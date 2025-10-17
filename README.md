@@ -162,6 +162,9 @@ command-center-1c/
 
 ## 📊 Roadmap
 
+> **⭐ Проект реализуется по варианту: Balanced Approach (14-16 недель)**
+> Детальный план см. в [docs/ROADMAP.md](docs/ROADMAP.md)
+
 ### Phase 1: MVP Foundation (Week 1-6) ✅ In Progress
 - [x] Базовая инфраструктура
 - [ ] Core functionality

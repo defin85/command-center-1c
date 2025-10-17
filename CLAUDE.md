@@ -10,7 +10,7 @@
 
 **Главная цель:** Массовые операции с данными в сотнях баз 1С параллельно с real-time мониторингом.
 
-**Roadmap:** Balanced approach - 16 недель до production (см. `src/task_00006/ROADMAP.md`)
+**Roadmap:** **Balanced approach (ВЫБРАН)** - 16 недель до production (см. `docs/ROADMAP.md`)
 
 ---
 
@@ -323,6 +323,17 @@ curl http://localhost:8080/health  # API Gateway
 curl http://localhost:8000/health  # Orchestrator
 curl http://localhost:3000         # Frontend
 ```
+
+---
+
+## ⭐ ВЫБРАННЫЙ ПЛАН РЕАЛИЗАЦИИ
+
+**Вариант:** Balanced Approach (14-16 недель)
+**Статус:** В разработке
+**Команда:** 3-4 разработчика
+**Цель:** Production-ready система с полным мониторингом
+
+> 📖 **Важно для AI агентов:** Проект реализуется по варианту **Balanced**. В roadmap описаны все три варианта (MVP, Balanced, Enterprise), но работа ведется строго по Balanced плану.
 
 ---
 
