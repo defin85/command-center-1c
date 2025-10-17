@@ -225,10 +225,19 @@ make clean
 
 ## 📖 Документация
 
+### Roadmap и Планирование
+- **[START HERE](docs/START_HERE.md)** - Быстрый старт по документации roadmap (2 мин)
+- **[Executive Summary](docs/EXECUTIVE_SUMMARY.md)** - Для принятия решений (5-10 мин)
+- **[Roadmap](docs/ROADMAP.md)** - Детальный план разработки (60-90 мин)
+- **[Roadmap Diagrams](docs/ROADMAP_DIAGRAMS.md)** - Визуализации и сравнения (20 мин)
+- **[Index](docs/INDEX.md)** - Полная навигация по документации (10 мин)
+
+### Техническая документация
 - [Architecture Overview](docs/architecture/README.md)
 - [API Documentation](docs/api/README.md)
 - [Deployment Guide](docs/deployment/README.md)
 - [Development Guide](docs/development/README.md)
+- [CLAUDE.md](CLAUDE.md) - Инструкции для AI агентов
 - [Contributing](CONTRIBUTING.md)
 
 ---
