@@ -1,0 +1,233 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: commandcenter-postgres
+    environment:
+      POSTGRES_DB: commandcenter
+      POSTGRES_USER: commandcenter
+      POSTGRES_PASSWORD: dev_password_change_in_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commandcenter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: commandcenter-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-network
+
+  # ClickHouse (Analytics)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: commandcenter-clickhouse
+    ports:
+      - "8123:8123"  # HTTP
+      - "9000:9000"  # Native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: commandcenter
+      CLICKHOUSE_USER: commandcenter
+      CLICKHOUSE_PASSWORD: dev_password_change_in_prod
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - commandcenter-network
+
+  # Django Orchestrator
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: commandcenter-orchestrator
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./orchestrator:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
+      - REDIS_URL=redis://redis:6379/0
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - SECRET_KEY=dev-secret-key-change-in-prod
+      - ALLOWED_HOSTS=*
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - commandcenter-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: commandcenter-celery-worker
+    command: celery -A config worker --loglevel=info
+    volumes:
+      - ./orchestrator:/app
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-prod
+    depends_on:
+      - redis
+      - postgres
+      - orchestrator
+    networks:
+      - commandcenter-network
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: commandcenter-celery-beat
+    command: celery -A config beat --loglevel=info
+    volumes:
+      - ./orchestrator:/app
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-prod
+    depends_on:
+      - redis
+      - postgres
+      - orchestrator
+    networks:
+      - commandcenter-network
+
+  # API Gateway (Go)
+  api-gateway:
+    build:
+      context: ./go-services/api-gateway
+      dockerfile: Dockerfile
+    container_name: commandcenter-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=development
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=dev-jwt-secret-change-in-prod
+      - LOG_LEVEL=debug
+    depends_on:
+      - redis
+      - orchestrator
+    networks:
+      - commandcenter-network
+
+  # Go Worker
+  worker:
+    build:
+      context: ./go-services/worker
+      dockerfile: Dockerfile
+    container_name: commandcenter-worker
+    environment:
+      - ENV=development
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_CONCURRENCY=20
+      - LOG_LEVEL=debug
+    depends_on:
+      - redis
+    networks:
+      - commandcenter-network
+    deploy:
+      replicas: 2
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: commandcenter-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_WS_URL=ws://localhost:8080/ws
+      - NODE_ENV=development
+    depends_on:
+      - api-gateway
+    networks:
+      - commandcenter-network
+
+  # Prometheus (Monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: commandcenter-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - commandcenter-network
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: commandcenter-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - commandcenter-network
+
+networks:
+  commandcenter-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
+  prometheus_data:
+  grafana_data:
