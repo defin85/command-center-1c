@@ -4,6 +4,19 @@
 
 ---
 
+## ⚠️ КРИТИЧЕСКИ ВАЖНО ДЛЯ AI АГЕНТОВ
+
+**🎯 ВЫБРАННЫЙ ВАРИАНТ РЕАЛИЗАЦИИ: Balanced Approach (14-16 недель)**
+
+- В документации описаны **три варианта** (MVP, Balanced, Enterprise) для полноты анализа
+- **НО:** Решение принято - проект реализуется **ТОЛЬКО по варианту Balanced**
+- При чтении roadmap: MVP и Enterprise - это справочная информация, НЕ план действий
+- **Фокус работы:** Phases 1-5 из Balanced подхода (см. `docs/ROADMAP.md`)
+
+> 🚨 **Не путать:** Наличие описания MVP/Enterprise вариантов НЕ означает что нужно их реализовывать. Это историческая документация для понимания альтернатив.
+
+---
+
 ## 🎯 Проект
 
 **CommandCenter1C** - микросервисная платформа для централизованного управления 700+ базами 1С:Бухгалтерия 3.0.
@@ -329,11 +342,18 @@ curl http://localhost:3000         # Frontend
 ## ⭐ ВЫБРАННЫЙ ПЛАН РЕАЛИЗАЦИИ
 
 **Вариант:** Balanced Approach (14-16 недель)
-**Статус:** В разработке
+**Статус:** Phase 1 - Week 1-2 (Infrastructure Setup)
 **Команда:** 3-4 разработчика
 **Цель:** Production-ready система с полным мониторингом
 
-> 📖 **Важно для AI агентов:** Проект реализуется по варианту **Balanced**. В roadmap описаны все три варианта (MVP, Balanced, Enterprise), но работа ведется строго по Balanced плану.
+**Структура плана (Balanced):**
+- **Phase 1:** MVP Foundation (Week 1-6)
+- **Phase 2:** Extended Functionality (Week 7-10)
+- **Phase 3:** Monitoring & Observability (Week 11-12)
+- **Phase 4:** Advanced Features (Week 13-15)
+- **Phase 5:** Production Hardening (Week 16)
+
+> 📖 **Важно для AI агентов:** Проект реализуется по варианту **Balanced**. В `docs/ROADMAP.md` описаны все три варианта (MVP, Balanced, Enterprise), но работа ведется строго по Balanced плану (секция "ВАРИАНТ 2: Balanced Approach").
 
 ---
 
@@ -348,25 +368,20 @@ curl http://localhost:3000         # Frontend
 - [ ] React project setup
 - [ ] Базовые Dockerfiles
 
-**Следующие шаги:**
+**Следующие шаги (согласно Balanced plan):**
 1. Инициализировать Go modules для api-gateway и worker
 2. Создать Django проект в orchestrator/
 3. Создать React app в frontend/
 4. Написать Dockerfiles для каждого компонента
 5. Протестировать docker-compose up
 
-**Roadmap:** См. `src/task_00006/ROADMAP.md` для детального плана
+**⭐ Детальный план:** См. `docs/ROADMAP.md` - секция "ВАРИАНТ 2: Balanced Approach"
 
 ---
 
 ## 🎯 Ключевые метрики (цели)
 
-**MVP (Week 8):**
-- 50+ баз параллельно
-- 100 ops/min
-- 1 тип операций работает
-
-**Balanced (Week 16):**
+**⭐ Balanced (Week 16) - НАШИ ЦЕЛЕВЫЕ МЕТРИКИ:**
 - 200-500 баз параллельно
 - 1,000+ ops/min
 - 4+ типов операций
@@ -374,30 +389,41 @@ curl http://localhost:3000         # Frontend
 - 95%+ success rate
 - 99% uptime
 
+**Промежуточные метрики (Phase 1 - MVP Foundation, Week 6):**
+- 50+ баз параллельно
+- 100 ops/min
+- 1 тип операций работает
+
 ---
 
 ## 🔗 Полезные ссылки
 
-- **Roadmap:** `src/task_00006/ROADMAP.md`
-- **Architecture:** `docs/architecture/`
-- **API Docs:** `docs/api/`
+- **⭐ Roadmap (Balanced):** `docs/ROADMAP.md` - ОБЯЗАТЕЛЬНО к прочтению
+- **Start Here:** `docs/START_HERE.md` - Быстрый старт
+- **Executive Summary:** `docs/EXECUTIVE_SUMMARY.md` - Краткое резюме
 - **Main README:** `README.md`
+- **Architecture:** `docs/architecture/` (будет добавлено)
+- **API Docs:** `docs/api/` (будет добавлено)
 
 ---
 
 ## 💡 Tips для AI агентов
 
-1. **Всегда используй Makefile команды** вместо прямых docker команд
-2. **Следуй структуре monorepo** - не создавай файлы в неправильных местах
-3. **Используй shared code в Go** - не дублируй auth/logger/config между сервисами
-4. **Django apps должны быть независимыми** - минимум cross-app imports
-5. **Frontend общается только с API Gateway** - никаких прямых вызовов Orchestrator
-6. **Транзакции 1С < 15 секунд** - это критично!
-7. **Тесты обязательны** - coverage > 70%
-8. **Используй paths-filter в CI** - не гоняй все тесты на каждый коммит
+1. **КРИТИЧНО: Работаем ТОЛЬКО по Balanced варианту** - MVP и Enterprise в roadmap для справки, НЕ реализация
+2. **Всегда используй Makefile команды** вместо прямых docker команд
+3. **Следуй структуре monorepo** - не создавай файлы в неправильных местах
+4. **Используй shared code в Go** - не дублируй auth/logger/config между сервисами
+5. **Django apps должны быть независимыми** - минимум cross-app imports
+6. **Frontend общается только с API Gateway** - никаких прямых вызовов Orchestrator
+7. **Транзакции 1С < 15 секунд** - это критично!
+8. **Тесты обязательны** - coverage > 70%
+9. **Используй paths-filter в CI** - не гоняй все тесты на каждый коммит
+10. **При сомнениях в roadmap** - всегда ориентируйся на Balanced plan (Phases 1-5)
 
 ---
 
-**Версия:** 1.0
+**Версия:** 1.1
 **Последнее обновление:** 2025-01-17
-**Фаза:** Week 1 - Infrastructure Setup
+**Выбранный вариант:** ⭐ Balanced Approach (14-16 недель)
+**Текущая фаза:** Phase 1, Week 1-2 - Infrastructure Setup
+**Следующая фаза:** Phase 1, Week 3-4 - Core Functionality
