@@ -1,0 +1,186 @@
+from django.db import models
+from django.utils import timezone
+from encrypted_model_fields.fields import EncryptedCharField
+
+
+class Database(models.Model):
+    """Represents a 1C database configuration with health monitoring."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_ERROR = 'error'
+    STATUS_MAINTENANCE = 'maintenance'
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_INACTIVE, 'Inactive'),
+        (STATUS_ERROR, 'Error'),
+        (STATUS_MAINTENANCE, 'Maintenance'),
+    ]
+
+    HEALTH_OK = 'ok'
+    HEALTH_DEGRADED = 'degraded'
+    HEALTH_DOWN = 'down'
+    HEALTH_UNKNOWN = 'unknown'
+
+    HEALTH_STATUS_CHOICES = [
+        (HEALTH_OK, 'OK'),
+        (HEALTH_DEGRADED, 'Degraded'),
+        (HEALTH_DOWN, 'Down'),
+        (HEALTH_UNKNOWN, 'Unknown'),
+    ]
+
+    # Identity
+    id = models.CharField(max_length=64, primary_key=True)
+    name = models.CharField(max_length=255, unique=True, db_index=True)
+    description = models.TextField(blank=True)
+
+    # Connection
+    host = models.CharField(max_length=255)
+    port = models.IntegerField(default=80)
+    base_name = models.CharField(max_length=255)
+    odata_url = models.URLField(max_length=512)
+    username = models.CharField(max_length=255)
+    password = EncryptedCharField(max_length=255)  # Encrypted with FIELD_ENCRYPTION_KEY
+
+    # Connection Pool Settings
+    max_connections = models.IntegerField(default=10, help_text="Maximum concurrent connections")
+    connection_timeout = models.IntegerField(default=30, help_text="Connection timeout in seconds")
+
+    # Status & Metadata
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    version = models.CharField(max_length=50, blank=True)
+    metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata")
+
+    # Health Check
+    last_check = models.DateTimeField(null=True, blank=True)
+    last_check_status = models.CharField(
+        max_length=20,
+        choices=HEALTH_STATUS_CHOICES,
+        default=HEALTH_UNKNOWN,
+        db_index=True
+    )
+    consecutive_failures = models.IntegerField(default=0)
+    health_check_enabled = models.BooleanField(default=True)
+
+    # Performance Tracking
+    avg_response_time = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Average response time in milliseconds"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'databases'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['status', 'last_check_status']),
+            models.Index(fields=['last_check']),
+            models.Index(fields=['consecutive_failures']),
+        ]
+        verbose_name = '1C Database'
+        verbose_name_plural = '1C Databases'
+
+    def __str__(self):
+        return self.name
+
+    def get_odata_endpoint(self, entity: str) -> str:
+        """
+        Construct OData endpoint URL for a specific entity.
+
+        Args:
+            entity: Entity name (e.g., 'Справочник_Пользователи')
+
+        Returns:
+            Full OData endpoint URL
+        """
+        base_url = self.odata_url.rstrip('/')
+        return f"{base_url}/{entity}"
+
+    def mark_health_check(self, success: bool, response_time: float = None, error_message: str = None):
+        """
+        Update health check status.
+
+        Args:
+            success: Whether health check succeeded
+            response_time: Response time in milliseconds (optional)
+            error_message: Error message if failed (optional)
+        """
+        self.last_check = timezone.now()
+
+        if success:
+            self.last_check_status = self.HEALTH_OK
+            self.consecutive_failures = 0
+            if response_time is not None:
+                # Calculate moving average (simple exponential smoothing)
+                if self.avg_response_time is None:
+                    self.avg_response_time = response_time
+                else:
+                    alpha = 0.3  # Smoothing factor
+                    self.avg_response_time = (alpha * response_time) + ((1 - alpha) * self.avg_response_time)
+        else:
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= 3:
+                self.last_check_status = self.HEALTH_DOWN
+                self.status = self.STATUS_ERROR
+            else:
+                self.last_check_status = self.HEALTH_DEGRADED
+
+        self.save(update_fields=[
+            'last_check',
+            'last_check_status',
+            'consecutive_failures',
+            'avg_response_time',
+            'status',
+            'updated_at'
+        ])
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if database is healthy."""
+        return self.last_check_status == self.HEALTH_OK and self.status == self.STATUS_ACTIVE
+
+    @property
+    def connection_string(self) -> str:
+        """Get connection info (without password)."""
+        return f"{self.username}@{self.host}:{self.port}/{self.base_name}"
+
+
+class DatabaseGroup(models.Model):
+    """Represents a group of databases for bulk operations."""
+
+    id = models.CharField(max_length=64, primary_key=True)
+    name = models.CharField(max_length=255, unique=True, db_index=True)
+    description = models.TextField(blank=True)
+    databases = models.ManyToManyField(Database, related_name='groups')
+    metadata = models.JSONField(default=dict, blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'database_groups'
+        ordering = ['name']
+        verbose_name = 'Database Group'
+        verbose_name_plural = 'Database Groups'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def database_count(self) -> int:
+        """Get number of databases in group."""
+        return self.databases.count()
+
+    @property
+    def healthy_count(self) -> int:
+        """Get number of healthy databases in group."""
+        return self.databases.filter(
+            last_check_status=Database.HEALTH_OK,
+            status=Database.STATUS_ACTIVE
+        ).count()

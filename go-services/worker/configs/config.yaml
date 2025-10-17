@@ -1,0 +1,17 @@
+# Worker Configuration
+# Most settings are loaded from environment variables
+
+worker:
+  pool_size: 50
+  max_retries: 3
+  timeout: 5m
+  graceful_shutdown_timeout: 30s
+
+queue:
+  poll_interval: 5s
+  batch_size: 1
+
+odata:
+  timeout: 15s  # Important: 1C transactions must be < 15s
+  max_retries: 2
+  retry_delay: 2s

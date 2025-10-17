@@ -1,0 +1,15 @@
+Django==4.2.7
+djangorestframework==3.14.0
+django-environ==0.11.2
+psycopg2-binary==2.9.9
+redis==5.0.1
+celery==5.3.4
+django-cors-headers==4.3.1
+django-filter==23.5
+drf-spectacular==0.27.0
+requests==2.31.0
+
+# Sprint 1.2: Database Models & Encryption
+django-encrypted-model-fields==0.6.5
+cryptography==42.0.0
+tenacity==8.2.3

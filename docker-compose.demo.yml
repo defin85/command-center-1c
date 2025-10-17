@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cc1c-demo-postgres
+    environment:
+      POSTGRES_DB: commandcenter
+      POSTGRES_USER: cc1c_user
+      POSTGRES_PASSWORD: cc1c_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_demo_data:/var/lib/postgresql/data
+    networks:
+      - demo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cc1c_user -d commandcenter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: cc1c-demo-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - demo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock 1C OData Server - Moscow
+  mock-1c-moscow:
+    build:
+      context: ./demo/mock_1c_server
+      dockerfile: Dockerfile
+    container_name: cc1c-mock-1c-moscow
+    environment:
+      ODATA_USERNAME: Администратор
+      ODATA_PASSWORD: mock_password
+      DB_NAME: moscow_001
+      PORT: 8080
+    ports:
+      - "8081:8080"
+    networks:
+      - demo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock 1C OData Server - St. Petersburg
+  mock-1c-spb:
+    build:
+      context: ./demo/mock_1c_server
+      dockerfile: Dockerfile
+    container_name: cc1c-mock-1c-spb
+    environment:
+      ODATA_USERNAME: Администратор
+      ODATA_PASSWORD: mock_password
+      DB_NAME: spb_001
+      PORT: 8080
+    ports:
+      - "8082:8080"
+    networks:
+      - demo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock 1C OData Server - Ekaterinburg
+  mock-1c-ekb:
+    build:
+      context: ./demo/mock_1c_server
+      dockerfile: Dockerfile
+    container_name: cc1c-mock-1c-ekb
+    environment:
+      ODATA_USERNAME: Администратор
+      ODATA_PASSWORD: mock_password
+      DB_NAME: ekb_001
+      PORT: 8080
+    ports:
+      - "8083:8080"
+    networks:
+      - demo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Django Orchestrator
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.dev
+    container_name: cc1c-demo-orchestrator
+    environment:
+      DEBUG: "True"
+      DJANGO_SECRET_KEY: "demo-secret-key-change-in-production-12345678"
+      DB_NAME: "commandcenter"
+      DB_USER: "cc1c_user"
+      DB_PASSWORD: "cc1c_password"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      REDIS_URL: "redis://redis:6379/0"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      DB_ENCRYPTION_KEY: "2HdNQcbJg4Vua6bCkA-P3PQEcgeNwOAjcIoYnKkhIiY="
+      ALLOWED_HOSTS: "localhost,127.0.0.1,orchestrator"
+      DJANGO_SETTINGS_MODULE: "config.settings.development"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - demo-network
+    volumes:
+      - ./orchestrator:/app
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+networks:
+  demo-network:
+    driver: bridge
+
+volumes:
+  postgres_demo_data:
