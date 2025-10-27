@@ -184,3 +184,57 @@ class DatabaseGroup(models.Model):
             last_check_status=Database.HEALTH_OK,
             status=Database.STATUS_ACTIVE
         ).count()
+
+
+class ExtensionInstallation(models.Model):
+    """Статус установки расширения на базу 1С"""
+
+    STATUS_PENDING = 'pending'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_COMPLETED = 'completed'
+    STATUS_FAILED = 'failed'
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_FAILED, 'Failed'),
+    ]
+
+    database = models.ForeignKey(
+        Database,
+        on_delete=models.CASCADE,
+        related_name='extension_installations'
+    )
+    extension_name = models.CharField(max_length=255, default="ODataAutoConfig")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
+    duration_seconds = models.IntegerField(null=True, blank=True)
+    retry_count = models.IntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'databases_extension_installation'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['database', 'extension_name']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['database', 'extension_name'],
+                condition=models.Q(status__in=['pending', 'in_progress']),
+                name='unique_active_installation'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.extension_name} on {self.database.name} - {self.status}"

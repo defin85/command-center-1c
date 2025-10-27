@@ -44,27 +44,32 @@ class DatabaseService:
 
         try:
             # Получаем OData client из session manager
-            client = session_manager.get_client(database)
+            client = session_manager.get_client(
+                base_id=str(database.id),
+                base_url=database.odata_url,
+                username=database.username,
+                password=database.password,
+                timeout=database.connection_timeout
+            )
 
             # Выполняем health check (простой GET запрос к metadata)
             health_result = client.health_check()
 
             # Вычисляем время ответа
             end_time = timezone.now()
-            response_time = (end_time - start_time).total_seconds()
+            response_time = (end_time - start_time).total_seconds() * 1000  # Convert to milliseconds
 
             result.update({
-                'healthy': health_result.get('healthy', False),
+                'healthy': health_result,
                 'response_time': response_time,
-                'status_code': health_result.get('status_code', 200)
+                'status_code': 200 if health_result else 500
             })
 
             # Обновляем информацию в базе
             with transaction.atomic():
                 database.last_check = timezone.now()
-                database.last_check_status = 'success'
+                database.last_check_status = Database.HEALTH_OK
                 database.consecutive_failures = 0
-                database.last_error = None
 
                 # Обновляем среднее время ответа (простое скользящее среднее)
                 if database.avg_response_time is None:
@@ -79,7 +84,6 @@ class DatabaseService:
                     'last_check',
                     'last_check_status',
                     'consecutive_failures',
-                    'last_error',
                     'avg_response_time',
                     'updated_at'
                 ])
@@ -96,14 +100,12 @@ class DatabaseService:
 
             with transaction.atomic():
                 database.last_check = timezone.now()
-                database.last_check_status = 'failed'
+                database.last_check_status = Database.HEALTH_DOWN
                 database.consecutive_failures += 1
-                database.last_error = error_msg[:500]  # Ограничиваем длину
                 database.save(update_fields=[
                     'last_check',
                     'last_check_status',
                     'consecutive_failures',
-                    'last_error',
                     'updated_at'
                 ])
 
@@ -119,14 +121,12 @@ class DatabaseService:
 
             with transaction.atomic():
                 database.last_check = timezone.now()
-                database.last_check_status = 'failed'
+                database.last_check_status = Database.HEALTH_DOWN
                 database.consecutive_failures += 1
-                database.last_error = error_msg[:500]
                 database.save(update_fields=[
                     'last_check',
                     'last_check_status',
                     'consecutive_failures',
-                    'last_error',
                     'updated_at'
                 ])
 

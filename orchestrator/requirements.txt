@@ -25,6 +25,7 @@ python-dotenv==1.0.0
 
 # Encryption
 cryptography==41.0.7
+django-encrypted-model-fields==0.6.5
 
 # Utilities
 pytz==2023.3

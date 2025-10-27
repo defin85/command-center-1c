@@ -1,12 +1,14 @@
 """REST API Views для databases app."""
 
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from django.db.models import Count, Q, Avg
 
-from .models import Database, DatabaseGroup
-from .serializers import DatabaseSerializer, DatabaseGroupSerializer
+from .models import Database, DatabaseGroup, ExtensionInstallation
+from .serializers import DatabaseSerializer, DatabaseGroupSerializer, ExtensionInstallationSerializer
 from .services import DatabaseService
 
 
@@ -71,8 +73,8 @@ class DatabaseViewSet(viewsets.ModelViewSet):
         })
 
     @extend_schema(
-        summary="Bulk health check для всех баз",
-        description="Проверяет все базы или отфильтрованный набор баз",
+        summary="Bulk health check для всех баз (async)",
+        description="Асинхронная проверка всех баз или отфильтрованного набора баз через Celery",
         parameters=[
             OpenApiParameter(
                 name='status',
@@ -83,18 +85,14 @@ class DatabaseViewSet(viewsets.ModelViewSet):
             )
         ],
         responses={
-            200: OpenApiResponse(
-                description="Bulk health check выполнен",
+            202: OpenApiResponse(
+                description="Health check задача создана",
                 response={
                     'type': 'object',
                     'properties': {
-                        'total': {'type': 'integer'},
-                        'healthy': {'type': 'integer'},
-                        'unhealthy': {'type': 'integer'},
-                        'results': {
-                            'type': 'array',
-                            'items': {'type': 'object'}
-                        }
+                        'task_id': {'type': 'string'},
+                        'status': {'type': 'string'},
+                        'total_databases': {'type': 'integer'}
                     }
                 }
             )
@@ -103,32 +101,26 @@ class DatabaseViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='bulk-health-check')
     def bulk_health_check(self, request):
         """
-        Проверить здоровье всех баз (или отфильтрованных).
+        Запланировать асинхронную проверку здоровья всех баз.
 
         POST /api/v1/databases/bulk-health-check/?status=active
+
+        Возвращает task_id для отслеживания прогресса.
         """
+        from .tasks import check_databases_health
+
         # Получаем queryset (может быть отфильтрован)
         queryset = self.filter_queryset(self.get_queryset())
+        database_ids = list(queryset.values_list('id', flat=True))
 
-        results = []
-        healthy_count = 0
-
-        for database in queryset:
-            result = DatabaseService.health_check_database(database)
-            results.append({
-                'database_id': str(database.id),
-                'database_name': database.name,
-                **result
-            })
-            if result['healthy']:
-                healthy_count += 1
+        # Запускаем асинхронную задачу
+        task = check_databases_health.delay(database_ids)
 
         return Response({
-            'total': len(results),
-            'healthy': healthy_count,
-            'unhealthy': len(results) - healthy_count,
-            'results': results
-        })
+            'task_id': str(task.id),
+            'status': 'scheduled',
+            'total_databases': len(database_ids)
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class DatabaseGroupViewSet(viewsets.ModelViewSet):
@@ -185,3 +177,148 @@ class DatabaseGroupViewSet(viewsets.ModelViewSet):
         result = DatabaseService.health_check_group(group)
 
         return Response(result)
+
+
+# Installation Service views
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def batch_install_extension(request):
+    """Запуск массовой установки расширения на группу баз"""
+    database_ids = request.data.get('database_ids', [])
+    extension_config = request.data.get('extension_config', {})
+
+    # Валидация
+    if not extension_config.get('name') or not extension_config.get('path'):
+        return Response(
+            {"error": "extension_config must contain 'name' and 'path'"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Если "all", взять все активные базы
+    if isinstance(database_ids, str) and database_ids == "all":
+        database_ids = list(Database.objects.filter(status='active').values_list('id', flat=True))
+    elif not isinstance(database_ids, list):
+        return Response(
+            {"error": "database_ids must be a list of integers or 'all'"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not database_ids:
+        return Response(
+            {"error": "database_ids is empty"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Импортируем Celery task здесь чтобы избежать циклических импортов
+    from .tasks import queue_extension_installation
+
+    # Запустить Celery task
+    task = queue_extension_installation.delay(database_ids, extension_config)
+
+    return Response({
+        "task_id": str(task.id),
+        "total_databases": len(database_ids),
+        "status": "queued"
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+def installation_progress(request, task_id):
+    """Real-time прогресс установки"""
+    installations = ExtensionInstallation.objects.all()
+
+    stats = installations.aggregate(
+        total=Count('id'),
+        completed=Count('id', filter=Q(status='completed')),
+        failed=Count('id', filter=Q(status='failed')),
+        in_progress=Count('id', filter=Q(status='in_progress')),
+        pending=Count('id', filter=Q(status='pending'))
+    )
+
+    total = stats['total'] or 1
+    progress_percent = (stats['completed'] / total) * 100 if total > 0 else 0
+
+    # Простая оценка оставшегося времени (можно улучшить)
+    avg_duration = installations.filter(
+        status='completed',
+        duration_seconds__isnull=False
+    ).aggregate(avg=Avg('duration_seconds'))['avg'] or 60
+
+    remaining_tasks = stats['pending'] + stats['in_progress']
+    estimated_time_remaining = int(remaining_tasks * avg_duration / 10)  # 10 параллельных
+
+    return Response({
+        "total": stats['total'],
+        "completed": stats['completed'],
+        "failed": stats['failed'],
+        "in_progress": stats['in_progress'],
+        "pending": stats['pending'],
+        "progress_percent": round(progress_percent, 2),
+        "estimated_time_remaining": estimated_time_remaining
+    })
+
+
+@api_view(['GET'])
+def extension_status(request, pk):
+    """Статус установки для конкретной базы"""
+    try:
+        installation = ExtensionInstallation.objects.filter(
+            database_id=pk
+        ).order_by('-created_at').first()
+
+        if not installation:
+            return Response(
+                {"error": "No installation found for this database"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = ExtensionInstallationSerializer(installation)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def retry_installation(request, pk):
+    """Повторить неудачную установку"""
+    try:
+        database = Database.objects.get(id=pk)
+
+        # Найти последнюю неудачную установку
+        failed_installation = ExtensionInstallation.objects.filter(
+            database=database,
+            status='failed'
+        ).order_by('-created_at').first()
+
+        if not failed_installation:
+            return Response(
+                {"error": "No failed installation found for this database"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Создать новую попытку
+        extension_config = {
+            "name": failed_installation.extension_name,
+            "path": failed_installation.metadata.get('extension_path', '')
+        }
+
+        # Импортируем Celery task здесь
+        from .tasks import queue_extension_installation
+
+        task = queue_extension_installation.delay([pk], extension_config)
+
+        return Response({
+            "status": "queued",
+            "task_id": str(task.id)
+        }, status=status.HTTP_201_CREATED)
+
+    except Database.DoesNotExist:
+        return Response(
+            {"error": "Database not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )

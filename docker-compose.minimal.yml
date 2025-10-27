@@ -1,0 +1,83 @@
+version: '3.8'
+
+# Минимальный стек для тестирования подключения к 1С
+# Запуск: docker-compose -f docker-compose.minimal.yml up
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: commandcenter-postgres-minimal
+    environment:
+      POSTGRES_DB: commandcenter
+      POSTGRES_USER: commandcenter
+      POSTGRES_PASSWORD: dev_password_change_in_prod
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_minimal:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commandcenter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-minimal
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: commandcenter-redis-minimal
+    command: redis-server --appendonly yes
+    # Ports не пробрасываем - Redis используется только внутри Docker сети
+    volumes:
+      - redis_data_minimal:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-minimal
+
+  # Django Orchestrator
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.dev
+    container_name: commandcenter-orchestrator-minimal
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./orchestrator:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=commandcenter
+      - DB_USER=commandcenter
+      - DB_PASSWORD=dev_password_change_in_prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - SECRET_KEY=dev-secret-key-change-in-prod
+      - ALLOWED_HOSTS=*
+      - DB_ENCRYPTION_KEY=HeRKJrBQTk2MBiRRIUUr4yJk6EqILaTpmsMfIYkkyuE=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - commandcenter-minimal
+
+networks:
+  commandcenter-minimal:
+    driver: bridge
+
+volumes:
+  postgres_data_minimal:
+  redis_data_minimal:
