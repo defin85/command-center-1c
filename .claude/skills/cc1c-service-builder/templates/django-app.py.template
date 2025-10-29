@@ -1,0 +1,446 @@
+# -*- coding: utf-8 -*-
+"""
+{{App Name}} Django Application
+
+Описание: {{app_description}}
+"""
+
+# ============================================================================
+# MODELS.PY
+# ============================================================================
+
+from django.db import models
+from django.utils import timezone
+
+
+class {{ModelName}}(models.Model):
+    """
+    {{model_description}}
+    """
+    name = models.CharField(
+        max_length=255,
+        verbose_name="Название",
+        help_text="Название объекта"
+    )
+    description = models.TextField(
+        blank=True,
+        verbose_name="Описание",
+        help_text="Подробное описание"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активен",
+        help_text="Флаг активности"
+    )
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Дата создания"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Дата обновления"
+    )
+
+    class Meta:
+        verbose_name = "{{verbose_name}}"
+        verbose_name_plural = "{{verbose_name_plural}}"
+        ordering = ['-created_at']
+        db_table = '{{app_name}}_{{model_name_lower}}'
+        indexes = [
+            models.Index(fields=['is_active', '-created_at']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+# ============================================================================
+# SERIALIZERS.PY
+# ============================================================================
+
+from rest_framework import serializers
+
+
+class {{ModelName}}Serializer(serializers.ModelSerializer):
+    """Serializer для {{ModelName}}"""
+
+    class Meta:
+        model = {{ModelName}}
+        fields = [
+            'id',
+            'name',
+            'description',
+            'is_active',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_name(self, value):
+        """Валидация названия"""
+        if len(value) < 3:
+            raise serializers.ValidationError(
+                "Название должно содержать минимум 3 символа"
+            )
+        return value
+
+
+class {{ModelName}}CreateSerializer(serializers.Serializer):
+    """Serializer для создания {{ModelName}}"""
+    name = serializers.CharField(max_length=255, required=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    is_active = serializers.BooleanField(default=True, required=False)
+
+
+# ============================================================================
+# VIEWS.PY
+# ============================================================================
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class {{ModelName}}ViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints для управления {{ModelName}}
+
+    list: GET /api/{{app_name}}/items/ - Получить список
+    create: POST /api/{{app_name}}/items/ - Создать новый
+    retrieve: GET /api/{{app_name}}/items/{id}/ - Получить по ID
+    update: PUT /api/{{app_name}}/items/{id}/ - Обновить полностью
+    partial_update: PATCH /api/{{app_name}}/items/{id}/ - Обновить частично
+    destroy: DELETE /api/{{app_name}}/items/{id}/ - Удалить
+    """
+    queryset = {{ModelName}}.objects.all()
+    serializer_class = {{ModelName}}Serializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['created_at', 'updated_at', 'name']
+    ordering = ['-created_at']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.service = {{ModelName}}Service()
+
+    def get_queryset(self):
+        """Фильтрация queryset"""
+        queryset = super().get_queryset()
+
+        # Filter by search query
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        """Создание через service layer"""
+        serializer = {{ModelName}}CreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = self.service.create_item(serializer.validated_data)
+            output_serializer = self.get_serializer(result)
+            return Response(
+                output_serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            logger.error(f"Failed to create {{model_name_lower}}: {e}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """Активировать объект"""
+        obj = self.get_object()
+        obj.is_active = True
+        obj.save()
+        return Response({'status': 'activated'})
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """Деактивировать объект"""
+        obj = self.get_object()
+        obj.is_active = False
+        obj.save()
+        return Response({'status': 'deactivated'})
+
+    @action(detail=False, methods=['get'])
+    def active(self, request):
+        """Получить только активные объекты"""
+        active_items = self.service.get_active_items()
+        serializer = self.get_serializer(active_items, many=True)
+        return Response(serializer.data)
+
+
+# ============================================================================
+# SERVICES.PY
+# ============================================================================
+
+from django.db import transaction
+from typing import Dict, List
+
+
+class {{ModelName}}Service:
+    """
+    Business logic для {{ModelName}}
+
+    Разделение ответственности:
+    - Views: обрабатывают HTTP requests/responses
+    - Services: содержат бизнес-логику
+    - Models: работают с данными
+    """
+
+    @transaction.atomic
+    def create_item(self, data: Dict) -> {{ModelName}}:
+        """
+        Создает новый объект {{ModelName}}
+
+        Args:
+            data: Словарь с данными для создания
+
+        Returns:
+            Созданный объект {{ModelName}}
+
+        Raises:
+            ValueError: Если данные невалидны
+        """
+        logger.info(f"Creating {{model_name_lower}} with data: {data}")
+
+        # Validate business rules
+        self._validate_business_rules(data)
+
+        # Create object
+        item = {{ModelName}}.objects.create(**data)
+
+        # Trigger async processing if needed
+        from .tasks import process_{{model_name_lower}}_task
+        process_{{model_name_lower}}_task.delay(item.id)
+
+        logger.info(f"{{ModelName}} created: {item.id}")
+        return item
+
+    @transaction.atomic
+    def update_item(self, item_id: int, data: Dict) -> {{ModelName}}:
+        """
+        Обновляет существующий объект
+
+        Args:
+            item_id: ID объекта
+            data: Словарь с данными для обновления
+
+        Returns:
+            Обновленный объект {{ModelName}}
+
+        Raises:
+            {{ModelName}}.DoesNotExist: Если объект не найден
+        """
+        item = {{ModelName}}.objects.get(id=item_id)
+
+        for field, value in data.items():
+            setattr(item, field, value)
+
+        item.save()
+        logger.info(f"{{ModelName}} updated: {item.id}")
+        return item
+
+    def get_active_items(self) -> List[{{ModelName}}]:
+        """Получить список активных объектов"""
+        return {{ModelName}}.objects.filter(is_active=True)
+
+    def _validate_business_rules(self, data: Dict) -> None:
+        """
+        Валидация бизнес-правил
+
+        Args:
+            data: Данные для валидации
+
+        Raises:
+            ValueError: Если валидация не прошла
+        """
+        # Add your business validation here
+        pass
+
+
+# ============================================================================
+# TASKS.PY
+# ============================================================================
+
+from celery import shared_task
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def process_{{model_name_lower}}_task(self, item_id: int):
+    """
+    Асинхронная обработка {{ModelName}}
+
+    Args:
+        item_id: ID объекта {{ModelName}}
+
+    Returns:
+        dict: Результат обработки
+    """
+    try:
+        item = {{ModelName}}.objects.get(id=item_id)
+        logger.info(f"Processing {{model_name_lower}} {item_id}")
+
+        # Add your async processing logic here
+
+        logger.info(f"{{ModelName}} {item_id} processed successfully")
+        return {
+            'status': 'success',
+            'item_id': item_id,
+            'message': 'Processing completed'
+        }
+
+    except {{ModelName}}.DoesNotExist:
+        logger.error(f"{{ModelName}} {item_id} not found")
+        raise
+
+    except Exception as exc:
+        logger.error(f"Error processing {{model_name_lower}} {item_id}: {exc}")
+        raise self.retry(exc=exc)
+
+
+# ============================================================================
+# ADMIN.PY
+# ============================================================================
+
+from django.contrib import admin
+
+
+@admin.register({{ModelName}})
+class {{ModelName}}Admin(admin.ModelAdmin):
+    """Admin interface для {{ModelName}}"""
+
+    list_display = [
+        'id',
+        'name',
+        'is_active',
+        'created_at',
+        'updated_at'
+    ]
+    list_filter = [
+        'is_active',
+        'created_at'
+    ]
+    search_fields = [
+        'name',
+        'description'
+    ]
+    readonly_fields = [
+        'created_at',
+        'updated_at'
+    ]
+    date_hierarchy = 'created_at'
+    ordering = ['-created_at']
+
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('name', 'description', 'is_active')
+        }),
+        ('Системная информация', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+# ============================================================================
+# URLS.PY
+# ============================================================================
+
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register(r'items', {{ModelName}}ViewSet, basename='{{model_name_lower}}')
+
+app_name = '{{app_name}}'
+
+urlpatterns = [
+    path('', include(router.urls)),
+]
+
+
+# ============================================================================
+# TESTS
+# ============================================================================
+
+# tests/test_models.py
+from django.test import TestCase
+
+
+class {{ModelName}}ModelTest(TestCase):
+    """Тесты для модели {{ModelName}}"""
+
+    def setUp(self):
+        self.item = {{ModelName}}.objects.create(
+            name="Test Item",
+            description="Test Description"
+        )
+
+    def test_create_item(self):
+        """Тест создания объекта"""
+        self.assertEqual({{ModelName}}.objects.count(), 1)
+        self.assertEqual(self.item.name, "Test Item")
+
+    def test_str_representation(self):
+        """Тест строкового представления"""
+        self.assertEqual(str(self.item), "Test Item")
+
+    def test_default_values(self):
+        """Тест значений по умолчанию"""
+        self.assertTrue(self.item.is_active)
+        self.assertIsNotNone(self.item.created_at)
+
+
+# tests/test_views.py
+from rest_framework.test import APITestCase, APIClient
+from rest_framework import status
+
+
+class {{ModelName}}ViewSetTest(APITestCase):
+    """Тесты для API endpoints {{ModelName}}"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.item = {{ModelName}}.objects.create(
+            name="Test Item",
+            description="Test Description"
+        )
+
+    def test_list_items(self):
+        """Тест получения списка"""
+        response = self.client.get('/api/{{app_name}}/items/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_create_item(self):
+        """Тест создания объекта"""
+        data = {
+            'name': 'New Item',
+            'description': 'New Description'
+        }
+        response = self.client.post('/api/{{app_name}}/items/', data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual({{ModelName}}.objects.count(), 2)
+
+    def test_retrieve_item(self):
+        """Тест получения объекта по ID"""
+        response = self.client.get(f'/api/{{app_name}}/items/{self.item.id}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], 'Test Item')

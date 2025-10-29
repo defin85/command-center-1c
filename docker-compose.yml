@@ -84,6 +84,8 @@ services:
       - REDIS_DB=0
       - SECRET_KEY=dev-secret-key-change-in-prod
       - ALLOWED_HOSTS=*
+      - INSTALLATION_SERVICE_URL=http://host.docker.internal:8086
+      - INSTALLATION_SERVICE_TIMEOUT=180
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,7 +176,7 @@ services:
     build:
       context: ./go-services
       dockerfile: worker/Dockerfile
-    container_name: commandcenter-worker
+    # container_name removed - incompatible with replicas
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

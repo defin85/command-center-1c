@@ -1,0 +1,453 @@
+/**
+ * {{ComponentName}} Component
+ *
+ * Описание: {{component_description}}
+ */
+
+import React, { useEffect, useState } from 'react';
+import { Card, Button, message, Space, Table, Modal, Form, Input, Switch } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface {{EntityName}} {
+  id: number;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface {{ComponentName}}Props {
+  // Add your component props here
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+const {{ComponentName}}: React.FC<{{ComponentName}}Props> = () => {
+  const [data, setData] = useState<{{EntityName}}[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<{{EntityName}} | null>(null);
+  const [form] = Form.useForm();
+
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // ============================================================================
+  // DATA FETCHING
+  // ============================================================================
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Replace with actual API call
+      const response = await fetch('/api/{{endpoint}}/');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      message.error('Ошибка при загрузке данных');
+      console.error('Fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // CRUD OPERATIONS
+  // ============================================================================
+
+  const handleCreate = () => {
+    setEditingItem(null);
+    form.resetFields();
+    setIsModalVisible(true);
+  };
+
+  const handleEdit = (item: {{EntityName}}) => {
+    setEditingItem(item);
+    form.setFieldsValue(item);
+    setIsModalVisible(true);
+  };
+
+  const handleDelete = (id: number) => {
+    Modal.confirm({
+      title: 'Подтверждение удаления',
+      content: 'Вы уверены что хотите удалить этот элемент?',
+      okText: 'Удалить',
+      cancelText: 'Отмена',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await fetch(`/api/{{endpoint}}/${id}/`, {
+            method: 'DELETE',
+          });
+          message.success('Элемент удален');
+          fetchData();
+        } catch (error) {
+          message.error('Ошибка при удалении');
+          console.error('Delete error:', error);
+        }
+      },
+    });
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
+      if (editingItem) {
+        // Update existing item
+        await fetch(`/api/{{endpoint}}/${editingItem.id}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(values),
+        });
+        message.success('Элемент обновлен');
+      } else {
+        // Create new item
+        await fetch('/api/{{endpoint}}/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(values),
+        });
+        message.success('Элемент создан');
+      }
+
+      setIsModalVisible(false);
+      fetchData();
+    } catch (error) {
+      message.error('Ошибка при сохранении');
+      console.error('Submit error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // TABLE CONFIGURATION
+  // ============================================================================
+
+  const columns: ColumnsType<{{EntityName}}> = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+    },
+    {
+      title: 'Название',
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: 'Описание',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+    {
+      title: 'Статус',
+      dataIndex: 'isActive',
+      key: 'isActive',
+      width: 100,
+      render: (isActive: boolean) => (
+        <span style={{ color: isActive ? 'green' : 'red' }}>
+          {isActive ? 'Активен' : 'Неактивен'}
+        </span>
+      ),
+      filters: [
+        { text: 'Активен', value: true },
+        { text: 'Неактивен', value: false },
+      ],
+      onFilter: (value, record) => record.isActive === value,
+    },
+    {
+      title: 'Дата создания',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 180,
+      render: (date: string) => new Date(date).toLocaleString('ru-RU'),
+      sorter: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    },
+    {
+      title: 'Действия',
+      key: 'actions',
+      width: 120,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size="small">
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+          />
+          <Button
+            type="link"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id)}
+          />
+        </Space>
+      ),
+    },
+  ];
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  return (
+    <div>
+      <Card
+        title="{{page_title}}"
+        extra={
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={fetchData}
+              loading={loading}
+            >
+              Обновить
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleCreate}
+            >
+              Создать
+            </Button>
+          </Space>
+        }
+      >
+        <Table
+          dataSource={data}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total) => `Всего: ${total}`,
+          }}
+        />
+      </Card>
+
+      <Modal
+        title={editingItem ? 'Редактировать' : 'Создать'}
+        open={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        onOk={handleSubmit}
+        okText="Сохранить"
+        cancelText="Отмена"
+        width={600}
+        confirmLoading={loading}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          autoComplete="off"
+        >
+          <Form.Item
+            name="name"
+            label="Название"
+            rules={[
+              { required: true, message: 'Пожалуйста введите название' },
+              { min: 3, message: 'Минимальная длина - 3 символа' },
+              { max: 255, message: 'Максимальная длина - 255 символов' },
+            ]}
+          >
+            <Input placeholder="Введите название" />
+          </Form.Item>
+
+          <Form.Item
+            name="description"
+            label="Описание"
+            rules={[
+              { max: 1000, message: 'Максимальная длина - 1000 символов' },
+            ]}
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="Введите описание (необязательно)"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="isActive"
+            label="Статус"
+            valuePropName="checked"
+            initialValue={true}
+          >
+            <Switch checkedChildren="Активен" unCheckedChildren="Неактивен" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default {{ComponentName}};
+
+
+// ============================================================================
+// API CLIENT (Separate file: api/endpoints/{{endpoint}}.ts)
+// ============================================================================
+
+/*
+import { apiClient } from '../client';
+
+export interface {{EntityName}} {
+  id: number;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Create{{EntityName}}Request {
+  name: string;
+  description?: string;
+  isActive?: boolean;
+}
+
+export const {{endpoint}}Api = {
+  getAll: async (): Promise<{{EntityName}}[]> => {
+    const response = await apiClient.get('/{{endpoint}}/');
+    return response.data;
+  },
+
+  getById: async (id: number): Promise<{{EntityName}}> => {
+    const response = await apiClient.get(`/{{endpoint}}/${id}/`);
+    return response.data;
+  },
+
+  create: async (data: Create{{EntityName}}Request): Promise<{{EntityName}}> => {
+    const response = await apiClient.post('/{{endpoint}}/', data);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<Create{{EntityName}}Request>): Promise<{{EntityName}}> => {
+    const response = await apiClient.patch(`/{{endpoint}}/${id}/`, data);
+    return response.data;
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await apiClient.delete(`/{{endpoint}}/${id}/`);
+  },
+};
+*/
+
+
+// ============================================================================
+// STATE MANAGEMENT (Separate file: stores/use{{EntityName}}.ts)
+// ============================================================================
+
+/*
+import { create } from 'zustand';
+import { {{endpoint}}Api, {{EntityName}}, Create{{EntityName}}Request } from '../api/endpoints/{{endpoint}}';
+
+interface {{EntityName}}State {
+  data: {{EntityName}}[];
+  loading: boolean;
+  error: string | null;
+  fetchData: () => Promise<void>;
+  createItem: (data: Create{{EntityName}}Request) => Promise<void>;
+  updateItem: (id: number, data: Partial<Create{{EntityName}}Request>) => Promise<void>;
+  deleteItem: (id: number) => Promise<void>;
+}
+
+export const use{{EntityName}} = create<{{EntityName}}State>((set) => ({
+  data: [],
+  loading: false,
+  error: null,
+
+  fetchData: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await {{endpoint}}Api.getAll();
+      set({ data, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createItem: async (itemData) => {
+    set({ loading: true, error: null });
+    try {
+      const newItem = await {{endpoint}}Api.create(itemData);
+      set((state) => ({
+        data: [...state.data, newItem],
+        loading: false,
+      }));
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  updateItem: async (id, itemData) => {
+    set({ loading: true, error: null });
+    try {
+      const updatedItem = await {{endpoint}}Api.update(id, itemData);
+      set((state) => ({
+        data: state.data.map((item) =>
+          item.id === id ? updatedItem : item
+        ),
+        loading: false,
+      }));
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  deleteItem: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await {{endpoint}}Api.delete(id);
+      set((state) => ({
+        data: state.data.filter((item) => item.id !== id),
+        loading: false,
+      }));
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+}));
+*/
+
+
+// ============================================================================
+// USAGE EXAMPLE
+// ============================================================================
+
+/*
+// In your page component:
+import {{ComponentName}} from './components/{{ComponentName}}';
+
+const YourPage: React.FC = () => {
+  return (
+    <div>
+      <{{ComponentName}} />
+    </div>
+  );
+};
+
+export default YourPage;
+*/

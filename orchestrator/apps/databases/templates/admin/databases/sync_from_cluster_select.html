@@ -1,0 +1,264 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .form-container {
+        max-width: 1200px;
+        margin: 20px auto;
+    }
+    .cluster-info {
+        margin-bottom: 20px;
+        padding: 15px;
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        border-radius: 4px;
+    }
+    .cluster-info p {
+        margin: 5px 0;
+        color: #2e7d32;
+    }
+    .cluster-info strong {
+        color: #1b5e20;
+    }
+    .selection-controls {
+        margin: 20px 0;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+    }
+    .selection-controls button {
+        padding: 8px 15px;
+        margin-right: 10px;
+        background-color: #ffffff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    .selection-controls button:hover {
+        background-color: #e0e0e0;
+    }
+    .database-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        background-color: white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .database-table thead {
+        background-color: #f0f0f0;
+    }
+    .database-table th {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: bold;
+        color: #333;
+    }
+    .database-table td {
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+    }
+    .database-table tr:hover {
+        background-color: #f9f9f9;
+    }
+    .database-table input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+    .submit-row {
+        margin-top: 20px;
+        padding: 15px 0;
+        border-top: 1px solid #ddd;
+    }
+    .submit-row input[type="submit"] {
+        background-color: #4caf50;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+    }
+    .submit-row input[type="submit"]:hover {
+        background-color: #45a049;
+    }
+    .cancel-link {
+        margin-left: 15px;
+        padding: 12px 30px;
+        background-color: #f5f5f5;
+        color: #333;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 16px;
+    }
+    .cancel-link:hover {
+        background-color: #e0e0e0;
+    }
+    .no-databases {
+        padding: 40px;
+        text-align: center;
+        color: #666;
+    }
+    .db-name {
+        font-weight: bold;
+        color: #1976d2;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:databases_database_changelist' %}">1C Databases</a>
+    &rsaquo; <a href="{% url 'admin:databases_database_sync_from_cluster' %}">Sync from Cluster</a>
+    &rsaquo; Select Databases
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h1>Select Databases to Import</h1>
+
+    <div class="cluster-info">
+        <p><strong>Cluster Name:</strong> {{ cluster_name }}</p>
+        <p><strong>Cluster ID:</strong> {{ cluster_id }}</p>
+        <p><strong>Total Databases Found:</strong> {{ total_count }}</p>
+        <p><strong>Query Duration:</strong> {{ duration_ms }} ms</p>
+    </div>
+
+    {% if infobases %}
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="step" value="2">
+
+        <div class="selection-controls">
+            <button type="button" onclick="selectAll()">Select All</button>
+            <button type="button" onclick="deselectAll()">Deselect All</button>
+            <span style="margin-left: 20px; color: #666;">
+                Select the databases you want to import
+            </span>
+        </div>
+
+        <table class="database-table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="select_all" onclick="toggleAll(this)" checked>
+                    </th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>DBMS</th>
+                    <th>Database Server</th>
+                    <th>Database Name</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ib in infobases %}
+                <tr>
+                    <td>
+                        <input type="checkbox" name="selected_infobases"
+                               value="{{ ib.uuid }}" class="infobase-checkbox" checked>
+                    </td>
+                    <td class="db-name">{{ ib.name }}</td>
+                    <td>
+                        {% if ib.description %}
+                            {{ ib.description }}
+                        {% else %}
+                            <span style="color: #999;">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if ib.dbms %}
+                            <span style="padding: 3px 8px; background-color: #e3f2fd; border-radius: 3px; font-size: 12px;">
+                                {{ ib.dbms }}
+                            </span>
+                        {% else %}
+                            <span style="color: #999;">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if ib.db_server %}
+                            {{ ib.db_server }}
+                        {% else %}
+                            <span style="color: #999;">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if ib.db_name %}
+                            {{ ib.db_name }}
+                        {% else %}
+                            <span style="color: #999;">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="submit-row">
+            <input type="submit" value="Import Selected Databases" class="default">
+            <a href="{% url 'admin:databases_database_changelist' %}" class="cancel-link">
+                Cancel
+            </a>
+        </div>
+    </form>
+
+    <script>
+    function toggleAll(checkbox) {
+        const checkboxes = document.querySelectorAll('.infobase-checkbox');
+        checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    }
+
+    function selectAll() {
+        const checkboxes = document.querySelectorAll('.infobase-checkbox');
+        checkboxes.forEach(cb => cb.checked = true);
+        document.getElementById('select_all').checked = true;
+    }
+
+    function deselectAll() {
+        const checkboxes = document.querySelectorAll('.infobase-checkbox');
+        checkboxes.forEach(cb => cb.checked = false);
+        document.getElementById('select_all').checked = false;
+    }
+
+    // Update select_all checkbox state when individual checkboxes change
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.infobase-checkbox');
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                const allChecked = Array.from(checkboxes).every(c => c.checked);
+                const noneChecked = Array.from(checkboxes).every(c => !c.checked);
+                const selectAll = document.getElementById('select_all');
+                if (allChecked) {
+                    selectAll.checked = true;
+                    selectAll.indeterminate = false;
+                } else if (noneChecked) {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = false;
+                } else {
+                    selectAll.indeterminate = true;
+                }
+            });
+        });
+    });
+    </script>
+
+    {% else %}
+    <div class="no-databases">
+        <p style="font-size: 18px; color: #999;">
+            No databases found in the cluster.
+        </p>
+        <p>
+            <a href="{% url 'admin:databases_database_sync_from_cluster' %}">
+                Try again with different parameters
+            </a>
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

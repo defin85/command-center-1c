@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<project basedir=".">
+
+	<property name="src.dir" location="src" />
+	<property name="lib.dir" location="../../lib" />
+	<property name="target.dir" location="bin" />
+
+	<!-- make the sample classpath -->
+	<path id="build.classpath">
+		<fileset dir="${lib.dir}">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+
+	<!-- clean the sample build files -->
+	<target name="clean">
+		<delete dir="${target.dir}" />
+	</target>
+
+	<!-- make the sample build folder -->
+	<target name="makedir">
+		<mkdir dir="${target.dir}" />
+	</target>
+
+	<!-- compile the sample source files into build folder -->
+	<target name="compile" depends="clean, makedir">
+		<javac srcdir="${src.dir}" 
+		       destdir="${target.dir}" 
+		       classpathref="build.classpath"
+		       includeantruntime="false" />
+	</target>
+
+	<!-- run the sample as independent Java application -->
+	<target name="run" depends="compile">
+		<java classname="sample.console.ui.AgentAdminConsole"
+		      classpath="${target.dir}"
+		      classpathref="build.classpath"
+		      fork="true"
+		      spawn="true" />
+	</target>
+
+</project>
+

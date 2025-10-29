@@ -1,0 +1,105 @@
+package handlers
+
+import (
+    "net/http"
+    "github.com/gin-gonic/gin"
+    "command-center/go-services/shared/logger"
+    "command-center/go-services/shared/metrics"
+)
+
+// {{HandlerName}}Handler handles {{description}}
+type {{HandlerName}}Handler struct {
+    log     logger.Logger
+    metrics metrics.Metrics
+}
+
+// New{{HandlerName}}Handler creates a new {{HandlerName}}Handler instance
+func New{{HandlerName}}Handler(log logger.Logger, metrics metrics.Metrics) *{{HandlerName}}Handler {
+    return &{{HandlerName}}Handler{
+        log:     log,
+        metrics: metrics,
+    }
+}
+
+// Handle{{Action}} handles {{action_description}}
+// @Summary {{action_description}}
+// @Description {{detailed_description}}
+// @Tags {{tag}}
+// @Accept json
+// @Produce json
+// @Param request body {{RequestType}} true "Request body"
+// @Success 200 {object} {{ResponseType}}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/{{endpoint}} [{{method}}]
+func (h *{{HandlerName}}Handler) Handle{{Action}}(c *gin.Context) {
+    h.log.Info("Processing {{action}}", "path", c.Request.URL.Path)
+
+    // Increment metrics counter
+    h.metrics.IncrementCounter("{{handler_name}}_{{action}}_requests_total")
+
+    // Parse request
+    var req {{RequestType}}
+    if err := c.ShouldBindJSON(&req); err != nil {
+        h.log.Error("Failed to parse request", "error", err)
+        c.JSON(http.StatusBadRequest, gin.H{
+            "error": "Invalid request format",
+        })
+        return
+    }
+
+    // Validate request
+    if err := h.validateRequest(&req); err != nil {
+        h.log.Error("Validation failed", "error", err)
+        c.JSON(http.StatusBadRequest, gin.H{
+            "error": err.Error(),
+        })
+        return
+    }
+
+    // Process request
+    result, err := h.process{{Action}}(&req)
+    if err != nil {
+        h.log.Error("Processing failed", "error", err)
+        h.metrics.IncrementCounter("{{handler_name}}_{{action}}_errors_total")
+        c.JSON(http.StatusInternalServerError, gin.H{
+            "error": "Internal server error",
+        })
+        return
+    }
+
+    // Record success
+    h.metrics.IncrementCounter("{{handler_name}}_{{action}}_success_total")
+
+    // Return response
+    c.JSON(http.StatusOK, gin.H{
+        "status": "success",
+        "data":   result,
+    })
+}
+
+// validateRequest validates the request parameters
+func (h *{{HandlerName}}Handler) validateRequest(req *{{RequestType}}) error {
+    // Add your validation logic here
+    return nil
+}
+
+// process{{Action}} contains the main business logic
+func (h *{{HandlerName}}Handler) process{{Action}}(req *{{RequestType}}) (*{{ResponseType}}, error) {
+    // Add your processing logic here
+    result := &{{ResponseType}}{}
+    return result, nil
+}
+
+// Request and Response types
+type {{RequestType}} struct {
+    // Add your request fields here
+}
+
+type {{ResponseType}} struct {
+    // Add your response fields here
+}
+
+type ErrorResponse struct {
+    Error string `json:"error"`
+}

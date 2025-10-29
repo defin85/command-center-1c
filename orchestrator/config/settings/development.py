@@ -10,6 +10,14 @@ INSTALLED_APPS += [
     'django_extensions',
 ]
 
+# Use SQLite for development (easier setup)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
 # Отключаем аутентификацию для demo/dev режима
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,

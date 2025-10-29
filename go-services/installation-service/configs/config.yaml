@@ -1,0 +1,19 @@
+# Installation Service Configuration
+
+# RAC Configuration
+rac:
+  # Path to rac.exe (can be overridden with RAC_PATH env var)
+  path: "C:\\Program Files\\1cv8\\8.3.27.1786\\bin\\rac.exe"
+  # Timeout for RAC operations in seconds (can be overridden with RAC_TIMEOUT_SECONDS env var)
+  timeout_seconds: 180
+
+# HTTP API Server Configuration
+api_server:
+  # Port for HTTP API server (can be overridden with API_SERVER_PORT env var)
+  port: 8086
+  # Graceful shutdown timeout in seconds (can be overridden with API_SERVER_SHUTDOWN_TIMEOUT env var)
+  shutdown_timeout_seconds: 30
+
+# Logging Configuration
+log_level: "info"  # debug, info, warn, error
+log_format: "text" # text or json

@@ -1,0 +1,170 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .form-container {
+        max-width: 800px;
+        margin: 20px auto;
+    }
+    .form-row {
+        margin-bottom: 20px;
+    }
+    .form-row label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    .form-row input[type="text"],
+    .form-row input[type="password"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .form-row .help {
+        display: block;
+        margin-top: 5px;
+        color: #666;
+        font-size: 13px;
+    }
+    .submit-row {
+        margin-top: 30px;
+        padding: 15px 0;
+        border-top: 1px solid #ddd;
+    }
+    .submit-row input[type="submit"] {
+        background-color: #417690;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    .submit-row input[type="submit"]:hover {
+        background-color: #2e5469;
+    }
+    .cancel-link {
+        margin-left: 15px;
+        padding: 10px 20px;
+        background-color: #f5f5f5;
+        color: #333;
+        text-decoration: none;
+        border-radius: 4px;
+    }
+    .cancel-link:hover {
+        background-color: #e0e0e0;
+    }
+    .info-box {
+        margin-top: 30px;
+        padding: 15px;
+        background-color: #fff8dc;
+        border-left: 4px solid #ffc107;
+        border-radius: 4px;
+    }
+    .info-box h3 {
+        margin-top: 0;
+        color: #856404;
+    }
+    .info-box ul {
+        margin-bottom: 0;
+    }
+    .info-box li {
+        margin-bottom: 8px;
+        color: #856404;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:databases_database_changelist' %}">1C Databases</a>
+    &rsaquo; Sync from Cluster
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h1>Sync Databases from 1C Cluster</h1>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="step" value="1">
+
+        <fieldset class="module aligned">
+            <h2>Cluster Connection Parameters</h2>
+
+            <div class="form-row">
+                <label for="id_server">RAS Server Address:</label>
+                <input type="text" name="server" id="id_server"
+                       value="localhost:1545" required>
+                <span class="help">
+                    1C RAS (Remote Administration Server) address in format host:port.
+                    Default port is 1545.
+                </span>
+            </div>
+
+            <div class="form-row">
+                <label for="id_cluster_user">Cluster Administrator Username (optional):</label>
+                <input type="text" name="cluster_user" id="id_cluster_user">
+                <span class="help">
+                    Leave empty if cluster authentication is not required.
+                </span>
+            </div>
+
+            <div class="form-row">
+                <label for="id_cluster_pwd">Cluster Administrator Password (optional):</label>
+                <input type="password" name="cluster_pwd" id="id_cluster_pwd">
+                <span class="help">
+                    Leave empty if cluster authentication is not required.
+                </span>
+            </div>
+
+            <div class="form-row">
+                <label>
+                    <input type="checkbox" name="detailed" id="id_detailed" checked>
+                    Get detailed information
+                </label>
+                <span class="help">
+                    Detailed mode retrieves complete database metadata including DBMS type,
+                    database server, and connection details. May take 10-30 seconds for 2-10 databases.
+                </span>
+            </div>
+        </fieldset>
+
+        <div class="submit-row">
+            <input type="submit" value="Get Database List" class="default">
+            <a href="{% url 'admin:databases_database_changelist' %}" class="cancel-link">
+                Cancel
+            </a>
+        </div>
+    </form>
+
+    <div class="info-box">
+        <h3>Important Notes</h3>
+        <ul>
+            <li>
+                <strong>Installation Service:</strong> This operation requires installation-service
+                to be running on port 8085 (default).
+            </li>
+            <li>
+                <strong>Imported Status:</strong> All imported databases will have INACTIVE status
+                by default.
+            </li>
+            <li>
+                <strong>OData Credentials:</strong> You must set OData username and password manually
+                for each imported database before use.
+            </li>
+            <li>
+                <strong>Update Behavior:</strong> If a database with the same UUID already exists,
+                it will be updated with new cluster information.
+            </li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

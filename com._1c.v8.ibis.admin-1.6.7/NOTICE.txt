@@ -1,0 +1,12 @@
+
+1C:Enterprise 8 Administrative Service API
+Copyright 1996-2017 1C-Soft LLC
+
+This product includes The Netty Project developed at Red Hat, Inc. Copyright 2009
+and licensed under the Apache License version 2.0 as published by the Apache Software Foundation.
+
+  * LICENSE:
+    * licenses/apache-2.0.txt (Apache License version 2.0)
+  * HOMEPAGE:
+    * http://www.jboss.org/netty/
+

@@ -404,6 +404,7 @@ curl http://localhost:3000         # Frontend
 - **Main README:** `README.md`
 - **Architecture:** `docs/architecture/` (будет добавлено)
 - **API Docs:** `docs/api/` (будет добавлено)
+- **RAC Security:** `docs/1C_RAC_SECURITY.md` - Ограничения безопасности RAC CLI
 
 ---
 

@@ -176,3 +176,13 @@ if not FIELD_ENCRYPTION_KEY:
     )
     # Использовать fallback ключ для development
     FIELD_ENCRYPTION_KEY = 'development-only-insecure-key-32chars!!'
+
+# Installation Service Configuration
+INSTALLATION_SERVICE_URL = env(
+    'INSTALLATION_SERVICE_URL',
+    default='http://localhost:8085'
+)
+INSTALLATION_SERVICE_TIMEOUT = int(env(
+    'INSTALLATION_SERVICE_TIMEOUT',
+    default='180'  # 3 minutes
+))
