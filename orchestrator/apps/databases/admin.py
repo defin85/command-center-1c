@@ -34,12 +34,12 @@ def health_check_action(modeladmin, request, queryset):
             )
 
 
-@admin.action(description='Check Installation Service status')
-def check_cluster_installation_service_action(modeladmin, request, queryset):
+@admin.action(description='Check Cluster Service status')
+def check_cluster_service_status_action(modeladmin, request, queryset):
     """
-    Проверить доступность installation-service для выбранных кластеров.
+    Проверить доступность cluster-service для выбранных кластеров.
 
-    Каждый кластер имеет свой installation_service_url.
+    Каждый кластер имеет свой cluster_service_url (поле installation_service_url).
     """
     import time
 
@@ -56,7 +56,7 @@ def check_cluster_installation_service_action(modeladmin, request, queryset):
         service_url = cluster.installation_service_url
         service_timeout = settings.INSTALLATION_SERVICE_TIMEOUT
 
-        logger.info(f"Checking installation-service for cluster {cluster.name}: {service_url}")
+        logger.info(f"Checking cluster-service for cluster {cluster.name}: {service_url}")
 
         try:
             start_time = time.time()
@@ -71,7 +71,7 @@ def check_cluster_installation_service_action(modeladmin, request, queryset):
                 modeladmin.message_user(
                     request,
                     format_html(
-                        '✅ <strong>Cluster "{}" - Installation Service: HEALTHY</strong><br>'
+                        '✅ <strong>Cluster "{}" - Cluster Service: HEALTHY</strong><br>'
                         '📍 URL: {}<br>'
                         '⏱️ Response time: {}s<br>'
                         '⚙️ Timeout: {}s',
@@ -83,14 +83,14 @@ def check_cluster_installation_service_action(modeladmin, request, queryset):
                     level=messages.SUCCESS
                 )
                 logger.info(
-                    f"Installation service for cluster {cluster.name} is healthy "
+                    f"Cluster service for cluster {cluster.name} is healthy "
                     f"(response time: {elapsed_time:.3f}s)"
                 )
             else:
                 modeladmin.message_user(
                     request,
                     format_html(
-                        '❌ <strong>Cluster "{}" - Installation Service: UNAVAILABLE</strong><br>'
+                        '❌ <strong>Cluster "{}" - Cluster Service: UNAVAILABLE</strong><br>'
                         '📍 URL: {}<br>'
                         '⏱️ Response time: {}s<br>'
                         '⚙️ Timeout: {}s<br>'
@@ -103,14 +103,14 @@ def check_cluster_installation_service_action(modeladmin, request, queryset):
                     level=messages.ERROR
                 )
                 logger.error(
-                    f"Installation service for cluster {cluster.name} is unavailable (URL: {service_url})"
+                    f"Cluster service for cluster {cluster.name} is unavailable (URL: {service_url})"
                 )
 
         except Exception as e:
             modeladmin.message_user(
                 request,
                 format_html(
-                    '💥 <strong>Cluster "{}" - Installation Service: ERROR</strong><br>'
+                    '💥 <strong>Cluster "{}" - Cluster Service: ERROR</strong><br>'
                     '📍 URL: {}<br>'
                     '❌ Error: {}<br>'
                     '💡 Check network connectivity and service logs',
@@ -132,7 +132,7 @@ def sync_infobases_action(modeladmin, request, queryset):
     Синхронизировать инфобазы из выбранных кластеров.
 
     Для каждого кластера вызывает ClusterService.sync_infobases(),
-    который получает список инфобаз через installation-service и RAS.
+    который получает список инфобаз через cluster-service и RAS.
     """
     if not queryset.exists():
         modeladmin.message_user(
@@ -226,7 +226,7 @@ def sync_infobases_action(modeladmin, request, queryset):
                 format_html(
                     '💥 <strong>Cluster "{}"</strong><br>'
                     '❌ Unexpected error: {}<br>'
-                    '💡 Check installation-service and RAS connectivity',
+                    '💡 Check cluster-service and RAS connectivity',
                     cluster.name,
                     str(e)
                 ),
@@ -287,7 +287,7 @@ class ClusterAdmin(admin.ModelAdmin):
         ('RAS Connection', {
             'fields': ('ras_server', 'cluster_user', 'cluster_pwd')
         }),
-        ('Installation Service', {
+        ('Cluster Service', {
             'fields': ('installation_service_url',)
         }),
         ('Sync Status', {
@@ -309,7 +309,7 @@ class ClusterAdmin(admin.ModelAdmin):
         }),
     )
 
-    actions = [check_cluster_installation_service_action, sync_infobases_action]
+    actions = [check_cluster_service_status_action, sync_infobases_action]
 
     def get_queryset(self, request):
         """Optimize queries with annotate to prevent N+1 queries."""
@@ -434,7 +434,7 @@ class DatabaseAdmin(admin.ModelAdmin):
 
         Workflow:
         1. GET - show form with cluster connection parameters
-        2. POST step=1 - call installation-service, show database list
+        2. POST step=1 - call cluster-service, show database list
         3. POST step=2 - import selected databases
 
         This is a three-step process:
@@ -476,7 +476,7 @@ class DatabaseAdmin(admin.ModelAdmin):
             return redirect('admin:databases_database_changelist')
 
     def _handle_step1_get_database_list(self, request):
-        """Handle step 1: Get database list from installation-service."""
+        """Handle step 1: Get database list from cluster-service."""
         # Get form parameters
         server = request.POST.get('server', 'localhost:1545')
         cluster_user = request.POST.get('cluster_user', '') or None
@@ -489,13 +489,13 @@ class DatabaseAdmin(admin.ModelAdmin):
         )
 
         try:
-            # Call installation-service
+            # Call cluster-service
             with InstallationServiceClient() as client:
                 # Check health first
                 if not client.health_check():
                     messages.error(
                         request,
-                        'Installation-service is not available. '
+                        'Cluster-service is not available. '
                         'Please ensure the service is running.'
                     )
                     return redirect('admin:databases_database_sync_from_cluster')
@@ -632,7 +632,7 @@ class DatabaseAdmin(admin.ModelAdmin):
         Import infobases into Database model.
 
         Args:
-            infobases: List of infobase dictionaries from installation-service
+            infobases: List of infobase dictionaries from cluster-service
             server: RAS server address (for building OData URLs)
 
         Returns:

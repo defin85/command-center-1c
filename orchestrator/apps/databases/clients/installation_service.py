@@ -1,4 +1,4 @@
-"""HTTP client for interacting with installation-service (Go microservice)."""
+"""HTTP client for interacting with cluster-service (Go microservice)."""
 
 import logging
 from typing import Dict, Optional
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class InstallationServiceClient:
     """
-    HTTP client for interacting with installation-service.
+    HTTP client for interacting with cluster-service.
 
     Installation-service is a Go microservice that provides administrative
     operations for 1C:Enterprise clusters via RAS/RAC protocol.
@@ -19,10 +19,10 @@ class InstallationServiceClient:
 
     def __init__(self, base_url: Optional[str] = None, timeout: int = 180):
         """
-        Initialize installation-service client.
+        Initialize cluster-service client.
 
         Args:
-            base_url: URL of installation-service (default: from settings)
+            base_url: URL of cluster-service (default: from settings)
             timeout: HTTP timeout in seconds (default: 180)
         """
         self.base_url = (base_url or getattr(
@@ -40,7 +40,7 @@ class InstallationServiceClient:
 
     def health_check(self) -> bool:
         """
-        Check if installation-service is available.
+        Check if cluster-service is available.
 
         Returns:
             True if service is available, False otherwise
@@ -65,7 +65,7 @@ class InstallationServiceClient:
         """
         Get list of information bases from 1C cluster.
 
-        This method calls installation-service's GET /api/v1/infobases endpoint,
+        This method calls cluster-service's GET /api/v1/infobases endpoint,
         which connects to 1C cluster via RAS protocol and retrieves database list.
 
         Args:
@@ -127,7 +127,7 @@ class InstallationServiceClient:
             safe_params['cluster_pwd'] = '***'
 
         endpoint = f"{self.base_url}/api/v1/infobases"
-        logger.info(f"Calling installation-service: GET {endpoint} with params={safe_params}")
+        logger.info(f"Calling cluster-service: GET {endpoint} with params={safe_params}")
 
         try:
             response = self.session.get(
@@ -176,35 +176,35 @@ class InstallationServiceClient:
 
         except Timeout as e:
             logger.error(
-                f"Timeout calling installation-service after {self.timeout}s: {e}. "
+                f"Timeout calling cluster-service after {self.timeout}s: {e}. "
                 f"Params: {safe_params}"
             )
             raise
 
         except ConnectionError as e:
             logger.error(
-                f"Connection error to installation-service at {self.base_url}: {e}. "
+                f"Connection error to cluster-service at {self.base_url}: {e}. "
                 f"Params: {safe_params}"
             )
             raise
 
         except RequestException as e:
             logger.error(
-                f"HTTP error calling installation-service: {e}. "
+                f"HTTP error calling cluster-service: {e}. "
                 f"Params: {safe_params}"
             )
             raise
 
         except ValueError as e:
             logger.error(
-                f"Invalid response from installation-service: {e}. "
+                f"Invalid response from cluster-service: {e}. "
                 f"Params: {safe_params}"
             )
             raise
 
         except Exception as e:
             logger.error(
-                f"Unexpected error calling installation-service: {type(e).__name__}: {e}. "
+                f"Unexpected error calling cluster-service: {type(e).__name__}: {e}. "
                 f"Params: {safe_params}",
                 exc_info=True
             )
