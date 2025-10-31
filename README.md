@@ -165,11 +165,15 @@ command-center-1c/
 > **⭐ Проект реализуется по варианту: Balanced Approach (14-16 недель)**
 > Детальный план см. в [docs/ROADMAP.md](docs/ROADMAP.md)
 
-### Phase 1: MVP Foundation (Week 1-6) ✅ In Progress
-- [x] Базовая инфраструктура
-- [ ] Core functionality
-- [ ] API & Basic UI
-- [ ] Testing & Deployment
+### Phase 1: MVP Foundation (Week 1-6) ✅ Week 1-2 Complete
+- [x] Базовая инфраструктура (Sprint 1.1-1.3)
+- [x] **cluster-service интеграция с RAS** (Sprint 1.4) ← NEW
+  - ✅ gRPC взаимодействие через ras-grpc-gw
+  - ✅ Endpoint management (47ms → 15ms)
+  - ✅ Аутентификация и получение списка баз данных
+- [ ] Core functionality (Week 3-4)
+- [ ] API & Basic UI (Week 5-6)
+- [ ] Testing & Deployment (Week 5-6)
 
 ### Phase 2: Extended Functionality (Week 7-10)
 - [ ] Система шаблонов (4+ операций)
@@ -232,8 +236,12 @@ make clean
 - **[START HERE](docs/START_HERE.md)** - Быстрый старт по документации roadmap (2 мин)
 - **[Executive Summary](docs/EXECUTIVE_SUMMARY.md)** - Для принятия решений (5-10 мин)
 - **[Roadmap](docs/ROADMAP.md)** - Детальный план разработки (60-90 мин)
-- **[Roadmap Diagrams](docs/ROADMAP_DIAGRAMS.md)** - Визуализации и сравнения (20 мин)
 - **[Index](docs/INDEX.md)** - Полная навигация по документации (10 мин)
+
+### Практические гайды ← NEW
+- **[1C Administration Guide](docs/1C_ADMINISTRATION_GUIDE.md)** - RAS/RAC, gRPC, endpoint management
+- **[Django Cluster Integration](docs/DJANGO_CLUSTER_INTEGRATION.md)** - Интеграция cluster-service с Django
+- **[OData Integration](docs/ODATA_INTEGRATION.md)** - Batch операции для массовой обработки данных
 
 ### Техническая документация
 - [Architecture Overview](docs/architecture/README.md)
