@@ -25,6 +25,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: commandcenter-redis
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -64,18 +65,27 @@ services:
       context: ./orchestrator
       dockerfile: Dockerfile
     container_name: commandcenter-orchestrator
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./orchestrator:/app
     ports:
       - "8000:8000"
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
-      - REDIS_URL=redis://redis:6379/0
-      - CLICKHOUSE_URL=http://clickhouse:8123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=commandcenter
+      - DB_USER=commandcenter
+      - DB_PASSWORD=dev_password_change_in_prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - SECRET_KEY=dev-secret-key-change-in-prod
       - ALLOWED_HOSTS=*
+      - INSTALLATION_SERVICE_URL=http://host.docker.internal:8086
+      - INSTALLATION_SERVICE_TIMEOUT=180
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,13 +100,19 @@ services:
       context: ./orchestrator
       dockerfile: Dockerfile
     container_name: commandcenter-celery-worker
-    command: celery -A config worker --loglevel=info
+    command: celery -A config worker --loglevel=info --concurrency=4
     volumes:
       - ./orchestrator:/app
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
-      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=commandcenter
+      - DB_USER=commandcenter
+      - DB_PASSWORD=dev_password_change_in_prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - SECRET_KEY=dev-secret-key-change-in-prod
     depends_on:
       - redis
@@ -116,8 +132,14 @@ services:
       - ./orchestrator:/app
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://commandcenter:dev_password_change_in_prod@postgres:5432/commandcenter
-      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=commandcenter
+      - DB_USER=commandcenter
+      - DB_PASSWORD=dev_password_change_in_prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - SECRET_KEY=dev-secret-key-change-in-prod
     depends_on:
       - redis
@@ -129,17 +151,20 @@ services:
   # API Gateway (Go)
   api-gateway:
     build:
-      context: ./go-services/api-gateway
-      dockerfile: Dockerfile
+      context: ./go-services
+      dockerfile: api-gateway/Dockerfile
     container_name: commandcenter-api-gateway
     ports:
       - "8080:8080"
     environment:
-      - ENV=development
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - ORCHESTRATOR_URL=http://orchestrator:8000
-      - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=dev-jwt-secret-change-in-prod
       - LOG_LEVEL=debug
+      - LOG_FORMAT=text
     depends_on:
       - redis
       - orchestrator
@@ -149,14 +174,15 @@ services:
   # Go Worker
   worker:
     build:
-      context: ./go-services/worker
-      dockerfile: Dockerfile
-    container_name: commandcenter-worker
+      context: ./go-services
+      dockerfile: worker/Dockerfile
+    # container_name removed - incompatible with replicas
     environment:
-      - ENV=development
-      - REDIS_URL=redis://redis:6379/0
-      - WORKER_CONCURRENCY=20
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - WORKER_POOL_SIZE=50
       - LOG_LEVEL=debug
+      - LOG_FORMAT=text
     depends_on:
       - redis
     networks:
@@ -171,14 +197,7 @@ services:
       dockerfile: Dockerfile
     container_name: commandcenter-frontend
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - REACT_APP_API_URL=http://localhost:8080
-      - REACT_APP_WS_URL=ws://localhost:8080/ws
-      - NODE_ENV=development
+      - "3000:80"
     depends_on:
       - api-gateway
     networks:

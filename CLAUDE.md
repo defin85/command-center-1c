@@ -357,23 +357,35 @@ curl http://localhost:3000         # Frontend
 
 ---
 
-## 📊 Текущая фаза: Week 1-2
+## 📊 Текущая фаза: Week 1-2 → Week 3-4
 
-**Sprint 1.1: Project Setup (5 дней)**
+**✅ Sprint 1.1: Project Setup (ЗАВЕРШЁН)**
 - [x] Monorepo structure
 - [x] Docker Compose
 - [x] Makefile
-- [ ] Go modules setup
-- [ ] Django project setup
-- [ ] React project setup
-- [ ] Базовые Dockerfiles
+- [x] Go modules setup (cluster-service)
+- [x] Базовые Dockerfiles
 
-**Следующие шаги (согласно Balanced plan):**
-1. Инициализировать Go modules для api-gateway и worker
+**✅ Sprint 1.2: Docker Integration (ЗАВЕРШЁН)**
+- [x] ras-grpc-gw fork (v1.0.0-cc) с health checks
+- [x] cluster-service Dockerfile (multi-stage, Go 1.24)
+- [x] docker-compose.yml для обоих сервисов
+- [x] Health check endpoints работают
+
+**✅ Sprint 1.3: E2E Testing (ЗАВЕРШЁН)**
+- [x] Исправлена версия Go (1.25.1 → 1.24) во всех go.mod
+- [x] Исправлена CLI команда ras-grpc-gw (--host → --bind)
+- [x] **КРИТИЧНО:** Исправлена protobuf несовместимость (client/v1 → service/api/v1)
+- [x] Docker образы собраны и запущены
+- [x] Health endpoints: 2/2 работают ✅
+- [x] gRPC интеграция: cluster-service → ras-grpc-gw ✅
+
+**🎯 Следующие шаги:**
+1. ~~Инициализировать Go modules~~ ✅ (cluster-service готов)
 2. Создать Django проект в orchestrator/
 3. Создать React app в frontend/
-4. Написать Dockerfiles для каждого компонента
-5. Протестировать docker-compose up
+4. Интеграция с реальным 1C RAS сервером для полного E2E теста
+5. Sprint 1.4: Performance testing (опционально)
 
 **⭐ Детальный план:** См. `docs/ROADMAP.md` - секция "ВАРИАНТ 2: Balanced Approach"
 
@@ -423,8 +435,9 @@ curl http://localhost:3000         # Frontend
 
 ---
 
-**Версия:** 1.1
-**Последнее обновление:** 2025-01-17
+**Версия:** 1.2
+**Последнее обновление:** 2025-01-30
 **Выбранный вариант:** ⭐ Balanced Approach (14-16 недель)
-**Текущая фаза:** Phase 1, Week 1-2 - Infrastructure Setup
+**Текущая фаза:** Phase 1, Week 1-2 ЗАВЕРШЕНА → Переход к Week 3-4
 **Следующая фаза:** Phase 1, Week 3-4 - Core Functionality
+**Достижения:** cluster-service + ras-grpc-gw интеграция готова, 73.7% test coverage

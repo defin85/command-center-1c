@@ -1,6 +1,6 @@
 module github.com/commandcenter1c/commandcenter/worker
 
-go 1.25.1
+go 1.24
 
 require (
 	github.com/commandcenter1c/commandcenter/shared v0.0.0

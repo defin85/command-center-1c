@@ -1,21 +1,33 @@
 package api
 
 import (
+	"github.com/command-center-1c/cluster-service/internal/api/handlers"
+	"github.com/command-center-1c/cluster-service/internal/api/middleware"
+
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-// SetupRouter configures HTTP routes for cluster-service
-func SetupRouter() *gin.Engine {
-	// TODO: Implement router setup
-	// - Configure middleware (logging, CORS, auth)
-	// - Register monitoring endpoints
-	// - Setup health check
-	router := gin.Default()
+func SetupRouter(monitoringHandler *handlers.MonitoringHandler, logger *zap.Logger) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+
+	router := gin.New()
+
+	// Middleware
+	router.Use(middleware.Recovery(logger))
+	router.Use(middleware.Logger(logger))
+	// EndpointID middleware УДАЛЁН - теперь используется gRPC interceptor
 
 	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy"})
-	})
+	healthHandler := handlers.NewHealthHandler()
+	router.GET("/health", healthHandler.Health)
+
+	// API routes
+	v1 := router.Group("/api/v1")
+	{
+		v1.GET("/clusters", monitoringHandler.GetClusters)
+		v1.GET("/infobases", monitoringHandler.GetInfobases)
+	}
 
 	return router
 }

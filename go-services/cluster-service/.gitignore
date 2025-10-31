@@ -1,0 +1,19 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+cluster-service
+
+# Test
+*.test
+*.out
+coverage.html
+
+# Env
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
