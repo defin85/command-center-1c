@@ -339,72 +339,20 @@ curl http://localhost:3000         # Frontend
 
 ---
 
-## ⭐ ВЫБРАННЫЙ ПЛАН РЕАЛИЗАЦИИ
+## ⭐ ROADMAP
 
-**Вариант:** Balanced Approach (14-16 недель)
-**Статус:** Phase 1 - Week 1-2 (Infrastructure Setup)
-**Команда:** 3-4 разработчика
-**Цель:** Production-ready система с полным мониторингом
+**Выбранный вариант:** Balanced Approach (14-16 недель)
+**Текущая фаза:** Phase 1, Week 1-2 → Week 3-4
+**Статус:** Infrastructure Setup завершён, переход к Core Functionality
 
-**Структура плана (Balanced):**
-- **Phase 1:** MVP Foundation (Week 1-6)
-- **Phase 2:** Extended Functionality (Week 7-10)
-- **Phase 3:** Monitoring & Observability (Week 11-12)
-- **Phase 4:** Advanced Features (Week 13-15)
-- **Phase 5:** Production Hardening (Week 16)
-
-> 📖 **Важно для AI агентов:** Проект реализуется по варианту **Balanced**. В `docs/ROADMAP.md` описаны все три варианта (MVP, Balanced, Enterprise), но работа ведется строго по Balanced плану (секция "ВАРИАНТ 2: Balanced Approach").
-
----
-
-## 📊 Текущая фаза: Week 1-2 → Week 3-4
-
-**✅ Sprint 1.1: Project Setup (ЗАВЕРШЁН)**
-- [x] Monorepo structure
-- [x] Docker Compose
-- [x] Makefile
-- [x] Go modules setup (cluster-service)
-- [x] Базовые Dockerfiles
-
-**✅ Sprint 1.2: Docker Integration (ЗАВЕРШЁН)**
-- [x] ras-grpc-gw fork (v1.0.0-cc) с health checks
-- [x] cluster-service Dockerfile (multi-stage, Go 1.24)
-- [x] docker-compose.yml для обоих сервисов
-- [x] Health check endpoints работают
-
-**✅ Sprint 1.3: E2E Testing (ЗАВЕРШЁН)**
-- [x] Исправлена версия Go (1.25.1 → 1.24) во всех go.mod
-- [x] Исправлена CLI команда ras-grpc-gw (--host → --bind)
-- [x] **КРИТИЧНО:** Исправлена protobuf несовместимость (client/v1 → service/api/v1)
-- [x] Docker образы собраны и запущены
-- [x] Health endpoints: 2/2 работают ✅
-- [x] gRPC интеграция: cluster-service → ras-grpc-gw ✅
-
-**🎯 Следующие шаги:**
-1. ~~Инициализировать Go modules~~ ✅ (cluster-service готов)
-2. Создать Django проект в orchestrator/
-3. Создать React app в frontend/
-4. Интеграция с реальным 1C RAS сервером для полного E2E теста
-5. Sprint 1.4: Performance testing (опционально)
-
-**⭐ Детальный план:** См. `docs/ROADMAP.md` - секция "ВАРИАНТ 2: Balanced Approach"
-
----
-
-## 🎯 Ключевые метрики (цели)
-
-**⭐ Balanced (Week 16) - НАШИ ЦЕЛЕВЫЕ МЕТРИКИ:**
+**Целевые метрики (Week 16):**
 - 200-500 баз параллельно
 - 1,000+ ops/min
-- 4+ типов операций
 - Full monitoring (Prometheus + Grafana)
-- 95%+ success rate
-- 99% uptime
 
-**Промежуточные метрики (Phase 1 - MVP Foundation, Week 6):**
-- 50+ баз параллельно
-- 100 ops/min
-- 1 тип операций работает
+> 📖 **Детальный план:** См. [`docs/ROADMAP.md`](docs/ROADMAP.md) - полный roadmap с Phases 1-5
+> 📖 **Архив вариантов:** См. [`docs/archive/roadmap_variants/`](docs/archive/roadmap_variants/) - MVP и Enterprise варианты
+> 📖 **История спринтов:** См. [`docs/archive/sprints/`](docs/archive/sprints/) - детальная история выполненных спринтов
 
 ---
 
@@ -435,9 +383,8 @@ curl http://localhost:3000         # Frontend
 
 ---
 
-**Версия:** 1.2
-**Последнее обновление:** 2025-01-30
+**Версия:** 1.3
+**Последнее обновление:** 2025-10-31
 **Выбранный вариант:** ⭐ Balanced Approach (14-16 недель)
-**Текущая фаза:** Phase 1, Week 1-2 ЗАВЕРШЕНА → Переход к Week 3-4
-**Следующая фаза:** Phase 1, Week 3-4 - Core Functionality
-**Достижения:** cluster-service + ras-grpc-gw интеграция готова, 73.7% test coverage
+**Текущая фаза:** Phase 1, Week 1-2 → Week 3-4
+**Roadmap:** См. [`docs/ROADMAP.md`](docs/ROADMAP.md) для детального плана
