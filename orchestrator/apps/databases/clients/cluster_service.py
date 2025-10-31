@@ -9,7 +9,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
-class InstallationServiceClient:
+class ClusterServiceClient:
     """
     HTTP client for interacting with cluster-service.
 
@@ -36,7 +36,7 @@ class InstallationServiceClient:
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         })
-        logger.info(f"Initialized InstallationServiceClient with base_url={self.base_url}")
+        logger.info(f"Initialized ClusterServiceClient with base_url={self.base_url}")
 
     def health_check(self) -> bool:
         """
@@ -214,7 +214,7 @@ class InstallationServiceClient:
         """Close HTTP session."""
         if self.session:
             self.session.close()
-            logger.debug("Closed InstallationServiceClient session")
+            logger.debug("Closed ClusterServiceClient session")
 
     def __enter__(self):
         """Context manager entry."""

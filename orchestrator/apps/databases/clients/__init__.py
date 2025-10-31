@@ -1,5 +1,5 @@
 """Clients for external services."""
 
-from .installation_service import InstallationServiceClient
+from .cluster_service import ClusterServiceClient
 
-__all__ = ['InstallationServiceClient']
+__all__ = ['ClusterServiceClient']

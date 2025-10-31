@@ -42,7 +42,7 @@ class Cluster(models.Model):
     )
 
     # Installation Service
-    installation_service_url = models.URLField(
+    cluster_service_url = models.URLField(
         max_length=512,
         help_text="URL of installation-service managing this cluster"
     )

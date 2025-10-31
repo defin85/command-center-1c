@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from .models import Database, DatabaseGroup, Cluster
 from .odata import ODataClient, session_manager, ODataError
-from .clients import InstallationServiceClient
+from .clients import ClusterServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -429,7 +429,7 @@ class ClusterService:
 
         try:
             # Connect to installation-service
-            with InstallationServiceClient(base_url=installation_service_url) as client:
+            with ClusterServiceClient(base_url=installation_service_url) as client:
                 # Health check
                 logger.info(f"Performing health check for installation-service: {installation_service_url}")
                 if not client.health_check():
@@ -567,7 +567,7 @@ class ClusterService:
 
         try:
             # Connect to installation-service
-            with InstallationServiceClient(base_url=cluster.installation_service_url) as client:
+            with ClusterServiceClient(base_url=cluster.installation_service_url) as client:
                 # Health check
                 logger.info(
                     f"Performing health check for installation-service: "

@@ -11,7 +11,7 @@ from django.conf import settings
 from django.db.models import Count, Q
 from .models import Cluster, Database, DatabaseGroup, ExtensionInstallation
 from .services import DatabaseService, ClusterService
-from .clients import InstallationServiceClient
+from .clients import ClusterServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
     """
     Проверить доступность cluster-service для выбранных кластеров.
 
-    Каждый кластер имеет свой cluster_service_url (поле installation_service_url).
+    Каждый кластер имеет свой cluster_service_url (поле cluster_service_url).
     """
     import time
 
@@ -53,7 +53,7 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
 
     # Check each selected cluster
     for cluster in queryset:
-        service_url = cluster.installation_service_url
+        service_url = cluster.cluster_service_url
         service_timeout = settings.INSTALLATION_SERVICE_TIMEOUT
 
         logger.info(f"Checking cluster-service for cluster {cluster.name}: {service_url}")
@@ -61,8 +61,8 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
         try:
             start_time = time.time()
 
-            # Create client with cluster's installation_service_url
-            with InstallationServiceClient(base_url=service_url) as client:
+            # Create client with cluster's cluster_service_url
+            with ClusterServiceClient(base_url=service_url) as client:
                 is_healthy = client.health_check()
 
             elapsed_time = time.time() - start_time
@@ -288,7 +288,7 @@ class ClusterAdmin(admin.ModelAdmin):
             'fields': ('ras_server', 'cluster_user', 'cluster_pwd')
         }),
         ('Cluster Service', {
-            'fields': ('installation_service_url',)
+            'fields': ('cluster_service_url',)
         }),
         ('Sync Status', {
             'fields': (
@@ -490,7 +490,7 @@ class DatabaseAdmin(admin.ModelAdmin):
 
         try:
             # Call cluster-service
-            with InstallationServiceClient() as client:
+            with ClusterServiceClient() as client:
                 # Check health first
                 if not client.health_check():
                     messages.error(
