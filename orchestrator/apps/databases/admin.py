@@ -9,14 +9,14 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.conf import settings
 from django.db.models import Count, Q
-from .models import Cluster, Database, DatabaseGroup, ExtensionInstallation
+from .models import Cluster, Database, DatabaseGroup, ExtensionInstallation, BatchService, StatusHistory
 from .services import DatabaseService, ClusterService
-from .clients import ClusterServiceClient
+from .clients import ClusterServiceClient, BatchServiceClient
 
 logger = logging.getLogger(__name__)
 
 
-@admin.action(description='Health check selected databases')
+@admin.action(description='Check health')
 def health_check_action(modeladmin, request, queryset):
     """Action для health check баз из admin."""
     for db in queryset:
@@ -34,7 +34,7 @@ def health_check_action(modeladmin, request, queryset):
             )
 
 
-@admin.action(description='Check Cluster Service status')
+@admin.action(description='Check health')
 def check_cluster_service_status_action(modeladmin, request, queryset):
     """
     Проверить доступность cluster-service для выбранных кластеров.
@@ -68,6 +68,9 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
             elapsed_time = time.time() - start_time
 
             if is_healthy:
+                # Mark successful health check
+                cluster.mark_health_check(success=True)
+
                 modeladmin.message_user(
                     request,
                     format_html(
@@ -87,6 +90,9 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
                     f"(response time: {elapsed_time:.3f}s)"
                 )
             else:
+                # Mark failed health check
+                cluster.mark_health_check(success=False)
+
                 modeladmin.message_user(
                     request,
                     format_html(
@@ -107,6 +113,9 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
                 )
 
         except Exception as e:
+            # Mark failed health check on exception
+            cluster.mark_health_check(success=False)
+
             modeladmin.message_user(
                 request,
                 format_html(
@@ -262,6 +271,7 @@ class ClusterAdmin(admin.ModelAdmin):
         'name',
         'ras_server',
         'status_badge',
+        'health_badge',
         'infobase_count',
         'healthy_infobase_count',
         'last_sync',
@@ -274,6 +284,8 @@ class ClusterAdmin(admin.ModelAdmin):
         'last_sync',
         'last_sync_status',
         'last_sync_error',
+        'consecutive_failures',
+        'last_health_check',
         'created_at',
         'updated_at',
         'infobase_count',
@@ -295,6 +307,12 @@ class ClusterAdmin(admin.ModelAdmin):
                 'last_sync',
                 'last_sync_status',
                 'last_sync_error'
+            )
+        }),
+        ('Health Check', {
+            'fields': (
+                'consecutive_failures',
+                'last_health_check'
             )
         }),
         ('Statistics', {
@@ -349,6 +367,27 @@ class ClusterAdmin(admin.ModelAdmin):
             obj.get_status_display()
         )
     status_badge.short_description = 'Status'
+
+    def health_badge(self, obj):
+        """Badge для health check статуса."""
+        if not obj.last_health_check:
+            return format_html('<span style="color: gray;">●</span> Never checked')
+
+        if obj.consecutive_failures == 0:
+            color = 'green'
+            text = '✓ Healthy'
+        elif obj.consecutive_failures < 3:
+            color = 'orange'
+            text = f'⚠ {obj.consecutive_failures} failures'
+        else:
+            color = 'red'
+            text = f'✗ {obj.consecutive_failures} failures'
+
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color, text
+        )
+    health_badge.short_description = 'Health Check'
 
 
 @admin.register(Database)
@@ -844,3 +883,188 @@ class ExtensionInstallationAdmin(admin.ModelAdmin):
             obj.get_status_display()
         )
     status_badge.short_description = 'Status'
+
+
+@admin.action(description='Check health')
+def check_batch_service_health_action(modeladmin, request, queryset):
+    """Проверить доступность выбранных BatchService инстансов."""
+    import time
+
+    if not queryset.exists():
+        modeladmin.message_user(
+            request,
+            '⚠️ Выберите хотя бы один BatchService для проверки',
+            level=messages.WARNING
+        )
+        return
+
+    for batch_service in queryset:
+        service_url = batch_service.url
+
+        try:
+            start_time = time.time()
+
+            with BatchServiceClient(base_url=service_url) as client:
+                is_healthy = client.health_check()
+
+            elapsed_time = time.time() - start_time
+
+            if is_healthy:
+                batch_service.mark_health_check(success=True)
+
+                modeladmin.message_user(
+                    request,
+                    format_html(
+                        '✅ <strong>{}</strong> - HEALTHY',
+                        batch_service.name
+                    ),
+                    level=messages.SUCCESS
+                )
+            else:
+                batch_service.mark_health_check(
+                    success=False,
+                    error_message="Health check returned unhealthy status"
+                )
+
+                modeladmin.message_user(
+                    request,
+                    format_html(
+                        '❌ <strong>{}</strong> - UNAVAILABLE',
+                        batch_service.name
+                    ),
+                    level=messages.ERROR
+                )
+
+        except Exception as e:
+            batch_service.mark_health_check(
+                success=False,
+                error_message=str(e)
+            )
+
+            modeladmin.message_user(
+                request,
+                format_html(
+                    '💥 <strong>{}</strong> - ERROR: {}',
+                    batch_service.name,
+                    str(e)
+                ),
+                level=messages.ERROR
+            )
+
+
+@admin.register(BatchService)
+class BatchServiceAdmin(admin.ModelAdmin):
+    """Admin для BatchService model."""
+
+    list_display = [
+        'name',
+        'url',
+        'status_badge',
+        'health_status_badge',
+        'consecutive_failures',
+        'last_health_check',
+        'created_at'
+    ]
+    list_filter = ['status', 'last_health_status', 'created_at']
+    search_fields = ['name', 'description', 'url']
+    readonly_fields = [
+        'id',
+        'last_health_check',
+        'last_health_status',
+        'consecutive_failures',
+        'created_at',
+        'updated_at'
+    ]
+
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('id', 'name', 'description', 'url')
+        }),
+        ('Status & Health', {
+            'fields': (
+                'status',
+                'last_health_status',
+                'last_health_check',
+                'consecutive_failures'
+            )
+        }),
+        ('Metadata', {
+            'fields': ('metadata',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+    actions = [check_batch_service_health_action]
+
+    @admin.display(description='Status', ordering='status')
+    def status_badge(self, obj):
+        """Display status with colored badge."""
+        colors = {
+            'active': 'green',
+            'inactive': 'gray',
+            'error': 'red',
+            'maintenance': 'orange',
+        }
+        color = colors.get(obj.status, 'gray')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">●</span> {}',
+            color,
+            obj.get_status_display()
+        )
+
+    def health_status_badge(self, obj):
+        """Badge для health status."""
+        colors = {
+            'healthy': 'green',
+            'unhealthy': 'red',
+            'unknown': 'gray'
+        }
+        color = colors.get(obj.last_health_status, 'gray')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">●</span> {}',
+            color,
+            obj.get_last_health_status_display()
+        )
+    health_status_badge.short_description = 'Health'
+
+
+@admin.register(StatusHistory)
+class StatusHistoryAdmin(admin.ModelAdmin):
+    """Admin для StatusHistory model."""
+
+    list_display = [
+        'id',
+        'content_type',
+        'object_id',
+        'old_status',
+        'new_status',
+        'changed_at'
+    ]
+    list_filter = [
+        'content_type',
+        'old_status',
+        'new_status',
+        'changed_at'
+    ]
+    search_fields = ['object_id', 'reason']
+    readonly_fields = [
+        'content_type',
+        'object_id',
+        'old_status',
+        'new_status',
+        'reason',
+        'metadata',
+        'changed_at'
+    ]
+    date_hierarchy = 'changed_at'
+
+    def has_add_permission(self, request):
+        """Запретить создание записей вручную."""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Запретить удаление (только через retention policy task)."""
+        return False

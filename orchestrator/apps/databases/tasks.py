@@ -210,3 +210,191 @@ def subscribe_installation_progress(self):
         pubsub.unsubscribe()
         pubsub.close()
         logger.info("Subscriber stopped gracefully")
+
+
+# ============================================================================
+# Periodic Health Check Tasks
+# ============================================================================
+
+
+@shared_task
+def periodic_cluster_health_check():
+    """
+    Периодическая проверка здоровья всех активных кластеров.
+    Запускается каждые 60 секунд через Celery Beat.
+    """
+    from .models import Cluster
+    from .clients import ClusterServiceClient
+
+    clusters = Cluster.objects.exclude(
+        status=Cluster.STATUS_MAINTENANCE
+    ).only(
+        'id', 'name', 'cluster_service_url', 'consecutive_failures',
+        'status', 'last_sync_error'
+    )
+
+    for cluster in clusters:
+        try:
+            with ClusterServiceClient(base_url=cluster.cluster_service_url) as client:
+                is_healthy = client.health_check()
+
+            cluster.mark_health_check(
+                success=is_healthy,
+                error_message=None if is_healthy else "Cluster service unavailable"
+            )
+
+            logger.info(f"Cluster {cluster.name} health check: {'OK' if is_healthy else 'FAILED'}")
+
+        except Exception as e:
+            cluster.mark_health_check(success=False, error_message=str(e))
+            logger.error(f"Error checking cluster {cluster.name}: {e}")
+
+    return {
+        'checked': clusters.count(),
+        'timestamp': timezone.now().isoformat()
+    }
+
+
+@shared_task(bind=True)
+def periodic_database_health_check(self):
+    """
+    Периодическая проверка здоровья баз данных.
+    Обрабатывает батчами по 20 баз для масштабируемости.
+    Запускается каждые 60 секунд через Celery Beat.
+    """
+    from .models import Database
+    from django_redis import get_redis_connection
+
+    # Проверяем что предыдущий раунд завершился
+    redis_conn = get_redis_connection("default")
+    lock_key = "health_check:database:lock"
+
+    # Проверяем lock
+    if redis_conn.exists(lock_key):
+        logger.warning("Previous database health check round still running, skipping")
+        return {
+            'skipped': True,
+            'reason': 'previous_round_running',
+            'timestamp': timezone.now().isoformat()
+        }
+
+    # Устанавливаем lock на 120 секунд (2x период)
+    redis_conn.setex(lock_key, 120, "1")
+
+    try:
+        # Только активные базы с включенным health check
+        active_databases = Database.objects.filter(
+            status__in=[Database.STATUS_ACTIVE, Database.STATUS_ERROR],
+            health_check_enabled=True
+        ).order_by('last_check_at')  # Проверяем сначала самые старые
+
+        total_count = active_databases.count()
+
+        # Батчинг по 20 баз (для 700 баз = 35 батчей)
+        batch_size = 20
+        batches_created = 0
+
+        for i in range(0, total_count, batch_size):
+            batch = active_databases[i:i+batch_size]
+
+            # Отправляем батч в отдельную задачу для параллельности
+            check_database_batch.delay(list(batch.values_list('id', flat=True)))
+            batches_created += 1
+
+        logger.info(
+            f"Database health check: created {batches_created} batches "
+            f"for {total_count} databases"
+        )
+
+        return {
+            'total_databases': total_count,
+            'batches_created': batches_created,
+            'timestamp': timezone.now().isoformat()
+        }
+
+    finally:
+        # Освобождаем lock
+        redis_conn.delete(lock_key)
+
+
+@shared_task
+def check_database_batch(database_ids):
+    """
+    Проверяет батч баз данных (вызывается из periodic_database_health_check).
+
+    Args:
+        database_ids: List[str] - ID баз для проверки
+    """
+    from .models import Database
+    from .services import DatabaseService
+
+    for db_id in database_ids:
+        try:
+            db = Database.objects.get(id=db_id)
+
+            # DatabaseService.health_check_database уже вызывает mark_health_check внутри
+            result = DatabaseService.health_check_database(db)
+
+        except Database.DoesNotExist:
+            logger.warning(f"Database {db_id} not found during health check")
+        except Exception as e:
+            logger.error(f"Error checking database {db_id}: {e}")
+
+    return {
+        'checked': len(database_ids),
+        'timestamp': timezone.now().isoformat()
+    }
+
+
+@shared_task
+def periodic_batch_service_health_check():
+    """
+    Периодическая проверка BatchService инстансов.
+    Запускается каждые 30 секунд через Celery Beat.
+    """
+    from .models import BatchService
+    from .clients import BatchServiceClient
+
+    services = BatchService.objects.all()
+
+    for service in services:
+        try:
+            with BatchServiceClient(base_url=service.url) as client:
+                is_healthy = client.health_check()
+
+            service.mark_health_check(
+                success=is_healthy,
+                error_message=None if is_healthy else "Batch service unavailable"
+            )
+
+            logger.info(f"BatchService {service.name} health check: {'OK' if is_healthy else 'FAILED'}")
+
+        except Exception as e:
+            service.mark_health_check(success=False, error_message=str(e))
+            logger.error(f"Error checking BatchService {service.name}: {e}")
+
+    return {
+        'checked': services.count(),
+        'timestamp': timezone.now().isoformat()
+    }
+
+
+@shared_task
+def cleanup_old_status_history():
+    """
+    Удаляет записи StatusHistory старше 90 дней.
+    Запускается раз в день (ночью).
+    """
+    from datetime import timedelta
+    from .models import StatusHistory
+
+    cutoff_date = timezone.now() - timedelta(days=90)
+    deleted_count, _ = StatusHistory.objects.filter(changed_at__lt=cutoff_date).delete()
+
+    logger.info(f"Cleaned up {deleted_count} old StatusHistory records (older than 90 days)")
+
+    return {
+        'deleted_count': deleted_count,
+        'cutoff_date': cutoff_date.isoformat(),
+        'timestamp': timezone.now().isoformat()
+    }

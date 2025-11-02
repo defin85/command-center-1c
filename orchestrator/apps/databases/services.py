@@ -66,32 +66,15 @@ class DatabaseService:
                 'status_code': 200 if health_result else 500
             })
 
-            # Обновляем информацию в базе
-            with transaction.atomic():
-                database.last_check = timezone.now()
-                database.last_check_status = Database.HEALTH_OK
-                database.consecutive_failures = 0
-
-                # Обновляем среднее время ответа (простое скользящее среднее)
-                if database.avg_response_time is None:
-                    database.avg_response_time = response_time
-                else:
-                    # Взвешенное среднее: 70% старое значение + 30% новое
-                    database.avg_response_time = (
-                        0.7 * database.avg_response_time + 0.3 * response_time
-                    )
-
-                database.save(update_fields=[
-                    'last_check',
-                    'last_check_status',
-                    'consecutive_failures',
-                    'avg_response_time',
-                    'updated_at'
-                ])
+            # Используем существующий метод вместо дублирования
+            database.mark_health_check(
+                success=True,
+                response_time=response_time
+            )
 
             logger.info(
-                f"Health check successful for {database.name}: "
-                f"{response_time:.3f}s"
+                f"Database {database.name} health check: OK "
+                f"(response_time={response_time:.3f}ms)"
             )
 
         except ODataError as e:
@@ -99,40 +82,29 @@ class DatabaseService:
             error_msg = str(e)
             result['error'] = error_msg
 
-            with transaction.atomic():
-                database.last_check = timezone.now()
-                database.last_check_status = Database.HEALTH_DOWN
-                database.consecutive_failures += 1
-                database.save(update_fields=[
-                    'last_check',
-                    'last_check_status',
-                    'consecutive_failures',
-                    'updated_at'
-                ])
+            database.mark_health_check(
+                success=False,
+                response_time=None
+            )
 
-            logger.error(
-                f"Health check failed for {database.name}: {error_msg}",
-                exc_info=True
+            logger.warning(
+                f"Database {database.name} health check: FAILED "
+                f"(ODataError: {error_msg})"
             )
 
         except Exception as e:
             # Unexpected errors
-            error_msg = f"Unexpected error: {str(e)}"
+            error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             result['error'] = error_msg
 
-            with transaction.atomic():
-                database.last_check = timezone.now()
-                database.last_check_status = Database.HEALTH_DOWN
-                database.consecutive_failures += 1
-                database.save(update_fields=[
-                    'last_check',
-                    'last_check_status',
-                    'consecutive_failures',
-                    'updated_at'
-                ])
+            database.mark_health_check(
+                success=False,
+                response_time=None
+            )
 
             logger.error(
-                f"Unexpected error during health check for {database.name}: {error_msg}",
+                f"Database {database.name} health check: ERROR "
+                f"({error_msg})",
                 exc_info=True
             )
 
@@ -424,17 +396,17 @@ class ClusterService:
         """
         logger.info(
             f"Creating cluster from RAS server: {ras_server}, "
-            f"installation_service: {installation_service_url}"
+            f"cluster_service: {installation_service_url}"
         )
 
         try:
-            # Connect to installation-service
+            # Connect to cluster-service
             with ClusterServiceClient(base_url=installation_service_url) as client:
                 # Health check
-                logger.info(f"Performing health check for installation-service: {installation_service_url}")
+                logger.info(f"Performing health check for cluster-service: {installation_service_url}")
                 if not client.health_check():
                     raise ValueError(
-                        f"Installation-service is not available at {installation_service_url}"
+                        f"Cluster-service is not available at {installation_service_url}"
                     )
 
                 logger.info("Health check passed, fetching cluster info from RAS")
@@ -480,7 +452,7 @@ class ClusterService:
                     id=cluster_id,
                     name=cluster_name,
                     ras_server=ras_server,
-                    installation_service_url=installation_service_url,
+                    cluster_service_url=installation_service_url,
                     cluster_user=cluster_user or '',
                     cluster_pwd=cluster_pwd or '',
                     status=Cluster.STATUS_ACTIVE,
@@ -566,17 +538,17 @@ class ClusterService:
         cluster.save(update_fields=['last_sync_status'])
 
         try:
-            # Connect to installation-service
-            with ClusterServiceClient(base_url=cluster.installation_service_url) as client:
+            # Connect to cluster-service
+            with ClusterServiceClient(base_url=cluster.cluster_service_url) as client:
                 # Health check
                 logger.info(
-                    f"Performing health check for installation-service: "
-                    f"{cluster.installation_service_url}"
+                    f"Performing health check for cluster-service: "
+                    f"{cluster.cluster_service_url}"
                 )
                 if not client.health_check():
                     raise ValueError(
-                        f"Installation-service is not available at "
-                        f"{cluster.installation_service_url}"
+                        f"Cluster-service is not available at "
+                        f"{cluster.cluster_service_url}"
                     )
 
                 logger.info("Health check passed, fetching detailed infobases info")
@@ -584,6 +556,7 @@ class ClusterService:
                 # Get detailed infobases info
                 result = client.get_infobases(
                     server=cluster.ras_server,
+                    cluster_id=str(cluster.id),  # Pass cluster ID to avoid authentication issues
                     cluster_user=cluster.cluster_user or None,
                     cluster_pwd=cluster.cluster_pwd or None,
                     detailed=True  # Get full information
@@ -604,7 +577,6 @@ class ClusterService:
                 # Update metadata with sync info
                 cluster.metadata.update({
                     'last_sync_infobase_count': len(infobases),
-                    'last_sync_duration_ms': result.get('duration_ms', 0),
                 })
                 cluster.save(update_fields=['metadata', 'updated_at'])
 

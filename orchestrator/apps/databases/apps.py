@@ -5,3 +5,7 @@ class DatabasesConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.databases'
     verbose_name = 'Databases'
+
+    def ready(self):
+        """Import signals when Django starts."""
+        import apps.databases.signals  # noqa

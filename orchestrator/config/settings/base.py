@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'django_celery_beat',  # Database-backed periodic tasks
 
     # Local apps
     'apps.operations',
@@ -186,3 +187,27 @@ INSTALLATION_SERVICE_TIMEOUT = int(env(
     'INSTALLATION_SERVICE_TIMEOUT',
     default='180'  # 3 minutes
 ))
+
+# Batch Service Configuration
+BATCH_SERVICE_URL = env(
+    'BATCH_SERVICE_URL',
+    default='http://localhost:8087'
+)
+BATCH_SERVICE_TIMEOUT = int(env(
+    'BATCH_SERVICE_TIMEOUT',
+    default='60'  # 1 minute
+))
+
+# Health Check Settings
+HEALTH_CHECK_CLUSTER_INTERVAL = 60  # секунды
+HEALTH_CHECK_DATABASE_INTERVAL = 30
+HEALTH_CHECK_BATCH_SERVICE_INTERVAL = 30
+
+HEALTH_CHECK_FAILURE_THRESHOLD = 3  # consecutive failures до ERROR
+HEALTH_CHECK_BATCH_SERVICE_THRESHOLD = 5  # для BatchService
+
+HEALTH_CHECK_DATABASE_BATCH_SIZE = 20  # батч для Database health checks
+HEALTH_CHECK_TIMEOUT = 30  # секунды
+
+# Status History Retention
+STATUS_HISTORY_RETENTION_DAYS = 90

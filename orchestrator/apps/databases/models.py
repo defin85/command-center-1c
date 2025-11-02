@@ -1,6 +1,9 @@
 import uuid
+from typing import Optional
 from django.db import models
 from django.utils import timezone
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
 from encrypted_model_fields.fields import EncryptedCharField
 
 
@@ -107,6 +110,17 @@ class Cluster(models.Model):
         help_text="Additional cluster metadata"
     )
 
+    # Health Check
+    consecutive_failures = models.IntegerField(
+        default=0,
+        help_text="Number of consecutive health check failures"
+    )
+    last_health_check = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last health check timestamp"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -171,6 +185,36 @@ class Cluster(models.Model):
             'last_sync_status',
             'last_sync_error',
             'status',
+            'updated_at'
+        ])
+
+    def mark_health_check(self, success: bool, error_message: str = None):
+        """
+        Update health check status.
+
+        Args:
+            success: Whether health check succeeded
+            error_message: Error message if failed (optional)
+        """
+        self.last_health_check = timezone.now()
+
+        if success:
+            self.consecutive_failures = 0
+            if self.status == self.STATUS_ERROR:
+                self.status = self.STATUS_ACTIVE  # Восстановление
+            self.last_sync_error = ''
+        else:
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= 3:
+                self.status = self.STATUS_ERROR
+            if error_message:
+                self.last_sync_error = error_message
+
+        self.save(update_fields=[
+            'last_health_check',
+            'consecutive_failures',
+            'status',
+            'last_sync_error',
             'updated_at'
         ])
 
@@ -292,20 +336,24 @@ class Database(models.Model):
         base_url = self.odata_url.rstrip('/')
         return f"{base_url}/{entity}"
 
-    def mark_health_check(self, success: bool, response_time: float = None, error_message: str = None):
+    def mark_health_check(self, success: bool, response_time: float = None):
         """
         Update health check status.
 
         Args:
             success: Whether health check succeeded
             response_time: Response time in milliseconds (optional)
-            error_message: Error message if failed (optional)
         """
         self.last_check = timezone.now()
 
         if success:
             self.last_check_status = self.HEALTH_OK
             self.consecutive_failures = 0
+
+            # НОВОЕ: Восстановление из ERROR в ACTIVE
+            if self.status == self.STATUS_ERROR:
+                self.status = self.STATUS_ACTIVE
+
             if response_time is not None:
                 # Calculate moving average (simple exponential smoothing)
                 if self.avg_response_time is None:
@@ -429,3 +477,260 @@ class ExtensionInstallation(models.Model):
 
     def __str__(self):
         return f"{self.extension_name} on {self.database.name} - {self.status}"
+
+
+class BatchService(models.Model):
+    """
+    Represents a Batch Service instance for parallel batch operations.
+
+    Batch Service is a Go microservice that handles parallel batch operations
+    across multiple 1C databases using goroutine pools and OData protocol.
+
+    Hierarchy:
+        BatchService (URL)
+          └── Manages parallel batch operations for multiple databases
+    """
+
+    # Status Choices (unified with Cluster/Database)
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_ERROR = 'error'
+    STATUS_MAINTENANCE = 'maintenance'
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_INACTIVE, 'Inactive'),
+        (STATUS_ERROR, 'Error'),
+        (STATUS_MAINTENANCE, 'Maintenance'),
+    ]
+
+    # Health Status Choices
+    HEALTH_HEALTHY = 'healthy'
+    HEALTH_UNHEALTHY = 'unhealthy'
+    HEALTH_UNKNOWN = 'unknown'
+
+    HEALTH_STATUS_CHOICES = [
+        (HEALTH_HEALTHY, 'Healthy'),
+        (HEALTH_UNHEALTHY, 'Unhealthy'),
+        (HEALTH_UNKNOWN, 'Unknown'),
+    ]
+
+    # Identity
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Batch Service UUID"
+    )
+    name = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        help_text="Batch Service instance name"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Optional description"
+    )
+
+    # Connection
+    url = models.URLField(
+        max_length=512,
+        unique=True,
+        help_text="Batch Service endpoint URL (e.g., http://localhost:8087)"
+    )
+
+    # Status (NEW - unified with Cluster/Database)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_ACTIVE,
+        db_index=True,
+        help_text="Service status (unified with Cluster/Database)"
+    )
+
+    # Health Check
+    last_health_check = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last health check timestamp"
+    )
+    last_health_status = models.CharField(
+        max_length=20,
+        choices=HEALTH_STATUS_CHOICES,
+        default=HEALTH_UNKNOWN,
+        db_index=True,
+        help_text="Result of last health check"
+    )
+    consecutive_failures = models.IntegerField(
+        default=0,
+        help_text="Number of consecutive health check failures"
+    )
+
+    # Metadata
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional metadata (e.g., last_error, performance stats)"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="Creation timestamp"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="Last update timestamp"
+    )
+
+    class Meta:
+        db_table = 'batch_services'
+        ordering = ['name']  # Removed '-status' (alphabetic sorting is not semantic)
+        indexes = [
+            models.Index(fields=['status', 'last_health_status']),
+            models.Index(fields=['last_health_check']),
+        ]
+        verbose_name = 'Batch Service'
+        verbose_name_plural = 'Batch Services'
+
+    def __str__(self):
+        status = self.get_status_display().upper()
+        return f"{self.name} ({status})"
+
+    @property
+    def is_active_compat(self) -> bool:
+        """
+        Backward compatibility property.
+        Returns True if status='active'.
+        """
+        return self.status == self.STATUS_ACTIVE
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if service is healthy and available."""
+        return (
+            self.status == self.STATUS_ACTIVE and
+            self.last_health_status == self.HEALTH_HEALTHY
+        )
+
+    def mark_health_check(self, success: bool, error_message: str = None):
+        """
+        Mark health check result and update status.
+
+        Auto-recovery pattern (same as Cluster):
+        - 3 consecutive failures → status='error' (automatic)
+        - Success when status='error' → status='active' (automatic recovery)
+
+        Args:
+            success: Whether health check succeeded
+            error_message: Error message if failed (optional)
+        """
+        self.last_health_check = timezone.now()
+
+        if success:
+            self.consecutive_failures = 0
+            self.last_health_status = self.HEALTH_HEALTHY
+
+            # Auto-recovery from ERROR status
+            if self.status == self.STATUS_ERROR:
+                self.status = self.STATUS_ACTIVE
+
+            # Clear last error on success
+            if 'last_error' in self.metadata:
+                del self.metadata['last_error']
+        else:
+            self.consecutive_failures += 1
+
+            if self.consecutive_failures >= 3:
+                self.last_health_status = self.HEALTH_UNHEALTHY
+                # Mark as ERROR after 3 consecutive failures
+                self.status = self.STATUS_ERROR
+            else:
+                self.last_health_status = self.HEALTH_UNHEALTHY
+
+            # Store error message in metadata
+            if error_message:
+                self.metadata['last_error'] = error_message
+
+        self.save(update_fields=[
+            'last_health_check',
+            'last_health_status',
+            'consecutive_failures',
+            'status',
+            'metadata',
+            'updated_at'
+        ])
+
+    @classmethod
+    def get_active(cls) -> Optional['BatchService']:
+        """
+        Get first active and healthy BatchService instance.
+
+        Returns:
+            First active and healthy BatchService or None if not found
+        """
+        return cls.objects.filter(
+            status=cls.STATUS_ACTIVE,
+            last_health_status=cls.HEALTH_HEALTHY
+        ).first()
+
+    @classmethod
+    def get_or_raise(cls, service_id: str = None) -> 'BatchService':
+        """
+        Get active BatchService instance or raise error.
+
+        Args:
+            service_id: Optional service UUID to get specific service
+
+        Returns:
+            Active and healthy BatchService
+
+        Raises:
+            ValueError: If no active BatchService found
+        """
+        if service_id:
+            try:
+                service = cls.objects.get(id=service_id, status=cls.STATUS_ACTIVE)
+                return service
+            except cls.DoesNotExist:
+                raise ValueError(f"Active BatchService with id={service_id} not found")
+
+        service = cls.get_active()
+        if not service:
+            raise ValueError(
+                "No active Batch Service available. "
+                "Please configure and activate a BatchService instance."
+            )
+        return service
+
+
+class StatusHistory(models.Model):
+    """История изменений статусов для всех типов объектов"""
+
+    # Generic Foreign Key для поддержки разных типов объектов
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.CharField(max_length=255)
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    # Статусные данные
+    old_status = models.CharField(max_length=50)
+    new_status = models.CharField(max_length=50)
+    reason = models.TextField(blank=True)  # Причина смены
+    metadata = models.JSONField(default=dict)  # response_time, error_message и т.д.
+
+    # Timestamps
+    changed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'status_history'
+        indexes = [
+            models.Index(fields=['content_type', 'object_id', '-changed_at']),
+            models.Index(fields=['new_status', '-changed_at']),
+        ]
+        ordering = ['-changed_at']
+        verbose_name = 'Status History'
+        verbose_name_plural = 'Status Histories'
+
+    def __str__(self):
+        return f"{self.content_type} {self.object_id}: {self.old_status} → {self.new_status}"

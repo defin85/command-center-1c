@@ -58,6 +58,7 @@ class ClusterServiceClient:
     def get_infobases(
         self,
         server: str = "localhost:1545",
+        cluster_id: Optional[str] = None,
         cluster_user: Optional[str] = None,
         cluster_pwd: Optional[str] = None,
         detailed: bool = False
@@ -70,6 +71,7 @@ class ClusterServiceClient:
 
         Args:
             server: RAS server address (host:port), default: "localhost:1545"
+            cluster_id: Cluster UUID (optional, but recommended for clusters without authentication)
             cluster_user: Cluster administrator username (optional)
             cluster_pwd: Cluster administrator password (optional)
             detailed: Get detailed information (slower but more complete)
@@ -110,6 +112,9 @@ class ClusterServiceClient:
             'detailed': str(detailed).lower()
         }
 
+        if cluster_id:
+            params['cluster'] = cluster_id
+
         if cluster_user:
             params['cluster_user'] = cluster_user
 
@@ -121,6 +126,8 @@ class ClusterServiceClient:
             'server': server,
             'detailed': str(detailed).lower()
         }
+        if cluster_id:
+            safe_params['cluster'] = cluster_id
         if cluster_user:
             safe_params['cluster_user'] = cluster_user
         if cluster_pwd:
@@ -148,28 +155,14 @@ class ClusterServiceClient:
             # Parse JSON
             data = response.json()
 
-            # Validate response structure
-            if 'status' not in data:
-                raise ValueError("Response missing 'status' field")
-
-            if data['status'] == 'error':
-                error_msg = data.get('error', 'Unknown error')
-                logger.error(f"Installation-service returned error: {error_msg}")
-                raise ValueError(f"Installation-service error: {error_msg}")
-
-            if data['status'] != 'success':
-                raise ValueError(f"Unexpected status: {data['status']}")
-
-            # Validate required fields
-            required_fields = ['cluster_id', 'cluster_name', 'total_count', 'infobases']
-            for field in required_fields:
-                if field not in data:
-                    raise ValueError(f"Response missing '{field}' field")
+            # Validate response structure (simple format: {"infobases": [...]})
+            if 'infobases' not in data:
+                raise ValueError("Response missing 'infobases' field")
 
             # Log success
+            infobase_count = len(data.get('infobases', []))
             logger.info(
-                f"Successfully retrieved {data['total_count']} infobases "
-                f"from cluster '{data['cluster_name']}' ({data['cluster_id']})"
+                f"Successfully retrieved {infobase_count} infobases from cluster-service"
             )
 
             return data
