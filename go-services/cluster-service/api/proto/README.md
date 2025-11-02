@@ -148,7 +148,7 @@ openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 
 - [ ] Сертификаты регулярно обновляются (автоматизация через cert-manager)
 - [ ] mTLS (mutual TLS) для дополнительной безопасности
 
-См. детальную инструкцию: [TLS_SETUP.md](docs/TLS_SETUP.md)
+См. детальную инструкцию: [TLS_SETUP.md](../../docs/TLS_SETUP.md)
 
 ### Серверная валидация
 
@@ -159,7 +159,7 @@ openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 
 - `LockInfobase`: Хотя бы один тип блокировки (sessions_deny или scheduled_jobs_deny)
 - `DropInfobase`: drop_mode не UNSPECIFIED
 
-См. детали: [VALIDATION_GUIDE.md](docs/VALIDATION_GUIDE.md)
+См. детали: [VALIDATION_GUIDE.md](../../docs/VALIDATION_GUIDE.md)
 
 ### Audit Trail (Обязательно для Production)
 
