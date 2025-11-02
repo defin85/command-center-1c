@@ -17,3 +17,13 @@ coverage.html
 .idea/
 .vscode/
 *.swp
+
+# Protobuf generated files
+*.pb.go
+*_grpc.pb.go
+*.pb.h
+*.pb.cc
+*.descriptor_set
+
+# Protobuf temp files
+*.pb.bin

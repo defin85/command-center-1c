@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package cluster.v1;
+
+option go_package = "github.com/yourusername/command-center-1c/go-services/cluster-service/api/proto/cluster/v1";
+
+import "google/protobuf/timestamp.proto";
+
+// ==================== ENUMS ====================
+
+// DBMSType определяет тип СУБД для хранения информационной базы 1С
+enum DBMSType {
+  DBMS_TYPE_UNSPECIFIED = 0;
+  DBMS_TYPE_MSSQL_SERVER = 1;  // Microsoft SQL Server
+  DBMS_TYPE_POSTGRESQL = 2;     // PostgreSQL
+  DBMS_TYPE_IBM_DB2 = 3;        // IBM DB2
+  DBMS_TYPE_ORACLE = 4;         // Oracle Database
+}
+
+// SecurityLevel определяет уровень защиты информационной базы
+enum SecurityLevel {
+  SECURITY_LEVEL_UNSPECIFIED = 0;
+  SECURITY_LEVEL_0 = 1;  // Нет защиты
+  SECURITY_LEVEL_1 = 2;  // Базовая защита
+  SECURITY_LEVEL_2 = 3;  // Повышенная защита
+  SECURITY_LEVEL_3 = 4;  // Максимальная защита
+}
+
+// ==================== CREATE INFOBASE ====================
+
+// CreateInfobaseRequest создает новую информационную базу в кластере 1С
+message CreateInfobaseRequest {
+  // Обязательные поля
+  string cluster_id = 1;   // UUID кластера 1С
+  string name = 2;         // Имя информационной базы (должно быть уникальным)
+  DBMSType dbms = 3;       // Тип СУБД
+  string db_server = 4;    // Адрес сервера БД (hostname или IP)
+  string db_name = 5;      // Имя базы данных на сервере СУБД
+
+  // Опциональные поля
+  optional string db_user = 6;              // Пользователь БД
+  optional string db_password = 7;          // Пароль БД (ВНИМАНИЕ: передается только через TLS!)
+  optional bool create_database = 8;        // Создать БД при создании infobase
+  optional SecurityLevel security_level = 9; // Уровень безопасности
+  optional string locale = 10;              // Локаль (например: "ru_RU")
+  optional int32 date_offset = 11;          // Смещение дат (например: 2000)
+  optional string description = 12;         // Описание информационной базы
+  optional bool scheduled_jobs_deny = 13;   // Блокировка регламентных заданий
+  optional bool license_distribution_allow = 14; // Разрешить распределение лицензий
+
+  // Аутентификация кластера
+  optional string cluster_user = 15;        // Администратор кластера
+  optional string cluster_password = 16;    // Пароль администратора (ВНИМАНИЕ: передается только через TLS!)
+}
+
+// CreateInfobaseResponse результат создания информационной базы
+message CreateInfobaseResponse {
+  string infobase_id = 1;  // UUID созданной базы
+  string name = 2;         // Имя созданной базы
+  string message = 3;      // Сообщение о результате создания
+}
+
+// ==================== UPDATE INFOBASE ====================
+
+// UpdateInfobaseRequest обновляет параметры существующей информационной базы
+message UpdateInfobaseRequest {
+  // Обязательные поля
+  string cluster_id = 1;   // UUID кластера 1С
+  string infobase_id = 2;  // UUID информационной базы
+
+  // Опциональные поля (что изменить)
+  // Блокировка сеансов
+  optional bool sessions_deny = 3;                          // Блокировка новых сеансов
+  optional google.protobuf.Timestamp denied_from = 4;       // Начало блокировки
+  optional google.protobuf.Timestamp denied_to = 5;         // Конец блокировки
+  optional string denied_message = 6;                       // Сообщение пользователям при попытке входа
+  optional string permission_code = 7;                      // Код разрешения для обхода блокировки
+  optional bool scheduled_jobs_deny = 8;                    // Блокировка регламентных заданий
+
+  // Изменение параметров БД
+  optional DBMSType dbms = 9;          // Тип СУБД
+  optional string db_server = 10;      // Адрес сервера БД
+  optional string db_name = 11;        // Имя базы данных
+  optional string db_user = 12;        // Пользователь БД
+  optional string db_password = 13;    // Пароль БД (ВНИМАНИЕ: передается только через TLS!)
+
+  // Изменение других параметров
+  optional string description = 14;             // Описание базы
+  optional SecurityLevel security_level = 15;   // Уровень безопасности
+  optional string security_profile_name = 16;   // Имя профиля безопасности
+
+  // Аутентификация кластера
+  optional string cluster_user = 17;        // Администратор кластера
+  optional string cluster_password = 18;    // Пароль администратора (ВНИМАНИЕ: передается только через TLS!)
+}
+
+// UpdateInfobaseResponse результат обновления информационной базы
+message UpdateInfobaseResponse {
+  string infobase_id = 1;  // UUID обновленной базы
+  string message = 2;      // Сообщение о результате
+  bool success = 3;        // Успешность операции
+}
+
+// ==================== DROP INFOBASE ====================
+
+// DropMode определяет режим удаления информационной базы
+enum DropMode {
+  DROP_MODE_UNSPECIFIED = 0;      // По умолчанию: только удалить регистрацию в кластере
+  DROP_MODE_UNREGISTER_ONLY = 1;  // Только удалить регистрацию (БД остается) - БЕЗОПАСНО
+  DROP_MODE_DROP_DATABASE = 2;    // УДАЛИТЬ БД вместе с infobase (ОПАСНО! Безвозвратное удаление данных!)
+  DROP_MODE_CLEAR_DATABASE = 3;   // Очистить БД, но не удалять (сохранить структуру) - ОПАСНО!
+}
+
+// DropInfobaseRequest удаляет информационную базу из кластера 1С
+//
+// Режимы удаления (drop_mode):
+//   - DROP_MODE_UNREGISTER_ONLY: Удалить только регистрацию в кластере (БД остается) - БЕЗОПАСНО
+//   - DROP_MODE_DROP_DATABASE: УДАЛИТЬ БД вместе с infobase - ОПАСНО! Безвозвратное удаление данных!
+//   - DROP_MODE_CLEAR_DATABASE: Очистить БД, но сохранить структуру - ОПАСНО!
+//
+// Примеры:
+//   - Безопасное удаление (только регистрация): drop_mode = DROP_MODE_UNREGISTER_ONLY
+//   - Полное удаление (включая БД): drop_mode = DROP_MODE_DROP_DATABASE (требует подтверждения!)
+//
+// ВНИМАНИЕ: Это деструктивная операция!
+message DropInfobaseRequest {
+  string cluster_id = 1;   // UUID кластера 1С
+  string infobase_id = 2;  // UUID информационной базы
+
+  // Режим удаления (вместо двух bool флагов)
+  DropMode drop_mode = 3;  // По умолчанию: DROP_MODE_UNSPECIFIED (безопасно)
+
+  // Аутентификация кластера
+  optional string cluster_user = 4;        // Администратор кластера
+  optional string cluster_password = 5;    // Пароль администратора (ВНИМАНИЕ: передается только через TLS!)
+}
+
+// DropInfobaseResponse результат удаления информационной базы
+message DropInfobaseResponse {
+  string infobase_id = 1;  // UUID удаленной базы
+  string message = 2;      // Сообщение о результате
+  bool success = 3;        // Успешность операции
+}
+
+// ==================== LOCK INFOBASE ====================
+
+// LockInfobaseRequest блокирует доступ к информационной базе
+// Используется для проведения технических работ или перед обновлением
+message LockInfobaseRequest {
+  string cluster_id = 1;   // UUID кластера 1С
+  string infobase_id = 2;  // UUID информационной базы
+
+  // Блокировка сеансов пользователей
+  bool sessions_deny = 3;                            // Запретить новые сеансы
+  optional google.protobuf.Timestamp denied_from = 4; // Начало блокировки
+  optional google.protobuf.Timestamp denied_to = 5;   // Конец блокировки
+  optional string denied_message = 6;                 // Сообщение пользователям
+  optional string permission_code = 7;                // Код для обхода блокировки (для администраторов)
+
+  // Блокировка регламентных заданий
+  bool scheduled_jobs_deny = 8;  // Запретить выполнение регламентных заданий
+
+  // Аутентификация кластера
+  optional string cluster_user = 9;        // Администратор кластера
+  optional string cluster_password = 10;   // Пароль администратора (ВНИМАНИЕ: передается только через TLS!)
+}
+
+// LockInfobaseResponse результат блокировки информационной базы
+message LockInfobaseResponse {
+  string infobase_id = 1;  // UUID заблокированной базы
+  string message = 2;      // Сообщение о результате
+  bool success = 3;        // Успешность операции
+}
+
+// ==================== UNLOCK INFOBASE ====================
+
+// UnlockInfobaseRequest снимает блокировку с информационной базы
+message UnlockInfobaseRequest {
+  string cluster_id = 1;   // UUID кластера 1С
+  string infobase_id = 2;  // UUID информационной базы
+
+  // Что разблокировать
+  bool unlock_sessions = 3;           // Разрешить новые сеансы
+  bool unlock_scheduled_jobs = 4;     // Разрешить выполнение регламентных заданий
+
+  // Аутентификация кластера
+  optional string cluster_user = 5;        // Администратор кластера
+  optional string cluster_password = 6;    // Пароль администратора (ВНИМАНИЕ: передается только через TLS!)
+}
+
+// UnlockInfobaseResponse результат разблокировки информационной базы
+message UnlockInfobaseResponse {
+  string infobase_id = 1;  // UUID разблокированной базы
+  string message = 2;      // Сообщение о результате
+  bool success = 3;        // Успешность операции
+}
+
+// ==================== SERVICE DEFINITION ====================
+
+// InfobaseManagementService предоставляет gRPC методы для управления
+// информационными базами 1С в кластере
+service InfobaseManagementService {
+  // CreateInfobase создает новую информационную базу в кластере
+  rpc CreateInfobase(CreateInfobaseRequest) returns (CreateInfobaseResponse);
+
+  // UpdateInfobase изменяет параметры существующей информационной базы
+  rpc UpdateInfobase(UpdateInfobaseRequest) returns (UpdateInfobaseResponse);
+
+  // DropInfobase удаляет информационную базу из кластера
+  // ВНИМАНИЕ: Деструктивная операция!
+  rpc DropInfobase(DropInfobaseRequest) returns (DropInfobaseResponse);
+
+  // LockInfobase блокирует доступ к информационной базе
+  // (сеансы пользователей и/или регламентные задания)
+  rpc LockInfobase(LockInfobaseRequest) returns (LockInfobaseResponse);
+
+  // UnlockInfobase снимает блокировку с информационной базы
+  rpc UnlockInfobase(UnlockInfobaseRequest) returns (UnlockInfobaseResponse);
+}
