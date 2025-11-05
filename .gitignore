@@ -184,3 +184,7 @@ data/
 temp/
 tmp/
 *.tmp
+
+# Compiled binaries
+bin/
+# Note: *.exe already covered in Go section

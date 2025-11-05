@@ -793,16 +793,157 @@ api-gateway:8080 ← frontend:3000
 - [Sprint Progress](docs/archive/sprints/) - Детальная история спринтов
 - [Roadmap Variants](docs/archive/roadmap_variants/) - MVP/Enterprise варианты (архив)
 
+
+---
+
+## 🔨 Build System
+
+### Naming Convention
+
+**Формат бинарников:** `cc1c-<service-name>.exe` (Windows) / `cc1c-<service-name>` (Linux)
+
+**Все бинарники:**
+```
+bin/
+├── cc1c-api-gateway.exe       - HTTP router, auth, rate limiting
+├── cc1c-worker.exe            - Параллельная обработка операций
+├── cc1c-cluster-service.exe   - Мониторинг кластеров 1С
+└── cc1c-batch-service.exe     - Установка расширений в базы
+```
+
+**Преимущества:**
+- Уникальность в Windows tasklist: сразу видно что это CommandCenter1C
+- Четкая идентификация в логах и мониторинге
+- Консистентность с Kubernetes naming (`kube-apiserver`, `kube-proxy`)
+
+### Сборка бинарников
+
+**Quick build (все сервисы):**
+```bash
+make build-go-all               # Если установлен Make
+./scripts/build.sh              # Альтернатива без Make
+```
+
+**Отдельные сервисы:**
+```bash
+make build-api-gateway
+make build-worker
+make build-cluster-service
+make build-batch-service
+```
+
+**Альтернативный способ (через scripts/build.sh):**
+```bash
+./scripts/build.sh --service=api-gateway
+./scripts/build.sh --service=worker
+./scripts/build.sh --service=cluster-service
+./scripts/build.sh --service=batch-service
+```
+
+**Cross-compilation:**
+```bash
+make build-linux       # Linux amd64
+make build-windows     # Windows amd64
+
+# Через scripts/build.sh:
+./scripts/build.sh --os=linux --arch=amd64
+./scripts/build.sh --os=windows --arch=amd64
+```
+
+**Параллельная сборка (быстрее):**
+```bash
+./scripts/build.sh --parallel
+```
+
+**Очистка:**
+```bash
+make clean-binaries
+```
+
+### Версионирование
+
+Все бинарники содержат встроенную информацию о версии:
+
+```bash
+./bin/cc1c-api-gateway.exe --version
+# Вывод:
+# Service: cc1c-api-gateway
+# Version: v1.2.3
+# Commit: abc1234
+# Built: 2025-11-05_14:30:00
+```
+
+**Версия определяется автоматически:**
+- Если есть git tag: используется tag (v1.2.3)
+- Если нет tag: используется commit hash (abc1234)
+- Если есть uncommitted changes: добавляется `-dirty`
+
+**Версия в логах:**
+
+Все сервисы логируют версию при старте:
+```
+INFO starting API Gateway service="cc1c-api-gateway" version="v1.2.3" commit="abc1234" buildTime="2025-11-05_14:30:00"
+```
+
+### Использование в скриптах
+
+**scripts/dev/start-all.sh автоматически выбирает:**
+
+1. **Приоритет 1:** Если бинарник собран → использует `bin/cc1c-<service>.exe`
+2. **Приоритет 2:** Если нет → fallback на `go run cmd/main.go`
+
+**Пример вывода:**
+```
+[6/11] Запуск API Gateway (port 8080)...
+   Используется собранный бинарник: bin/cc1c-api-gateway.exe
+✓ API Gateway запущен (PID: 12345)
+```
+
+Или:
+```
+[6/11] Запуск API Gateway (port 8080)...
+   Бинарник не найден, используется 'go run'
+   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции
+✓ API Gateway запущен (PID: 12345)
+```
+
+**Совет:** Для максимальной скорости старта соберите бинарники:
+```bash
+make build-go-all               # или ./scripts/build.sh
+./scripts/dev/start-all.sh      # Будет использовать собранные бинарники
+```
+
+### Build + Start (быстрый старт)
+
+```bash
+./scripts/dev/build-and-start.sh
+# Соберет все бинарники + запустит сервисы
+```
+
+**С очисткой:**
+```bash
+./scripts/dev/build-and-start.sh --clean
+# Очистит bin/ → соберет → запустит
+```
+
+---
+
 ### Дополнительная информация
 
-**Версия:** 2.3
+**Версия:** 2.4
 **Последнее обновление:** 2025-11-05
 
-**Изменения в версии 2.3:**
+
+**Изменения в версии 2.4:**
+- Внедрена система правильных наименований Go бинарников (cc1c-*)
+- Добавлена централизованная build система (Makefile + scripts/build.sh)
+- Добавлено версионирование в код всех сервисов (--version flag)
+n**Изменения в версии 2.3:**
 - Добавлена секция "🔌 Критичные сервисы" (batch-service, cluster-service, ras-grpc-gw)
 - Обновлен Troubleshooting с проблемами для критичных сервисов
 - Добавлен правильный порядок запуска сервисов
 - Детализированы API endpoints и команды запуска для критичных сервисов
+
 
 **Изменения в версии 2.2:**
 - Радикальная реструктуризация: Progressive Disclosure (AI INSTRUCTIONS → CONTEXT → GUIDE → REFERENCE)

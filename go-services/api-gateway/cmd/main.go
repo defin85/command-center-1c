@@ -1,15 +1,42 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"os"
 
 	"github.com/commandcenter1c/commandcenter/api-gateway/internal/routes"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
+var (
+	// These variables are set by -ldflags during build
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
+var showVersion bool
+
+func init() {
+	// Register version flag
+	flag.BoolVar(&showVersion, "version", false, "Show version information and exit")
+}
+
 func main() {
+	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("Service: cc1c-api-gateway\n")
+		fmt.Printf("Version: %s\n", Version)
+		fmt.Printf("Commit: %s\n", Commit)
+		fmt.Printf("Built: %s\n", BuildTime)
+		os.Exit(0)
+	}
+
 	// Load configuration
 	cfg := config.LoadFromEnv()
 
@@ -20,7 +47,12 @@ func main() {
 	})
 
 	log := logger.GetLogger()
-	log.Info("Starting API Gateway...")
+	log.Info("starting API Gateway",
+		zap.String("service", "cc1c-api-gateway"),
+		zap.String("version", Version),
+		zap.String("commit", Commit),
+		zap.String("buildTime", BuildTime),
+	)
 
 	// Set Gin mode
 	if cfg.LogLevel == "debug" {
@@ -34,9 +66,11 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)
-	log.Infof("API Gateway listening on %s", addr)
+	log.Info("API Gateway listening",
+		zap.String("address", addr),
+	)
 
 	if err := router.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		log.Fatal("failed to start server", zap.Error(err))
 	}
 }

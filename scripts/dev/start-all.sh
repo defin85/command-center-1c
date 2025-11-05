@@ -189,17 +189,34 @@ fi
 echo ""
 
 ##############################################################################
+##############################################################################
 # Шаг 6: API Gateway (Go)
 ##############################################################################
 echo -e "${BLUE}[6/11] Запуск API Gateway (port 8080)...${NC}"
 
-cd "$PROJECT_ROOT/go-services/api-gateway"
+# Проверить наличие бинарника
+BINARY_PATH="$PROJECT_ROOT/bin/cc1c-api-gateway.exe"
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-api-gateway.exe${NC}"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    nohup "$BINARY_PATH" > "$LOGS_DIR/api-gateway.log" 2>&1 &
+    API_GATEWAY_PID=$!
+else
+    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
+    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
+    
+    cd "$PROJECT_ROOT/go-services/api-gateway"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    nohup go run cmd/main.go > "$LOGS_DIR/api-gateway.log" 2>&1 &
+    API_GATEWAY_PID=$!
+fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-
-nohup go run cmd/main.go > "$LOGS_DIR/api-gateway.log" 2>&1 &
-API_GATEWAY_PID=$!
 echo $API_GATEWAY_PID > "$PIDS_DIR/api-gateway.pid"
 
 sleep 3
@@ -217,13 +234,29 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[7/11] Запуск Go Worker...${NC}"
 
-cd "$PROJECT_ROOT/go-services/worker"
+# Проверить наличие бинарника
+BINARY_PATH="$PROJECT_ROOT/bin/cc1c-worker.exe"
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-worker.exe${NC}"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    nohup "$BINARY_PATH" > "$LOGS_DIR/worker.log" 2>&1 &
+    WORKER_PID=$!
+else
+    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
+    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
+    
+    cd "$PROJECT_ROOT/go-services/worker"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    nohup go run cmd/main.go > "$LOGS_DIR/worker.log" 2>&1 &
+    WORKER_PID=$!
+fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-
-nohup go run cmd/main.go > "$LOGS_DIR/worker.log" 2>&1 &
-WORKER_PID=$!
 echo $WORKER_PID > "$PIDS_DIR/worker.pid"
 
 sleep 2
@@ -236,7 +269,6 @@ else
 fi
 echo ""
 
-##############################################################################
 # Шаг 8: ras-grpc-gw (Go)
 ##############################################################################
 echo -e "${BLUE}[8/11] Запуск ras-grpc-gw (port 9999)...${NC}"
@@ -269,17 +301,40 @@ fi
 echo ""
 
 ##############################################################################
+##############################################################################
 # Шаг 9: Cluster Service (Go)
 ##############################################################################
 echo -e "${BLUE}[9/11] Запуск Cluster Service (port 8088)...${NC}"
 
-cd "$PROJECT_ROOT/go-services/cluster-service"
+# Проверить наличие бинарника
+BINARY_PATH="$PROJECT_ROOT/bin/cc1c-cluster-service.exe"
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-cluster-service.exe${NC}"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
+    export SERVER_PORT=8088
+    
+    nohup "$BINARY_PATH" > "$LOGS_DIR/cluster-service.log" 2>&1 &
+    CLUSTER_SERVICE_PID=$!
+else
+    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
+    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
+    
+    cd "$PROJECT_ROOT/go-services/cluster-service"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
+    export SERVER_PORT=8088
+    
+    nohup go run cmd/main.go > "$LOGS_DIR/cluster-service.log" 2>&1 &
+    CLUSTER_SERVICE_PID=$!
+fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-
-nohup go run cmd/main.go > "$LOGS_DIR/cluster-service.log" 2>&1 &
-CLUSTER_SERVICE_PID=$!
 echo $CLUSTER_SERVICE_PID > "$PIDS_DIR/cluster-service.pid"
 
 sleep 2
@@ -297,13 +352,35 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
 
-cd "$PROJECT_ROOT/go-services/batch-service"
+# Проверить наличие бинарника
+BINARY_PATH="$PROJECT_ROOT/bin/cc1c-batch-service.exe"
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-batch-service.exe${NC}"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    # Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
+    export SERVER_PORT=8087
+    
+    nohup "$BINARY_PATH" > "$LOGS_DIR/batch-service.log" 2>&1 &
+    BATCH_SERVICE_PID=$!
+else
+    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
+    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
+    
+    cd "$PROJECT_ROOT/go-services/batch-service"
+    
+    # Загрузить .env.local
+    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    
+    # Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
+    export SERVER_PORT=8087
+    
+    nohup go run cmd/main.go > "$LOGS_DIR/batch-service.log" 2>&1 &
+    BATCH_SERVICE_PID=$!
+fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-
-nohup go run cmd/main.go > "$LOGS_DIR/batch-service.log" 2>&1 &
-BATCH_SERVICE_PID=$!
 echo $BATCH_SERVICE_PID > "$PIDS_DIR/batch-service.pid"
 
 sleep 2
@@ -316,7 +393,6 @@ else
 fi
 echo ""
 
-##############################################################################
 # Шаг 11: Frontend (React)
 ##############################################################################
 echo -e "${BLUE}[11/11] Запуск Frontend (port 3000)...${NC}"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,11 +16,36 @@ import (
 	"github.com/command-center-1c/batch-service/internal/service"
 )
 
+var (
+	// These variables are set by -ldflags during build
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
+var showVersion bool
+
+func init() {
+	// Register version flag
+	flag.BoolVar(&showVersion, "version", false, "Show version information and exit")
+}
+
 func main() {
+	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("Service: cc1c-batch-service\n")
+		fmt.Printf("Version: %s\n", Version)
+		fmt.Printf("Commit: %s\n", Commit)
+		fmt.Printf("Built: %s\n", BuildTime)
+		os.Exit(0)
+	}
+
 	// Load configuration
 	cfg := config.Load()
 
-	log.Printf("Starting batch-service...")
+	log.Printf("Starting batch-service (cc1c-batch-service)")
+	log.Printf("Version: %s, Commit: %s, Built: %s", Version, Commit, BuildTime)
 	log.Printf("Server: %s:%s", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("gRPC Gateway: %s", cfg.GRPC.GatewayAddr)
 	log.Printf("1cv8.exe: %s", cfg.V8.ExePath)

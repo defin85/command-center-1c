@@ -134,15 +134,26 @@ case "$SERVICE_NAME" in
         NEW_PID=$!
         ;;
 
+
     api-gateway)
-        cd "$PROJECT_ROOT/go-services/api-gateway"
-        nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-api-gateway.exe"
+        if [ -f "$BINARY_PATH" ]; then
+            nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
+        else
+            cd "$PROJECT_ROOT/go-services/api-gateway"
+            nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        fi
         NEW_PID=$!
         ;;
 
     worker)
-        cd "$PROJECT_ROOT/go-services/worker"
-        nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-worker.exe"
+        if [ -f "$BINARY_PATH" ]; then
+            nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
+        else
+            cd "$PROJECT_ROOT/go-services/worker"
+            nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        fi
         NEW_PID=$!
         ;;
 
@@ -158,14 +169,30 @@ case "$SERVICE_NAME" in
         ;;
 
     cluster-service)
-        cd "$PROJECT_ROOT/go-services/cluster-service"
-        nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
+        export SERVER_PORT=8088
+        
+        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-cluster-service.exe"
+        if [ -f "$BINARY_PATH" ]; then
+            nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
+        else
+            cd "$PROJECT_ROOT/go-services/cluster-service"
+            nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        fi
         NEW_PID=$!
         ;;
 
     batch-service)
-        cd "$PROJECT_ROOT/go-services/batch-service"
-        nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
+        export SERVER_PORT=8087
+        
+        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-batch-service.exe"
+        if [ -f "$BINARY_PATH" ]; then
+            nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
+        else
+            cd "$PROJECT_ROOT/go-services/batch-service"
+            nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        fi
         NEW_PID=$!
         ;;
 

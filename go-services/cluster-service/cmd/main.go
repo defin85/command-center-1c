@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/command-center-1c/cluster-service/internal/api"
 	"github.com/command-center-1c/cluster-service/internal/api/handlers"
@@ -16,7 +18,24 @@ import (
 	"go.uber.org/zap"
 )
 
+var showVersion bool
+
+func init() {
+	// Register version flag
+	flag.BoolVar(&showVersion, "version", false, "Show version information and exit")
+}
+
 func main() {
+	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("Service: cc1c-cluster-service\n")
+		fmt.Printf("Version: %s\n", version.Version)
+		fmt.Printf("Commit: %s\n", version.Commit)
+		fmt.Printf("Built: %s\n", version.BuildTime)
+		os.Exit(0)
+	}
+
 	// Load config
 	cfg, err := config.Load()
 	if err != nil {
@@ -31,7 +50,10 @@ func main() {
 	defer logger.Sync()
 
 	logger.Info("starting cluster-service",
+		zap.String("service", "cc1c-cluster-service"),
 		zap.String("version", version.Version),
+		zap.String("commit", version.Commit),
+		zap.String("buildTime", version.BuildTime),
 		zap.String("grpc_gateway", cfg.GRPC.GatewayAddr),
 	)
 

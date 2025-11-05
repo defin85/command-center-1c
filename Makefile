@@ -186,3 +186,110 @@ health:
 	@curl -f http://localhost:8080/health || echo "API Gateway: $(YELLOW)DOWN$(NC)"
 	@curl -f http://localhost:8000/health || echo "Orchestrator: $(YELLOW)DOWN$(NC)"
 	@curl -f http://localhost:3000 || echo "Frontend: $(YELLOW)DOWN$(NC)"
+
+##############################################################################
+# Go Services Build System
+##############################################################################
+
+# Directories
+BIN_DIR := bin
+GO_SERVICES_DIR := go-services
+
+# Build metadata
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+
+# Build flags for version injection
+LDFLAGS := -ldflags "\
+	-X main.Version=$(VERSION) \
+	-X main.Commit=$(COMMIT) \
+	-X main.BuildTime=$(BUILD_TIME)"
+
+
+# Cluster Service uses its own version package
+LDFLAGS_CLUSTER := -ldflags "\
+	-X github.com/command-center-1c/cluster-service/internal/version.Version=$(VERSION) \
+	-X github.com/command-center-1c/cluster-service/internal/version.Commit=$(COMMIT) \
+	-X github.com/command-center-1c/cluster-service/internal/version.BuildTime=$(BUILD_TIME)"
+
+# Platform-specific binary extension
+ifeq ($(GOOS),windows)
+	BIN_EXT := .exe
+else
+	BIN_EXT :=
+endif
+
+# Binary names
+API_GATEWAY_BIN := cc1c-api-gateway$(BIN_EXT)
+WORKER_BIN := cc1c-worker$(BIN_EXT)
+CLUSTER_SERVICE_BIN := cc1c-cluster-service$(BIN_EXT)
+BATCH_SERVICE_BIN := cc1c-batch-service$(BIN_EXT)
+
+##############################################################################
+# Build Targets
+##############################################################################
+
+.PHONY: build-go-all build-api-gateway build-worker build-cluster-service build-batch-service
+.PHONY: clean-binaries build-linux build-windows
+
+## build-go-all: Собрать все Go сервисы
+build-go-all: build-api-gateway build-worker build-cluster-service build-batch-service
+	@echo "$(GREEN)✓ All Go binaries built successfully$(NC)"
+	@echo ""
+	@echo "Binaries:"
+	@ls -lh $(BIN_DIR)/cc1c-* 2>/dev/null || true
+
+## build-api-gateway: Собрать cc1c-api-gateway
+build-api-gateway:
+	@echo "$(BLUE)[1/4] Building API Gateway...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@cd $(GO_SERVICES_DIR)/api-gateway && \
+		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(API_GATEWAY_BIN) cmd/main.go
+	@echo "$(GREEN)✓ $(API_GATEWAY_BIN) built$(NC)"
+
+## build-worker: Собрать cc1c-worker
+build-worker:
+	@echo "$(BLUE)[2/4] Building Worker...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@cd $(GO_SERVICES_DIR)/worker && \
+		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(WORKER_BIN) cmd/main.go
+	@echo "$(GREEN)✓ $(WORKER_BIN) built$(NC)"
+
+## build-cluster-service: Собрать cc1c-cluster-service
+build-cluster-service:
+	@echo "$(BLUE)[3/4] Building Cluster Service...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@cd $(GO_SERVICES_DIR)/cluster-service && \
+		go build $(LDFLAGS_CLUSTER) -o ../../$(BIN_DIR)/$(CLUSTER_SERVICE_BIN) cmd/main.go
+	@echo "$(GREEN)✓ $(CLUSTER_SERVICE_BIN) built$(NC)"
+
+## build-batch-service: Собрать cc1c-batch-service
+build-batch-service:
+	@echo "$(BLUE)[4/4] Building Batch Service...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@cd $(GO_SERVICES_DIR)/batch-service && \
+		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(BATCH_SERVICE_BIN) cmd/main.go
+	@echo "$(GREEN)✓ $(BATCH_SERVICE_BIN) built$(NC)"
+
+## clean-binaries: Удалить все собранные бинарники
+clean-binaries:
+	@echo "$(YELLOW)Cleaning binaries...$(NC)"
+	@rm -rf $(BIN_DIR)
+	@echo "$(GREEN)✓ Binaries cleaned$(NC)"
+
+## build-linux: Cross-compile для Linux (amd64)
+build-linux:
+	@echo "$(BLUE)Building for Linux (amd64)...$(NC)"
+	@GOOS=linux GOARCH=amd64 $(MAKE) build-go-all
+
+## build-windows: Cross-compile для Windows (amd64)
+build-windows:
+	@echo "$(BLUE)Building for Windows (amd64)...$(NC)"
+	@GOOS=windows GOARCH=amd64 $(MAKE) build-go-all
+
+##############################################################################
+# End of Go Services Build System
+##############################################################################
