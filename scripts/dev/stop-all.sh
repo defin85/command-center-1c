@@ -85,8 +85,11 @@ stop_service() {
 # Остановка всех сервисов в обратном порядке запуска
 ##############################################################################
 
-# 10. Frontend
+# 11. Frontend
 stop_service "frontend"
+
+# 10. Batch Service
+stop_service "batch-service"
 
 # 9. Cluster Service
 stop_service "cluster-service"
@@ -146,9 +149,12 @@ check_and_kill_port() {
 }
 
 check_and_kill_port 3000 "Frontend"
+check_and_kill_port 8087 "Batch Service"
+check_and_kill_port 8088 "Cluster Service"
+check_and_kill_port 8081 "ras-grpc-gw HTTP"
+check_and_kill_port 9999 "ras-grpc-gw gRPC"
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"
-check_and_kill_port 8088 "Cluster Service"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

@@ -272,6 +272,111 @@ cd /c/1CProject/command-center-1c
 
 **См. также:** [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
 
+#### cluster-service: "connection refused" на порту 9999
+
+**Причина:** ras-grpc-gw не запущен или не готов
+
+**Диагностика:**
+```bash
+# 1. Проверить что gRPC порт слушает
+netstat -ano | findstr :9999  # Windows
+lsof -i :9999  # Linux/Mac
+
+# 2. Проверить процесс ras-grpc-gw
+ps aux | grep ras-grpc-gw  # Linux/Mac
+tasklist | findstr ras-grpc-gw.exe  # Windows
+
+# 3. Проверить health check
+curl http://localhost:8081/health
+# Ожидается: {"service":"ras-grpc-gw","status":"healthy",...}
+```
+
+**Решение:**
+```bash
+# Запустить ras-grpc-gw ПЕРВЫМ
+cd ../ras-grpc-gw
+go run cmd/main.go localhost:1545
+
+# Подождать 3-5 секунд, затем запустить cluster-service
+cd /c/1CProject/command-center-1c/go-services/cluster-service
+go run cmd/main.go
+```
+
+**См. также:** [Критичные сервисы → Порядок запуска](#критичные-сервисы)
+
+#### batch-service: "1cv8.exe not found"
+
+**Причина:** Путь к 1cv8.exe не установлен или неправильный
+
+**Диагностика:**
+```bash
+# Проверить переменную окружения
+echo $EXE_1CV8_PATH  # Linux/Mac/GitBash
+set EXE_1CV8_PATH  # Windows CMD
+
+# Проверить что файл существует
+ls "$EXE_1CV8_PATH"  # Linux/Mac/GitBash
+dir "%EXE_1CV8_PATH%"  # Windows CMD
+```
+
+**Решение:**
+```bash
+# Установить правильный путь в .env.local
+cat >> .env.local << EOF
+EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe
+V8_DEFAULT_TIMEOUT=300
+EOF
+
+# Или экспортировать в текущей сессии
+export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
+
+# Перезапустить batch-service
+cd go-services/batch-service
+go run cmd/main.go
+```
+
+#### ras-grpc-gw: "RAS server not available" на порту 1545
+
+**Причина:** RAS сервер 1С не запущен или недоступен
+
+**Диагностика:**
+```bash
+# Проверить подключение к RAS серверу
+telnet localhost 1545
+# или
+nc -zv localhost 1545  # Linux/Mac
+
+# Проверить логи ras-grpc-gw
+cd ../ras-grpc-gw
+cat ras-grpc-gw.log | tail -50
+```
+
+**Решение:**
+
+**Вариант 1: Запустить RAS сервер (если он не запущен):**
+- Открыть консоль администрирования 1С
+- Подключиться к серверу кластера
+- Проверить что RAS работает на порту 1545
+
+**Вариант 2: Изменить порт в параметрах запуска:**
+```bash
+# Если RAS на другом порту (например, 1546)
+cd ../ras-grpc-gw
+go run cmd/main.go localhost:1546
+
+# Обновить переменную окружения для cluster-service
+export RAS_SERVER=localhost:1546
+```
+
+**Вариант 3: RAS на удаленном сервере:**
+```bash
+# Указать IP/hostname RAS сервера
+cd ../ras-grpc-gw
+go run cmd/main.go 192.168.1.100:1545
+```
+
+**См. также:** [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
+
 #### Транзакции 1С падают с timeout
 
 **⚠️ КРИТИЧНО:** Транзакции ДОЛЖНЫ быть < 15 секунд!
@@ -486,6 +591,167 @@ command-center-1c/
 **External:**
 - ras-grpc-gw (9999 gRPC, 8081 HTTP) - форк для 1C RAS
 
+---
+
+## 🔌 Критичные сервисы
+
+### Разделение ответственности
+
+| Сервис | Назначение | Протокол | Use Case |
+|--------|------------|----------|----------|
+| **cluster-service** | Мониторинг кластеров | gRPC → RAS | Чтение метаданных, real-time мониторинг |
+| **batch-service** | Управление конфигурациями | subprocess → 1cv8.exe | Установка расширений, batch операции |
+| **ras-grpc-gw** | Gateway для RAS | gRPC ↔ RAS binary | Прокси для cluster-service |
+
+### ras-grpc-gw (Внешний форк)
+
+**Назначение:** Production-ready gRPC gateway для RAS протокола 1С Enterprise
+- Прокси между gRPC и бинарным протоколом RAS (Remote Administration Server)
+- Connection pooling для масштабирования на 700+ баз
+- Health checks и graceful shutdown
+
+**Технические детали:**
+- **Репозиторий:** `C:\1CProject\ras-grpc-gw` (форк v8platform/ras-grpc-gw)
+- **Версия:** v1.0.0-cc (форк с production features)
+- **Язык:** Go 1.21+
+- **Порты:**
+  - 9999 (gRPC server)
+  - 8081 (HTTP health check)
+- **Протокол:** gRPC ↔ RAS binary protocol
+
+**Запуск:**
+```bash
+cd ../ras-grpc-gw
+go run cmd/main.go localhost:1545
+# или с параметрами
+./bin/ras-grpc-gw.exe --bind :9999 --health :8081 localhost:1545
+```
+
+**Health check:**
+```bash
+curl http://localhost:8081/health
+# Ожидается: {"service":"ras-grpc-gw","status":"healthy","version":"v1.0.0-cc"}
+```
+
+**⚠️ ВАЖНО:** Запускать ПЕРВЫМ перед cluster-service!
+
+### cluster-service
+
+**Назначение:** Мониторинг и управление кластерами 1С через gRPC протокол
+- Получение списка кластеров, информационных баз, сессий
+- Real-time мониторинг с низкой latency (<100ms)
+- Integration с Django Orchestrator
+
+**Технические детали:**
+- **Репозиторий:** `go-services/cluster-service`
+- **Язык:** Go 1.21+ / Gin + gRPC client
+- **Порт:** 8088
+- **Зависимости:** ras-grpc-gw (КРИТИЧНО - должен быть запущен)
+
+**API Endpoints:**
+- `GET /health` - health check
+- `GET /api/v1/clusters?server=localhost:1545` - список кластеров
+- `GET /api/v1/infobases?server=localhost:1545` - список информационных баз
+- `GET /api/v1/sessions?cluster=UUID` - активные сессии (Phase 2)
+
+**Запуск:**
+```bash
+cd go-services/cluster-service
+go run cmd/main.go
+```
+
+**Переменные окружения:**
+```bash
+export SERVER_HOST=0.0.0.0
+export SERVER_PORT=8088
+export GRPC_GATEWAY_ADDR=localhost:9999
+export LOG_LEVEL=info
+```
+
+**Health check:**
+```bash
+curl http://localhost:8088/health
+# Ожидается: {"status":"healthy","service":"cluster-service","version":"dev"}
+```
+
+### batch-service
+
+**Назначение:** Установка расширений (.cfe) в базы 1С через subprocess
+- Одиночная установка расширения в базу
+- Batch установка на множество баз параллельно
+- Использует 1cv8.exe напрямую (subprocess)
+
+**Технические детали:**
+- **Репозиторий:** `go-services/batch-service`
+- **Язык:** Go 1.21+ / Gin
+- **Порт:** 8087
+- **Требования:** Путь к 1cv8.exe в переменных окружения
+
+**API Endpoints:**
+- `GET /health` - health check
+- `POST /api/v1/extensions/install` - установка в одну базу
+- `POST /api/v1/extensions/batch-install` - batch установка на несколько баз
+
+**Запуск:**
+```bash
+cd go-services/batch-service
+go run cmd/main.go
+```
+
+**Переменные окружения:**
+```bash
+export SERVER_HOST=0.0.0.0
+export SERVER_PORT=8087
+export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
+export V8_DEFAULT_TIMEOUT=300
+```
+
+**Health check:**
+```bash
+curl http://localhost:8087/health
+# Ожидается: {"status":"healthy","service":"batch-service","version":"dev"}
+```
+
+### Порядок запуска сервисов
+
+**Правильная последовательность:**
+
+1. **Infrastructure** (если не запущено):
+   ```bash
+   docker-compose -f docker-compose.local.yml up -d postgres redis
+   ```
+
+2. **ras-grpc-gw** (ПЕРВЫМ):
+   ```bash
+   cd ../ras-grpc-gw
+   go run cmd/main.go localhost:1545
+   # Подождать 3-5 секунд для инициализации
+   ```
+
+3. **cluster-service** (зависит от ras-grpc-gw):
+   ```bash
+   cd go-services/cluster-service
+   go run cmd/main.go
+   ```
+
+4. **batch-service** (независим):
+   ```bash
+   cd go-services/batch-service
+   go run cmd/main.go
+   ```
+
+5. **Остальные сервисы**:
+   ```bash
+   ./scripts/dev/start-all.sh
+   ```
+
+**Проверка:**
+```bash
+./scripts/dev/health-check.sh
+```
+
+---
+
 ### Ключевые зависимости
 
 **Runtime dependencies:**
@@ -529,8 +795,14 @@ api-gateway:8080 ← frontend:3000
 
 ### Дополнительная информация
 
-**Версия:** 2.2
+**Версия:** 2.3
 **Последнее обновление:** 2025-11-05
+
+**Изменения в версии 2.3:**
+- Добавлена секция "🔌 Критичные сервисы" (batch-service, cluster-service, ras-grpc-gw)
+- Обновлен Troubleshooting с проблемами для критичных сервисов
+- Добавлен правильный порядок запуска сервисов
+- Детализированы API endpoints и команды запуска для критичных сервисов
 
 **Изменения в версии 2.2:**
 - Радикальная реструктуризация: Progressive Disclosure (AI INSTRUCTIONS → CONTEXT → GUIDE → REFERENCE)

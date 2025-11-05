@@ -61,6 +61,7 @@ check_process "api-gateway"
 check_process "worker"
 check_process "ras-grpc-gw"
 check_process "cluster-service"
+check_process "batch-service"
 check_process "frontend"
 
 echo ""
@@ -95,6 +96,7 @@ check_http "API Gateway" "http://localhost:8080/health"
 check_http "Orchestrator" "http://localhost:8000/health"
 check_http "ras-grpc-gw" "http://localhost:8081/health"
 check_http "Cluster Service" "http://localhost:8088/health"
+check_http "Batch Service" "http://localhost:8087/health"
 
 echo ""
 
@@ -185,6 +187,9 @@ check_port 3000 "Frontend"
 check_port 8080 "API Gateway"
 check_port 8000 "Orchestrator"
 check_port 8088 "Cluster Service"
+check_port 8087 "Batch Service"
+check_port 8081 "ras-grpc-gw HTTP"
+check_port 9999 "ras-grpc-gw gRPC"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
 
@@ -199,10 +204,10 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Подсчитать количество работающих сервисов
-TOTAL=7
+TOTAL=9
 RUNNING=0
 
-for service in orchestrator celery-worker celery-beat api-gateway worker cluster-service frontend; do
+for service in orchestrator celery-worker celery-beat api-gateway worker ras-grpc-gw cluster-service batch-service frontend; do
     pid_file="$PIDS_DIR/${service}.pid"
     if [ -f "$pid_file" ]; then
         pid=$(cat "$pid_file")

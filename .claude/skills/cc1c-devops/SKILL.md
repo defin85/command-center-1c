@@ -71,8 +71,96 @@ allowed-tools: ["Bash", "Read"]
 - `api-gateway` - Go API Gateway
 - `worker` - Go Worker
 - `cluster-service` - Go Cluster Service
+- `batch-service` - Go Batch Service (установка расширений в базы 1С)
+- `ras-grpc-gw` - RAS gRPC Gateway (внешний репозиторий)
 - `frontend` - React Frontend
 - `all` - все сервисы (только для logs.sh)
+
+## Service Details
+
+### batch-service
+- **Port:** 8087
+- **Path:** go-services/batch-service
+- **Language:** Go 1.21+
+- **Dependencies:** 1cv8.exe (путь в переменных окружения)
+- **Start:** `cd go-services/batch-service && go run cmd/main.go`
+- **Health:** http://localhost:8087/health
+- **Purpose:** Установка расширений (.cfe) в базы 1С через subprocess
+- **API Endpoints:**
+  - POST /api/v1/extensions/install - установка в одну базу
+  - POST /api/v1/extensions/batch-install - batch установка
+- **Env vars:**
+  - EXE_1CV8_PATH - путь к 1cv8.exe
+  - V8_DEFAULT_TIMEOUT - таймаут операций (default: 300 сек)
+
+### cluster-service
+- **Port:** 8088
+- **Path:** go-services/cluster-service
+- **Language:** Go 1.21+ / Gin + gRPC client
+- **Dependencies:** ras-grpc-gw (КРИТИЧНО - должен быть запущен первым)
+- **Start:** `cd go-services/cluster-service && go run cmd/main.go`
+- **Health:** http://localhost:8088/health
+- **Purpose:** Мониторинг кластеров 1С через gRPC протокол
+- **API Endpoints:**
+  - GET /api/v1/clusters?server=localhost:1545
+  - GET /api/v1/infobases?server=localhost:1545
+  - GET /api/v1/sessions?cluster=UUID (Phase 2)
+- **Env vars:**
+  - SERVER_HOST - host (default: 0.0.0.0)
+  - SERVER_PORT - port (default: 8088)
+  - GRPC_GATEWAY_ADDR - адрес ras-grpc-gw (default: localhost:9999)
+  - LOG_LEVEL - уровень логирования (default: info)
+
+### ras-grpc-gw (External)
+- **Port:** 9999 (gRPC), 8081 (HTTP health)
+- **Path:** ../ras-grpc-gw (вне monorepo)
+- **Language:** Go 1.21+ / gRPC server
+- **Dependencies:** RAS сервер 1С на порту 1545
+- **Start:** `cd ../ras-grpc-gw && go run cmd/main.go localhost:1545`
+- **Start (binary):** `cd ../ras-grpc-gw && ./bin/ras-grpc-gw.exe --bind :9999 --health :8081 localhost:1545`
+- **Health:** http://localhost:8081/health
+- **Purpose:** gRPC gateway для RAS протокола 1С Enterprise
+- **Env vars:**
+  - HEALTH_ADDR - адрес health check сервера (default: 0.0.0.0:8081)
+  - DEBUG - режим отладки (default: false)
+- **⚠️ ВАЖНО:** Запускать ПЕРВЫМ перед cluster-service!
+
+## Service Dependencies
+
+Некоторые сервисы имеют зависимости друг от друга и должны запускаться в определенном порядке:
+
+### Правильный порядок запуска:
+
+1. **Infrastructure** (PostgreSQL, Redis) - должны быть запущены первыми
+2. **ras-grpc-gw** - КРИТИЧНО запускать перед cluster-service
+3. **cluster-service** - зависит от ras-grpc-gw
+4. **batch-service** - независим, можно запускать в любой момент
+5. **Остальные сервисы** - Orchestrator, Celery, API Gateway, Workers
+
+### Граф зависимостей:
+
+```
+Infrastructure (PostgreSQL, Redis)
+  ↓
+ras-grpc-gw (внешний)
+  ↓
+cluster-service ───┐
+                   │
+batch-service ─────┼──→ Orchestrator ──→ API Gateway ──→ Frontend
+                   │         ↓
+                   └────→ Celery Workers
+```
+
+### Проверка зависимостей:
+
+Перед запуском cluster-service проверьте что ras-grpc-gw запущен:
+```bash
+curl http://localhost:8081/health
+# Ожидается: {"service":"ras-grpc-gw","status":"healthy",...}
+
+netstat -ano | findstr :9999  # Windows
+# Должен слушать порт 9999
+```
 
 ## Detailed Workflows
 
@@ -615,6 +703,116 @@ docker-compose -f docker-compose.local.yml exec redis redis-cli
 ./scripts/dev/logs.sh celery-worker | grep "ready"
 ```
 
+### Problem 8: cluster-service Connection Refused (port 9999)
+
+**Symptom:**
+```
+Error: connection refused on port 9999
+cluster-service cannot connect to ras-grpc-gw
+```
+
+**Solution:**
+```bash
+# 1. Check if ras-grpc-gw is running
+netstat -ano | findstr :9999  # Windows
+lsof -i :9999  # Linux/Mac
+
+# 2. Check ras-grpc-gw process
+ps aux | grep ras-grpc-gw  # Linux/Mac
+tasklist | findstr ras-grpc-gw.exe  # Windows
+
+# 3. Check health endpoint
+curl http://localhost:8081/health
+# Expected: {"service":"ras-grpc-gw","status":"healthy",...}
+
+# 4. Start ras-grpc-gw FIRST
+cd ../ras-grpc-gw
+go run cmd/main.go localhost:1545
+
+# Wait 3-5 seconds, then start cluster-service
+cd /c/1CProject/command-center-1c/go-services/cluster-service
+go run cmd/main.go
+```
+
+**⚠️ ВАЖНО:** ras-grpc-gw должен быть запущен ПЕРЕД cluster-service!
+
+### Problem 9: batch-service "1cv8.exe not found"
+
+**Symptom:**
+```
+Error: exec: "1cv8.exe": executable file not found
+```
+
+**Solution:**
+```bash
+# 1. Check environment variable
+echo $EXE_1CV8_PATH  # Linux/Mac/GitBash
+set EXE_1CV8_PATH  # Windows CMD
+
+# 2. Check if file exists
+ls "$EXE_1CV8_PATH"  # Linux/Mac/GitBash
+dir "%EXE_1CV8_PATH%"  # Windows CMD
+
+# 3. Set correct path in .env.local
+cat >> .env.local << EOF
+EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe
+V8_DEFAULT_TIMEOUT=300
+EOF
+
+# 4. Export in current session
+export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
+
+# 5. Restart batch-service
+cd go-services/batch-service
+go run cmd/main.go
+```
+
+### Problem 10: ras-grpc-gw "RAS server not available" (port 1545)
+
+**Symptom:**
+```
+Error: cannot connect to RAS server on port 1545
+RAS server not available
+```
+
+**Solution:**
+
+**Option 1: Start RAS server (if not running)**
+- Open 1C administration console
+- Connect to server cluster
+- Verify RAS is running on port 1545
+
+**Option 2: Change RAS port**
+```bash
+# If RAS is on different port (e.g., 1546)
+cd ../ras-grpc-gw
+go run cmd/main.go localhost:1546
+
+# Update environment for cluster-service
+export RAS_SERVER=localhost:1546
+```
+
+**Option 3: Remote RAS server**
+```bash
+# Connect to remote RAS server
+cd ../ras-grpc-gw
+go run cmd/main.go 192.168.1.100:1545
+```
+
+**Check connection:**
+```bash
+# Test telnet connection
+telnet localhost 1545
+# or
+nc -zv localhost 1545  # Linux/Mac
+
+# Check ras-grpc-gw logs
+cd ../ras-grpc-gw
+cat ras-grpc-gw.log | tail -50
+```
+
+**См. также:** [1C_ADMINISTRATION_GUIDE.md](../docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
+
 ## Advanced Operations
 
 ### Debug Specific Service
@@ -882,8 +1080,9 @@ cd ..
 
 ---
 
-**Version:** 2.0 (Local Development)
-**Last Updated:** 2025-11-03
+**Version:** 2.1 (Local Development + Critical Services)
+**Last Updated:** 2025-11-05
 **Changelog:**
+- 2.1 (2025-11-05): Add batch-service, ras-grpc-gw details, service dependencies, troubleshooting for critical services
 - 2.0 (2025-11-03): Complete rewrite for local development (host machine, not Docker)
 - 1.0 (2025-01-17): Initial release with Docker Compose workflows

@@ -46,7 +46,7 @@ export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
 ##############################################################################
 # Шаг 1: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse, ras-grpc-gw)
 ##############################################################################
-echo -e "${BLUE}[1/9] Запуск Docker сервисов...${NC}"
+echo -e "${BLUE}[1/11] Запуск Docker сервисов...${NC}"
 
 # Проверить docker-compose.local.yml
 if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
@@ -91,7 +91,7 @@ echo ""
 ##############################################################################
 # Шаг 2: Django Migrations
 ##############################################################################
-echo -e "${BLUE}[2/9] Применение миграций Django...${NC}"
+echo -e "${BLUE}[2/11] Применение миграций Django...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -107,7 +107,7 @@ echo ""
 ##############################################################################
 # Шаг 3: Django Orchestrator
 ##############################################################################
-echo -e "${BLUE}[3/9] Запуск Django Orchestrator (port 8000)...${NC}"
+echo -e "${BLUE}[3/11] Запуск Django Orchestrator (port 8000)...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -136,7 +136,7 @@ echo ""
 ##############################################################################
 # Шаг 4: Celery Worker
 ##############################################################################
-echo -e "${BLUE}[4/9] Запуск Celery Worker...${NC}"
+echo -e "${BLUE}[4/11] Запуск Celery Worker...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -162,7 +162,7 @@ echo ""
 ##############################################################################
 # Шаг 5: Celery Beat
 ##############################################################################
-echo -e "${BLUE}[5/9] Запуск Celery Beat...${NC}"
+echo -e "${BLUE}[5/11] Запуск Celery Beat...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -191,7 +191,7 @@ echo ""
 ##############################################################################
 # Шаг 6: API Gateway (Go)
 ##############################################################################
-echo -e "${BLUE}[6/9] Запуск API Gateway (port 8080)...${NC}"
+echo -e "${BLUE}[6/11] Запуск API Gateway (port 8080)...${NC}"
 
 cd "$PROJECT_ROOT/go-services/api-gateway"
 
@@ -215,7 +215,7 @@ echo ""
 ##############################################################################
 # Шаг 7: Go Worker
 ##############################################################################
-echo -e "${BLUE}[7/9] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[7/11] Запуск Go Worker...${NC}"
 
 cd "$PROJECT_ROOT/go-services/worker"
 
@@ -239,7 +239,7 @@ echo ""
 ##############################################################################
 # Шаг 8: ras-grpc-gw (Go)
 ##############################################################################
-echo -e "${BLUE}[8/10] Запуск ras-grpc-gw (port 9999)...${NC}"
+echo -e "${BLUE}[8/11] Запуск ras-grpc-gw (port 9999)...${NC}"
 
 # Проверить что директория ras-grpc-gw существует
 RAS_GW_DIR="/c/1CProject/ras-grpc-gw"
@@ -254,7 +254,7 @@ cd "$RAS_GW_DIR"
 # Загрузить .env.local
 export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
 
-nohup go run main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1541 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
+nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
 RAS_GW_PID=$!
 echo $RAS_GW_PID > "$PIDS_DIR/ras-grpc-gw.pid"
 
@@ -271,7 +271,7 @@ echo ""
 ##############################################################################
 # Шаг 9: Cluster Service (Go)
 ##############################################################################
-echo -e "${BLUE}[9/10] Запуск Cluster Service (port 8088)...${NC}"
+echo -e "${BLUE}[9/11] Запуск Cluster Service (port 8088)...${NC}"
 
 cd "$PROJECT_ROOT/go-services/cluster-service"
 
@@ -293,9 +293,33 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 10: Frontend (React)
+# Шаг 10: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[10/10] Запуск Frontend (port 3000)...${NC}"
+echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
+
+cd "$PROJECT_ROOT/go-services/batch-service"
+
+# Загрузить .env.local
+export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+
+nohup go run cmd/main.go > "$LOGS_DIR/batch-service.log" 2>&1 &
+BATCH_SERVICE_PID=$!
+echo $BATCH_SERVICE_PID > "$PIDS_DIR/batch-service.pid"
+
+sleep 2
+if kill -0 $BATCH_SERVICE_PID 2>/dev/null; then
+    echo -e "${GREEN}✓ Batch Service запущен (PID: $BATCH_SERVICE_PID)${NC}"
+else
+    echo -e "${RED}✗ Не удалось запустить Batch Service${NC}"
+    cat "$LOGS_DIR/batch-service.log"
+    exit 1
+fi
+echo ""
+
+##############################################################################
+# Шаг 11: Frontend (React)
+##############################################################################
+echo -e "${BLUE}[11/11] Запуск Frontend (port 3000)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -334,6 +358,7 @@ echo -e "  Frontend:         ${GREEN}http://localhost:3000${NC}"
 echo -e "  API Gateway:      ${GREEN}http://localhost:8080${NC}"
 echo -e "  Orchestrator:     ${GREEN}http://localhost:8000${NC}"
 echo -e "  Cluster Service:  ${GREEN}http://localhost:8088${NC}"
+echo -e "  Batch Service:    ${GREEN}http://localhost:8087${NC}"
 echo -e "  ras-grpc-gw:      ${GREEN}http://localhost:8081/health${NC} (gRPC: 9999)"
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"

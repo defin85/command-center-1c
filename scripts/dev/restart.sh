@@ -39,6 +39,7 @@ if [ -z "$1" ]; then
     echo -e "  worker            - Go Worker"
     echo -e "  ras-grpc-gw       - RAS gRPC Gateway (port 9999)"
     echo -e "  cluster-service   - Go Cluster Service (port 8088)"
+    echo -e "  batch-service     - Go Batch Service (port 8087)"
     echo -e "  frontend          - React Frontend (port 3000)"
     echo ""
     exit 1
@@ -152,12 +153,18 @@ case "$SERVICE_NAME" in
             exit 1
         fi
         cd "$RAS_GW_DIR"
-        nohup go run main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1541 > "$LOG_FILE" 2>&1 &
+        nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOG_FILE" 2>&1 &
         NEW_PID=$!
         ;;
 
     cluster-service)
         cd "$PROJECT_ROOT/go-services/cluster-service"
+        nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        NEW_PID=$!
+        ;;
+
+    batch-service)
+        cd "$PROJECT_ROOT/go-services/batch-service"
         nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
         NEW_PID=$!
         ;;
@@ -173,7 +180,7 @@ case "$SERVICE_NAME" in
         echo ""
         echo -e "${BLUE}Available services:${NC}"
         echo -e "  orchestrator, celery-worker, celery-beat, api-gateway,"
-        echo -e "  worker, ras-grpc-gw, cluster-service, frontend"
+        echo -e "  worker, ras-grpc-gw, cluster-service, batch-service, frontend"
         echo ""
         exit 1
         ;;
