@@ -1,69 +1,67 @@
 ---
-description: Check health status of all running services
+description: Check health status of all running services (local processes)
 ---
 
-Проверить статус здоровья всех работающих сервисов.
+Проверить статус здоровья всех локально запущенных сервисов.
 
-## Действия
-
-1. **Проверить Docker контейнеры**
-   ```bash
-   docker-compose ps
-   ```
-
-2. **Проверить API Gateway**
-   ```bash
-   curl -s http://localhost:8080/health | jq .
-   ```
-
-3. **Проверить Orchestrator**
-   ```bash
-   curl -s http://localhost:8000/health | jq .
-   ```
-
-4. **Проверить Frontend**
-   ```bash
-   curl -s http://localhost:3000 -I
-   ```
-
-5. **Проверить Redis**
-   ```bash
-   docker-compose exec redis redis-cli ping
-   ```
-
-6. **Проверить PostgreSQL**
-   ```bash
-   docker-compose exec postgres psql -U orchestrator -d command_center -c "SELECT 1"
-   ```
-
-7. **Проверить логи ошибок**
-   ```bash
-   docker-compose logs --tail=50 | grep ERROR
-   ```
-
-## Примеры
+## Использование
 
 ```bash
-# Все at once
-make check-health
+# Полная проверка всех сервисов
+./scripts/dev/health-check.sh
 
-# Конкретный сервис
-docker-compose logs api-gateway
-docker-compose logs orchestrator
-
-# Полные логи для отладки
-docker-compose logs --tail=100 api-gateway
-
-# Real-time logs
-docker-compose logs -f orchestrator
-
-# Логи за последний час
-docker-compose logs --since 1h api-gateway
+# Или через команду (если настроен)
+make health-check
 ```
 
-## Ожидаемые результаты
+## Что проверяется
 
-**API Gateway (8080):**
+### 1. Локальные процессы (по PID файлам)
+
+Проверяет что процессы запущены:
+
+- **orchestrator** - Django Orchestrator (PID из `pids/orchestrator.pid`)
+- **celery-worker** - Celery Worker
+- **celery-beat** - Celery Beat
+- **api-gateway** - Go API Gateway
+- **worker** - Go Worker
+- **cluster-service** - Go Cluster Service
+- **frontend** - React Frontend
+
+**Пример вывода:**
+```
+[1] Проверка локальных процессов:
+
+  orchestrator: ✓ запущен (PID: 12345)
+  celery-worker: ✓ запущен (PID: 12346)
+  celery-beat: ✓ запущен (PID: 12347)
+  api-gateway: ✓ запущен (PID: 12348)
+  worker: ✓ запущен (PID: 12349)
+  cluster-service: ✓ запущен (PID: 12350)
+  frontend: ✓ запущен (PID: 12351)
+```
+
+### 2. HTTP Endpoints
+
+Проверяет доступность HTTP endpoints:
+
+```bash
+# Frontend
+curl http://localhost:3000
+
+# API Gateway
+curl http://localhost:8080/health
+
+# Orchestrator
+curl http://localhost:8000/health
+
+# Cluster Service
+curl http://localhost:8088/health
+```
+
+**Ожидаемые ответы:**
+
+**API Gateway:**
 ```json
 {
   "status": "healthy",
@@ -72,7 +70,7 @@ docker-compose logs --since 1h api-gateway
 }
 ```
 
-**Orchestrator (8000):**
+**Orchestrator:**
 ```json
 {
   "status": "ok",
@@ -81,79 +79,250 @@ docker-compose logs --since 1h api-gateway
 }
 ```
 
-**Frontend (3000):**
+### 3. Docker Services
+
+Проверяет инфраструктурные сервисы:
+
+- **PostgreSQL** - `pg_isready` check
+- **Redis** - `redis-cli ping` check
+- **ClickHouse** - container status (опционально)
+- **ras-grpc-gw** - container status (опционально)
+
+**Пример вывода:**
 ```
-HTTP/1.1 200 OK
+[3] Проверка Docker сервисов:
+
+  PostgreSQL: ✓ запущен и готов
+  Redis: ✓ запущен и готов
+  ClickHouse: ⚠️  не запущен (опционально)
+  ras-grpc-gw: ⚠️  не запущен (опционально)
 ```
 
-**Redis:**
+### 4. Проверка соединений (детально)
+
+Проверяет валидность JSON ответов от API:
+
+- API Gateway `/health` возвращает корректный JSON
+- Orchestrator `/health` возвращает корректный JSON
+
+### 5. Статус портов
+
+Проверяет что порты открыты и слушают:
+
+- Port 3000 (Frontend)
+- Port 8080 (API Gateway)
+- Port 8000 (Orchestrator)
+- Port 8088 (Cluster Service)
+- Port 5432 (PostgreSQL)
+- Port 6379 (Redis)
+
+**Пример вывода:**
 ```
-PONG
+[5] Статус портов:
+
+  Port 3000 (Frontend): ✓ открыт
+  Port 8080 (API Gateway): ✓ открыт
+  Port 8000 (Orchestrator): ✓ открыт
+  Port 8088 (Cluster Service): ✓ открыт
+  Port 5432 (PostgreSQL): ✓ открыт
+  Port 6379 (Redis): ✓ открыт
 ```
 
-**PostgreSQL:**
+## Итоговый статус
+
+В конце выводится сводка:
+
 ```
- ?column?
-----------
-        1
+========================================
+  Итоговый статус
+========================================
+
+✓ Все сервисы запущены (7/7)
+
+Управление:
+  Запустить все:    ./scripts/dev/start-all.sh
+  Остановить все:   ./scripts/dev/stop-all.sh
+  Перезапустить:    ./scripts/dev/restart.sh <service>
+  Просмотр логов:   ./scripts/dev/logs.sh <service>
 ```
 
 ## Troubleshooting
 
-**Service not responding:**
-```bash
-# Check logs
-docker-compose logs <service-name>
+### Сервис не запущен
 
-# Restart service
-docker-compose restart <service-name>
-
-# Full restart
-docker-compose down && docker-compose up -d
+**Проблема:**
+```
+orchestrator: ✗ не запущен (PID файл не найден)
 ```
 
-**Connection refused:**
+**Решение:**
 ```bash
-# Check if port is listening
-lsof -i :<port>
+# Запустить все сервисы
+./scripts/dev/start-all.sh
 
-# Check firewall (on WSL2)
-netstat -tuln | grep <port>
+# Или только конкретный сервис
+./scripts/dev/restart.sh orchestrator
 ```
 
-**Database connection error:**
-```bash
-# Check PostgreSQL container
-docker-compose logs postgres
+### HTTP endpoint не отвечает
 
-# Check credentials
-docker-compose exec postgres psql -U orchestrator -d command_center
+**Проблема:**
+```
+API Gateway: ✗ не доступен (нет ответа)
 ```
 
-**Redis not responding:**
+**Решение:**
 ```bash
-# Check Redis logs
-docker-compose logs redis
+# Проверить логи
+./scripts/dev/logs.sh api-gateway
 
-# Test connection
-docker-compose exec redis redis-cli PING
+# Проверить что процесс запущен
+cat pids/api-gateway.pid
+ps aux | grep <pid>
+
+# Перезапустить
+./scripts/dev/restart.sh api-gateway
 ```
 
-## Metrics (Optional)
+### PostgreSQL не готов
 
-```bash
-# Check resource usage
-docker stats
-
-# Check disk usage
-docker system df
-
-# Check network
-docker network inspect command-center_default
+**Проблема:**
+```
+PostgreSQL: ⚠️  запущен, но не готов
 ```
 
-## Связанные Commands
+**Решение:**
+```bash
+# Проверить статус контейнера
+docker-compose -f docker-compose.local.yml ps postgres
 
-- `dev-start` - запустить сервисы
-- `test-all` - запустить тесты
-- `docker-logs` - просмотреть логи в detail
+# Посмотреть логи
+docker-compose -f docker-compose.local.yml logs postgres
+
+# Подождать (может инициализироваться)
+sleep 10
+./scripts/dev/health-check.sh
+
+# Если не помогло - перезапустить
+docker-compose -f docker-compose.local.yml restart postgres
+```
+
+### Redis не готов
+
+**Проблема:**
+```
+Redis: ⚠️  запущен, но не готов
+```
+
+**Решение:**
+```bash
+# Проверить подключение
+docker-compose -f docker-compose.local.yml exec redis redis-cli ping
+
+# Должен вернуть: PONG
+
+# Если не отвечает
+docker-compose -f docker-compose.local.yml restart redis
+```
+
+### Порт закрыт
+
+**Проблема:**
+```
+Port 8080 (API Gateway): ✗ закрыт
+```
+
+**Решение:**
+```bash
+# Проверить что процесс запущен
+ps aux | grep api-gateway
+
+# Проверить что порт не занят другим процессом
+netstat -ano | findstr :8080  # Windows
+lsof -i :8080                 # Linux/Mac
+
+# Проверить .env.local - возможно указан другой порт
+cat .env.local | grep PORT
+
+# Перезапустить сервис
+./scripts/dev/restart.sh api-gateway
+```
+
+## Integration с мониторингом
+
+Health check можно использовать для автоматического мониторинга:
+
+```bash
+# Периодическая проверка (каждые 30 секунд)
+watch -n 30 ./scripts/dev/health-check.sh
+
+# Или через cron
+*/5 * * * * /path/to/command-center-1c/scripts/dev/health-check.sh >> /var/log/cc1c-health.log 2>&1
+```
+
+## Exit Codes
+
+Скрипт возвращает exit code:
+- `0` - все сервисы работают нормально
+- `1` - есть проблемы с сервисами
+
+Можно использовать в CI/CD или мониторинге:
+
+```bash
+if ./scripts/dev/health-check.sh; then
+    echo "All services healthy"
+else
+    echo "Some services are down"
+    # Send alert
+fi
+```
+
+## Быстрая проверка (curl only)
+
+Если нужна только быстрая проверка HTTP endpoints:
+
+```bash
+# API Gateway
+curl -f http://localhost:8080/health || echo "API Gateway down"
+
+# Orchestrator
+curl -f http://localhost:8000/health || echo "Orchestrator down"
+
+# Frontend
+curl -f http://localhost:3000 || echo "Frontend down"
+
+# Cluster Service
+curl -f http://localhost:8088/health || echo "Cluster Service down"
+```
+
+## Проверка конкретного сервиса
+
+Для детальной проверки одного сервиса:
+
+```bash
+# 1. Проверить процесс
+cat pids/orchestrator.pid
+ps aux | grep $(cat pids/orchestrator.pid)
+
+# 2. Проверить endpoint
+curl -v http://localhost:8000/health
+
+# 3. Проверить логи
+tail -f logs/orchestrator.log
+
+# 4. Проверить соединение с БД (для Django)
+cd orchestrator
+python manage.py check --database default
+```
+
+## Related Commands
+
+- `/dev-start` - запустить все сервисы
+- `/run-migrations` - применить миграции
+
+## Related Scripts
+
+- `./scripts/dev/start-all.sh` - запустить все
+- `./scripts/dev/stop-all.sh` - остановить все
+- `./scripts/dev/restart.sh <service>` - перезапустить сервис
+- `./scripts/dev/logs.sh <service>` - просмотр логов

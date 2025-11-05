@@ -1,0 +1,103 @@
+version: '3.9'
+
+##############################################################################
+# CommandCenter1C - Local Development (Infrastructure Only)
+##############################################################################
+# Этот docker-compose файл запускает ТОЛЬКО инфраструктурные сервисы:
+# - PostgreSQL
+# - Redis
+# - ClickHouse (опционально)
+#
+# Все application сервисы (API Gateway, Orchestrator, Workers, Frontend, ras-grpc-gw)
+# запускаются локально на хост-машине через scripts/dev/start-all.sh
+##############################################################################
+
+services:
+  ##############################################################################
+  # PostgreSQL - Primary Database
+  ##############################################################################
+  postgres:
+    image: postgres:15-alpine
+    container_name: cc1c-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-commandcenter}
+      POSTGRES_USER: ${DB_USER:-commandcenter}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-commandcenter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cc1c-local
+
+  ##############################################################################
+  # Redis - Message Queue and Cache
+  ##############################################################################
+  redis:
+    image: redis:7-alpine
+    container_name: cc1c-redis-local
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data_local:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cc1c-local
+
+  ##############################################################################
+  # ClickHouse - Analytics Database (Optional)
+  ##############################################################################
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: cc1c-clickhouse-local
+    restart: unless-stopped
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native protocol
+    volumes:
+      - clickhouse_data_local:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: commandcenter
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cc1c-local
+    profiles:
+      - analytics
+
+##############################################################################
+# Networks
+##############################################################################
+networks:
+  cc1c-local:
+    name: cc1c-local-network
+    driver: bridge
+
+##############################################################################
+# Volumes
+##############################################################################
+volumes:
+  postgres_data_local:
+    name: cc1c-postgres-local-data
+  redis_data_local:
+    name: cc1c-redis-local-data
+  clickhouse_data_local:
+    name: cc1c-clickhouse-local-data

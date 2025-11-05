@@ -1,6 +1,6 @@
 ---
 name: cc1c-devops
-description: "Execute DevOps tasks for CommandCenter1C: start/stop services with Docker Compose, check health endpoints, view logs, run migrations, build Docker images. Use when user needs to start development environment, check service status, debug deployment issues, or mentions docker, compose, health checks, logs."
+description: "Execute DevOps tasks for CommandCenter1C: start/stop services locally (host machine), check health endpoints, view logs, run migrations. Use when user needs to start development environment, check service status, debug deployment issues, or mentions local development, health checks, logs, restart."
 allowed-tools: ["Bash", "Read"]
 ---
 
@@ -8,306 +8,442 @@ allowed-tools: ["Bash", "Read"]
 
 ## Purpose
 
-Управлять DevOps операциями для локальной разработки и deployment проекта CommandCenter1C.
+Управлять DevOps операциями для локальной разработки проекта CommandCenter1C.
+
+**ВАЖНО:** Этот skill предназначен для **локального запуска сервисов на хост-машине**, а НЕ в Docker контейнерах (кроме инфраструктурных сервисов).
 
 ## When to Use
 
 Используй этот skill когда:
-- Запуск/остановка локального окружения
-- Проверка статуса сервисов
-- Просмотр логов
-- Проблемы с Docker/Docker Compose
-- Пользователь упоминает: docker, compose, logs, health, start, stop, restart, build
+- Запуск/остановка локального окружения разработки
+- Проверка статуса сервисов (PID, HTTP endpoints, порты)
+- Просмотр логов локальных процессов
+- Перезапуск конкретных сервисов
+- Отладка проблем с запуском
+- Пользователь упоминает: start, stop, restart, logs, health, status, local development
+
+## Architecture Overview
+
+### Infrastructure (Docker)
+Запускаются в Docker контейнерах:
+- **PostgreSQL** (port 5432) - primary database
+- **Redis** (port 6379) - message queue and cache
+- **ClickHouse** (ports 8123, 9000) - analytics (опционально)
+- **ras-grpc-gw** (port 9999) - 1C RAS gateway (опционально)
+
+### Application Services (Host Machine)
+Запускаются локально на хост-машине:
+- **Django Orchestrator** (port 8000) - business logic orchestration
+- **Celery Worker** - async task processing
+- **Celery Beat** - task scheduler
+- **Go API Gateway** (port 8080) - HTTP routing, auth
+- **Go Worker** - parallel 1C operations processing
+- **Go Cluster Service** (port 8088) - 1C cluster management
+- **React Frontend** (port 3000) - UI
 
 ## Quick Start Commands
 
-### Essential Commands (Makefile)
+### Essential Commands
 
 ```bash
-# Start all services
-make dev
+# Запустить все сервисы
+./scripts/dev/start-all.sh
 
-# Stop all services
-make stop
+# Проверить статус
+./scripts/dev/health-check.sh
 
-# View logs (all services)
-make logs
+# Просмотр логов
+./scripts/dev/logs.sh <service-name>
+./scripts/dev/logs.sh all
 
-# View logs (specific service)
-make logs-api          # API Gateway
-make logs-orchestrator # Django Orchestrator
-make logs-worker       # Go Workers
-make logs-frontend     # React Frontend
+# Перезапустить сервис
+./scripts/dev/restart.sh <service-name>
 
-# Restart services
-make restart
-
-# Run tests
-make test
-
-# Check status
-make ps
+# Остановить все
+./scripts/dev/stop-all.sh
 ```
 
-## Detailed Makefile Commands
+### Available Service Names
 
-### Development Workflow
+- `orchestrator` - Django Orchestrator
+- `celery-worker` - Celery Worker
+- `celery-beat` - Celery Beat
+- `api-gateway` - Go API Gateway
+- `worker` - Go Worker
+- `cluster-service` - Go Cluster Service
+- `frontend` - React Frontend
+- `all` - все сервисы (только для logs.sh)
+
+## Detailed Workflows
+
+### First Time Setup
 
 ```bash
-# First time setup
-make setup              # Install all dependencies
-cp .env.example .env   # Copy environment template
-make dev               # Start all services
+# 1. Клонировать репозиторий
+cd /c/1CProject
+git clone <repo-url> command-center-1c
+cd command-center-1c
 
-# Daily development
-make dev               # Start everything
-make logs              # Watch logs
-make stop              # Stop when done
+# 2. Создать .env.local файл
+cp .env.local.example .env.local
 
-# Testing
-make test              # Run all tests
-make test-go           # Go tests only
-make test-django       # Django tests only
-make test-frontend     # Frontend tests only
+# 3. Отредактировать .env.local под свое окружение
+nano .env.local
 
-# Cleanup
-make clean             # Remove containers and volumes
-make clean-all         # Nuclear option - remove everything
+# 4. Установить Python зависимости
+cd orchestrator
+python -m venv venv
+source venv/bin/activate  # или venv/Scripts/activate на Windows
+pip install -r requirements.txt
+cd ..
+
+# 5. Установить Node.js зависимости
+cd frontend
+npm install
+cd ..
+
+# 6. Запустить все сервисы
+./scripts/dev/start-all.sh
+
+# 7. Проверить что все запустилось
+./scripts/dev/health-check.sh
 ```
 
-### Service Management
+### Daily Development Workflow
 
 ```bash
-# Individual service control
-make start-api         # Start API Gateway only
-make start-orchestrator # Start Django only
-make start-worker      # Start Workers only
-make start-frontend    # Start Frontend only
+# Запустить окружение
+./scripts/dev/start-all.sh
 
-make stop-api          # Stop specific service
-make stop-orchestrator
-make stop-worker
-make stop-frontend
+# Следить за логами (в отдельном терминале)
+./scripts/dev/logs.sh all
 
-make restart-api       # Restart specific service
-make restart-orchestrator
-make restart-worker
-make restart-frontend
+# Работать с кодом...
+
+# При изменении кода - перезапустить сервис
+./scripts/dev/restart.sh orchestrator
+./scripts/dev/restart.sh api-gateway
+
+# Проверить health
+./scripts/dev/health-check.sh
+
+# В конце дня - остановить
+./scripts/dev/stop-all.sh
 ```
 
-### Database Operations
+### Testing Changes
 
 ```bash
-# Django migrations
-make migrate           # Run migrations
-make makemigrations    # Create new migrations
-make shell-db          # PostgreSQL psql shell
-make shell-orchestrator # Django shell
+# 1. Изменить код...
 
-# Database reset (⚠️ DESTRUCTIVE)
-make db-reset          # Drop and recreate database
+# 2. Перезапустить измененный сервис
+./scripts/dev/restart.sh orchestrator
+
+# 3. Проверить логи
+./scripts/dev/logs.sh orchestrator
+
+# 4. Проверить health endpoint
+curl http://localhost:8000/health
+
+# 5. Запустить тесты
+cd orchestrator
+pytest
+cd ..
 ```
 
-### Building
+## Service Management
+
+### Start All Services
 
 ```bash
-# Build Docker images
-make build             # Build all images
-make build-api         # Build API Gateway
-make build-orchestrator # Build Django
-make build-worker      # Build Worker
-make build-frontend    # Build Frontend
-
-# Rebuild (no cache)
-make rebuild           # Rebuild all from scratch
+./scripts/dev/start-all.sh
 ```
 
-## Health Check Endpoints
+**Порядок запуска:**
+1. Docker Infrastructure (PostgreSQL, Redis)
+2. Django Migrations
+3. Django Orchestrator
+4. Celery Worker & Beat
+5. Go API Gateway
+6. Go Worker
+7. Go Cluster Service
+8. React Frontend
 
-### Service Health Status
+**Что создается:**
+- `pids/<service>.pid` - PID файлы для управления процессами
+- `logs/<service>.log` - лог файлы сервисов
+
+### Stop All Services
+
+```bash
+./scripts/dev/stop-all.sh
+```
+
+**Порядок остановки:**
+1. Application services (graceful SIGTERM → force SIGKILL)
+2. Docker infrastructure (docker-compose down)
+
+**Очистка:**
+- Удаляет PID файлы
+- Останавливает Docker контейнеры
+- Проверяет остаточные процессы на портах
+
+### Restart Specific Service
+
+```bash
+./scripts/dev/restart.sh <service-name>
+```
+
+**Примеры:**
+```bash
+./scripts/dev/restart.sh orchestrator
+./scripts/dev/restart.sh api-gateway
+./scripts/dev/restart.sh frontend
+```
+
+**Что происходит:**
+1. Читает PID из `pids/<service>.pid`
+2. Graceful shutdown (SIGTERM)
+3. Ожидает завершения (10 секунд)
+4. Force kill если не завершился (SIGKILL)
+5. Запускает заново
+6. Сохраняет новый PID
+7. Проверяет что процесс запустился
+
+## Health Check
+
+### Automated Health Check
+
+```bash
+./scripts/dev/health-check.sh
+```
+
+**Что проверяется:**
+
+1. **Локальные процессы** (по PID файлам):
+   - Проверяет что процессы запущены
+   - Показывает PID каждого сервиса
+
+2. **HTTP Endpoints**:
+   - Frontend: http://localhost:3000
+   - API Gateway: http://localhost:8080/health
+   - Orchestrator: http://localhost:8000/health
+   - Cluster Service: http://localhost:8088/health
+
+3. **Docker Services**:
+   - PostgreSQL: `pg_isready` check
+   - Redis: `redis-cli ping` check
+   - ClickHouse: container status
+   - ras-grpc-gw: container status
+
+4. **Соединения**:
+   - Проверка JSON ответов от API
+   - Валидация структуры health responses
+
+5. **Порты**:
+   - Проверка что порты открыты и слушают
+   - Ports: 3000, 8080, 8000, 8088, 5432, 6379
+
+**Пример вывода:**
+```
+========================================
+  CommandCenter1C - Health Check
+========================================
+
+[1] Проверка локальных процессов:
+
+  orchestrator: ✓ запущен (PID: 12345)
+  celery-worker: ✓ запущен (PID: 12346)
+  celery-beat: ✓ запущен (PID: 12347)
+  api-gateway: ✓ запущен (PID: 12348)
+  worker: ✓ запущен (PID: 12349)
+  cluster-service: ✓ запущен (PID: 12350)
+  frontend: ✓ запущен (PID: 12351)
+
+[2] Проверка HTTP endpoints:
+
+  Frontend: ✓ доступен (HTTP 200)
+  API Gateway: ✓ доступен (HTTP 200)
+  Orchestrator: ✓ доступен (HTTP 200)
+  Cluster Service: ✓ доступен (HTTP 200)
+
+[3] Проверка Docker сервисов:
+
+  PostgreSQL: ✓ запущен и готов
+  Redis: ✓ запущен и готов
+  ClickHouse: ⚠️  не запущен (опционально)
+  ras-grpc-gw: ⚠️  не запущен (опционально)
+
+========================================
+  Итоговый статус
+========================================
+
+✓ Все сервисы запущены (7/7)
+```
+
+### Manual Health Checks
 
 ```bash
 # API Gateway
 curl http://localhost:8080/health
-
-# Expected response:
-# {
-#   "status": "healthy",
-#   "service": "api-gateway",
-#   "timestamp": "2025-01-17T10:00:00Z"
-# }
+# Expected: {"status":"healthy","version":"1.0.0","uptime":"2h 30m"}
 
 # Django Orchestrator
 curl http://localhost:8000/health
-
-# Expected response:
-# {
-#   "status": "healthy",
-#   "service": "orchestrator",
-#   "database": "connected",
-#   "redis": "connected"
-# }
+# Expected: {"status":"ok","database":"connected","redis":"connected"}
 
 # Frontend
 curl http://localhost:3000
+# Expected: HTTP 200 OK
 
-# Should return 200 OK with HTML
+# Cluster Service
+curl http://localhost:8088/health
+# Expected: {"status":"healthy"}
+
+# PostgreSQL
+docker-compose -f docker-compose.local.yml exec postgres pg_isready
+# Expected: accepting connections
+
+# Redis
+docker-compose -f docker-compose.local.yml exec redis redis-cli ping
+# Expected: PONG
 ```
 
-### Automated Health Check Script
+## Log Management
+
+### View Service Logs
 
 ```bash
-#!/bin/bash
-# health-check.sh
+# Tail logs для конкретного сервиса (follow mode)
+./scripts/dev/logs.sh <service-name>
 
-echo "Checking CommandCenter1C services..."
+# Указать количество строк
+./scripts/dev/logs.sh orchestrator 200
+
+# Все логи (последние 10 строк каждого)
+./scripts/dev/logs.sh all
+```
+
+**Примеры:**
+```bash
+# Django Orchestrator
+./scripts/dev/logs.sh orchestrator
 
 # API Gateway
-if curl -s http://localhost:8080/health | grep -q "healthy"; then
-    echo "✓ API Gateway: healthy"
-else
-    echo "✗ API Gateway: unhealthy"
-fi
-
-# Orchestrator
-if curl -s http://localhost:8000/health | grep -q "healthy"; then
-    echo "✓ Orchestrator: healthy"
-else
-    echo "✗ Orchestrator: unhealthy"
-fi
+./scripts/dev/logs.sh api-gateway
 
 # Frontend
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
-    echo "✓ Frontend: healthy"
-else
-    echo "✗ Frontend: unhealthy"
-fi
+./scripts/dev/logs.sh frontend
+
+# Celery Worker
+./scripts/dev/logs.sh celery-worker
 ```
 
-## Docker Compose Reference
-
-### Service Ports
+### Log File Locations
 
 ```
-Frontend:           http://localhost:3000
-API Gateway:        http://localhost:8080
-Django Orchestrator: http://localhost:8000
-PostgreSQL:         localhost:5432
-Redis:              localhost:6379
+logs/
+├── orchestrator.log       # Django runserver output
+├── celery-worker.log      # Celery worker tasks
+├── celery-beat.log        # Celery beat scheduler
+├── api-gateway.log        # Go API Gateway
+├── worker.log             # Go Worker
+├── cluster-service.log    # Go Cluster Service
+└── frontend.log           # React dev server (Vite)
 ```
 
-### Container Names
-
-```
-cc1c-frontend
-cc1c-api-gateway
-cc1c-orchestrator
-cc1c-worker
-cc1c-postgres
-cc1c-redis
-cc1c-celery-worker
-```
-
-### Docker Compose Commands
+### Log Analysis
 
 ```bash
-# Start services
-docker-compose up -d
+# Ошибки в логах Orchestrator
+grep ERROR logs/orchestrator.log
 
-# Start with rebuild
-docker-compose up -d --build
+# Последние 100 строк с ошибками
+tail -n 100 logs/orchestrator.log | grep -i error
 
-# Stop services
-docker-compose down
+# Логи за последний час (если есть timestamps)
+tail -n 1000 logs/api-gateway.log | grep "$(date +%H:)"
 
-# Stop and remove volumes (⚠️ removes data)
-docker-compose down -v
+# Логи всех сервисов с фильтром
+grep -i "connection refused" logs/*.log
 
-# View logs
-docker-compose logs -f
-
-# View logs for specific service
-docker-compose logs -f api-gateway
-docker-compose logs -f orchestrator
-docker-compose logs -f worker
-
-# Check status
-docker-compose ps
-
-# Execute command in container
-docker-compose exec orchestrator python manage.py shell
-docker-compose exec postgres psql -U postgres
-docker-compose exec redis redis-cli
-
-# Scale workers
-docker-compose up -d --scale worker=5
+# Следить за логами нескольких сервисов
+tail -f logs/orchestrator.log logs/api-gateway.log
 ```
 
-## Log Analysis
-
-### Log Locations
-
-**Docker logs (через docker-compose):**
-```bash
-docker-compose logs -f api-gateway
-docker-compose logs -f orchestrator
-docker-compose logs -f worker
-docker-compose logs -f celery-worker
-```
-
-**Persistent logs (если настроены volumes):**
-```
-./logs/api-gateway/
-./logs/orchestrator/
-./logs/worker/
-./logs/celery/
-```
-
-### Log Filtering
+### Docker Service Logs
 
 ```bash
-# Show only errors
-docker-compose logs | grep ERROR
+# PostgreSQL
+docker-compose -f docker-compose.local.yml logs postgres
 
-# Show last 100 lines
-docker-compose logs --tail=100
+# Redis
+docker-compose -f docker-compose.local.yml logs redis
 
-# Show logs since specific time
-docker-compose logs --since 2025-01-17T10:00:00
+# Follow mode
+docker-compose -f docker-compose.local.yml logs -f postgres
 
-# Follow logs for specific service
-docker-compose logs -f orchestrator | grep -i "operation"
-
-# Filter by log level
-docker-compose logs orchestrator | grep -E "(ERROR|WARNING)"
+# Last 100 lines
+docker-compose -f docker-compose.local.yml logs --tail=100 redis
 ```
 
-### Common Log Patterns
+## Environment Configuration
 
-**API Gateway logs:**
-```
-INFO: Request started GET /api/operations
-INFO: Auth validated for user: admin
-INFO: Proxying to orchestrator: http://orchestrator:8000/operations
-INFO: Request completed in 125ms
-```
+### .env.local File
 
-**Django Orchestrator logs:**
-```
-INFO: Operation created: operation_id=123
-INFO: Celery task dispatched: task_id=abc-123
-INFO: Processing operation for 50 databases
-WARNING: Database connection retry (1/3)
-ERROR: Failed to process operation: timeout
+**КРИТИЧНО:** Локальная разработка использует `.env.local`, НЕ `.env`!
+
+```bash
+# Создать из примера
+cp .env.local.example .env.local
+
+# Отредактировать
+nano .env.local
 ```
 
-**Worker logs:**
+### Key Differences from Docker Environment
+
+**Docker compose (.env):**
+```bash
+DB_HOST=postgres           # service name
+REDIS_HOST=redis           # service name
+ORCHESTRATOR_URL=http://orchestrator:8000
 ```
-INFO: Worker started, pool size: 50
-INFO: Processing task: task_id=abc-123
-INFO: OData request to base_001: POST Catalog_Users
-INFO: Batch completed: 50/50 successful
-ERROR: OData request failed: connection timeout
+
+**Local development (.env.local):**
+```bash
+DB_HOST=localhost          # host machine
+REDIS_HOST=localhost       # host machine
+ORCHESTRATOR_URL=http://localhost:8000
+```
+
+### Essential Variables
+
+```bash
+# Django
+DJANGO_SECRET_KEY=your-secret
+DEBUG=True
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=commandcenter
+DB_USER=commandcenter
+DB_PASSWORD=password
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Go Services
+SERVER_PORT=8080
+ORCHESTRATOR_URL=http://localhost:8000
+
+# Celery
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+
+# Frontend
+VITE_API_URL=http://localhost:8080/api/v1
+VITE_WS_URL=ws://localhost:8080/ws
 ```
 
 ## Troubleshooting
@@ -315,21 +451,23 @@ ERROR: OData request failed: connection timeout
 ### Problem 1: Services Won't Start
 
 **Symptom:**
-```bash
-make dev
-# ERROR: port already in use
+```
+Error: listen tcp :8080: bind: address already in use
 ```
 
 **Solution:**
 ```bash
-# Check what's using the port
-netstat -ano | findstr :8080    # Windows
-lsof -i :8080                   # Linux/Mac
+# Windows (GitBash)
+netstat -ano | findstr :8080
+taskkill /PID <pid> /F
 
-# Kill the process or change port in .env
-# Then restart
-make stop
-make dev
+# Linux/Mac
+lsof -i :8080
+kill -9 <pid>
+
+# Or stop all and restart
+./scripts/dev/stop-all.sh
+./scripts/dev/start-all.sh
 ```
 
 ### Problem 2: Database Connection Errors
@@ -341,331 +479,411 @@ django.db.utils.OperationalError: could not connect to server
 
 **Solution:**
 ```bash
-# Check if PostgreSQL container is running
-docker-compose ps postgres
+# Check if PostgreSQL is running
+docker-compose -f docker-compose.local.yml ps postgres
 
 # Check logs
-docker-compose logs postgres
+docker-compose -f docker-compose.local.yml logs postgres
 
 # Restart database
-docker-compose restart postgres
+docker-compose -f docker-compose.local.yml restart postgres
 
-# Wait for it to be ready
-docker-compose exec postgres pg_isready
+# Wait for ready
+docker-compose -f docker-compose.local.yml exec postgres pg_isready
 
-# Run migrations
-make migrate
+# Check .env.local
+cat .env.local | grep DB_HOST
+# Should be: DB_HOST=localhost (NOT postgres)
 ```
 
 ### Problem 3: Redis Connection Issues
 
 **Symptom:**
 ```
-redis.exceptions.ConnectionError: Connection refused
+redis.exceptions.ConnectionError: Error 10061 connecting to localhost:6379
 ```
 
 **Solution:**
 ```bash
 # Check Redis status
-docker-compose ps redis
+docker-compose -f docker-compose.local.yml ps redis
 
 # Test connection
-docker-compose exec redis redis-cli ping
+docker-compose -f docker-compose.local.yml exec redis redis-cli ping
 # Should return: PONG
 
 # Restart Redis
-docker-compose restart redis
+docker-compose -f docker-compose.local.yml restart redis
+
+# Check .env.local
+cat .env.local | grep REDIS_HOST
+# Should be: REDIS_HOST=localhost (NOT redis)
 ```
 
-### Problem 4: Worker Not Processing Tasks
+### Problem 4: Process Not Starting
 
 **Symptom:**
-- Operations stuck in "pending" status
-- No worker logs
+```
+✗ Не удалось запустить Django Orchestrator
+```
 
 **Solution:**
 ```bash
-# Check if worker is running
-docker-compose ps worker
+# 1. Check logs
+cat logs/orchestrator.log
 
-# Check worker logs
-docker-compose logs worker
+# 2. Run manually for debugging
+cd orchestrator
+source venv/bin/activate
+python manage.py runserver 0.0.0.0:8000
 
-# Check Redis queue
-docker-compose exec redis redis-cli
-> LLEN operations_queue
-> LRANGE operations_queue 0 -1
+# 3. Check dependencies
+pip install -r requirements.txt
 
-# Restart worker
-docker-compose restart worker
+# 4. Check database connection
+python manage.py check --database default
+
+# 5. Check migrations
+python manage.py showmigrations
 ```
 
 ### Problem 5: Frontend Not Loading
 
 **Symptom:**
 ```
-Cannot GET /
+Module not found: Can't resolve 'react'
 ```
 
 **Solution:**
 ```bash
-# Check if frontend container is running
-docker-compose ps frontend
+cd frontend
+
+# Install dependencies
+npm install
+
+# Clear cache
+rm -rf node_modules package-lock.json
+npm install
+
+# Run manually
+npm run dev
 
 # Check logs
-docker-compose logs frontend
-
-# Rebuild frontend
-docker-compose up -d --build frontend
-
-# Check if API is accessible
-curl http://localhost:8080/health
+cat ../logs/frontend.log
 ```
 
-### Problem 6: Out of Disk Space
+### Problem 6: PID Files Lost/Corrupted
 
 **Symptom:**
 ```
-ERROR: no space left on device
+⚠️  orchestrator: PID файл не найден
 ```
 
 **Solution:**
 ```bash
-# Remove unused Docker resources
-docker system prune -a
+# Clean up and restart
+rm -rf pids/*.pid
 
-# Remove volumes (⚠️ removes data)
-docker volume prune
+# Kill any remaining processes by port
+netstat -ano | findstr :8080  # Find PID
+taskkill /PID <pid> /F        # Kill it
 
-# Remove specific old images
-docker images
-docker rmi <image_id>
-
-# Clean project build artifacts
-make clean
+# Start fresh
+./scripts/dev/start-all.sh
 ```
 
-## Environment Variables
+### Problem 7: Celery Tasks Not Processing
 
-### .env File Structure
+**Symptom:**
+- Operations stuck in "pending"
+- No worker activity
 
+**Solution:**
 ```bash
-# Application
-ENV=development
-DEBUG=true
+# Check Celery Worker logs
+./scripts/dev/logs.sh celery-worker
 
-# Ports
-FRONTEND_PORT=3000
-API_GATEWAY_PORT=8080
-ORCHESTRATOR_PORT=8000
-
-# Database
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=commandcenter
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_password
-
-# Redis
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_DB=0
-
-# 1C Connection
-ONEC_BASE_URL=http://your-1c-server/base/odata/standard.odata
-ONEC_USERNAME=admin
-ONEC_PASSWORD=password
-
-# Workers
-WORKER_POOL_SIZE=50
-WORKER_TIMEOUT=30
-
-# Celery
-CELERY_BROKER_URL=redis://redis:6379/0
-CELERY_RESULT_BACKEND=redis://redis:6379/1
-```
-
-## Performance Monitoring
-
-### Container Resource Usage
-
-```bash
-# Real-time stats
-docker stats
-
-# Specific container
-docker stats cc1c-worker
-
-# Expected resource usage (Phase 1):
-# API Gateway:     CPU: 5-10%,   RAM: 50-100MB
-# Orchestrator:    CPU: 10-20%,  RAM: 200-300MB
-# Worker:          CPU: 20-50%,  RAM: 100-200MB
-# Frontend:        CPU: 5-10%,   RAM: 100-200MB
-# PostgreSQL:      CPU: 5-15%,   RAM: 200-400MB
-# Redis:           CPU: 1-5%,    RAM: 50-100MB
-```
-
-### Database Performance
-
-```bash
-# Connect to PostgreSQL
-docker-compose exec postgres psql -U postgres -d commandcenter
-
-# Check active connections
-SELECT count(*) FROM pg_stat_activity;
-
-# Slow queries
-SELECT query, calls, total_time, mean_time
-FROM pg_stat_statements
-ORDER BY mean_time DESC
-LIMIT 10;
-
-# Database size
-SELECT pg_size_pretty(pg_database_size('commandcenter'));
-
-# Table sizes
-SELECT tablename, pg_size_pretty(pg_total_relation_size(tablename::text))
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size(tablename::text) DESC;
-```
-
-### Redis Monitoring
-
-```bash
-# Connect to Redis
-docker-compose exec redis redis-cli
-
-# Check info
-> INFO
-
-# Queue lengths
+# Check Redis queue
+docker-compose -f docker-compose.local.yml exec redis redis-cli
 > LLEN operations_queue
-> LLEN results_queue
+> LRANGE operations_queue 0 -1
 
-# Memory usage
-> INFO memory
+# Restart Celery Worker
+./scripts/dev/restart.sh celery-worker
 
-# Connected clients
-> CLIENT LIST
+# Check worker is connected
+./scripts/dev/logs.sh celery-worker | grep "ready"
 ```
 
-## Deployment Checklist
+## Advanced Operations
 
-### Pre-deployment
+### Debug Specific Service
 
-- [ ] All tests passing (`make test`)
-- [ ] Migrations created and tested (`make migrate`)
-- [ ] Environment variables configured (`.env`)
-- [ ] Health checks responding
-- [ ] Logs show no errors
-- [ ] Database backed up
+```bash
+# Stop all except infrastructure
+./scripts/dev/stop-all.sh
 
-### Post-deployment
+# Start only infrastructure
+docker-compose -f docker-compose.local.yml up -d
 
-- [ ] All services started successfully
-- [ ] Health checks passing
-- [ ] Can create operations
-- [ ] Workers processing tasks
-- [ ] Frontend accessible
-- [ ] Monitoring enabled
+# Run Django migrations
+cd orchestrator
+source venv/bin/activate
+python manage.py migrate
+
+# Run service manually (foreground, with full output)
+python manage.py runserver 0.0.0.0:8000
+```
+
+### Scale Workers
+
+```bash
+# Start multiple Go Workers
+for i in {1..5}; do
+    cd go-services/worker
+    nohup go run cmd/main.go > ../../logs/worker-$i.log 2>&1 &
+    echo $! > ../../pids/worker-$i.pid
+    cd ../..
+done
+
+# Stop all workers
+for pid_file in pids/worker-*.pid; do
+    if [ -f "$pid_file" ]; then
+        pid=$(cat "$pid_file")
+        kill -TERM "$pid" 2>/dev/null || true
+        rm -f "$pid_file"
+    fi
+done
+```
+
+### Run with Specific Profiles
+
+```bash
+# Start with ClickHouse
+docker-compose -f docker-compose.local.yml --profile analytics up -d
+
+# Start with ras-grpc-gw
+docker-compose -f docker-compose.local.yml --profile ras up -d
+
+# Start with all profiles
+docker-compose -f docker-compose.local.yml --profile analytics --profile ras up -d
+```
+
+### Hot Reload Setup (Go services)
+
+```bash
+# Install air for Go hot reload
+go install github.com/cosmtrek/air@latest
+
+# In go-services/api-gateway
+cd go-services/api-gateway
+air  # Will auto-restart on code changes
+
+# In go-services/cluster-service
+cd go-services/cluster-service
+air  # Will auto-restart on code changes
+```
+
+### Check Resource Usage
+
+```bash
+# Process resource usage (Windows)
+for pid_file in pids/*.pid; do
+    if [ -f "$pid_file" ]; then
+        service=$(basename "$pid_file" .pid)
+        pid=$(cat "$pid_file")
+        echo "=== $service (PID: $pid) ==="
+        tasklist //FI "PID eq $pid" //FO TABLE
+    fi
+done
+
+# Docker resource usage
+docker stats --no-stream
+
+# Disk usage
+docker system df
+du -sh logs/
+```
+
+## Migration Management
+
+```bash
+# Create new migration
+cd orchestrator
+source venv/bin/activate
+python manage.py makemigrations
+
+# Apply migrations
+python manage.py migrate
+
+# Show migrations status
+python manage.py showmigrations
+
+# Rollback migration
+python manage.py migrate <app_name> <migration_number>
+
+# Fake migration (mark as applied without running)
+python manage.py migrate --fake <app_name> <migration_number>
+```
 
 ## Common Scenarios
 
-### Scenario 1: Starting Fresh Development Session
+### Scenario 1: Fresh Start After Git Pull
 
 ```bash
 # Pull latest changes
 git pull
 
-# Start services
-make dev
+# Update dependencies (if changed)
+cd orchestrator
+source venv/bin/activate
+pip install -r requirements.txt
+cd ..
 
-# Check everything is up
-make ps
+cd frontend
+npm install
+cd ..
 
-# Watch logs
-make logs
-```
+# Run migrations (if any)
+cd orchestrator
+python manage.py migrate
+cd ..
 
-### Scenario 2: Testing Changes
-
-```bash
-# Make code changes...
-
-# Rebuild affected service
-make build-orchestrator
-
-# Restart service
-make restart-orchestrator
-
-# Check logs
-make logs-orchestrator
-
-# Run tests
-make test-django
-```
-
-### Scenario 3: Debugging Production Issue
-
-```bash
-# Connect to production server (via SSH)
-ssh user@production-server
-
-# Check service status
-make ps
-
-# Check logs
-make logs | grep ERROR
+# Restart all services
+./scripts/dev/stop-all.sh
+./scripts/dev/start-all.sh
 
 # Check health
-curl http://localhost:8080/health
+./scripts/dev/health-check.sh
+```
 
-# Check database
-make shell-db
+### Scenario 2: Debugging Production Issue Locally
+
+```bash
+# Reproduce issue locally
+./scripts/dev/start-all.sh
+
+# Enable debug logging in .env.local
+echo "LOG_LEVEL=debug" >> .env.local
+
+# Restart affected service
+./scripts/dev/restart.sh orchestrator
+
+# Follow logs
+./scripts/dev/logs.sh orchestrator
+
+# Test the issue
+curl -X POST http://localhost:8000/api/operations ...
+
+# Check logs for errors
+grep ERROR logs/orchestrator.log
+```
+
+### Scenario 3: Testing Database Migration
+
+```bash
+# Backup database first
+docker-compose -f docker-compose.local.yml exec postgres pg_dump -U commandcenter commandcenter > backup.sql
+
+# Create migration
+cd orchestrator
+python manage.py makemigrations
+
+# Check migration
+python manage.py sqlmigrate <app> <migration_number>
+
+# Apply migration
+python manage.py migrate
+
+# Test migration
+python manage.py shell
+>>> from apps.operations.models import Operation
+>>> Operation.objects.all()
+
+# If something goes wrong - restore
+docker-compose -f docker-compose.local.yml exec -T postgres psql -U commandcenter commandcenter < backup.sql
 ```
 
 ### Scenario 4: Complete Reset
 
 ```bash
 # Stop everything
-make stop
+./scripts/dev/stop-all.sh
 
-# Remove all containers and volumes
-make clean-all
+# Remove Docker volumes (⚠️ removes all data)
+docker-compose -f docker-compose.local.yml down -v
 
-# Rebuild from scratch
-make setup
+# Clear logs and PIDs
+rm -rf logs/*.log pids/*.pid
 
-# Start fresh
-make dev
+# Start infrastructure
+docker-compose -f docker-compose.local.yml up -d
+
+# Wait for database
+sleep 10
 
 # Run migrations
-make migrate
+cd orchestrator
+source venv/bin/activate
+python manage.py migrate
+python manage.py createsuperuser  # if needed
+cd ..
 
-# Load fixtures (if any)
-python manage.py loaddata initial_data
+# Start all services
+./scripts/dev/start-all.sh
+
+# Check health
+./scripts/dev/health-check.sh
 ```
 
-## References
+## Performance Monitoring
 
-- Main Makefile: `Makefile` (root directory)
-- Docker Compose: `docker-compose.yml`
-- Environment template: `.env.example`
-- Project documentation: `CLAUDE.md`
-- Quick start guide: `docs/START_HERE.md`
+### Monitor Live
+
+```bash
+# Watch health check every 5 seconds
+watch -n 5 ./scripts/dev/health-check.sh
+
+# Monitor specific port traffic
+netstat -ano | findstr :8080  # Windows
+
+# Monitor logs for errors
+tail -f logs/*.log | grep -i error
+```
+
+### Check Service Metrics
+
+```bash
+# API Gateway metrics (if Prometheus enabled)
+curl http://localhost:9090/metrics
+
+# Celery inspect
+cd orchestrator
+source venv/bin/activate
+celery -A config inspect active
+celery -A config inspect stats
+cd ..
+```
 
 ## Related Skills
 
 При работе с DevOps используй:
 - `cc1c-navigator` - для понимания архитектуры и зависимостей
-- `cc1c-test-runner` - для запуска тестов после deployment
-- `cc1c-sprint-guide` - для проверки текущей фазы и требований
-- `cc1c-service-builder` - при создании новых Dockerfiles
+- `cc1c-test-runner` - для запуска тестов после изменений
+- `cc1c-sprint-guide` - для проверки текущей фазы разработки
+
+## References
+
+- Main scripts: `scripts/dev/`
+- Docker Compose: `docker-compose.local.yml`
+- Environment template: `.env.local.example`
+- Project docs: `CLAUDE.md`, `docs/START_HERE.md`
+- Commands: `.claude/commands/dev-start.md`, `check-health.md`, `restart-service.md`
 
 ---
 
-**Version:** 1.0
-**Last Updated:** 2025-01-17
+**Version:** 2.0 (Local Development)
+**Last Updated:** 2025-11-03
 **Changelog:**
-- 1.0 (2025-01-17): Initial release with Makefile commands and troubleshooting guide
+- 2.0 (2025-11-03): Complete rewrite for local development (host machine, not Docker)
+- 1.0 (2025-01-17): Initial release with Docker Compose workflows
