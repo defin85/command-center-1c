@@ -2,70 +2,45 @@
 description: Build Docker images for all components
 ---
 
-Собрать Docker образы для всех компонентов проекта.
+Собрать Docker images для всех компонентов.
 
-## Действия
-
-1. **Перейти в корневую директорию**
-   ```bash
-   cd /c/1CProject/command-center-1c
-   ```
-
-2. **Собрать все образы**
-   ```bash
-   docker-compose build
-   ```
-
-3. **Или собрать конкретный сервис**
-   ```bash
-   docker-compose build api-gateway
-   docker-compose build orchestrator
-   docker-compose build frontend
-   docker-compose build worker
-   ```
-
-4. **Проверить собранные образы**
-   ```bash
-   docker images | grep command-center
-   ```
-
-## Параметры
-
-- `--no-cache` - собрать без кэша (полная пересборка)
-- `--pull` - always pull latest base images
-
-## Примеры
+## Usage
 
 ```bash
-# Собрать все
 docker-compose build
-
-# Собрать без кэша (чистая сборка)
-docker-compose build --no-cache
-
-# Собрать конкретный сервис
-docker-compose build api-gateway
-
-# Собрать и запустить
-docker-compose build && docker-compose up -d
-
-# Собрать с progress output
-docker-compose build --progress=plain
 ```
 
-## Troubleshooting
+## Build Specific Service
 
-**Build fails with "base image not found":**
 ```bash
+docker-compose build orchestrator
+docker-compose build api-gateway
+docker-compose build frontend
+docker-compose build worker
+```
+
+## Force Rebuild
+
+```bash
+docker-compose build --no-cache
+```
+
+## When to Use
+
+- После изменения Dockerfiles
+- После обновления зависимостей (requirements.txt, go.mod, package.json)
+- Перед deployment
+- При проблемах с кешем Docker
+
+## Common Issues
+
+**Build fails:**
+```bash
+# Пересобрать без кеша
+docker-compose build --no-cache <service>
+
 # Pull latest base images
 docker-compose build --pull
-
-# Или вручную
-docker pull python:3.11-slim
-docker pull golang:1.21-alpine
-docker pull node:18-alpine
-docker pull postgres:15-alpine
-docker pull redis:7-alpine
 ```
 
 **Out of disk space:**
@@ -77,25 +52,13 @@ docker image prune -a
 docker image prune
 ```
 
-**Permission denied:**
-```bash
-# Add current user to docker group (Linux)
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
 **Build takes too long:**
 ```bash
 # Check what's happening
 docker-compose build --progress=plain api-gateway
-
-# Build in parallel (with make)
-make build-docker-parallel
 ```
 
 ## Verification
-
-После успешной сборки:
 
 ```bash
 # Проверить что образы созданы
@@ -106,8 +69,7 @@ docker-compose run --rm orchestrator pytest
 docker-compose run --rm api-gateway go test ./...
 ```
 
-## Связанные Commands
+## Related
 
-- `dev-start` - запустить собранные образы
-- `test-all` - запустить тесты
-- `deploy-staging` - отправить образы в staging
+- `/dev-start` - для локальной разработки (НЕ Docker)
+- Skill: `cc1c-devops`

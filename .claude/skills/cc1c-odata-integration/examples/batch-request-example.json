@@ -1,0 +1,33 @@
+{
+  "description": "Пример OData $batch запроса для создания множества пользователей в 1С",
+  "endpoint": "http://server:port/base_name/odata/standard.odata/$batch",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "multipart/mixed; boundary=batch_boundary",
+    "Authorization": "Basic <base64_encoded_credentials>"
+  },
+  "body_format": "multipart/mixed",
+  "request_body": "--batch_boundary\nContent-Type: multipart/mixed; boundary=changeset_boundary\n\n--changeset_boundary\nContent-Type: application/http\nContent-Transfer-Encoding: binary\n\nPOST Catalog_Users HTTP/1.1\nContent-Type: application/json\n\n{\n  \"Code\": \"USER001\",\n  \"Description\": \"Иванов Иван Иванович\",\n  \"Email\": \"ivanov@example.com\",\n  \"IsActive\": true\n}\n\n--changeset_boundary\nContent-Type: application/http\nContent-Transfer-Encoding: binary\n\nPOST Catalog_Users HTTP/1.1\nContent-Type: application/json\n\n{\n  \"Code\": \"USER002\",\n  \"Description\": \"Петров Петр Петрович\",\n  \"Email\": \"petrov@example.com\",\n  \"IsActive\": true\n}\n\n--changeset_boundary\nContent-Type: application/http\nContent-Transfer-Encoding: binary\n\nPOST Catalog_Users HTTP/1.1\nContent-Type: application/json\n\n{\n  \"Code\": \"USER003\",\n  \"Description\": \"Сидоров Сидор Сидорович\",\n  \"Email\": \"sidorov@example.com\",\n  \"IsActive\": false\n}\n\n--changeset_boundary--\n--batch_boundary--",
+  "python_example": {
+    "description": "Код для отправки batch request из Python",
+    "code": "import requests\nimport uuid\nimport json\n\ndef create_batch_request(users_data):\n    \"\"\"Создание multipart batch request\"\"\"\n    batch_boundary = f\"batch_{uuid.uuid4()}\"\n    changeset_boundary = f\"changeset_{uuid.uuid4()}\"\n    \n    lines = [f\"--{batch_boundary}\"]\n    lines.append(f\"Content-Type: multipart/mixed; boundary={changeset_boundary}\")\n    lines.append(\"\")\n    \n    for user in users_data:\n        lines.append(f\"--{changeset_boundary}\")\n        lines.append(\"Content-Type: application/http\")\n        lines.append(\"Content-Transfer-Encoding: binary\")\n        lines.append(\"\")\n        lines.append(\"POST Catalog_Users HTTP/1.1\")\n        lines.append(\"Content-Type: application/json\")\n        lines.append(\"\")\n        lines.append(json.dumps(user))\n        lines.append(\"\")\n    \n    lines.append(f\"--{changeset_boundary}--\")\n    lines.append(f\"--{batch_boundary}--\")\n    \n    return \"\\r\\n\".join(lines)\n\n# Usage\nusers = [\n    {\"Code\": \"USER001\", \"Description\": \"User 1\"},\n    {\"Code\": \"USER002\", \"Description\": \"User 2\"},\n    {\"Code\": \"USER003\", \"Description\": \"User 3\"}\n]\n\nbatch_request = create_batch_request(users)\n\nresponse = requests.post(\n    \"http://server:port/base/odata/standard.odata/$batch\",\n    data=batch_request,\n    headers={\n        'Content-Type': f'multipart/mixed; boundary=batch_boundary',\n        'Authorization': 'Basic <base64_credentials>'\n    },\n    timeout=15  # КРИТИЧНО: < 15 секунд!\n)\n\nprint(f\"Status: {response.status_code}\")\nprint(f\"Response: {response.text}\")"
+  },
+  "response_example": {
+    "status_code": 200,
+    "content_type": "multipart/mixed; boundary=batchresponse_boundary",
+    "body": "--batchresponse_boundary\nContent-Type: multipart/mixed; boundary=changesetresponse_boundary\n\n--changesetresponse_boundary\nContent-Type: application/http\nContent-Transfer-Encoding: binary\n\nHTTP/1.1 201 Created\nContent-Type: application/json\nLocation: http://server:port/base/odata/standard.odata/Catalog_Users(guid'12345678-1234-1234-1234-123456789abc')\n\n{\n  \"@odata.context\": \"http://server:port/base/odata/standard.odata/$metadata#Catalog_Users/$entity\",\n  \"Ref_Key\": \"12345678-1234-1234-1234-123456789abc\",\n  \"Code\": \"USER001\",\n  \"Description\": \"Иванов Иван Иванович\"\n}\n\n--changesetresponse_boundary\nContent-Type: application/http\nContent-Transfer-Encoding: binary\n\nHTTP/1.1 201 Created\nContent-Type: application/json\nLocation: http://server:port/base/odata/standard.odata/Catalog_Users(guid'12345678-1234-1234-1234-123456789abd')\n\n{\n  \"@odata.context\": \"http://server:port/base/odata/standard.odata/$metadata#Catalog_Users/$entity\",\n  \"Ref_Key\": \"12345678-1234-1234-1234-123456789abd\",\n  \"Code\": \"USER002\",\n  \"Description\": \"Петров Петр Петрович\"\n}\n\n--changesetresponse_boundary--\n--batchresponse_boundary--"
+  },
+  "notes": [
+    "Batch операции атомарны - либо все успешны, либо все откатываются",
+    "Рекомендуемый batch size: 50-100 для Create, 100-200 для Update",
+    "КРИТИЧНО: Весь batch должен выполниться < 15 секунд",
+    "Для больших датасетов используй chunking - разбивай на несколько batch requests",
+    "Connection limits: не более 3-5 параллельных соединений на одну базу 1С"
+  ],
+  "common_errors": {
+    "400": "Неправильный формат batch request или невалидные данные в одном из items",
+    "401": "Неверная авторизация (проверь Basic Auth credentials)",
+    "500": "Timeout (> 15s) или ошибка в бизнес-логике 1С - уменьши batch size",
+    "503": "Сервер перегружен - уменьши количество параллельных connections"
+  }
+}

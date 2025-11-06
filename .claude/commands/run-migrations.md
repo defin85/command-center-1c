@@ -2,122 +2,91 @@
 description: Run database migrations for Django Orchestrator
 ---
 
-Запустить миграции базы данных для Django Orchestrator.
+Применить миграции Django для Orchestrator.
 
-## Действия
-
-1. **Убедиться что сервисы запущены**
-   ```bash
-   docker-compose ps
-   ```
-
-2. **Выполнить миграции**
-   ```bash
-   docker-compose exec orchestrator python manage.py migrate
-   ```
-
-3. **Проверить статус миграций**
-   ```bash
-   docker-compose exec orchestrator python manage.py showmigrations
-   ```
-
-4. **Создать миграции (если поменялись models)**
-   ```bash
-   docker-compose exec orchestrator python manage.py makemigrations
-   docker-compose exec orchestrator python manage.py migrate
-   ```
-
-5. **Создать суперпользователя (первый запуск)**
-   ```bash
-   docker-compose exec orchestrator python manage.py createsuperuser
-   ```
-
-## Параметры
-
-Нет - команда использует значения из docker-compose.yml
-
-## Примеры
+## Usage
 
 ```bash
-# Запустить все миграции
-docker-compose exec orchestrator python manage.py migrate
-
-# Создать миграции из changes в models.py
-docker-compose exec orchestrator python manage.py makemigrations apps.databases apps.operations
-
-# Откатить последнюю миграцию
-docker-compose exec orchestrator python manage.py migrate apps.databases 0008
-
-# Посмотреть SQL что будет выполнен
-docker-compose exec orchestrator python manage.py sqlmigrate apps.databases 0001
-
-# Проверить что все ОК
-docker-compose exec orchestrator python manage.py check
+cd orchestrator
+source venv/Scripts/activate  # Windows GitBash
+# или: source venv/bin/activate  # Linux/Mac
+python manage.py migrate
 ```
 
-## Troubleshooting
+## Common Operations
 
-**Migration fails with "table already exists":**
+**Проверить статус миграций:**
 ```bash
-# Посмотреть current state
-docker-compose exec orchestrator python manage.py showmigrations
-
-# Может быть что миграция была partial
-docker-compose exec orchestrator python manage.py migrate --plan
+python manage.py showmigrations
 ```
 
-**"No changes detected" when running makemigrations:**
+**Создать новые миграции:**
 ```bash
-# Убедиться что model changes saved
-docker-compose exec orchestrator python manage.py makemigrations --dry-run
-
-# Force recreation
-docker-compose exec orchestrator python manage.py makemigrations --noinput
+python manage.py makemigrations
+python manage.py migrate
 ```
+
+**Откатить миграции:**
+```bash
+python manage.py migrate <app_name> <migration_name>
+```
+
+**Создать суперпользователя:**
+```bash
+python manage.py createsuperuser
+```
+
+## When to Use
+
+- После `git pull` (новые миграции от других)
+- После изменения Django models
+- При setup нового окружения
+- При ошибках "no such table"
+
+## Common Issues
 
 **Database connection error:**
 ```bash
-# Check postgres
-docker-compose logs postgres
+# Проверить что PostgreSQL запущен
+docker ps | grep postgres
 
-# Check connection string in .env
-cat .env | grep DATABASE_URL
-
-# Test connection directly
-docker-compose exec postgres psql -U orchestrator -d command_center
+# Проверить .env.local
+cat .env.local | grep DB_HOST
+# Должно быть: DB_HOST=localhost (НЕ postgres!)
 ```
 
-**Circular dependency in migrations:**
+**Migration conflicts:**
 ```bash
-# Check migration dependencies
-docker-compose exec orchestrator python manage.py showmigrations --plan
-
-# May need to merge migrations
-docker-compose exec orchestrator python manage.py makemigrations --merge
+# Удалить конфликтующие миграции и пересоздать
+rm orchestrator/apps/<app>/migrations/0XXX_*.py
+python manage.py makemigrations
 ```
 
-## When to run
+**"No changes detected":**
+```bash
+# Проверить dry-run
+python manage.py makemigrations --dry-run
 
-1. **Fresh setup** - после первого `docker-compose up`
-2. **After git pull** - если есть новые миграции в коде
-3. **After model changes** - если поменяли models.py
-4. **Before deployment** - обязательно перед production
+# Force recreation
+python manage.py makemigrations --noinput
+```
+
+Детальный troubleshooting: skill `cc1c-devops`
 
 ## Verification
 
 ```bash
-# Проверить что all миграции applied
-docker-compose exec orchestrator python manage.py showmigrations --list | grep "\[X\]"
+# Проверить что все миграции applied
+python manage.py showmigrations --list | grep "\[X\]"
 
-# Проверить что все миграции зелёные
-docker-compose exec orchestrator python manage.py migrate --plan
+# Проверить план миграций
+python manage.py migrate --plan
 
 # Access admin panel
 # http://localhost:8000/admin (если DEBUG=true)
 ```
 
-## Связанные Commands
+## Related
 
-- `dev-start` - запустить сервисы (нужно перед миграциями)
-- `test-all` - запустить тесты (используют test database)
-- `analyze-logs` - посмотреть логи если что-то сломалось
+- `/dev-start` - запустить все (автоматически применяет миграции)
+- Skill: `cc1c-devops`

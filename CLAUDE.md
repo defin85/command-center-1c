@@ -33,15 +33,25 @@
 **Запуск проекта в начале сессии:**
 ```bash
 cd /c/1CProject/command-center-1c
-./scripts/dev/start-all.sh        # Запустить всё
+./scripts/dev/start-all.sh        # Умный запуск с автопересборкой
 ./scripts/dev/health-check.sh     # Проверить статус
 ```
 
 **Во время разработки:**
 ```bash
-./scripts/dev/restart.sh <service>  # После изменений кода
+./scripts/dev/restart-all.sh        # Умный перезапуск с автопересборкой
+./scripts/dev/restart.sh <service>  # Перезапуск одного сервиса
 ./scripts/dev/logs.sh <service>     # Просмотр логов
-./scripts/dev/stop-all.sh          # Остановить всё
+./scripts/dev/stop-all.sh           # Остановить всё
+```
+
+**Опции для start-all.sh и restart-all.sh:**
+```bash
+--force-rebuild     # Принудительная пересборка всех Go сервисов
+--no-rebuild        # Пропустить пересборку (быстрый старт)
+--parallel-build    # Параллельная пересборка (быстрее)
+--verbose           # Детальный вывод
+--help              # Справка
 ```
 
 **Доступные сервисы:**
@@ -64,9 +74,12 @@ cd /c/1CProject/command-center-1c
 
 **Endpoints для проверки:**
 - Frontend: http://localhost:3000
-- API Gateway: http://localhost:8080 (+ /health)
-- Orchestrator: http://localhost:8000 (+ /api/docs)
+- API Gateway: http://localhost:8080/health
+- Orchestrator:
+  - Admin Panel: http://localhost:8000/admin
+  - API Docs (Swagger): http://localhost:8000/api/docs
 - Cluster Service: http://localhost:8088/health
+- Batch Service: http://localhost:8087/health
 - ras-grpc-gw: http://localhost:8081/health (gRPC: 9999)
 - Grafana: http://localhost:3001 (admin/admin)
 - Prometheus: http://localhost:9090
@@ -178,13 +191,21 @@ cd go-services/cluster-service && go mod download && cd ../..
 
 **Утром:**
 ```bash
-./scripts/dev/start-all.sh
-./scripts/dev/health-check.sh
+./scripts/dev/start-all.sh         # Умный запуск с автопересборкой измененных сервисов
+./scripts/dev/health-check.sh      # Проверка статуса
 ```
 
 **После изменений кода:**
 ```bash
-./scripts/dev/restart.sh <service-name>
+# Для Go сервисов - умный перезапуск с автопересборкой
+./scripts/dev/restart-all.sh
+
+# Для одного Go сервиса
+./scripts/dev/restart-all.sh --service=api-gateway
+
+# Для Python/Frontend (без пересборки)
+./scripts/dev/restart.sh orchestrator
+./scripts/dev/restart.sh frontend
 ```
 
 **Просмотр логов:**
@@ -231,6 +252,25 @@ python manage.py migrate
 
 **Распространенные проблемы и решения:**
 
+#### Windows Firewall постоянно спрашивает разрешение
+
+**Причина:** Используется `go run` вместо собранных бинарников → каждый раз новая временная директория
+
+**Решение:**
+```bash
+# Используйте улучшенные скрипты с умной пересборкой:
+./scripts/dev/start-all.sh        # Автоматически собирает бинарники
+./scripts/dev/restart-all.sh      # Умный перезапуск с пересборкой
+
+# Брандмауэр спросит один раз для каждого сервиса и больше не будет беспокоить!
+```
+
+#### Все процессы называются main.exe в Task Manager
+
+**Причина:** Используется `go run` вместо собранных бинарников
+
+**Решение:** См. выше. После использования `start-all.sh` или `restart-all.sh` все процессы будут называться `cc1c-api-gateway.exe`, `cc1c-worker.exe`, и т.д.
+
 #### Сервисы не запускаются
 
 ```bash
@@ -241,11 +281,11 @@ docker ps
 ./scripts/dev/logs.sh <service-name>
 
 # 3. Перезапустить сервис
-./scripts/dev/restart.sh <service-name>
+./scripts/dev/restart-all.sh --service=<service-name>
 
-# 4. Полный перезапуск всех сервисов
+# 4. Полный перезапуск всех сервисов с принудительной пересборкой
 ./scripts/dev/stop-all.sh
-./scripts/dev/start-all.sh
+./scripts/dev/start-all.sh --force-rebuild
 ```
 
 #### cluster-service не подключается к ras-grpc-gw
@@ -885,32 +925,64 @@ make clean-binaries
 INFO starting API Gateway service="cc1c-api-gateway" version="v1.2.3" commit="abc1234" buildTime="2025-11-05_14:30:00"
 ```
 
-### Использование в скриптах
+### Умная автопересборка (Smart Rebuild)
 
-**scripts/dev/start-all.sh автоматически выбирает:**
+**scripts/dev/start-all.sh и scripts/dev/restart-all.sh теперь с умной пересборкой!**
 
-1. **Приоритет 1:** Если бинарник собран → использует `bin/cc1c-<service>.exe`
-2. **Приоритет 2:** Если нет → fallback на `go run cmd/main.go`
+**Как работает:**
+1. **Автоматическое определение изменений** - сравнивает timestamps `.go` файлов и бинарников
+2. **Выборочная пересборка** - пересобирает ТОЛЬКО измененные сервисы
+3. **Проверка shared/ модулей** - если изменился `go-services/shared/`, пересобирает ВСЕ сервисы
+4. **ВСЕГДА использует бинарники** - больше НЕТ fallback на `go run`
+
+**Преимущества:**
+- ✅ **Решена проблема Windows Firewall** - брандмауэр больше не спрашивает разрешение постоянно
+- ✅ **Правильные имена процессов** - `cc1c-api-gateway.exe` вместо `main.exe` в Task Manager
+- ✅ **Экономия времени** - пересборка только измененного (75-89% быстрее)
+- ✅ **Не нужно думать** - просто запускайте `start-all.sh`, всё остальное автоматически
+
+**Примеры использования:**
+```bash
+# Обычный запуск (умная пересборка)
+./scripts/dev/start-all.sh
+
+# Принудительная пересборка всех
+./scripts/dev/start-all.sh --force-rebuild
+
+# Быстрый старт без пересборки
+./scripts/dev/start-all.sh --no-rebuild
+
+# Параллельная сборка (быстрее)
+./scripts/dev/start-all.sh --parallel-build
+
+# То же самое для restart-all.sh
+./scripts/dev/restart-all.sh
+./scripts/dev/restart-all.sh --service=api-gateway
+```
 
 **Пример вывода:**
 ```
-[6/11] Запуск API Gateway (port 8080)...
-   Используется собранный бинарник: bin/cc1c-api-gateway.exe
-✓ API Gateway запущен (PID: 12345)
-```
+========================================
+  Phase 1: Проверка и пересборка Go сервисов
+========================================
 
-Или:
-```
-[6/11] Запуск API Gateway (port 8080)...
-   Бинарник не найден, используется 'go run'
-   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции
-✓ API Gateway запущен (PID: 12345)
-```
+[1/4] Проверка api-gateway...
+✓ Бинарник актуален → пересборка не требуется
 
-**Совет:** Для максимальной скорости старта соберите бинарники:
-```bash
-make build-go-all               # или ./scripts/build.sh
-./scripts/dev/start-all.sh      # Будет использовать собранные бинарники
+[2/4] Проверка worker...
+⚠️ Обнаружены изменения → требуется пересборка
+
+[3/4] Проверка cluster-service...
+✓ Бинарник актуален → пересборка не требуется
+
+[4/4] Проверка batch-service...
+✓ Бинарник актуален → пересборка не требуется
+
+Пересборка Go сервисов...
+Building Worker...
+✓ Worker built successfully (8.5M)
+
+✓ Сервис worker успешно пересобран
 ```
 
 ### Build + Start (быстрый старт)
@@ -930,15 +1002,23 @@ make build-go-all               # или ./scripts/build.sh
 
 ### Дополнительная информация
 
-**Версия:** 2.4
-**Последнее обновление:** 2025-11-05
+**Версия:** 2.5
+**Последнее обновление:** 2025-11-06
 
+**Изменения в версии 2.5:**
+- Реализована умная система автопересборки Go сервисов в start-all.sh и restart-all.sh
+- Создан common-functions.sh для централизации общих функций (DRY принцип)
+- Решена проблема Windows Firewall (больше не использует go run)
+- Исправлен баг зависания в build.sh при сборке всех сервисов
+- Добавлены флаги: --force-rebuild, --no-rebuild, --parallel-build, --verbose
+- Обновлена документация scripts/dev/README.md с полным описанием всех опций
 
 **Изменения в версии 2.4:**
 - Внедрена система правильных наименований Go бинарников (cc1c-*)
 - Добавлена централизованная build система (Makefile + scripts/build.sh)
 - Добавлено версионирование в код всех сервисов (--version flag)
-n**Изменения в версии 2.3:**
+
+**Изменения в версии 2.3:**
 - Добавлена секция "🔌 Критичные сервисы" (batch-service, cluster-service, ras-grpc-gw)
 - Обновлен Troubleshooting с проблемами для критичных сервисов
 - Добавлен правильный порядок запуска сервисов

@@ -10,7 +10,7 @@ allowed-tools: ["Bash", "Read"]
 
 Управлять DevOps операциями для локальной разработки проекта CommandCenter1C.
 
-**ВАЖНО:** Этот skill предназначен для **локального запуска сервисов на хост-машине**, а НЕ в Docker контейнерах (кроме инфраструктурных сервисов).
+**Hybrid Development Mode:** Infrastructure сервисы (PostgreSQL, Redis) запускаются в Docker, Application сервисы (Django, Go, React) запускаются на хост-машине.
 
 ## When to Use
 
@@ -18,30 +18,11 @@ allowed-tools: ["Bash", "Read"]
 - Запуск/остановка локального окружения разработки
 - Проверка статуса сервисов (PID, HTTP endpoints, порты)
 - Просмотр логов локальных процессов
-- Перезапуск конкретных сервисов
+- Перезапуск конкретных сервисов после изменений кода
 - Отладка проблем с запуском
 - Пользователь упоминает: start, stop, restart, logs, health, status, local development
 
-## Architecture Overview
-
-### Infrastructure (Docker)
-Запускаются в Docker контейнерах:
-- **PostgreSQL** (port 5432) - primary database
-- **Redis** (port 6379) - message queue and cache
-- **ClickHouse** (ports 8123, 9000) - analytics (опционально)
-- **ras-grpc-gw** (port 9999) - 1C RAS gateway (опционально)
-
-### Application Services (Host Machine)
-Запускаются локально на хост-машине:
-- **Django Orchestrator** (port 8000) - business logic orchestration
-- **Celery Worker** - async task processing
-- **Celery Beat** - task scheduler
-- **Go API Gateway** (port 8080) - HTTP routing, auth
-- **Go Worker** - parallel 1C operations processing
-- **Go Cluster Service** (port 8088) - 1C cluster management
-- **React Frontend** (port 3000) - UI
-
-## Quick Start Commands
+## Quick Commands
 
 ### Essential Commands
 
@@ -63,86 +44,43 @@ allowed-tools: ["Bash", "Read"]
 ./scripts/dev/stop-all.sh
 ```
 
-### Available Service Names
+### Available Services
 
-- `orchestrator` - Django Orchestrator
-- `celery-worker` - Celery Worker
-- `celery-beat` - Celery Beat
-- `api-gateway` - Go API Gateway
-- `worker` - Go Worker
-- `cluster-service` - Go Cluster Service
-- `batch-service` - Go Batch Service (установка расширений в базы 1С)
-- `ras-grpc-gw` - RAS gRPC Gateway (внешний репозиторий)
-- `frontend` - React Frontend
-- `all` - все сервисы (только для logs.sh)
+**Application (Host):**
+- `orchestrator` - Django Orchestrator (port 8000)
+- `celery-worker` - Celery Worker (async tasks)
+- `celery-beat` - Celery Beat (scheduler)
+- `api-gateway` - Go API Gateway (port 8080)
+- `worker` - Go Worker (parallel processing)
+- `cluster-service` - Go Cluster Service (port 8088)
+- `batch-service` - Go Batch Service (port 8087)
+- `frontend` - React Frontend (port 3000)
 
-## Service Details
+**Infrastructure (Docker):**
+- `postgres` - PostgreSQL (port 5432)
+- `redis` - Redis (port 6379)
 
-### batch-service
-- **Port:** 8087
-- **Path:** go-services/batch-service
-- **Language:** Go 1.21+
-- **Dependencies:** 1cv8.exe (путь в переменных окружения)
-- **Start:** `cd go-services/batch-service && go run cmd/main.go`
-- **Health:** http://localhost:8087/health
-- **Purpose:** Установка расширений (.cfe) в базы 1С через subprocess
-- **API Endpoints:**
-  - POST /api/v1/extensions/install - установка в одну базу
-  - POST /api/v1/extensions/batch-install - batch установка
-- **Env vars:**
-  - EXE_1CV8_PATH - путь к 1cv8.exe
-  - V8_DEFAULT_TIMEOUT - таймаут операций (default: 300 сек)
+**External:**
+- `ras-grpc-gw` - RAS gRPC Gateway (port 9999) - в ../ras-grpc-gw
 
-### cluster-service
-- **Port:** 8088
-- **Path:** go-services/cluster-service
-- **Language:** Go 1.21+ / Gin + gRPC client
-- **Dependencies:** ras-grpc-gw (КРИТИЧНО - должен быть запущен первым)
-- **Start:** `cd go-services/cluster-service && go run cmd/main.go`
-- **Health:** http://localhost:8088/health
-- **Purpose:** Мониторинг кластеров 1С через gRPC протокол
-- **API Endpoints:**
-  - GET /api/v1/clusters?server=localhost:1545
-  - GET /api/v1/infobases?server=localhost:1545
-  - GET /api/v1/sessions?cluster=UUID (Phase 2)
-- **Env vars:**
-  - SERVER_HOST - host (default: 0.0.0.0)
-  - SERVER_PORT - port (default: 8088)
-  - GRPC_GATEWAY_ADDR - адрес ras-grpc-gw (default: localhost:9999)
-  - LOG_LEVEL - уровень логирования (default: info)
+## Critical Service Dependencies
 
-### ras-grpc-gw (External)
-- **Port:** 9999 (gRPC), 8081 (HTTP health)
-- **Path:** ../ras-grpc-gw (вне monorepo)
-- **Language:** Go 1.21+ / gRPC server
-- **Dependencies:** RAS сервер 1С на порту 1545
-- **Start:** `cd ../ras-grpc-gw && go run cmd/main.go localhost:1545`
-- **Start (binary):** `cd ../ras-grpc-gw && ./bin/ras-grpc-gw.exe --bind :9999 --health :8081 localhost:1545`
-- **Health:** http://localhost:8081/health
-- **Purpose:** gRPC gateway для RAS протокола 1С Enterprise
-- **Env vars:**
-  - HEALTH_ADDR - адрес health check сервера (default: 0.0.0.0:8081)
-  - DEBUG - режим отладки (default: false)
-- **⚠️ ВАЖНО:** Запускать ПЕРВЫМ перед cluster-service!
-
-## Service Dependencies
-
-Некоторые сервисы имеют зависимости друг от друга и должны запускаться в определенном порядке:
+**⚠️ ВАЖНО:** Некоторые сервисы имеют зависимости и должны запускаться в порядке:
 
 ### Правильный порядок запуска:
 
-1. **Infrastructure** (PostgreSQL, Redis) - должны быть запущены первыми
-2. **ras-grpc-gw** - КРИТИЧНО запускать перед cluster-service
-3. **cluster-service** - зависит от ras-grpc-gw
-4. **batch-service** - независим, можно запускать в любой момент
-5. **Остальные сервисы** - Orchestrator, Celery, API Gateway, Workers
+1. **Infrastructure** (PostgreSQL, Redis) - Docker контейнеры
+2. **ras-grpc-gw** - **КРИТИЧНО запускать ПЕРВЫМ** перед cluster-service
+3. **cluster-service** - зависит от ras-grpc-gw (порт 9999)
+4. **batch-service** - независим
+5. **Остальные сервисы** - Orchestrator, Celery, API Gateway, Workers, Frontend
 
 ### Граф зависимостей:
 
 ```
 Infrastructure (PostgreSQL, Redis)
   ↓
-ras-grpc-gw (внешний)
+ras-grpc-gw (external, port 9999)
   ↓
 cluster-service ───┐
                    │
@@ -151,938 +89,194 @@ batch-service ─────┼──→ Orchestrator ──→ API Gateway ─
                    └────→ Celery Workers
 ```
 
-### Проверка зависимостей:
-
-Перед запуском cluster-service проверьте что ras-grpc-gw запущен:
-```bash
-curl http://localhost:8081/health
-# Ожидается: {"service":"ras-grpc-gw","status":"healthy",...}
-
-netstat -ano | findstr :9999  # Windows
-# Должен слушать порт 9999
-```
-
-## Detailed Workflows
-
-### First Time Setup
+### Проверка зависимостей перед запуском cluster-service:
 
 ```bash
-# 1. Клонировать репозиторий
-cd /c/1CProject
-git clone <repo-url> command-center-1c
-cd command-center-1c
-
-# 2. Создать .env.local файл
-cp .env.local.example .env.local
-
-# 3. Отредактировать .env.local под свое окружение
-nano .env.local
-
-# 4. Установить Python зависимости
-cd orchestrator
-python -m venv venv
-source venv/bin/activate  # или venv/Scripts/activate на Windows
-pip install -r requirements.txt
-cd ..
-
-# 5. Установить Node.js зависимости
-cd frontend
-npm install
-cd ..
-
-# 6. Запустить все сервисы
-./scripts/dev/start-all.sh
-
-# 7. Проверить что все запустилось
-./scripts/dev/health-check.sh
-```
-
-### Daily Development Workflow
-
-```bash
-# Запустить окружение
-./scripts/dev/start-all.sh
-
-# Следить за логами (в отдельном терминале)
-./scripts/dev/logs.sh all
-
-# Работать с кодом...
-
-# При изменении кода - перезапустить сервис
-./scripts/dev/restart.sh orchestrator
-./scripts/dev/restart.sh api-gateway
-
-# Проверить health
-./scripts/dev/health-check.sh
-
-# В конце дня - остановить
-./scripts/dev/stop-all.sh
-```
-
-### Testing Changes
-
-```bash
-# 1. Изменить код...
-
-# 2. Перезапустить измененный сервис
-./scripts/dev/restart.sh orchestrator
-
-# 3. Проверить логи
-./scripts/dev/logs.sh orchestrator
-
-# 4. Проверить health endpoint
-curl http://localhost:8000/health
-
-# 5. Запустить тесты
-cd orchestrator
-pytest
-cd ..
-```
-
-## Service Management
-
-### Start All Services
-
-```bash
-./scripts/dev/start-all.sh
-```
-
-**Порядок запуска:**
-1. Docker Infrastructure (PostgreSQL, Redis)
-2. Django Migrations
-3. Django Orchestrator
-4. Celery Worker & Beat
-5. Go API Gateway
-6. Go Worker
-7. Go Cluster Service
-8. React Frontend
-
-**Что создается:**
-- `pids/<service>.pid` - PID файлы для управления процессами
-- `logs/<service>.log` - лог файлы сервисов
-
-### Stop All Services
-
-```bash
-./scripts/dev/stop-all.sh
-```
-
-**Порядок остановки:**
-1. Application services (graceful SIGTERM → force SIGKILL)
-2. Docker infrastructure (docker-compose down)
-
-**Очистка:**
-- Удаляет PID файлы
-- Останавливает Docker контейнеры
-- Проверяет остаточные процессы на портах
-
-### Restart Specific Service
-
-```bash
-./scripts/dev/restart.sh <service-name>
-```
-
-**Примеры:**
-```bash
-./scripts/dev/restart.sh orchestrator
-./scripts/dev/restart.sh api-gateway
-./scripts/dev/restart.sh frontend
-```
-
-**Что происходит:**
-1. Читает PID из `pids/<service>.pid`
-2. Graceful shutdown (SIGTERM)
-3. Ожидает завершения (10 секунд)
-4. Force kill если не завершился (SIGKILL)
-5. Запускает заново
-6. Сохраняет новый PID
-7. Проверяет что процесс запустился
-
-## Health Check
-
-### Automated Health Check
-
-```bash
-./scripts/dev/health-check.sh
-```
-
-**Что проверяется:**
-
-1. **Локальные процессы** (по PID файлам):
-   - Проверяет что процессы запущены
-   - Показывает PID каждого сервиса
-
-2. **HTTP Endpoints**:
-   - Frontend: http://localhost:3000
-   - API Gateway: http://localhost:8080/health
-   - Orchestrator: http://localhost:8000/health
-   - Cluster Service: http://localhost:8088/health
-
-3. **Docker Services**:
-   - PostgreSQL: `pg_isready` check
-   - Redis: `redis-cli ping` check
-   - ClickHouse: container status
-   - ras-grpc-gw: container status
-
-4. **Соединения**:
-   - Проверка JSON ответов от API
-   - Валидация структуры health responses
-
-5. **Порты**:
-   - Проверка что порты открыты и слушают
-   - Ports: 3000, 8080, 8000, 8088, 5432, 6379
-
-**Пример вывода:**
-```
-========================================
-  CommandCenter1C - Health Check
-========================================
-
-[1] Проверка локальных процессов:
-
-  orchestrator: ✓ запущен (PID: 12345)
-  celery-worker: ✓ запущен (PID: 12346)
-  celery-beat: ✓ запущен (PID: 12347)
-  api-gateway: ✓ запущен (PID: 12348)
-  worker: ✓ запущен (PID: 12349)
-  cluster-service: ✓ запущен (PID: 12350)
-  frontend: ✓ запущен (PID: 12351)
-
-[2] Проверка HTTP endpoints:
-
-  Frontend: ✓ доступен (HTTP 200)
-  API Gateway: ✓ доступен (HTTP 200)
-  Orchestrator: ✓ доступен (HTTP 200)
-  Cluster Service: ✓ доступен (HTTP 200)
-
-[3] Проверка Docker сервисов:
-
-  PostgreSQL: ✓ запущен и готов
-  Redis: ✓ запущен и готов
-  ClickHouse: ⚠️  не запущен (опционально)
-  ras-grpc-gw: ⚠️  не запущен (опционально)
-
-========================================
-  Итоговый статус
-========================================
-
-✓ Все сервисы запущены (7/7)
-```
-
-### Manual Health Checks
-
-```bash
-# API Gateway
-curl http://localhost:8080/health
-# Expected: {"status":"healthy","version":"1.0.0","uptime":"2h 30m"}
-
-# Django Orchestrator
-curl http://localhost:8000/health
-# Expected: {"status":"ok","database":"connected","redis":"connected"}
-
-# Frontend
-curl http://localhost:3000
-# Expected: HTTP 200 OK
-
-# Cluster Service
-curl http://localhost:8088/health
-# Expected: {"status":"healthy"}
-
-# PostgreSQL
-docker-compose -f docker-compose.local.yml exec postgres pg_isready
-# Expected: accepting connections
-
-# Redis
-docker-compose -f docker-compose.local.yml exec redis redis-cli ping
-# Expected: PONG
-```
-
-## Log Management
-
-### View Service Logs
-
-```bash
-# Tail logs для конкретного сервиса (follow mode)
-./scripts/dev/logs.sh <service-name>
-
-# Указать количество строк
-./scripts/dev/logs.sh orchestrator 200
-
-# Все логи (последние 10 строк каждого)
-./scripts/dev/logs.sh all
-```
-
-**Примеры:**
-```bash
-# Django Orchestrator
-./scripts/dev/logs.sh orchestrator
-
-# API Gateway
-./scripts/dev/logs.sh api-gateway
-
-# Frontend
-./scripts/dev/logs.sh frontend
-
-# Celery Worker
-./scripts/dev/logs.sh celery-worker
-```
-
-### Log File Locations
-
-```
-logs/
-├── orchestrator.log       # Django runserver output
-├── celery-worker.log      # Celery worker tasks
-├── celery-beat.log        # Celery beat scheduler
-├── api-gateway.log        # Go API Gateway
-├── worker.log             # Go Worker
-├── cluster-service.log    # Go Cluster Service
-└── frontend.log           # React dev server (Vite)
-```
-
-### Log Analysis
-
-```bash
-# Ошибки в логах Orchestrator
-grep ERROR logs/orchestrator.log
-
-# Последние 100 строк с ошибками
-tail -n 100 logs/orchestrator.log | grep -i error
-
-# Логи за последний час (если есть timestamps)
-tail -n 1000 logs/api-gateway.log | grep "$(date +%H:)"
-
-# Логи всех сервисов с фильтром
-grep -i "connection refused" logs/*.log
-
-# Следить за логами нескольких сервисов
-tail -f logs/orchestrator.log logs/api-gateway.log
-```
-
-### Docker Service Logs
-
-```bash
-# PostgreSQL
-docker-compose -f docker-compose.local.yml logs postgres
-
-# Redis
-docker-compose -f docker-compose.local.yml logs redis
-
-# Follow mode
-docker-compose -f docker-compose.local.yml logs -f postgres
-
-# Last 100 lines
-docker-compose -f docker-compose.local.yml logs --tail=100 redis
-```
-
-## Environment Configuration
-
-### .env.local File
-
-**КРИТИЧНО:** Локальная разработка использует `.env.local`, НЕ `.env`!
-
-```bash
-# Создать из примера
-cp .env.local.example .env.local
-
-# Отредактировать
-nano .env.local
-```
-
-### Key Differences from Docker Environment
-
-**Docker compose (.env):**
-```bash
-DB_HOST=postgres           # service name
-REDIS_HOST=redis           # service name
-ORCHESTRATOR_URL=http://orchestrator:8000
-```
-
-**Local development (.env.local):**
-```bash
-DB_HOST=localhost          # host machine
-REDIS_HOST=localhost       # host machine
-ORCHESTRATOR_URL=http://localhost:8000
-```
-
-### Essential Variables
-
-```bash
-# Django
-DJANGO_SECRET_KEY=your-secret
-DEBUG=True
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=commandcenter
-DB_USER=commandcenter
-DB_PASSWORD=password
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# Go Services
-SERVER_PORT=8080
-ORCHESTRATOR_URL=http://localhost:8000
-
-# Celery
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/1
-
-# Frontend
-VITE_API_URL=http://localhost:8080/api/v1
-VITE_WS_URL=ws://localhost:8080/ws
-```
-
-## Troubleshooting
-
-### Problem 1: Services Won't Start
-
-**Symptom:**
-```
-Error: listen tcp :8080: bind: address already in use
-```
-
-**Solution:**
-```bash
-# Windows (GitBash)
-netstat -ano | findstr :8080
-taskkill /PID <pid> /F
-
-# Linux/Mac
-lsof -i :8080
-kill -9 <pid>
-
-# Or stop all and restart
-./scripts/dev/stop-all.sh
-./scripts/dev/start-all.sh
-```
-
-### Problem 2: Database Connection Errors
-
-**Symptom:**
-```
-django.db.utils.OperationalError: could not connect to server
-```
-
-**Solution:**
-```bash
-# Check if PostgreSQL is running
-docker-compose -f docker-compose.local.yml ps postgres
-
-# Check logs
-docker-compose -f docker-compose.local.yml logs postgres
-
-# Restart database
-docker-compose -f docker-compose.local.yml restart postgres
-
-# Wait for ready
-docker-compose -f docker-compose.local.yml exec postgres pg_isready
-
-# Check .env.local
-cat .env.local | grep DB_HOST
-# Should be: DB_HOST=localhost (NOT postgres)
-```
-
-### Problem 3: Redis Connection Issues
-
-**Symptom:**
-```
-redis.exceptions.ConnectionError: Error 10061 connecting to localhost:6379
-```
-
-**Solution:**
-```bash
-# Check Redis status
-docker-compose -f docker-compose.local.yml ps redis
-
-# Test connection
-docker-compose -f docker-compose.local.yml exec redis redis-cli ping
-# Should return: PONG
-
-# Restart Redis
-docker-compose -f docker-compose.local.yml restart redis
-
-# Check .env.local
-cat .env.local | grep REDIS_HOST
-# Should be: REDIS_HOST=localhost (NOT redis)
-```
-
-### Problem 4: Process Not Starting
-
-**Symptom:**
-```
-✗ Не удалось запустить Django Orchestrator
-```
-
-**Solution:**
-```bash
-# 1. Check logs
-cat logs/orchestrator.log
-
-# 2. Run manually for debugging
-cd orchestrator
-source venv/bin/activate
-python manage.py runserver 0.0.0.0:8000
-
-# 3. Check dependencies
-pip install -r requirements.txt
-
-# 4. Check database connection
-python manage.py check --database default
-
-# 5. Check migrations
-python manage.py showmigrations
-```
-
-### Problem 5: Frontend Not Loading
-
-**Symptom:**
-```
-Module not found: Can't resolve 'react'
-```
-
-**Solution:**
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Clear cache
-rm -rf node_modules package-lock.json
-npm install
-
-# Run manually
-npm run dev
-
-# Check logs
-cat ../logs/frontend.log
-```
-
-### Problem 6: PID Files Lost/Corrupted
-
-**Symptom:**
-```
-⚠️  orchestrator: PID файл не найден
-```
-
-**Solution:**
-```bash
-# Clean up and restart
-rm -rf pids/*.pid
-
-# Kill any remaining processes by port
-netstat -ano | findstr :8080  # Find PID
-taskkill /PID <pid> /F        # Kill it
-
-# Start fresh
-./scripts/dev/start-all.sh
-```
-
-### Problem 7: Celery Tasks Not Processing
-
-**Symptom:**
-- Operations stuck in "pending"
-- No worker activity
-
-**Solution:**
-```bash
-# Check Celery Worker logs
-./scripts/dev/logs.sh celery-worker
-
-# Check Redis queue
-docker-compose -f docker-compose.local.yml exec redis redis-cli
-> LLEN operations_queue
-> LRANGE operations_queue 0 -1
-
-# Restart Celery Worker
-./scripts/dev/restart.sh celery-worker
-
-# Check worker is connected
-./scripts/dev/logs.sh celery-worker | grep "ready"
-```
-
-### Problem 8: cluster-service Connection Refused (port 9999)
-
-**Symptom:**
-```
-Error: connection refused on port 9999
-cluster-service cannot connect to ras-grpc-gw
-```
-
-**Solution:**
-```bash
-# 1. Check if ras-grpc-gw is running
-netstat -ano | findstr :9999  # Windows
-lsof -i :9999  # Linux/Mac
-
-# 2. Check ras-grpc-gw process
-ps aux | grep ras-grpc-gw  # Linux/Mac
-tasklist | findstr ras-grpc-gw.exe  # Windows
-
-# 3. Check health endpoint
+# Check ras-grpc-gw is running
 curl http://localhost:8081/health
 # Expected: {"service":"ras-grpc-gw","status":"healthy",...}
 
-# 4. Start ras-grpc-gw FIRST
+# Check gRPC port is listening
+netstat -ano | findstr :9999  # Windows
+lsof -i :9999  # Linux/Mac
+```
+
+## Key Concepts
+
+### 1. Hybrid Development Mode
+
+- **Infrastructure** (PostgreSQL, Redis) → Docker контейнеры
+- **Application** (Django, Go, React) → локальные процессы на хосте
+- **Преимущества:** Hot reload, debugging, IDE integration
+- **Требования:** .env.local с DB_HOST=localhost (НЕ postgres)
+
+### 2. PID Management
+
+- Все сервисы управляются через PID файлы: `pids/<service>.pid`
+- `./scripts/dev/start-all.sh` создает PID файлы
+- `./scripts/dev/stop-all.sh` использует PID для graceful shutdown
+- `./scripts/dev/restart.sh` читает PID, останавливает, запускает заново
+
+### 3. Health Check Strategy
+
+- **Process check:** проверка PID файлов
+- **HTTP check:** curl health endpoints (8080, 8000, 8088, 3000)
+- **Database check:** pg_isready, redis-cli ping
+- **Port check:** netstat/lsof для проверки listening ports
+
+### 4. Log Management
+
+- Логи в `logs/<service>.log`
+- `./scripts/dev/logs.sh <service>` - tail -f для конкретного сервиса
+- `./scripts/dev/logs.sh all` - последние 10 строк всех сервисов
+- Docker logs: `docker-compose -f docker-compose.local.yml logs <service>`
+
+### 5. Critical Services (batch-service, cluster-service, ras-grpc-gw)
+
+**batch-service:**
+- Установка расширений (.cfe) в базы 1С через subprocess
+- Требует EXE_1CV8_PATH в переменных окружения
+- Port 8087
+
+**cluster-service:**
+- Мониторинг кластеров 1С через gRPC
+- **ЗАВИСИМОСТЬ:** ras-grpc-gw ДОЛЖЕН быть запущен первым
+- Port 8088
+
+**ras-grpc-gw:**
+- gRPC gateway для RAS протокола 1С
+- **Внешний репозиторий:** ../ras-grpc-gw
+- Ports: 9999 (gRPC), 8081 (HTTP health)
+- **⚠️ Запускать ПЕРВЫМ!**
+
+Детали см. {baseDir}/reference/services.md
+
+## Common Operations
+
+### Start Dev Session (утро)
+
+```bash
+cd /c/1CProject/command-center-1c
+./scripts/dev/start-all.sh
+./scripts/dev/health-check.sh
+```
+
+### After Code Changes
+
+```bash
+# Изменил код Django
+./scripts/dev/restart.sh orchestrator
+
+# Изменил код Go API Gateway
+./scripts/dev/restart.sh api-gateway
+
+# Изменил код React
+./scripts/dev/restart.sh frontend
+```
+
+### Debugging Service
+
+```bash
+# Проверить логи
+./scripts/dev/logs.sh orchestrator
+
+# Проверить health endpoint
+curl http://localhost:8000/health
+
+# Запустить вручную (foreground, full output)
+cd orchestrator
+source venv/Scripts/activate
+python manage.py runserver 0.0.0.0:8000
+```
+
+### End of Day
+
+```bash
+./scripts/dev/stop-all.sh
+```
+
+## Critical Constraints
+
+1. **Service Dependencies:** ras-grpc-gw → cluster-service (порядок запуска критичен!)
+2. **Environment Files:** .env.local с DB_HOST=localhost (НЕ postgres)
+3. **PID Management:** НЕ удаляй pids/ вручную, используй ./scripts/dev/stop-all.sh
+4. **Port Conflicts:** Перед запуском проверь что порты свободны (8080, 8000, 8088, 3000, 5432, 6379)
+5. **Infrastructure First:** Docker containers (PostgreSQL, Redis) ДОЛЖНЫ быть запущены первыми
+
+## Common Problems
+
+### Services Won't Start
+**Symptom:** `Error: address already in use`
+**Quick Fix:**
+```bash
+./scripts/dev/stop-all.sh
+./scripts/dev/start-all.sh
+```
+
+### Database Connection Error
+**Symptom:** `could not connect to server`
+**Quick Fix:**
+```bash
+# Check .env.local
+cat .env.local | grep DB_HOST
+# Should be: DB_HOST=localhost
+
+docker-compose -f docker-compose.local.yml restart postgres
+./scripts/dev/restart.sh orchestrator
+```
+
+### cluster-service Connection Refused (port 9999)
+**Symptom:** `connection refused on port 9999`
+**Quick Fix:**
+```bash
+# Start ras-grpc-gw FIRST
 cd ../ras-grpc-gw
 go run cmd/main.go localhost:1545
 
 # Wait 3-5 seconds, then start cluster-service
-cd /c/1CProject/command-center-1c/go-services/cluster-service
-go run cmd/main.go
+cd /c/1CProject/command-center-1c
+./scripts/dev/restart.sh cluster-service
 ```
 
-**⚠️ ВАЖНО:** ras-grpc-gw должен быть запущен ПЕРЕД cluster-service!
-
-### Problem 9: batch-service "1cv8.exe not found"
-
-**Symptom:**
-```
-Error: exec: "1cv8.exe": executable file not found
-```
-
-**Solution:**
+### batch-service "1cv8.exe not found"
+**Symptom:** `executable file not found`
+**Quick Fix:**
 ```bash
-# 1. Check environment variable
-echo $EXE_1CV8_PATH  # Linux/Mac/GitBash
-set EXE_1CV8_PATH  # Windows CMD
-
-# 2. Check if file exists
-ls "$EXE_1CV8_PATH"  # Linux/Mac/GitBash
-dir "%EXE_1CV8_PATH%"  # Windows CMD
-
-# 3. Set correct path in .env.local
-cat >> .env.local << EOF
-EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe
-V8_DEFAULT_TIMEOUT=300
-EOF
-
-# 4. Export in current session
-export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
-
-# 5. Restart batch-service
-cd go-services/batch-service
-go run cmd/main.go
+# Set path in .env.local
+echo 'EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe' >> .env.local
+./scripts/dev/restart.sh batch-service
 ```
 
-### Problem 10: ras-grpc-gw "RAS server not available" (port 1545)
-
-**Symptom:**
-```
-Error: cannot connect to RAS server on port 1545
-RAS server not available
-```
-
-**Solution:**
-
-**Option 1: Start RAS server (if not running)**
-- Open 1C administration console
-- Connect to server cluster
-- Verify RAS is running on port 1545
-
-**Option 2: Change RAS port**
-```bash
-# If RAS is on different port (e.g., 1546)
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1546
-
-# Update environment for cluster-service
-export RAS_SERVER=localhost:1546
-```
-
-**Option 3: Remote RAS server**
-```bash
-# Connect to remote RAS server
-cd ../ras-grpc-gw
-go run cmd/main.go 192.168.1.100:1545
-```
-
-**Check connection:**
-```bash
-# Test telnet connection
-telnet localhost 1545
-# or
-nc -zv localhost 1545  # Linux/Mac
-
-# Check ras-grpc-gw logs
-cd ../ras-grpc-gw
-cat ras-grpc-gw.log | tail -50
-```
-
-**См. также:** [1C_ADMINISTRATION_GUIDE.md](../docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
-
-## Advanced Operations
-
-### Debug Specific Service
-
-```bash
-# Stop all except infrastructure
-./scripts/dev/stop-all.sh
-
-# Start only infrastructure
-docker-compose -f docker-compose.local.yml up -d
-
-# Run Django migrations
-cd orchestrator
-source venv/bin/activate
-python manage.py migrate
-
-# Run service manually (foreground, with full output)
-python manage.py runserver 0.0.0.0:8000
-```
-
-### Scale Workers
-
-```bash
-# Start multiple Go Workers
-for i in {1..5}; do
-    cd go-services/worker
-    nohup go run cmd/main.go > ../../logs/worker-$i.log 2>&1 &
-    echo $! > ../../pids/worker-$i.pid
-    cd ../..
-done
-
-# Stop all workers
-for pid_file in pids/worker-*.pid; do
-    if [ -f "$pid_file" ]; then
-        pid=$(cat "$pid_file")
-        kill -TERM "$pid" 2>/dev/null || true
-        rm -f "$pid_file"
-    fi
-done
-```
-
-### Run with Specific Profiles
-
-```bash
-# Start with ClickHouse
-docker-compose -f docker-compose.local.yml --profile analytics up -d
-
-# Start with ras-grpc-gw
-docker-compose -f docker-compose.local.yml --profile ras up -d
-
-# Start with all profiles
-docker-compose -f docker-compose.local.yml --profile analytics --profile ras up -d
-```
-
-### Hot Reload Setup (Go services)
-
-```bash
-# Install air for Go hot reload
-go install github.com/cosmtrek/air@latest
-
-# In go-services/api-gateway
-cd go-services/api-gateway
-air  # Will auto-restart on code changes
-
-# In go-services/cluster-service
-cd go-services/cluster-service
-air  # Will auto-restart on code changes
-```
-
-### Check Resource Usage
-
-```bash
-# Process resource usage (Windows)
-for pid_file in pids/*.pid; do
-    if [ -f "$pid_file" ]; then
-        service=$(basename "$pid_file" .pid)
-        pid=$(cat "$pid_file")
-        echo "=== $service (PID: $pid) ==="
-        tasklist //FI "PID eq $pid" //FO TABLE
-    fi
-done
-
-# Docker resource usage
-docker stats --no-stream
-
-# Disk usage
-docker system df
-du -sh logs/
-```
-
-## Migration Management
-
-```bash
-# Create new migration
-cd orchestrator
-source venv/bin/activate
-python manage.py makemigrations
-
-# Apply migrations
-python manage.py migrate
-
-# Show migrations status
-python manage.py showmigrations
-
-# Rollback migration
-python manage.py migrate <app_name> <migration_number>
-
-# Fake migration (mark as applied without running)
-python manage.py migrate --fake <app_name> <migration_number>
-```
-
-## Common Scenarios
-
-### Scenario 1: Fresh Start After Git Pull
-
-```bash
-# Pull latest changes
-git pull
-
-# Update dependencies (if changed)
-cd orchestrator
-source venv/bin/activate
-pip install -r requirements.txt
-cd ..
-
-cd frontend
-npm install
-cd ..
-
-# Run migrations (if any)
-cd orchestrator
-python manage.py migrate
-cd ..
-
-# Restart all services
-./scripts/dev/stop-all.sh
-./scripts/dev/start-all.sh
-
-# Check health
-./scripts/dev/health-check.sh
-```
-
-### Scenario 2: Debugging Production Issue Locally
-
-```bash
-# Reproduce issue locally
-./scripts/dev/start-all.sh
-
-# Enable debug logging in .env.local
-echo "LOG_LEVEL=debug" >> .env.local
-
-# Restart affected service
-./scripts/dev/restart.sh orchestrator
-
-# Follow logs
-./scripts/dev/logs.sh orchestrator
-
-# Test the issue
-curl -X POST http://localhost:8000/api/operations ...
-
-# Check logs for errors
-grep ERROR logs/orchestrator.log
-```
-
-### Scenario 3: Testing Database Migration
-
-```bash
-# Backup database first
-docker-compose -f docker-compose.local.yml exec postgres pg_dump -U commandcenter commandcenter > backup.sql
-
-# Create migration
-cd orchestrator
-python manage.py makemigrations
-
-# Check migration
-python manage.py sqlmigrate <app> <migration_number>
-
-# Apply migration
-python manage.py migrate
-
-# Test migration
-python manage.py shell
->>> from apps.operations.models import Operation
->>> Operation.objects.all()
-
-# If something goes wrong - restore
-docker-compose -f docker-compose.local.yml exec -T postgres psql -U commandcenter commandcenter < backup.sql
-```
-
-### Scenario 4: Complete Reset
-
-```bash
-# Stop everything
-./scripts/dev/stop-all.sh
-
-# Remove Docker volumes (⚠️ removes all data)
-docker-compose -f docker-compose.local.yml down -v
-
-# Clear logs and PIDs
-rm -rf logs/*.log pids/*.pid
-
-# Start infrastructure
-docker-compose -f docker-compose.local.yml up -d
-
-# Wait for database
-sleep 10
-
-# Run migrations
-cd orchestrator
-source venv/bin/activate
-python manage.py migrate
-python manage.py createsuperuser  # if needed
-cd ..
-
-# Start all services
-./scripts/dev/start-all.sh
-
-# Check health
-./scripts/dev/health-check.sh
-```
-
-## Performance Monitoring
-
-### Monitor Live
-
-```bash
-# Watch health check every 5 seconds
-watch -n 5 ./scripts/dev/health-check.sh
-
-# Monitor specific port traffic
-netstat -ano | findstr :8080  # Windows
-
-# Monitor logs for errors
-tail -f logs/*.log | grep -i error
-```
-
-### Check Service Metrics
-
-```bash
-# API Gateway metrics (if Prometheus enabled)
-curl http://localhost:9090/metrics
-
-# Celery inspect
-cd orchestrator
-source venv/bin/activate
-celery -A config inspect active
-celery -A config inspect stats
-cd ..
-```
-
-## Related Skills
-
-При работе с DevOps используй:
-- `cc1c-navigator` - для понимания архитектуры и зависимостей
-- `cc1c-test-runner` - для запуска тестов после изменений
-- `cc1c-sprint-guide` - для проверки текущей фазы разработки
+**Полный troubleshooting:** см. {baseDir}/reference/troubleshooting.md
 
 ## References
 
-- Main scripts: `scripts/dev/`
-- Docker Compose: `docker-compose.local.yml`
-- Environment template: `.env.local.example`
-- Project docs: `CLAUDE.md`, `docs/START_HERE.md`
-- Commands: `.claude/commands/dev-start.md`, `check-health.md`, `restart-service.md`
+### Detailed Documentation
+- {baseDir}/reference/services.md - детали всех сервисов, API endpoints, env vars
+- {baseDir}/reference/troubleshooting.md - решения 13 типичных проблем
+- {baseDir}/reference/advanced-ops.md - debug, scaling, profiling, testing
+
+### Related Skills
+- `cc1c-navigator` - понимание архитектуры и зависимостей
+- `cc1c-test-runner` - запуск тестов после изменений
+- `cc1c-sprint-guide` - текущая фаза разработки
+
+### Slash Commands
+- `/dev-start` - запустить все сервисы
+- `/check-health` - проверить статус
+- `/restart-service <name>` - перезапустить сервис
+- `/run-migrations` - применить миграции Django
+
+### Project Documentation
+- [CLAUDE.md](../../../CLAUDE.md) - главный контекст проекта
+- [LOCAL_DEVELOPMENT_GUIDE.md](../../../docs/LOCAL_DEVELOPMENT_GUIDE.md) - полное руководство
+- [1C_ADMINISTRATION_GUIDE.md](../../../docs/1C_ADMINISTRATION_GUIDE.md) - RAS/gRPC setup
 
 ---
 
-**Version:** 2.1 (Local Development + Critical Services)
-**Last Updated:** 2025-11-05
+**Version:** 3.0 (Optimized)
+**Last Updated:** 2025-11-06
 **Changelog:**
-- 2.1 (2025-11-05): Add batch-service, ras-grpc-gw details, service dependencies, troubleshooting for critical services
-- 2.0 (2025-11-03): Complete rewrite for local development (host machine, not Docker)
-- 1.0 (2025-01-17): Initial release with Docker Compose workflows
+- 3.0 (2025-11-06): Refactored to 220 lines, moved details to reference/ files
+- 2.1 (2025-11-05): Add batch-service, ras-grpc-gw details, service dependencies
+- 2.0 (2025-11-03): Complete rewrite for local development (host machine)

@@ -12,21 +12,96 @@
 
 set -e
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-functions.sh"
+
+# Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
 
-PIDS_DIR="$PROJECT_ROOT/pids"
-LOGS_DIR="$PROJECT_ROOT/logs"
+# Флаги по умолчанию
+FORCE_REBUILD=false
+NO_REBUILD=false
+PARALLEL_BUILD=false
+VERBOSE=false
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Массивы для отчетности
+declare -a REBUILD_SERVICES=()
+declare -a SKIPPED_SERVICES=()
 
 # Создать директории если нет
 mkdir -p "$PIDS_DIR" "$LOGS_DIR"
+
+##############################################################################
+# HELP FUNCTION
+##############################################################################
+
+show_help() {
+    echo -e "${BLUE}CommandCenter1C - Start All Services with Smart Rebuild${NC}"
+    echo ""
+    echo "Запускает все сервисы с автоматической пересборкой измененных Go сервисов."
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --help                   Показать эту справку"
+    echo "  --force-rebuild          Принудительно пересобрать все Go сервисы"
+    echo "  --no-rebuild             Пропустить проверку/пересборку"
+    echo "  --parallel-build         Параллельная пересборка (быстрее)"
+    echo "  --verbose                Детальный вывод для отладки"
+    echo ""
+    echo "Examples:"
+    echo "  $0                           # Smart rebuild (по умолчанию)"
+    echo "  $0 --force-rebuild           # Принудительная пересборка всех"
+    echo "  $0 --no-rebuild              # Быстрый старт без пересборки"
+    echo "  $0 --parallel-build          # Параллельная сборка"
+    echo ""
+}
+
+##############################################################################
+# ARGUMENT PARSING
+##############################################################################
+
+# Парсинг аргументов
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help)
+            show_help
+            exit 0
+            ;;
+        --force-rebuild)
+            FORCE_REBUILD=true
+            shift
+            ;;
+        --no-rebuild)
+            NO_REBUILD=true
+            shift
+            ;;
+        --parallel-build)
+            PARALLEL_BUILD=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Неизвестный флаг: $1${NC}"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# Валидация конфликтующих флагов
+if [ "$FORCE_REBUILD" = true ] && [ "$NO_REBUILD" = true ]; then
+    echo -e "${RED}Ошибка: --force-rebuild и --no-rebuild несовместимы${NC}"
+    exit 1
+fi
+
+##############################################################################
+# MAIN EXECUTION
+##############################################################################
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Starting Services  ${NC}"
@@ -44,7 +119,24 @@ fi
 export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
 
 ##############################################################################
-# Шаг 1: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse, ras-grpc-gw)
+# Phase 1: Smart Go Rebuild (NEW!)
+##############################################################################
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Phase 1: Проверка и пересборка Go сервисов${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+if ! smart_rebuild_services; then
+    echo ""
+    echo -e "${RED}✗ Ошибка при пересборке Go сервисов${NC}"
+    echo -e "${YELLOW}Совет: Проверьте логи сборки выше${NC}"
+    exit 1
+fi
+
+echo ""
+
+##############################################################################
+# Phase 2: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse)
 ##############################################################################
 echo -e "${BLUE}[1/11] Запуск Docker сервисов...${NC}"
 
@@ -194,29 +286,14 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[6/11] Запуск API Gateway (port 8080)...${NC}"
 
-# Проверить наличие бинарника
-BINARY_PATH="$PROJECT_ROOT/bin/cc1c-api-gateway.exe"
-if [ -f "$BINARY_PATH" ]; then
-    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-api-gateway.exe${NC}"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    nohup "$BINARY_PATH" > "$LOGS_DIR/api-gateway.log" 2>&1 &
-    API_GATEWAY_PID=$!
-else
-    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
-    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
-    
-    cd "$PROJECT_ROOT/go-services/api-gateway"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    nohup go run cmd/main.go > "$LOGS_DIR/api-gateway.log" 2>&1 &
-    API_GATEWAY_PID=$!
-fi
+# Бинарник гарантированно существует и актуален после Phase 1
+BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
 
+# Загрузить .env.local
+export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+
+nohup "$BINARY_PATH" > "$LOGS_DIR/api-gateway.log" 2>&1 &
+API_GATEWAY_PID=$!
 echo $API_GATEWAY_PID > "$PIDS_DIR/api-gateway.pid"
 
 sleep 3
@@ -234,29 +311,14 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[7/11] Запуск Go Worker...${NC}"
 
-# Проверить наличие бинарника
-BINARY_PATH="$PROJECT_ROOT/bin/cc1c-worker.exe"
-if [ -f "$BINARY_PATH" ]; then
-    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-worker.exe${NC}"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    nohup "$BINARY_PATH" > "$LOGS_DIR/worker.log" 2>&1 &
-    WORKER_PID=$!
-else
-    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
-    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
-    
-    cd "$PROJECT_ROOT/go-services/worker"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    nohup go run cmd/main.go > "$LOGS_DIR/worker.log" 2>&1 &
-    WORKER_PID=$!
-fi
+# Бинарник гарантированно существует и актуален после Phase 1
+BINARY_PATH="$BIN_DIR/cc1c-worker.exe"
 
+# Загрузить .env.local
+export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+
+nohup "$BINARY_PATH" > "$LOGS_DIR/worker.log" 2>&1 &
+WORKER_PID=$!
 echo $WORKER_PID > "$PIDS_DIR/worker.pid"
 
 sleep 2
@@ -286,7 +348,16 @@ cd "$RAS_GW_DIR"
 # Загрузить .env.local
 export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
 
-nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
+# Проверить наличие бинарника
+BINARY_PATH="$RAS_GW_DIR/bin/ras-grpc-gw.exe"
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${YELLOW}   Используется собранный бинарник: bin/ras-grpc-gw.exe${NC}"
+    nohup "$BINARY_PATH" --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
+else
+    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
+    echo -e "${YELLOW}   Совет: Запустите 'make build' в $RAS_GW_DIR для компиляции${NC}"
+    nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
+fi
 RAS_GW_PID=$!
 echo $RAS_GW_PID > "$PIDS_DIR/ras-grpc-gw.pid"
 
@@ -306,35 +377,17 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[9/11] Запуск Cluster Service (port 8088)...${NC}"
 
-# Проверить наличие бинарника
-BINARY_PATH="$PROJECT_ROOT/bin/cc1c-cluster-service.exe"
-if [ -f "$BINARY_PATH" ]; then
-    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-cluster-service.exe${NC}"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
-    export SERVER_PORT=8088
-    
-    nohup "$BINARY_PATH" > "$LOGS_DIR/cluster-service.log" 2>&1 &
-    CLUSTER_SERVICE_PID=$!
-else
-    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
-    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
-    
-    cd "$PROJECT_ROOT/go-services/cluster-service"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
-    export SERVER_PORT=8088
-    
-    nohup go run cmd/main.go > "$LOGS_DIR/cluster-service.log" 2>&1 &
-    CLUSTER_SERVICE_PID=$!
-fi
+# Бинарник гарантированно существует и актуален после Phase 1
+BINARY_PATH="$BIN_DIR/cc1c-cluster-service.exe"
 
+# Загрузить .env.local
+export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+
+# Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
+export SERVER_PORT=8088
+
+nohup "$BINARY_PATH" > "$LOGS_DIR/cluster-service.log" 2>&1 &
+CLUSTER_SERVICE_PID=$!
 echo $CLUSTER_SERVICE_PID > "$PIDS_DIR/cluster-service.pid"
 
 sleep 2
@@ -352,35 +405,17 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
 
-# Проверить наличие бинарника
-BINARY_PATH="$PROJECT_ROOT/bin/cc1c-batch-service.exe"
-if [ -f "$BINARY_PATH" ]; then
-    echo -e "${YELLOW}   Используется собранный бинарник: bin/cc1c-batch-service.exe${NC}"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    # Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
-    export SERVER_PORT=8087
-    
-    nohup "$BINARY_PATH" > "$LOGS_DIR/batch-service.log" 2>&1 &
-    BATCH_SERVICE_PID=$!
-else
-    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
-    echo -e "${YELLOW}   Совет: Запустите 'make build-go-all' или './scripts/build.sh' для компиляции${NC}"
-    
-    cd "$PROJECT_ROOT/go-services/batch-service"
-    
-    # Загрузить .env.local
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
-    
-    # Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
-    export SERVER_PORT=8087
-    
-    nohup go run cmd/main.go > "$LOGS_DIR/batch-service.log" 2>&1 &
-    BATCH_SERVICE_PID=$!
-fi
+# Бинарник гарантированно существует и актуален после Phase 1
+BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
 
+# Загрузить .env.local
+export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+
+# Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
+export SERVER_PORT=8087
+
+nohup "$BINARY_PATH" > "$LOGS_DIR/batch-service.log" 2>&1 &
+BATCH_SERVICE_PID=$!
 echo $BATCH_SERVICE_PID > "$PIDS_DIR/batch-service.pid"
 
 sleep 2
@@ -423,18 +458,43 @@ fi
 echo ""
 
 ##############################################################################
-# Финальная сводка
+# Summary Report
 ##############################################################################
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Итоговая сводка${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+# Показать статус пересборки
+if [ ${#REBUILD_SERVICES[@]} -gt 0 ]; then
+    echo -e "${BLUE}Пересобранные Go сервисы (${#REBUILD_SERVICES[@]}):${NC}"
+    for service in "${REBUILD_SERVICES[@]}"; do
+        echo -e "  ${GREEN}✓${NC} $service"
+    done
+    echo ""
+fi
+
+if [ ${#SKIPPED_SERVICES[@]} -gt 0 ]; then
+    echo -e "${BLUE}Пропущенные Go сервисы (${#SKIPPED_SERVICES[@]}):${NC}"
+    for service in "${SKIPPED_SERVICES[@]}"; do
+        echo -e "  ${BLUE}ℹ${NC} $service (бинарник актуален)"
+    done
+    echo ""
+fi
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
 echo -e "  Frontend:         ${GREEN}http://localhost:3000${NC}"
-echo -e "  API Gateway:      ${GREEN}http://localhost:8080${NC}"
-echo -e "  Orchestrator:     ${GREEN}http://localhost:8000${NC}"
-echo -e "  Cluster Service:  ${GREEN}http://localhost:8088${NC}"
-echo -e "  Batch Service:    ${GREEN}http://localhost:8087${NC}"
+echo -e "  API Gateway:      ${GREEN}http://localhost:8080/health${NC}"
+echo -e "  Orchestrator:"
+echo -e "    Admin Panel:    ${GREEN}http://localhost:8000/admin${NC}"
+echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
+echo -e "  Cluster Service:  ${GREEN}http://localhost:8088/health${NC}"
+echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
 echo -e "  ras-grpc-gw:      ${GREEN}http://localhost:8081/health${NC} (gRPC: 9999)"
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"

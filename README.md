@@ -79,25 +79,44 @@
 - **Python** >= 3.11 (для разработки)
 - **Node.js** >= 20 (для разработки)
 
-### Запуск локально
+### Запуск локально (Hybrid режим разработки)
 
 ```bash
 # Клонировать репозиторий
 git clone https://github.com/your-org/command-center-1c.git
 cd command-center-1c
 
-# Запустить все сервисы
-make dev
+# Настроить окружение
+cp .env.example .env.local
+# Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
 
-# Или через docker-compose напрямую
-docker-compose up
+# Установить зависимости
+cd orchestrator && python -m venv venv && source venv/Scripts/activate && pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
+
+# Запустить все сервисы (с умной автопересборкой)
+./scripts/dev/start-all.sh
+
+# Проверить статус
+./scripts/dev/health-check.sh
+```
+
+**Опции запуска:**
+```bash
+./scripts/dev/start-all.sh                    # Умная пересборка измененных
+./scripts/dev/start-all.sh --force-rebuild    # Принудительная пересборка всех Go
+./scripts/dev/start-all.sh --no-rebuild       # Быстрый старт без пересборки
+./scripts/dev/start-all.sh --parallel-build   # Параллельная сборка
 ```
 
 Сервисы будут доступны на:
 - **Frontend**: http://localhost:3000
-- **API Gateway**: http://localhost:8080
-- **Orchestrator**: http://localhost:8000
-- **API Docs**: http://localhost:8000/api/docs
+- **API Gateway**: http://localhost:8080/health
+- **Orchestrator**:
+  - Admin Panel: http://localhost:8000/admin
+  - API Docs (Swagger): http://localhost:8000/api/docs
+- **Cluster Service**: http://localhost:8088/health
+- **Batch Service**: http://localhost:8087/health
 
 ---
 
