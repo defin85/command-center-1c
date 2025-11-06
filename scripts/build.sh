@@ -131,13 +131,21 @@ build_service() {
         LDFLAGS="-X main.Version=$VERSION -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
     fi
 
+    # Save current directory and return to it after build
+    local current_dir=$(pwd)
+
     cd "$service_dir"
     GOOS=$TARGET_OS GOARCH=$TARGET_ARCH go build \
         -ldflags "$LDFLAGS" \
         -o "$output_path" \
         cmd/main.go
 
-    if [ $? -eq 0 ]; then
+    local build_status=$?
+
+    # Return to original directory
+    cd "$current_dir"
+
+    if [ $build_status -eq 0 ]; then
         local size=$(du -h "$output_path" | cut -f1)
         echo -e "${GREEN}✓ $service_name built successfully ($size)${NC}"
         echo ""
@@ -159,14 +167,21 @@ build_all_sequential() {
     local total=${#SERVICES[@]}
     local failed=0
 
+    # Temporarily disable exit on error for loop
+    set +e
+
     for service in "${!SERVICES[@]}"; do
         ((count++))
         echo -e "${BLUE}[$count/$total]${NC}"
 
-        if ! build_service "$service"; then
+        build_service "$service"
+        if [ $? -ne 0 ]; then
             ((failed++))
         fi
     done
+
+    # Re-enable exit on error
+    set -e
 
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}  Build Summary${NC}"
@@ -198,6 +213,9 @@ build_all_parallel() {
     local pids=()
     local results=()
 
+    # Temporarily disable exit on error for parallel builds
+    set +e
+
     for service in "${!SERVICES[@]}"; do
         build_service "$service" &
         pids+=($!)
@@ -206,10 +224,14 @@ build_all_parallel() {
     # Ждать завершения всех
     local failed=0
     for pid in "${pids[@]}"; do
-        if ! wait $pid; then
+        wait $pid
+        if [ $? -ne 0 ]; then
             ((failed++))
         fi
     done
+
+    # Re-enable exit on error
+    set -e
 
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}  Build Summary${NC}"
