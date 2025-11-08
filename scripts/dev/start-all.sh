@@ -430,7 +430,7 @@ echo ""
 
 # Шаг 11: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[11/11] Запуск Frontend (port 3000)...${NC}"
+echo -e "${BLUE}[11/11] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -488,7 +488,7 @@ echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${N
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
-echo -e "  Frontend:         ${GREEN}http://localhost:3000${NC}"
+echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC}"
 echo -e "  API Gateway:      ${GREEN}http://localhost:8080/health${NC}"
 echo -e "  Orchestrator:"
 echo -e "    Admin Panel:    ${GREEN}http://localhost:8000/admin${NC}"

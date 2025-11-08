@@ -148,7 +148,7 @@ check_and_kill_port() {
     fi
 }
 
-check_and_kill_port 3000 "Frontend"
+check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "Cluster Service"
 check_and_kill_port 8081 "ras-grpc-gw HTTP"

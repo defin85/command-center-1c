@@ -73,7 +73,7 @@ cd /c/1CProject/command-center-1c
 - `/test-all` - запустить все тесты
 
 **Endpoints для проверки:**
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:5173
 - API Gateway: http://localhost:8080/health
 - Orchestrator:
   - Admin Panel: http://localhost:8000/admin
@@ -121,7 +121,7 @@ cd /c/1CProject/command-center-1c
 ### Архитектура (краткая версия)
 
 ```
-User → Frontend (React:3000)
+User → Frontend (React:5173)
   ↓
 API Gateway (Go:8080) → Orchestrator (Django:8000) → PostgreSQL:5432
                           ↓
@@ -504,7 +504,7 @@ curl http://localhost:8000/api/docs
 # Должна открыться Swagger UI
 
 # Frontend должен быть запущен
-curl http://localhost:3000
+curl http://localhost:5173
 ```
 
 **Важно:** Frontend общается ТОЛЬКО с API Gateway (`:8080`), НЕ напрямую с Orchestrator (`:8000`)!
@@ -547,7 +547,7 @@ kill -9 <pid>  # Linux/Mac
 ```
 ┌─────────┐
 │ React   │ TypeScript + Ant Design
-│ (3000)  │
+│ (5173)  │
 └────┬────┘
      │ HTTP + WebSocket
 ┌────▼────┐
@@ -618,7 +618,7 @@ command-center-1c/
 | **cluster-service** | Go 1.21+ | gRPC client | 8088 |
 | **Orchestrator** | Python 3.11+ | Django 4.2+ DRF | 8000 |
 | **Task Queue** | Python 3.11+ | Celery 5.3+ | - |
-| **Frontend** | TypeScript | React 18.2 + Ant Design | 3000 |
+| **Frontend** | TypeScript | React 18.2 + Ant Design | 5173 |
 
 **Data:**
 - PostgreSQL 15 (5432) - primary DB
@@ -800,7 +800,7 @@ ras-grpc-gw:9999 (gRPC) ← cluster-service:8088
 postgres:5432, redis:6379 ← orchestrator:8000, celery-worker, celery-beat
 orchestrator:8000 ← api-gateway:8080
 redis:6379 ← worker (x2 replicas)
-api-gateway:8080 ← frontend:3000
+api-gateway:8080 ← frontend:5173
 ```
 
 **Важно:**

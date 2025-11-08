@@ -385,7 +385,7 @@ lsof -i -P | grep LISTEN  # Linux/Mac
 # Check specific service ports
 netstat -ano | findstr :8080  # API Gateway
 netstat -ano | findstr :8000  # Orchestrator
-netstat -ano | findstr :3000  # Frontend
+netstat -ano | findstr :5173  # Frontend
 
 # Test connectivity
 curl -v http://localhost:8080/health

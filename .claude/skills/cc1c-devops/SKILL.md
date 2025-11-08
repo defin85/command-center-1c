@@ -54,7 +54,7 @@ allowed-tools: ["Bash", "Read"]
 - `worker` - Go Worker (parallel processing)
 - `cluster-service` - Go Cluster Service (port 8088)
 - `batch-service` - Go Batch Service (port 8087)
-- `frontend` - React Frontend (port 3000)
+- `frontend` - React Frontend (port 5173)
 
 **Infrastructure (Docker):**
 - `postgres` - PostgreSQL (port 5432)
@@ -120,7 +120,7 @@ lsof -i :9999  # Linux/Mac
 ### 3. Health Check Strategy
 
 - **Process check:** проверка PID файлов
-- **HTTP check:** curl health endpoints (8080, 8000, 8088, 3000)
+- **HTTP check:** curl health endpoints (8080, 8000, 8088, 5173)
 - **Database check:** pg_isready, redis-cli ping
 - **Port check:** netstat/lsof для проверки listening ports
 
@@ -200,7 +200,7 @@ python manage.py runserver 0.0.0.0:8000
 1. **Service Dependencies:** ras-grpc-gw → cluster-service (порядок запуска критичен!)
 2. **Environment Files:** .env.local с DB_HOST=localhost (НЕ postgres)
 3. **PID Management:** НЕ удаляй pids/ вручную, используй ./scripts/dev/stop-all.sh
-4. **Port Conflicts:** Перед запуском проверь что порты свободны (8080, 8000, 8088, 3000, 5432, 6379)
+4. **Port Conflicts:** Перед запуском проверь что порты свободны (8080, 8000, 8088, 5173, 5432, 6379)
 5. **Infrastructure First:** Docker containers (PostgreSQL, Redis) ДОЛЖНЫ быть запущены первыми
 
 ## Common Problems

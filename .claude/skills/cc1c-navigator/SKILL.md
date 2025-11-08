@@ -71,7 +71,7 @@ scripts/              # Dev scripts
 ## Service Dependencies (Quick)
 
 ```
-Frontend (:3000)
+Frontend (:5173)
   ↓
 API Gateway (:8080)
   ↓

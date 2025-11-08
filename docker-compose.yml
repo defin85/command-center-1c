@@ -260,7 +260,7 @@ services:
       dockerfile: Dockerfile
     container_name: commandcenter-frontend
     ports:
-      - "3000:80"
+      - "5173:80"
     depends_on:
       - api-gateway
     networks:

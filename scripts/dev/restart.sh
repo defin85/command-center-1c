@@ -40,7 +40,7 @@ if [ -z "$1" ]; then
     echo -e "  ras-grpc-gw       - RAS gRPC Gateway (port 9999)"
     echo -e "  cluster-service   - Go Cluster Service (port 8088)"
     echo -e "  batch-service     - Go Batch Service (port 8087)"
-    echo -e "  frontend          - React Frontend (port 3000)"
+    echo -e "  frontend          - React Frontend (port 5173)"
     echo ""
     exit 1
 fi

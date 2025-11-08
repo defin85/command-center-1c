@@ -2,7 +2,7 @@
 
 ## Runtime Dependencies
 
-### Frontend (React:3000)
+### Frontend (React:5173)
 ```
 Frontend
   ↓ HTTP
@@ -411,7 +411,7 @@ batch-service/       ├── config/
 
 | Service | Port | Protocol | Purpose |
 |---------|------|----------|---------|
-| **Frontend** | 3000 | HTTP | React dev server |
+| **Frontend** | 5173 | HTTP | React dev server |
 | **API Gateway** | 8080 | HTTP | Main API endpoint |
 | **Orchestrator** | 8000 | HTTP | Django app |
 | **cluster-service** | 8088 | HTTP | Cluster monitoring API |

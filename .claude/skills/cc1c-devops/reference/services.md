@@ -236,7 +236,7 @@ go run cmd/main.go
 **Назначение:** UI
 
 **Технические параметры:**
-- **Port:** 3000
+- **Port:** 5173
 - **Path:** frontend/
 - **Language:** TypeScript / React 18.2 + Ant Design
 
@@ -248,7 +248,7 @@ npm run dev
 
 **Health check:**
 ```bash
-curl http://localhost:3000
+curl http://localhost:5173
 # Expected: HTTP 200 OK
 ```
 

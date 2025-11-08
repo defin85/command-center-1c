@@ -34,7 +34,7 @@
 ```
 ┌─────────────┐
 │   Frontend  │ React + TypeScript + Ant Design
-│   (Port 3000)│
+│   (Port 5173)│
 └──────┬──────┘
        │
 ┌──────▼──────┐
@@ -110,7 +110,7 @@ cd frontend && npm install && cd ..
 ```
 
 Сервисы будут доступны на:
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:5173
 - **API Gateway**: http://localhost:8080/health
 - **Orchestrator**:
   - Admin Panel: http://localhost:8000/admin

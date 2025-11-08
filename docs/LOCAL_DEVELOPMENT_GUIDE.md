@@ -47,7 +47,7 @@
 │         HOST MACHINE (NATIVE)           │
 ├─────────────────────────────────────────┤
 │                                         │
-│  React Frontend (port 3000)             │
+│  React Frontend (port 5173)             │
 │  Go API Gateway (port 8080)             │
 │  Go Cluster Service (port 8088)         │
 │  Go Worker                              │
@@ -73,7 +73,7 @@
 
 | Service | Port | Protocol | Location |
 |---------|------|----------|----------|
-| Frontend | 3000 | HTTP | Host |
+| Frontend | 5173 | HTTP | Host |
 | API Gateway | 8080 | HTTP | Host |
 | Orchestrator | 8000 | HTTP | Host |
 | Cluster Service | 8088 | HTTP | Host |
@@ -261,7 +261,7 @@ chmod +x scripts/dev/*.sh
 curl http://localhost:8080/health  # API Gateway
 curl http://localhost:8000/health  # Orchestrator
 curl http://localhost:8088/health  # Cluster Service
-curl http://localhost:3000         # Frontend
+curl http://localhost:5173         # Frontend
 ```
 
 ### Step 8: Create Superuser (Django Admin)

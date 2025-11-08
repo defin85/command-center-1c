@@ -40,7 +40,7 @@
 - `ras-grpc-gw` - RAS gRPC Gateway (port 9999)
 - `cluster-service` - Go Cluster Service (port 8088)
 - `batch-service` - Go Batch Service (port 8087)
-- `frontend` - React Frontend (port 3000)
+- `frontend` - React Frontend (port 5173)
 
 ---
 
@@ -284,7 +284,7 @@ api-gateway → celery-beat → celery-worker → orchestrator
    - Показывает статус каждого сервиса
 
 2. **Проверка HTTP endpoints:**
-   - Frontend: `http://localhost:3000`
+   - Frontend: `http://localhost:5173`
    - API Gateway: `http://localhost:8080/health`
    - Orchestrator: `http://localhost:8000/health`
    - ras-grpc-gw: `http://localhost:8081/health`

@@ -91,7 +91,7 @@ check_http() {
     fi
 }
 
-check_http "Frontend" "http://localhost:3000"
+check_http "Frontend" "http://localhost:5173"
 check_http "API Gateway" "http://localhost:8080/health"
 check_http "Orchestrator" "http://localhost:8000/health"
 check_http "ras-grpc-gw" "http://localhost:8081/health"
@@ -183,7 +183,7 @@ check_port() {
     fi
 }
 
-check_port 3000 "Frontend"
+check_port 5173 "Frontend"
 check_port 8080 "API Gateway"
 check_port 8000 "Orchestrator"
 check_port 8088 "Cluster Service"
