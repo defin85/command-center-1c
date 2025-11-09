@@ -6,29 +6,23 @@ import (
 	"sync"
 	"time"
 
-	v8 "github.com/v8platform/api"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
 	"github.com/command-center-1c/batch-service/internal/models"
 )
 
-// ExtensionInstaller handles installation of 1C extensions using v8platform/api
+// ExtensionInstaller handles installation of 1C extensions using V8Executor
 type ExtensionInstaller struct {
-	exe1cv8Path    string
-	defaultTimeout time.Duration
+	executor *v8executor.V8Executor
 }
 
 // NewExtensionInstaller creates a new ExtensionInstaller
 func NewExtensionInstaller(exe1cv8Path string, defaultTimeout time.Duration) *ExtensionInstaller {
-	if exe1cv8Path == "" {
-		exe1cv8Path = `C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe`
-	}
-
 	if defaultTimeout == 0 {
 		defaultTimeout = 5 * time.Minute
 	}
 
 	return &ExtensionInstaller{
-		exe1cv8Path:    exe1cv8Path,
-		defaultTimeout: defaultTimeout,
+		executor: v8executor.NewV8Executor(exe1cv8Path, defaultTimeout),
 	}
 }
 
@@ -36,47 +30,30 @@ func NewExtensionInstaller(exe1cv8Path string, defaultTimeout time.Duration) *Ex
 func (i *ExtensionInstaller) InstallExtension(ctx context.Context, req *models.InstallExtensionRequest) (*models.InstallExtensionResponse, error) {
 	startTime := time.Now()
 
-	// 1. Create infobase connection
-	infobase := v8.NewServerIB(req.Server, req.InfobaseName)
+	// Build request for V8Executor
+	installReq := v8executor.InstallRequest{
+		Server:        req.Server,
+		InfobaseName:  req.InfobaseName,
+		Username:      req.Username,
+		Password:      req.Password,
+		ExtensionName: req.ExtensionName,
+		ExtensionPath: req.ExtensionPath,
+	}
 
-	// 2. Load extension from .cfe file
-	what := v8.LoadExtensionCfg(req.ExtensionName, req.ExtensionPath)
+	// Install extension using V8Executor (LoadCfg + UpdateDBCfg)
+	// Note: V8Executor.InstallExtension always performs UpdateDBCfg,
+	// so we ignore the req.UpdateDBConfig flag (it's always true now)
+	err := i.executor.InstallExtension(ctx, installReq)
 
-	// 3. Execute installation with v8platform/api
-	err := v8.Run(infobase, what,
-		v8.WithCredentials(req.Username, req.Password),
-		v8.WithTimeout(int64(i.defaultTimeout.Seconds())),
-		v8.WithPath(i.exe1cv8Path),
-	)
+	duration := time.Since(startTime)
 
 	if err != nil {
 		return &models.InstallExtensionResponse{
 			Success:         false,
 			Message:         fmt.Sprintf("Failed to install extension: %v", err),
-			DurationSeconds: time.Since(startTime).Seconds(),
+			DurationSeconds: duration.Seconds(),
 		}, err
 	}
-
-	// 4. Update DB configuration if requested
-	if req.UpdateDBConfig {
-		updateWhat := v8.UpdateExtensionDBCfg(req.ExtensionName, true, false)
-
-		err = v8.Run(infobase, updateWhat,
-			v8.WithCredentials(req.Username, req.Password),
-			v8.WithTimeout(int64(i.defaultTimeout.Seconds())),
-			v8.WithPath(i.exe1cv8Path),
-		)
-
-		if err != nil {
-			return &models.InstallExtensionResponse{
-				Success:         false,
-				Message:         fmt.Sprintf("Extension installed but failed to update DB config: %v", err),
-				DurationSeconds: time.Since(startTime).Seconds(),
-			}, err
-		}
-	}
-
-	duration := time.Since(startTime)
 
 	return &models.InstallExtensionResponse{
 		Success:         true,

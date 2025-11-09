@@ -38,18 +38,18 @@ func (v *FileValidator) ValidateExtensionFile(path string) error {
 		return fmt.Errorf("cannot access file: %w", err)
 	}
 
-	// 4. Check file size (> 0, < 100MB reasonable limit)
+	// 4. Check it's a regular file, not directory (BEFORE size check)
+	if info.IsDir() {
+		return errors.New("path is a directory, not a file")
+	}
+
+	// 5. Check file size (> 0, < 100MB reasonable limit)
 	if info.Size() == 0 {
 		return errors.New("file is empty")
 	}
 	maxSize := int64(100 * 1024 * 1024) // 100 MB
 	if info.Size() > maxSize {
 		return fmt.Errorf("file too large (max 100MB, got %d bytes)", info.Size())
-	}
-
-	// 5. Check it's a regular file, not directory
-	if info.IsDir() {
-		return errors.New("path is a directory, not a file")
 	}
 
 	return nil
