@@ -1,0 +1,128 @@
+{
+  "templates": [
+    {
+      "id": "create-user-template",
+      "name": "Create User Template",
+      "description": "Template for creating a new user in 1C",
+      "operation_type": "create",
+      "target_entity": "Catalog_Users",
+      "template_data": {
+        "Description": "{{user_name}}",
+        "Code": "{{user_code}}",
+        "IsActive": "{{is_active|bool1c}}",
+        "CreatedAt": "{{created_at|datetime1c}}"
+      }
+    },
+    {
+      "id": "update-user-template",
+      "name": "Update User Template",
+      "description": "Template for updating user data",
+      "operation_type": "update",
+      "target_entity": "Catalog_Users",
+      "template_data": {
+        "filter": "Ref_Key eq {{user_id|guid1c}}",
+        "data": {
+          "Description": "{{new_name}}",
+          "IsActive": "{{is_active|bool1c}}",
+          "UpdatedAt": "{{current_timestamp|datetime1c}}"
+        }
+      }
+    },
+    {
+      "id": "create-document-template",
+      "name": "Create Document Template",
+      "description": "Template for creating a document in 1C",
+      "operation_type": "create",
+      "target_entity": "Document_SalesOrder",
+      "template_data": {
+        "Date": "{{document_date|date1c}}",
+        "Number": "{{document_number}}",
+        "Organization": "{{org_id|guid1c}}",
+        "Counterparty": "{{counterparty_id|guid1c}}",
+        "Posted": "{{is_posted|bool1c}}",
+        "Items": [
+          {
+            "Product": "{{product_id|guid1c}}",
+            "Quantity": "{{quantity}}",
+            "Price": "{{price}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "query-users-template",
+      "name": "Query Users Template",
+      "description": "Template for querying users with filter",
+      "operation_type": "read",
+      "target_entity": "Catalog_Users",
+      "template_data": {
+        "filter": "IsActive eq {{is_active|bool1c}} and CreatedAt ge {{from_date|datetime1c}}",
+        "select": ["Ref_Key", "Description", "Code", "CreatedAt"],
+        "orderby": "Description asc",
+        "top": "{{limit}}"
+      }
+    },
+    {
+      "id": "delete-user-template",
+      "name": "Delete User Template",
+      "description": "Template for marking user as deleted",
+      "operation_type": "update",
+      "target_entity": "Catalog_Users",
+      "template_data": {
+        "filter": "Ref_Key eq {{user_id|guid1c}}",
+        "data": {
+          "DeletionMark": "true",
+          "DeletedAt": "{{current_timestamp|datetime1c}}"
+        }
+      }
+    }
+  ],
+
+  "context_examples": [
+    {
+      "template_id": "create-user-template",
+      "context": {
+        "user_name": "John Doe",
+        "user_code": "USER001",
+        "is_active": true,
+        "created_at": "2025-11-09T10:30:00"
+      },
+      "expected_result": {
+        "Description": "John Doe",
+        "Code": "USER001",
+        "IsActive": "true",
+        "CreatedAt": "datetime'2025-11-09T10:30:00'"
+      }
+    },
+    {
+      "template_id": "update-user-template",
+      "context": {
+        "user_id": "a1b2c3d4-1234-5678-90ab-cdef12345678",
+        "new_name": "Jane Doe",
+        "is_active": false
+      },
+      "expected_result": {
+        "filter": "Ref_Key eq guid'a1b2c3d4-1234-5678-90ab-cdef12345678'",
+        "data": {
+          "Description": "Jane Doe",
+          "IsActive": "false",
+          "UpdatedAt": "datetime'2025-11-09T..."
+        }
+      }
+    },
+    {
+      "template_id": "query-users-template",
+      "context": {
+        "is_active": true,
+        "from_date": "2025-01-01T00:00:00",
+        "limit": 100
+      },
+      "expected_result": {
+        "filter": "IsActive eq true and CreatedAt ge datetime'2025-01-01T00:00:00'",
+        "select": ["Ref_Key", "Description", "Code", "CreatedAt"],
+        "orderby": "Description asc",
+        "top": 100
+      }
+    }
+  ]
+}

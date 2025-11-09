@@ -174,8 +174,8 @@ if not FIELD_ENCRYPTION_KEY:
         "Generate one with: python scripts/generate_encryption_key.py",
         RuntimeWarning
     )
-    # Использовать fallback ключ для development
-    FIELD_ENCRYPTION_KEY = 'development-only-insecure-key-32chars!!'
+    # Использовать fallback ключ для development (valid Fernet key)
+    FIELD_ENCRYPTION_KEY = '2KyoQKVSb56ajWuIVq3n11VXLd6YjZ099oABHDXV4V4='
 
 # Installation Service Configuration
 INSTALLATION_SERVICE_URL = env(

@@ -19,6 +19,7 @@ urlpatterns = [
 
     # API v1
     path('api/v1/', include('apps.databases.urls')),
+    path('api/v1/templates/', include('apps.templates.urls')),
 
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
