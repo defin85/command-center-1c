@@ -10,6 +10,7 @@ from .views import (
     extension_status,
     retry_installation,
     installation_callback,
+    get_database_credentials,
 )
 
 router = DefaultRouter()
@@ -25,4 +26,11 @@ urlpatterns = [
     path('<str:pk>/retry-installation/', retry_installation, name='retry-installation'),
     # Callback from batch-service
     path('extensions/installation/callback/', installation_callback, name='installation-callback'),
+
+    # Credentials endpoint для Go Workers
+    path(
+        'databases/<str:database_id>/credentials',
+        get_database_credentials,
+        name='database-credentials'
+    ),
 ]

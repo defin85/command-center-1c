@@ -324,6 +324,77 @@ def retry_installation(request, pk):
         )
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@extend_schema(
+    summary="Получить credentials для базы (для Go Worker)",
+    description="""
+    Возвращает OData URL и credentials для базы данных.
+    Используется Go Worker для выполнения операций.
+
+    Requires authentication: Worker API Key
+    """,
+    responses={
+        200: OpenApiResponse(
+            description="Credentials returned",
+            response={
+                'type': 'object',
+                'properties': {
+                    'database_id': {'type': 'string'},
+                    'odata_url': {'type': 'string'},
+                    'username': {'type': 'string'},
+                    'password': {'type': 'string', 'description': 'Decrypted password'}
+                }
+            }
+        ),
+        404: OpenApiResponse(description="Database not found"),
+        403: OpenApiResponse(description="Authentication failed")
+    }
+)
+def get_database_credentials(request, database_id):
+    """
+    Get database credentials for Go Worker.
+
+    GET /api/v1/databases/{database_id}/credentials
+
+    Response:
+    {
+        "database_id": "uuid",
+        "odata_url": "http://...",
+        "username": "admin",
+        "password": "decrypted_password"
+    }
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Credentials request for database {database_id}")
+
+    try:
+        database = Database.objects.get(id=database_id)
+
+        # ВАЖНО: Password автоматически расшифровывается
+        # благодаря EncryptedCharField
+        credentials = {
+            "database_id": str(database.id),
+            "odata_url": database.odata_url,
+            "username": database.username,
+            "password": database.password  # Auto-decrypted
+        }
+
+        logger.info(
+            f"Credentials provided for database {database_id}",
+            extra={"database_name": database.name}
+        )
+
+        return Response(credentials, status=status.HTTP_200_OK)
+
+    except Database.DoesNotExist:
+        logger.warning(f"Database {database_id} not found")
+        return Response(
+            {"error": f"Database {database_id} not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
 @api_view(['POST'])
 @permission_classes([])  # No authentication required for callbacks from batch-service
 @extend_schema(

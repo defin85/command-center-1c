@@ -156,6 +156,22 @@ REDIS_HOST = env('REDIS_HOST', default='localhost')
 REDIS_PORT = env('REDIS_PORT', default='6379')
 REDIS_DB = env('REDIS_DB', default='0')
 
+# ========== Redis Queue Configuration (Message Protocol v2.0) ==========
+REDIS_QUEUE_OPERATIONS = "cc1c:operations:v1"
+REDIS_QUEUE_RESULTS = "cc1c:operations:results:v1"
+REDIS_QUEUE_DLQ = "cc1c:operations:dlq:v1"
+
+# Idempotency & Heartbeat
+REDIS_KEY_TASK_LOCK = "cc1c:task:{task_id}:lock"
+REDIS_KEY_TASK_PROGRESS = "cc1c:task:{task_id}:progress"
+REDIS_KEY_WORKER_HEARTBEAT = "cc1c:worker:{worker_id}:heartbeat"
+
+# Worker Authentication
+WORKER_API_KEY = env('WORKER_API_KEY', default='dev-worker-key-change-in-production')
+
+# DLQ Retention
+DLQ_RETENTION_DAYS = 7
+
 # CORS
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -174,8 +190,8 @@ if not FIELD_ENCRYPTION_KEY:
         "Generate one with: python scripts/generate_encryption_key.py",
         RuntimeWarning
     )
-    # Использовать fallback ключ для development
-    FIELD_ENCRYPTION_KEY = 'development-only-insecure-key-32chars!!'
+    # Использовать fallback ключ для development (valid Fernet key)
+    FIELD_ENCRYPTION_KEY = 'MqYe7fA3_doV3nD15UAtPUb6Aq0_cgVg6kfdwjDlpCo='
 
 # Installation Service Configuration
 INSTALLATION_SERVICE_URL = env(

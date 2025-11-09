@@ -35,6 +35,8 @@ type Config struct {
 	OrchestratorURL string
 
 	// Worker configuration
+	WorkerID          string
+	WorkerAPIKey      string
 	WorkerPoolSize    int
 	WorkerMaxRetries  int
 	WorkerTimeout     time.Duration
@@ -78,6 +80,8 @@ func LoadFromEnv() *Config {
 		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
 
 		// Worker
+		WorkerID:         getEnv("WORKER_ID", "worker-1"),
+		WorkerAPIKey:     getEnv("WORKER_API_KEY", "dev-worker-key-change-in-production"),
 		WorkerPoolSize:   getIntEnv("WORKER_POOL_SIZE", 50),
 		WorkerMaxRetries: getIntEnv("WORKER_MAX_RETRIES", 3),
 		WorkerTimeout:    getDurationEnv("WORKER_TIMEOUT", 5*time.Minute),

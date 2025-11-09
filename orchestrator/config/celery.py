@@ -50,6 +50,27 @@ app.conf.beat_schedule = {
 # Timezone для beat schedule
 app.conf.timezone = 'UTC'
 
+# ========== Queue Configuration (Message Protocol v2.0) ==========
+app.conf.task_routes = {
+    'apps.operations.tasks.enqueue_operation': {
+        'queue': 'operations',
+        'routing_key': 'operations.enqueue',
+    },
+}
+
+# ========== Retry Configuration ==========
+app.conf.task_acks_late = True
+app.conf.task_reject_on_worker_lost = True
+app.conf.worker_prefetch_multiplier = 1  # Fair task distribution
+
+# Default retry policy
+app.conf.task_default_retry_delay = 2  # seconds
+app.conf.task_max_retries = 3
+
+# ========== Timeouts ==========
+app.conf.task_soft_time_limit = 60  # Graceful timeout (seconds)
+app.conf.task_time_limit = 70        # Hard timeout (seconds)
+
 
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):

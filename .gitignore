@@ -148,7 +148,9 @@ dist
 .env.local
 .env.*.local
 secrets/
-credentials/
+/credentials/
+*.credentials.json
+credentials.yaml
 
 # Logs
 logs
