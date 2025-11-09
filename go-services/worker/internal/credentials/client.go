@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
-	"go.uber.org/zap"
 )
 
 // DatabaseCredentials represents credentials for a 1C database
@@ -55,16 +54,12 @@ func NewClient(orchestratorURL, apiKey string) *Client {
 func (c *Client) Fetch(ctx context.Context, databaseID string) (*DatabaseCredentials, error) {
 	// Check cache first
 	if creds := c.getFromCache(databaseID); creds != nil {
-		logger.GetLogger().Debug("credentials cache hit",
-			zap.String("database_id", databaseID),
-		)
+		logger.Debugf("credentials cache hit, database_id=%s", databaseID)
 		return creds, nil
 	}
 
 	// Cache miss - fetch from API
-	logger.GetLogger().Debug("credentials cache miss, fetching from API",
-		zap.String("database_id", databaseID),
-	)
+	logger.Debugf("credentials cache miss, fetching from API, database_id=%s", databaseID)
 
 	creds, err := c.fetchFromAPI(ctx, databaseID)
 	if err != nil {
@@ -112,10 +107,7 @@ func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*Database
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	logger.GetLogger().Info("credentials fetched successfully",
-		zap.String("database_id", databaseID),
-		zap.String("odata_url", creds.ODataURL),
-	)
+	logger.Infof("credentials fetched successfully, database_id=%s, odata_url=%s", databaseID, creds.ODataURL)
 
 	return &creds, nil
 }
@@ -153,5 +145,5 @@ func (c *Client) ClearCache() {
 	defer c.cacheMu.Unlock()
 
 	c.cache = make(map[string]*cacheEntry)
-	logger.GetLogger().Info("credentials cache cleared")
+	logger.Info("credentials cache cleared")
 }

@@ -10,7 +10,8 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
-	"github.com/commandcenter1c/commandcenter/worker/internal/pool"
+	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
+	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
 	"go.uber.org/zap"
 )
@@ -54,31 +55,41 @@ func main() {
 		zap.String("service", "cc1c-worker"),
 		zap.String("version", Version),
 		zap.String("commit", Commit),
-		zap.String("buildTime", BuildTime),
+		zap.String("worker_id", cfg.WorkerID),
 	)
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize queue client
-	queueClient, err := queue.NewRedisQueue(ctx, cfg)
+	// Initialize credentials client
+	credsClient := credentials.NewClient(
+		cfg.OrchestratorURL,
+		cfg.WorkerAPIKey,
+	)
+	log.Info("credentials client initialized")
+
+	// Initialize task processor
+	taskProcessor := processor.NewTaskProcessor(cfg, credsClient)
+	log.Info("task processor initialized")
+
+	// Initialize queue consumer
+	consumer, err := queue.NewConsumer(cfg, taskProcessor)
 	if err != nil {
-		log.Fatal("failed to initialize queue", zap.Error(err))
+		log.Fatal("failed to initialize consumer", zap.Error(err))
 	}
-	defer queueClient.Close()
+	defer consumer.Close()
 
 	log.Info("connected to Redis queue")
 
-	// Initialize worker pool
-	workerPool := pool.NewWorkerPool(cfg.WorkerPoolSize, queueClient, cfg)
-	log.Info("initialized worker pool",
-		zap.Int("poolSize", cfg.WorkerPoolSize),
-	)
+	// Start consumer (blocking)
+	go func() {
+		if err := consumer.Start(ctx); err != nil && err != context.Canceled {
+			log.Error("consumer error", zap.Error(err))
+		}
+	}()
 
-	// Start worker pool
-	workerPool.Start(ctx)
-	log.Info("worker pool started, waiting for tasks")
+	log.Info("worker started, waiting for tasks")
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
@@ -87,7 +98,7 @@ func main() {
 	<-sigChan
 	log.Info("shutting down worker service")
 
-	// Stop worker pool gracefully
-	workerPool.Stop()
+	cancel() // Trigger graceful shutdown
+
 	log.Info("worker service stopped")
 }
