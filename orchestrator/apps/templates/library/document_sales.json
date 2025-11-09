@@ -1,0 +1,40 @@
+{
+  "name": "Create Sales Document",
+  "description": "Creates a sales document in Document_Sales with line items",
+  "operation_type": "create",
+  "target_entity": "Document_Sales",
+  "template_data": {
+    "Number": "{{document_number}}",
+    "Date": "{{document_date|date1c}}",
+    "Customer": "{{customer_code}}",
+    "CustomerName": "{{customer_name}}",
+    "Status": "{% if is_draft %}Draft{% else %}Posted{% endif %}",
+    "LineItems": [
+      {
+        "Product": "{{product_code}}",
+        "Quantity": "{{quantity}}",
+        "Price": "{{price}}",
+        "Total": "{{quantity * price}}"
+      }
+    ],
+    "TotalAmount": "{{total_amount}}",
+    "VATAmount": "{{total_amount * 0.20}}",
+    "GrandTotal": "{{total_amount * 1.20}}",
+    "CreatedBy": "CommandCenter1C",
+    "CreatedAt": "{{current_timestamp|datetime1c}}"
+  },
+  "required_variables": ["document_number", "document_date", "customer_code", "customer_name", "product_code", "quantity", "price", "total_amount"],
+  "optional_variables": ["is_draft", "current_timestamp"],
+  "example_context": {
+    "document_number": "SALE-2025-001",
+    "document_date": "2025-11-09",
+    "customer_code": "CUST001",
+    "customer_name": "ООО Рога и Копыта",
+    "is_draft": false,
+    "product_code": "PROD001",
+    "quantity": 10,
+    "price": 1500.00,
+    "total_amount": 15000.00,
+    "current_timestamp": "2025-11-09T15:30:00"
+  }
+}

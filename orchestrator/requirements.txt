@@ -31,6 +31,9 @@ django-encrypted-model-fields==0.6.5
 # Utilities
 pytz==2023.3
 
+# Template Engine
+Jinja2==3.1.6
+
 # Development
 django-extensions==3.2.3
 pytest==7.4.3

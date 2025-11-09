@@ -1,0 +1,25 @@
+{
+  "name": "Update Product Price",
+  "description": "Updates price for product in Catalog_Products with automatic discount calculation",
+  "operation_type": "update",
+  "target_entity": "Catalog_Products",
+  "template_data": {
+    "filter": "Code eq '{{product_code}}'",
+    "data": {
+      "Price": "{{new_price}}",
+      "OldPrice": "{{old_price|default(0)}}",
+      "Discount": "{% if old_price and new_price < old_price %}{{((old_price - new_price) / old_price * 100)|round(2)}}{% else %}0{% endif %}",
+      "UpdatedAt": "{{current_timestamp|datetime1c}}",
+      "UpdatedBy": "{{user_name|default('System')}}"
+    }
+  },
+  "required_variables": ["product_code", "new_price"],
+  "optional_variables": ["old_price", "user_name", "current_timestamp"],
+  "example_context": {
+    "product_code": "PROD12345",
+    "new_price": 850.50,
+    "old_price": 1000.00,
+    "user_name": "admin",
+    "current_timestamp": "2025-11-09T15:30:00"
+  }
+}

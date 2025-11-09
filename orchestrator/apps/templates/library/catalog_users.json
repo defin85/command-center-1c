@@ -1,0 +1,34 @@
+{
+  "name": "Create User in 1C Catalog",
+  "description": "Creates a new user record in Catalog_Users with conditional logic for production/test databases",
+  "operation_type": "create",
+  "target_entity": "Catalog_Users",
+  "template_data": {
+    "Code": "{{user_code}}",
+    "Description": "{{user_name}}",
+    "IsActive": "{% if database_type == 'production' %}{{is_active|bool1c}}{% else %}false{% endif %}",
+    "Email": "{{email}}",
+    "Phone": "{{phone|default('')}}",
+    "Department": "{{department|default('Unknown')}}",
+    "Permissions": [
+      "{% if is_admin %}read{% endif %}",
+      "{% if is_admin or is_moderator %}write{% endif %}",
+      "{% if is_admin %}admin{% endif %}"
+    ],
+    "CreatedBy": "CommandCenter1C",
+    "CreatedAt": "{{current_timestamp|datetime1c}}"
+  },
+  "required_variables": ["user_code", "user_name", "email", "is_active"],
+  "optional_variables": ["phone", "department", "is_admin", "is_moderator", "database_type"],
+  "example_context": {
+    "user_code": "USER001",
+    "user_name": "Иванов Алексей Петрович",
+    "email": "ivanov@company.com",
+    "phone": "+7 (999) 123-45-67",
+    "department": "IT Department",
+    "is_active": true,
+    "is_admin": true,
+    "database_type": "production",
+    "current_timestamp": "2025-11-09T15:30:00"
+  }
+}
