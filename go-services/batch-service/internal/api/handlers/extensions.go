@@ -11,12 +11,14 @@ import (
 // ExtensionsHandler handles extension-related HTTP requests
 type ExtensionsHandler struct {
 	installer *service.ExtensionInstaller
+	validator *service.FileValidator
 }
 
 // NewExtensionsHandler creates a new ExtensionsHandler
-func NewExtensionsHandler(installer *service.ExtensionInstaller) *ExtensionsHandler {
+func NewExtensionsHandler(installer *service.ExtensionInstaller, validator *service.FileValidator) *ExtensionsHandler {
 	return &ExtensionsHandler{
 		installer: installer,
+		validator: validator,
 	}
 }
 
@@ -37,6 +39,14 @@ func (h *ExtensionsHandler) InstallExtension(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error: "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate extension file
+	if err := h.validator.ValidateExtensionFile(req.ExtensionPath); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error: "File validation failed: " + err.Error(),
 		})
 		return
 	}

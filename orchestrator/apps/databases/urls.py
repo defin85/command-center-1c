@@ -9,6 +9,7 @@ from .views import (
     installation_progress,
     extension_status,
     retry_installation,
+    installation_callback,
 )
 
 router = DefaultRouter()
@@ -22,4 +23,6 @@ urlpatterns = [
     path('installation-progress/<str:task_id>/', installation_progress, name='installation-progress'),
     path('<str:pk>/extension-status/', extension_status, name='extension-status'),
     path('<str:pk>/retry-installation/', retry_installation, name='retry-installation'),
+    # Callback from batch-service
+    path('extensions/installation/callback/', installation_callback, name='installation-callback'),
 ]

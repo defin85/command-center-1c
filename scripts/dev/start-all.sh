@@ -5,6 +5,7 @@
 ##############################################################################
 # Запускает все сервисы проекта локально на хост-машине
 # - Docker: PostgreSQL, Redis, ClickHouse
+# - 1C Platform: RAS (Remote Administration Server)
 # - Python: Django Orchestrator, Celery Worker, Celery Beat
 # - Go: API Gateway, Worker, ras-grpc-gw, cluster-service
 # - Frontend: React dev server
@@ -115,8 +116,10 @@ if [ ! -f "$PROJECT_ROOT/.env.local" ]; then
     echo -e "${GREEN}✓ Создан .env.local${NC}"
 fi
 
-# Загрузить переменные окружения
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# Загрузить переменные окружения (безопасно для путей с пробелами)
+set -a
+source "$PROJECT_ROOT/.env.local"
+set +a
 
 ##############################################################################
 # Phase 1: Smart Go Rebuild (NEW!)
@@ -208,8 +211,7 @@ if [ -d "venv" ]; then
     source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
 fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 nohup python manage.py runserver 0.0.0.0:8000 > "$LOGS_DIR/orchestrator.log" 2>&1 &
 ORCHESTRATOR_PID=$!
@@ -289,8 +291,7 @@ echo -e "${BLUE}[6/11] Запуск API Gateway (port 8080)...${NC}"
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 nohup "$BINARY_PATH" > "$LOGS_DIR/api-gateway.log" 2>&1 &
 API_GATEWAY_PID=$!
@@ -314,8 +315,7 @@ echo -e "${BLUE}[7/11] Запуск Go Worker...${NC}"
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-worker.exe"
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 nohup "$BINARY_PATH" > "$LOGS_DIR/worker.log" 2>&1 &
 WORKER_PID=$!
@@ -331,9 +331,50 @@ else
 fi
 echo ""
 
-# Шаг 8: ras-grpc-gw (Go)
+# Шаг 8: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[8/11] Запуск ras-grpc-gw (port 9999)...${NC}"
+echo -e "${BLUE}[8/12] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+
+# Проверить что PLATFORM_1C_BIN_PATH задан
+if [ -z "$PLATFORM_1C_BIN_PATH" ]; then
+    echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
+    echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
+    echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=C:\\Program Files\\1cv8\\8.3.27.1786\\bin${NC}"
+    echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+else
+    RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+
+    # Проверить что ras.exe существует
+    if [ ! -f "$RAS_EXE" ]; then
+        echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+        echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+    else
+        # Проверить что RAS еще не запущен
+        if netstat -ano 2>/dev/null | grep -q ":${RAS_PORT:-1545}.*LISTENING" || lsof -i ":${RAS_PORT:-1545}" >/dev/null 2>&1; then
+            echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
+            echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
+        else
+            # Запустить RAS
+            nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} > "$LOGS_DIR/ras.log" 2>&1 &
+            RAS_PID=$!
+            echo $RAS_PID > "$PIDS_DIR/ras.pid"
+
+            sleep 3
+            if kill -0 $RAS_PID 2>/dev/null; then
+                echo -e "${GREEN}✓ RAS запущен (PID: $RAS_PID, port: ${RAS_PORT:-1545})${NC}"
+            else
+                echo -e "${RED}✗ Не удалось запустить RAS${NC}"
+                cat "$LOGS_DIR/ras.log"
+                echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+            fi
+        fi
+    fi
+fi
+echo ""
+
+# Шаг 9: ras-grpc-gw (Go)
+##############################################################################
+echo -e "${BLUE}[9/12] Запуск ras-grpc-gw (port 9999)...${NC}"
 
 # Проверить что директория ras-grpc-gw существует
 RAS_GW_DIR="/c/1CProject/ras-grpc-gw"
@@ -345,8 +386,7 @@ fi
 
 cd "$RAS_GW_DIR"
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
+# .env.local уже загружен в начале скрипта
 
 # Проверить наличие бинарника
 BINARY_PATH="$RAS_GW_DIR/bin/ras-grpc-gw.exe"
@@ -373,15 +413,14 @@ echo ""
 
 ##############################################################################
 ##############################################################################
-# Шаг 9: Cluster Service (Go)
+# Шаг 10: Cluster Service (Go)
 ##############################################################################
-echo -e "${BLUE}[9/11] Запуск Cluster Service (port 8088)...${NC}"
+echo -e "${BLUE}[10/12] Запуск Cluster Service (port 8088)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-cluster-service.exe"
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
 export SERVER_PORT=8088
@@ -401,15 +440,14 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 10: Batch Service (Go)
+# Шаг 11: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
+echo -e "${BLUE}[11/12] Запуск Batch Service (port 8087)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 # Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
 export SERVER_PORT=8087
@@ -428,9 +466,9 @@ else
 fi
 echo ""
 
-# Шаг 11: Frontend (React)
+# Шаг 12: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[11/11] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[12/12] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -440,8 +478,7 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Загрузить .env.local
-export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+# .env.local уже загружен в начале скрипта
 
 nohup npm run dev > "$LOGS_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!

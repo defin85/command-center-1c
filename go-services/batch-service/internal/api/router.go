@@ -7,11 +7,18 @@ import (
 )
 
 // SetupRouter configures and returns a Gin router with all routes
-func SetupRouter(extensionInstaller *service.ExtensionInstaller) *gin.Engine {
+func SetupRouter(
+	extensionInstaller *service.ExtensionInstaller,
+	extensionDeleter *service.ExtensionDeleter,
+	extensionLister *service.ExtensionLister,
+	fileValidator *service.FileValidator,
+) *gin.Engine {
 	router := gin.Default()
 
 	// Create handlers
-	extensionsHandler := handlers.NewExtensionsHandler(extensionInstaller)
+	extensionsHandler := handlers.NewExtensionsHandler(extensionInstaller, fileValidator)
+	deleteHandler := handlers.NewDeleteExtensionHandler(extensionDeleter)
+	listHandler := handlers.NewListExtensionsHandler(extensionLister)
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
@@ -21,6 +28,8 @@ func SetupRouter(extensionInstaller *service.ExtensionInstaller) *gin.Engine {
 		{
 			extensions.POST("/install", extensionsHandler.InstallExtension)
 			extensions.POST("/batch-install", extensionsHandler.BatchInstall)
+			extensions.POST("/delete", deleteHandler.Delete)
+			extensions.GET("/list", listHandler.List)
 		}
 	}
 

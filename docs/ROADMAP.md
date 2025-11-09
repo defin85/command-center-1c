@@ -27,18 +27,20 @@
 
 ## 📍 ТЕКУЩИЙ ПРОГРЕСС
 
-**Дата обновления:** 2025-10-31
-**Текущая фаза:** Phase 1 - MVP Foundation (Week 1-2)
-**Статус:** ✅ Sprint 1.4 ЗАВЕРШЕН - cluster-service интеграция с RAS
+**Дата обновления:** 2025-11-08
+**Текущая фаза:** Phase 1 - MVP Foundation (Week 2.5-3)
+**Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ - Task Queue & Worker Integration
 
 ### Завершенные работы
 
 | Sprint | Статус | Дата завершения | Результат |
 |--------|--------|-----------------|-----------|
 | **Sprint 1.1** | ✅ DONE | 2025-01-16 | Monorepo structure, Docker Compose, Infrastructure setup |
-| **Sprint 1.2** | ✅ DONE | 2025-01-17 | Database Models, OData Client, REST API (13 endpoints), Django Admin |
-| **Sprint 1.3** | ✅ DONE | 2025-10-29 | Docker integration, cluster-service в Docker Compose |
+| **Sprint 1.2** | ✅ DONE | 2025-01-17 | Database Models, OData Client, REST API (15+ endpoints), Django Admin |
+| **Sprint 1.3** | ✅ DONE | 2025-10-29 | Docker integration, cluster-service + batch-service в Docker Compose |
 | **Sprint 1.4** | ✅ DONE | 2025-10-31 | **RAS integration через gRPC** - endpoint management, GetInfobases working |
+| **Sprint 2.1** | 🟡 30% DONE | - | Celery setup ✅, Go Worker structure ✅, Integration ❌ (TODO) |
+| **Sprint 2.2** | 🟡 20% DONE | - | Template models ✅, Template Engine ❌ (TODO), First Operation ❌ (TODO) |
 
 ### Достигнутые метрики
 
@@ -51,7 +53,13 @@
 
 ### Текущие возможности
 
-✅ **cluster-service (Go) - NEW:**
+✅ **Infrastructure (100% готово):**
+- Monorepo structure: `go-services/`, `orchestrator/`, `frontend/`
+- Docker Compose: PostgreSQL, Redis, ClickHouse
+- Dev scripts: `scripts/dev/*.sh` с smart rebuild
+- RAS auto-start в start-all.sh
+
+✅ **cluster-service (Go) - 100% готово:**
 - gRPC клиент для ras-grpc-gw
 - Endpoint management с автоматическим переиспользованием
 - Аутентификация на кластере 1С
@@ -59,41 +67,137 @@
 - Health check endpoint (HTTP:8088/health)
 - Docker integration
 
-✅ **RAS Integration:**
+✅ **batch-service (Go) - 100% готово:**
+- Установка расширений через subprocess (1cv8.exe)
+- Batch install API
+- Health check endpoint (HTTP:8087/health)
+
+✅ **RAS Integration - 100% готово:**
 - ras-grpc-gw форк с endpoint_id в headers
 - RAS server connection (port 1545)
+- Автоматический запуск RAS в dev скриптах
 - Протестировано на real 1C cluster
 - 3 databases обнаружены и работают
 
-✅ **База данных:**
-- Модели Database, Operation, Task с encrypted credentials
-- Django migrations готовы
-- Health check tracking
+✅ **Database Models - 100% готово:**
+- `Cluster` (737 строк) - с RAS integration
+- `Database` (390 строк) - с encrypted credentials (EncryptedCharField)
+- `DatabaseGroup`, `ExtensionInstallation`, `BatchService`, `StatusHistory`
+- Django migrations применены
 
-✅ **OData Integration:**
+✅ **Operations Models - 100% готово:**
+- `BatchOperation` (312 строк) - с progress tracking
+- `Task` (312 строк) - с retry logic и exponential backoff
+- Status lifecycle management
+
+✅ **OData Integration - 100% готово:**
 - Full CRUD operations (GET/POST/PATCH/DELETE)
 - Connection pooling для 700+ баз
 - Retry logic с exponential backoff
 - Session Pool Manager (thread-safe)
+- OData clients: `client.py`, `session_manager.py`, `entities.py`
 
-✅ **REST API:**
-- 13 endpoints (databases, operations, health checks)
+✅ **REST API - 100% готово:**
+- **15+ endpoints** (databases, operations, templates, batch operations)
+- ViewSets: `DatabaseViewSet`, `DatabaseGroupViewSet`, `BatchOperationViewSet`, `OperationViewSet`, `TemplateViewSet`
+- Custom actions: health-check, bulk-health-check, batch-install-extension
 - OpenAPI/Swagger документация
 - Django Admin interface
 
+🟡 **Celery Setup - 30% готово:**
+- ✅ Celery config: `config/celery.py`
+- ✅ Periodic tasks: health checks, cleanup
+- ✅ Beat schedule настроен
+- ❌ **TODO:** Реализация `process_operation()` task (сейчас заглушка)
+- ❌ **TODO:** Интеграция с Go Worker через Redis queue
+
+🟡 **Go Worker - 30% готово:**
+- ✅ Структура: `cmd/main.go`, `pool.go`, `processor.go`, `queue/redis.go`
+- ✅ Worker pool architecture
+- ❌ **TODO:** Redis queue consumer (нет подключения к queue)
+- ❌ **TODO:** Реальная обработка операций (processCreate, processUpdate - заглушки)
+- ❌ **TODO:** Интеграция с OData client
+
+🟡 **Template System - 20% готово:**
+- ✅ `OperationTemplate` model
+- ✅ Template ViewSet (CRUD)
+- ❌ **TODO:** Template Engine (variables, expressions, validation)
+- ❌ **TODO:** Template Library (готовые шаблоны операций)
+- ❌ **TODO:** Template testing/dry-run
+
+### Критические GAPs для завершения Phase 1
+
+❌ **GAP 1: Orchestrator → Worker Integration**
+```
+Django (Celery) --X--> Redis Queue --X--> Go Worker
+                  ^^^               ^^^
+            НЕ РЕАЛИЗОВАНО
+```
+
+❌ **GAP 2: Template Processing Engine**
+- Template models есть, но engine для обработки переменных/expressions - нет
+
+❌ **GAP 3: Real Operation Execution**
+- Go Worker имеет только заглушки (TODO comments в коде)
+
+❌ **GAP 4: End-to-End Flow**
+```
+User → API → Celery → (MISSING) → Worker → (MISSING) → 1C OData
+```
+
 ### Следующие шаги (Week 3-4)
 
-🔄 **Sprint 2.1: Task Queue & Worker Implementation** (5 дней)
-- Celery setup в Orchestrator
-- Go Worker - базовая версия
-- Интеграция Orchestrator → Worker
+🔄 **Sprint 2.1: Task Queue & Worker Implementation** (5-7 дней)
 
-🔄 **Sprint 2.2: Template System & First Operation** (5 дней)
-- Система шаблонов операций
-- Реализация первой операции (создание пользователей)
-- End-to-End тестирование
+**Задачи:**
+1. ❌ Реализовать `process_operation()` в `orchestrator/apps/operations/tasks.py`
+2. ❌ Подключить Redis queue producer (Django → Redis)
+3. ❌ Подключить Redis queue consumer (Redis → Go Worker)
+4. ❌ Реализовать обработку операций в Go Worker (вместо TODO заглушек)
+5. ❌ Интеграция с OData client для реальных операций
 
-**Estimated completion:** Week 4 (конец января 2025)
+**Приоритет:** КРИТИЧНО
+
+🔄 **Sprint 2.2: Template System & First Operation** (5-7 дней)
+
+**Задачи:**
+1. ❌ Реализовать Template Engine (variables, expressions)
+2. ❌ Добавить validation для шаблонов
+3. ❌ Создать шаблон "Создание пользователей 1С"
+4. ❌ End-to-End тестирование (User → API → Worker → 1C)
+5. ❌ Документация для шаблонов
+
+**Приоритет:** КРИТИЧНО
+
+**Реалистичная оценка завершения Phase 1 (Week 1-6):** Week 5-6 (середина декабря 2025)
+
+### 📊 Общий прогресс Phase 1 (MVP Foundation)
+
+**Временная шкала:**
+```
+Week 1-2: Infrastructure Setup        ✅ 100% DONE
+Week 3-4: Core Functionality          🟡  25% DONE
+Week 5-6: Integration & Testing       ⏳   0% DONE
+```
+
+**Прогресс по компонентам:**
+
+| Компонент | Плановый статус | Реальный статус | % |
+|-----------|----------------|-----------------|---|
+| **Infrastructure** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **Database Models** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **OData Client** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **REST API** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **RAS Integration** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **batch-service** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
+| **Celery Setup** | Week 3-4 ✅ | Week 3 🟡 | 30% |
+| **Go Worker** | Week 3-4 ✅ | Week 3 🟡 | 30% |
+| **Template Engine** | Week 3-4 ✅ | Week 3 🟡 | 20% |
+| **E2E Integration** | Week 3-4 ✅ | - ❌ | 0% |
+
+**Общий прогресс Phase 1:** **~45-50%** (3 из 6 недель)
+
+**Отставание от плана:** ~1-2 недели (но инфраструктура опережает - batch-service/RAS automation не было в плане)
 
 ---
 
@@ -1152,10 +1256,14 @@ graph LR
 
 ---
 
-**Версия документа:** 1.0
-**Дата:** 2025-01-17
+**Версия документа:** 1.1
+**Дата последнего обновления:** 2025-11-08
 **Автор:** Claude (AI Architect)
-**Статус:** Draft → Требуется утверждение
+**Статус:** In Progress (Sprint 2.1-2.2)
+
+**Changelog:**
+- **v1.1 (2025-11-08):** Обновлен прогресс на основе реального кода, добавлены Sprint 2.1-2.2 (частично), детализированы GAPs
+- **v1.0 (2025-01-17):** Первоначальная версия roadmap
 
 ---
 

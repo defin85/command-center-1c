@@ -190,6 +190,7 @@ check_port 8088 "Cluster Service"
 check_port 8087 "Batch Service"
 check_port 8081 "ras-grpc-gw HTTP"
 check_port 9999 "ras-grpc-gw gRPC"
+check_port 1545 "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
 

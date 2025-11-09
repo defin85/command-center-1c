@@ -85,17 +85,20 @@ stop_service() {
 # Остановка всех сервисов в обратном порядке запуска
 ##############################################################################
 
-# 11. Frontend
+# 12. Frontend
 stop_service "frontend"
 
-# 10. Batch Service
+# 11. Batch Service
 stop_service "batch-service"
 
-# 9. Cluster Service
+# 10. Cluster Service
 stop_service "cluster-service"
 
-# 8. ras-grpc-gw
+# 9. ras-grpc-gw
 stop_service "ras-grpc-gw"
+
+# 8. RAS (1C Remote Administration Server)
+stop_service "ras"
 
 # 7. Go Worker
 stop_service "worker"
@@ -153,6 +156,7 @@ check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "Cluster Service"
 check_and_kill_port 8081 "ras-grpc-gw HTTP"
 check_and_kill_port 9999 "ras-grpc-gw gRPC"
+check_and_kill_port 1545 "RAS"
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"
 

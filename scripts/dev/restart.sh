@@ -37,6 +37,7 @@ if [ -z "$1" ]; then
     echo -e "  celery-beat       - Celery Beat"
     echo -e "  api-gateway       - Go API Gateway (port 8080)"
     echo -e "  worker            - Go Worker"
+    echo -e "  ras               - 1C RAS Server (port 1545)"
     echo -e "  ras-grpc-gw       - RAS gRPC Gateway (port 9999)"
     echo -e "  cluster-service   - Go Cluster Service (port 8088)"
     echo -e "  batch-service     - Go Batch Service (port 8087)"
@@ -58,7 +59,9 @@ echo ""
 # Загрузить переменные окружения
 ##############################################################################
 if [ -f "$PROJECT_ROOT/.env.local" ]; then
-    export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs)
+    set -a
+    source "$PROJECT_ROOT/.env.local"
+    set +a
 fi
 
 ##############################################################################
@@ -157,6 +160,24 @@ case "$SERVICE_NAME" in
         NEW_PID=$!
         ;;
 
+    ras)
+        # .env.local уже загружен в начале скрипта
+
+        if [ -z "$PLATFORM_1C_BIN_PATH" ]; then
+            echo -e "${RED}✗ PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
+            exit 1
+        fi
+
+        RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+        if [ ! -f "$RAS_EXE" ]; then
+            echo -e "${RED}✗ ras.exe не найден: $RAS_EXE${NC}"
+            exit 1
+        fi
+
+        nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} > "$LOG_FILE" 2>&1 &
+        NEW_PID=$!
+        ;;
+
     ras-grpc-gw)
         RAS_GW_DIR="/c/1CProject/ras-grpc-gw"
         if [ ! -d "$RAS_GW_DIR" ]; then
@@ -169,7 +190,7 @@ case "$SERVICE_NAME" in
         ;;
 
     cluster-service)
-        export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
+        # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8088
         
         BINARY_PATH="$PROJECT_ROOT/bin/cc1c-cluster-service.exe"
@@ -183,7 +204,7 @@ case "$SERVICE_NAME" in
         ;;
 
     batch-service)
-        export $(grep -v '^#' "$PROJECT_ROOT/.env.local" | xargs 2>/dev/null || true)
+        # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8087
         
         BINARY_PATH="$PROJECT_ROOT/bin/cc1c-batch-service.exe"

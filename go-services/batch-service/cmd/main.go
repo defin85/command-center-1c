@@ -55,9 +55,18 @@ func main() {
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
 	)
+	extensionDeleter := service.NewExtensionDeleter(
+		cfg.V8.ExePath,
+		cfg.V8.DefaultTimeout,
+	)
+	extensionLister := service.NewExtensionLister(
+		cfg.V8.ExePath,
+		cfg.V8.DefaultTimeout,
+	)
+	fileValidator := service.NewFileValidator()
 
-	// Setup router
-	router := api.SetupRouter(extensionInstaller)
+	// Setup router with all services
+	router := api.SetupRouter(extensionInstaller, extensionDeleter, extensionLister, fileValidator)
 
 	// Create HTTP server
 	server := &http.Server{

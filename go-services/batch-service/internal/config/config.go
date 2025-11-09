@@ -8,9 +8,10 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig
-	GRPC      GRPCConfig
-	V8        V8Config
+	Server         ServerConfig
+	GRPC           GRPCConfig
+	V8             V8Config
+	OrchestratorURL string
 }
 
 // ServerConfig holds HTTP server configuration
@@ -50,6 +51,7 @@ func Load() *Config {
 			ExePath:        getEnv("EXE_1CV8_PATH", `C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe`),
 			DefaultTimeout: getDurationEnv("V8_DEFAULT_TIMEOUT", 5*time.Minute),
 		},
+		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
 	}
 }
 
