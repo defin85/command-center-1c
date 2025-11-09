@@ -11,9 +11,19 @@ import (
 	"syscall"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/command-center-1c/batch-service/internal/api"
 	"github.com/command-center-1c/batch-service/internal/config"
 	"github.com/command-center-1c/batch-service/internal/service"
+	"github.com/command-center-1c/batch-service/internal/domain/storage"
+	"github.com/command-center-1c/batch-service/internal/domain/metadata"
+	"github.com/command-center-1c/batch-service/internal/domain/session"
+	"github.com/command-center-1c/batch-service/internal/domain/rollback"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/cluster"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
 )
 
 var (
@@ -41,19 +51,79 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Initialize logger
+	logger := initLogger()
+	defer logger.Sync()
+
 	// Load configuration
 	cfg := config.Load()
 
-	log.Printf("Starting batch-service (cc1c-batch-service)")
-	log.Printf("Version: %s, Commit: %s, Built: %s", Version, Commit, BuildTime)
-	log.Printf("Server: %s:%s", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("gRPC Gateway: %s", cfg.GRPC.GatewayAddr)
-	log.Printf("1cv8.exe: %s", cfg.V8.ExePath)
+	logger.Info("Starting batch-service",
+		zap.String("service", "cc1c-batch-service"),
+		zap.String("version", Version),
+		zap.String("commit", Commit),
+		zap.String("build_time", BuildTime))
+	logger.Info("Configuration loaded",
+		zap.String("server_addr", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)),
+		zap.String("grpc_gateway", cfg.GRPC.GatewayAddr),
+		zap.String("v8_exe", cfg.V8.ExePath),
+		zap.String("storage_path", cfg.Storage.Path),
+		zap.String("backup_path", cfg.Backup.Path),
+		zap.String("cluster_service_url", cfg.ClusterServiceURL),
+		zap.Duration("cluster_request_timeout", cfg.ClusterRequestTimeout),
+		zap.Int("retention_versions", cfg.Storage.RetentionVersions),
+		zap.Int("retention_backups", cfg.Backup.RetentionBackups))
+
+	// Initialize cluster client for session management with configurable timeout
+	clusterClient := cluster.NewClusterClient(
+		cfg.ClusterServiceURL,
+		cfg.ClusterRequestTimeout,
+		logger,
+	)
+
+	logger.Info("cluster client initialized",
+		zap.String("url", cfg.ClusterServiceURL),
+		zap.Duration("timeout", cfg.ClusterRequestTimeout))
+
+	// Health check cluster-service (non-blocking)
+	if err := clusterClient.HealthCheck(); err != nil {
+		logger.Warn("cluster-service not available at startup",
+			zap.String("url", cfg.ClusterServiceURL),
+			zap.Error(err))
+		logger.Info("session termination features will be unavailable until cluster-service is ready")
+	} else {
+		logger.Info("cluster-service health check passed",
+			zap.String("url", cfg.ClusterServiceURL))
+	}
+
+	// Initialize session manager
+	sessionManager := session.NewSessionManager(clusterClient, logger)
+
+	// Initialize backup system
+	backupStorage := filesystem.NewBackupStorage(cfg.Backup.Path, logger)
+
+	// Initialize v8executor for backup operations
+	v8exec := v8executor.NewV8Executor(
+		cfg.V8.ExePath,
+		cfg.V8.DefaultTimeout,
+		logger,
+	)
+
+	backupManager := rollback.NewBackupManager(v8exec, backupStorage, logger)
+	rollbackManager := rollback.NewRollbackManager(backupManager, logger)
+
+	logger.Info("Backup system initialized",
+		zap.String("backup_path", cfg.Backup.Path),
+		zap.Int("retention_backups", cfg.Backup.RetentionBackups))
 
 	// Initialize services
 	extensionInstaller := service.NewExtensionInstaller(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
+		sessionManager,
+		backupManager,
+		cfg.Backup.RetentionBackups,
+		logger,
 	)
 	extensionDeleter := service.NewExtensionDeleter(
 		cfg.V8.ExePath,
@@ -65,8 +135,37 @@ func main() {
 	)
 	fileValidator := service.NewFileValidator()
 
+	// Initialize storage manager
+	storageManager := storage.NewManager(
+		cfg.Storage.Path,
+		cfg.Storage.RetentionVersions,
+		logger,
+	)
+
+	logger.Info("Storage manager initialized",
+		zap.String("path", cfg.Storage.Path),
+		zap.Int("retention", cfg.Storage.RetentionVersions))
+
+	// Initialize metadata extractor (reuse v8exec from backup system)
+	metadataParser := metadata.NewParser(logger)
+	metadataExtractor := metadata.NewExtractor(v8exec, metadataParser, logger)
+
+	logger.Info("Metadata extractor initialized",
+		zap.String("v8_exe", cfg.V8.ExePath),
+		zap.Duration("timeout", cfg.V8.DefaultTimeout))
+
 	// Setup router with all services
-	router := api.SetupRouter(extensionInstaller, extensionDeleter, extensionLister, fileValidator)
+	router := api.SetupRouter(
+		extensionInstaller,
+		extensionDeleter,
+		extensionLister,
+		fileValidator,
+		storageManager,
+		metadataExtractor,
+		rollbackManager,
+		backupManager,
+		logger,
+	)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -78,9 +177,9 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("Server listening on %s", server.Addr)
+		logger.Info("Server listening", zap.String("addr", server.Addr))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
@@ -89,15 +188,56 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	logger.Info("Shutting down server...")
 
 	// Graceful shutdown with 5 second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.Error("Server forced to shutdown", zap.Error(err))
+		os.Exit(1)
 	}
 
-	log.Println("Server exited")
+	logger.Info("Server exited gracefully")
+}
+
+// initLogger создает и настраивает zap logger
+func initLogger() *zap.Logger {
+	// Настройка уровня логирования из env (по умолчанию INFO)
+	logLevel := os.Getenv("LOG_LEVEL")
+	level := zapcore.InfoLevel
+	if logLevel != "" {
+		if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+			log.Printf("Invalid LOG_LEVEL '%s', using INFO", logLevel)
+		}
+	}
+
+	// Конфигурация logger
+	config := zap.Config{
+		Level:            zap.NewAtomicLevelAt(level),
+		Encoding:         "json",
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:        "timestamp",
+			LevelKey:       "level",
+			NameKey:        "logger",
+			CallerKey:      "caller",
+			MessageKey:     "message",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.ISO8601TimeEncoder,
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+	}
+
+	logger, err := config.Build()
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	return logger
 }

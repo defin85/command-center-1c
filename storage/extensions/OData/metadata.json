@@ -1,0 +1,35 @@
+{
+  "extension_name": "OData",
+  "versions": [
+    {
+      "file_name": "OData_v1.0.7.cfe",
+      "extension_name": "OData",
+      "version": "1.0.7",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "972ed52d5414e6f055acff4c5fbb2503",
+      "uploaded_at": "2025-11-09T12:31:09.122926+03:00",
+      "file_path": "storage\\extensions\\OData\\OData_v1.0.7.cfe"
+    },
+    {
+      "file_name": "OData_v1.0.6.cfe",
+      "extension_name": "OData",
+      "version": "1.0.6",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "f5faa46387c21a18e4465eb5c48a9ea5",
+      "uploaded_at": "2025-11-09T12:31:09.0890783+03:00",
+      "file_path": "storage\\extensions\\OData\\OData_v1.0.6.cfe"
+    },
+    {
+      "file_name": "OData_v1.0.5.cfe",
+      "extension_name": "OData",
+      "version": "1.0.5",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "643204d9ba4eb48de59478431a08dc1e",
+      "uploaded_at": "2025-11-09T12:31:09.0492213+03:00",
+      "file_path": "storage\\extensions\\OData\\OData_v1.0.5.cfe"
+    }
+  ]
+}

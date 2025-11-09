@@ -1,0 +1,35 @@
+{
+  "extension_name": "TestExt",
+  "versions": [
+    {
+      "file_name": "TestExt_v1.0.6.cfe",
+      "extension_name": "TestExt",
+      "version": "1.0.6",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "f5faa46387c21a18e4465eb5c48a9ea5",
+      "uploaded_at": "2025-11-09T12:31:19.6594311+03:00",
+      "file_path": "storage\\extensions\\TestExt\\TestExt_v1.0.6.cfe"
+    },
+    {
+      "file_name": "TestExt_v1.0.5.cfe",
+      "extension_name": "TestExt",
+      "version": "1.0.5",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "643204d9ba4eb48de59478431a08dc1e",
+      "uploaded_at": "2025-11-09T12:31:19.6251413+03:00",
+      "file_path": "storage\\extensions\\TestExt\\TestExt_v1.0.5.cfe"
+    },
+    {
+      "file_name": "TestExt_v1.0.4.cfe",
+      "extension_name": "TestExt",
+      "version": "1.0.4",
+      "author": "Tester",
+      "size_bytes": 7,
+      "checksum_md5": "aa876288711c4198cfcda790b58d7e95",
+      "uploaded_at": "2025-11-09T12:31:19.590795+03:00",
+      "file_path": "storage\\extensions\\TestExt\\TestExt_v1.0.4.cfe"
+    }
+  ]
+}

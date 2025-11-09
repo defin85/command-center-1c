@@ -7,17 +7,31 @@ import (
 	"time"
 
 	v8 "github.com/v8platform/api"
+	"go.uber.org/zap"
 	"github.com/command-center-1c/batch-service/internal/models"
+	"github.com/command-center-1c/batch-service/internal/domain/session"
+	"github.com/command-center-1c/batch-service/internal/domain/rollback"
 )
 
 // ExtensionInstaller handles installation of 1C extensions using v8platform/api
 type ExtensionInstaller struct {
-	exe1cv8Path    string
-	defaultTimeout time.Duration
+	exe1cv8Path       string
+	defaultTimeout    time.Duration
+	sessionManager    *session.SessionManager
+	backupManager     *rollback.BackupManager
+	retentionBackups  int // Number of backups to keep
+	logger            *zap.Logger
 }
 
 // NewExtensionInstaller creates a new ExtensionInstaller
-func NewExtensionInstaller(exe1cv8Path string, defaultTimeout time.Duration) *ExtensionInstaller {
+func NewExtensionInstaller(
+	exe1cv8Path string,
+	defaultTimeout time.Duration,
+	sessionManager *session.SessionManager,
+	backupManager *rollback.BackupManager,
+	retentionBackups int,
+	logger *zap.Logger,
+) *ExtensionInstaller {
 	if exe1cv8Path == "" {
 		exe1cv8Path = `C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe`
 	}
@@ -26,9 +40,17 @@ func NewExtensionInstaller(exe1cv8Path string, defaultTimeout time.Duration) *Ex
 		defaultTimeout = 5 * time.Minute
 	}
 
+	if retentionBackups <= 0 {
+		retentionBackups = 5 // Default: keep 5 backups
+	}
+
 	return &ExtensionInstaller{
-		exe1cv8Path:    exe1cv8Path,
-		defaultTimeout: defaultTimeout,
+		exe1cv8Path:      exe1cv8Path,
+		defaultTimeout:   defaultTimeout,
+		sessionManager:   sessionManager,
+		backupManager:    backupManager,
+		retentionBackups: retentionBackups,
+		logger:           logger,
 	}
 }
 
@@ -36,13 +58,73 @@ func NewExtensionInstaller(exe1cv8Path string, defaultTimeout time.Duration) *Ex
 func (i *ExtensionInstaller) InstallExtension(ctx context.Context, req *models.InstallExtensionRequest) (*models.InstallExtensionResponse, error) {
 	startTime := time.Now()
 
-	// 1. Create infobase connection
+	i.logger.Info("starting extension installation",
+		zap.String("infobase", req.InfobaseName),
+		zap.String("extension", req.ExtensionName),
+		zap.Bool("force_terminate_sessions", req.ForceTerminateSessions))
+
+	// Get database ID (using InfobaseName as ID for now - will be replaced with real UUID)
+	databaseID := req.InfobaseName
+
+	// 1. Terminate active sessions if requested
+	if req.ForceTerminateSessions {
+		i.logger.Info("terminating active sessions before installation",
+			zap.String("infobase", req.InfobaseName))
+
+		// TODO: Get infobase UUID from infobase name (requires cluster-service integration)
+		// For now, use infobase name as ID (MOCK implementation)
+		infobaseID := req.InfobaseName
+
+		if err := i.sessionManager.TerminateSessionsIfNeeded(infobaseID, true); err != nil {
+			i.logger.Error("failed to terminate sessions",
+				zap.String("infobase", req.InfobaseName),
+				zap.Error(err))
+			return &models.InstallExtensionResponse{
+				Success:         false,
+				Message:         fmt.Sprintf("Session termination failed: %v", err),
+				DurationSeconds: time.Since(startTime).Seconds(),
+			}, fmt.Errorf("session termination failed: %w", err)
+		}
+
+		i.logger.Info("sessions terminated successfully",
+			zap.String("infobase", req.InfobaseName))
+	}
+
+	// 2. Create backup of existing extension (if exists)
+	var backup *models.ExtensionBackup
+	var backupErr error
+
+	i.logger.Info("attempting to create pre-install backup",
+		zap.String("extension_name", req.ExtensionName))
+
+	backup, backupErr = i.backupManager.CreatePreInstallBackup(
+		databaseID, req.Server, req.InfobaseName, req.Username, req.Password, req.ExtensionName,
+	)
+
+	if backupErr != nil {
+		i.logger.Warn("failed to create backup (extension may not exist, continuing with installation)",
+			zap.String("extension_name", req.ExtensionName),
+			zap.Error(backupErr))
+		// Continue anyway - this might be the first installation
+	} else if backup != nil {
+		i.logger.Info("backup created successfully",
+			zap.String("backup_id", backup.BackupID),
+			zap.Int64("size_bytes", backup.SizeBytes))
+	} else {
+		i.logger.Info("no backup needed (extension does not exist yet)")
+	}
+
+	// 3. Create infobase connection
 	infobase := v8.NewServerIB(req.Server, req.InfobaseName)
 
-	// 2. Load extension from .cfe file
+	// 4. Load extension from .cfe file
 	what := v8.LoadExtensionCfg(req.ExtensionName, req.ExtensionPath)
 
-	// 3. Execute installation with v8platform/api
+	// 5. Execute installation with v8platform/api
+	i.logger.Info("executing extension installation",
+		zap.String("infobase", req.InfobaseName),
+		zap.String("extension_path", req.ExtensionPath))
+
 	err := v8.Run(infobase, what,
 		v8.WithCredentials(req.Username, req.Password),
 		v8.WithTimeout(int64(i.defaultTimeout.Seconds())),
@@ -50,6 +132,38 @@ func (i *ExtensionInstaller) InstallExtension(ctx context.Context, req *models.I
 	)
 
 	if err != nil {
+		// Installation failed - attempt restore from backup if exists
+		i.logger.Error("extension installation failed",
+			zap.String("infobase", req.InfobaseName),
+			zap.Error(err))
+
+		if backup != nil {
+			i.logger.Info("attempting to restore from backup after installation failure",
+				zap.String("backup_id", backup.BackupID))
+
+			restoreErr := i.backupManager.RestoreFromBackup(
+				backup, req.Server, req.InfobaseName, req.Username, req.Password,
+			)
+
+			if restoreErr != nil {
+				i.logger.Error("restore from backup failed",
+					zap.String("backup_id", backup.BackupID),
+					zap.Error(restoreErr))
+				return &models.InstallExtensionResponse{
+					Success:         false,
+					Message:         fmt.Sprintf("Installation failed: %v. Restore also failed: %v", err, restoreErr),
+					DurationSeconds: time.Since(startTime).Seconds(),
+				}, fmt.Errorf("installation failed: %w, restore also failed: %v", err, restoreErr)
+			}
+
+			i.logger.Info("successfully restored from backup after installation failure")
+			return &models.InstallExtensionResponse{
+				Success:         false,
+				Message:         fmt.Sprintf("Installation failed: %v. Extension restored to previous version from backup.", err),
+				DurationSeconds: time.Since(startTime).Seconds(),
+			}, fmt.Errorf("installation failed (restored from backup): %w", err)
+		}
+
 		return &models.InstallExtensionResponse{
 			Success:         false,
 			Message:         fmt.Sprintf("Failed to install extension: %v", err),
@@ -57,7 +171,7 @@ func (i *ExtensionInstaller) InstallExtension(ctx context.Context, req *models.I
 		}, err
 	}
 
-	// 4. Update DB configuration if requested
+	// 6. Update DB configuration if requested
 	if req.UpdateDBConfig {
 		updateWhat := v8.UpdateExtensionDBCfg(req.ExtensionName, true, false)
 
@@ -76,7 +190,23 @@ func (i *ExtensionInstaller) InstallExtension(ctx context.Context, req *models.I
 		}
 	}
 
+	// 7. SUCCESS - apply retention policy to clean up old backups
+	if backup != nil {
+		i.logger.Info("applying retention policy to old backups",
+			zap.String("extension_name", req.ExtensionName),
+			zap.Int("keep_count", i.retentionBackups))
+
+		if err := i.backupManager.ApplyRetentionPolicy(databaseID, req.ExtensionName, i.retentionBackups); err != nil {
+			i.logger.Warn("failed to apply retention policy (non-critical)",
+				zap.Error(err))
+			// Don't fail the installation due to cleanup error
+		}
+	}
+
 	duration := time.Since(startTime)
+
+	i.logger.Info("extension installation completed successfully",
+		zap.Float64("duration_seconds", duration.Seconds()))
 
 	return &models.InstallExtensionResponse{
 		Success:         true,

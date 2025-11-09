@@ -2,13 +2,14 @@ package models
 
 // InstallExtensionRequest represents a request to install extension
 type InstallExtensionRequest struct {
-	Server         string `json:"server" binding:"required"`          // "localhost:1541"
-	InfobaseName   string `json:"infobase_name" binding:"required"`   // "dev"
-	Username       string `json:"username" binding:"required"`
-	Password       string `json:"password" binding:"required"`
-	ExtensionPath  string `json:"extension_path" binding:"required"`  // "/path/to/extension.cfe"
-	ExtensionName  string `json:"extension_name" binding:"required"`  // "ODataAutoConfig"
-	UpdateDBConfig bool   `json:"update_db_config"`                   // Update database configuration
+	Server                 string `json:"server" binding:"required"`          // "localhost:1541"
+	InfobaseName           string `json:"infobase_name" binding:"required"`   // "dev"
+	Username               string `json:"username" binding:"required"`
+	Password               string `json:"password" binding:"required"`
+	ExtensionPath          string `json:"extension_path" binding:"required"`  // "/path/to/extension.cfe"
+	ExtensionName          string `json:"extension_name" binding:"required"`  // "ODataAutoConfig"
+	UpdateDBConfig         bool   `json:"update_db_config"`                   // Update database configuration
+	ForceTerminateSessions bool   `json:"force_terminate_sessions"`           // Terminate active sessions before installation
 }
 
 // InstallExtensionResponse represents the response from extension installation

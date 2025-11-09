@@ -1,0 +1,23 @@
+{
+  "extension_name": "test_ODataAutoConfig",
+  "versions": [
+    {
+      "file_name": "test_ODataAutoConfig_v1.0.7.cfe",
+      "extension_name": "test_ODataAutoConfig",
+      "version": "1.0.7",
+      "size_bytes": 16,
+      "checksum_md5": "baa4d1678f37f5d92611cc9fed9c2f69",
+      "uploaded_at": "2025-11-09T11:53:49.8241176+03:00",
+      "file_path": "storage\\extensions\\test_ODataAutoConfig\\test_ODataAutoConfig_v1.0.7.cfe"
+    },
+    {
+      "file_name": "test_ODataAutoConfig_v1.0.6.cfe",
+      "extension_name": "test_ODataAutoConfig",
+      "version": "1.0.6",
+      "size_bytes": 16,
+      "checksum_md5": "53c90353cb4ac794741b7e9334f69bcd",
+      "uploaded_at": "2025-11-09T11:53:41.1970612+03:00",
+      "file_path": "storage\\extensions\\test_ODataAutoConfig\\test_ODataAutoConfig_v1.0.6.cfe"
+    }
+  ]
+}
