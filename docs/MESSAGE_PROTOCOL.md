@@ -1,8 +1,24 @@
 # Message Protocol - Orchestrator ↔ Worker
 
-**Версия:** 1.0 (DRAFT)
+**Версия:** 1.0 (DRAFT) - SUPERSEDED
 **Дата:** 2025-11-09
-**Статус:** 🔴 НЕ СОГЛАСОВАН (требует sync meeting)
+**Статус:** 🔴 УСТАРЕЛ
+
+⚠️ **ЭТОТ ДОКУМЕНТ УСТАРЕЛ**
+
+Финализированная версия: **[MESSAGE_PROTOCOL_FINALIZED.md](MESSAGE_PROTOCOL_FINALIZED.md)**
+
+---
+
+## ⚠️ ВАЖНО
+
+Используйте **MESSAGE_PROTOCOL_FINALIZED.md v2.0** для реализации!
+
+Все open questions решены, все решения утверждены.
+
+---
+
+## Архивная информация (DRAFT v1.0)
 
 ---
 
