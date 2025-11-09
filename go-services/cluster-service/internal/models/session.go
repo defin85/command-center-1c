@@ -1,21 +1,5 @@
 package models
 
-// Cluster represents a 1C cluster
-type Cluster struct {
-	UUID              string `json:"uuid"`
-	Name              string `json:"name"`
-	Host              string `json:"host"`
-	Port              int    `json:"port"`
-	LifetimeLimit     int    `json:"lifetime_limit"`
-	SecurityLevel     int    `json:"security_level"`
-	SessionFaultToler int    `json:"session_fault_tolerance_level"`
-}
-
-// ClusterListResponse represents the response for GET /clusters
-type ClusterListResponse struct {
-	Clusters []Cluster `json:"clusters"`
-}
-
 // Session represents an active 1C session
 type Session struct {
 	SessionID   string `json:"session_id"`
@@ -24,7 +8,7 @@ type Session struct {
 	StartedAt   string `json:"started_at"`
 }
 
-// SessionsResponse represents the response for GET /api/v1/sessions
+// SessionsResponse represents API response with list of sessions
 type SessionsResponse struct {
 	Sessions []Session `json:"sessions"`
 	Count    int       `json:"count"`

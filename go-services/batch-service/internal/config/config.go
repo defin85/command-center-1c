@@ -8,10 +8,14 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server         ServerConfig
-	GRPC           GRPCConfig
-	V8             V8Config
-	OrchestratorURL string
+	Server                ServerConfig
+	GRPC                  GRPCConfig
+	V8                    V8Config
+	Storage               StorageConfig
+	Backup                BackupConfig
+	OrchestratorURL       string
+	ClusterServiceURL     string
+	ClusterRequestTimeout time.Duration
 }
 
 // ServerConfig holds HTTP server configuration
@@ -34,6 +38,18 @@ type V8Config struct {
 	DefaultTimeout time.Duration // Default timeout for operations
 }
 
+// StorageConfig holds extension storage configuration
+type StorageConfig struct {
+	Path              string // Path to extensions storage directory
+	RetentionVersions int    // Number of versions to keep (retention policy)
+}
+
+// BackupConfig holds backup configuration
+type BackupConfig struct {
+	Path              string // Path to backups directory
+	RetentionBackups  int    // Number of backups to keep per extension
+}
+
 // Load reads configuration from environment variables
 func Load() *Config {
 	return &Config{
@@ -51,7 +67,17 @@ func Load() *Config {
 			ExePath:        getEnv("EXE_1CV8_PATH", `C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe`),
 			DefaultTimeout: getDurationEnv("V8_DEFAULT_TIMEOUT", 5*time.Minute),
 		},
-		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
+		Storage: StorageConfig{
+			Path:              getEnv("EXTENSION_STORAGE_PATH", "./storage/extensions"),
+			RetentionVersions: getIntEnv("RETENTION_VERSIONS", 3),
+		},
+		Backup: BackupConfig{
+			Path:             getEnv("BACKUP_PATH", "./backups"),
+			RetentionBackups: getIntEnv("RETENTION_BACKUPS", 5),
+		},
+		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
+		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),
+		ClusterRequestTimeout: getDurationEnv("CLUSTER_REQUEST_TIMEOUT", 30*time.Second),
 	}
 }
 
@@ -59,6 +85,16 @@ func Load() *Config {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+// getIntEnv returns an int from environment variable or default
+func getIntEnv(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
 	}
 	return defaultValue
 }

@@ -22,11 +22,18 @@ func SetupRouter(monitoringHandler *handlers.MonitoringHandler, logger *zap.Logg
 	healthHandler := handlers.NewHealthHandler()
 	router.GET("/health", healthHandler.Health)
 
+	// Session handler for session termination integration (P3.3)
+	sessionsHandler := handlers.NewSessionsHandler(logger)
+
 	// API routes
 	v1 := router.Group("/api/v1")
 	{
 		v1.GET("/clusters", monitoringHandler.GetClusters)
 		v1.GET("/infobases", monitoringHandler.GetInfobases)
+
+		// Session management endpoints (MOCK for P3.3)
+		v1.GET("/sessions", sessionsHandler.GetSessions)
+		v1.POST("/sessions/terminate", sessionsHandler.TerminateSessions)
 	}
 
 	return router
