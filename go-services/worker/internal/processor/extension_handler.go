@@ -15,10 +15,16 @@ import (
 )
 
 // ExtensionInstallRequest represents Batch Service install request
+// Must match batch-service/internal/models/extension.go:InstallExtensionRequest
 type ExtensionInstallRequest struct {
-	ConnectionString string `json:"connection_string"`
-	ExtensionPath    string `json:"extension_path"`
-	ExtensionName    string `json:"extension_name"`
+	Server                 string `json:"server"`                   // "localhost" or "localhost:1541"
+	InfobaseName           string `json:"infobase_name"`            // e.g., "dev"
+	Username               string `json:"username"`
+	Password               string `json:"password"`
+	ExtensionPath          string `json:"extension_path"`           // Path to .cfe file
+	ExtensionName          string `json:"extension_name"`           // Extension name
+	UpdateDBConfig         bool   `json:"update_db_config"`         // Update database configuration
+	ForceTerminateSessions bool   `json:"force_terminate_sessions"` // Terminate active sessions before install
 }
 
 // ExtensionInstallResponse represents Batch Service install response
@@ -81,31 +87,28 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		return result
 	}
 
-	// Build connection string for 1cv8.exe
-	// Format: /S<server>\<infobase> /N<username> /P<password>
-	// If port is not default (1540), use server:port format
+	// Build server address for Batch Service
+	// Format: "localhost" or "localhost:1541" (if port is not default 1540)
 	serverAddress := creds.Host
 	if creds.Port != 0 && creds.Port != 1540 {
 		serverAddress = fmt.Sprintf("%s:%d", creds.Host, creds.Port)
 	}
-
-	connectionString := fmt.Sprintf("/S%s\\%s /N%s /P%s",
-		serverAddress,
-		creds.BaseName,
-		creds.Username,
-		creds.Password,
-	)
 
 	// Update status to 50%
 	if err := p.updateExtensionStatus(ctx, databaseID, "in_progress", "", 50); err != nil {
 		log.Warnf("failed to update status to 50%%: %v", err)
 	}
 
-	// Call Batch Service
+	// Call Batch Service with structured request
 	installReq := ExtensionInstallRequest{
-		ConnectionString: connectionString,
-		ExtensionPath:    extensionPath,
-		ExtensionName:    extensionName,
+		Server:                 serverAddress,
+		InfobaseName:           creds.BaseName,
+		Username:               creds.Username,
+		Password:               creds.Password,
+		ExtensionPath:          extensionPath,
+		ExtensionName:          extensionName,
+		UpdateDBConfig:         false, // Default: don't update DB config
+		ForceTerminateSessions: false, // Default: don't terminate sessions
 	}
 
 	batchServiceURL := fmt.Sprintf("%s/api/v1/extensions/install", p.config.BatchServiceURL)

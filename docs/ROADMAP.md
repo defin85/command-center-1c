@@ -236,6 +236,462 @@ Week 5-6: Integration & Testing       ⏳   0% DONE
 
 ---
 
+## 🏛️ Архитектурные принципы и защита от антипаттернов
+
+> **Мотивация:** На основе анализа реальных кейсов из индустрии (включая статью ["Адский эксперимент: личный сайт на нищих микросервисах"](https://habr.com/ru/articles/964450/)), определены критичные архитектурные принципы для долгосрочного здоровья проекта.
+
+### ⚠️ Критичные антипаттерны (которых НУЖНО избегать)
+
+#### 1. **Прямой доступ к чужим БД между микросервисами** 🚨 СМЕРТЕЛЬНЫЙ ГРЕХ
+
+**Антипаттерн:**
+```
+Admin Service ----[direct SQL]----> Content DB (MongoDB)
+             └───[direct SQL]----> Comments DB (PostgreSQL)
+             └───[direct SQL]----> Auth DB (PostgreSQL)
+```
+
+**Почему это катастрофа:**
+- ❌ Скрытые зависимости между сервисами
+- ❌ Нарушение инкапсуляции данных
+- ❌ Невозможно изменить схему БД без поломки других сервисов
+- ❌ Создаёт **распределённый монолит** (complexity без benefits)
+- ❌ Сервис становится "божественным объектом" (God Object)
+
+**Правильный подход:**
+```
+Admin Service ----[REST/gRPC]----> Content Service -----> Content DB
+              ----[REST/gRPC]----> Comments Service ----> Comments DB
+              ----[REST/gRPC]----> Auth Service --------> Auth DB
+```
+
+**Наша реализация (проверить!):**
+- ✅ Frontend → API Gateway → Orchestrator (REST)
+- ✅ Orchestrator → Worker (Redis queue, не direct DB access)
+- ✅ Cluster Service → ras-grpc-gw (gRPC, не direct DB)
+- ⚠️ **ПРОВЕРИТЬ:** Extension Storage access (должен быть через API, не filesystem sharing)
+
+**Action Items:**
+- [ ] **Track 3 audit:** Убедиться, что Batch Service НЕ читает напрямую из `storage/extensions/`
+- [ ] Orchestrator должен предоставлять file path/stream через API
+- [ ] Документировать Data Ownership для каждого сервиса
+
+---
+
+#### 2. **"Бедные сервисы" (Anemic Domain Model)** 🚨 ВЫСОКИЙ РИСК
+
+**Антипаттерн:**
+```python
+# Content Service - просто CRUD прокси к БД
+async def get_content(content_id):
+    return await db.content.find_one({"_id": content_id})
+
+async def create_content(data):
+    return await db.content.insert_one(data)
+```
+
+**Почему плохо:**
+- ❌ Сервис не несёт никакой ценности, кроме доступа к данным
+- ❌ Вся бизнес-логика утекает в другие сервисы (обычно в Admin)
+- ❌ "Дорогой прокси к хранилищу" - complexity без benefits
+- ❌ Нарушение принципа Single Responsibility
+
+**Правильный подход:**
+```python
+# Content Service - с бизнес-логикой
+class ContentService:
+    async def publish_content(self, content_id, user_id):
+        # Валидация бизнес-правил
+        content = await self._validate_content(content_id)
+        if not self._can_publish(content, user_id):
+            raise PermissionDenied()
+
+        # Изменение статуса с бизнес-логикой
+        await self._update_status(content_id, Status.PUBLISHED)
+        await self._notify_subscribers(content)
+        await self._index_search(content)
+
+        return content
+```
+
+**Наша реализация (проверить!):**
+- ✅ **Template Engine:** Содержит валидацию, компиляцию, security checks (не просто CRUD)
+- ✅ **Operations App:** Orchestration logic, lifecycle management, retry logic
+- ✅ **Worker:** Parallel processing, credentials caching, result aggregation
+- ⚠️ **Databases App:** Проверить - не является ли просто CRUD для Database model?
+
+**Рекомендации:**
+- Каждый сервис должен содержать **domain logic**, специфичную для его bounded context
+- CRUD операции - это необходимость, но НЕ единственная ценность сервиса
+- Если сервис можно заменить на `SELECT * FROM table`, он слишком "бедный"
+
+---
+
+#### 3. **Admin Service как "свалка логики"** 🚨 СРЕДНИЙ РИСК
+
+**Антипаттерн:**
+```python
+# Admin Service содержит логику ВСЕХ сервисов
+class AdminService:
+    def hash_password(self, password):  # Дублирует Auth Service
+        return bcrypt.hash(password)
+
+    def moderate_comment(self, comment_id):  # Логика Comments Service
+        ...
+
+    def publish_content(self, content_id):  # Логика Content Service
+        ...
+```
+
+**Почему плохо:**
+- ❌ Дублирование кода (hash_password есть в Auth и Admin)
+- ❌ Coupling между доменами
+- ❌ Admin превращается в "God Service" - знает всё про всех
+- ❌ Admin панель должна быть просто UI, а не оркестратором
+
+**Правильный подход:**
+```python
+# Admin панель просто вызывает API других сервисов
+class AdminUI:
+    async def moderate_comment(self, comment_id):
+        # НЕ содержит логику модерации
+        return await comments_service_client.moderate(comment_id)
+
+    async def publish_content(self, content_id):
+        # НЕ содержит логику публикации
+        return await content_service_client.publish(content_id)
+```
+
+**Наша реализация (проверить!):**
+- ✅ **Frontend:** Просто UI, вызывает API Gateway (не содержит бизнес-логику)
+- ✅ **API Gateway:** Тонкий прокси, routing, auth (не содержит domain logic)
+- ⚠️ **Orchestrator:** Проверить - не превращается ли в "God Service"?
+
+**Анализ Orchestrator:**
+- ✅ **Плюсы:** Содержит orchestration logic (это его ответственность)
+- ✅ Template Engine, Operations management - legitimate domain logic
+- ⚠️ **Потенциальный риск:** Все зависят от Orchestrator (централизация)
+
+**Решение для Phase 1-2:** Централизованный Orchestrator - нормально для MVP/Balanced.
+
+**План для Phase 3-4 (если понадобится):**
+- Разбить Orchestrator на более мелкие domain services
+- Operations Service, Templates Service, Credentials Service (отдельно)
+- Event-Driven Architecture (Kafka) для decoupling
+
+---
+
+#### 4. **Отсутствие чётких Bounded Context** 🚨 ВЫСОКИЙ РИСК
+
+**Антипаттерн:**
+- Нет явных границ между доменами
+- Сервисы вторгаются в чужие домены
+- Один сервис может изменять данные другого напрямую
+
+**Правильный подход (DDD):**
+
+**Core Domain:**
+- **Operations** (основная ценность продукта)
+- **Templates** (уникальная функциональность)
+
+**Supporting Subdomains:**
+- **Databases** (управление метаданными баз 1С)
+- **Credentials** (управление доступами)
+- **Monitoring** (health checks, system status)
+
+**Generic Subdomains:**
+- **Auth** (типовая аутентификация)
+- **API Gateway** (стандартный routing)
+- **Extension Storage** (файловое хранилище)
+
+**Правила взаимодействия:**
+1. Core Domain НЕ зависит от Supporting/Generic
+2. Supporting может зависеть от Core (но не наоборот)
+3. Generic не зависит ни от кого (reusable)
+
+**Action Item:**
+- [ ] Создать документ `docs/BOUNDED_CONTEXTS.md` с явным описанием:
+  - Какие данные владеет каждый сервис
+  - Какие API предоставляет
+  - Какие зависимости допустимы
+
+---
+
+#### 5. **Распределённый монолит** 🚨 КАТАСТРОФИЧЕСКИЙ РИСК
+
+**Признаки:**
+- ✅ Внешне выглядит как микросервисы (5-6 сервисов, Kubernetes, Kafka)
+- ❌ На деле — жёсткая связность, как в монолите
+- ❌ Изменение одного сервиса требует изменения нескольких
+- ❌ Невозможно развернуть сервис независимо
+
+**Как проверить, что у нас НЕТ распределённого монолита:**
+
+**Тест 1: Изменение схемы БД**
+- ❓ Можно ли изменить схему Database model без изменения Worker?
+- ✅ **ДА** - Общение через Redis queue (контракт стабилен)
+- ✅ Orchestrator владеет Database schema, Worker использует через API
+
+**Тест 2: Независимое развертывание**
+- ❓ Можно ли обновить Worker без остановки Orchestrator?
+- ✅ **ДА** - Worker масштабируется независимо (deploy.replicas)
+- ✅ Graceful shutdown, Redis queue buffer изменения
+
+**Тест 3: Замена технологии**
+- ❓ Можно ли переписать Worker на другом языке (Rust, Java)?
+- ✅ **ДА** - Контракт определён Message Protocol v2.0
+- ✅ Только Redis queue interface нужно соблюдать
+
+**Вывод:** Наша архитектура **НЕ** распределённый монолит (пока).
+
+**Риски в будущем:**
+- ⚠️ Если Orchestrator начнёт напрямую обращаться к Worker БД
+- ⚠️ Если появятся shared models с бизнес-логикой (сейчас shared - только DTO)
+- ⚠️ Если контракт Message Protocol станет слишком жёстким
+
+---
+
+### ✅ Архитектурные принципы CommandCenter1C
+
+#### Принцип 1: Database per Service
+**Правило:** Каждый сервис владеет своими данными. Никто не может писать напрямую в чужую БД.
+
+**Реализация:**
+```
+✅ Orchestrator → PostgreSQL (operations, databases metadata, templates)
+✅ Worker → Redis (queue, heartbeat, results)
+✅ Cluster Service → RAS (через gRPC gateway)
+✅ Batch Service → Filesystem (extensions storage)
+```
+
+**Запрещено:**
+```
+❌ Worker → PostgreSQL (direct access)
+❌ API Gateway → PostgreSQL (только через Orchestrator API)
+❌ Frontend → PostgreSQL (только через API Gateway)
+```
+
+---
+
+#### Принцип 2: API-First Communication
+**Правило:** Межсервисное общение ТОЛЬКО через API (REST/gRPC/Events), НЕ через direct DB access.
+
+**Реализация:**
+```
+✅ Frontend → API Gateway (REST)
+✅ API Gateway → Orchestrator (REST)
+✅ Orchestrator → Worker (Redis queue - асинхронный контракт)
+✅ Cluster Service → ras-grpc-gw (gRPC)
+```
+
+**Контракты:**
+- Message Protocol v2.0 (Django ↔ Go Worker)
+- REST API (OpenAPI/Swagger документирован)
+- gRPC proto (ras-grpc-gw)
+
+---
+
+#### Принцип 3: Rich Domain Model
+**Правило:** Каждый сервис содержит бизнес-логику своего домена, а не просто CRUD.
+
+**Реализация:**
+```
+✅ Template Engine:
+   - Валидация шаблонов (security, syntax, business rules)
+   - Компиляция с кешированием (11.5x speedup)
+   - Custom 1C filters (guid1c, datetime1c)
+
+✅ Operations App:
+   - Lifecycle management (pending → running → completed)
+   - Retry logic с exponential backoff
+   - Partial failure handling
+
+✅ Worker:
+   - Parallel processing (goroutines pool)
+   - Credentials caching
+   - Result aggregation
+```
+
+**НЕ просто CRUD:**
+- Template не просто читается из БД, а валидируется и компилируется
+- Operation не просто сохраняется, а управляется через lifecycle
+- Worker не просто выполняет, а оптимизирует (кеш, pool, retry)
+
+---
+
+#### Принцип 4: Versioned Contracts
+**Правило:** API контракты версионируются. Breaking changes требуют новую версию.
+
+**Реализация (TODO для Phase 2):**
+```python
+# REST API versioning
+/api/v1/operations/...
+/api/v2/operations/...  # Breaking changes в будущем
+
+# Message Protocol versioning
+operation_v2.go  # текущая версия
+operation_v3.go  # будущая версия (backward compatible на N versions)
+```
+
+**Почему важно:**
+- Позволяет обновлять сервисы независимо
+- Worker v1 может работать с Orchestrator v2 (если контракт v2 backward compatible)
+- Избегаем "big bang" deployments
+
+**Action Items:**
+- [ ] Добавить API versioning в Orchestrator REST API
+- [ ] Документировать deprecation policy (сколько версий поддерживаем)
+
+---
+
+#### Принцип 5: Event-Driven для слабого coupling
+**Правило:** Для асинхронной коммуникации используем события (Events), а не direct calls.
+
+**Реализация (Phase 1):**
+```
+✅ Orchestrator → Redis Queue → Worker (event: operation_enqueued)
+✅ Worker → Redis Results → Orchestrator (event: operation_completed)
+```
+
+**Расширение (Phase 3-4, если понадобится):**
+```
+Orchestrator → Kafka → [Worker, Notification Service, Analytics Service]
+```
+
+**Преимущества:**
+- Decoupling: Orchestrator не знает, кто подписан на события
+- Scalability: Можно добавить новых подписчиков без изменения Orchestrator
+- Resilience: Если Worker down, события остаются в queue
+
+---
+
+### 📋 Архитектурный чеклист для Code Review
+
+**Перед мержем в main проверить:**
+
+#### Data Access:
+- [ ] ✅ Сервис общается с другими через API, а не direct DB
+- [ ] ✅ Нет SQL запросов к чужим таблицам
+- [ ] ✅ Shared models - только DTO, без бизнес-логики
+
+#### Domain Logic:
+- [ ] ✅ Сервис содержит бизнес-логику, а не просто CRUD
+- [ ] ✅ Валидация данных на уровне домена (не только на уровне БД)
+- [ ] ✅ Бизнес-правила инкапсулированы в сервисе
+
+#### API Contracts:
+- [ ] ✅ API документирован (OpenAPI/Swagger, proto)
+- [ ] ✅ Breaking changes версионированы
+- [ ] ✅ Контракт стабилен (не меняется при рефакторинге внутренней логики)
+
+#### Dependencies:
+- [ ] ✅ Зависимости явные (import, require)
+- [ ] ✅ Нет циклических зависимостей
+- [ ] ✅ Core Domain не зависит от Supporting/Generic
+
+#### Testing:
+- [ ] ✅ Unit tests для domain logic
+- [ ] ✅ Integration tests для API контрактов
+- [ ] ✅ Contract tests для межсервисного общения (optional, но рекомендуется)
+
+---
+
+### 🎯 Roadmap для архитектурного здоровья
+
+#### Phase 1-2 (текущее):
+- ✅ Database per Service
+- ✅ API-First Communication
+- ✅ Rich Domain Model (Template Engine, Operations)
+- ⚠️ TODO: Bounded Contexts документация
+- ⚠️ TODO: API Versioning
+
+#### Phase 3-4 (будущее):
+- [ ] Разбить Orchestrator на domain services (если понадобится)
+  - Operations Service
+  - Templates Service
+  - Credentials Service
+- [ ] Event-Driven Architecture (Kafka для decoupling)
+- [ ] Contract Testing (Pact, Spring Cloud Contract)
+- [ ] API Gateway: Circuit Breaker, Rate Limiting per service
+
+#### Phase 5 (Enterprise):
+- [ ] Service Mesh (Istio/Linkerd) для observability
+- [ ] Distributed Tracing (Jaeger) для debugging
+- [ ] Chaos Engineering (проверка resilience)
+- [ ] Multi-region deployment (если нужно)
+
+---
+
+### 🔥 "Smell Tests" - когда пора рефакторить
+
+**Красные флаги:**
+
+1. **"God Service" появился:**
+   - Один сервис знает слишком много про других
+   - Решение: Разбить на более мелкие bounded contexts
+
+2. **Изменения каскадом:**
+   - Изменение в одном сервисе требует изменений в 3+ других
+   - Решение: Пересмотреть API контракты, добавить versioning
+
+3. **Дублирование логики:**
+   - Одна и та же бизнес-логика в 2+ сервисах
+   - Решение: Выделить в Shared Library или отдельный сервис
+
+4. **Прямой доступ к БД появился:**
+   - "Временное решение" для performance
+   - Решение: Немедленно убрать, оптимизировать API (кеширование, batch)
+
+5. **Контракт меняется каждый спринт:**
+   - API нестабилен
+   - Решение: Зафиксировать контракт, использовать versioning
+
+---
+
+### 📚 Рекомендуемая литература
+
+**Обязательно для команды:**
+1. **"Domain-Driven Design"** (Eric Evans) - Библия DDD
+2. **"Building Microservices"** (Sam Newman) - Практика микросервисов
+3. **"Designing Data-Intensive Applications"** (Martin Kleppmann) - Distributed systems
+
+**Статьи:**
+1. ["Адский эксперимент: личный сайт на нищих микросервисах"](https://habr.com/ru/articles/964450/) - Антипаттерны (ОБЯЗАТЕЛЬНО!)
+2. "Microservices Patterns" (Chris Richardson) - Паттерны и антипаттерны
+3. "The Twelve-Factor App" (Heroku) - Best practices для cloud-native apps
+
+**Видео:**
+1. Martin Fowler - "Microservices" (GOTO Conference)
+2. Sam Newman - "Principles of Microservices" (GOTO Conference)
+
+---
+
+### 🎓 Выводы
+
+**Главный урок:**
+> "Микросервисы — это не про количество сервисов и не про Kubernetes. Это про правильные границы контекстов и владение данными."
+
+**Наш подход:**
+- ✅ Умеренное количество сервисов (6-7 в Phase 1)
+- ✅ Чёткое разделение ответственности
+- ✅ Database per Service
+- ✅ No direct DB access между сервисами
+- ✅ Локальная разработка (без Kubernetes overhead в dev)
+
+**Когда масштабироваться (Phase 3-4):**
+- НЕ потому что "микросервисы модно"
+- Только когда есть **реальная необходимость**:
+  - Разные команды работают над разными доменами
+  - Нужна независимая масштабируемость компонентов
+  - Разные технологические требования (Go vs Python)
+
+**Помни:**
+- ❌ Плохая архитектура НЕ решается добавлением Kubernetes
+- ❌ Микросервисы НЕ делают систему автоматически лучше
+- ✅ Начни с правильных границ, инфраструктура - потом
+
+---
+
 ## 🎯 Три варианта реализации
 
 ### Сравнительная таблица
