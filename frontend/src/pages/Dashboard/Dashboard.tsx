@@ -1,5 +1,5 @@
-import { Card, Row, Col, Statistic } from 'antd'
-import { ThunderboltOutlined, DatabaseOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Statistic } from 'antd';
+import { ThunderboltOutlined, DatabaseOutlined, CheckCircleOutlined } from '@ant-design/icons';
 
 export const Dashboard = () => {
   return (
@@ -36,5 +36,5 @@ export const Dashboard = () => {
         </Col>
       </Row>
     </div>
-  )
-}
+  );
+};

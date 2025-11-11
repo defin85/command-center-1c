@@ -1,7 +1,7 @@
 """Serializers для databases app."""
 
 from rest_framework import serializers
-from .models import Database, DatabaseGroup, ExtensionInstallation
+from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster
 
 
 class DatabaseSerializer(serializers.ModelSerializer):
@@ -86,3 +86,32 @@ class ExtensionInstallationSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'started_at', 'completed_at']
+
+
+class ClusterSerializer(serializers.ModelSerializer):
+    """Serializer для Cluster model."""
+
+    databases_count = serializers.IntegerField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    cluster_pwd = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = Cluster
+        fields = [
+            'id',
+            'name',
+            'description',
+            'ras_server',
+            'cluster_service_url',
+            'cluster_user',
+            'cluster_pwd',  # write-only
+            'status',
+            'status_display',
+            'last_sync',
+            'metadata',
+            'databases_count',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'last_sync', 'created_at', 'updated_at']
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Tag, Button, Input, Select, Space } from 'antd'
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { Table, Tag, Button, Input, Select, Space, message, Modal, Form } from 'antd'
+import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
 import { installationApi } from '../../api/endpoints/installation'
 
@@ -11,6 +11,9 @@ export const InstallationStatusTable: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<string>('all')
   const [searchText, setSearchText] = useState('')
+  const [modalVisible, setModalVisible] = useState(false)
+  const [selectedDatabase, setSelectedDatabase] = useState<{ id: number; name: string } | null>(null)
+  const [form] = Form.useForm()
 
   const fetchInstallations = async () => {
     setLoading(true)
@@ -33,9 +36,35 @@ export const InstallationStatusTable: React.FC = () => {
   const handleRetry = async (databaseId: number) => {
     try {
       await installationApi.retryInstallation(databaseId)
+      message.success('Installation retry started')
       fetchInstallations()
     } catch (error) {
       console.error('Failed to retry installation:', error)
+      message.error('Failed to retry installation')
+    }
+  }
+
+  const handleInstallSingle = async (databaseId: number, databaseName: string) => {
+    setSelectedDatabase({ id: databaseId, name: databaseName })
+    setModalVisible(true)
+  }
+
+  const handleConfirmInstall = async () => {
+    if (!selectedDatabase) return
+
+    try {
+      const values = await form.validateFields()
+      const response = await installationApi.installSingle(selectedDatabase.id, {
+        name: values.extension_name,
+        path: values.extension_path,
+      })
+      message.success(response.message)
+      setModalVisible(false)
+      form.resetFields()
+      fetchInstallations()
+    } catch (error) {
+      console.error('Failed to start installation:', error)
+      message.error('Failed to start installation')
     }
   }
 
@@ -107,17 +136,30 @@ export const InstallationStatusTable: React.FC = () => {
     {
       title: 'Action',
       key: 'action',
-      width: 100,
-      render: (_: any, record: ExtensionInstallation) =>
-        record.status === 'failed' ? (
-          <Button
-            size="small"
-            icon={<ReloadOutlined />}
-            onClick={() => handleRetry(record.database_id)}
-          >
-            Retry
-          </Button>
-        ) : null,
+      width: 180,
+      render: (_: any, record: ExtensionInstallation) => (
+        <Space>
+          {record.status === 'failed' && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => handleRetry(record.database_id)}
+            >
+              Retry
+            </Button>
+          )}
+          {!['in_progress', 'pending'].includes(record.status) && (
+            <Button
+              size="small"
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              onClick={() => handleInstallSingle(record.database_id, record.database_name)}
+            >
+              Install
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ]
 
@@ -150,6 +192,40 @@ export const InstallationStatusTable: React.FC = () => {
         loading={loading}
         pagination={{ pageSize: 50 }}
       />
+
+      <Modal
+        title={`Install Extension on ${selectedDatabase?.name}`}
+        open={modalVisible}
+        onOk={handleConfirmInstall}
+        onCancel={() => setModalVisible(false)}
+        okText="Install"
+        width={600}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            extension_name: 'ODataAutoConfig',
+            extension_path: 'C:\\Extensions\\ODataAutoConfig.cfe',
+          }}
+        >
+          <Form.Item
+            label="Extension Name"
+            name="extension_name"
+            rules={[{ required: true, message: 'Please enter extension name' }]}
+          >
+            <Input placeholder="ODataAutoConfig" />
+          </Form.Item>
+
+          <Form.Item
+            label="Extension Path (on Windows Server)"
+            name="extension_path"
+            rules={[{ required: true, message: 'Please enter extension path' }]}
+          >
+            <Input placeholder="C:\Extensions\ODataAutoConfig.cfe" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

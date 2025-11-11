@@ -245,17 +245,31 @@ type OperationOptions struct {
 ### Описание
 Реализовать реальную обработку операций (создание/обновление/удаление) в базах 1С через OData
 
+**📋 ARCHITECTURE ANALYSIS COMPLETE** (2025-11-09)
+
+**Документация:**
+- 📊 **START HERE:** `docs/TRACK3_README.md` - Navigation guide
+- 🎯 **Quick Decision:** `docs/TRACK3_DECISION_SUMMARY.md` - 5 min read
+- 📐 **Full Analysis:** `docs/TRACK3_ARCHITECTURE_OPTIONS.md` - All options
+- 🔧 **Code Design:** `docs/TRACK3_OPTION_E_CODE_DESIGN.md` - Implementation details
+
+**Рекомендация:** ✅ **Option E - Lightweight Go HTTP Client**
+- Timeline: 3-4 дня
+- LOC: ~500 (simple, maintainable)
+- Performance: ~50ms latency, ~500 ops/sec
+- No external dependencies (Go stdlib only)
+
 ### Задачи
 
-#### 3.1 OData Client Integration (2 дня)
-- [ ] Реализовать `processCreate()` в `go-services/worker/processor.go`
-- [ ] Реализовать `processUpdate()` в `go-services/worker/processor.go`
-- [ ] Реализовать `processDelete()` в `go-services/worker/processor.go`
-- [ ] Интеграция с OData client (уже готов ✅ в `orchestrator/apps/databases/odata/`)
+#### 3.1 OData Client Implementation (2 дня) - **Option E Approved**
+- [ ] Создать `go-services/worker/internal/odata/` package
+- [ ] Реализовать `client.go` - HTTP client для OData
+- [ ] Реализовать `types.go` - Request/Response structs
+- [ ] Реализовать `errors.go` - 1С error parsing
+- [ ] Реализовать `utils.go` - GUID, datetime formatting
+- [ ] Unit tests (> 80% coverage)
 
-**Примечание:** OData client написан на Python, нужно решить:
-- **Вариант А:** Go Worker вызывает Python OData client через subprocess/RPC
-- **Вариант Б:** Реимплементировать OData client на Go (рекомендуется)
+**См. детали:** `docs/TRACK3_OPTION_E_CODE_DESIGN.md`
 
 #### 3.2 Error Handling & Retry (2 дня)
 - [ ] Exponential backoff retry logic

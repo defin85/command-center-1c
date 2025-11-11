@@ -66,10 +66,10 @@ def get_redis_client():
 @shared_task
 def queue_extension_installation(database_ids, extension_config):
     """
-    Отправляет задачи установки в Redis queue для Windows Service
+    Отправляет задачи установки в Redis queue используя Message Protocol v2.0
 
     Args:
-        database_ids: List[int] - список ID баз
+        database_ids: List[str] - список UUID баз
         extension_config: dict - конфигурация расширения
             {
                 "name": "ODataAutoConfig",
@@ -79,53 +79,123 @@ def queue_extension_installation(database_ids, extension_config):
     Returns:
         dict: Статус операции
     """
-    from .models import Database, ExtensionInstallation
+    import uuid
+    from datetime import datetime
+    from .models import Database
+    from apps.operations.models import BatchOperation, Task
 
     redis_client = get_redis_client()
-    queued_count = 0
-
+    
+    # Создать BatchOperation
+    operation_id = str(uuid.uuid4())
+    batch_operation = BatchOperation.objects.create(
+        id=operation_id,
+        name=f"Install {extension_config['name']}",
+        description=f"Installing extension {extension_config['name']} on {len(database_ids)} database(s)",
+        operation_type=BatchOperation.TYPE_INSTALL_EXTENSION,
+        target_entity=extension_config['name'],
+        payload={
+            "extension_name": extension_config["name"],
+            "extension_path": extension_config["path"]
+        },
+        config={
+            "batch_size": 10,
+            "timeout_seconds": 300,
+            "retry_count": 3
+        },
+        status=BatchOperation.STATUS_PENDING
+    )
+    
+    # Создать Task для каждой базы
+    tasks = []
+    valid_db_ids = []
+    
     for db_id in database_ids:
         try:
             db = Database.objects.get(id=db_id)
-
-            # Создать запись об установке
-            installation = ExtensionInstallation.objects.create(
+            
+            # Создать задачу для этой базы
+            task = Task.objects.create(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
                 database=db,
-                extension_name=extension_config["name"],
-                status="pending",
-                metadata={
-                    "extension_path": extension_config["path"]
-                }
+                status=Task.STATUS_PENDING,
+                max_retries=3
             )
-
-            # Подготовить задачу для Windows Service
-            task_data = {
-                "task_id": str(installation.id),
-                "database_id": db.id,
-                "database_name": db.name,
-                "connection_string": f'/S"{db.odata_url.split("/")[2]}\\{db.name}"',  # извлечь server из URL
-                "username": db.username,
-                "password": db.password,  # EncryptedCharField автоматически расшифровывает при чтении
-                "extension_path": extension_config["path"],
-                "extension_name": extension_config["name"]
-            }
-
-            # Отправить в Redis queue
-            redis_client.lpush("installation_tasks", json.dumps(task_data))
-            queued_count += 1
-
-            logger.info(f"Queued installation task for database {db.name} (id={db.id})")
-
+            tasks.append(task)
+            valid_db_ids.append(str(db.id))
+            
+            logger.info(f"Created task for database {db.name} (task_id={task.id})")
+            
         except Database.DoesNotExist:
             logger.error(f"Database {db_id} not found")
             continue
         except Exception as e:
-            logger.error(f"Error queuing installation for database {db_id}: {e}")
+            logger.error(f"Error creating task for database {db_id}: {e}")
             continue
-
+    
+    # Связать базы с batch операцией
+    if valid_db_ids:
+        batch_operation.target_databases.set(Database.objects.filter(id__in=valid_db_ids))
+        batch_operation.total_tasks = len(tasks)
+        batch_operation.status = BatchOperation.STATUS_QUEUED
+        batch_operation.save()
+    
+    if not valid_db_ids:
+        logger.warning("No valid databases found for installation")
+        batch_operation.status = BatchOperation.STATUS_FAILED
+        batch_operation.save()
+        return {
+            "status": "failed",
+            "queued_count": 0,
+            "total_requested": len(database_ids),
+            "error": "No valid databases"
+        }
+    
+    # Сформировать OperationMessage v2.0
+    message = {
+        "version": "2.0",
+        "operation_id": batch_operation.id,
+        "batch_id": batch_operation.id,
+        "operation_type": "install_extension",
+        "entity": "extension",
+        "target_databases": valid_db_ids,
+        "payload": {
+            "data": {
+                "extension_name": extension_config["name"],
+                "extension_path": extension_config["path"]
+            },
+            "filters": {},
+            "options": {}
+        },
+        "execution_config": {
+            "batch_size": 10,
+            "timeout_seconds": 300,
+            "retry_count": 3,
+            "priority": "normal",
+            "idempotency_key": batch_operation.id
+        },
+        "metadata": {
+            "created_by": "orchestrator",
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "template_id": "",
+            "tags": ["extension", "install", extension_config["name"]]
+        }
+    }
+    
+    # Отправить в Redis queue (Message Protocol v2.0)
+    redis_client.lpush("cc1c:operations:v1", json.dumps(message))
+    
+    # Создать lock key для idempotency check в Go Worker
+    lock_key = f"cc1c:task:{batch_operation.id}:lock"
+    redis_client.setex(lock_key, 3600, "1")  # TTL 1 час
+    
+    logger.info(f"Queued extension installation operation (operation_id={batch_operation.id}, databases={len(valid_db_ids)})")
+    
     return {
-        "status": "completed",
-        "queued_count": queued_count,
+        "status": "queued",
+        "operation_id": batch_operation.id,
+        "queued_count": len(valid_db_ids),
         "total_requested": len(database_ids)
     }
 

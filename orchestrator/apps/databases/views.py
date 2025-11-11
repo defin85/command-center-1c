@@ -6,10 +6,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from django.db.models import Count, Q, Avg
+from django.utils import timezone
 
-from .models import Database, DatabaseGroup, ExtensionInstallation
-from .serializers import DatabaseSerializer, DatabaseGroupSerializer, ExtensionInstallationSerializer
+from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster
+from .serializers import DatabaseSerializer, DatabaseGroupSerializer, ExtensionInstallationSerializer, ClusterSerializer
 from .services import DatabaseService
+from .storage import ExtensionStorageService
 
 
 class DatabaseViewSet(viewsets.ModelViewSet):
@@ -282,119 +284,7 @@ def extension_status(request, pk):
         )
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def retry_installation(request, pk):
-    """Повторить неудачную установку"""
-    try:
-        database = Database.objects.get(id=pk)
-
-        # Найти последнюю неудачную установку
-        failed_installation = ExtensionInstallation.objects.filter(
-            database=database,
-            status='failed'
-        ).order_by('-created_at').first()
-
-        if not failed_installation:
-            return Response(
-                {"error": "No failed installation found for this database"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Создать новую попытку
-        extension_config = {
-            "name": failed_installation.extension_name,
-            "path": failed_installation.metadata.get('extension_path', '')
-        }
-
-        # Импортируем Celery task здесь
-        from .tasks import queue_extension_installation
-
-        task = queue_extension_installation.delay([pk], extension_config)
-
-        return Response({
-            "status": "queued",
-            "task_id": str(task.id)
-        }, status=status.HTTP_201_CREATED)
-
-    except Database.DoesNotExist:
-        return Response(
-            {"error": "Database not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-@extend_schema(
-    summary="Получить credentials для базы (для Go Worker)",
-    description="""
-    Возвращает OData URL и credentials для базы данных.
-    Используется Go Worker для выполнения операций.
-
-    Requires authentication: Worker API Key
-    """,
-    responses={
-        200: OpenApiResponse(
-            description="Credentials returned",
-            response={
-                'type': 'object',
-                'properties': {
-                    'database_id': {'type': 'string'},
-                    'odata_url': {'type': 'string'},
-                    'username': {'type': 'string'},
-                    'password': {'type': 'string', 'description': 'Decrypted password'}
-                }
-            }
-        ),
-        404: OpenApiResponse(description="Database not found"),
-        403: OpenApiResponse(description="Authentication failed")
-    }
-)
-def get_database_credentials(request, database_id):
-    """
-    Get database credentials for Go Worker.
-
-    GET /api/v1/databases/{database_id}/credentials
-
-    Response:
-    {
-        "database_id": "uuid",
-        "odata_url": "http://...",
-        "username": "admin",
-        "password": "decrypted_password"
-    }
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(f"Credentials request for database {database_id}")
-
-    try:
-        database = Database.objects.get(id=database_id)
-
-        # ВАЖНО: Password автоматически расшифровывается
-        # благодаря EncryptedCharField
-        credentials = {
-            "database_id": str(database.id),
-            "odata_url": database.odata_url,
-            "username": database.username,
-            "password": database.password  # Auto-decrypted
-        }
-
-        logger.info(
-            f"Credentials provided for database {database_id}",
-            extra={"database_name": database.name}
-        )
-
-        return Response(credentials, status=status.HTTP_200_OK)
-
-    except Database.DoesNotExist:
-        logger.warning(f"Database {database_id} not found")
-        return Response(
-            {"error": f"Database {database_id} not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
+# ======== Extension Storage Endpoints ========
 @api_view(['POST'])
 @permission_classes([])  # No authentication required for callbacks from batch-service
 @extend_schema(
@@ -478,3 +368,532 @@ def installation_callback(request):
             {"error": f"No pending installation found for database {database_id} and extension {extension_name}"},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+class ClusterViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet для управления кластерами 1С.
+
+    Endpoints:
+    - GET /api/v1/clusters/ - список кластеров
+    - POST /api/v1/clusters/ - создать кластер
+    - GET /api/v1/clusters/{id}/ - получить кластер
+    - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
+    - DELETE /api/v1/clusters/{id}/ - удалить кластер
+    - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
+    - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
+    """
+
+    queryset = Cluster.objects.annotate(
+        databases_count=Count('databases')
+    )
+    serializer_class = ClusterSerializer
+    search_fields = ['name', 'description', 'ras_server']
+    filterset_fields = ['status']
+    ordering_fields = ['name', 'created_at', 'last_sync']
+    ordering = ['-created_at']
+
+    @extend_schema(
+        summary="Синхронизация баз из RAS",
+        description="Синхронизирует список баз данных из RAS через cluster-service",
+        responses={
+            200: OpenApiResponse(
+                description="Синхронизация запущена",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'status': {'type': 'string'},
+                        'message': {'type': 'string'},
+                        'databases_found': {'type': 'integer'},
+                    }
+                }
+            ),
+            404: OpenApiResponse(description="Кластер не найден")
+        }
+    )
+    @action(detail=True, methods=['post'])
+    def sync(self, request, pk=None):
+        """
+        Синхронизировать базы из RAS через cluster-service.
+
+        POST /api/v1/clusters/{id}/sync/
+        """
+        cluster = self.get_object()
+
+        try:
+            from .services import ClusterService
+            result = ClusterService.sync_infobases(cluster)
+
+            return Response({
+                'status': 'success',
+                'message': f'Cluster {cluster.name} synchronized successfully',
+                'databases_found': result['created'] + result['updated']
+            })
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        summary="Получить базы кластера",
+        description="Возвращает список баз данных в конкретном кластере",
+        responses={
+            200: OpenApiResponse(
+                description="Список баз",
+                response=DatabaseSerializer(many=True)
+            )
+        }
+    )
+    @action(detail=True, methods=['get'])
+    def databases(self, request, pk=None):
+        """
+        Получить список баз конкретного кластера.
+
+        GET /api/v1/clusters/{id}/databases/
+        """
+        cluster = self.get_object()
+        databases = Database.objects.filter(cluster=cluster)
+        serializer = DatabaseSerializer(databases, many=True)
+        return Response(serializer.data)
+
+
+class DatabaseViewSet(viewsets.ModelViewSet):
+    """Extended with installation actions."""
+    
+    queryset = Database.objects.all()
+    serializer_class = DatabaseSerializer
+    
+    @extend_schema(
+        summary="Установить расширение на базу",
+        description="Запускает задачу установки расширения на выбранную базу данных",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'extension_config': {
+                        'type': 'object',
+                        'properties': {
+                            'name': {'type': 'string'},
+                            'path': {'type': 'string'}
+                        },
+                        'required': ['name', 'path']
+                    }
+                }
+            }
+        },
+        responses={
+            201: OpenApiResponse(
+                description="Installation task created",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'status': {'type': 'string'},
+                        'task_id': {'type': 'string'},
+                        'message': {'type': 'string'}
+                    }
+                }
+            ),
+            400: OpenApiResponse(description="Invalid extension config"),
+            404: OpenApiResponse(description="Database not found")
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='install-extension')
+    def install_extension(self, request, pk=None):
+        """
+        Установить расширение на одну базу.
+        
+        POST /api/v1/databases/{id}/install-extension/
+        """
+        database = self.get_object()
+        extension_config = request.data.get('extension_config', {})
+
+        # Валидация
+        if not extension_config.get('name') or not extension_config.get('path'):
+            return Response(
+                {"error": "extension_config must contain 'name' and 'path'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Импортируем Celery task
+        from .tasks import queue_extension_installation
+
+        task = queue_extension_installation.delay([str(pk)], extension_config)
+
+        return Response({
+            "status": "queued",
+            "task_id": str(task.id),
+            "message": f"Installation started for {database.name}"
+        }, status=status.HTTP_201_CREATED)
+    
+    @extend_schema(
+        summary="Получить статус установки расширения",
+        description="Возвращает статус установки расширения для данной базы",
+        responses={
+            200: OpenApiResponse(
+                description="Extension status",
+                response=ExtensionInstallationSerializer
+            ),
+            404: OpenApiResponse(description="Installation not found")
+        }
+    )
+    @action(detail=True, methods=['get'], url_path='extension-status')
+    def extension_status(self, request, pk=None):
+        """
+        Получить статус установки расширения.
+        
+        GET /api/v1/databases/{id}/extension-status/
+        
+        Returns the latest extension installation task for this database.
+        """
+        from apps.operations.models import Task, BatchOperation
+        
+        try:
+            # Найти последнюю задачу установки расширения для этой базы
+            task = Task.objects.filter(
+                database_id=pk,
+                batch_operation__operation_type=BatchOperation.TYPE_INSTALL_EXTENSION
+            ).select_related('batch_operation').latest('created_at')
+            
+            return Response({
+                "id": task.id,
+                "database_id": str(task.database_id),
+                "extension_name": task.batch_operation.target_entity,
+                "status": task.status,
+                "started_at": task.started_at,
+                "completed_at": task.completed_at,
+                "error_message": task.error_message,
+                "duration_seconds": task.duration_seconds,
+                "retry_count": task.retry_count,
+                "metadata": {
+                    "operation_id": task.batch_operation.id,
+                    "operation_name": task.batch_operation.name,
+                    "progress_percent": task.batch_operation.progress
+                }
+            })
+        except Task.DoesNotExist:
+            return Response(
+                {"error": "No installation found for this database"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @extend_schema(
+        summary="Повторить установку расширения",
+        description="Повторяет неудачную установку расширения",
+        responses={
+            200: OpenApiResponse(
+                description="Retry task created",
+                response={'type': 'object', 'properties': {'task_id': {'type': 'string'}}}
+            ),
+            404: OpenApiResponse(description="Installation not found")
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='retry-installation')
+    def retry_installation(self, request, pk=None):
+        """
+        Повторить установку расширения.
+        
+        POST /api/v1/databases/{id}/retry-installation/
+        """
+        try:
+            installation = ExtensionInstallation.objects.filter(
+                database_id=pk,
+                status='failed'
+            ).latest('created_at')
+            
+            # TODO: Повторная отправка в очередь
+            return Response({"task_id": "pending_implementation"})
+        except ExtensionInstallation.DoesNotExist:
+            return Response(
+                {"error": "No failed installation found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @extend_schema(
+        summary="Обновить статус установки расширения (для Go Worker)",
+        description="Endpoint для Go Worker чтобы обновлять статус установки расширения",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'status': {
+                        'type': 'string',
+                        'enum': ['pending', 'in_progress', 'completed', 'failed'],
+                        'description': 'Новый статус установки'
+                    },
+                    'error_message': {
+                        'type': 'string',
+                        'description': 'Сообщение об ошибке (если status=failed)'
+                    },
+                    'progress_percent': {
+                        'type': 'integer',
+                        'description': 'Процент выполнения (0-100)'
+                    }
+                },
+                'required': ['status']
+            }
+        },
+        responses={
+            200: OpenApiResponse(description="Status updated successfully"),
+            404: OpenApiResponse(description="No pending installation found")
+        }
+    )
+    @action(detail=True, methods=['patch'], url_path='extension-installation-status')
+    def update_extension_installation_status(self, request, pk=None):
+        """
+        Обновить статус установки расширения (используется Go Worker).
+        
+        PATCH /api/v1/databases/{id}/extension-installation-status/
+        
+        Body:
+        {
+            "status": "in_progress|completed|failed",
+            "error_message": "optional error",
+            "progress_percent": 50
+        }
+        """
+        from django.utils import timezone
+        from apps.operations.models import Task, BatchOperation
+        
+        database = self.get_object()
+        
+        # Получить последнюю pending/in_progress задачу установки расширения
+        task = Task.objects.filter(
+            database=database,
+            batch_operation__operation_type=BatchOperation.TYPE_INSTALL_EXTENSION,
+            status__in=[Task.STATUS_PENDING, Task.STATUS_PROCESSING]
+        ).select_related('batch_operation').order_by('-created_at').first()
+        
+        if not task:
+            return Response(
+                {"error": "No pending installation task found for this database"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Маппинг статусов
+        status_mapping = {
+            'pending': Task.STATUS_PENDING,
+            'in_progress': Task.STATUS_PROCESSING,
+            'completed': Task.STATUS_COMPLETED,
+            'failed': Task.STATUS_FAILED
+        }
+        
+        new_status = request.data.get('status')
+        if new_status not in status_mapping:
+            return Response(
+                {"error": "Invalid status. Must be: pending, in_progress, completed, or failed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Обновить статус задачи
+        if new_status == 'in_progress':
+            task.mark_started(worker_id=request.data.get('worker_id', 'worker-1'))
+        elif new_status == 'completed':
+            result = {
+                "success": True,
+                "progress_percent": request.data.get('progress_percent', 100)
+            }
+            task.mark_completed(result=result)
+        elif new_status == 'failed':
+            error_message = request.data.get('error_message', 'Unknown error')
+            task.mark_failed(error_message=error_message, should_retry=False)
+        
+        return Response({
+            "id": task.id,
+            "database_id": str(task.database_id),
+            "status": task.status,
+            "error_message": task.error_message,
+            "duration_seconds": task.duration_seconds
+        })
+
+    @action(detail=True, methods=['post'], url_path='retry-installation')
+    def retry_installation(self, request, pk=None):
+        """
+        Повторить установку расширения.
+        
+        POST /api/v1/databases/{id}/retry-installation/
+        """
+        try:
+            installation = ExtensionInstallation.objects.filter(
+                database_id=pk,
+                status='failed'
+            ).latest('created_at')
+
+            from .tasks import queue_extension_installation
+
+            extension_config = {
+                'name': installation.extension_name,
+                'path': installation.extension_path
+            }
+
+            task = queue_extension_installation.delay([str(pk)], extension_config)
+
+            return Response({"task_id": str(task.id)})
+
+        except ExtensionInstallation.DoesNotExist:
+            return Response(
+                {"error": "No failed installation found for this database"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @extend_schema(
+        summary="Получить credentials для базы (для Go Worker)",
+        description="Возвращает OData URL и credentials для базы данных",
+        responses={
+            200: OpenApiResponse(
+                description="Credentials returned",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'database_id': {'type': 'string'},
+                        'odata_url': {'type': 'string'},
+                        'username': {'type': 'string'},
+                        'password': {'type': 'string'}
+                    }
+                }
+            ),
+            404: OpenApiResponse(description="Database not found")
+        }
+    )
+    @action(detail=True, methods=['get'], url_path='credentials', permission_classes=[IsAuthenticated])
+    def get_credentials(self, request, pk=None):
+        """
+        Получить credentials для базы.
+        
+        GET /api/v1/databases/{id}/credentials/
+        
+        Returns both OData and 1C connection credentials.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Credentials request for database {pk}")
+
+        database = self.get_object()
+
+        if not database.odata_url or not database.username:
+            return Response(
+                {"error": "Database configuration is incomplete"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Decrypt password (encrypted with FIELD_ENCRYPTION_KEY)
+        from apps.databases.services import DatabaseService
+        password = DatabaseService.decrypt_password(database.password)
+
+        return Response({
+            "database_id": str(database.id),
+            # OData credentials
+            "odata_url": database.odata_url,
+            "username": database.username,
+            "password": password,
+            # 1C connection info (for 1cv8.exe batch operations)
+            "host": database.host,
+            "port": database.port,
+            "base_name": database.base_name or database.name,
+        })
+
+
+@api_view(['GET'])
+def list_extension_storage(request):
+    """
+    Получить список файлов расширений в хранилище.
+    
+    GET /api/v1/extensions/storage/
+    """
+    try:
+        extensions = ExtensionStorageService.list_extensions()
+        
+        # Форматировать даты
+        from datetime import datetime
+        for ext in extensions:
+            ext['modified_at'] = datetime.fromtimestamp(ext['modified_at']).isoformat()
+        
+        return Response({
+            'extensions': extensions,
+            'count': len(extensions)
+        })
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+def upload_extension(request):
+    """
+    Загрузить файл расширения в хранилище.
+    
+    POST /api/v1/extensions/upload/
+    
+    Form data:
+        file: .cfe file
+        filename: optional custom filename
+    """
+    try:
+        if 'file' not in request.FILES:
+            return Response(
+                {'error': 'No file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        file = request.FILES['file']
+        filename = request.data.get('filename', None)
+        
+        # Валидация
+        if not file.name.lower().endswith('.cfe'):
+            return Response(
+                {'error': 'File must have .cfe extension'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверка размера (max 100MB)
+        if file.size > 100 * 1024 * 1024:
+            return Response(
+                {'error': 'File too large (max 100MB)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Сохранить
+        result = ExtensionStorageService.save_extension(file, filename)
+        
+        return Response({
+            'message': 'File uploaded successfully',
+            'file': result
+        }, status=status.HTTP_201_CREATED)
+        
+    except ValueError as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['DELETE'])
+def delete_extension_storage(request, filename):
+    """
+    Удалить файл расширения из хранилища.
+    
+    DELETE /api/v1/extensions/storage/{filename}/
+    """
+    try:
+        deleted = ExtensionStorageService.delete_extension(filename)
+        
+        if deleted:
+            return Response({'message': 'File deleted successfully'})
+        else:
+            return Response(
+                {'error': 'File not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+

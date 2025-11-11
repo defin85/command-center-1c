@@ -15,15 +15,20 @@ import (
 // DatabaseCredentials represents credentials for a 1C database
 type DatabaseCredentials struct {
 	DatabaseID string `json:"database_id"`
-	ODataURL   string `json:"odata_url"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
+	// OData credentials
+	ODataURL string `json:"odata_url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	// 1C connection info (for 1cv8.exe batch operations)
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	BaseName string `json:"base_name"`
 }
 
 // Client fetches credentials from Orchestrator API
 type Client struct {
 	orchestratorURL string
-	apiKey          string
+	serviceToken    string // JWT token for service-to-service auth
 	httpClient      *http.Client
 
 	// Cache with TTL
@@ -37,11 +42,11 @@ type cacheEntry struct {
 	expiresAt   time.Time
 }
 
-// NewClient creates a new credentials client
-func NewClient(orchestratorURL, apiKey string) *Client {
+// NewClient creates a new credentials client with JWT service token
+func NewClient(orchestratorURL, serviceToken string) *Client {
 	return &Client{
 		orchestratorURL: orchestratorURL,
-		apiKey:          apiKey,
+		serviceToken:    serviceToken,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -80,8 +85,8 @@ func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*Database
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set authorization header (API Key)
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	// Set authorization header (JWT Bearer token)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.serviceToken))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)

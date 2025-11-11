@@ -239,7 +239,13 @@ if [ -d "venv" ]; then
     source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
 fi
 
-nohup celery -A config worker --loglevel=info > "$LOGS_DIR/celery-worker.log" 2>&1 &
+# NOTE: Using gevent pool for async I/O operations (Windows compatible)
+# - prefork causes ACCESS_VIOLATION on Windows (spawn process issues)
+# - gevent provides lightweight concurrency via green threads (cooperative)
+# - Ideal for I/O-bound tasks: DB queries, Redis operations, HTTP calls
+# - Concurrency 100 = up to 100 concurrent greenlets (minimal memory overhead)
+# - Using -P instead of --pool (short form required by Celery 5.x)
+nohup celery -A config worker -P gevent --concurrency=100 --loglevel=info > "$LOGS_DIR/celery-worker.log" 2>&1 &
 CELERY_WORKER_PID=$!
 echo $CELERY_WORKER_PID > "$PIDS_DIR/celery-worker.pid"
 

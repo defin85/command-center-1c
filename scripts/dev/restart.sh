@@ -123,7 +123,10 @@ case "$SERVICE_NAME" in
         if [ -d "venv" ]; then
             source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
         fi
-        nohup celery -A config worker --loglevel=info > "$LOG_FILE" 2>&1 &
+        # Using gevent pool for async I/O operations (Windows compatible)
+        # -P gevent: lightweight concurrency via green threads
+        # --concurrency=100: up to 100 concurrent greenlets
+        nohup celery -A config worker -P gevent --concurrency=100 --loglevel=info > "$LOG_FILE" 2>&1 &
         NEW_PID=$!
         ;;
 

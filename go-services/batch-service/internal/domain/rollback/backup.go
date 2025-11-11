@@ -1,6 +1,7 @@
 package rollback
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,8 +49,17 @@ func (m *BackupManager) CreatePreInstallBackup(
 	defer os.Remove(tmpFile) // cleanup temp file after we're done
 
 	// 2. Dump current extension from database
-	dbPath := fmt.Sprintf("%s\\%s", server, infobaseName)
-	err := m.v8executor.DumpExtension(dbPath, username, password, extensionName, tmpFile)
+	ctx := context.Background()
+	dumpReq := v8executor.DumpRequest{
+		Server:        server,
+		InfobaseName:  infobaseName,
+		Username:      username,
+		Password:      password,
+		ExtensionName: extensionName,
+		OutputPath:    tmpFile,
+	}
+
+	err := m.v8executor.DumpExtension(ctx, dumpReq)
 	if err != nil {
 		// Extension might not exist - this is OK for first installation
 		m.logger.Info("extension does not exist, skipping backup (first installation)",
@@ -108,8 +118,17 @@ func (m *BackupManager) CreateManualBackup(
 	defer os.Remove(tmpFile)
 
 	// 2. Dump extension
-	dbPath := fmt.Sprintf("%s\\%s", server, infobaseName)
-	err := m.v8executor.DumpExtension(dbPath, username, password, extensionName, tmpFile)
+	ctx := context.Background()
+	dumpReq := v8executor.DumpRequest{
+		Server:        server,
+		InfobaseName:  infobaseName,
+		Username:      username,
+		Password:      password,
+		ExtensionName: extensionName,
+		OutputPath:    tmpFile,
+	}
+
+	err := m.v8executor.DumpExtension(ctx, dumpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dump extension: %w", err)
 	}
@@ -165,14 +184,31 @@ func (m *BackupManager) RestoreFromBackup(
 	}
 
 	// 2. Load extension from backup file
-	dbPath := fmt.Sprintf("%s\\%s", server, infobaseName)
-	err := m.v8executor.LoadExtensionFromFile(dbPath, username, password, backup.ExtensionName, backup.BackupPath)
+	ctx := context.Background()
+	installReq := v8executor.InstallRequest{
+		Server:        server,
+		InfobaseName:  infobaseName,
+		Username:      username,
+		Password:      password,
+		ExtensionName: backup.ExtensionName,
+		ExtensionPath: backup.BackupPath,
+	}
+
+	err := m.v8executor.InstallExtension(ctx, installReq)
 	if err != nil {
 		return fmt.Errorf("failed to load extension from backup: %w", err)
 	}
 
 	// 3. Update DB config
-	err = m.v8executor.UpdateExtensionDBConfig(dbPath, username, password, backup.ExtensionName)
+	updateReq := v8executor.UpdateRequest{
+		Server:        server,
+		InfobaseName:  infobaseName,
+		Username:      username,
+		Password:      password,
+		ExtensionName: backup.ExtensionName,
+	}
+
+	err = m.v8executor.UpdateExtension(ctx, updateReq)
 	if err != nil {
 		return fmt.Errorf("failed to update DB config after restore: %w", err)
 	}

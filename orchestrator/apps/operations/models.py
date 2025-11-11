@@ -26,12 +26,14 @@ class BatchOperation(models.Model):
     TYPE_UPDATE = 'update'
     TYPE_DELETE = 'delete'
     TYPE_QUERY = 'query'
+    TYPE_INSTALL_EXTENSION = 'install_extension'
 
     TYPE_CHOICES = [
         (TYPE_CREATE, 'Create'),
         (TYPE_UPDATE, 'Update'),
         (TYPE_DELETE, 'Delete'),
         (TYPE_QUERY, 'Query'),
+        (TYPE_INSTALL_EXTENSION, 'Install Extension'),
     ]
 
     # Identity

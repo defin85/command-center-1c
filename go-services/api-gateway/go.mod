@@ -1,12 +1,13 @@
 module github.com/commandcenter1c/commandcenter/api-gateway
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/commandcenter1c/commandcenter/shared v0.0.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sirupsen/logrus v1.9.3
+	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -39,6 +40,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	go.uber.org/mock v0.5.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/crypto v0.41.0 // indirect

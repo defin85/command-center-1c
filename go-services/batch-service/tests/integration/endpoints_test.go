@@ -5,15 +5,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/command-center-1c/batch-service/internal/api"
 	"github.com/command-center-1c/batch-service/internal/api/handlers"
+	"github.com/command-center-1c/batch-service/internal/domain/metadata"
+	"github.com/command-center-1c/batch-service/internal/domain/rollback"
+	"github.com/command-center-1c/batch-service/internal/domain/storage"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
 	"github.com/command-center-1c/batch-service/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func setupTestRouter() *gin.Engine {
@@ -24,19 +31,39 @@ func setupTestRouter() *gin.Engine {
 	installer := service.NewExtensionInstaller("", 0)
 	validator := service.NewFileValidator()
 
+	// Create additional required services
+	logger := zap.NewNop()
+
+	// Create temp directories for test storage
+	testStoragePath := "./test-storage"
+	testBackupPath := "./test-backups"
+	os.MkdirAll(testStoragePath, 0755)
+	os.MkdirAll(testBackupPath, 0755)
+
+	// Storage manager with retention of 3 versions
+	storageManager := storage.NewManager(testStoragePath, 3, logger)
+
+	// V8 executor (will fail gracefully in tests without 1cv8.exe)
+	v8exec := v8executor.NewV8Executor("", 10*time.Second)
+
+	// Metadata extractor with parser
+	metadataParser := metadata.NewParser(logger)
+	metadataExtractor := metadata.NewExtractor(v8exec, metadataParser, logger)
+
+	// Backup system
+	backupStorage := filesystem.NewBackupStorage(testBackupPath, logger)
+	backupManager := rollback.NewBackupManager(v8exec, backupStorage, logger)
+	rollbackManager := rollback.NewRollbackManager(backupManager, logger)
+
 	// Setup router
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := api.SetupRouter(installer, deleter, lister, validator, storageManager, metadataExtractor, rollbackManager, backupManager, logger)
 
 	return router
 }
 
 func TestHealthEndpoint(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest("GET", "/health", nil)
 	require.NoError(t, err)
@@ -54,12 +81,8 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_ValidRequest(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",
@@ -89,12 +112,8 @@ func TestDeleteExtensionEndpoint_ValidRequest(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_MissingField(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	tests := []struct {
 		name    string
@@ -170,12 +189,8 @@ func TestDeleteExtensionEndpoint_MissingField(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_InvalidJSON(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest("POST", "/api/v1/extensions/delete", bytes.NewBuffer([]byte("invalid json")))
 	require.NoError(t, err)
@@ -188,12 +203,8 @@ func TestDeleteExtensionEndpoint_InvalidJSON(t *testing.T) {
 }
 
 func TestListExtensionsEndpoint_ValidRequest(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest(
 		"GET",
@@ -210,12 +221,8 @@ func TestListExtensionsEndpoint_ValidRequest(t *testing.T) {
 }
 
 func TestListExtensionsEndpoint_MissingParameter(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	tests := []struct {
 		name string
@@ -253,12 +260,8 @@ func TestListExtensionsEndpoint_MissingParameter(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_EmptyRequest(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest("POST", "/api/v1/extensions/delete", bytes.NewBuffer([]byte("{}")))
 	require.NoError(t, err)
@@ -271,12 +274,8 @@ func TestDeleteExtensionEndpoint_EmptyRequest(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_VeryLongExtensionName(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	longName := ""
 	for i := 0; i < 500; i++ {
@@ -306,12 +305,8 @@ func TestDeleteExtensionEndpoint_VeryLongExtensionName(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_SpecialCharactersInParams(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",
@@ -336,12 +331,8 @@ func TestDeleteExtensionEndpoint_SpecialCharactersInParams(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_WrongHttpMethod(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",
@@ -365,12 +356,8 @@ func TestDeleteExtensionEndpoint_WrongHttpMethod(t *testing.T) {
 }
 
 func TestListExtensionsEndpoint_WrongHttpMethod(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":        "localhost:1541",
@@ -393,12 +380,8 @@ func TestListExtensionsEndpoint_WrongHttpMethod(t *testing.T) {
 }
 
 func TestDeleteExtensionEndpoint_ContentTypeHandling(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",
@@ -424,12 +407,8 @@ func TestDeleteExtensionEndpoint_ContentTypeHandling(t *testing.T) {
 }
 
 func TestListExtensionsEndpoint_MultipleParameters(t *testing.T) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest(
 		"GET",
@@ -453,12 +432,8 @@ func TestDeleteExtensionEndpoint_NoDeadlockWithLargeOutput(t *testing.T) {
 	// After fix: Should complete in < 10 seconds
 
 	// Use short timeout for test to complete quickly
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",
@@ -497,12 +472,8 @@ func TestListExtensionsEndpoint_NoDeadlockWithLargeOutput(t *testing.T) {
 	// CRITICAL TEST: Verifies the deadlock fix for list operation
 
 	// Use short timeout for test to complete quickly
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	req, err := http.NewRequest(
 		"GET",
@@ -522,12 +493,8 @@ func TestListExtensionsEndpoint_NoDeadlockWithLargeOutput(t *testing.T) {
 
 // BenchmarkDeleteEndpointProcessing benchmarks endpoint request processing
 func BenchmarkDeleteEndpointProcessing(b *testing.B) {
-	deleter := service.NewExtensionDeleter("", 10*time.Second)
-	lister := service.NewExtensionLister("", 10*time.Second)
-	installer := service.NewExtensionInstaller("", 0)
-	validator := service.NewFileValidator()
 
-	router := api.SetupRouter(installer, deleter, lister, validator)
+	router := setupTestRouter()
 
 	payload := map[string]string{
 		"server":         "localhost:1541",

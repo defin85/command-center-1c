@@ -34,12 +34,15 @@ type Config struct {
 	// Orchestrator configuration
 	OrchestratorURL string
 
+	// Batch Service configuration
+	BatchServiceURL string
+
 	// Worker configuration
-	WorkerID          string
-	WorkerAPIKey      string
-	WorkerPoolSize    int
-	WorkerMaxRetries  int
-	WorkerTimeout     time.Duration
+	WorkerID         string
+	WorkerAPIKey     string
+	WorkerPoolSize   int
+	WorkerMaxRetries int
+	WorkerTimeout    time.Duration
 
 	// Logging configuration
 	LogLevel  string
@@ -78,6 +81,9 @@ func LoadFromEnv() *Config {
 
 		// Orchestrator
 		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
+
+		// Batch Service
+		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8087"),
 
 		// Worker
 		WorkerID:         getEnv("WORKER_ID", "worker-1"),

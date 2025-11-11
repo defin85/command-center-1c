@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'apps.operations',
     'apps.databases',
     'apps.templates',
+    'apps.monitoring',
 ]
 
 MIDDLEWARE = [
@@ -120,6 +121,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apps.core.authentication.ServiceJWTAuthentication',  # Supports service tokens
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -131,6 +133,21 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Simple JWT settings
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),  # Для dev - 24 часа, для prod уменьшить
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': env('JWT_SECRET', default='your-jwt-secret-change-in-production'),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
 }
 
 # Spectacular settings (OpenAPI/Swagger)
@@ -226,3 +243,34 @@ HEALTH_CHECK_TIMEOUT = 30  # секунды
 
 # Status History Retention
 STATUS_HISTORY_RETENTION_DAYS = 90
+
+# ========== Extension Storage Configuration ==========
+EXTENSION_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'extensions'
+
+# ========== System Monitoring Configuration ==========
+MONITORED_SERVICES = [
+    {
+        'name': 'API Gateway',
+        'type': 'backend',
+        'health_url': 'http://localhost:8080/health',
+        'critical': True,
+    },
+    {
+        'name': 'cluster-service',
+        'type': 'backend',
+        'health_url': 'http://localhost:8088/health',
+        'critical': True,
+    },
+    {
+        'name': 'batch-service',
+        'type': 'backend',
+        'health_url': 'http://localhost:8087/health',
+        'critical': False,
+    },
+    {
+        'name': 'ras-grpc-gw',
+        'type': 'backend',
+        'health_url': 'http://localhost:8081/health',
+        'critical': True,
+    },
+]

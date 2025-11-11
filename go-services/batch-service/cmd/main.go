@@ -16,14 +16,14 @@ import (
 
 	"github.com/command-center-1c/batch-service/internal/api"
 	"github.com/command-center-1c/batch-service/internal/config"
-	"github.com/command-center-1c/batch-service/internal/service"
-	"github.com/command-center-1c/batch-service/internal/domain/storage"
 	"github.com/command-center-1c/batch-service/internal/domain/metadata"
-	"github.com/command-center-1c/batch-service/internal/domain/session"
 	"github.com/command-center-1c/batch-service/internal/domain/rollback"
-	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
+	"github.com/command-center-1c/batch-service/internal/domain/session"
+	"github.com/command-center-1c/batch-service/internal/domain/storage"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/cluster"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
+	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
+	"github.com/command-center-1c/batch-service/internal/service"
 )
 
 var (
@@ -97,7 +97,7 @@ func main() {
 	}
 
 	// Initialize session manager
-	sessionManager := session.NewSessionManager(clusterClient, logger)
+	_ = session.NewSessionManager(clusterClient, logger)
 
 	// Initialize backup system
 	backupStorage := filesystem.NewBackupStorage(cfg.Backup.Path, logger)
@@ -106,7 +106,6 @@ func main() {
 	v8exec := v8executor.NewV8Executor(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
-		logger,
 	)
 
 	backupManager := rollback.NewBackupManager(v8exec, backupStorage, logger)
@@ -120,10 +119,6 @@ func main() {
 	extensionInstaller := service.NewExtensionInstaller(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
-		sessionManager,
-		backupManager,
-		cfg.Backup.RetentionBackups,
-		logger,
 	)
 	extensionDeleter := service.NewExtensionDeleter(
 		cfg.V8.ExePath,

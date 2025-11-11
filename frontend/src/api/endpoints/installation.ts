@@ -25,17 +25,37 @@ export const installationApi = {
   },
 
   // Получить статус для конкретной базы
-  getDatabaseStatus: async (databaseId: number): Promise<ExtensionInstallation> => {
-    const response = await apiClient.get<ExtensionInstallation>(
-      `/databases/${databaseId}/extension-status/`
-    )
-    return response.data
+  getDatabaseStatus: async (databaseId: string): Promise<ExtensionInstallation | null> => {
+    try {
+      const response = await apiClient.get<ExtensionInstallation>(
+        `/databases/${databaseId}/extension-status/`
+      )
+      return response.data
+    } catch (error: any) {
+      // Если установка еще не начата, вернуть null
+      if (error.response?.status === 404) {
+        return null
+      }
+      throw error
+    }
   },
 
   // Повторить неудачную установку
   retryInstallation: async (databaseId: number): Promise<{ task_id: string }> => {
     const response = await apiClient.post<{ task_id: string }>(
       `/databases/${databaseId}/retry-installation/`
+    )
+    return response.data
+  },
+
+  // Установить расширение на одну базу
+  installSingle: async (
+    databaseId: string,
+    extensionConfig: { name: string; path: string }
+  ): Promise<{ task_id: string; message: string }> => {
+    const response = await apiClient.post<{ task_id: string; message: string }>(
+      `/databases/${databaseId}/install-extension/`,
+      { extension_config: extensionConfig }
     )
     return response.data
   },

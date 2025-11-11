@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
@@ -62,10 +64,23 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize credentials client
+	// Generate JWT service token for Worker
+	jwtManager := auth.NewJWTManager(auth.JWTConfig{
+		Secret:     cfg.JWTSecret,
+		ExpireTime: 24 * time.Hour, // Not used for service tokens
+		Issuer:     "commandcenter",
+	})
+
+	serviceToken, err := jwtManager.GenerateServiceToken("worker", 24*time.Hour)
+	if err != nil {
+		log.Fatal("failed to generate service token", zap.Error(err))
+	}
+	log.Info("service JWT token generated", zap.Duration("ttl", 24*time.Hour))
+
+	// Initialize credentials client with JWT token
 	credsClient := credentials.NewClient(
 		cfg.OrchestratorURL,
-		cfg.WorkerAPIKey,
+		serviceToken,
 	)
 	log.Info("credentials client initialized")
 

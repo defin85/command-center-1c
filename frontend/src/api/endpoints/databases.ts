@@ -10,10 +10,17 @@ export interface Database {
   created_at: string
 }
 
+export interface DatabaseListResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Database[]
+}
+
 export const databasesApi = {
   list: async (params?: Record<string, any>) => {
-    const response = await apiClient.get<Database[]>('/databases', { params })
-    return response.data
+    const response = await apiClient.get<DatabaseListResponse>('/databases', { params })
+    return response.data.results
   },
 
   get: async (id: string) => {

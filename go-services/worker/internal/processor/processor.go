@@ -4,27 +4,32 @@ package processor
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
+	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
 )
 
 // TaskProcessor handles task processing logic
 type TaskProcessor struct {
-	config      *config.Config
-	credsClient *credentials.Client
-	workerID    string
+	config       *config.Config
+	credsClient  credentials.Fetcher
+	odataClients map[string]*odata.Client // Cache clients per database
+	clientsMutex sync.RWMutex
+	workerID     string
 }
 
 // NewTaskProcessor creates a new task processor
-func NewTaskProcessor(cfg *config.Config, credsClient *credentials.Client) *TaskProcessor {
+func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher) *TaskProcessor {
 	return &TaskProcessor{
-		config:      cfg,
-		credsClient: credsClient,
-		workerID:    cfg.WorkerID,
+		config:       cfg,
+		credsClient:  credsClient,
+		odataClients: make(map[string]*odata.Client),
+		workerID:     cfg.WorkerID,
 	}
 }
 
@@ -85,6 +90,39 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	return result
 }
 
+// getODataClient retrieves or creates OData client for database
+func (p *TaskProcessor) getODataClient(creds *credentials.DatabaseCredentials) *odata.Client {
+	p.clientsMutex.RLock()
+	if client, exists := p.odataClients[creds.DatabaseID]; exists {
+		p.clientsMutex.RUnlock()
+		return client
+	}
+	p.clientsMutex.RUnlock()
+
+	// Create new client
+	p.clientsMutex.Lock()
+	defer p.clientsMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if client, exists := p.odataClients[creds.DatabaseID]; exists {
+		return client
+	}
+
+	client := odata.NewClient(odata.ClientConfig{
+		BaseURL: creds.ODataURL,
+		Auth: odata.Auth{
+			Username: creds.Username,
+			Password: creds.Password,
+		},
+		Timeout:       30 * time.Second,
+		MaxRetries:    3,
+		RetryWaitTime: 500 * time.Millisecond,
+	})
+
+	p.odataClients[creds.DatabaseID] = client
+	return client
+}
+
 func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
 
@@ -92,7 +130,15 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		DatabaseID: databaseID,
 	}
 
-	// Fetch credentials
+	// Special handling for extension installation (fetches credentials internally)
+	if msg.OperationType == "install_extension" {
+		result = p.executeExtensionInstall(ctx, msg, databaseID)
+		result.DatabaseID = databaseID
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
+
+	// Fetch credentials for OData operations
 	creds, err := p.credsClient.Fetch(ctx, databaseID)
 	if err != nil {
 		result.Success = false
@@ -125,27 +171,52 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 }
 
 func (p *TaskProcessor) executeCreate(ctx context.Context, msg *models.OperationMessage, creds *credentials.DatabaseCredentials) models.DatabaseResultV2 {
-	// TODO: Implement OData POST
-	// Placeholder implementation
-	logger.Infof("executing create operation (stub), entity=%s, odata_url=%s", msg.Entity, creds.ODataURL)
+	log := logger.GetLogger()
+	client := p.getODataClient(creds)
 
-	// Simulate work
-	time.Sleep(100 * time.Millisecond)
+	log.Infof("executing create operation, entity=%s, odata_url=%s", msg.Entity, creds.ODataURL)
+
+	// Create entity via OData
+	result, err := client.Create(ctx, msg.Entity, msg.Payload.Data)
+	if err != nil {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     err.Error(),
+			ErrorCode: categorizeODataError(err),
+		}
+	}
 
 	return models.DatabaseResultV2{
 		Success: true,
-		Data: map[string]interface{}{
-			"created": true,
-			"entity":  msg.Entity,
-		},
+		Data:    result,
 	}
 }
 
 func (p *TaskProcessor) executeUpdate(ctx context.Context, msg *models.OperationMessage, creds *credentials.DatabaseCredentials) models.DatabaseResultV2 {
-	// TODO: Implement OData PATCH/PUT
-	logger.Info("executing update operation (stub)")
+	log := logger.GetLogger()
+	client := p.getODataClient(creds)
 
-	time.Sleep(100 * time.Millisecond)
+	// Extract entity ID from filters (expected format: {"entity_id": "guid'...'"})
+	entityID, ok := msg.Payload.Filters["entity_id"].(string)
+	if !ok || entityID == "" {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     "entity_id is required in filters for update operation",
+			ErrorCode: "VALIDATION_ERROR",
+		}
+	}
+
+	log.Infof("executing update operation, entity=%s, id=%s", msg.Entity, entityID)
+
+	// Update entity via OData
+	err := client.Update(ctx, msg.Entity, entityID, msg.Payload.Data)
+	if err != nil {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     err.Error(),
+			ErrorCode: categorizeODataError(err),
+		}
+	}
 
 	return models.DatabaseResultV2{
 		Success: true,
@@ -156,10 +227,30 @@ func (p *TaskProcessor) executeUpdate(ctx context.Context, msg *models.Operation
 }
 
 func (p *TaskProcessor) executeDelete(ctx context.Context, msg *models.OperationMessage, creds *credentials.DatabaseCredentials) models.DatabaseResultV2 {
-	// TODO: Implement OData DELETE
-	logger.Info("executing delete operation (stub)")
+	log := logger.GetLogger()
+	client := p.getODataClient(creds)
 
-	time.Sleep(100 * time.Millisecond)
+	// Extract entity ID from filters
+	entityID, ok := msg.Payload.Filters["entity_id"].(string)
+	if !ok || entityID == "" {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     "entity_id is required in filters for delete operation",
+			ErrorCode: "VALIDATION_ERROR",
+		}
+	}
+
+	log.Infof("executing delete operation, entity=%s, id=%s", msg.Entity, entityID)
+
+	// Delete entity via OData
+	err := client.Delete(ctx, msg.Entity, entityID)
+	if err != nil {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     err.Error(),
+			ErrorCode: categorizeODataError(err),
+		}
+	}
 
 	return models.DatabaseResultV2{
 		Success: true,
@@ -170,15 +261,65 @@ func (p *TaskProcessor) executeDelete(ctx context.Context, msg *models.Operation
 }
 
 func (p *TaskProcessor) executeQuery(ctx context.Context, msg *models.OperationMessage, creds *credentials.DatabaseCredentials) models.DatabaseResultV2 {
-	// TODO: Implement OData GET
-	logger.Info("executing query operation (stub)")
+	log := logger.GetLogger()
+	client := p.getODataClient(creds)
 
-	time.Sleep(100 * time.Millisecond)
+	// Extract query parameters from options
+	filter := ""
+	if f, ok := msg.Payload.Options["filter"].(string); ok {
+		filter = f
+	}
+
+	var selectFields []string
+	if s, ok := msg.Payload.Options["select"].([]interface{}); ok {
+		for _, field := range s {
+			if fieldStr, ok := field.(string); ok {
+				selectFields = append(selectFields, fieldStr)
+			}
+		}
+	}
+
+	top := 0
+	if t, ok := msg.Payload.Options["top"].(float64); ok {
+		top = int(t)
+	}
+
+	skip := 0
+	if s, ok := msg.Payload.Options["skip"].(float64); ok {
+		skip = int(s)
+	}
+
+	log.Infof("executing query operation, entity=%s, filter=%s", msg.Entity, filter)
+
+	// Query entities via OData
+	results, err := client.Query(ctx, odata.QueryRequest{
+		Entity: msg.Entity,
+		Filter: filter,
+		Select: selectFields,
+		Top:    top,
+		Skip:   skip,
+	})
+	if err != nil {
+		return models.DatabaseResultV2{
+			Success:   false,
+			Error:     err.Error(),
+			ErrorCode: categorizeODataError(err),
+		}
+	}
 
 	return models.DatabaseResultV2{
 		Success: true,
 		Data: map[string]interface{}{
-			"results": []interface{}{},
+			"results": results,
+			"count":   len(results),
 		},
 	}
+}
+
+// categorizeODataError categorizes OData error for result
+func categorizeODataError(err error) string {
+	if odataErr, ok := err.(*odata.ODataError); ok {
+		return odataErr.Code
+	}
+	return "UNKNOWN_ERROR"
 }

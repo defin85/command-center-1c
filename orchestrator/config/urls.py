@@ -7,6 +7,11 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView
 )
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+    TokenVerifyView,
+)
 from apps.health import health_check, health_check_detailed
 
 urlpatterns = [
@@ -17,9 +22,16 @@ urlpatterns = [
     path('health/', health_check, name='health-slash'),
     path('health/detailed', health_check_detailed, name='health-detailed'),
 
+    # JWT Authentication
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
+
     # API v1
     path('api/v1/', include('apps.databases.urls')),
+    path('api/v1/operations/', include('apps.operations.urls')),
     path('api/v1/templates/', include('apps.templates.urls')),
+    path('api/v1/system/', include('apps.monitoring.urls')),
 
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

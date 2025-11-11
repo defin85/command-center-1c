@@ -4,8 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 from django.http import JsonResponse
-from .models import Operation, BatchOperation, Task
-from .serializers import OperationSerializer, BatchOperationSerializer
+from .models import BatchOperation, Task
+from .serializers import BatchOperationSerializer, TaskSerializer
 from .redis_client import redis_client
 import logging
 
@@ -20,33 +20,26 @@ def health_check(request):
     })
 
 
-class OperationViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing operations."""
+class BatchOperationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing batch operations."""
 
-    queryset = Operation.objects.all()
-    serializer_class = OperationSerializer
-    filterset_fields = ['status', 'type', 'database']
+    queryset = BatchOperation.objects.all().prefetch_related('target_databases')
+    serializer_class = BatchOperationSerializer
+    filterset_fields = ['status', 'operation_type']
+    ordering = ['-created_at']
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """Cancel an operation."""
+        """Cancel a batch operation."""
         operation = self.get_object()
-        if operation.status in [Operation.STATUS_PENDING, Operation.STATUS_PROCESSING]:
-            operation.status = Operation.STATUS_CANCELLED
+        if operation.status in [BatchOperation.STATUS_PENDING, BatchOperation.STATUS_PROCESSING]:
+            operation.status = BatchOperation.STATUS_CANCELLED
             operation.save()
             return Response({'status': 'cancelled'})
         return Response(
             {'error': 'Operation cannot be cancelled'},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-
-class BatchOperationViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing batch operations."""
-
-    queryset = BatchOperation.objects.all()
-    serializer_class = BatchOperationSerializer
-    filterset_fields = ['status']
 
 
 @api_view(['POST'])

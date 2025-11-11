@@ -18,12 +18,13 @@ DATABASES = {
     }
 }
 
-# Отключаем аутентификацию для demo/dev режима
+# Отключаем аутентификацию для demo/dev режима (оставляем JWT, но делаем AllowAny)
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
+    # Оставляем JWT authentication для совместимости с API Gateway
 }
 
 # Logging

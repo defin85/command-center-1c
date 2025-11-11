@@ -1,7 +1,8 @@
-import { Layout, Menu } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined } from '@ant-design/icons'
+import { Layout, Menu, Button, Dropdown } from 'antd'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, RocketOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
+import type { MenuProps } from 'antd'
 
 const { Header, Content, Sider } = Layout
 
@@ -13,6 +14,21 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('refresh_token')
+    navigate('/login')
+  }
+
+  const userMenuItems: MenuProps['items'] = [
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: 'Выйти',
+      onClick: handleLogout,
+    },
+  ]
+
   const menuItems = [
     {
       key: '/',
@@ -20,23 +36,43 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Dashboard',
     },
     {
-      key: '/operations',
-      icon: <ThunderboltOutlined />,
-      label: 'Operations',
+      key: '/system-status',
+      icon: <MonitorOutlined />,
+      label: 'System Status',
+    },
+    {
+      key: '/clusters',
+      icon: <ClusterOutlined />,
+      label: 'Clusters',
     },
     {
       key: '/databases',
       icon: <DatabaseOutlined />,
       label: 'Databases',
     },
+    {
+      key: '/operations',
+      icon: <ThunderboltOutlined />,
+      label: 'Operations',
+    },
+    {
+      key: '/installation-monitor',
+      icon: <RocketOutlined />,
+      label: 'Installation Monitor',
+    },
   ]
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center' }}>
+      <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
           CommandCenter1C
         </div>
+        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+          <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
+            admin
+          </Button>
+        </Dropdown>
       </Header>
       <Layout>
         <Sider width={200} theme="light">
