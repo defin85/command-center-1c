@@ -835,6 +835,12 @@ api-gateway:8080 ← frontend:5173
 - [Deployment](docs/deployment/) - Развертывание
 - [README.md](README.md) - Main project README
 
+**Event-Driven Architecture (NEW!):**
+- **[EVENT_DRIVEN_EXECUTIVE_SUMMARY.md](docs/EVENT_DRIVEN_EXECUTIVE_SUMMARY.md)** - Executive Summary (TL;DR 60 sec)
+- **[EVENT_DRIVEN_ROADMAP.md](docs/EVENT_DRIVEN_ROADMAP.md)** - Детальный roadmap (14 дней, task breakdown)
+- **[EVENT_DRIVEN_GANTT.md](docs/EVENT_DRIVEN_GANTT.md)** - Gantt chart & timeline visualization
+- **[EVENT_DRIVEN_ARCHITECTURE.md](docs/architecture/EVENT_DRIVEN_ARCHITECTURE.md)** - Концептуальный дизайн (82KB)
+
 **История:**
 - [Sprint Progress](docs/archive/sprints/) - Детальная история спринтов
 - [Roadmap Variants](docs/archive/roadmap_variants/) - MVP/Enterprise варианты (архив)
