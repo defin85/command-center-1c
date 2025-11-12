@@ -1,0 +1,934 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>statemachine: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/compensation.go (100.0%)</option>
+				
+				<option value="file1">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/config.go (90.0%)</option>
+				
+				<option value="file2">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/deduplication.go (0.0%)</option>
+				
+				<option value="file3">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/events.go (43.2%)</option>
+				
+				<option value="file4">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/handlers.go (0.0%)</option>
+				
+				<option value="file5">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/persistence.go (5.3%)</option>
+				
+				<option value="file6">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/state_machine.go (47.3%)</option>
+				
+				<option value="file7">github.com/commandcenter1c/commandcenter/worker/internal/statemachine/states.go (88.9%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package statemachine
+
+import (
+        "context"
+        "fmt"
+)
+
+// pushCompensation adds compensation action to stack
+func (sm *ExtensionInstallStateMachine) pushCompensation(name string, action func(context.Context) error) <span class="cov8" title="1">{
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+
+        sm.compensationStack = append(sm.compensationStack, CompensationAction{
+                Name:   name,
+                Action: action,
+        })
+
+        fmt.Printf("[StateMachine] Added compensation: %s\n", name)
+}</span>
+
+// executeCompensations executes compensation actions in LIFO order
+func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context) error <span class="cov8" title="1">{
+        fmt.Printf("[StateMachine] Executing compensations (count=%d)\n", len(sm.compensationStack))
+
+        ctx, cancel := context.WithTimeout(ctx, sm.config.TimeoutCompensation)
+        defer cancel()
+
+        // Execute in reverse order (LIFO)
+        for i := len(sm.compensationStack) - 1; i &gt;= 0; i-- </span><span class="cov8" title="1">{
+                comp := sm.compensationStack[i]
+
+                fmt.Printf("[StateMachine] Executing compensation: %s\n", comp.Name)
+
+                err := comp.Action(ctx)
+                if err != nil </span><span class="cov8" title="1">{
+                        fmt.Printf("[StateMachine] Compensation %s failed: %v\n", comp.Name, err)
+                        // Continue with other compensations даже если одна failed
+                }</span> else<span class="cov8" title="1"> {
+                        fmt.Printf("[StateMachine] Compensation %s succeeded\n", comp.Name)
+                }</span>
+        }
+
+        // All compensations executed, transition to Failed
+        <span class="cov8" title="1">return sm.transitionTo(StateFailed)</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package statemachine
+
+import (
+        "errors"
+        "time"
+)
+
+// Config holds state machine configuration
+type Config struct {
+        // Timeouts for each step
+        TimeoutLockJobs      time.Duration
+        TimeoutTerminate     time.Duration
+        TimeoutInstall       time.Duration
+        TimeoutUnlock        time.Duration
+        TimeoutCompensation  time.Duration
+
+        // Retry configuration
+        MaxRetries        int
+        RetryInitialDelay time.Duration
+        RetryMaxDelay     time.Duration
+        RetryMultiplier   float64
+
+        // State persistence
+        StateTTL          time.Duration
+
+        // Deduplication
+        DeduplicationTTL  time.Duration
+}
+
+// DefaultConfig returns default configuration
+func DefaultConfig() *Config <span class="cov8" title="1">{
+        return &amp;Config{
+                // Timeouts
+                TimeoutLockJobs:      30 * time.Second,
+                TimeoutTerminate:     90 * time.Second,
+                TimeoutInstall:       5 * time.Minute,
+                TimeoutUnlock:        30 * time.Second,
+                TimeoutCompensation:  2 * time.Minute,
+
+                // Retry
+                MaxRetries:        3,
+                RetryInitialDelay: 1 * time.Second,
+                RetryMaxDelay:     30 * time.Second,
+                RetryMultiplier:   2.0,
+
+                // Persistence
+                StateTTL:          24 * time.Hour,
+
+                // Deduplication
+                DeduplicationTTL:  10 * time.Minute,
+        }
+}</span>
+
+// Validate validates configuration
+func (c *Config) Validate() error <span class="cov8" title="1">{
+        if c.TimeoutLockJobs &lt;= 0 </span><span class="cov8" title="1">{
+                return errors.New("invalid timeout for lock jobs")
+        }</span>
+        <span class="cov8" title="1">if c.TimeoutTerminate &lt;= 0 </span><span class="cov8" title="1">{
+                return errors.New("invalid timeout for terminate sessions")
+        }</span>
+        <span class="cov8" title="1">if c.TimeoutInstall &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.New("invalid timeout for install")
+        }</span>
+        <span class="cov8" title="1">if c.MaxRetries &lt; 0 </span><span class="cov8" title="1">{
+                return errors.New("max retries cannot be negative")
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package statemachine
+
+import (
+        "context"
+        "fmt"
+)
+
+// markEventProcessedInRedis marks event as processed in Redis
+func (sm *ExtensionInstallStateMachine) markEventProcessedInRedis(ctx context.Context, messageID string) error <span class="cov0" title="0">{
+        key := fmt.Sprintf("workflow:%s:event:%s", sm.CorrelationID, messageID)
+
+        err := sm.redisClient.Set(ctx, key, "1", sm.config.DeduplicationTTL).Err()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to mark event as processed: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// isEventProcessedInRedis checks if event was processed in Redis
+func (sm *ExtensionInstallStateMachine) isEventProcessedInRedis(ctx context.Context, messageID string) (bool, error) <span class="cov0" title="0">{
+        key := fmt.Sprintf("workflow:%s:event:%s", sm.CorrelationID, messageID)
+
+        exists, err := sm.redisClient.Exists(ctx, key).Result()
+        if err != nil </span><span class="cov0" title="0">{
+                return false, fmt.Errorf("failed to check event deduplication: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return exists &gt; 0, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package statemachine
+
+import (
+        "context"
+        "fmt"
+        "time"
+
+        "github.com/commandcenter1c/commandcenter/shared/events"
+)
+
+// publishCommand publishes a command event
+func (sm *ExtensionInstallStateMachine) publishCommand(
+        ctx context.Context,
+        channel string,
+        eventType string,
+        payload interface{},
+) error <span class="cov8" title="1">{
+
+        // Используем Publisher из Task 1.1!
+        err := sm.publisher.Publish(ctx, channel, eventType, payload, sm.CorrelationID)
+        if err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("failed to publish command %s: %w", eventType, err)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Printf("[StateMachine] Published command: %s (correlation_id=%s)\n",
+                eventType, sm.CorrelationID)
+
+        return nil</span>
+}
+
+// waitForEvent waits for specific event with timeout and retry logic
+func (sm *ExtensionInstallStateMachine) waitForEvent(
+        ctx context.Context,
+        expectedEventType string,
+        timeout time.Duration,
+) (*events.Envelope, error) <span class="cov0" title="0">{
+
+        attempts := 0
+        maxAttempts := sm.config.MaxRetries
+
+        for attempts &lt; maxAttempts </span><span class="cov0" title="0">{
+                attempts++
+
+                timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+                defer cancel()
+
+                select </span>{
+                case envelope := &lt;-sm.eventChan:<span class="cov0" title="0">
+                        // Check if this is the expected event
+                        if envelope.EventType == expectedEventType </span><span class="cov0" title="0">{
+                                // Check deduplication
+                                if sm.isEventProcessed(envelope.MessageID) </span><span class="cov0" title="0">{
+                                        fmt.Printf("[StateMachine] Duplicate event ignored: %s\n", envelope.MessageID)
+                                        continue</span>
+                                }
+
+                                <span class="cov0" title="0">sm.markEventProcessed(envelope.MessageID)
+
+                                fmt.Printf("[StateMachine] Received event: %s (correlation_id=%s)\n",
+                                        expectedEventType, sm.CorrelationID)
+
+                                return envelope, nil</span>
+                        }
+
+                case &lt;-timeoutCtx.Done():<span class="cov0" title="0">
+                        if attempts &lt; maxAttempts </span><span class="cov0" title="0">{
+                                fmt.Printf("[StateMachine] Timeout waiting for %s, retry %d/%d\n",
+                                        expectedEventType, attempts, maxAttempts)
+
+                                // Exponential backoff
+                                delay := sm.calculateBackoff(attempts)
+                                time.Sleep(delay)
+                                continue</span>
+                        }
+                        <span class="cov0" title="0">return nil, fmt.Errorf("timeout waiting for event %s after %d attempts",
+                                expectedEventType, maxAttempts)</span>
+                }
+        }
+
+        <span class="cov0" title="0">return nil, fmt.Errorf("max retries reached waiting for event %s", expectedEventType)</span>
+}
+
+// calculateBackoff calculates exponential backoff with jitter
+func (sm *ExtensionInstallStateMachine) calculateBackoff(attempt int) time.Duration <span class="cov8" title="1">{
+        delay := sm.config.RetryInitialDelay * time.Duration(1&lt;&lt;uint(attempt-1))
+        if delay &gt; sm.config.RetryMaxDelay </span><span class="cov8" title="1">{
+                delay = sm.config.RetryMaxDelay
+        }</span>
+
+        // Add jitter (±10%)
+        <span class="cov8" title="1">jitter := time.Duration(float64(delay) * 0.1)
+        return delay + jitter</span>
+}
+
+// isEventProcessed checks if event was already processed
+func (sm *ExtensionInstallStateMachine) isEventProcessed(messageID string) bool <span class="cov8" title="1">{
+        sm.mu.RLock()
+        defer sm.mu.RUnlock()
+        return sm.processedEvents[messageID]
+}</span>
+
+// markEventProcessed marks event as processed
+func (sm *ExtensionInstallStateMachine) markEventProcessed(messageID string) <span class="cov8" title="1">{
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        sm.processedEvents[messageID] = true
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package statemachine
+
+import (
+        "context"
+        "fmt"
+)
+
+// handleInit handles initial state
+func (sm *ExtensionInstallStateMachine) handleInit(ctx context.Context) error <span class="cov0" title="0">{
+        fmt.Printf("[StateMachine] Handling Init state\n")
+
+        // Publish lock command
+        payload := map[string]interface{}{
+                "cluster_id":   sm.ClusterID,
+                "infobase_id":  sm.InfobaseID,
+                "database_id":  sm.DatabaseID,
+        }
+
+        err := sm.publishCommand(ctx,
+                "commands:cluster-service:infobase:lock",
+                "cluster.infobase.lock",
+                payload,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to publish lock command: %w", err)
+        }</span>
+
+        // Wait for locked event
+        <span class="cov0" title="0">_, err = sm.waitForEvent(ctx,
+                "cluster.infobase.locked",
+                sm.config.TimeoutLockJobs,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed waiting for locked event: %w", err)
+        }</span>
+
+        // Add compensation for unlock
+        <span class="cov0" title="0">sm.pushCompensation("unlock_infobase", func(ctx context.Context) error </span><span class="cov0" title="0">{
+                return sm.unlockInfobase(ctx)
+        }</span>)
+
+        // Transition to next state
+        <span class="cov0" title="0">return sm.transitionTo(StateJobsLocked)</span>
+}
+
+// handleJobsLocked handles jobs locked state
+func (sm *ExtensionInstallStateMachine) handleJobsLocked(ctx context.Context) error <span class="cov0" title="0">{
+        fmt.Printf("[StateMachine] Handling JobsLocked state\n")
+
+        // Publish terminate sessions command
+        payload := map[string]interface{}{
+                "cluster_id":   sm.ClusterID,
+                "infobase_id":  sm.InfobaseID,
+        }
+
+        err := sm.publishCommand(ctx,
+                "commands:cluster-service:sessions:terminate",
+                "cluster.sessions.terminate",
+                payload,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to publish terminate command: %w", err)
+        }</span>
+
+        // Wait for sessions closed event
+        <span class="cov0" title="0">_, err = sm.waitForEvent(ctx,
+                "cluster.sessions.closed",
+                sm.config.TimeoutTerminate,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed waiting for sessions closed: %w", err)
+        }</span>
+
+        // Transition to next state
+        <span class="cov0" title="0">return sm.transitionTo(StateSessionsClosed)</span>
+}
+
+// handleSessionsClosed handles sessions closed state
+func (sm *ExtensionInstallStateMachine) handleSessionsClosed(ctx context.Context) error <span class="cov0" title="0">{
+        fmt.Printf("[StateMachine] Handling SessionsClosed state\n")
+
+        // Publish install extension command
+        payload := map[string]interface{}{
+                "database_id":    sm.DatabaseID,
+                "extension_path": sm.ExtensionPath,
+                "extension_name": sm.ExtensionName,
+        }
+
+        err := sm.publishCommand(ctx,
+                "commands:batch-service:extension:install",
+                "batch.extension.install",
+                payload,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to publish install command: %w", err)
+        }</span>
+
+        // Wait for extension installed event
+        <span class="cov0" title="0">_, err = sm.waitForEvent(ctx,
+                "batch.extension.installed",
+                sm.config.TimeoutInstall,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed waiting for extension installed: %w", err)
+        }</span>
+
+        // Add compensation for rollback (if needed)
+        // Note: rollback расширений в 1С сложен, пока skip
+
+        // Transition to next state
+        <span class="cov0" title="0">return sm.transitionTo(StateExtensionInstalled)</span>
+}
+
+// handleExtensionInstalled handles extension installed state
+func (sm *ExtensionInstallStateMachine) handleExtensionInstalled(ctx context.Context) error <span class="cov0" title="0">{
+        fmt.Printf("[StateMachine] Handling ExtensionInstalled state\n")
+
+        // Publish unlock command
+        payload := map[string]interface{}{
+                "cluster_id":   sm.ClusterID,
+                "infobase_id":  sm.InfobaseID,
+        }
+
+        err := sm.publishCommand(ctx,
+                "commands:cluster-service:infobase:unlock",
+                "cluster.infobase.unlock",
+                payload,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to publish unlock command: %w", err)
+        }</span>
+
+        // Wait for unlocked event
+        <span class="cov0" title="0">_, err = sm.waitForEvent(ctx,
+                "cluster.infobase.unlocked",
+                sm.config.TimeoutUnlock,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                // Unlock failed - critical, need manual intervention
+                sm.publishManualActionRequired(ctx, "unlock_failed")
+                return fmt.Errorf("failed waiting for unlocked: %w", err)
+        }</span>
+
+        // Transition to completed
+        <span class="cov0" title="0">return sm.transitionTo(StateCompleted)</span>
+}
+
+// unlockInfobase unlocks infobase (compensation action)
+func (sm *ExtensionInstallStateMachine) unlockInfobase(ctx context.Context) error <span class="cov0" title="0">{
+        payload := map[string]interface{}{
+                "cluster_id":   sm.ClusterID,
+                "infobase_id":  sm.InfobaseID,
+        }
+
+        err := sm.publishCommand(ctx,
+                "commands:cluster-service:infobase:unlock",
+                "cluster.infobase.unlock",
+                payload,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">_, err = sm.waitForEvent(ctx,
+                "cluster.infobase.unlocked",
+                sm.config.TimeoutUnlock,
+        )
+
+        return err</span>
+}
+
+// publishManualActionRequired publishes manual action event
+func (sm *ExtensionInstallStateMachine) publishManualActionRequired(ctx context.Context, reason string) <span class="cov0" title="0">{
+        payload := map[string]interface{}{
+                "operation_id":   sm.OperationID,
+                "database_id":    sm.DatabaseID,
+                "correlation_id": sm.CorrelationID,
+                "reason":         reason,
+                "state":          sm.State.String(),
+        }
+
+        sm.publishCommand(ctx,
+                "events:orchestrator:manual-action",
+                "orchestrator.manual-action.required",
+                payload,
+        )
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package statemachine
+
+import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "time"
+
+        "github.com/redis/go-redis/v9"
+)
+
+// stateData represents persisted state
+type stateData struct {
+        State         InstallState   `json:"state"`
+        OperationID   string         `json:"operation_id"`
+        DatabaseID    string         `json:"database_id"`
+        CorrelationID string         `json:"correlation_id"`
+        ClusterID     string         `json:"cluster_id"`
+        InfobaseID    string         `json:"infobase_id"`
+        ExtensionPath string         `json:"extension_path"`
+        ExtensionName string         `json:"extension_name"`
+        LastActivity  time.Time      `json:"last_activity"`
+}
+
+// saveState saves state to Redis
+func (sm *ExtensionInstallStateMachine) saveState(ctx context.Context) error <span class="cov8" title="1">{
+        // Skip if no Redis client (unit tests)
+        if sm.redisClient == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">sm.mu.RLock()
+        defer sm.mu.RUnlock()
+
+        data := stateData{
+                State:         sm.State,
+                OperationID:   sm.OperationID,
+                DatabaseID:    sm.DatabaseID,
+                CorrelationID: sm.CorrelationID,
+                ClusterID:     sm.ClusterID,
+                InfobaseID:    sm.InfobaseID,
+                ExtensionPath: sm.ExtensionPath,
+                ExtensionName: sm.ExtensionName,
+                LastActivity:  sm.lastActivity,
+        }
+
+        bytes, err := json.Marshal(data)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to marshal state: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">key := fmt.Sprintf("workflow:%s:state", sm.CorrelationID)
+        err = sm.redisClient.Set(ctx, key, bytes, sm.config.StateTTL).Err()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to save state to Redis: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// loadState loads state from Redis
+func (sm *ExtensionInstallStateMachine) loadState(ctx context.Context) error <span class="cov0" title="0">{
+        // Skip if no Redis client (unit tests)
+        if sm.redisClient == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("no redis client")
+        }</span>
+
+        <span class="cov0" title="0">key := fmt.Sprintf("workflow:%s:state", sm.CorrelationID)
+
+        bytes, err := sm.redisClient.Get(ctx, key).Bytes()
+        if err == redis.Nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("state not found")
+        }</span>
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to load state from Redis: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">var data stateData
+        err = json.Unmarshal(bytes, &amp;data)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to unmarshal state: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">sm.mu.Lock()
+        defer sm.mu.Unlock()
+
+        sm.State = data.State
+        sm.OperationID = data.OperationID
+        sm.DatabaseID = data.DatabaseID
+        sm.CorrelationID = data.CorrelationID
+        sm.ClusterID = data.ClusterID
+        sm.InfobaseID = data.InfobaseID
+        sm.ExtensionPath = data.ExtensionPath
+        sm.ExtensionName = data.ExtensionName
+        sm.lastActivity = data.LastActivity
+
+        fmt.Printf("[StateMachine] State loaded from Redis: %s\n", sm.State)
+
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package statemachine
+
+import (
+        "context"
+        "fmt"
+        "sync"
+        "time"
+
+        "github.com/commandcenter1c/commandcenter/shared/events"
+        "github.com/redis/go-redis/v9"
+)
+
+// ExtensionInstallStateMachine orchestrates extension installation workflow
+type ExtensionInstallStateMachine struct {
+        // Identity
+        ID            string
+        OperationID   string
+        DatabaseID    string
+        CorrelationID string
+
+        // State
+        State         InstallState
+        mu            sync.RWMutex
+        lastActivity  time.Time
+
+        // Workflow data
+        ClusterID     string
+        InfobaseID    string
+        ExtensionPath string
+        ExtensionName string
+
+        // Event integration (используем Task 1.1!)
+        publisher  EventPublisher
+        subscriber EventSubscriber
+        eventChan  chan *events.Envelope
+
+        // Dependencies
+        redisClient *redis.Client
+        config      *Config
+
+        // Compensation
+        compensationStack []CompensationAction
+
+        // Deduplication
+        processedEvents map[string]bool
+
+        // Control
+        ctx    context.Context
+        cancel context.CancelFunc
+        closed bool
+}
+
+// CompensationAction represents a compensation action
+type CompensationAction struct {
+        Name   string
+        Action func(context.Context) error
+}
+
+// NewStateMachine creates new state machine instance
+func NewStateMachine(
+        ctx context.Context,
+        operationID, databaseID, correlationID string,
+        publisher EventPublisher,
+        subscriber EventSubscriber,
+        redisClient *redis.Client,
+        config *Config,
+) (*ExtensionInstallStateMachine, error) <span class="cov8" title="1">{
+
+        if publisher == nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("publisher is required")
+        }</span>
+        <span class="cov8" title="1">if subscriber == nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("subscriber is required")
+        }</span>
+        // redisClient is optional (for unit tests without persistence)
+        <span class="cov8" title="1">if config == nil </span><span class="cov8" title="1">{
+                config = DefaultConfig()
+        }</span>
+
+        <span class="cov8" title="1">smCtx, cancel := context.WithCancel(ctx)
+
+        sm := &amp;ExtensionInstallStateMachine{
+                ID:            fmt.Sprintf("sm-%s", correlationID),
+                OperationID:   operationID,
+                DatabaseID:    databaseID,
+                CorrelationID: correlationID,
+                State:         StateInit,
+                lastActivity:  time.Now(),
+                publisher:     publisher,
+                subscriber:    subscriber,
+                redisClient:   redisClient,
+                config:        config,
+                eventChan:     make(chan *events.Envelope, 100),
+                processedEvents: make(map[string]bool),
+                compensationStack: make([]CompensationAction, 0),
+                ctx:           smCtx,
+                cancel:        cancel,
+        }
+
+        return sm, nil</span>
+}
+
+// Run executes the state machine main loop
+func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error <span class="cov0" title="0">{
+        defer sm.cancel()
+        defer sm.Close()
+
+        // Start event listener
+        go sm.listenEvents(ctx)
+
+        // Load state if exists (for recovery)
+        if err := sm.loadState(ctx); err != nil </span>{<span class="cov0" title="0">
+                // Ignore error, start from Init
+        }</span>
+
+        // Main state loop
+        <span class="cov0" title="0">for !sm.State.IsFinal() </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        sm.saveState(ctx)
+                        return ctx.Err()</span>
+                default:<span class="cov0" title="0"></span>
+                }
+
+                <span class="cov0" title="0">var err error
+                switch sm.State </span>{
+                case StateInit:<span class="cov0" title="0">
+                        err = sm.handleInit(ctx)</span>
+                case StateJobsLocked:<span class="cov0" title="0">
+                        err = sm.handleJobsLocked(ctx)</span>
+                case StateSessionsClosed:<span class="cov0" title="0">
+                        err = sm.handleSessionsClosed(ctx)</span>
+                case StateExtensionInstalled:<span class="cov0" title="0">
+                        err = sm.handleExtensionInstalled(ctx)</span>
+                case StateCompensating:<span class="cov0" title="0">
+                        err = sm.executeCompensations(ctx)</span>
+                default:<span class="cov0" title="0">
+                        return fmt.Errorf("unknown state: %s", sm.State)</span>
+                }
+
+                <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                        sm.transitionTo(StateCompensating)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// transitionTo transitions to new state
+func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) error <span class="cov8" title="1">{
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+
+        if !CanTransition(sm.State, newState) </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid transition from %s to %s", sm.State, newState)
+        }</span>
+
+        <span class="cov8" title="1">oldState := sm.State
+        sm.State = newState
+        sm.lastActivity = time.Now()
+
+        // Log transition
+        fmt.Printf("[StateMachine] Transition: %s -&gt; %s (correlation_id=%s)\n",
+                oldState, newState, sm.CorrelationID)
+
+        // Save state
+        if err := sm.saveState(sm.ctx); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("[StateMachine] Failed to save state: %v\n", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Close closes state machine and releases resources
+func (sm *ExtensionInstallStateMachine) Close() error <span class="cov8" title="1">{
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+
+        if sm.closed </span><span class="cov8" title="1">{
+                return nil // Already closed
+        }</span>
+
+        <span class="cov8" title="1">sm.cancel()
+        sm.closed = true
+
+        // Close channel safely
+        select </span>{
+        case &lt;-sm.eventChan:<span class="cov0" title="0"></span>
+        default:<span class="cov8" title="1">
+                close(sm.eventChan)</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// listenEvents listens for incoming events
+func (sm *ExtensionInstallStateMachine) listenEvents(ctx context.Context) <span class="cov0" title="0">{
+        // Subscribe to events for this correlation ID
+        // Используем Subscriber из Task 1.1!
+        handler := func(ctx context.Context, envelope *events.Envelope) error </span><span class="cov0" title="0">{
+                if envelope.CorrelationID == sm.CorrelationID </span><span class="cov0" title="0">{
+                        select </span>{
+                        case sm.eventChan &lt;- envelope:<span class="cov0" title="0"></span>
+                        case &lt;-ctx.Done():<span class="cov0" title="0">
+                                return ctx.Err()</span>
+                        }
+                }
+                <span class="cov0" title="0">return nil</span>
+        }
+
+        // Subscribe to orchestrator events
+        <span class="cov0" title="0">sm.subscriber.Subscribe("events:orchestrator:*", handler)
+
+        // Wait for context cancellation to prevent goroutine leak
+        &lt;-ctx.Done()</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package statemachine
+
+// InstallState represents the current state of extension installation workflow
+type InstallState string
+
+const (
+        StateInit               InstallState = "init"
+        StateJobsLocked         InstallState = "jobs_locked"
+        StateSessionsClosed     InstallState = "sessions_closed"
+        StateExtensionInstalled InstallState = "extension_installed"
+        StateCompleted          InstallState = "completed"
+        StateFailed             InstallState = "failed"
+        StateCompensating       InstallState = "compensating"
+)
+
+// ValidTransitions defines allowed state transitions
+var ValidTransitions = map[InstallState][]InstallState{
+        StateInit: {StateJobsLocked, StateFailed},
+        StateJobsLocked: {StateSessionsClosed, StateCompensating, StateFailed},
+        StateSessionsClosed: {StateExtensionInstalled, StateCompensating, StateFailed},
+        StateExtensionInstalled: {StateCompleted, StateCompensating, StateFailed},
+        StateCompensating: {StateFailed},
+        StateFailed: {},
+        StateCompleted: {},
+}
+
+// CanTransition checks if transition from current state to new state is valid
+func CanTransition(from, to InstallState) bool <span class="cov8" title="1">{
+        allowed, ok := ValidTransitions[from]
+        if !ok </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov8" title="1">for _, allowedState := range allowed </span><span class="cov8" title="1">{
+                if allowedState == to </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// String returns string representation of state
+func (s InstallState) String() string <span class="cov8" title="1">{
+        return string(s)
+}</span>
+
+// IsFinal returns true if state is final (completed or failed)
+func (s InstallState) IsFinal() bool <span class="cov8" title="1">{
+        return s == StateCompleted || s == StateFailed
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

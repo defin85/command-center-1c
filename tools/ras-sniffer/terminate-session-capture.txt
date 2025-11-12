@@ -1,0 +1,500 @@
+
+--- Packet #5 [Conn #1] SERVER→CLIENT @ 12:20:52.361 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 7a                                            | .z
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #6 [Conn #1] SERVER→CLIENT @ 12:20:52.362 ---
+Length: 122 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 0c 01 c3 e5  08 59 3d 41 43 83 b0 d7 | .........Y=AC...
+000010  | 4e e2 02 72 b6 9d 00 00  00 3c 0f 44 45 53 4b 54 | N..r.....<.DESKT
+000020  | 4f 50 2d 53 53 35 44 36  4d 4d 00 00 00 00 06 05 | OP-SS5D6MM......
+000030  | 00 00 00 00 00 00 00 00  21 d0 9b d0 be d0 ba d0 | ........!.......
+000040  | b0 d0 bb d1 8c d0 bd d1  8b d0 b9 20 d0 ba d0 bb | ........... ....
+000050  | d0 b0 d1 81 d1 82 d0 b5  d1 80 00 00 00 00 00 00 | ................
+000060  | 00 00 00 00 00 00 00 00  00 00 01 00 00 00 00 01 | ................
+000070  | 00 00 00 00 00 00 00 00  00 00                   | ..........
+
+[ANALYSIS]
+First 8 bytes (possible header): 010000010c01c3e5
+Contains printable strings: false
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [Y=AC DESKTOP-SS5D6MM]
+
+================================================================================
+
+--- Packet #6 [Conn #1] CLIENT→SERVER @ 12:20:52.365 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0d 01                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+[2025-11-12 12:21:27.476] 
+[CONNECTION #2 ESTABLISHED] 12:21:27.476
+[2025-11-12 12:21:27.478] Client: 127.0.0.1:44869 -> Proxy: localhost:1546 -> RAS: localhost:1545
+
+--- Packet #1 [Conn #2] CLIENT→SERVER @ 12:21:27.480 ---
+Length: 32 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 1c 53 57 50 01 00 01 00  01 16 01 0f 63 6f 6e 6e | .SWP........conn
+000010  | 65 63 74 2e 74 69 6d 65  6f 75 74 04 00 00 07 d0 | ect.timeout.....
+
+[ANALYSIS]
+First 8 bytes (possible header): 1c53575001000100
+Contains printable strings: true
+Possible length encoding (LE): 1347900188
+Possible length encoding (BE): 475223888
+Extracted strings (min 4 chars): [connect.timeout]
+
+================================================================================
+
+--- Packet #1 [Conn #2] SERVER→CLIENT @ 12:21:27.483 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 02 01                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #2 [Conn #2] SERVER→CLIENT @ 12:21:27.485 ---
+Length: 1 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 80                                               | .
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #2 [Conn #2] CLIENT→SERVER @ 12:21:27.487 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0b 1f                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #3 [Conn #2] CLIENT→SERVER @ 12:21:27.489 ---
+Length: 31 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 18 76 38 2e 73 65 72 76  69 63 65 2e 41 64 6d 69 | .v8.service.Admi
+000010  | 6e 2e 43 6c 75 73 74 65  72 04 31 36 2e 30 80    | n.Cluster.16.0.
+
+[ANALYSIS]
+First 8 bytes (possible header): 1876382e73657276
+Contains printable strings: true
+Possible length encoding (LE): 775452184
+Possible length encoding (BE): 410400814
+Extracted strings (min 4 chars): [v8.service.Admin.Cluster 16.0]
+
+================================================================================
+
+--- Packet #3 [Conn #2] SERVER→CLIENT @ 12:21:27.495 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0c 20                                            | . 
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #4 [Conn #2] SERVER→CLIENT @ 12:21:27.497 ---
+Length: 32 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 18 76 38 2e 73 65 72 76  69 63 65 2e 41 64 6d 69 | .v8.service.Admi
+000010  | 6e 2e 43 6c 75 73 74 65  72 04 31 36 2e 30 01 80 | n.Cluster.16.0..
+
+[ANALYSIS]
+First 8 bytes (possible header): 1876382e73657276
+Contains printable strings: true
+Possible length encoding (LE): 775452184
+Possible length encoding (BE): 410400814
+Extracted strings (min 4 chars): [v8.service.Admin.Cluster 16.0]
+
+================================================================================
+
+--- Packet #4 [Conn #2] CLIENT→SERVER @ 12:21:27.500 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 17                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #5 [Conn #2] CLIENT→SERVER @ 12:21:27.502 ---
+Length: 23 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 09 c3 e5 08  59 3d 41 43 83 b0 d7 4e | ........Y=AC...N
+000010  | e2 02 72 b6 9d 00 00                             | ..r....
+
+[ANALYSIS]
+First 8 bytes (possible header): 0100000109c3e508
+Contains printable strings: false
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [Y=AC]
+
+================================================================================
+
+--- Packet #5 [Conn #2] SERVER→CLIENT @ 12:21:27.508 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 04                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #6 [Conn #2] SERVER→CLIENT @ 12:21:27.510 ---
+Length: 4 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 00                                      | ....
+
+[ANALYSIS]
+Contains printable strings: false
+Possible length encoding (LE): 1
+Possible length encoding (BE): 16777216
+
+================================================================================
+
+--- Packet #6 [Conn #2] CLIENT→SERVER @ 12:21:27.512 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 15                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #7 [Conn #2] CLIENT→SERVER @ 12:21:27.514 ---
+Length: 21 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 41 c3 e5 08  59 3d 41 43 83 b0 d7 4e | ....A...Y=AC...N
+000010  | e2 02 72 b6 9d                                   | ..r..
+
+[ANALYSIS]
+First 8 bytes (possible header): 0100000141c3e508
+Contains printable strings: true
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [Y=AC]
+
+================================================================================
+
+--- Packet #7 [Conn #2] SERVER→CLIENT @ 12:21:27.627 ---
+Length: 3 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e eb 02                                         | ...
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #8 [Conn #2] SERVER→CLIENT @ 12:21:27.630 ---
+Length: 363 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 42 01 20 5d  bf ef a8 b1 48 36 b6 69 | ....B. ]....H6.i
+000010  | 3d f7 e1 40 6a 24 0b 53  72 76 72 43 6f 6e 73 6f | =..@j$.SrvrConso
+000020  | 6c 65 00 00 00 00 00 00  00 00 00 00 00 00 00 00 | le..............
+000030  | 02 02 00 00 00 00 00 00  00 00 00 00 00 06 00 00 | ................
+000040  | 00 00 00 00 00 00 3a 85  c4 28 22 97 49 38 b8 8f | ......:..(".I8..
+000050  | bb 0e 0f 92 a8 72 00 00  00 00 00 68 e7 c3 00 00 | .....r.....h....
+000060  | 00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00 | ................
+000070  | 00 00 00 00 00 01 0a 00  00 00 20 00 00 00 00 00 | .......... .....
+000080  | 00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00 | ................
+000090  | 00 00 00 0f 44 45 53 4b  54 4f 50 2d 53 53 35 44 | ....DESKTOP-SS5D
+0000a0  | 36 4d 4d 60 e7 71 3e b9  33 49 e0 a3 ae 51 07 ef | 6MM`.q>.3I...Q..
+0000b0  | 56 56 0c 00 02 45 27 65  e3 2f 50 00 00 00 04 b0 | VV...E'e./P.....
+0000c0  | 00 01 51 80 00 05 72 75  5f 52 55 6c a5 dd 02 6d | ..Q...ru_RUl...m
+0000d0  | c2 40 f8 b2 b9 c1 d5 88  bf d7 b8 00 00 00 08 00 | .@..............
+0000e0  | 02 45 27 61 f3 a5 a0 0e  d0 93 d0 bb d0 b0 d0 b2 | .E'a............
+0000f0  | d0 91 d1 83 d1 85 00 00  00 00 00 00 00 00 00 00 | ................
+000100  | 00 00 00 00 00 00 00 00  00 00 00 06 36 4f 00 00 | ............6O..
+000110  | 00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00 | ................
+000120  | 00 00 00 68 de 5d 00 00  00 00 00 00 00 00 00 00 | ...h.]..........
+000130  | 00 00 00 00 00 00 00 00  00 00 00 68 de 5d 00 00 | ...........h.]..
+000140  | 00 00 00 00 00 00 00 00  00 00 00 00 00 10 00 00 | ................
+000150  | 00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00 | ................
+000160  | 00 00 00 00 00 00 da 02  27 27 00                | ........''.
+
+[ANALYSIS]
+First 8 bytes (possible header): 010000014201205d
+Contains printable strings: false
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [SrvrConsole DESKTOP-SS5D6MM` ru_RUl]
+
+================================================================================
+
+--- Packet #8 [Conn #2] CLIENT→SERVER @ 12:21:27.633 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0d 01                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+[2025-11-12 12:21:45.052] 
+[CONNECTION #3 ESTABLISHED] 12:21:45.052
+[2025-11-12 12:21:45.064] Client: 127.0.0.1:45012 -> Proxy: localhost:1546 -> RAS: localhost:1545
+
+--- Packet #1 [Conn #3] CLIENT→SERVER @ 12:21:45.065 ---
+Length: 32 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 1c 53 57 50 01 00 01 00  01 16 01 0f 63 6f 6e 6e | .SWP........conn
+000010  | 65 63 74 2e 74 69 6d 65  6f 75 74 04 00 00 07 d0 | ect.timeout.....
+
+[ANALYSIS]
+First 8 bytes (possible header): 1c53575001000100
+Contains printable strings: true
+Possible length encoding (LE): 1347900188
+Possible length encoding (BE): 475223888
+Extracted strings (min 4 chars): [connect.timeout]
+
+================================================================================
+
+--- Packet #1 [Conn #3] SERVER→CLIENT @ 12:21:45.068 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 02 01                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #2 [Conn #3] SERVER→CLIENT @ 12:21:45.070 ---
+Length: 1 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 80                                               | .
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #2 [Conn #3] CLIENT→SERVER @ 12:21:45.072 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0b 1f                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #3 [Conn #3] CLIENT→SERVER @ 12:21:45.074 ---
+Length: 31 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 18 76 38 2e 73 65 72 76  69 63 65 2e 41 64 6d 69 | .v8.service.Admi
+000010  | 6e 2e 43 6c 75 73 74 65  72 04 31 36 2e 30 80    | n.Cluster.16.0.
+
+[ANALYSIS]
+First 8 bytes (possible header): 1876382e73657276
+Contains printable strings: true
+Possible length encoding (LE): 775452184
+Possible length encoding (BE): 410400814
+Extracted strings (min 4 chars): [v8.service.Admin.Cluster 16.0]
+
+================================================================================
+
+--- Packet #3 [Conn #3] SERVER→CLIENT @ 12:21:45.082 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0c 20                                            | . 
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #4 [Conn #3] SERVER→CLIENT @ 12:21:45.084 ---
+Length: 32 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 18 76 38 2e 73 65 72 76  69 63 65 2e 41 64 6d 69 | .v8.service.Admi
+000010  | 6e 2e 43 6c 75 73 74 65  72 04 31 36 2e 30 01 80 | n.Cluster.16.0..
+
+[ANALYSIS]
+First 8 bytes (possible header): 1876382e73657276
+Contains printable strings: true
+Possible length encoding (LE): 775452184
+Possible length encoding (BE): 410400814
+Extracted strings (min 4 chars): [v8.service.Admin.Cluster 16.0]
+
+================================================================================
+
+--- Packet #4 [Conn #3] CLIENT→SERVER @ 12:21:45.087 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 17                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #5 [Conn #3] CLIENT→SERVER @ 12:21:45.089 ---
+Length: 23 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 09 c3 e5 08  59 3d 41 43 83 b0 d7 4e | ........Y=AC...N
+000010  | e2 02 72 b6 9d 00 00                             | ..r....
+
+[ANALYSIS]
+First 8 bytes (possible header): 0100000109c3e508
+Contains printable strings: false
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [Y=AC]
+
+================================================================================
+
+--- Packet #5 [Conn #3] SERVER→CLIENT @ 12:21:45.094 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 04                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #6 [Conn #3] SERVER→CLIENT @ 12:21:45.097 ---
+Length: 4 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 00                                      | ....
+
+[ANALYSIS]
+Contains printable strings: false
+Possible length encoding (LE): 1
+Possible length encoding (BE): 16777216
+
+================================================================================
+
+--- Packet #6 [Conn #3] CLIENT→SERVER @ 12:21:45.099 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 26                                            | .&
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #7 [Conn #3] CLIENT→SERVER @ 12:21:45.101 ---
+Length: 38 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 01 47 c3 e5 08  59 3d 41 43 83 b0 d7 4e | ....G...Y=AC...N
+000010  | e2 02 72 b6 9d 20 5d bf  ef a8 b1 48 36 b6 69 3d | ..r.. ]....H6.i=
+000020  | f7 e1 40 6a 24 00                                | ..@j$.
+
+[ANALYSIS]
+First 8 bytes (possible header): 0100000147c3e508
+Contains printable strings: true
+Possible length encoding (LE): 16777217
+Possible length encoding (BE): 16777217
+Extracted strings (min 4 chars): [Y=AC]
+
+================================================================================
+
+--- Packet #7 [Conn #3] SERVER→CLIENT @ 12:21:45.105 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0e 04                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================
+
+--- Packet #8 [Conn #3] SERVER→CLIENT @ 12:21:45.108 ---
+Length: 4 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 01 00 00 00                                      | ....
+
+[ANALYSIS]
+Contains printable strings: false
+Possible length encoding (LE): 1
+Possible length encoding (BE): 16777216
+
+================================================================================
+
+--- Packet #8 [Conn #3] CLIENT→SERVER @ 12:21:45.110 ---
+Length: 2 bytes
+
+Offset  | Hex                                              | ASCII
+--------|--------------------------------------------------|------------------
+000000  | 0d 01                                            | ..
+
+[ANALYSIS]
+Packet too small for analysis
+================================================================================

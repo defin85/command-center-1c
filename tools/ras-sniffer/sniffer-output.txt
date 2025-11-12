@@ -1,0 +1,66 @@
+[2025-11-12 11:35:01.490] RAS Protocol Proxy Sniffer started
+[2025-11-12 11:35:01.517] Listening on: localhost:1546
+[2025-11-12 11:35:01.520] Forwarding to: localhost:1545
+[2025-11-12 11:35:01.525] Usage: rac.exe cluster list localhost:1546
+[2025-11-12 11:35:01.529] ================================================================================
+2025/11/12 11:35:01 Proxy listening on localhost:1546, forwarding to localhost:1545
+2025/11/12 11:35:01 Waiting for rac.exe connection...
+2025/11/12 12:20:52 New connection #1 from 127.0.0.1:44665
+[2025-11-12 12:20:52.325] 
+[CONNECTION #1 ESTABLISHED] 12:20:52.325
+[2025-11-12 12:20:52.330] Client: 127.0.0.1:44665 -> Proxy: localhost:1546 -> RAS: localhost:1545
+[12:20:52.333] Conn#1 CLIENT→SERVER: 32 bytes
+[12:20:52.336] Conn#1 SERVER→CLIENT: 2 bytes
+[12:20:52.338] Conn#1 SERVER→CLIENT: 1 bytes
+[12:20:52.340] Conn#1 CLIENT→SERVER: 2 bytes
+[12:20:52.342] Conn#1 CLIENT→SERVER: 31 bytes
+[12:20:52.349] Conn#1 SERVER→CLIENT: 2 bytes
+[12:20:52.351] Conn#1 SERVER→CLIENT: 32 bytes
+[12:20:52.353] Conn#1 CLIENT→SERVER: 2 bytes
+[12:20:52.355] Conn#1 CLIENT→SERVER: 5 bytes
+[12:20:52.361] Conn#1 SERVER→CLIENT: 2 bytes
+[12:20:52.362] Conn#1 SERVER→CLIENT: 122 bytes
+[12:20:52.365] Conn#1 CLIENT→SERVER: 2 bytes
+2025/11/12 12:20:52 Connection #1 CLIENT→SERVER read error: read tcp 127.0.0.1:1546->127.0.0.1:44665: wsarecv: An existing connection was forcibly closed by the remote host.
+2025/11/12 12:21:27 New connection #2 from 127.0.0.1:44869
+[2025-11-12 12:21:27.476] 
+[CONNECTION #2 ESTABLISHED] 12:21:27.476
+[2025-11-12 12:21:27.478] Client: 127.0.0.1:44869 -> Proxy: localhost:1546 -> RAS: localhost:1545
+[12:21:27.480] Conn#2 CLIENT→SERVER: 32 bytes
+[12:21:27.483] Conn#2 SERVER→CLIENT: 2 bytes
+[12:21:27.485] Conn#2 SERVER→CLIENT: 1 bytes
+[12:21:27.487] Conn#2 CLIENT→SERVER: 2 bytes
+[12:21:27.489] Conn#2 CLIENT→SERVER: 31 bytes
+[12:21:27.495] Conn#2 SERVER→CLIENT: 2 bytes
+[12:21:27.497] Conn#2 SERVER→CLIENT: 32 bytes
+[12:21:27.500] Conn#2 CLIENT→SERVER: 2 bytes
+[12:21:27.502] Conn#2 CLIENT→SERVER: 23 bytes
+[12:21:27.508] Conn#2 SERVER→CLIENT: 2 bytes
+[12:21:27.510] Conn#2 SERVER→CLIENT: 4 bytes
+[12:21:27.512] Conn#2 CLIENT→SERVER: 2 bytes
+[12:21:27.514] Conn#2 CLIENT→SERVER: 21 bytes
+[12:21:27.627] Conn#2 SERVER→CLIENT: 3 bytes
+[12:21:27.630] Conn#2 SERVER→CLIENT: 363 bytes
+[12:21:27.633] Conn#2 CLIENT→SERVER: 2 bytes
+2025/11/12 12:21:27 Connection #2 CLIENT→SERVER read error: read tcp 127.0.0.1:1546->127.0.0.1:44869: wsarecv: An existing connection was forcibly closed by the remote host.
+2025/11/12 12:21:45 New connection #3 from 127.0.0.1:45012
+[2025-11-12 12:21:45.052] 
+[CONNECTION #3 ESTABLISHED] 12:21:45.052
+[2025-11-12 12:21:45.064] Client: 127.0.0.1:45012 -> Proxy: localhost:1546 -> RAS: localhost:1545
+[12:21:45.065] Conn#3 CLIENT→SERVER: 32 bytes
+[12:21:45.068] Conn#3 SERVER→CLIENT: 2 bytes
+[12:21:45.070] Conn#3 SERVER→CLIENT: 1 bytes
+[12:21:45.072] Conn#3 CLIENT→SERVER: 2 bytes
+[12:21:45.074] Conn#3 CLIENT→SERVER: 31 bytes
+[12:21:45.082] Conn#3 SERVER→CLIENT: 2 bytes
+[12:21:45.084] Conn#3 SERVER→CLIENT: 32 bytes
+[12:21:45.087] Conn#3 CLIENT→SERVER: 2 bytes
+[12:21:45.089] Conn#3 CLIENT→SERVER: 23 bytes
+[12:21:45.094] Conn#3 SERVER→CLIENT: 2 bytes
+[12:21:45.097] Conn#3 SERVER→CLIENT: 4 bytes
+[12:21:45.099] Conn#3 CLIENT→SERVER: 2 bytes
+[12:21:45.101] Conn#3 CLIENT→SERVER: 38 bytes
+[12:21:45.105] Conn#3 SERVER→CLIENT: 2 bytes
+[12:21:45.108] Conn#3 SERVER→CLIENT: 4 bytes
+[12:21:45.110] Conn#3 CLIENT→SERVER: 2 bytes
+2025/11/12 12:21:45 Connection #3 CLIENT→SERVER read error: read tcp 127.0.0.1:1546->127.0.0.1:45012: wsarecv: An existing connection was forcibly closed by the remote host.
