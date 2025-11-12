@@ -79,6 +79,9 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 	// Fetch database credentials
 	creds, err := p.credsClient.Fetch(ctx, databaseID)
 	if err != nil {
+		// Детальный error log
+		log.Errorf("failed to fetch credentials for database %s: %v", databaseID, err)
+
 		p.updateExtensionStatus(ctx, databaseID, "failed", fmt.Sprintf("failed to fetch credentials: %v", err), 0)
 		result.Success = false
 		result.Error = fmt.Sprintf("failed to fetch credentials: %v", err)
@@ -87,11 +90,22 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		return result
 	}
 
-	// Build server address for Batch Service
+	// Success log
+	log.Infof("credentials fetched successfully for database %s, odata_url=%s", databaseID, creds.ODataURL)
+
+	// Build server address for Batch Service using 1C Server fields (not OData)
 	// Format: "localhost" or "localhost:1541" (if port is not default 1540)
-	serverAddress := creds.Host
-	if creds.Port != 0 && creds.Port != 1540 {
-		serverAddress = fmt.Sprintf("%s:%d", creds.Host, creds.Port)
+	serverAddress := creds.ServerAddress
+	if creds.ServerPort != 0 && creds.ServerPort != 1540 {
+		serverAddress = fmt.Sprintf("%s:%d", creds.ServerAddress, creds.ServerPort)
+	}
+
+	// Use InfobaseName from credentials (не BaseName из OData URL)
+	infobaseName := creds.InfobaseName
+	if infobaseName == "" {
+		// Fallback to BaseName if InfobaseName not provided
+		infobaseName = creds.BaseName
+		log.Warnf("InfobaseName not provided for database %s, using BaseName fallback: %s", databaseID, infobaseName)
 	}
 
 	// Update status to 50%
@@ -102,18 +116,26 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 	// Call Batch Service with structured request
 	installReq := ExtensionInstallRequest{
 		Server:                 serverAddress,
-		InfobaseName:           creds.BaseName,
+		InfobaseName:           infobaseName,
 		Username:               creds.Username,
 		Password:               creds.Password,
 		ExtensionPath:          extensionPath,
 		ExtensionName:          extensionName,
 		UpdateDBConfig:         false, // Default: don't update DB config
-		ForceTerminateSessions: false, // Default: don't terminate sessions
+		ForceTerminateSessions: true,  // Force terminate sessions для успешного UpdateDBCfg
 	}
 
+	// Log request details
 	batchServiceURL := fmt.Sprintf("%s/api/v1/extensions/install", p.config.BatchServiceURL)
+	log.Infof("calling Batch Service for database %s, url=%s, extension=%s, path=%s",
+		databaseID, batchServiceURL, extensionName, extensionPath)
+
 	installResp, err := p.callBatchService(ctx, batchServiceURL, installReq)
 	if err != nil {
+		// Детальный error log
+		log.Errorf("batch service call failed for database %s, url=%s, error=%v",
+			databaseID, batchServiceURL, err)
+
 		p.updateExtensionStatus(ctx, databaseID, "failed", fmt.Sprintf("batch service error: %v", err), 0)
 		result.Success = false
 		result.Error = fmt.Sprintf("batch service error: %v", err)
@@ -123,6 +145,10 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 	}
 
 	if !installResp.Success {
+		// Детальный error log
+		log.Errorf("extension installation failed for database %s, batch_error=%s",
+			databaseID, installResp.Error)
+
 		p.updateExtensionStatus(ctx, databaseID, "failed", installResp.Error, 0)
 		result.Success = false
 		result.Error = installResp.Error

@@ -34,12 +34,39 @@ class ServiceUser:
 class ServiceJWTAuthentication(JWTAuthentication):
     """
     Custom JWT Authentication для поддержки service tokens.
-    
+
     Если user_id начинается с 'service:', создаёт ServiceUser вместо
     загрузки из БД. Это позволяет Worker и другим сервисам аутентифицироваться
     без создания реальных пользователей в БД.
     """
-    
+
+    def authenticate(self, request):
+        """Override to add debug logging."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        logger.debug(f"ServiceJWT authenticate called", extra={
+            "auth_header_preview": auth_header[:50] if auth_header else 'missing',
+            "path": request.path,
+        })
+
+        try:
+            result = super().authenticate(request)
+            if result:
+                user, token = result
+                logger.info(f"ServiceJWT authentication successful", extra={
+                    "user": str(user),
+                    "is_service": hasattr(user, 'service_name'),
+                })
+            return result
+        except Exception as e:
+            logger.error(f"ServiceJWT authentication failed: {e}", extra={
+                "error_type": type(e).__name__,
+                "auth_header_preview": auth_header[:50] if auth_header else 'missing',
+            })
+            raise
+
     def get_user(self, validated_token):
         """
         Attempts to find and return a user using the given validated token.

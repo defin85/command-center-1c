@@ -23,6 +23,9 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'odata_url',
             'username',
             'password',  # write-only
+            'server_address',
+            'server_port',
+            'infobase_name',
             'status',
             'status_display',
             'version',

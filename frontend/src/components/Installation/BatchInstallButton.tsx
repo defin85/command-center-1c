@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Button, Modal, Form, Input, message } from 'antd'
 import { RocketOutlined } from '@ant-design/icons'
 import { installationApi } from '../../api/endpoints/installation'
+import { ExtensionFileSelector } from './ExtensionFileSelector'
 
 interface BatchInstallButtonProps {
   onStarted?: (taskId: string) => void
@@ -62,25 +63,25 @@ export const BatchInstallButton: React.FC<BatchInstallButtonProps> = ({ onStarte
         <Form
           form={form}
           layout="vertical"
-          initialValues={{
-            extension_name: 'ODataAutoConfig',
-            extension_path: 'C:\\Extensions\\ODataAutoConfig.cfe',
-          }}
         >
-          <Form.Item
-            label="Extension Name"
-            name="extension_name"
-            rules={[{ required: true, message: 'Please enter extension name' }]}
-          >
-            <Input placeholder="ODataAutoConfig" />
+          <ExtensionFileSelector
+            value={form.getFieldValue('extension_file')}
+            onChange={(fileInfo) => {
+              // Update form fields when file selected
+              form.setFieldsValue({
+                extension_file: fileInfo,
+                extension_name: fileInfo.name,
+                extension_path: fileInfo.path,
+              })
+            }}
+          />
+
+          <Form.Item name="extension_name" hidden>
+            <Input />
           </Form.Item>
 
-          <Form.Item
-            label="Extension Path (on Windows Server)"
-            name="extension_path"
-            rules={[{ required: true, message: 'Please enter extension path' }]}
-          >
-            <Input placeholder="C:\Extensions\ODataAutoConfig.cfe" />
+          <Form.Item name="extension_path" hidden>
+            <Input />
           </Form.Item>
 
           <p style={{ color: '#ff4d4f', marginBottom: 0 }}>

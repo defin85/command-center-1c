@@ -9,8 +9,15 @@
 
 set -e
 
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-functions.sh"
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# Load environment variables from .env.local
+load_env_file
 
 PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"
@@ -54,15 +61,6 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Перезапуск сервиса: ${SERVICE_NAME}${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-
-##############################################################################
-# Загрузить переменные окружения
-##############################################################################
-if [ -f "$PROJECT_ROOT/.env.local" ]; then
-    set -a
-    source "$PROJECT_ROOT/.env.local"
-    set +a
-fi
 
 ##############################################################################
 # Остановка сервиса

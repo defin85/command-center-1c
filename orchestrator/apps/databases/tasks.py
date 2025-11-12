@@ -182,14 +182,14 @@ def queue_extension_installation(database_ids, extension_config):
             "tags": ["extension", "install", extension_config["name"]]
         }
     }
-    
-    # Отправить в Redis queue (Message Protocol v2.0)
-    redis_client.lpush("cc1c:operations:v1", json.dumps(message))
-    
-    # Создать lock key для idempotency check в Go Worker
+
+    # Создать lock key для idempotency check в Go Worker (ДО отправки в queue!)
     lock_key = f"cc1c:task:{batch_operation.id}:lock"
     redis_client.setex(lock_key, 3600, "1")  # TTL 1 час
-    
+
+    # Отправить в Redis queue (Message Protocol v2.0)
+    redis_client.lpush("cc1c:operations:v1", json.dumps(message))
+
     logger.info(f"Queued extension installation operation (operation_id={batch_operation.id}, databases={len(valid_db_ids)})")
     
     return {

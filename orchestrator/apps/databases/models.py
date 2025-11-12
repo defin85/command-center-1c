@@ -264,6 +264,22 @@ class Database(models.Model):
     username = models.CharField(max_length=255)
     password = EncryptedCharField(max_length=255)  # Encrypted with FIELD_ENCRYPTION_KEY
 
+    # 1C Server connection parameters (для DESIGNER режима)
+    server_address = models.CharField(
+        max_length=255,
+        default='localhost',
+        help_text="Адрес сервера 1С (например: localhost, srv1c, 192.168.1.100)"
+    )
+    server_port = models.IntegerField(
+        default=1540,
+        help_text="Порт сервера 1С (обычно 1540 или 1541)"
+    )
+    infobase_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Имя информационной базы на сервере 1С (если отличается от name)"
+    )
+
     # Connection Pool Settings
     max_connections = models.IntegerField(default=10, help_text="Maximum concurrent connections")
     connection_timeout = models.IntegerField(default=30, help_text="Connection timeout in seconds")
@@ -387,6 +403,36 @@ class Database(models.Model):
     def connection_string(self) -> str:
         """Get connection info (without password)."""
         return f"{self.username}@{self.host}:{self.port}/{self.base_name}"
+
+    @property
+    def connection_string_1c(self) -> str:
+        """
+        Генерирует connection string для подключения через DESIGNER.
+        Формат: Srvr="server:port";Ref="infobase_name";
+        """
+        # Используем infobase_name если задано, иначе name
+        ib_name = self.infobase_name if self.infobase_name else self.name
+
+        # Добавляем порт только если не default (1540)
+        if self.server_port and self.server_port != 1540:
+            server_part = f"{self.server_address}:{self.server_port}"
+        else:
+            server_part = self.server_address
+
+        return f'Srvr="{server_part}";Ref="{ib_name}";'
+
+    @property
+    def designer_path(self) -> str:
+        """
+        Генерирует путь для параметра /S в DESIGNER.
+        Формат: server\infobase или server:port\infobase
+        """
+        ib_name = self.infobase_name if self.infobase_name else self.name
+
+        if self.server_port and self.server_port != 1540:
+            return f"{self.server_address}:{self.server_port}\\{ib_name}"
+        else:
+            return f"{self.server_address}\\{ib_name}"
 
 
 class DatabaseGroup(models.Model):

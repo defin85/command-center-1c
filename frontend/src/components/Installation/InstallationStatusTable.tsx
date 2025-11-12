@@ -3,6 +3,7 @@ import { Table, Tag, Button, Input, Select, Space, message, Modal, Form } from '
 import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
 import { installationApi } from '../../api/endpoints/installation'
+import { ExtensionFileSelector } from './ExtensionFileSelector'
 
 const { Option } = Select
 
@@ -54,7 +55,7 @@ export const InstallationStatusTable: React.FC = () => {
 
     try {
       const values = await form.validateFields()
-      const response = await installationApi.installSingle(selectedDatabase.id, {
+      const response = await installationApi.installSingle(String(selectedDatabase.id), {
         name: values.extension_name,
         path: values.extension_path,
       })
@@ -204,25 +205,25 @@ export const InstallationStatusTable: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{
-            extension_name: 'ODataAutoConfig',
-            extension_path: 'C:\\Extensions\\ODataAutoConfig.cfe',
-          }}
         >
-          <Form.Item
-            label="Extension Name"
-            name="extension_name"
-            rules={[{ required: true, message: 'Please enter extension name' }]}
-          >
-            <Input placeholder="ODataAutoConfig" />
+          <ExtensionFileSelector
+            value={form.getFieldValue('extension_file')}
+            onChange={(fileInfo) => {
+              // Update form fields when file selected
+              form.setFieldsValue({
+                extension_file: fileInfo,
+                extension_name: fileInfo.name,
+                extension_path: fileInfo.path,
+              })
+            }}
+          />
+
+          <Form.Item name="extension_name" hidden>
+            <Input />
           </Form.Item>
 
-          <Form.Item
-            label="Extension Path (on Windows Server)"
-            name="extension_path"
-            rules={[{ required: true, message: 'Please enter extension path' }]}
-          >
-            <Input placeholder="C:\Extensions\ODataAutoConfig.cfe" />
+          <Form.Item name="extension_path" hidden>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>

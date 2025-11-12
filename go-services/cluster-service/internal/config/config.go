@@ -25,6 +25,7 @@ type GRPCConfig struct {
 	GatewayAddr    string
 	ConnTimeout    time.Duration
 	RequestTimeout time.Duration
+	RASGWHTTPURL   string // ras-grpc-gw HTTP server URL for HTTP endpoints
 }
 
 type LogConfig struct {
@@ -44,6 +45,7 @@ func Load() (*Config, error) {
 			GatewayAddr:    getEnv("GRPC_GATEWAY_ADDR", "localhost:9999"),
 			ConnTimeout:    getEnvDuration("GRPC_CONN_TIMEOUT", 5*time.Second),
 			RequestTimeout: getEnvDuration("GRPC_REQUEST_TIMEOUT", 10*time.Second),
+			RASGWHTTPURL:   getEnv("RAS_GW_HTTP_URL", "http://localhost:8081"),
 		},
 		Log: LogConfig{
 			Level: getEnv("LOG_LEVEL", "info"),

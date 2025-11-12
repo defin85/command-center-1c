@@ -14,9 +14,15 @@ env = environ.Env(
     DEBUG=(bool, False)
 )
 
-# Read .env file if exists
+# Read .env files with priority: .env.local > .env
+# .env.local для локальной разработки (gitignored, содержит secrets)
+# .env для production/CI (checked in, содержит defaults)
+env_file_local = BASE_DIR.parent / '.env.local'
 env_file = BASE_DIR.parent / '.env'
-if env_file.exists():
+
+if env_file_local.exists():
+    environ.Env.read_env(str(env_file_local))
+elif env_file.exists():
     environ.Env.read_env(str(env_file))
 
 # SECURITY WARNING: keep the secret key used in production secret!
@@ -209,6 +215,22 @@ if not FIELD_ENCRYPTION_KEY:
     )
     # Использовать fallback ключ для development (valid Fernet key)
     FIELD_ENCRYPTION_KEY = 'MqYe7fA3_doV3nD15UAtPUb6Aq0_cgVg6kfdwjDlpCo='
+
+# Credentials Transport Encryption (AES-GCM-256)
+# ВАЖНО: Должен быть 32+ bytes для AES-256!
+# Должен совпадать между Django Orchestrator и Go Worker!
+CREDENTIALS_TRANSPORT_KEY = env(
+    'CREDENTIALS_TRANSPORT_KEY',
+    default='dev-transport-key-change-in-prod-32bytes-minimum'  # 32+ символов для AES-256
+)
+
+if len(CREDENTIALS_TRANSPORT_KEY.encode('utf-8')) < 32:
+    import warnings
+    warnings.warn(
+        "CREDENTIALS_TRANSPORT_KEY is too short (should be 32+ bytes). "
+        "Add to .env.local: CREDENTIALS_TRANSPORT_KEY=<strong-32+-byte-key>",
+        RuntimeWarning
+    )
 
 # Installation Service Configuration
 INSTALLATION_SERVICE_URL = env(

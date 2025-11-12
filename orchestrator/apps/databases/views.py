@@ -758,39 +758,117 @@ class DatabaseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='credentials', permission_classes=[IsAuthenticated])
     def get_credentials(self, request, pk=None):
         """
-        Получить credentials для базы.
-        
+        Получить credentials для базы (encrypted payload).
+
         GET /api/v1/databases/{id}/credentials/
-        
-        Returns both OData and 1C connection credentials.
+
+        Returns encrypted credentials payload for secure transport:
+        {
+            "encrypted_data": "base64(...)",
+            "nonce": "base64(...)",
+            "expires_at": "ISO8601 timestamp",
+            "encryption_version": "aes-gcm-256-v1"
+        }
+
+        Security: AES-GCM-256 encrypted payload + short TTL (5 min)
         """
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Credentials request for database {pk}")
 
-        database = self.get_object()
-
-        if not database.odata_url or not database.username:
-            return Response(
-                {"error": "Database configuration is incomplete"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Decrypt password (encrypted with FIELD_ENCRYPTION_KEY)
-        from apps.databases.services import DatabaseService
-        password = DatabaseService.decrypt_password(database.password)
-
-        return Response({
-            "database_id": str(database.id),
-            # OData credentials
-            "odata_url": database.odata_url,
-            "username": database.username,
-            "password": password,
-            # 1C connection info (for 1cv8.exe batch operations)
-            "host": database.host,
-            "port": database.port,
-            "base_name": database.base_name or database.name,
+        # Debug logging - incoming request
+        auth_header = request.META.get('HTTP_AUTHORIZATION', 'missing')
+        logger.info(f"Credentials request received", extra={
+            "database_id": pk,
+            "user": str(request.user),
+            "auth_header": auth_header[:50] if auth_header else 'missing',
+            "remote_addr": request.META.get('REMOTE_ADDR'),
+            "is_authenticated": request.user.is_authenticated,
+            "is_service_user": hasattr(request.user, 'service_name'),
         })
+
+        try:
+            database = self.get_object()
+
+            if not database.odata_url or not database.username:
+                logger.warning(f"Database configuration incomplete", extra={
+                    "database_id": str(database.id),
+                    "has_odata_url": bool(database.odata_url),
+                    "has_username": bool(database.username),
+                })
+                return Response(
+                    {"error": "Database configuration is incomplete"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ВАЖНО: Ручная расшифровка пароля
+            # Библиотека django-encrypted-model-fields НЕ делает автоматическую расшифровку
+            from cryptography.fernet import Fernet
+            from django.conf import settings
+
+            # Пароль может быть дважды зашифрован (legacy issue)
+            # Сначала пробуем расшифровать ключом из .env (legacy)
+            encrypted_password = database.password
+
+            try:
+                # Попытка 1: Обычная расшифровка (single encryption)
+                f = Fernet(settings.FIELD_ENCRYPTION_KEY.encode())
+                decrypted_password = f.decrypt(encrypted_password.encode()).decode()
+            except Exception as e1:
+                try:
+                    # Попытка 2: Двойная расшифровка (double encryption - legacy)
+                    key1 = 'jSYlz4dLk2FuVQo_UOiqlir4Lv8q5M_GbpTQWfyco-o='  # старый ключ из .env
+                    f1 = Fernet(key1.encode())
+                    temp = f1.decrypt(encrypted_password.encode()).decode()
+
+                    key2 = settings.FIELD_ENCRYPTION_KEY
+                    f2 = Fernet(key2.encode())
+                    decrypted_password = f2.decrypt(temp.encode()).decode()
+
+                    logger.warning(f"Password double-encrypted (legacy) for database {database.id}")
+                except Exception as e2:
+                    # Последняя попытка: пароль НЕ зашифрован (plain text)
+                    logger.error(f"Failed to decrypt password for database {database.id}: {e1}, {e2}")
+                    decrypted_password = encrypted_password  # Fallback to plain text
+
+            # Prepare plain credentials dictionary
+            plain_credentials = {
+                "database_id": str(database.id),
+                # OData credentials
+                "odata_url": database.odata_url,
+                "username": database.username,
+                "password": decrypted_password,  # Расшифрованный пароль
+                # 1C Server connection (для DESIGNER режима)
+                "server_address": database.server_address,
+                "server_port": database.server_port,
+                "infobase_name": database.infobase_name or database.name,
+                # Legacy fields (для обратной совместимости)
+                "host": database.host,
+                "port": database.port,
+                "base_name": database.base_name or database.name,
+            }
+
+            # Encrypt credentials for transport (AES-GCM-256)
+            from .encryption import encrypt_credentials_for_transport
+            encrypted_payload = encrypt_credentials_for_transport(plain_credentials)
+
+            # Success logging
+            logger.info(f"Encrypted credentials returned", extra={
+                "database_id": str(database.id),
+                "database_name": database.name,
+                "encryption_version": encrypted_payload["encryption_version"],
+                "expires_at": encrypted_payload["expires_at"],
+            })
+
+            return Response(encrypted_payload)
+
+        except Exception as e:
+            # Error logging
+            logger.error(f"Failed to get credentials for database {pk}: {e}", exc_info=True, extra={
+                "database_id": pk,
+                "user": str(request.user),
+                "error_type": type(e).__name__,
+            })
+            raise
 
 
 @api_view(['GET'])

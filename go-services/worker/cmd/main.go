@@ -60,6 +60,16 @@ func main() {
 		zap.String("worker_id", cfg.WorkerID),
 	)
 
+	// Debug: Show JWT configuration (first 10 chars of secret for security)
+	jwtSecretPreview := cfg.JWTSecret
+	if len(jwtSecretPreview) > 10 {
+		jwtSecretPreview = jwtSecretPreview[:10] + "..."
+	}
+	log.Info("JWT configuration loaded",
+		zap.String("jwt_secret_preview", jwtSecretPreview),
+		zap.String("jwt_issuer", cfg.JWTIssuer),
+	)
+
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -77,12 +87,36 @@ func main() {
 	}
 	log.Info("service JWT token generated", zap.Duration("ttl", 24*time.Hour))
 
-	// Initialize credentials client with JWT token
+	// Debug: Show first 20 chars of generated token for debugging
+	tokenPreview := serviceToken
+	if len(tokenPreview) > 20 {
+		tokenPreview = tokenPreview[:20] + "..."
+	}
+	log.Info("service token details",
+		zap.String("token_preview", tokenPreview),
+		zap.String("for_service", "worker"),
+	)
+
+	// Validate transport encryption key
+	transportKey := []byte(cfg.CredentialsTransportKey)
+	if len(transportKey) < 32 {
+		log.Fatal("CREDENTIALS_TRANSPORT_KEY must be at least 32 bytes",
+			zap.Int("current_length", len(transportKey)),
+			zap.Int("required_length", 32),
+		)
+	}
+	log.Info("credentials transport encryption configured",
+		zap.Int("key_length", len(transportKey)),
+		zap.String("algorithm", "AES-GCM-256"),
+	)
+
+	// Initialize credentials client with JWT token and transport key
 	credsClient := credentials.NewClient(
 		cfg.OrchestratorURL,
 		serviceToken,
+		transportKey, // AES-256 key for decrypting credentials payload
 	)
-	log.Info("credentials client initialized")
+	log.Info("credentials client initialized with encrypted transport")
 
 	// Initialize task processor
 	taskProcessor := processor.NewTaskProcessor(cfg, credsClient)

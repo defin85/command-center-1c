@@ -225,6 +225,10 @@ func (e *V8Executor) Execute(ctx context.Context, args []string) (*ExecutionResu
 // Step 1: LoadCfg -Extension (load .cfe file)
 // Step 2: UpdateDBCfg -Extension (apply to database)
 func (e *V8Executor) InstallExtension(ctx context.Context, req InstallRequest) error {
+	// ✅ ADD: Log request details
+	fmt.Printf("[DEBUG] InstallExtension called: server=%s, infobase=%s, user=%s, extension=%s, path=%s\n",
+		req.Server, req.InfobaseName, req.Username, req.ExtensionName, req.ExtensionPath)
+
 	// Step 1: Load extension from .cfe file
 	loadArgs, err := BuildInstallLoadCommand(
 		req.Server,
@@ -238,7 +242,15 @@ func (e *V8Executor) InstallExtension(ctx context.Context, req InstallRequest) e
 		return fmt.Errorf("failed to build LoadCfg command: %w", err)
 	}
 
+	// ✅ ADD: Log command that will be executed
+	fmt.Printf("[DEBUG] Executing LoadCfg command: %v\n", loadArgs)
+
 	result1, err := e.Execute(ctx, loadArgs)
+
+	// ✅ ADD: Log result
+	fmt.Printf("[DEBUG] LoadCfg result: exitCode=%d, stdout=%s, stderr=%s, err=%v\n",
+		result1.ExitCode, result1.Stdout, result1.Stderr, err)
+
 	if err != nil {
 		return fmt.Errorf("LoadCfg failed: %w (stderr: %s)", err, result1.Stderr)
 	}
@@ -258,7 +270,15 @@ func (e *V8Executor) InstallExtension(ctx context.Context, req InstallRequest) e
 		return fmt.Errorf("failed to build UpdateDBCfg command: %w", err)
 	}
 
+	// ✅ ADD: Log command that will be executed
+	fmt.Printf("[DEBUG] Executing UpdateDBCfg command: %v\n", updateArgs)
+
 	result2, err := e.Execute(ctx, updateArgs)
+
+	// ✅ ADD: Log result
+	fmt.Printf("[DEBUG] UpdateDBCfg result: exitCode=%d, stdout=%s, stderr=%s, err=%v\n",
+		result2.ExitCode, result2.Stdout, result2.Stderr, err)
+
 	if err != nil {
 		return fmt.Errorf("UpdateDBCfg failed: %w (stderr: %s)", err, result2.Stderr)
 	}

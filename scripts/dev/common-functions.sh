@@ -328,5 +328,40 @@ rebuild_go_services() {
 }
 
 ##############################################################################
+# [СЕКЦИЯ 5: ENVIRONMENT LOADING]
+##############################################################################
+
+# load_env_file - загрузка переменных окружения из .env.local
+# Usage: load_env_file
+# Гарантирует что Go сервисы получают те же настройки что и Django
+load_env_file() {
+    local env_file="$PROJECT_ROOT/.env.local"
+
+    if [ -f "$env_file" ]; then
+        echo "📋 Загрузка переменных окружения из .env.local..."
+
+        # Export variables from .env.local
+        # - Skip comments (lines starting with #)
+        # - Skip empty lines
+        # - Remove Windows line endings (\r)
+        # - Use set -a to automatically export all variables
+        set -a
+        source <(grep -v '^#' "$env_file" | grep -v '^[[:space:]]*$' | sed 's/\r$//')
+        set +a
+
+        echo "✓ Переменные окружения загружены (JWT_SECRET, DB credentials, и т.д.)"
+
+        # Verify critical variables are set
+        if [ -z "$JWT_SECRET" ]; then
+            echo "⚠️  Warning: JWT_SECRET не найден в .env.local"
+        fi
+    else
+        echo "⚠️  Warning: .env.local не найден по пути $env_file"
+        echo "   Go сервисы будут использовать значения по умолчанию"
+        echo "   Создайте .env.local из .env.local.example если необходимо"
+    fi
+}
+
+##############################################################################
 # End of common-functions.sh
 ##############################################################################

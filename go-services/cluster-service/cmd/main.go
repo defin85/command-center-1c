@@ -68,6 +68,7 @@ func main() {
 
 	// Service layer
 	monitoringService := service.NewMonitoringService(grpcClient, logger)
+	infobaseMgmtService := service.NewInfobaseManagementService(grpcClient, logger, cfg.GRPC.RASGWHTTPURL)
 
 	// Handlers
 	monitoringHandler := handlers.NewMonitoringHandler(
@@ -75,9 +76,14 @@ func main() {
 		cfg.GRPC.RequestTimeout,
 		logger,
 	)
+	infobaseMgmtHandler := handlers.NewInfobaseManagementHandler(
+		infobaseMgmtService,
+		cfg.GRPC.RequestTimeout,
+		logger,
+	)
 
 	// Router
-	router := api.SetupRouter(monitoringHandler, logger)
+	router := api.SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	// HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

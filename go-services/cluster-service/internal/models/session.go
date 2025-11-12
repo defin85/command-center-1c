@@ -2,7 +2,8 @@ package models
 
 // Session represents an active 1C session
 type Session struct {
-	SessionID   string `json:"session_id"`
+	UUID        string `json:"uuid"`         // RAS internal UUID
+	SessionID   string `json:"session_id"`   // Legacy alias for UUID
 	UserName    string `json:"user_name"`
 	Application string `json:"application"`
 	StartedAt   string `json:"started_at"`

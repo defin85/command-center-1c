@@ -20,6 +20,9 @@ source "$SCRIPT_DIR/common-functions.sh"
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
 
+# Load environment variables from .env.local
+load_env_file
+
 # Флаги по умолчанию
 FORCE_REBUILD=false
 NO_REBUILD=false

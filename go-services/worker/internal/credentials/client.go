@@ -19,16 +19,21 @@ type DatabaseCredentials struct {
 	ODataURL string `json:"odata_url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	// 1C connection info (for 1cv8.exe batch operations)
+	// Legacy fields (for OData)
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	BaseName string `json:"base_name"`
+	// NEW: Поля для DESIGNER подключения (из 1C Server)
+	ServerAddress string `json:"server_address"`
+	ServerPort    int    `json:"server_port"`
+	InfobaseName  string `json:"infobase_name"`
 }
 
 // Client fetches credentials from Orchestrator API
 type Client struct {
 	orchestratorURL string
 	serviceToken    string // JWT token for service-to-service auth
+	transportKey    []byte // AES-256 key for decrypting credentials payload
 	httpClient      *http.Client
 
 	// Cache with TTL
@@ -42,11 +47,12 @@ type cacheEntry struct {
 	expiresAt   time.Time
 }
 
-// NewClient creates a new credentials client with JWT service token
-func NewClient(orchestratorURL, serviceToken string) *Client {
+// NewClient creates a new credentials client with JWT service token and transport encryption key
+func NewClient(orchestratorURL, serviceToken string, transportKey []byte) *Client {
 	return &Client{
 		orchestratorURL: orchestratorURL,
 		serviceToken:    serviceToken,
+		transportKey:    transportKey, // NEW: для decryption
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -107,14 +113,28 @@ func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*Database
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var creds DatabaseCredentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	// Decode encrypted response from Django Orchestrator
+	var encResp EncryptedCredentialsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&encResp); err != nil {
+		return nil, fmt.Errorf("failed to decode encrypted response: %w", err)
 	}
 
-	logger.Infof("credentials fetched successfully, database_id=%s, odata_url=%s", databaseID, creds.ODataURL)
+	logger.Debugf(
+		"received encrypted credentials, database_id=%s, encryption_version=%s, expires_at=%s",
+		databaseID,
+		encResp.EncryptionVersion,
+		encResp.ExpiresAt,
+	)
 
-	return &creds, nil
+	// Decrypt credentials using transport key (AES-GCM-256)
+	creds, err := DecryptCredentials(encResp, c.transportKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+	}
+
+	logger.Infof("credentials decrypted successfully, database_id=%s, odata_url=%s", databaseID, creds.ODataURL)
+
+	return creds, nil
 }
 
 func (c *Client) getFromCache(databaseID string) *DatabaseCredentials {

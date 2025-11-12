@@ -8,7 +8,11 @@ import (
 	"go.uber.org/zap"
 )
 
-func SetupRouter(monitoringHandler *handlers.MonitoringHandler, logger *zap.Logger) *gin.Engine {
+func SetupRouter(
+	monitoringHandler *handlers.MonitoringHandler,
+	infobaseMgmtHandler *handlers.InfobaseManagementHandler,
+	logger *zap.Logger,
+) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -34,6 +38,12 @@ func SetupRouter(monitoringHandler *handlers.MonitoringHandler, logger *zap.Logg
 		// Session management endpoints (MOCK for P3.3)
 		v1.GET("/sessions", sessionsHandler.GetSessions)
 		v1.POST("/sessions/terminate", sessionsHandler.TerminateSessions)
+
+		// Infobase management endpoints (Extension Installation Workflow)
+		v1.POST("/infobases/lock", infobaseMgmtHandler.LockInfobase)
+		v1.POST("/infobases/unlock", infobaseMgmtHandler.UnlockInfobase)
+		v1.POST("/infobases/terminate-sessions", infobaseMgmtHandler.TerminateInfobaseSessions)
+		v1.GET("/infobases/sessions-count", infobaseMgmtHandler.GetSessionsCount)
 	}
 
 	return router

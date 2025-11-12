@@ -51,6 +51,10 @@ type Config struct {
 	// Metrics configuration
 	MetricsEnabled bool
 	MetricsPort    string
+
+	// Credentials Transport Encryption (AES-256)
+	// ВАЖНО: Должен совпадать с Django CREDENTIALS_TRANSPORT_KEY!
+	CredentialsTransportKey string
 }
 
 // LoadFromEnv loads configuration from environment variables
@@ -99,6 +103,9 @@ func LoadFromEnv() *Config {
 		// Metrics
 		MetricsEnabled: getBoolEnv("METRICS_ENABLED", true),
 		MetricsPort:    getEnv("METRICS_PORT", "9090"),
+
+		// Credentials Transport Encryption
+		CredentialsTransportKey: getEnv("CREDENTIALS_TRANSPORT_KEY", ""),
 	}
 }
 

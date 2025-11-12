@@ -29,6 +29,9 @@ source "$SCRIPT_DIR/common-functions.sh"
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
 
+# Load environment variables from .env.local
+load_env_file
+
 SCRIPTS_DIR="$PROJECT_ROOT/scripts/dev"
 
 # Флаги по умолчанию
