@@ -11,10 +11,12 @@ import (
 	"github.com/command-center-1c/cluster-service/internal/api/handlers"
 	"github.com/command-center-1c/cluster-service/internal/config"
 	"github.com/command-center-1c/cluster-service/internal/grpc"
+	"github.com/command-center-1c/cluster-service/internal/monitor"
 	"github.com/command-center-1c/cluster-service/internal/server"
 	"github.com/command-center-1c/cluster-service/internal/service"
 	"github.com/command-center-1c/cluster-service/internal/version"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -66,9 +68,52 @@ func main() {
 
 	logger.Info("gRPC client initialized", zap.String("addr", cfg.GRPC.GatewayAddr))
 
+	// Initialize Redis client for Pub/Sub
+	var redisClient *redis.Client
+	var sessionsMonitor *monitor.SessionsMonitor
+
+	if cfg.Monitor.PubSubEnabled {
+		redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+
+		// Test Redis connection
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			logger.Error("failed to connect to Redis, Pub/Sub disabled",
+				zap.String("addr", redisAddr),
+				zap.Error(err),
+			)
+			redisClient = nil
+		} else {
+			logger.Info("Redis client initialized for Pub/Sub",
+				zap.String("addr", redisAddr),
+			)
+		}
+	} else {
+		logger.Info("Redis Pub/Sub disabled by configuration")
+	}
+
 	// Service layer
 	monitoringService := service.NewMonitoringService(grpcClient, logger)
 	infobaseMgmtService := service.NewInfobaseManagementService(grpcClient, logger, cfg.GRPC.RASGWHTTPURL)
+
+	// Initialize sessions monitor if Redis is available
+	if redisClient != nil {
+		sessionsMonitor = monitor.NewSessionsMonitor(
+			infobaseMgmtService,
+			redisClient,
+			monitor.MonitorConfig{
+				PollInterval: cfg.Monitor.SessionMonitorInterval,
+			},
+			logger,
+		)
+		logger.Info("sessions monitor initialized",
+			zap.Duration("poll_interval", cfg.Monitor.SessionMonitorInterval),
+		)
+	}
 
 	// Handlers
 	monitoringHandler := handlers.NewMonitoringHandler(
@@ -78,6 +123,7 @@ func main() {
 	)
 	infobaseMgmtHandler := handlers.NewInfobaseManagementHandler(
 		infobaseMgmtService,
+		sessionsMonitor,
 		cfg.GRPC.RequestTimeout,
 		logger,
 	)
@@ -99,6 +145,12 @@ func main() {
 	// Start (blocks until shutdown)
 	if err := srv.Start(); err != nil {
 		logger.Fatal("server error", zap.Error(err))
+	}
+
+	// Cleanup Redis connection
+	if redisClient != nil {
+		redisClient.Close()
+		logger.Info("Redis connection closed")
 	}
 }
 

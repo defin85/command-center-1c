@@ -8,9 +8,11 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	GRPC   GRPCConfig
-	Log    LogConfig
+	Server  ServerConfig
+	GRPC    GRPCConfig
+	Redis   RedisConfig
+	Monitor MonitorConfig
+	Log     LogConfig
 }
 
 type ServerConfig struct {
@@ -26,6 +28,18 @@ type GRPCConfig struct {
 	ConnTimeout    time.Duration
 	RequestTimeout time.Duration
 	RASGWHTTPURL   string // ras-grpc-gw HTTP server URL for HTTP endpoints
+}
+
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
+}
+
+type MonitorConfig struct {
+	SessionMonitorInterval time.Duration
+	PubSubEnabled          bool
 }
 
 type LogConfig struct {
@@ -46,6 +60,16 @@ func Load() (*Config, error) {
 			ConnTimeout:    getEnvDuration("GRPC_CONN_TIMEOUT", 5*time.Second),
 			RequestTimeout: getEnvDuration("GRPC_REQUEST_TIMEOUT", 10*time.Second),
 			RASGWHTTPURL:   getEnv("RAS_GW_HTTP_URL", "http://localhost:8081"),
+		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvInt("REDIS_DB", 0),
+		},
+		Monitor: MonitorConfig{
+			SessionMonitorInterval: getEnvDuration("SESSION_MONITOR_INTERVAL", 1*time.Second),
+			PubSubEnabled:          getBoolEnv("REDIS_PUBSUB_ENABLED", true),
 		},
 		Log: LogConfig{
 			Level: getEnv("LOG_LEVEL", "info"),
@@ -93,6 +117,15 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {
 			return duration
+		}
+	}
+	return defaultValue
+}
+
+func getBoolEnv(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

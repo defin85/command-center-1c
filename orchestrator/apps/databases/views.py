@@ -706,6 +706,24 @@ class DatabaseViewSet(viewsets.ModelViewSet):
             "duration_seconds": task.duration_seconds
         })
 
+    @action(detail=True, methods=['get'], url_path='cluster-info')
+    def get_cluster_info(self, request, pk=None):
+        """
+        GET /api/v1/databases/{id}/cluster-info/
+
+        Returns cluster_id and infobase_id для RAS workflow operations.
+        """
+        database = self.get_object()
+
+        # Использовать ras_infobase_id если задано, иначе primary key
+        infobase_id = str(database.ras_infobase_id) if database.ras_infobase_id else str(database.id)
+
+        return Response({
+            "database_id": str(database.id),
+            "cluster_id": str(database.ras_cluster_id) if database.ras_cluster_id else None,
+            "infobase_id": infobase_id,
+        })
+
     @action(detail=True, methods=['post'], url_path='retry-installation')
     def retry_installation(self, request, pk=None):
         """

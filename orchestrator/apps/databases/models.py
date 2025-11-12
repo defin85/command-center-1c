@@ -280,6 +280,18 @@ class Database(models.Model):
         help_text="Имя информационной базы на сервере 1С (если отличается от name)"
     )
 
+    # RAS/Cluster metadata (для workflow управления регламентами и сессиями)
+    ras_cluster_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="UUID кластера 1С в RAS (для блокировки регламентных заданий)"
+    )
+    ras_infobase_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="UUID информационной базы в RAS (может отличаться от primary key)"
+    )
+
     # Connection Pool Settings
     max_connections = models.IntegerField(default=10, help_text="Maximum concurrent connections")
     connection_timeout = models.IntegerField(default=30, help_text="Connection timeout in seconds")

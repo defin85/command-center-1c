@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,17 +14,24 @@ import (
 	"go.uber.org/zap"
 )
 
+// SessionsMonitor interface for monitoring sessions
+type SessionsMonitor interface {
+	MonitorInfobase(ctx context.Context, clusterID, infobaseID string) error
+}
+
 // InfobaseManagementHandler handles infobase management operations
 type InfobaseManagementHandler struct {
 	service        *service.InfobaseManagementService
+	monitor        SessionsMonitor
 	logger         *zap.Logger
 	requestTimeout time.Duration
 }
 
 // NewInfobaseManagementHandler creates a new InfobaseManagementHandler instance
-func NewInfobaseManagementHandler(svc *service.InfobaseManagementService, requestTimeout time.Duration, logger *zap.Logger) *InfobaseManagementHandler {
+func NewInfobaseManagementHandler(svc *service.InfobaseManagementService, monitor SessionsMonitor, requestTimeout time.Duration, logger *zap.Logger) *InfobaseManagementHandler {
 	return &InfobaseManagementHandler{
 		service:        svc,
+		monitor:        monitor,
 		logger:         logger,
 		requestTimeout: requestTimeout,
 	}
@@ -128,10 +136,35 @@ func (h *InfobaseManagementHandler) TerminateInfobaseSessions(c *gin.Context) {
 		return
 	}
 
+	// Start background monitor to publish event when sessions=0
+	eventChannel := fmt.Sprintf("sessions:%s:closed", req.InfobaseID)
+
+	if h.monitor != nil {
+		h.logger.Info("starting background sessions monitor",
+			zap.String("infobase_id", req.InfobaseID),
+			zap.String("event_channel", eventChannel),
+		)
+
+		go func() {
+			// Use background context with timeout to avoid blocking shutdown
+			monitorCtx, monitorCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer monitorCancel()
+
+			if err := h.monitor.MonitorInfobase(monitorCtx, req.ClusterID, req.InfobaseID); err != nil {
+				h.logger.Error("sessions monitor failed",
+					zap.String("infobase_id", req.InfobaseID),
+					zap.Error(err),
+				)
+			}
+		}()
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"terminated_count": terminated,
 		"cluster_id":       req.ClusterID,
 		"infobase_id":      req.InfobaseID,
+		"monitor_started":  h.monitor != nil,
+		"event_channel":    eventChannel,
 	})
 }
 

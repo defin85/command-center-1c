@@ -37,6 +37,9 @@ type Config struct {
 	// Batch Service configuration
 	BatchServiceURL string
 
+	// Cluster Service configuration
+	ClusterServiceURL string
+
 	// Worker configuration
 	WorkerID         string
 	WorkerAPIKey     string
@@ -88,6 +91,9 @@ func LoadFromEnv() *Config {
 
 		// Batch Service
 		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8087"),
+
+		// Cluster Service
+		ClusterServiceURL: getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),
 
 		// Worker
 		WorkerID:         getEnv("WORKER_ID", "worker-1"),

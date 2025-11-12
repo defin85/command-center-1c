@@ -12,6 +12,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/workflow"
 )
 
 // ExtensionInstallRequest represents Batch Service install request
@@ -39,6 +40,41 @@ type StatusUpdateRequest struct {
 	Status          string `json:"status"`
 	ErrorMessage    string `json:"error_message,omitempty"`
 	ProgressPercent int    `json:"progress_percent,omitempty"`
+}
+
+// ClusterInfo represents cluster metadata for workflow operations
+type ClusterInfo struct {
+	DatabaseID string `json:"database_id"`
+	ClusterID  string `json:"cluster_id"`
+	InfobaseID string `json:"infobase_id"`
+}
+
+// fetchClusterInfo получает cluster_id и infobase_id через Orchestrator API
+func (p *TaskProcessor) fetchClusterInfo(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	url := fmt.Sprintf("%s/api/v1/databases/%s/cluster-info", p.config.OrchestratorURL, databaseID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("cluster-info endpoint returned status %d", resp.StatusCode)
+	}
+
+	var info ClusterInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
 }
 
 // executeExtensionInstall handles extension installation via Batch Service
@@ -113,6 +149,55 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		log.Warnf("failed to update status to 50%%: %v", err)
 	}
 
+	// NEW: Fetch cluster info для workflow
+	clusterInfo, err := p.fetchClusterInfo(ctx, databaseID)
+	if err != nil {
+		log.Errorf("failed to fetch cluster info for database %s: %v", databaseID, err)
+		p.updateExtensionStatus(ctx, databaseID, "failed", fmt.Sprintf("failed to fetch cluster info: %v", err), 0)
+		result.Success = false
+		result.Error = fmt.Sprintf("failed to fetch cluster info: %v", err)
+		result.ErrorCode = "CLUSTER_INFO_ERROR"
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
+
+	// NEW: Initialize workflow with Redis Pub/Sub support
+	redisAddr := fmt.Sprintf("%s:%s", p.config.RedisHost, p.config.RedisPort)
+	pubSubEnabled := true // TODO: Add config parameter REDIS_PUBSUB_ENABLED
+
+	workflowOrchestrator := workflow.NewExtensionInstallWorkflow(
+		p.config.ClusterServiceURL,
+		redisAddr,
+		pubSubEnabled,
+	)
+
+	// NEW: Execute pre-install (lock jobs + terminate sessions + wait)
+	log.Infof("Starting pre-install workflow (lock + terminate + wait)")
+	err = workflowOrchestrator.PreInstall(ctx, workflow.WorkflowParams{
+		ClusterID:  clusterInfo.ClusterID,
+		InfobaseID: clusterInfo.InfobaseID,
+	})
+	if err != nil {
+		log.Errorf("pre-install workflow failed: %v", err)
+		p.updateExtensionStatus(ctx, databaseID, "failed", fmt.Sprintf("workflow error: %v", err), 0)
+		result.Success = false
+		result.Error = fmt.Sprintf("workflow error: %v", err)
+		result.ErrorCode = "WORKFLOW_ERROR"
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
+
+	// CRITICAL: defer rollback для гарантии unlock
+	defer func() {
+		if !result.Success {
+			log.Warnf("Installation failed, executing rollback (unlock jobs)")
+			workflowOrchestrator.Rollback(context.Background(), workflow.WorkflowParams{
+				ClusterID:  clusterInfo.ClusterID,
+				InfobaseID: clusterInfo.InfobaseID,
+			})
+		}
+	}()
+
 	// Call Batch Service with structured request
 	installReq := ExtensionInstallRequest{
 		Server:                 serverAddress,
@@ -155,6 +240,18 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		result.ErrorCode = "INSTALLATION_FAILED"
 		result.Duration = time.Since(start).Seconds()
 		return result
+	}
+
+	// NEW: Execute post-install (unlock jobs)
+	log.Infof("Starting post-install workflow (unlock jobs)")
+	err = workflowOrchestrator.PostInstall(ctx, workflow.WorkflowParams{
+		ClusterID:  clusterInfo.ClusterID,
+		InfobaseID: clusterInfo.InfobaseID,
+	})
+	if err != nil {
+		log.Errorf("CRITICAL: post-install workflow failed: %v", err)
+		// Не возвращаем error - установка прошла успешно, только unlock failed
+		// Admin должен вручную unlock
 	}
 
 	// Update status to completed
