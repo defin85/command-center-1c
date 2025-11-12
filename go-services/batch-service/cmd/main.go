@@ -11,6 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -20,6 +23,7 @@ import (
 	"github.com/command-center-1c/batch-service/internal/domain/rollback"
 	"github.com/command-center-1c/batch-service/internal/domain/session"
 	"github.com/command-center-1c/batch-service/internal/domain/storage"
+	"github.com/command-center-1c/batch-service/internal/eventhandlers"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/cluster"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
@@ -149,6 +153,83 @@ func main() {
 		zap.String("v8_exe", cfg.V8.ExePath),
 		zap.Duration("timeout", cfg.V8.DefaultTimeout))
 
+	// Initialize Redis client for Event Bus
+	var redisClient *redis.Client
+	var eventPublisher *events.Publisher
+	var eventSubscriber *events.Subscriber
+
+	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+
+	// Test Redis connection
+	ctx := context.Background()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		logger.Error("failed to connect to Redis",
+			zap.String("addr", redisAddr),
+			zap.Error(err),
+		)
+		// Continue without event bus (graceful degradation)
+	} else {
+		logger.Info("Redis client initialized",
+			zap.String("addr", redisAddr),
+		)
+
+		// Initialize Watermill logger
+		watermillLogger := watermill.NewStdLogger(false, false)
+
+		// Initialize Event Publisher
+		eventPublisher, err = events.NewPublisher(redisClient, "batch-service", watermillLogger)
+		if err != nil {
+			logger.Error("failed to create event publisher",
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("event publisher initialized")
+		}
+
+		// Initialize Event Subscriber
+		eventSubscriber, err = events.NewSubscriber(redisClient, "batch-service-consumer", watermillLogger)
+		if err != nil {
+			logger.Error("failed to create event subscriber",
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("event subscriber initialized")
+		}
+	}
+
+	// Register Event Handlers (if event system is available)
+	if eventPublisher != nil && eventSubscriber != nil {
+		logger.Info("registering event handlers")
+
+		// Create handlers
+		installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, logger)
+
+		// Subscribe to command channels
+		if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {
+			logger.Error("failed to subscribe to install commands",
+				zap.String("channel", eventhandlers.InstallCommandChannel),
+				zap.Error(err))
+		} else {
+			logger.Info("subscribed to install commands",
+				zap.String("channel", eventhandlers.InstallCommandChannel))
+		}
+
+		// Start event subscriber in background
+		go func() {
+			logger.Info("starting event subscriber")
+			if err := eventSubscriber.Run(ctx); err != nil {
+				logger.Error("event subscriber error", zap.Error(err))
+			}
+		}()
+	} else {
+		logger.Warn("event system not available, event handlers disabled")
+	}
+
 	// Setup router with all services
 	router := api.SetupRouter(
 		extensionInstaller,
@@ -192,6 +273,36 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("Server forced to shutdown", zap.Error(err))
 		os.Exit(1)
+	}
+
+	// Close event subscriber
+	if eventSubscriber != nil {
+		logger.Info("closing event subscriber")
+		if err := eventSubscriber.Close(); err != nil {
+			logger.Error("failed to close event subscriber", zap.Error(err))
+		} else {
+			logger.Info("event subscriber closed")
+		}
+	}
+
+	// Close event publisher
+	if eventPublisher != nil {
+		logger.Info("closing event publisher")
+		if err := eventPublisher.Close(); err != nil {
+			logger.Error("failed to close event publisher", zap.Error(err))
+		} else {
+			logger.Info("event publisher closed")
+		}
+	}
+
+	// Close Redis connection
+	if redisClient != nil {
+		logger.Info("closing Redis connection")
+		if err := redisClient.Close(); err != nil {
+			logger.Error("failed to close Redis connection", zap.Error(err))
+		} else {
+			logger.Info("Redis connection closed")
+		}
 	}
 
 	logger.Info("Server exited gracefully")

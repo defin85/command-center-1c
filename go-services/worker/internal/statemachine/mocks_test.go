@@ -1,0 +1,112 @@
+package statemachine
+
+import (
+	"context"
+	"sync"
+
+	"github.com/commandcenter1c/commandcenter/shared/events"
+)
+
+// MockPublisher is a mock implementation of EventPublisher for testing
+type MockPublisher struct {
+	mu             sync.Mutex
+	PublishedCalls []PublishCall
+	PublishError   error
+	Closed         bool
+}
+
+type PublishCall struct {
+	Channel       string
+	EventType     string
+	Payload       interface{}
+	CorrelationID string
+}
+
+func NewMockPublisher() *MockPublisher {
+	return &MockPublisher{
+		PublishedCalls: make([]PublishCall, 0),
+	}
+}
+
+func (m *MockPublisher) Publish(ctx context.Context, channel string, eventType string, payload interface{}, correlationID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.PublishError != nil {
+		return m.PublishError
+	}
+
+	m.PublishedCalls = append(m.PublishedCalls, PublishCall{
+		Channel:       channel,
+		EventType:     eventType,
+		Payload:       payload,
+		CorrelationID: correlationID,
+	})
+
+	return nil
+}
+
+func (m *MockPublisher) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Closed = true
+	return nil
+}
+
+func (m *MockPublisher) GetPublishedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.PublishedCalls)
+}
+
+func (m *MockPublisher) GetLastPublished() *PublishCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.PublishedCalls) == 0 {
+		return nil
+	}
+
+	return &m.PublishedCalls[len(m.PublishedCalls)-1]
+}
+
+// MockSubscriber is a mock implementation of EventSubscriber for testing
+type MockSubscriber struct {
+	mu       sync.Mutex
+	Handlers map[string]func(context.Context, *events.Envelope) error
+	Closed   bool
+}
+
+func NewMockSubscriber() *MockSubscriber {
+	return &MockSubscriber{
+		Handlers: make(map[string]func(context.Context, *events.Envelope) error),
+	}
+}
+
+func (m *MockSubscriber) Subscribe(channel string, handler func(context.Context, *events.Envelope) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.Handlers[channel] = handler
+	return nil
+}
+
+func (m *MockSubscriber) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Closed = true
+	return nil
+}
+
+// SimulateEvent simulates receiving an event (для тестов)
+func (m *MockSubscriber) SimulateEvent(ctx context.Context, channel string, envelope *events.Envelope) error {
+	m.mu.Lock()
+	handler, exists := m.Handlers[channel]
+	m.mu.Unlock()
+
+	if !exists {
+		return nil // No handler registered
+	}
+
+	return handler(ctx, envelope)
+}

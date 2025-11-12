@@ -13,6 +13,7 @@ type Config struct {
 	V8                    V8Config
 	Storage               StorageConfig
 	Backup                BackupConfig
+	Redis                 RedisConfig
 	OrchestratorURL       string
 	ClusterServiceURL     string
 	ClusterRequestTimeout time.Duration
@@ -50,6 +51,14 @@ type BackupConfig struct {
 	RetentionBackups  int    // Number of backups to keep per extension
 }
 
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
+}
+
 // Load reads configuration from environment variables
 func Load() *Config {
 	return &Config{
@@ -74,6 +83,12 @@ func Load() *Config {
 		Backup: BackupConfig{
 			Path:             getEnv("BACKUP_PATH", "./backups"),
 			RetentionBackups: getIntEnv("RETENTION_BACKUPS", 5),
+		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getIntEnv("REDIS_DB", 0),
 		},
 		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
 		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),

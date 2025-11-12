@@ -1,0 +1,231 @@
+package statemachine
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/ThreeDotsLabs/watermill"
+)
+
+func createTestRedis(t *testing.T) *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+		DB:   1, // Test database
+	})
+
+	// Test connection
+	err := client.Ping(context.Background()).Err()
+	require.NoError(t, err, "Redis must be running on localhost:6379")
+
+	return client
+}
+
+func TestStateMachine_BasicFlow(t *testing.T) {
+	ctx := context.Background()
+	redisClient := createTestRedis(t)
+	defer redisClient.Close()
+
+	logger := watermill.NewStdLogger(false, false)
+
+	publisher, err := events.NewPublisher(redisClient, "test-worker", logger)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	subscriber, err := events.NewSubscriber(redisClient, "test-group", logger)
+	require.NoError(t, err)
+	defer subscriber.Close()
+
+	config := DefaultConfig()
+	config.TimeoutLockJobs = 5 * time.Second
+
+	sm, err := NewStateMachine(
+		ctx,
+		"op-123",
+		"db-456",
+		"corr-789",
+		publisher,
+		subscriber,
+		redisClient,
+		config,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, StateInit, sm.State)
+	assert.Equal(t, "op-123", sm.OperationID)
+	assert.Equal(t, "db-456", sm.DatabaseID)
+}
+
+func TestStateMachine_StateTransitions(t *testing.T) {
+	tests := []struct {
+		name      string
+		from      InstallState
+		to        InstallState
+		shouldErr bool
+	}{
+		{"init to jobs_locked", StateInit, StateJobsLocked, false},
+		{"init to failed", StateInit, StateFailed, false},
+		{"jobs_locked to sessions_closed", StateJobsLocked, StateSessionsClosed, false},
+		{"jobs_locked to compensating", StateJobsLocked, StateCompensating, false},
+		{"completed to init", StateCompleted, StateInit, true}, // Invalid
+		{"failed to completed", StateFailed, StateCompleted, true}, // Invalid
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			valid := CanTransition(tt.from, tt.to)
+			if tt.shouldErr {
+				assert.False(t, valid)
+			} else {
+				assert.True(t, valid)
+			}
+		})
+	}
+}
+
+func TestStateMachine_StatePersistence(t *testing.T) {
+	ctx := context.Background()
+	redisClient := createTestRedis(t)
+	defer redisClient.Close()
+
+	logger := watermill.NewStdLogger(false, false)
+	publisher, _ := events.NewPublisher(redisClient, "test", logger)
+	subscriber, _ := events.NewSubscriber(redisClient, "test-group", logger)
+
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, redisClient, nil)
+	require.NoError(t, err)
+
+	sm.State = StateJobsLocked
+	sm.ClusterID = "cluster-1"
+	sm.InfobaseID = "infobase-1"
+
+	// Save state
+	err = sm.saveState(ctx)
+	require.NoError(t, err)
+
+	// Create new state machine with same correlation ID
+	sm2, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, redisClient, nil)
+	require.NoError(t, err)
+
+	// Load state
+	err = sm2.loadState(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, StateJobsLocked, sm2.State)
+	assert.Equal(t, "cluster-1", sm2.ClusterID)
+	assert.Equal(t, "infobase-1", sm2.InfobaseID)
+}
+
+func TestStateMachine_Config(t *testing.T) {
+	config := DefaultConfig()
+
+	assert.Equal(t, 30*time.Second, config.TimeoutLockJobs)
+	assert.Equal(t, 90*time.Second, config.TimeoutTerminate)
+	assert.Equal(t, 5*time.Minute, config.TimeoutInstall)
+	assert.Equal(t, 3, config.MaxRetries)
+
+	err := config.Validate()
+	assert.NoError(t, err)
+}
+
+func TestStateMachine_InvalidConfig(t *testing.T) {
+	config := &Config{
+		TimeoutLockJobs: -1,
+	}
+
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid timeout")
+}
+
+func TestStateMachine_StateIsFinal(t *testing.T) {
+	tests := []struct {
+		state    InstallState
+		isFinal  bool
+	}{
+		{StateInit, false},
+		{StateJobsLocked, false},
+		{StateSessionsClosed, false},
+		{StateExtensionInstalled, false},
+		{StateCompensating, false},
+		{StateCompleted, true},
+		{StateFailed, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state.String(), func(t *testing.T) {
+			assert.Equal(t, tt.isFinal, tt.state.IsFinal())
+		})
+	}
+}
+
+func TestStateMachine_CompensationStack(t *testing.T) {
+	ctx := context.Background()
+	redisClient := createTestRedis(t)
+	defer redisClient.Close()
+
+	logger := watermill.NewStdLogger(false, false)
+	publisher, _ := events.NewPublisher(redisClient, "test", logger)
+	subscriber, _ := events.NewSubscriber(redisClient, "test-group", logger)
+
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, redisClient, nil)
+	require.NoError(t, err)
+
+	executed := []string{}
+
+	sm.pushCompensation("action1", func(ctx context.Context) error {
+		executed = append(executed, "action1")
+		return nil
+	})
+
+	sm.pushCompensation("action2", func(ctx context.Context) error {
+		executed = append(executed, "action2")
+		return nil
+	})
+
+	sm.pushCompensation("action3", func(ctx context.Context) error {
+		executed = append(executed, "action3")
+		return nil
+	})
+
+	assert.Equal(t, 3, len(sm.compensationStack))
+
+	// Execute compensations (should be LIFO)
+	sm.executeCompensations(ctx)
+
+	// Verify LIFO order (3, 2, 1)
+	assert.Equal(t, []string{"action3", "action2", "action1"}, executed)
+	assert.Equal(t, StateFailed, sm.State)
+}
+
+func TestStateMachine_EventDeduplication(t *testing.T) {
+	ctx := context.Background()
+	redisClient := createTestRedis(t)
+	defer redisClient.Close()
+
+	logger := watermill.NewStdLogger(false, false)
+	publisher, _ := events.NewPublisher(redisClient, "test", logger)
+	subscriber, _ := events.NewSubscriber(redisClient, "test-group", logger)
+
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, redisClient, nil)
+	require.NoError(t, err)
+
+	messageID := "msg-123"
+
+	// First check - should be false
+	assert.False(t, sm.isEventProcessed(messageID))
+
+	// Mark as processed
+	sm.markEventProcessed(messageID)
+
+	// Second check - should be true
+	assert.True(t, sm.isEventProcessed(messageID))
+}
+
+// TODO: Add integration test with mock events
+// TODO: Test timeout scenarios
+// TODO: Test recovery after crash

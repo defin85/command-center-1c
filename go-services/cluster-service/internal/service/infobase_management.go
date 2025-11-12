@@ -45,9 +45,8 @@ func NewInfobaseManagementService(client *grpc.Client, logger *zap.Logger, rasGW
 
 // LockInfobase locks an infobase (blocks scheduled jobs)
 //
-// STUB IMPLEMENTATION: v8platform/protos v0.2.0 doesn't expose UpdateInfobase method
-// TODO(future): Implement using RAC CLI через batch-service subprocess
-// For MVP: Returns success without actual locking (workflow will still work, but without scheduled jobs protection)
+// REAL IMPLEMENTATION: Calls ras-grpc-gw HTTP API /api/v1/infobases/lock
+// Blocks only scheduled jobs (scheduled_jobs_deny=true), does NOT block user sessions
 func (s *InfobaseManagementService) LockInfobase(ctx context.Context, clusterID, infobaseID string) error {
 	if clusterID == "" || infobaseID == "" {
 		return &ServiceError{
@@ -56,25 +55,82 @@ func (s *InfobaseManagementService) LockInfobase(ctx context.Context, clusterID,
 		}
 	}
 
-	s.logger.Warn("LockInfobase is STUB - v8platform/protos v0.2.0 lacks UpdateInfobase method",
+	s.logger.Info("locking infobase (scheduled jobs only)",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	// Authenticate cluster first
+	if err := s.authenticateCluster(ctx, clusterID); err != nil {
+		return err
+	}
+
+	// Build HTTP request to ras-grpc-gw
+	url := fmt.Sprintf("%s/api/v1/infobases/lock", s.rasGWURL)
+
+	reqBody := map[string]interface{}{
+		"cluster_id":          clusterID,
+		"infobase_id":         infobaseID,
+		"sessions_deny":       false, // Do NOT block user sessions
+		"scheduled_jobs_deny": true,  // Block ONLY scheduled jobs
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Execute HTTP request
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ras-grpc-gw returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse response
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !response.Success {
+		return fmt.Errorf("lock failed: %s", response.Error)
+	}
+
+	s.logger.Info("infobase locked successfully",
 		zap.String("cluster_id", clusterID),
 		zap.String("infobase_id", infobaseID),
-		zap.String("workaround", "returns success without actual locking"),
-		zap.String("TODO", "implement via RAC CLI subprocess in batch-service"))
-
-	// STUB: Return success for workflow compatibility
-	// Real implementation requires:
-	// 1. RAC CLI: ras infobase update --cluster=<id> --infobase=<id> --scheduled-jobs-deny=on
-	// 2. OR: Upgrade to newer v8platform/protos with UpdateInfobase support
-	// 3. OR: Direct RAS protocol implementation
+		zap.String("message", response.Message))
 
 	return nil
 }
 
 // UnlockInfobase unlocks an infobase (enables scheduled jobs)
 //
-// STUB IMPLEMENTATION: v8platform/protos v0.2.0 doesn't expose UpdateInfobase method
-// TODO(future): Implement using RAC CLI через batch-service subprocess
+// REAL IMPLEMENTATION: Calls ras-grpc-gw HTTP API /api/v1/infobases/unlock
+// Unlocks scheduled jobs (unlock_scheduled_jobs=true), does NOT unlock user sessions
 func (s *InfobaseManagementService) UnlockInfobase(ctx context.Context, clusterID, infobaseID string) error {
 	if clusterID == "" || infobaseID == "" {
 		return &ServiceError{
@@ -83,12 +139,75 @@ func (s *InfobaseManagementService) UnlockInfobase(ctx context.Context, clusterI
 		}
 	}
 
-	s.logger.Warn("UnlockInfobase is STUB - v8platform/protos v0.2.0 lacks UpdateInfobase method",
+	s.logger.Info("unlocking infobase (scheduled jobs only)",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	// Authenticate cluster first
+	if err := s.authenticateCluster(ctx, clusterID); err != nil {
+		return err
+	}
+
+	// Build HTTP request to ras-grpc-gw
+	url := fmt.Sprintf("%s/api/v1/infobases/unlock", s.rasGWURL)
+
+	reqBody := map[string]interface{}{
+		"cluster_id":             clusterID,
+		"infobase_id":            infobaseID,
+		"unlock_sessions":        false, // Do NOT unlock user sessions (we didn't lock them)
+		"unlock_scheduled_jobs":  true,  // Unlock ONLY scheduled jobs
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Execute HTTP request
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ras-grpc-gw returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse response
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !response.Success {
+		return fmt.Errorf("unlock failed: %s", response.Error)
+	}
+
+	s.logger.Info("infobase unlocked successfully",
 		zap.String("cluster_id", clusterID),
 		zap.String("infobase_id", infobaseID),
-		zap.String("workaround", "returns success without actual unlocking"))
+		zap.String("message", response.Message))
 
-	// STUB: Return success for workflow compatibility
 	return nil
 }
 
