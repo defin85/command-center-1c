@@ -131,10 +131,10 @@ func main() {
 	if eventPublisher != nil && eventSubscriber != nil {
 		logger.Info("registering event handlers")
 
-		// Create handlers
-		lockHandler := eventhandlers.NewLockHandler(infobaseMgmtService, eventPublisher, logger)
-		terminateHandler := eventhandlers.NewTerminateHandler(infobaseMgmtService, eventPublisher, logger)
-		unlockHandler := eventhandlers.NewUnlockHandler(infobaseMgmtService, eventPublisher, logger)
+		// Create handlers (pass redisClient for idempotency checks)
+		lockHandler := eventhandlers.NewLockHandler(infobaseMgmtService, eventPublisher, redisClient, logger)
+		terminateHandler := eventhandlers.NewTerminateHandler(infobaseMgmtService, eventPublisher, redisClient, logger)
+		unlockHandler := eventhandlers.NewUnlockHandler(infobaseMgmtService, eventPublisher, redisClient, logger)
 
 		// Subscribe to command channels
 		if err := eventSubscriber.Subscribe(eventhandlers.LockCommandChannel, lockHandler.HandleLockCommand); err != nil {

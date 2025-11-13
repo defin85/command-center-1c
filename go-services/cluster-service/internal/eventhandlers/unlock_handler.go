@@ -23,18 +23,44 @@ const (
 
 // UnlockHandler handles unlock infobase commands from the event bus
 type UnlockHandler struct {
-	service   InfobaseManager
-	publisher EventPublisher
-	logger    *zap.Logger
+	service     InfobaseManager
+	publisher   EventPublisher
+	redisClient RedisClient
+	logger      *zap.Logger
 }
 
 // NewUnlockHandler creates a new UnlockHandler instance
-func NewUnlockHandler(svc InfobaseManager, pub EventPublisher, logger *zap.Logger) *UnlockHandler {
+func NewUnlockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *UnlockHandler {
 	return &UnlockHandler{
-		service:   svc,
-		publisher: pub,
-		logger:    logger,
+		service:     svc,
+		publisher:   pub,
+		redisClient: redisClient,
+		logger:      logger,
 	}
+}
+
+// checkIdempotency checks if the operation has been already processed using Redis SetNX
+func (h *UnlockHandler) checkIdempotency(ctx context.Context, correlationID string, eventType string) (bool, error) {
+	// Skip idempotency check if Redis is not configured
+	if h.redisClient == nil {
+		h.logger.Debug("Redis client not configured, skipping idempotency check",
+			zap.String("correlation_id", correlationID))
+		return true, nil
+	}
+
+	dedupKey := fmt.Sprintf("dedupe:%s:%s", correlationID, eventType)
+
+	// Try to set key (returns true if key didn't exist)
+	isFirst, err := h.redisClient.SetNX(ctx, dedupKey, "1", idempotencyTTL).Result()
+	if err != nil {
+		h.logger.Warn("Redis SetNX failed, allowing operation (fail-open)",
+			zap.String("correlation_id", correlationID),
+			zap.String("event_type", eventType),
+			zap.Error(err))
+		return true, nil // Fail-open: allow operation on Redis error
+	}
+
+	return isFirst, nil
 }
 
 // HandleUnlockCommand handles unlock infobase command from the event bus
@@ -57,6 +83,20 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 		return h.publishError(ctx, envelope.CorrelationID, payload, fmt.Errorf("cluster_id and infobase_id are required"))
 	}
 
+	// CHECK IDEMPOTENCY
+	isFirst, err := h.checkIdempotency(ctx, envelope.CorrelationID, "unlock")
+	if err != nil {
+		return fmt.Errorf("idempotency check failed: %w", err)
+	}
+
+	if !isFirst {
+		// Already processed → return success (idempotent response)
+		h.logger.Info("duplicate unlock command detected, skipping operation (idempotent)",
+			zap.String("correlation_id", envelope.CorrelationID),
+			zap.String("infobase_id", payload.InfobaseID))
+		return h.publishSuccess(ctx, envelope.CorrelationID, payload)
+	}
+
 	h.logger.Info("handling unlock command",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.String("cluster_id", payload.ClusterID),
@@ -64,7 +104,7 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 		zap.String("database_id", payload.DatabaseID))
 
 	// Call service to unlock infobase
-	err := h.service.UnlockInfobase(ctx, payload.ClusterID, payload.InfobaseID)
+	err = h.service.UnlockInfobase(ctx, payload.ClusterID, payload.InfobaseID)
 	if err != nil {
 		h.logger.Error("failed to unlock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),

@@ -22,15 +22,22 @@ type stateData struct {
 	LastActivity  time.Time      `json:"last_activity"`
 }
 
-// saveState saves state to Redis
+// saveState saves state to Redis (WITH lock for external callers)
 func (sm *ExtensionInstallStateMachine) saveState(ctx context.Context) error {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	return sm.saveStateUnsafe(ctx)
+}
+
+// saveStateUnsafe saves state to Redis WITHOUT taking lock
+// NOTE: Caller MUST hold sm.mu lock (either RLock or Lock)
+// Used internally from transitionTo() which already holds lock
+func (sm *ExtensionInstallStateMachine) saveStateUnsafe(ctx context.Context) error {
 	// Skip if no Redis client (unit tests)
 	if sm.redisClient == nil {
 		return nil
 	}
-
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
 
 	data := stateData{
 		State:         sm.State,

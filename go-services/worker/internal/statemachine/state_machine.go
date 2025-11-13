@@ -109,7 +109,46 @@ func NewStateMachine(
 		cancel:        cancel,
 	}
 
+	// Register event handlers BEFORE router starts
+	// (в listenEvents() будет только waitforcontext, без Subscribe)
+	sm.registerEventHandlers()
+
 	return sm, nil
+}
+
+// registerEventHandlers registers handlers for incoming events
+// This must be called BEFORE subscriber.Run() starts the router
+func (sm *ExtensionInstallStateMachine) registerEventHandlers() {
+	handler := func(ctx context.Context, envelope *events.Envelope) error {
+		if envelope.CorrelationID == sm.CorrelationID {
+			select {
+			case sm.eventChan <- envelope:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}
+
+	// Subscribe to specific event channels
+	// NOTE: Redis Streams НЕ поддерживают wildcard подписки
+	eventChannels := []string{
+		// cluster-service events
+		"events:cluster-service:infobase:locked",
+		"events:cluster-service:infobase:lock-failed",
+		"events:cluster-service:infobase:unlocked",
+		"events:cluster-service:infobase:unlock-failed",
+		"events:cluster-service:sessions:closed",
+		"events:cluster-service:sessions:terminate-failed",
+		// batch-service events
+		"events:batch-service:extension:installed",
+		"events:batch-service:extension:install-failed",
+		"events:batch-service:extension:install-started",
+	}
+
+	for _, channel := range eventChannels {
+		sm.subscriber.Subscribe(channel, handler)
+	}
 }
 
 // Run executes the state machine main loop
@@ -127,8 +166,11 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 
 	// Main state loop
 	for !sm.State.IsFinal() {
+		fmt.Printf("[StateMachine] Loop iteration, current state: %s (correlation_id=%s)\n", sm.State, sm.CorrelationID)
+
 		select {
 		case <-ctx.Done():
+			fmt.Printf("[StateMachine] Context cancelled, saving state...\n")
 			sm.saveState(ctx)
 			return ctx.Err()
 		default:
@@ -151,15 +193,22 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		}
 
 		if err != nil {
+			fmt.Printf("[StateMachine] Handler returned error: %v, transitioning to Compensating\n", err)
 			sm.transitionTo(StateCompensating)
+		} else {
+			fmt.Printf("[StateMachine] Handler completed successfully\n")
 		}
 	}
+
+	fmt.Printf("[StateMachine] Exited main loop, final state: %s\n", sm.State)
 
 	return nil
 }
 
 // transitionTo transitions to new state
 func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) error {
+	fmt.Printf("[StateMachine] transitionTo() called: %s -> %s\n", sm.State, newState)
+
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -175,11 +224,14 @@ func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) erro
 	fmt.Printf("[StateMachine] Transition: %s -> %s (correlation_id=%s)\n",
 		oldState, newState, sm.CorrelationID)
 
-	// Save state
-	if err := sm.saveState(sm.ctx); err != nil {
+	// Save state (use Unsafe version - we already hold lock!)
+	fmt.Printf("[StateMachine] Calling saveStateUnsafe()...\n")
+	if err := sm.saveStateUnsafe(sm.ctx); err != nil {
 		fmt.Printf("[StateMachine] Failed to save state: %v\n", err)
 	}
+	fmt.Printf("[StateMachine] saveStateUnsafe() completed\n")
 
+	fmt.Printf("[StateMachine] transitionTo() returning nil\n")
 	return nil
 }
 
@@ -215,24 +267,10 @@ func (sm *ExtensionInstallStateMachine) clearEventBuffer() {
 	sm.eventBuffer = sm.eventBuffer[:0]
 }
 
-// listenEvents listens for incoming events
+// listenEvents waits for context cancellation
+// Event handlers are already registered in registerEventHandlers() (called from NewStateMachine)
+// This goroutine just prevents the eventChan from being closed prematurely
 func (sm *ExtensionInstallStateMachine) listenEvents(ctx context.Context) {
-	// Subscribe to events for this correlation ID
-	// Используем Subscriber из Task 1.1!
-	handler := func(ctx context.Context, envelope *events.Envelope) error {
-		if envelope.CorrelationID == sm.CorrelationID {
-			select {
-			case sm.eventChan <- envelope:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		return nil
-	}
-
-	// Subscribe to orchestrator events
-	sm.subscriber.Subscribe("events:orchestrator:*", handler)
-
 	// Wait for context cancellation to prevent goroutine leak
 	<-ctx.Done()
 }

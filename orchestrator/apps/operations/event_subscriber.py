@@ -20,6 +20,7 @@ from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
 import logging
 
 from apps.operations.models import BatchOperation, Task
@@ -386,31 +387,34 @@ class EventSubscriber:
             # Extract task_id (everything after the last "-task-" including "task-")
             task_id = remainder[task_prefix_index + 1:]  # Skip leading '-'
 
-            # Find task
-            try:
-                task = Task.objects.get(id=task_id)
-            except Task.DoesNotExist:
-                logger.warning(f"Task not found: {task_id} (correlation_id={correlation_id})")
-                return
+            # Use atomic transaction with select_for_update to prevent race conditions
+            # when multiple event subscribers process the same task concurrently
+            with transaction.atomic():
+                # Find task with row-level lock
+                try:
+                    task = Task.objects.select_for_update().get(id=task_id)
+                except Task.DoesNotExist:
+                    logger.warning(f"Task not found: {task_id} (correlation_id={correlation_id})")
+                    return
 
-            # Update task based on status
-            if status == Task.STATUS_COMPLETED:
-                task.mark_completed(result=result)
-                logger.info(f"Task {task_id} marked as completed")
+                # Update task based on status
+                if status == Task.STATUS_COMPLETED:
+                    task.mark_completed(result=result)
+                    logger.info(f"Task {task_id} marked as completed")
 
-            elif status == Task.STATUS_FAILED:
-                task.mark_failed(
-                    error_message=error_message or "Unknown error",
-                    error_code=error_code,
-                    should_retry=True
-                )
-                logger.info(f"Task {task_id} marked as failed: {error_message}")
+                elif status == Task.STATUS_FAILED:
+                    task.mark_failed(
+                        error_message=error_message or "Unknown error",
+                        error_code=error_code,
+                        should_retry=True
+                    )
+                    logger.info(f"Task {task_id} marked as failed: {error_message}")
 
-            else:
-                # For other statuses, update directly
-                task.status = status
-                task.save(update_fields=['status', 'updated_at'])
-                logger.info(f"Task {task_id} status updated to {status}")
+                else:
+                    # For other statuses, update directly
+                    task.status = status
+                    task.save(update_fields=['status', 'updated_at'])
+                    logger.info(f"Task {task_id} status updated to {status}")
 
         except Exception as e:
             logger.error(f"Error updating task from correlation_id {correlation_id}: {e}", exc_info=True)

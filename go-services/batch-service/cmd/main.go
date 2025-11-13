@@ -206,8 +206,8 @@ func main() {
 	if eventPublisher != nil && eventSubscriber != nil {
 		logger.Info("registering event handlers")
 
-		// Create handlers
-		installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, logger)
+		// Create handlers (pass redisClient for idempotency checks)
+		installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, logger)
 
 		// Subscribe to command channels
 		if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {

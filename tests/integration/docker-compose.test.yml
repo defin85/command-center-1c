@@ -1,0 +1,82 @@
+version: '3.8'
+
+# Docker Compose для Integration & E2E тестов
+# Запускает изолированное test environment на отдельных портах
+
+services:
+  # Redis для тестов (порт 6380, отдельный от dev Redis на 6379)
+  redis-test:
+    image: redis:7-alpine
+    container_name: cc1c-redis-test
+    ports:
+      - "6380:6379"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # PostgreSQL для E2E тестов (порт 5433, отдельный от dev PostgreSQL на 5432)
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: cc1c-postgres-test
+    environment:
+      POSTGRES_DB: commandcenter_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+
+networks:
+  test-network:
+    name: cc1c-test-network
+    driver: bridge
+
+volumes:
+  postgres-test-data:
+    name: cc1c-postgres-test-data
+
+# USAGE:
+#
+# 1. Start test environment:
+#    docker-compose -f docker-compose.test.yml up -d
+#
+# 2. Check services are healthy:
+#    docker-compose -f docker-compose.test.yml ps
+#
+# 3. Run integration tests:
+#    cd tests/integration
+#    go test -v ./...
+#
+# 4. View Redis logs (for debugging):
+#    docker-compose -f docker-compose.test.yml logs -f redis-test
+#
+# 5. Connect to test Redis (for debugging):
+#    docker exec -it cc1c-redis-test redis-cli
+#
+# 6. Connect to test PostgreSQL (for debugging):
+#    docker exec -it cc1c-postgres-test psql -U test -d commandcenter_test
+#
+# 7. Stop test environment:
+#    docker-compose -f docker-compose.test.yml down
+#
+# 8. Stop and remove volumes (clean slate):
+#    docker-compose -f docker-compose.test.yml down -v
+#
+# PORTS:
+# - Redis test:      localhost:6380 (production: 6379, dev: 6379)
+# - PostgreSQL test: localhost:5433 (production: 5432, dev: 5432)
+#
+# This allows running tests WITHOUT interfering with dev environment!
