@@ -122,6 +122,14 @@ func main() {
 	taskProcessor := processor.NewTaskProcessor(cfg, credsClient)
 	log.Info("task processor initialized")
 
+	// Log feature flags configuration
+	featureFlags := taskProcessor.GetFeatureFlags()
+	log.Info("feature flags loaded",
+		zap.Bool("event_driven_enabled", featureFlags["enable_event_driven"].(bool)),
+		zap.Float64("rollout_percentage", featureFlags["rollout_percentage"].(float64)),
+		zap.Int("max_concurrent_events", featureFlags["max_concurrent_events"].(int)),
+	)
+
 	// Initialize queue consumer
 	consumer, err := queue.NewConsumer(cfg, taskProcessor)
 	if err != nil {

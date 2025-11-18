@@ -10,27 +10,39 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
 )
 
 // TaskProcessor handles task processing logic
 type TaskProcessor struct {
-	config       *config.Config
-	credsClient  credentials.Fetcher
-	odataClients map[string]*odata.Client // Cache clients per database
-	clientsMutex sync.RWMutex
-	workerID     string
+	config         *config.Config
+	credsClient    credentials.Fetcher
+	odataClients   map[string]*odata.Client // Cache clients per database
+	clientsMutex   sync.RWMutex
+	workerID       string
+	featureFlags   *workerConfig.FeatureFlags  // NEW: Feature flags for dual-mode
+	dualModeProc   *DualModeProcessor          // NEW: Dual-mode processor
 }
 
 // NewTaskProcessor creates a new task processor
 func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher) *TaskProcessor {
-	return &TaskProcessor{
+	// Load feature flags from environment
+	featureFlags := workerConfig.LoadFeatureFlagsFromEnv()
+
+	processor := &TaskProcessor{
 		config:       cfg,
 		credsClient:  credsClient,
 		odataClients: make(map[string]*odata.Client),
 		workerID:     cfg.WorkerID,
+		featureFlags: featureFlags,
 	}
+
+	// Initialize dual-mode processor
+	processor.dualModeProc = NewDualModeProcessor(featureFlags, processor)
+
+	return processor
 }
 
 // Process processes an operation message
@@ -130,9 +142,10 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		DatabaseID: databaseID,
 	}
 
-	// Special handling for extension installation (fetches credentials internally)
+	// Special handling for extension installation (with dual-mode support)
 	if msg.OperationType == "install_extension" {
-		result = p.executeExtensionInstall(ctx, msg, databaseID)
+		// Use dual-mode processor
+		result = p.dualModeProc.ProcessExtensionInstall(ctx, msg, databaseID)
 		result.DatabaseID = databaseID
 		result.Duration = time.Since(start).Seconds()
 		return result
@@ -322,4 +335,14 @@ func categorizeODataError(err error) string {
 		return odataErr.Code
 	}
 	return "UNKNOWN_ERROR"
+}
+
+// GetFeatureFlags returns current feature flags configuration
+func (p *TaskProcessor) GetFeatureFlags() map[string]interface{} {
+	return p.dualModeProc.GetFeatureFlags()
+}
+
+// ReloadFeatureFlags hot-reloads feature flags from environment
+func (p *TaskProcessor) ReloadFeatureFlags() error {
+	return p.dualModeProc.ReloadFeatureFlags()
 }
