@@ -16,8 +16,9 @@ import (
 func TestSetupRouter(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	assert.NotNil(t, router)
 }
@@ -25,8 +26,9 @@ func TestSetupRouter(t *testing.T) {
 func TestSetupRouter_HealthEndpoint(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	req, err := http.NewRequest("GET", "/health", nil)
 	require.NoError(t, err)
@@ -41,8 +43,9 @@ func TestSetupRouter_HealthEndpoint(t *testing.T) {
 func TestSetupRouter_APIv1Routes(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	tests := []struct {
 		name           string
@@ -77,8 +80,9 @@ func TestSetupRouter_APIv1Routes(t *testing.T) {
 func TestSetupRouter_Middleware(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	// Проверяем что middleware применены (Recovery и Logger)
 	req, err := http.NewRequest("GET", "/health", nil)
@@ -94,8 +98,9 @@ func TestSetupRouter_Middleware(t *testing.T) {
 func TestSetupRouter_NotFoundRoute(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	req, err := http.NewRequest("GET", "/non-existent", nil)
 	require.NoError(t, err)
@@ -110,8 +115,9 @@ func TestSetupRouter_NotFoundRoute(t *testing.T) {
 func TestSetupRouter_MultipleRequests(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	monitoringHandler := handlers.NewMonitoringHandler(nil, 10*time.Second, logger)
+	var infobaseMgmtHandler *handlers.InfobaseManagementHandler = nil
 
-	router := SetupRouter(monitoringHandler, logger)
+	router := SetupRouter(monitoringHandler, infobaseMgmtHandler, logger)
 
 	// Проверяем что router может обрабатывать множественные запросы
 	for i := 0; i < 10; i++ {

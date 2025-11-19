@@ -17,9 +17,8 @@ func NewSubscriberAdapter(subscriber *events.Subscriber) *SubscriberAdapter {
 }
 
 // Subscribe implements statemachine.EventSubscriber interface
-func (a *SubscriberAdapter) Subscribe(channel string, handler func(context.Context, *events.Envelope) error) error {
-	// Convert handler to events.HandlerFunc (they have the same signature, just named differently)
-	return a.subscriber.Subscribe(channel, events.HandlerFunc(handler))
+func (a *SubscriberAdapter) Subscribe(channel string, handler events.HandlerFunc) error {
+	return a.subscriber.Subscribe(channel, handler)
 }
 
 // Close implements statemachine.EventSubscriber interface
