@@ -14,6 +14,6 @@ type EventPublisher interface {
 
 // EventSubscriber interface for subscribing to events (для mock в тестах)
 type EventSubscriber interface {
-	Subscribe(channel string, handler func(context.Context, *events.Envelope) error) error
+	Subscribe(channel string, handler events.HandlerFunc) error
 	Close() error
 }

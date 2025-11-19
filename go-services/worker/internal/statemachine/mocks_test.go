@@ -73,17 +73,17 @@ func (m *MockPublisher) GetLastPublished() *PublishCall {
 // MockSubscriber is a mock implementation of EventSubscriber for testing
 type MockSubscriber struct {
 	mu       sync.Mutex
-	Handlers map[string]func(context.Context, *events.Envelope) error
+	Handlers map[string]events.HandlerFunc
 	Closed   bool
 }
 
 func NewMockSubscriber() *MockSubscriber {
 	return &MockSubscriber{
-		Handlers: make(map[string]func(context.Context, *events.Envelope) error),
+		Handlers: make(map[string]events.HandlerFunc),
 	}
 }
 
-func (m *MockSubscriber) Subscribe(channel string, handler func(context.Context, *events.Envelope) error) error {
+func (m *MockSubscriber) Subscribe(channel string, handler events.HandlerFunc) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
