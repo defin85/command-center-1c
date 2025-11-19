@@ -1,0 +1,381 @@
+# Event-Driven Architecture Rollback Alerts
+# Prometheus alerting rules for monitoring Event-Driven deployment health
+# and triggering rollback decisions
+
+groups:
+  - name: event_driven_rollback
+    interval: 30s
+    rules:
+      ##########################################################################
+      # Critical Alert: Low Success Rate
+      ##########################################################################
+      - alert: EventDrivenSuccessRateLow
+        expr: |
+          (
+            rate(worker_execution_success_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+          ) < 0.95
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Event-Driven success rate below 95% - ROLLBACK RECOMMENDED"
+          description: |
+            Event-Driven architecture success rate is {{ $value | humanizePercentage }},
+            which is below the 95% threshold.
+
+            Current value: {{ $value | humanizePercentage }}
+            Threshold: 95%
+            Duration: 5 minutes
+
+            This is a critical condition that may require immediate rollback.
+
+          impact: "HIGH - Users may experience failed operations and data inconsistencies"
+
+          action: |
+            1. Verify alert in Grafana dashboard: http://localhost:3001/d/event-driven-ab-testing
+            2. Check Worker logs for errors: tail -100 logs/worker.log
+            3. Execute rollback: ./scripts/rollback-event-driven.sh
+            4. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-success-rate-low"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: |
+            rate(worker_execution_success_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Critical Alert: High Latency
+      ##########################################################################
+      - alert: EventDrivenLatencyHigh
+        expr: |
+          histogram_quantile(0.99,
+            rate(worker_execution_duration_seconds_bucket{mode="event_driven"}[5m])
+          ) > 1
+        for: 3m
+        labels:
+          severity: critical
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Event-Driven P99 latency exceeds 1 second - ROLLBACK RECOMMENDED"
+          description: |
+            Event-Driven architecture P99 latency is {{ $value | humanizeDuration }},
+            which exceeds the 1 second threshold.
+
+            Current P99: {{ $value | humanizeDuration }}
+            Threshold: 1 second
+            Duration: 3 minutes
+
+            High latency indicates performance degradation compared to HTTP Sync baseline (< 500ms).
+
+          impact: "HIGH - Users experience slow operation execution, may timeout"
+
+          action: |
+            1. Check Grafana latency panel: http://localhost:3001/d/event-driven-ab-testing
+            2. Verify Redis health: docker exec redis redis-cli INFO
+            3. Check database connections: docker exec postgres psql -U commandcenter -c "SELECT count(*) FROM pg_stat_activity;"
+            4. Execute rollback: ./scripts/rollback-event-driven.sh
+            5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-latency-high"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: |
+            histogram_quantile(0.99,
+              rate(worker_execution_duration_seconds_bucket{mode="event_driven"}[5m])
+            )
+
+      ##########################################################################
+      # Warning Alert: High Compensation Rate
+      ##########################################################################
+      - alert: EventDrivenCompensationHigh
+        expr: |
+          (
+            rate(worker_compensation_executed_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Event-Driven compensation rate exceeds 10% - INVESTIGATION REQUIRED"
+          description: |
+            Event-Driven architecture compensation rate is {{ $value | humanizePercentage }},
+            which exceeds the 10% threshold.
+
+            Current rate: {{ $value | humanizePercentage }}
+            Threshold: 10%
+            Duration: 5 minutes
+
+            High compensation rate indicates frequent rollbacks of partial operations,
+            which may lead to data inconsistencies or resource exhaustion.
+
+          impact: "MEDIUM - Increased resource usage, potential data inconsistencies"
+
+          action: |
+            1. Review compensation reasons in logs: grep "compensation" logs/worker.log
+            2. Check Grafana compensation panel: http://localhost:3001/d/event-driven-ab-testing
+            3. Analyze failure patterns by reason
+            4. If rate continues > 15 minutes, consider rollback
+            5. Execute rollback: ./scripts/rollback-event-driven.sh
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-compensation-high"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: |
+            rate(worker_compensation_executed_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Critical Alert: Redis Unavailable
+      ##########################################################################
+      - alert: EventDrivenRedisUnavailable
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: redis
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Redis is unavailable - Event-Driven CANNOT FUNCTION"
+          description: |
+            Redis instance is down or unreachable for 1 minute.
+
+            Redis is CRITICAL for Event-Driven architecture:
+            - Event channel communication
+            - Distributed locking
+            - Operation state coordination
+
+            Without Redis, Event-Driven operations will fail immediately.
+            IMMEDIATE ROLLBACK REQUIRED.
+
+          impact: "CRITICAL - Event-Driven operations will fail, may cause data corruption"
+
+          action: |
+            1. Check Redis container: docker ps | grep redis
+            2. Check Redis logs: docker logs redis
+            3. Attempt Redis restart: docker restart redis
+            4. If Redis cannot be restored within 2 minutes:
+               - Execute immediate rollback: ./scripts/rollback-event-driven.sh
+               - Notify platform team: #platform-emergency
+            5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/redis-unavailable"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: up{job="redis"}
+
+      ##########################################################################
+      # Warning Alert: Circuit Breaker Tripped
+      ##########################################################################
+      - alert: EventDrivenCircuitBreakerTripped
+        expr: |
+          increase(worker_circuit_breaker_trips_total{mode="event_driven"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Event-Driven circuit breaker has tripped"
+          description: |
+            Circuit breaker for Event-Driven mode has tripped {{ $value }} times in the last 10 minutes.
+
+            Circuit breaker trips indicate repeated failures and automatic fallback to HTTP Sync.
+            This is a protective measure but indicates underlying issues.
+
+          impact: "LOW-MEDIUM - Operations falling back to HTTP Sync, reduced performance"
+
+          action: |
+            1. Check circuit breaker metrics: http://localhost:9090
+            2. Review Worker logs for failure patterns: grep "circuit breaker" logs/worker.log
+            3. Verify infrastructure health (Redis, Database, Network)
+            4. If trips continue > 5 in 10 minutes, consider rollback
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/circuit-breaker-tripped"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: increase(worker_circuit_breaker_trips_total{mode="event_driven"}[10m])
+
+      ##########################################################################
+      # Warning Alert: High Retry Rate
+      ##########################################################################
+      - alert: EventDrivenRetryRateHigh
+        expr: |
+          (
+            rate(worker_retry_attempts_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+          ) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: manual
+        annotations:
+          summary: "Event-Driven retry rate exceeds 15%"
+          description: |
+            Event-Driven mode retry rate is {{ $value | humanizePercentage }},
+            which exceeds the 15% threshold.
+
+            High retry rate indicates transient failures or resource contention.
+            May lead to increased latency and resource usage.
+
+          impact: "MEDIUM - Increased latency, resource usage, potential cascading failures"
+
+          action: |
+            1. Check retry patterns in logs: grep "retry" logs/worker.log
+            2. Verify Redis and Database health
+            3. Check for lock contention
+            4. Monitor for 15 minutes - if continues or worsens, consider rollback
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/retry-rate-high"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: |
+            rate(worker_retry_attempts_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Info Alert: Event-Driven Mode Disabled
+      ##########################################################################
+      - alert: EventDrivenModeDisabled
+        expr: |
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) == 0
+          and
+          rate(worker_execution_mode_total{mode="http_sync"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: info
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: none
+        annotations:
+          summary: "Event-Driven mode is disabled - HTTP Sync active"
+          description: |
+            Event-Driven architecture is currently disabled.
+            All operations are running in HTTP Sync mode.
+
+            This is expected after rollback or during initial deployment (0% rollout).
+
+          impact: "NONE - System operating normally in HTTP Sync mode"
+
+          action: |
+            No action required. This is informational only.
+
+            If Event-Driven mode was expected to be active:
+            1. Check .env.local configuration
+            2. Verify ENABLE_EVENT_DRIVEN=true
+            3. Verify EVENT_DRIVEN_ROLLOUT_PERCENT > 0.0
+
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+      ##########################################################################
+      # Warning Alert: Queue Depth Growing
+      ##########################################################################
+      - alert: EventDrivenQueueDepthGrowing
+        expr: |
+          deriv(worker_queue_depth{mode="event_driven"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: manual
+        annotations:
+          summary: "Event-Driven queue depth is growing rapidly"
+          description: |
+            Event-Driven queue depth is increasing at {{ $value }} ops/second.
+
+            Growing queue indicates workers cannot keep up with incoming operations.
+            May lead to increased latency and eventual queue overflow.
+
+          impact: "MEDIUM - Increasing latency, risk of queue overflow"
+
+          action: |
+            1. Check current queue depth: docker exec redis redis-cli LLEN operations_queue
+            2. Verify worker pool size is adequate
+            3. Check for stuck workers or slow operations
+            4. Consider scaling worker pool if sustained
+            5. If queue depth > 1000, consider rollback
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/queue-depth-growing"
+          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+
+          query: deriv(worker_queue_depth{mode="event_driven"}[5m])
+
+##############################################################################
+# Alert Routing Configuration
+##############################################################################
+# Add this to your alertmanager.yml:
+#
+# route:
+#   receiver: 'platform-team'
+#   group_by: ['alertname', 'severity', 'service']
+#   group_wait: 10s
+#   group_interval: 5m
+#   repeat_interval: 12h
+#
+#   routes:
+#     # Critical alerts -> PagerDuty + Slack
+#     - match:
+#         severity: critical
+#         component: event_driven
+#       receiver: 'pagerduty-platform'
+#       continue: true
+#
+#     - match:
+#         severity: critical
+#       receiver: 'slack-critical'
+#
+#     # Warning alerts -> Slack only
+#     - match:
+#         severity: warning
+#       receiver: 'slack-warnings'
+#
+# receivers:
+#   - name: 'pagerduty-platform'
+#     pagerduty_configs:
+#       - service_key: '<your-pagerduty-key>'
+#         description: '{{ .CommonAnnotations.summary }}'
+#
+#   - name: 'slack-critical'
+#     slack_configs:
+#       - api_url: '<your-slack-webhook>'
+#         channel: '#platform-alerts'
+#         title: '🚨 {{ .GroupLabels.alertname }}'
+#         text: '{{ .CommonAnnotations.description }}'
+#
+#   - name: 'slack-warnings'
+#     slack_configs:
+#       - api_url: '<your-slack-webhook>'
+#         channel: '#platform-warnings'
+#         title: '⚠️  {{ .GroupLabels.alertname }}'
+#         text: '{{ .CommonAnnotations.description }}'
+#
+##############################################################################

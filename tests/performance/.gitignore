@@ -1,0 +1,24 @@
+# Generated reports (JSON)
+*.json
+!go.sum
+
+# Generated reports (Markdown) - exclude EXCEPT documentation
+benchmark_*.md
+performance_report_*.md
+
+# Keep documentation
+!README.md
+!QUICKSTART.md
+!PERFORMANCE_TEST_SUMMARY.md
+
+# Go build artifacts
+*.test
+*.out
+*.exe
+
+# Temporary files
+*.log
+*.tmp
+
+# Helper script (can be regenerated)
+generate_reports.go

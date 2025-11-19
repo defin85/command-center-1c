@@ -193,10 +193,24 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		}
 
 		if err != nil {
-			fmt.Printf("[StateMachine] Handler returned error: %v, transitioning to Compensating\n", err)
-			sm.transitionTo(StateCompensating)
+			fmt.Printf("[StateMachine] Handler returned error: %v\n", err)
+
+			// Decide next state based on current state and compensation stack
+			nextState := StateFailed
+			if len(sm.compensationStack) > 0 && CanTransition(sm.State, StateCompensating) {
+				nextState = StateCompensating
+			}
+
+			fmt.Printf("[StateMachine] Transitioning to %s\n", nextState)
+			sm.transitionTo(nextState)
 		} else {
 			fmt.Printf("[StateMachine] Handler completed successfully\n")
+		}
+
+		// Check if we reached final state (handler may have transitioned internally)
+		if sm.State.IsFinal() {
+			fmt.Printf("[StateMachine] Reached final state: %s\n", sm.State)
+			break
 		}
 	}
 

@@ -40,6 +40,8 @@ func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context
 		}
 	}
 
-	// All compensations executed, transition to Failed
-	return sm.transitionTo(StateFailed)
+	// All compensations executed
+	// Transition to Failed (will be done by main loop automatically)
+	sm.transitionTo(StateFailed)
+	return nil
 }

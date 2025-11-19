@@ -27,7 +27,7 @@ func TestClient_Fetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key")
+	client := NewClient(server.URL, "test-api-key", nil)
 
 	creds, err := client.Fetch(context.Background(), "db-123")
 	if err != nil {
@@ -48,7 +48,7 @@ func TestClient_Fetch_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "invalid-key")
+	client := NewClient(server.URL, "invalid-key", nil)
 
 	_, err := client.Fetch(context.Background(), "db-123")
 	if err == nil {
@@ -66,7 +66,7 @@ func TestClient_Fetch_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key")
+	client := NewClient(server.URL, "test-api-key", nil)
 
 	_, err := client.Fetch(context.Background(), "db-nonexistent")
 	if err == nil {
@@ -88,7 +88,7 @@ func TestClient_Fetch_Cache(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key")
+	client := NewClient(server.URL, "test-api-key", nil)
 
 	// First call - should hit API
 	_, err := client.Fetch(context.Background(), "db-123")
@@ -116,7 +116,7 @@ func TestClient_Fetch_CacheExpiry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key")
+	client := NewClient(server.URL, "test-api-key", nil)
 	client.cacheTTL = 100 * time.Millisecond // Short TTL for test
 
 	// First call
@@ -142,7 +142,7 @@ func TestClient_ClearCache(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key")
+	client := NewClient(server.URL, "test-api-key", nil)
 
 	// First call
 	_, _ = client.Fetch(context.Background(), "db-123")

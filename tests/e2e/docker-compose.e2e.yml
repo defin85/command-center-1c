@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Redis для E2E тестов (отдельный порт)
+  redis-e2e:
+    image: redis:7-alpine
+    container_name: cc1c-redis-e2e
+    ports:
+      - "6380:6379"  # Не конфликтует с dev Redis (6379)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e-network
+
+  # PostgreSQL для E2E тестов (отдельный порт)
+  # FIXED: Issue #5 - Use environment variable for password
+  postgres-e2e:
+    image: postgres:15-alpine
+    container_name: cc1c-postgres-e2e
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:-test_e2e}
+      POSTGRES_DB: commandcenter_e2e
+    ports:
+      - "5433:5432"  # Не конфликтует с dev PostgreSQL (5432)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e-network
+
+  # Mock RAS gRPC Gateway для E2E тестов
+  ras-mock:
+    build:
+      context: ./mocks/ras-grpc-gw
+      dockerfile: Dockerfile
+    container_name: cc1c-ras-mock
+    ports:
+      - "9998:9999"  # gRPC (не конфликтует с реальным RAS на 9999)
+      - "8082:8081"  # HTTP health (не конфликтует с реальным RAS на 8081)
+    environment:
+      - MOCK_MODE=true
+      - LOG_LEVEL=debug
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e-network
+
+networks:
+  e2e-network:
+    driver: bridge

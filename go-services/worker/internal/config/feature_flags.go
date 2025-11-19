@@ -88,23 +88,31 @@ func LoadFeatureFlagsFromEnv() *FeatureFlags {
 }
 
 // ShouldUseEventDriven decides whether to use Event-Driven for an operation
+// FIXED: Race condition - read immutable fields with RLock, upgrade to Lock for RNG mutation
 func (ff *FeatureFlags) ShouldUseEventDriven(operationType string, databaseID string) bool {
+	// Read immutable fields with read lock
 	ff.mu.RLock()
-	defer ff.mu.RUnlock()
+	enableEventDriven := ff.EnableEventDriven
+	rolloutPercentage := ff.RolloutPercentage
+	targetedDatabases := ff.TargetedDatabases
+	enableForExtensions := ff.EnableForExtensions
+	enableForBackups := ff.EnableForBackups
+	experimentID := ff.ExperimentID
+	ff.mu.RUnlock()
 
 	// 1. Global kill switch
-	if !ff.EnableEventDriven {
+	if !enableEventDriven {
 		return false
 	}
 
 	// 2. Check operation type
 	switch operationType {
 	case "extension", "install_extension":
-		if !ff.EnableForExtensions {
+		if !enableForExtensions {
 			return false
 		}
 	case "backup":
-		if !ff.EnableForBackups {
+		if !enableForBackups {
 			return false
 		}
 	default:
@@ -113,8 +121,8 @@ func (ff *FeatureFlags) ShouldUseEventDriven(operationType string, databaseID st
 	}
 
 	// 3. Check targeted databases (if configured)
-	if len(ff.TargetedDatabases) > 0 {
-		for _, db := range ff.TargetedDatabases {
+	if len(targetedDatabases) > 0 {
+		for _, db := range targetedDatabases {
 			if db == databaseID {
 				return true // Always use Event-Driven for targeted DBs
 			}
@@ -123,24 +131,32 @@ func (ff *FeatureFlags) ShouldUseEventDriven(operationType string, databaseID st
 	}
 
 	// 4. Percentage-based rollout
-	if ff.RolloutPercentage >= 1.0 {
+	if rolloutPercentage >= 1.0 {
 		return true // 100% rollout
 	}
 
-	if ff.RolloutPercentage <= 0.0 {
+	if rolloutPercentage <= 0.0 {
 		return false // 0% rollout
 	}
 
-	// 5. Consistent hashing for A/B testing
-	if ff.ExperimentID != "" {
+	// 5. Consistent hashing for A/B testing (recommended for production)
+	if experimentID != "" {
 		// Same database always gets same treatment
-		hash := hashString(ff.ExperimentID + databaseID)
-		threshold := uint32(ff.RolloutPercentage * float64(^uint32(0)))
+		hash := hashString(experimentID + databaseID)
+		threshold := uint32(rolloutPercentage * float64(^uint32(0)))
 		return hash < threshold
 	}
 
 	// 6. Random rollout (not recommended for production)
-	return ff.rng.Float64() < ff.RolloutPercentage
+	// FIXED: Upgrade to write lock for RNG mutation to prevent race condition
+	if rolloutPercentage > 0.0 {
+		ff.mu.Lock()
+		randomValue := ff.rng.Float64()
+		ff.mu.Unlock()
+		return randomValue < rolloutPercentage
+	}
+
+	return false
 }
 
 // Reload hot-reloads configuration from environment

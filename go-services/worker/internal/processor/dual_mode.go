@@ -4,9 +4,13 @@ package processor
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
+	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
 )
@@ -45,7 +49,7 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 		msg.OperationID, databaseID, string(mode))
 
 	// Record decision metrics (if metrics enabled)
-	recordExecutionModeDecision(mode)
+	metrics.ExecutionMode.WithLabelValues(string(mode)).Inc()
 
 	// Execute based on mode
 	var result models.DatabaseResultV2
@@ -59,10 +63,11 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 
 	// Record metrics
 	duration := time.Since(start)
-	recordExecutionDuration(mode, duration)
+	durationSeconds := duration.Seconds()
+	metrics.ExecutionDuration.WithLabelValues(string(mode)).Observe(durationSeconds)
 
 	if err != nil {
-		recordExecutionFailure(mode)
+		metrics.ExecutionFailure.WithLabelValues(string(mode)).Inc()
 		log.Errorf("execution failed: mode=%s, error=%v, duration=%v",
 			string(mode), err, duration)
 
@@ -75,7 +80,7 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 			Duration:   duration.Seconds(),
 		}
 	} else {
-		recordExecutionSuccess(mode)
+		metrics.ExecutionSuccess.WithLabelValues(string(mode)).Inc()
 		log.Infof("execution completed: mode=%s, success=%v, duration=%v",
 			string(mode), result.Success, duration)
 	}
@@ -99,6 +104,53 @@ func (dm *DualModeProcessor) determineExecutionMode(operationType string, databa
 	return ModeHTTPSync
 }
 
+// validateExtensionInstallParams validates extension installation parameters
+func validateExtensionInstallParams(data map[string]interface{}) (extensionName, extensionPath, databaseID string, err error) {
+	// Validate extension_name
+	extensionName, ok := data["extension_name"].(string)
+	if !ok || extensionName == "" {
+		return "", "", "", fmt.Errorf("extension_name is required")
+	}
+
+	// Length validation
+	if len(extensionName) > 255 {
+		return "", "", "", fmt.Errorf("extension_name too long (max 255 chars): %d", len(extensionName))
+	}
+
+	// Format validation (alphanumeric + underscore/dash only)
+	validNamePattern := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !validNamePattern.MatchString(extensionName) {
+		return "", "", "", fmt.Errorf("extension_name contains invalid characters: %s", extensionName)
+	}
+
+	// Validate extension_path
+	extensionPath, ok = data["extension_path"].(string)
+	if !ok || extensionPath == "" {
+		return "", "", "", fmt.Errorf("extension_path is required")
+	}
+
+	// Path traversal protection
+	cleanPath := filepath.Clean(extensionPath)
+	if strings.Contains(cleanPath, "..") {
+		return "", "", "", fmt.Errorf("path traversal detected in extension_path: %s", extensionPath)
+	}
+
+	// Length validation
+	if len(extensionPath) > 1024 {
+		return "", "", "", fmt.Errorf("extension_path too long (max 1024 chars): %d", len(extensionPath))
+	}
+
+	// Validate database_id (if present in data, for processEventDriven it comes from msg)
+	if dbID, ok := data["database_id"].(string); ok {
+		if dbID == "" {
+			return "", "", "", fmt.Errorf("database_id cannot be empty")
+		}
+		databaseID = dbID
+	}
+
+	return extensionName, extensionPath, databaseID, nil
+}
+
 // processEventDriven executes through Event-Driven State Machine
 func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	log := logger.GetLogger()
@@ -106,15 +158,10 @@ func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models
 	log.Infof("executing via Event-Driven State Machine: operation_id=%s, database_id=%s",
 		msg.OperationID, databaseID)
 
-	// Extract extension parameters
-	extensionName, ok := msg.Payload.Data["extension_name"].(string)
-	if !ok || extensionName == "" {
-		return models.DatabaseResultV2{}, fmt.Errorf("extension_name is required")
-	}
-
-	extensionPath, ok := msg.Payload.Data["extension_path"].(string)
-	if !ok || extensionPath == "" {
-		return models.DatabaseResultV2{}, fmt.Errorf("extension_path is required")
+	// Validate parameters
+	_, _, _, err := validateExtensionInstallParams(msg.Payload.Data)
+	if err != nil {
+		return models.DatabaseResultV2{}, err
 	}
 
 	// NOTE: This is a simplified version for Task 3.2.1
@@ -214,22 +261,6 @@ func (dm *DualModeProcessor) ReloadFeatureFlags() error {
 
 // Metrics recording functions (placeholder - to be implemented with Prometheus)
 
-func recordExecutionModeDecision(mode ExecutionMode) {
-	// TODO: Implement with Prometheus counter
-	// metrics.ExecutionMode.WithLabelValues(string(mode)).Inc()
-}
 
-func recordExecutionDuration(mode ExecutionMode, duration time.Duration) {
-	// TODO: Implement with Prometheus histogram
-	// metrics.ExecutionDuration.WithLabelValues(string(mode)).Observe(duration.Seconds())
-}
 
-func recordExecutionFailure(mode ExecutionMode) {
-	// TODO: Implement with Prometheus counter
-	// metrics.ExecutionFailure.WithLabelValues(string(mode)).Inc()
-}
 
-func recordExecutionSuccess(mode ExecutionMode) {
-	// TODO: Implement with Prometheus counter
-	// metrics.ExecutionSuccess.WithLabelValues(string(mode)).Inc()
-}

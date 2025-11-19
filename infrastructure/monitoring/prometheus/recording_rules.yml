@@ -1,0 +1,164 @@
+# Prometheus Recording Rules for A/B Testing Metrics
+# These pre-computed aggregations reduce query load and improve dashboard performance
+
+groups:
+  - name: worker_ab_testing
+    interval: 30s
+    rules:
+      # Success rate по mode (5-minute window)
+      # Используется для быстрого отображения success rate в dashboards
+      - record: worker:success_rate:5m
+        expr: |
+          rate(worker_execution_success_total[5m])
+          /
+          rate(worker_execution_mode_total[5m])
+        labels:
+          aggregation: "5m"
+
+      # Throughput по mode (5-minute rate)
+      # Операций в секунду по каждому режиму
+      - record: worker:throughput:5m
+        expr: rate(worker_execution_mode_total[5m])
+        labels:
+          aggregation: "5m"
+
+      # P50 latency по mode
+      # Median latency для каждого execution mode
+      - record: worker:latency_p50:5m
+        expr: histogram_quantile(0.50, rate(worker_execution_duration_seconds_bucket[5m]))
+        labels:
+          percentile: "50"
+
+      # P95 latency по mode
+      # 95th percentile latency (good SLO indicator)
+      - record: worker:latency_p95:5m
+        expr: histogram_quantile(0.95, rate(worker_execution_duration_seconds_bucket[5m]))
+        labels:
+          percentile: "95"
+
+      # P99 latency по mode
+      # 99th percentile latency (tail latency)
+      - record: worker:latency_p99:5m
+        expr: histogram_quantile(0.99, rate(worker_execution_duration_seconds_bucket[5m]))
+        labels:
+          percentile: "99"
+
+      # Error rate по mode (5-minute window)
+      # Процент неудачных выполнений
+      - record: worker:error_rate:5m
+        expr: |
+          rate(worker_execution_failure_total[5m])
+          /
+          rate(worker_execution_mode_total[5m])
+        labels:
+          aggregation: "5m"
+
+      # Total executions per mode (hourly)
+      # Общее количество выполнений за последний час
+      - record: worker:executions_total:1h
+        expr: sum(rate(worker_execution_mode_total[1h])) by (mode)
+        labels:
+          aggregation: "1h"
+
+      # Compensation rate (hourly)
+      # Frequency of compensation actions
+      - record: worker:compensation_rate:1h
+        expr: rate(worker_compensation_executed_total[1h])
+        labels:
+          aggregation: "1h"
+
+      # Circuit breaker trip rate (hourly)
+      # How often circuit breaker activates
+      - record: worker:circuit_breaker_rate:1h
+        expr: rate(worker_circuit_breaker_trips_total[1h])
+        labels:
+          aggregation: "1h"
+
+  # Hourly aggregations for long-term trends
+  - name: worker_ab_testing_hourly
+    interval: 5m
+    rules:
+      # Hourly success rate для trend analysis
+      - record: worker:success_rate:1h
+        expr: |
+          rate(worker_execution_success_total[1h])
+          /
+          rate(worker_execution_mode_total[1h])
+        labels:
+          aggregation: "1h"
+
+      # Hourly throughput для capacity planning
+      - record: worker:throughput:1h
+        expr: rate(worker_execution_mode_total[1h])
+        labels:
+          aggregation: "1h"
+
+      # Hourly P99 latency для SLO tracking
+      - record: worker:latency_p99:1h
+        expr: histogram_quantile(0.99, rate(worker_execution_duration_seconds_bucket[1h]))
+        labels:
+          percentile: "99"
+          aggregation: "1h"
+
+      # Hourly error rate для reliability tracking
+      - record: worker:error_rate:1h
+        expr: |
+          rate(worker_execution_failure_total[1h])
+          /
+          rate(worker_execution_mode_total[1h])
+        labels:
+          aggregation: "1h"
+
+  # Alerting rules (optional - для будущих alerts)
+  - name: worker_ab_testing_alerts
+    interval: 1m
+    rules:
+      # Alert если success rate падает ниже 95% для Event-Driven mode
+      - alert: EventDrivenLowSuccessRate
+        expr: |
+          worker:success_rate:5m{mode="event_driven"} < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+          mode: event_driven
+        annotations:
+          summary: "Event-Driven mode success rate is low"
+          description: "Success rate for Event-Driven mode is {{ $value | humanizePercentage }}, which is below 95% threshold."
+
+      # Alert если HTTP Sync success rate падает ниже 90% (более низкий threshold)
+      - alert: HTTPSyncLowSuccessRate
+        expr: |
+          worker:success_rate:5m{mode="http_sync"} < 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+          mode: http_sync
+        annotations:
+          summary: "HTTP Sync mode success rate is low"
+          description: "Success rate for HTTP Sync mode is {{ $value | humanizePercentage }}, which is below 90% threshold."
+
+      # Alert если Circuit Breaker срабатывает слишком часто
+      - alert: HighCircuitBreakerTripRate
+        expr: |
+          sum(rate(worker_circuit_breaker_trips_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: worker
+        annotations:
+          summary: "High circuit breaker trip rate detected"
+          description: "Circuit breaker is tripping at {{ $value | humanize }} times per second, indicating system instability."
+
+      # Alert если Compensation actions слишком частые
+      - alert: HighCompensationRate
+        expr: |
+          sum(rate(worker_compensation_executed_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "High compensation action rate"
+          description: "Compensation actions are executing at {{ $value | humanize }} times per second, which may indicate failures in normal flow."

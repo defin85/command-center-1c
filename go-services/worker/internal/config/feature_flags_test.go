@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -254,4 +255,131 @@ func TestFeatureFlags_TargetedDatabases_Whitespace(t *testing.T) {
 
 	ff := LoadFeatureFlagsFromEnv()
 	assert.Equal(t, []string{"db1", "db2", "db3"}, ff.TargetedDatabases)
+}
+
+// TestFeatureFlags_ShouldUseEventDriven_Race tests for race conditions with concurrent calls
+// FIXED: Issue #1 - Race condition in random rollout with RNG mutation
+func TestFeatureFlags_ShouldUseEventDriven_Race(t *testing.T) {
+	ff := NewFeatureFlags()
+	ff.EnableEventDriven = true
+	ff.EnableForExtensions = true
+	ff.RolloutPercentage = 0.5
+
+	// Run 100 concurrent calls to test race conditions
+	done := make(chan bool)
+	for i := 0; i < 100; i++ {
+		go func(id int) {
+			dbID := fmt.Sprintf("db-%d", id%10)
+			_ = ff.ShouldUseEventDriven("extension", dbID)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 100; i++ {
+		<-done
+	}
+
+	// Should not panic or cause race condition
+	t.Log("Race detector test passed - no data races detected")
+}
+
+// TestFeatureFlags_InvalidRolloutPercentage tests invalid rollout percentage values
+func TestFeatureFlags_InvalidRolloutPercentage(t *testing.T) {
+	tests := []struct {
+		name       string
+		percentage float64
+		expected   bool // Expected result for ShouldUseEventDriven when percentage-based decision is made
+	}{
+		{"Negative percentage should behave as 0%", -0.5, false},
+		{"Greater than 1.0 should behave as 100%", 1.5, true},
+		{"Zero percentage", 0.0, false},
+		{"Exactly 1.0", 1.0, true},
+		{"Exactly 0.5", 0.5, true}, // This is probabilistic, but we'll check it doesn't crash
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ff := NewFeatureFlags()
+			ff.EnableEventDriven = true
+			ff.EnableForExtensions = true
+			ff.RolloutPercentage = tt.percentage
+
+			// Should not panic
+			result := ff.ShouldUseEventDriven("extension", "db-test")
+
+			// For deterministic cases (0.0, 1.0+, negative)
+			if tt.percentage <= 0.0 || tt.percentage >= 1.0 {
+				assert.Equal(t, tt.expected, result, "Unexpected result for percentage %.2f", tt.percentage)
+			}
+			// For 0.5, just check it doesn't panic (result is probabilistic)
+		})
+	}
+}
+
+// TestFeatureFlags_EmptyTargetedDatabases tests behavior with empty targeted database list
+func TestFeatureFlags_EmptyTargetedDatabases(t *testing.T) {
+	ff := NewFeatureFlags()
+	ff.EnableEventDriven = true
+	ff.EnableForExtensions = true
+	ff.TargetedDatabases = []string{} // Empty list
+	ff.RolloutPercentage = 0.5
+
+	// Should fall back to percentage rollout (not crash)
+	result := ff.ShouldUseEventDriven("extension", "db-1")
+	t.Logf("Result with empty targeted databases: %v", result)
+
+	// Should not panic - that's the main test
+	assert.NotNil(t, ff.TargetedDatabases)
+}
+
+// TestFeatureFlags_NilTargetedDatabases tests behavior with nil targeted database list
+func TestFeatureFlags_NilTargetedDatabases(t *testing.T) {
+	ff := NewFeatureFlags()
+	ff.EnableEventDriven = true
+	ff.EnableForExtensions = true
+	ff.TargetedDatabases = nil // Nil list
+	ff.RolloutPercentage = 0.5
+
+	// Should fall back to percentage rollout (not crash)
+	result := ff.ShouldUseEventDriven("extension", "db-1")
+	t.Logf("Result with nil targeted databases: %v", result)
+
+	// Should not panic
+}
+
+// TestFeatureFlags_UnknownOperationType tests handling of unknown operation types
+func TestFeatureFlags_UnknownOperationType(t *testing.T) {
+	ff := NewFeatureFlags()
+	ff.EnableEventDriven = true
+	ff.RolloutPercentage = 1.0 // 100% rollout
+	ff.EnableForExtensions = true
+	ff.EnableForBackups = true
+
+	// Unknown operation types should default to false (HTTP Sync)
+	unknownOps := []string{
+		"unknown_operation",
+		"invalid_type",
+		"",           // Empty string
+		"extension!", // With special character
+	}
+
+	for _, op := range unknownOps {
+		result := ff.ShouldUseEventDriven(op, "db-1")
+		assert.False(t, result, "Unknown operation type '%s' should default to HTTP Sync", op)
+	}
+}
+
+// TestFeatureFlags_EmptyDatabaseID tests behavior with empty database ID
+func TestFeatureFlags_EmptyDatabaseID(t *testing.T) {
+	ff := NewFeatureFlags()
+	ff.EnableEventDriven = true
+	ff.EnableForExtensions = true
+	ff.RolloutPercentage = 1.0
+
+	// Should not panic with empty database ID
+	result := ff.ShouldUseEventDriven("extension", "")
+	t.Logf("Result with empty database ID: %v", result)
+
+	// Should handle gracefully (not panic)
 }

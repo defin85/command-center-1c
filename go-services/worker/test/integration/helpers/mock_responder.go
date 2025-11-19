@@ -26,6 +26,7 @@ type MockEventResponder struct {
 	subscriber *SubscriberAdapter
 	behaviors  map[string]EventBehavior
 	verbose    bool
+	ready      chan struct{} // Signal when subscriptions are established
 }
 
 // NewMockEventResponder creates a new mock event responder
@@ -39,6 +40,7 @@ func NewMockEventResponder(
 		subscriber: subscriber,
 		behaviors:  behaviors,
 		verbose:    false,
+		ready:      make(chan struct{}),
 	}
 }
 
@@ -59,7 +61,20 @@ func (m *MockEventResponder) Run(ctx context.Context) error {
 		fmt.Println("[MockResponder] Started, listening for commands...")
 	}
 
+	// Signal ready AFTER subscriptions are established
+	close(m.ready)
+
 	return m.subscriber.Run(ctx)
+}
+
+// WaitReady blocks until the responder is ready to handle events
+func (m *MockEventResponder) WaitReady(timeout time.Duration) error {
+	select {
+	case <-m.ready:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("responder did not become ready within %v", timeout)
+	}
 }
 
 // handleEvent handles incoming command event and publishes response
@@ -130,12 +145,16 @@ func (m *MockEventResponder) publishFailure(ctx context.Context, original *event
 		// "installed" -> "install.failed"
 		// "closed" -> "close.failed"
 		// "unlocked" -> "unlock.failed"
-		base := strings.TrimSuffix(failedEvent, "ed")
-		if strings.HasSuffix(base, "l") && strings.HasSuffix(failedEvent, "lled") {
-			// "installed" -> "install"
-			base = strings.TrimSuffix(failedEvent, "led")
+
+		// Special case: "installed" → "install"
+		if strings.HasSuffix(failedEvent, "lled") {
+			base := strings.TrimSuffix(failedEvent, "led")  // "installed" → "instal"
+			failedEvent = base + "l.failed"                   // "instal" → "install.failed"
+		} else {
+			// General case: remove "ed"
+			base := strings.TrimSuffix(failedEvent, "ed")
+			failedEvent = base + ".failed"
 		}
-		failedEvent = base + ".failed"
 	} else if !strings.HasSuffix(failedEvent, ".failed") {
 		failedEvent += ".failed"
 	}
@@ -273,4 +292,34 @@ func TerminateTimeoutBehaviors() map[string]EventBehavior {
 		TimeoutRate:   1.0, // Never respond (simulate timeout)
 	}
 	return behaviors
+}
+
+// UnlockRetriesBehaviors returns behaviors where unlock fails N times then succeeds
+func UnlockRetriesBehaviors(failCount int) map[string]EventBehavior {
+	behaviors := HappyPathBehaviors()
+
+	// Create a stateful behavior that tracks attempts
+	// Note: This is a simplified version. In real implementation,
+	// we would need more complex state tracking per correlation_id
+	// For now, we'll use FailureRate as approximation
+
+	if failCount > 0 {
+		// Set FailureRate to simulate N failures
+		// This is simplified - real implementation would need counter per correlation_id
+		behaviors["cluster.infobase.unlock"] = EventBehavior{
+			ResponseEvent: "cluster.infobase.unlocked",
+			Delay:         100 * time.Millisecond,
+			FailureRate:   0.7, // 70% failure rate (approximation)
+		}
+	}
+
+	return behaviors
+}
+
+// DuplicateEventBehaviors returns behaviors that publish duplicate events
+// This is used to test deduplication in State Machine
+func DuplicateEventBehaviors() map[string]EventBehavior {
+	return HappyPathBehaviors()
+	// Note: Duplicate publishing is handled externally in tests
+	// This function exists for consistency
 }

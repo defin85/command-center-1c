@@ -16,6 +16,8 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
 	"go.uber.org/zap"
+	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -139,6 +141,16 @@ func main() {
 
 	log.Info("connected to Redis queue")
 
+
+	// Start Prometheus metrics endpoint
+	go func() {
+		metricsPort := ":9091"
+		http.Handle("/metrics", promhttp.Handler())
+		log.Info("metrics endpoint started", zap.String("port", metricsPort))
+		if err := http.ListenAndServe(metricsPort, nil); err != nil {
+			log.Error("metrics endpoint failed", zap.Error(err))
+		}
+	}()
 	// Start consumer (blocking)
 	go func() {
 		if err := consumer.Start(ctx); err != nil && err != context.Canceled {
