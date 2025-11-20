@@ -61,7 +61,14 @@ check_process "api-gateway"
 check_process "worker"
 check_process "ras"
 check_process "ras-grpc-gw"
-check_process "cluster-service"
+# Week 4: Check both ras-adapter and cluster-service (only one should be running)
+if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
+    check_process "ras-adapter"
+elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
+    check_process "cluster-service"
+else
+    echo -e "  ras-adapter / cluster-service: ${RED}✗ не запущен (PID файл не найден)${NC}"
+fi
 check_process "batch-service"
 check_process "frontend"
 
@@ -96,7 +103,8 @@ check_http "Frontend" "http://localhost:5173"
 check_http "API Gateway" "http://localhost:8080/health"
 check_http "Orchestrator" "http://localhost:8000/health"
 check_http "ras-grpc-gw" "http://localhost:8081/health"
-check_http "Cluster Service" "http://localhost:8088/health"
+# Week 4: Check RAS Adapter (or Cluster Service for backward compatibility)
+check_http "RAS Adapter / Cluster Service" "http://localhost:8088/health"
 check_http "Batch Service" "http://localhost:8087/health"
 
 echo ""
@@ -187,7 +195,7 @@ check_port() {
 check_port 5173 "Frontend"
 check_port 8080 "API Gateway"
 check_port 8000 "Orchestrator"
-check_port 8088 "Cluster Service"
+check_port 8088 "RAS Adapter / Cluster Service"
 check_port 8087 "Batch Service"
 check_port 8081 "ras-grpc-gw HTTP"
 check_port 9999 "ras-grpc-gw gRPC"
@@ -241,7 +249,17 @@ echo ""
 TOTAL=10
 RUNNING=0
 
-for service in orchestrator celery-worker celery-beat api-gateway worker ras ras-grpc-gw cluster-service batch-service frontend; do
+# Week 4: Check ras-adapter OR cluster-service (not both)
+SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "ras-grpc-gw" "batch-service" "frontend")
+
+# Add either ras-adapter or cluster-service based on which PID file exists
+if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
+    SERVICES+=("ras-adapter")
+elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
+    SERVICES+=("cluster-service")
+fi
+
+for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"
     if [ -f "$pid_file" ]; then
         pid=$(cat "$pid_file")

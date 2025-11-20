@@ -16,6 +16,7 @@
   - [logs.sh](#logssh) - Просмотр логов
   - [health-check.sh](#health-checksh) - Проверка статуса сервисов
   - [build-and-start.sh](#build-and-startsh) - Сборка + запуск
+  - [test-lock-unlock-workflow.sh](#test-lock-unlock-workflowsh) - Smoke tests для RAS Adapter (Week 4)
 - [Вспомогательные скрипты](#вспомогательные-скрипты)
   - [../build.sh](#buildsh) - Сборка Go сервисов
 - [Типичные сценарии](#типичные-сценарии)
@@ -39,7 +40,8 @@
 - `worker` - Go Worker
 - `ras` - 1C RAS Server (port 1545)
 - `ras-grpc-gw` - RAS gRPC Gateway (port 9999, HTTP 8081)
-- `cluster-service` - Go Cluster Service (port 8088)
+- **`ras-adapter`** - **Go RAS Adapter (port 8088) ← Week 4 NEW!**
+- ~~`cluster-service`~~ - ~~Go Cluster Service (port 8088)~~ **DEPRECATED (replaced by ras-adapter)**
 - `batch-service` - Go Batch Service (port 8087)
 - `frontend` - React Frontend (port 5173)
 
@@ -70,6 +72,55 @@
 
 ---
 
+## 🆕 RAS Adapter (Week 4 - NEW)
+
+**Status:** ✅ Deployed (replaces cluster-service)
+
+RAS Adapter provides direct RAS protocol integration (khorevaa/ras-client) для Lock/Unlock operations.
+
+**Commands:**
+```bash
+# Start (included in start-all.sh)
+./bin/cc1c-ras-adapter.exe
+
+# Stop
+./scripts/dev/stop-all.sh  # stops all services including ras-adapter
+
+# Restart (smart rebuild)
+./scripts/dev/restart-all.sh --service=ras-adapter
+
+# Health check
+curl http://localhost:8088/health
+
+# Smoke tests
+./scripts/dev/test-lock-unlock-workflow.sh
+```
+
+**Endpoints:**
+- Health: http://localhost:8088/health
+- Clusters: http://localhost:8088/api/v1/clusters?server=localhost:1545
+- Infobases: http://localhost:8088/api/v1/infobases?cluster_id={uuid}
+- Lock: POST http://localhost:8088/api/v1/infobases/{id}/lock
+- Unlock: POST http://localhost:8088/api/v1/infobases/{id}/unlock
+
+**Architecture:**
+```
+Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
+                              ↓ khorevaa/ras-client (direct)
+                         (1 network hop, NO ras-grpc-gw)
+```
+
+**Replaced:** cluster-service (8088) + ras-grpc-gw (9999) → archived
+
+**Environment Variable:**
+```bash
+# In .env.local (optional, default: true)
+USE_RAS_ADAPTER=true   # Use new RAS Adapter
+USE_RAS_ADAPTER=false  # Use old cluster-service (deprecated)
+```
+
+---
+
 ## Скрипты
 
 ### start-all.sh
@@ -90,7 +141,7 @@
    - **Monitoring: Prometheus, Grafana** ← автоматически!
 3. Применяет Django миграции
 4. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
-5. Запускает Go сервисы (api-gateway, worker, ras, ras-grpc-gw, cluster-service, batch-service)
+5. Запускает Go сервисы (api-gateway, worker, ras, ras-grpc-gw, **ras-adapter**, batch-service)
 6. Запускает Frontend (React dev server)
 
 **Особенности:**
@@ -127,7 +178,7 @@
 **Порядок остановки:**
 ```
 Application Services:
-  frontend → batch-service → cluster-service → ras-grpc-gw → worker →
+  frontend → batch-service → ras-adapter (or cluster-service) → ras-grpc-gw → worker →
   api-gateway → celery-beat → celery-worker → orchestrator
 
 Docker Services:
@@ -441,6 +492,53 @@ Docker Services:
 
 ---
 
+### test-lock-unlock-workflow.sh
+
+**Назначение:** Smoke tests для RAS Adapter (Week 4 - NEW)
+
+**Использование:**
+```bash
+./scripts/dev/test-lock-unlock-workflow.sh
+```
+
+**Опции:** Нет
+
+**Что делает:**
+1. **Test 1:** Health Check - проверяет что RAS Adapter отвечает
+2. **Test 2:** GET /clusters - проверяет подключение к RAS серверу
+3. **Test 3:** GET /infobases - получает список информационных баз
+4. **Test 4-5:** POST /lock, /unlock - пропускаются (требуют реальные cluster_id и infobase_id)
+5. **Test 6:** Redis connectivity - проверяет подключение к Redis
+6. **Test 7-8:** Redis Pub/Sub - пропускаются (требуют redis-cli и ручное тестирование)
+
+**Переменные окружения:**
+```bash
+RAS_ADAPTER_URL=http://localhost:8088    # URL RAS Adapter (default)
+REDIS_HOST=localhost                      # Redis host (default)
+REDIS_PORT=6379                           # Redis port (default)
+```
+
+**Примеры:**
+
+```bash
+# Запустить smoke tests с defaults
+./scripts/dev/test-lock-unlock-workflow.sh
+
+# Указать другой URL RAS Adapter
+RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflow.sh
+```
+
+**Результат:**
+- Exit code 0 если все тесты прошли
+- Exit code 1 если хотя бы один тест failed
+
+**Важно:**
+- RAS Adapter должен быть запущен
+- RAS сервер должен быть доступен на порту 1545
+- Redis должен быть запущен
+
+---
+
 ## Вспомогательные скрипты
 
 ### ../build.sh
@@ -458,7 +556,7 @@ Docker Services:
 
 | Опция | Описание |
 |-------|----------|
-| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, cluster-service, batch-service) |
+| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter, cluster-service, batch-service) |
 | `--os=<os>` | Целевая ОС (linux, windows, darwin). По умолчанию: текущая ОС |
 | `--arch=<arch>` | Целевая архитектура (amd64, arm64). По умолчанию: текущая архитектура |
 | `--parallel` | Собрать все сервисы параллельно (быстрее) |
@@ -602,6 +700,42 @@ docker-compose -f docker-compose.local.yml down
 # Если не помогло → полный перезапуск
 ./scripts/dev/stop-all.sh
 ./scripts/dev/start-all.sh
+```
+
+### 🧪 Тестирование RAS Adapter (Week 4)
+
+```bash
+# 1. Запустить ras-adapter (если не запущен)
+./scripts/dev/start-all.sh
+
+# 2. Smoke tests (автоматические)
+./scripts/dev/test-lock-unlock-workflow.sh
+
+# 3. Проверить health
+curl http://localhost:8088/health
+
+# 4. Получить список кластеров
+curl "http://localhost:8088/api/v1/clusters?server=localhost:1545"
+
+# 5. Получить список информационных баз (подставить cluster_id)
+curl "http://localhost:8088/api/v1/infobases?cluster_id=<UUID>"
+
+# 6. Manual Lock Test (подставить cluster_id и infobase_id)
+curl -X POST http://localhost:8088/api/v1/infobases/<INFOBASE_ID>/lock \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_id":"<CLUSTER_ID>"}'
+
+# 7. Manual Unlock Test
+curl -X POST http://localhost:8088/api/v1/infobases/<INFOBASE_ID>/unlock \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_id":"<CLUSTER_ID>"}'
+
+# 8. Просмотр логов
+./scripts/dev/logs.sh ras-adapter
+
+# 9. Переключение на старый cluster-service (если нужно)
+# В .env.local: USE_RAS_ADAPTER=false
+./scripts/dev/restart-all.sh
 ```
 
 ---

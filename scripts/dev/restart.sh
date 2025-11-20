@@ -46,7 +46,8 @@ if [ -z "$1" ]; then
     echo -e "  worker            - Go Worker"
     echo -e "  ras               - 1C RAS Server (port 1545)"
     echo -e "  ras-grpc-gw       - RAS gRPC Gateway (port 9999)"
-    echo -e "  cluster-service   - Go Cluster Service (port 8088)"
+    echo -e "  ras-adapter       - Go RAS Adapter (port 8088) ← Week 4 NEW!"
+    echo -e "  cluster-service   - Go Cluster Service (port 8088) - DEPRECATED"
     echo -e "  batch-service     - Go Batch Service (port 8087)"
     echo -e "  frontend          - React Frontend (port 5173)"
     echo ""
@@ -190,10 +191,26 @@ case "$SERVICE_NAME" in
         NEW_PID=$!
         ;;
 
-    cluster-service)
+    ras-adapter)
         # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8088
-        
+
+        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-ras-adapter.exe"
+        if [ -f "$BINARY_PATH" ]; then
+            nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
+        else
+            cd "$PROJECT_ROOT/go-services/ras-adapter"
+            nohup go run cmd/main.go > "$LOG_FILE" 2>&1 &
+        fi
+        NEW_PID=$!
+        ;;
+
+    cluster-service)
+        # DEPRECATED: replaced by ras-adapter in Week 4
+        echo -e "${YELLOW}⚠️  cluster-service is DEPRECATED, use ras-adapter instead${NC}"
+        # .env.local уже загружен в начале скрипта
+        export SERVER_PORT=8088
+
         BINARY_PATH="$PROJECT_ROOT/bin/cc1c-cluster-service.exe"
         if [ -f "$BINARY_PATH" ]; then
             nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
@@ -229,7 +246,7 @@ case "$SERVICE_NAME" in
         echo ""
         echo -e "${BLUE}Available services:${NC}"
         echo -e "  orchestrator, celery-worker, celery-beat, api-gateway,"
-        echo -e "  worker, ras-grpc-gw, cluster-service, batch-service, frontend"
+        echo -e "  worker, ras-grpc-gw, ras-adapter, cluster-service, batch-service, frontend"
         echo ""
         exit 1
         ;;

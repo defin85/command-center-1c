@@ -91,8 +91,13 @@ stop_service "frontend"
 # 11. Batch Service
 stop_service "batch-service"
 
-# 10. Cluster Service
-stop_service "cluster-service"
+# 10. RAS Adapter (Week 4 NEW - replaces cluster-service)
+# Try both ras-adapter and cluster-service (for backward compatibility)
+if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
+    stop_service "ras-adapter"
+elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
+    stop_service "cluster-service"
+fi
 
 # 9. ras-grpc-gw
 stop_service "ras-grpc-gw"
@@ -167,7 +172,7 @@ check_and_kill_port() {
 
 check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
-check_and_kill_port 8088 "Cluster Service"
+check_and_kill_port 8088 "RAS Adapter / Cluster Service"
 check_and_kill_port 8081 "ras-grpc-gw HTTP"
 check_and_kill_port 9999 "ras-grpc-gw gRPC"
 check_and_kill_port 1545 "RAS"

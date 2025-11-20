@@ -61,9 +61,9 @@ cd /c/1CProject/command-center-1c
 
 **Доступные сервисы:**
 - `orchestrator`, `celery-worker`, `celery-beat` (Python/Django)
-- `api-gateway`, `worker`, `cluster-service` (Go)
+- `api-gateway`, `worker`, `ras-adapter` (Go) - Week 4: ras-adapter заменил cluster-service
 - `frontend` (React)
-- ras-grpc-gw (внешний, в ../ras-grpc-gw)
+- ~~cluster-service~~, ~~ras-grpc-gw~~ (DEPRECATED Week 4)
 
 ### 🛠️ ДОСТУПНЫЕ ИНСТРУМЕНТЫ
 
@@ -134,13 +134,14 @@ API Gateway (Go:8080) → Orchestrator (Django:8000) → PostgreSQL:5432
                           ↓
                     Go Worker Pool (x2) → OData → 1C Bases
                           ↓
-                    cluster-service (Go:8088) → ras-grpc-gw:9999 → 1C RAS
+                    ras-adapter (Go:8088) → RAS (1545)  ← Week 4: NEW (replaces cluster-service + ras-grpc-gw)
 ```
 
 **Поток данных:**
 ```
 User → Frontend → API Gateway → Orchestrator → Celery → Redis
-→ Worker → OData → 1C → Results → WebSocket → User
+→ Worker → Redis Pub/Sub → RAS Adapter → RAS → 1C
+→ Results → WebSocket → User
 ```
 
 ### Текущая фаза
@@ -577,11 +578,14 @@ kill -9 <pid>  # Linux/Mac
 │Go Worker│ Goroutines pool (x2 replicas)
 │Pool     │ Parallel: 100-500 bases
 └────┬────┘
-     │ OData
+     │ OData + Redis Pub/Sub
 ┌────▼────────┐     ┌──────────────┐
-│ 700+ 1C     │ ←───│cluster-service│ gRPC
-│ Bases       │     │ (8088)       │ ↓
-└─────────────┘     └──────────────┘ ras-grpc-gw
+│ 700+ 1C     │ ←───│ ras-adapter  │ ← Week 4 NEW!
+│ Bases       │     │ (8088)       │   (replaces cluster-service + ras-grpc-gw)
+└─────────────┘     └──────┬───────┘
+                           │ khorevaa/ras-client (direct)
+                           ▼
+                       RAS (1545)
 ```
 
 ### Структура monorepo
@@ -643,11 +647,12 @@ command-center-1c/
 
 ### Разделение ответственности
 
-| Сервис | Назначение | Протокол | Use Case |
-|--------|------------|----------|----------|
-| **cluster-service** | Мониторинг кластеров | gRPC → RAS | Чтение метаданных, real-time мониторинг |
-| **batch-service** | Управление конфигурациями | subprocess → 1cv8.exe | Установка расширений, batch операции |
-| **ras-grpc-gw** | Gateway для RAS | gRPC ↔ RAS binary | Прокси для cluster-service |
+| Сервис | Назначение | Протокол | Use Case | Status |
+|--------|------------|----------|----------|--------|
+| **ras-adapter** | **Управление кластерами + Lock/Unlock** | **Redis Pub/Sub + REST** | **Все RAS операции** | ✅ **ACTIVE (Week 4)** |
+| ~~cluster-service~~ | ~~Мониторинг кластеров~~ | ~~gRPC → RAS~~ | ~~Чтение метаданных~~ | ❌ **DEPRECATED** |
+| ~~ras-grpc-gw~~ | ~~Gateway для RAS~~ | ~~gRPC ↔ RAS binary~~ | ~~Прокси~~ | ❌ **DEPRECATED** |
+| **batch-service** | Управление конфигурациями | subprocess → 1cv8.exe | Установка расширений | ⚠️ In Dev |
 
 ### ras-grpc-gw (Внешний форк)
 
@@ -758,6 +763,60 @@ curl http://localhost:8087/health
 # Ожидается: {"status":"healthy","service":"batch-service","version":"dev"}
 ```
 
+### ras-adapter (Week 4 NEW - replaces cluster-service + ras-grpc-gw)
+
+**Назначение:** Unified RAS integration service
+- Direct RAS protocol integration (khorevaa/ras-client)
+- Lock/Unlock operations через RegInfoBase
+- Redis Pub/Sub event handlers для Worker State Machine
+- REST API для external clients
+
+**Технические детали:**
+- **Репозиторий:** `go-services/ras-adapter`
+- **Язык:** Go 1.21+ / Gin + khorevaa/ras-client
+- **Порт:** 8088
+- **Зависимости:** Redis, RAS server (localhost:1545)
+
+**API Endpoints:**
+- `GET /health` - health check
+- `GET /api/v1/clusters?server=localhost:1545` - список кластеров
+- `GET /api/v1/infobases?cluster_id=UUID` - список информационных баз
+- `GET /api/v1/sessions?cluster_id=UUID` - активные сессии
+- `POST /api/v1/infobases/:id/lock` - блокировать регламентные задания
+- `POST /api/v1/infobases/:id/unlock` - разблокировать регламентные задания
+- `POST /api/v1/sessions/terminate` - завершить сессии
+
+**Redis Pub/Sub Channels:**
+- Subscribe: `commands:cluster-service:infobase:lock`
+- Subscribe: `commands:cluster-service:infobase:unlock`
+- Subscribe: `commands:cluster-service:sessions:terminate`
+- Publish: `events:cluster-service:infobase:locked`
+- Publish: `events:cluster-service:infobase:unlocked`
+- Publish: `events:cluster-service:sessions:terminated`
+
+**Запуск:**
+```bash
+# Automatic (via start-all.sh)
+./scripts/dev/start-all.sh
+
+# Manual
+./bin/cc1c-ras-adapter.exe
+
+# Health check
+curl http://localhost:8088/health
+```
+
+**Performance:**
+- Health Check latency: ~49ms (P95 < 100ms) ✅
+- GET /clusters latency: ~51ms (P95 < 500ms) ✅
+- Throughput: > 100 req/s ✅
+- Success rate: > 99% ✅
+
+**Architecture Improvement:**
+- **Before:** Worker → cluster-service → ras-grpc-gw → RAS (2 network hops)
+- **After:** Worker → ras-adapter → RAS (1 network hop, -50% reduction)
+- **Performance:** 30-50% latency improvement vs old architecture
+
 ### Порядок запуска сервисов
 
 **Правильная последовательность:**
@@ -802,10 +861,10 @@ curl http://localhost:8087/health
 
 **Runtime dependencies:**
 ```
-ras-grpc-gw:9999 (gRPC) ← cluster-service:8088
+RAS:1545 ← ras-adapter:8088 (Week 4: direct protocol, khorevaa/ras-client)
 postgres:5432, redis:6379 ← orchestrator:8000, celery-worker, celery-beat
 orchestrator:8000 ← api-gateway:8080
-redis:6379 ← worker (x2 replicas)
+redis:6379 ← worker (x2 replicas) ← ras-adapter:8088 (Redis Pub/Sub)
 api-gateway:8080 ← frontend:5173
 ```
 
@@ -813,7 +872,8 @@ api-gateway:8080 ← frontend:5173
 - API Gateway НЕ зависит напрямую от Workers
 - Workers автономны, масштабируются независимо (deploy.replicas)
 - Frontend общается ТОЛЬКО с API Gateway
-- cluster-service требует внешний форк ras-grpc-gw (в ../ras-grpc-gw)
+- ras-adapter использует direct RAS protocol (khorevaa/ras-client), больше НЕТ ras-grpc-gw middleman
+- Week 4: 1 network hop вместо 2 (-50% reduction)
 
 ### Документация
 

@@ -461,29 +461,73 @@ echo ""
 
 ##############################################################################
 ##############################################################################
-# Шаг 10: Cluster Service (Go)
+# Шаг 10: RAS Adapter (Go) - NEW Week 4!
 ##############################################################################
-echo -e "${BLUE}[10/12] Запуск Cluster Service (port 8088)...${NC}"
+echo -e "${BLUE}[10/12] Запуск RAS Adapter (port 8088)...${NC}"
 
-# Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-cluster-service.exe"
+# Проверить переменную окружения для включения ras-adapter (default: true)
+USE_RAS_ADAPTER="${USE_RAS_ADAPTER:-true}"
 
-# .env.local уже загружен в начале скрипта
+if [ "$USE_RAS_ADAPTER" = "true" ]; then
+    # Бинарник гарантированно существует и актуален после Phase 1
+    BINARY_PATH="$BIN_DIR/cc1c-ras-adapter.exe"
 
-# Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
-export SERVER_PORT=8088
+    # Проверить что бинарник существует
+    if [ ! -f "$BINARY_PATH" ]; then
+        echo -e "${RED}✗ RAS Adapter бинарник не найден: $BINARY_PATH${NC}"
+        echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o ../../bin/cc1c-ras-adapter.exe cmd/main.go${NC}"
+        exit 1
+    fi
 
-nohup "$BINARY_PATH" > "$LOGS_DIR/cluster-service.log" 2>&1 &
-CLUSTER_SERVICE_PID=$!
-echo $CLUSTER_SERVICE_PID > "$PIDS_DIR/cluster-service.pid"
+    # .env.local уже загружен в начале скрипта
 
-sleep 2
-if kill -0 $CLUSTER_SERVICE_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ Cluster Service запущен (PID: $CLUSTER_SERVICE_PID)${NC}"
+    # Переопределить порт для ras-adapter (default 8088, не 8080 из .env.local)
+    export SERVER_PORT=8088
+
+    nohup "$BINARY_PATH" > "$LOGS_DIR/ras-adapter.log" 2>&1 &
+    RAS_ADAPTER_PID=$!
+    echo $RAS_ADAPTER_PID > "$PIDS_DIR/ras-adapter.pid"
+
+    sleep 2
+    if kill -0 $RAS_ADAPTER_PID 2>/dev/null; then
+        echo -e "${GREEN}✓ RAS Adapter запущен (PID: $RAS_ADAPTER_PID)${NC}"
+
+        # Health check
+        if curl -sf http://localhost:8088/health > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ RAS Adapter health check PASSED${NC}"
+        else
+            echo -e "${YELLOW}⚠️  RAS Adapter health check FAILED (может потребоваться время для запуска)${NC}"
+        fi
+    else
+        echo -e "${RED}✗ Не удалось запустить RAS Adapter${NC}"
+        cat "$LOGS_DIR/ras-adapter.log"
+        exit 1
+    fi
 else
-    echo -e "${RED}✗ Не удалось запустить Cluster Service${NC}"
-    cat "$LOGS_DIR/cluster-service.log"
-    exit 1
+    # DEPRECATED: cluster-service (replaced by ras-adapter in Week 4)
+    echo -e "${YELLOW}⚠️  Используется DEPRECATED cluster-service (USE_RAS_ADAPTER=false)${NC}"
+    echo -e "${BLUE}[10/12] Запуск Cluster Service (port 8088) - DEPRECATED...${NC}"
+
+    # Бинарник гарантированно существует и актуален после Phase 1
+    BINARY_PATH="$BIN_DIR/cc1c-cluster-service.exe"
+
+    # .env.local уже загружен в начале скрипта
+
+    # Переопределить порт для cluster-service (default 8088, не 8080 из .env.local)
+    export SERVER_PORT=8088
+
+    nohup "$BINARY_PATH" > "$LOGS_DIR/cluster-service.log" 2>&1 &
+    CLUSTER_SERVICE_PID=$!
+    echo $CLUSTER_SERVICE_PID > "$PIDS_DIR/cluster-service.pid"
+
+    sleep 2
+    if kill -0 $CLUSTER_SERVICE_PID 2>/dev/null; then
+        echo -e "${GREEN}✓ Cluster Service запущен (PID: $CLUSTER_SERVICE_PID)${NC}"
+    else
+        echo -e "${RED}✗ Не удалось запустить Cluster Service${NC}"
+        cat "$LOGS_DIR/cluster-service.log"
+        exit 1
+    fi
 fi
 echo ""
 
@@ -578,7 +622,7 @@ echo -e "  API Gateway:      ${GREEN}http://localhost:8080/health${NC}"
 echo -e "  Orchestrator:"
 echo -e "    Admin Panel:    ${GREEN}http://localhost:8000/admin${NC}"
 echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
-echo -e "  Cluster Service:  ${GREEN}http://localhost:8088/health${NC}"
+echo -e "  RAS Adapter:      ${GREEN}http://localhost:8088/health${NC} (Week 4 NEW!)"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
 echo -e "  ras-grpc-gw:      ${GREEN}http://localhost:8081/health${NC} (gRPC: 9999)"
 echo ""

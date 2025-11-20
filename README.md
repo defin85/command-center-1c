@@ -32,39 +32,40 @@
 ## 🏗️ Архитектура
 
 ```
-┌─────────────┐
-│   Frontend  │ React + TypeScript + Ant Design
-│   (Port 5173)│
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│ API Gateway │ Go + Gin
-│  (Port 8080)│
-└──────┬──────┘
-       │
-┌──────▼──────────┐
-│  Orchestrator   │ Python + Django + DRF
-│   (Port 8000)   │
-└────┬────────┬───┘
-     │        │
-┌────▼────┐ ┌▼─────────┐
-│  Celery │ │PostgreSQL│
-│  Tasks  │ │  Redis   │
-└────┬────┘ └──────────┘
-     │
-┌────▼──────┐
-│ Go Workers│ Parallel processing
-│ (Scalable)│
-└─────┬─────┘
-      │
-┌─────▼─────────┐
-│ OData Adapter │
-└───────┬───────┘
-        │
-   ┌────▼────┐
-   │ 700+    │
-   │ 1C Bases│
-   └─────────┘
+┌─────────┐
+│ React   │ TypeScript + Ant Design
+│ (5173)  │
+└────┬────┘
+     │ HTTP + WebSocket
+┌────▼────┐
+│ Go API  │ Gin + JWT + Rate Limiting
+│ Gateway │
+│ (8080)  │
+└────┬────┘
+     │ HTTP
+┌────▼────────┐
+│ Django      │ DRF + Celery
+│ Orchestr.   │ Business Logic
+│ (8000)      │
+└──┬────┬─────┘
+   │    │
+┌──▼──┐ │  ┌──────────┐
+│Redis│ └─→│PostgreSQL│
+│Queue│    │ (5432)   │
+└──┬──┘    └──────────┘
+   │
+┌──▼──────┐
+│Go Worker│ Goroutines pool (x2 replicas)
+│Pool     │ Parallel: 100-500 bases
+└────┬────┘
+     │ OData + Redis Pub/Sub
+┌────▼────────┐     ┌──────────────┐
+│ 700+ 1C     │ ←───│ ras-adapter  │ ← Week 4 NEW!
+│ Bases       │     │ (8088)       │   (replaces cluster-service + ras-grpc-gw)
+└─────────────┘     └──────────────┘
+                           │ khorevaa/ras-client (direct)
+                           ▼
+                       RAS (1545)
 ```
 
 ---

@@ -35,7 +35,8 @@ PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
 # Список Go сервисов (в порядке приоритета)
-GO_SERVICES=("api-gateway" "worker" "cluster-service" "batch-service")
+# Week 4: ras-adapter заменяет cluster-service (оба в списке для backward compatibility)
+GO_SERVICES=("api-gateway" "worker" "ras-adapter" "cluster-service" "batch-service")
 
 # Цвета для вывода
 RED='\033[0;31m'
