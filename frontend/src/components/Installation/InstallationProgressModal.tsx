@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { Modal, Progress, Typography, Alert, Space, Spin } from 'antd'
-import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { Modal, Progress, Typography, Alert, Space, Spin, Button } from 'antd'
+import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined, ClockCircleOutlined, MonitorOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import { ExtensionInstallation } from '../../types/installation'
 
-const { Text, Title } = Typography
+const { Text, Title, Paragraph } = Typography
 
 interface InstallationProgressModalProps {
     visible: boolean
     databaseId: string
     databaseName: string
+    operationId?: string  // Operation ID для мониторинга workflow
     onClose: () => void
     pollInterval?: number // ms, по умолчанию 2000
     fetchStatus: (databaseId: string) => Promise<ExtensionInstallation | null>
@@ -18,10 +20,12 @@ export const InstallationProgressModal: React.FC<InstallationProgressModalProps>
     visible,
     databaseId,
     databaseName,
+    operationId,
     onClose,
     pollInterval = 2000,
     fetchStatus,
 }) => {
+    const navigate = useNavigate()
     const [installation, setInstallation] = useState<ExtensionInstallation | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -164,6 +168,38 @@ export const InstallationProgressModal: React.FC<InstallationProgressModalProps>
                     }
                     showIcon
                 />
+
+                {/* Operation ID Block */}
+                {operationId && (
+                    <div style={{
+                        padding: '12px',
+                        background: '#f0f2f5',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <div>
+                            <Text strong>Operation ID: </Text>
+                            <Paragraph
+                                copyable={{ text: operationId, tooltips: ['Копировать', 'Скопировано!'] }}
+                                style={{ marginBottom: 0, display: 'inline', fontSize: '12px' }}
+                            >
+                                <code>{operationId}</code>
+                            </Paragraph>
+                        </div>
+                        <Button
+                            type="primary"
+                            icon={<MonitorOutlined />}
+                            onClick={() => {
+                                navigate(`/operation-monitor?operation=${operationId}`)
+                                onClose()
+                            }}
+                        >
+                            Monitor Workflow
+                        </Button>
+                    </div>
+                )}
 
                 {/* Error Message */}
                 {installation?.error_message && (

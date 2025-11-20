@@ -28,7 +28,7 @@
 Все скрипты находятся в директории `scripts/dev/` и предназначены для локальной разработки в **Hybrid mode** (Docker для инфраструктуры, процессы на хосте для приложений).
 
 **Режим разработки:**
-- **Docker:** PostgreSQL, Redis, ClickHouse
+- **Docker:** PostgreSQL, Redis, ClickHouse, Prometheus, Grafana
 - **Процессы на хосте:** Django Orchestrator, Celery, Go сервисы, Frontend
 
 **Доступные сервисы:**
@@ -37,10 +37,15 @@
 - `celery-beat` - Celery Beat
 - `api-gateway` - Go API Gateway (port 8080)
 - `worker` - Go Worker
-- `ras-grpc-gw` - RAS gRPC Gateway (port 9999)
+- `ras` - 1C RAS Server (port 1545)
+- `ras-grpc-gw` - RAS gRPC Gateway (port 9999, HTTP 8081)
 - `cluster-service` - Go Cluster Service (port 8088)
 - `batch-service` - Go Batch Service (port 8087)
 - `frontend` - React Frontend (port 5173)
+
+**Мониторинг (Docker, автозапуск):**
+- `prometheus` - Metrics collection (port 9090)
+- `grafana` - Dashboards & visualization (port 3001)
 
 ---
 
@@ -79,20 +84,24 @@
 **Опции:** Нет
 
 **Что делает:**
-1. Запускает Docker сервисы (postgres, redis, clickhouse)
-2. Применяет Django миграции
-3. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
-4. Запускает Go сервисы (api-gateway, worker, ras-grpc-gw, cluster-service, batch-service)
-5. Запускает Frontend (React dev server)
+1. **Phase 1:** Проверка и пересборка Go сервисов (умная автопересборка измененных)
+2. **Phase 2:** Запускает Docker сервисы:
+   - Infrastructure: PostgreSQL, Redis, ClickHouse (опционально)
+   - **Monitoring: Prometheus, Grafana** ← автоматически!
+3. Применяет Django миграции
+4. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
+5. Запускает Go сервисы (api-gateway, worker, ras, ras-grpc-gw, cluster-service, batch-service)
+6. Запускает Frontend (React dev server)
 
 **Особенности:**
+- **Умная автопересборка:** проверяет изменения в Go коде и пересобирает только измененные сервисы
+- **Мониторинг включен:** Prometheus + Grafana запускаются автоматически на шаге [1/12]
 - Автоматически создает `.env.local` из `.env.example` если отсутствует
-- Проверяет наличие собранных бинарников Go → fallback на `go run` если нет
 - Сохраняет PID процессов в `pids/`
 - Логи сохраняются в `logs/`
 - Ожидает готовности PostgreSQL и Redis перед продолжением
 
-**Примечание:** Для первого запуска рекомендуется использовать `build-and-start.sh` чтобы собрать бинарники.
+**Важно:** Go сервисы должны быть собраны. Скрипт автоматически пересобирает измененные сервисы, либо используйте `--force-rebuild`.
 
 ---
 
@@ -108,18 +117,24 @@
 **Опции:** Нет
 
 **Что делает:**
-1. Останавливает сервисы в **обратном порядке** запуска (reverse dependencies)
+1. Останавливает application сервисы в **обратном порядке** запуска (reverse dependencies)
 2. Использует graceful shutdown (SIGTERM → wait 10s → SIGKILL если не завершился)
 3. Удаляет PID файлы
-4. Находит и убивает зависшие процессы по портам если PID файлы потеряны
+4. **Останавливает Docker infrastructure** (PostgreSQL, Redis)
+5. **Останавливает Docker monitoring** (Prometheus, Grafana)
+6. Находит и убивает зависшие процессы по портам если PID файлы потеряны
 
 **Порядок остановки:**
 ```
-frontend → batch-service → cluster-service → ras-grpc-gw → worker →
-api-gateway → celery-beat → celery-worker → orchestrator
+Application Services:
+  frontend → batch-service → cluster-service → ras-grpc-gw → worker →
+  api-gateway → celery-beat → celery-worker → orchestrator
+
+Docker Services:
+  PostgreSQL, Redis → Prometheus, Grafana
 ```
 
-**Примечание:** Docker сервисы (postgres, redis, clickhouse) НЕ останавливаются. Используйте `docker-compose down` для остановки инфраструктуры.
+**Важно:** Начиная с версии 2.6, скрипт останавливает **ВСЕ сервисы**, включая мониторинг. Если хотите остановить только мониторинг: `./scripts/dev/stop-monitoring.sh`
 
 ---
 
@@ -296,6 +311,11 @@ api-gateway → celery-beat → celery-worker → orchestrator
    - Redis: проверка контейнера + `redis-cli ping`
    - ClickHouse: проверка контейнера
 
+4. **Проверка мониторинга (опционально):**
+   - Prometheus: проверка контейнера + HTTP health endpoint
+   - Grafana: проверка контейнера + HTTP health endpoint
+   - Если мониторинг не запущен - показывает инструкцию для запуска
+
 **Пример вывода:**
 ```
 ========================================
@@ -323,6 +343,58 @@ api-gateway → celery-beat → celery-worker → orchestrator
 ```
 
 **Использование:** Запускайте периодически чтобы убедиться что все сервисы работают корректно.
+
+**Важно:** Начиная с версии 2.6, health-check также проверяет мониторинг (Prometheus, Grafana) в секции [6].
+
+---
+
+### start-monitoring.sh
+
+**Назначение:** Запускает Prometheus + Grafana в Docker контейнерах для мониторинга Event-Driven архитектуры
+
+**Использование:**
+```bash
+./scripts/dev/start-monitoring.sh
+```
+
+**Опции:** Нет
+
+**Что делает:**
+1. Проверяет что Docker запущен
+2. Создает сеть `cc1c-local-network` если не существует
+3. Запускает Prometheus (`:9090`) и Grafana (`:3001`) через `docker-compose.local.monitoring.yml`
+4. Выполняет health checks обоих сервисов
+5. Выводит URL для доступа
+
+**Доступ:**
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3001 (admin/admin)
+- A/B Testing Dashboard: автоматически провизионируется в Grafana
+
+**Примечание:** Мониторинг теперь **запускается автоматически** с `start-all.sh`. Используйте этот скрипт только если хотите запустить мониторинг отдельно без остальных сервисов.
+
+---
+
+### stop-monitoring.sh
+
+**Назначение:** Останавливает Prometheus + Grafana контейнеры
+
+**Использование:**
+```bash
+./scripts/dev/stop-monitoring.sh
+```
+
+**Опции:** Нет
+
+**Что делает:**
+1. Останавливает контейнеры `cc1c-prometheus-local` и `cc1c-grafana-local`
+2. Удаляет контейнеры
+3. **Сохраняет данные** в volumes: `cc1c-prometheus-local-data`, `cc1c-grafana-local-data`
+
+**Примечание:**
+- Данные НЕ удаляются, так что метрики и дашборды сохранятся при следующем запуске
+- Для полной очистки: `docker volume rm cc1c-prometheus-local-data cc1c-grafana-local-data`
+- `stop-all.sh` теперь **автоматически** вызывает `stop-monitoring.sh`
 
 ---
 
@@ -681,11 +753,13 @@ command-center-1c/
 
 | Скрипт | Опции | Аргументы | Назначение |
 |--------|-------|-----------|------------|
-| `start-all.sh` | нет | нет | Запуск всех сервисов |
-| `stop-all.sh` | нет | нет | Остановка всех сервисов |
+| `start-all.sh` | нет | нет | Запуск ВСЕХ сервисов (app + infra + monitoring) |
+| `stop-all.sh` | нет | нет | Остановка ВСЕХ сервисов (app + infra + monitoring) |
 | `restart.sh` | нет | `<service-name>` | Перезапуск одного сервиса |
 | `restart-all.sh` | `--help`, `--force-rebuild`, `--no-rebuild`, `--parallel-build`, `--service=<name>`, `--verbose` | нет | Умный перезапуск с автопересборкой |
 | `logs.sh` | нет | `<service-name>` `[lines]` | Просмотр логов |
+| `start-monitoring.sh` | нет | нет | Запуск только мониторинга (опционально) |
+| `stop-monitoring.sh` | нет | нет | Остановка только мониторинга (опционально) |
 | `health-check.sh` | нет | нет | Проверка статуса сервисов |
 | `build-and-start.sh` | `--clean`, `--help` | нет | Сборка + запуск |
 | `../build.sh` | `--service=<name>`, `--os=<os>`, `--arch=<arch>`, `--parallel`, `--clean`, `--help` | нет | Сборка Go сервисов |

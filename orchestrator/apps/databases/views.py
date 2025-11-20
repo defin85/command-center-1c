@@ -520,10 +520,16 @@ class DatabaseViewSet(viewsets.ModelViewSet):
 
         task = queue_extension_installation.delay([str(pk)], extension_config)
 
+        # Получить результат task чтобы извлечь operation_id
+        # Task возвращает: {"status": "queued", "operation_id": "...", "queued_count": 1, "total_requested": 1}
+        result = task.get(timeout=10)  # Ждём максимум 10 секунд
+
         return Response({
             "status": "queued",
             "task_id": str(task.id),
-            "message": f"Installation started for {database.name}"
+            "operation_id": result.get("operation_id"),  # NEW: Return operation_id for workflow tracking
+            "message": f"Installation started for {database.name}",
+            "queued_count": result.get("queued_count", 1)
         }, status=status.HTTP_201_CREATED)
     
     @extend_schema(

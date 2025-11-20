@@ -16,4 +16,11 @@ urlpatterns = [
         views.operation_callback,
         name='operation-callback'
     ),
+
+    # SSE endpoint для real-time workflow tracking
+    path(
+        '<str:operation_id>/stream',
+        views.operation_stream,
+        name='operation-stream'
+    ),
 ]

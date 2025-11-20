@@ -38,13 +38,13 @@ groups:
           impact: "HIGH - Users may experience failed operations and data inconsistencies"
 
           action: |
-            1. Verify alert in Grafana dashboard: http://localhost:3001/d/event-driven-ab-testing
+            1. Verify alert in Grafana dashboard: http://localhost:3001/d/ab-testing-event-driven
             2. Check Worker logs for errors: tail -100 logs/worker.log
             3. Execute rollback: ./scripts/rollback-event-driven.sh
             4. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-success-rate-low"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: |
             rate(worker_execution_success_total{mode="event_driven"}[5m])
@@ -81,14 +81,14 @@ groups:
           impact: "HIGH - Users experience slow operation execution, may timeout"
 
           action: |
-            1. Check Grafana latency panel: http://localhost:3001/d/event-driven-ab-testing
+            1. Check Grafana latency panel: http://localhost:3001/d/ab-testing-event-driven
             2. Verify Redis health: docker exec redis redis-cli INFO
             3. Check database connections: docker exec postgres psql -U commandcenter -c "SELECT count(*) FROM pg_stat_activity;"
             4. Execute rollback: ./scripts/rollback-event-driven.sh
             5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-latency-high"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: |
             histogram_quantile(0.99,
@@ -129,13 +129,13 @@ groups:
 
           action: |
             1. Review compensation reasons in logs: grep "compensation" logs/worker.log
-            2. Check Grafana compensation panel: http://localhost:3001/d/event-driven-ab-testing
+            2. Check Grafana compensation panel: http://localhost:3001/d/ab-testing-event-driven
             3. Analyze failure patterns by reason
             4. If rate continues > 15 minutes, consider rollback
             5. Execute rollback: ./scripts/rollback-event-driven.sh
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-compensation-high"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: |
             rate(worker_compensation_executed_total{mode="event_driven"}[5m])
@@ -179,7 +179,7 @@ groups:
             5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/redis-unavailable"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: up{job="redis"}
 
@@ -213,7 +213,7 @@ groups:
             4. If trips continue > 5 in 10 minutes, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/circuit-breaker-tripped"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: increase(worker_circuit_breaker_trips_total{mode="event_driven"}[10m])
 
@@ -252,7 +252,7 @@ groups:
             4. Monitor for 15 minutes - if continues or worsens, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/retry-rate-high"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: |
             rate(worker_retry_attempts_total{mode="event_driven"}[5m])
@@ -292,7 +292,7 @@ groups:
             2. Verify ENABLE_EVENT_DRIVEN=true
             3. Verify EVENT_DRIVEN_ROLLOUT_PERCENT > 0.0
 
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
       ##########################################################################
       # Warning Alert: Queue Depth Growing
@@ -325,7 +325,7 @@ groups:
             5. If queue depth > 1000, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/queue-depth-growing"
-          dashboard_url: "http://localhost:3001/d/event-driven-ab-testing"
+          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
 
           query: deriv(worker_queue_depth{mode="event_driven"}[5m])
 

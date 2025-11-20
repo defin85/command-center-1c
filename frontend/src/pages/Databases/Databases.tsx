@@ -23,6 +23,7 @@ export const Databases = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [progressModalVisible, setProgressModalVisible] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null)
+  const [currentOperationId, setCurrentOperationId] = useState<string | null>(null)
   const [form] = Form.useForm()
 
   // Загрузка кластеров
@@ -107,6 +108,11 @@ export const Databases = () => {
         path: values.extension.path,
       })
 
+      // Сохранить Operation ID для мониторинга
+      if (response.operation_id) {
+        setCurrentOperationId(response.operation_id)
+      }
+
       // Закрыть модалку выбора файла
       setModalVisible(false)
       form.resetFields()
@@ -114,7 +120,20 @@ export const Databases = () => {
       // Открыть модалку прогресса
       setProgressModalVisible(true)
 
-      message.info(response.message)
+      // Показать сообщение с Operation ID
+      message.success({
+        content: (
+          <div>
+            <div>{response.message}</div>
+            {response.operation_id && (
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#666' }}>
+                Operation ID: {response.operation_id}
+              </div>
+            )}
+          </div>
+        ),
+        duration: 5,
+      })
     } catch (error) {
       console.error('Failed to start installation:', error)
       message.error('Failed to start installation')
@@ -254,12 +273,13 @@ export const Databases = () => {
         </Form>
       </Modal>
 
-      {/* Progress Modal */}
+      {/* Progress Modal с Operation ID внутри */}
       {selectedDatabase && (
         <InstallationProgressModal
           visible={progressModalVisible}
           databaseId={selectedDatabase.id}
           databaseName={selectedDatabase.name}
+          operationId={currentOperationId || undefined}
           onClose={handleProgressModalClose}
           fetchStatus={installationApi.getDatabaseStatus}
         />

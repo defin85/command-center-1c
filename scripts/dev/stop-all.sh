@@ -118,15 +118,29 @@ stop_service "orchestrator"
 echo ""
 
 ##############################################################################
-# Остановка Docker сервисов
+# Остановка Docker сервисов (Infrastructure)
 ##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов...${NC}"
+echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis)...${NC}"
 
 if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
     docker-compose -f docker-compose.local.yml down
     echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
 else
     echo -e "${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
+fi
+
+echo ""
+
+##############################################################################
+# Остановка Docker сервисов (Monitoring)
+##############################################################################
+echo -e "${BLUE}Остановка Docker сервисов (Prometheus, Grafana)...${NC}"
+
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    docker-compose -f docker-compose.local.monitoring.yml down
+    echo -e "${GREEN}✓ Мониторинг остановлен${NC}"
+else
+    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден${NC}"
 fi
 
 echo ""
@@ -160,8 +174,17 @@ check_and_kill_port 1545 "RAS"
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"
 
+# Мониторинг (обычно не нужно, т.к. Docker контейнеры)
+# check_and_kill_port 9090 "Prometheus"
+# check_and_kill_port 3001 "Grafana"
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  ✓ Все сервисы остановлены!${NC}"
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${BLUE}Управление:${NC}"
+echo -e "  Запустить все:         ${GREEN}./scripts/dev/start-all.sh${NC}"
+echo -e "  Запустить мониторинг:  ${GREEN}./scripts/dev/start-monitoring.sh${NC}"
+echo -e "  Проверить статус:      ${GREEN}./scripts/dev/health-check.sh${NC}"
 echo ""

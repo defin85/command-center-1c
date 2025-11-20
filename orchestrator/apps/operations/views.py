@@ -3,11 +3,15 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
+from django.utils import timezone
+from django.conf import settings
 from .models import BatchOperation, Task
 from .serializers import BatchOperationSerializer, TaskSerializer
 from .redis_client import redis_client
 import logging
+import json
+import redis as redis_module
 
 logger = logging.getLogger(__name__)
 
@@ -202,3 +206,106 @@ def operation_callback(request, operation_id):
             {"error": f"Operation {operation_id} not found"},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+@api_view(['GET'])
+def operation_stream(request, operation_id):
+    """
+    SSE endpoint для real-time updates операции.
+
+    GET /api/v1/operations/{operation_id}/stream?token={jwt_token}
+
+    NOTE: EventSource не поддерживает custom headers, поэтому токен передается через query parameter.
+
+    Клиент подключается через EventSource и получает события в real-time:
+    - PENDING → QUEUED → PROCESSING → UPLOADING → INSTALLING → VERIFYING → SUCCESS/FAILED
+
+    Event format:
+    data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
+    """
+    # Manual authentication via query parameter (EventSource limitation)
+    from rest_framework_simplejwt.authentication import JWTAuthentication
+    from rest_framework.exceptions import AuthenticationFailed
+
+    token = request.GET.get('token')
+    if not token:
+        return JsonResponse({'error': 'Missing token parameter'}, status=401)
+
+    try:
+        jwt_auth = JWTAuthentication()
+        validated_token = jwt_auth.get_validated_token(token)
+        user = jwt_auth.get_user(validated_token)
+        if not user:
+            raise AuthenticationFailed('User not found')
+    except Exception as e:
+        logger.error(f"SSE authentication failed: {e}")
+        return JsonResponse({'error': 'Invalid token'}, status=401)
+
+    logger.info(f"SSE stream requested for operation {operation_id} by user {user.username}")
+
+    def event_stream():
+        """Generator для SSE событий."""
+        logger.info(f"event_stream: Starting for operation {operation_id}")
+
+        # Подключиться к Redis PubSub
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+        redis_conn = redis_module.from_url(
+            redis_url,
+            decode_responses=True
+        )
+        pubsub = redis_conn.pubsub()
+        channel = f"operation:{operation_id}:events"
+        pubsub.subscribe(channel)
+        logger.info(f"event_stream: Subscribed to channel {channel}")
+
+        # Отправить начальное состояние
+        try:
+            operation = BatchOperation.objects.get(id=operation_id)
+            logger.info(f"event_stream: Found operation with status {operation.status}")
+            initial_event = {
+                "version": "1.0",
+                "operation_id": str(operation_id),
+                "timestamp": timezone.now().isoformat(),
+                "state": operation.status.upper(),
+                "microservice": "orchestrator",
+                "message": f"Операция в статусе {operation.status}",
+                "metadata": {
+                    "operation_type": operation.operation_type,
+                    "created_at": operation.created_at.isoformat()
+                }
+            }
+            logger.info(f"event_stream: Sending initial event")
+            yield f"data: {json.dumps(initial_event)}\n\n"
+            logger.info(f"event_stream: Initial event sent")
+        except BatchOperation.DoesNotExist:
+            error_event = {
+                "error": "Operation not found",
+                "operation_id": str(operation_id)
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+            pubsub.unsubscribe()
+            pubsub.close()
+            redis_conn.close()
+            return
+
+        # Слушать события из Redis PubSub
+        try:
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    # Переслать событие клиенту
+                    yield f"data: {message['data']}\n\n"
+        except GeneratorExit:
+            # Клиент отключился
+            logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
+        finally:
+            pubsub.unsubscribe()
+            pubsub.close()
+            redis_conn.close()
+
+    response = StreamingHttpResponse(
+        event_stream(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+    return response

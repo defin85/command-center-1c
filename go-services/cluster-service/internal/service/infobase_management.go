@@ -16,6 +16,9 @@ import (
 	apiv1 "github.com/v8platform/protos/gen/ras/service/api/v1"
 	messagesv1 "github.com/v8platform/protos/gen/ras/messages/v1"
 
+	// Import infobase management service from ras-grpc-gw
+	infobaseService "github.com/v8platform/ras-grpc-gw/pkg/gen/infobase/service"
+
 	"go.uber.org/zap"
 )
 
@@ -23,8 +26,8 @@ import (
 type InfobaseManagementService struct {
 	grpcClient *grpc.Client
 	logger     *zap.Logger
-	httpClient *http.Client     // For calling ras-grpc-gw HTTP endpoints
-	rasGWURL   string           // ras-grpc-gw HTTP server URL (default: http://localhost:8081)
+	httpClient *http.Client // For terminate session HTTP endpoint
+	rasGWURL   string        // ras-grpc-gw HTTP server URL (default: http://localhost:8081)
 }
 
 // NewInfobaseManagementService creates a new InfobaseManagementService instance
@@ -37,7 +40,7 @@ func NewInfobaseManagementService(client *grpc.Client, logger *zap.Logger, rasGW
 		grpcClient: client,
 		logger:     logger,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second, // Default timeout for HTTP requests
+			Timeout: 10 * time.Second,
 		},
 		rasGWURL: rasGWURL,
 	}
@@ -45,7 +48,7 @@ func NewInfobaseManagementService(client *grpc.Client, logger *zap.Logger, rasGW
 
 // LockInfobase locks an infobase (blocks scheduled jobs)
 //
-// REAL IMPLEMENTATION: Calls ras-grpc-gw HTTP API /api/v1/infobases/lock
+// REAL IMPLEMENTATION: Calls ras-grpc-gw gRPC API InfobaseManagementService.LockInfobase
 // Blocks only scheduled jobs (scheduled_jobs_deny=true), does NOT block user sessions
 func (s *InfobaseManagementService) LockInfobase(ctx context.Context, clusterID, infobaseID string) error {
 	if clusterID == "" || infobaseID == "" {
@@ -64,72 +67,42 @@ func (s *InfobaseManagementService) LockInfobase(ctx context.Context, clusterID,
 		return err
 	}
 
-	// Build HTTP request to ras-grpc-gw
-	url := fmt.Sprintf("%s/api/v1/infobases/lock", s.rasGWURL)
+	// Create gRPC client for InfobaseManagementService
+	client := infobaseService.NewInfobaseManagementServiceClient(s.grpcClient.GetConnection())
 
-	reqBody := map[string]interface{}{
-		"cluster_id":          clusterID,
-		"infobase_id":         infobaseID,
-		"sessions_deny":       false, // Do NOT block user sessions
-		"scheduled_jobs_deny": true,  // Block ONLY scheduled jobs
+	// Build gRPC request
+	req := &infobaseService.LockInfobaseRequest{
+		ClusterId:         clusterID,
+		InfobaseId:        infobaseID,
+		SessionsDeny:      false, // Do NOT block user sessions
+		ScheduledJobsDeny: true,  // Block ONLY scheduled jobs
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
+	// Execute gRPC call
+	resp, err := client.LockInfobase(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		s.logger.Error("failed to lock infobase via gRPC",
+			zap.String("cluster_id", clusterID),
+			zap.String("infobase_id", infobaseID),
+			zap.Error(err))
+		return fmt.Errorf("lock infobase gRPC call failed: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Execute HTTP request
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ras-grpc-gw returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// Parse response
-	var response struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Error   string `json:"error,omitempty"`
-	}
-
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if !response.Success {
-		return fmt.Errorf("lock failed: %s", response.Error)
+	if !resp.Success {
+		return fmt.Errorf("lock failed: %s", resp.Message)
 	}
 
 	s.logger.Info("infobase locked successfully",
 		zap.String("cluster_id", clusterID),
 		zap.String("infobase_id", infobaseID),
-		zap.String("message", response.Message))
+		zap.String("message", resp.Message))
 
 	return nil
 }
 
 // UnlockInfobase unlocks an infobase (enables scheduled jobs)
 //
-// REAL IMPLEMENTATION: Calls ras-grpc-gw HTTP API /api/v1/infobases/unlock
+// REAL IMPLEMENTATION: Calls ras-grpc-gw gRPC API InfobaseManagementService.UnlockInfobase
 // Unlocks scheduled jobs (unlock_scheduled_jobs=true), does NOT unlock user sessions
 func (s *InfobaseManagementService) UnlockInfobase(ctx context.Context, clusterID, infobaseID string) error {
 	if clusterID == "" || infobaseID == "" {
@@ -148,65 +121,35 @@ func (s *InfobaseManagementService) UnlockInfobase(ctx context.Context, clusterI
 		return err
 	}
 
-	// Build HTTP request to ras-grpc-gw
-	url := fmt.Sprintf("%s/api/v1/infobases/unlock", s.rasGWURL)
+	// Create gRPC client for InfobaseManagementService
+	client := infobaseService.NewInfobaseManagementServiceClient(s.grpcClient.GetConnection())
 
-	reqBody := map[string]interface{}{
-		"cluster_id":             clusterID,
-		"infobase_id":            infobaseID,
-		"unlock_sessions":        false, // Do NOT unlock user sessions (we didn't lock them)
-		"unlock_scheduled_jobs":  true,  // Unlock ONLY scheduled jobs
+	// Build gRPC request
+	req := &infobaseService.UnlockInfobaseRequest{
+		ClusterId:           clusterID,
+		InfobaseId:          infobaseID,
+		UnlockSessions:      false, // Do NOT unlock user sessions (we didn't lock them)
+		UnlockScheduledJobs: true,  // Unlock ONLY scheduled jobs
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
+	// Execute gRPC call
+	resp, err := client.UnlockInfobase(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		s.logger.Error("failed to unlock infobase via gRPC",
+			zap.String("cluster_id", clusterID),
+			zap.String("infobase_id", infobaseID),
+			zap.Error(err))
+		return fmt.Errorf("unlock infobase gRPC call failed: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Execute HTTP request
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ras-grpc-gw returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// Parse response
-	var response struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Error   string `json:"error,omitempty"`
-	}
-
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if !response.Success {
-		return fmt.Errorf("unlock failed: %s", response.Error)
+	if !resp.Success {
+		return fmt.Errorf("unlock failed: %s", resp.Message)
 	}
 
 	s.logger.Info("infobase unlocked successfully",
 		zap.String("cluster_id", clusterID),
 		zap.String("infobase_id", infobaseID),
-		zap.String("message", response.Message))
+		zap.String("message", resp.Message))
 
 	return nil
 }

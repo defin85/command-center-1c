@@ -392,7 +392,7 @@ print_summary() {
     echo ""
 
     echo -e "${BLUE}Next Steps:${NC}"
-    echo -e "  1. Monitor dashboard: http://localhost:3001/d/event-driven-ab-testing"
+    echo -e "  1. Monitor dashboard: http://localhost:3001/d/ab-testing-event-driven"
     echo -e "  2. Verify success rate > 95% for 30 minutes"
     echo -e "  3. Check for stuck operations: 0 expected"
     echo -e "  4. Complete verification checklist: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md"

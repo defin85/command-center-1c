@@ -1,0 +1,36 @@
+.workflow-tracker {
+  width: 100%;
+}
+
+.active-node {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(24, 144, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0);
+  }
+}
+
+.timeline-container {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.timeline {
+  padding: 12px;
+}
+
+.timeline-event {
+  transition: background-color 0.3s ease;
+}
+
+.timeline-event:hover {
+  background-color: #e6f7ff !important;
+}

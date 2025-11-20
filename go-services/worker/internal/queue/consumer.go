@@ -23,20 +23,10 @@ type Consumer struct {
 }
 
 // NewConsumer creates a new Redis queue consumer
-func NewConsumer(cfg *config.Config, processor *processor.TaskProcessor) (*Consumer, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	// Test connection
-	if err := client.Ping(context.Background()).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
-	}
-
+func NewConsumer(cfg *config.Config, processor *processor.TaskProcessor, redisClient *redis.Client) (*Consumer, error) {
+	// Use provided redis client instead of creating new one
 	return &Consumer{
-		redis:        client,
+		redis:        redisClient,
 		processor:    processor,
 		workerID:     cfg.WorkerID,
 		queueName:    "cc1c:operations:v1",

@@ -144,7 +144,7 @@ echo ""
 ##############################################################################
 # Phase 2: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse)
 ##############################################################################
-echo -e "${BLUE}[1/11] Запуск Docker сервисов...${NC}"
+echo -e "${BLUE}[1/12] Запуск Docker сервисов...${NC}"
 
 # Проверить docker-compose.local.yml
 if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
@@ -183,13 +183,52 @@ for i in {1..30}; do
     sleep 1
 done
 
-echo -e "${GREEN}✓ Docker сервисы запущены${NC}"
+echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)${NC}"
+
+# Запуск мониторинга (Prometheus + Grafana)
+echo -e "${YELLOW}   Запуск мониторинга (Prometheus, Grafana)...${NC}"
+
+if [ ! -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден, пропускаем мониторинг${NC}"
+else
+    # Проверить что Docker запущен
+    if ! docker info > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Docker не запущен, пропускаем мониторинг${NC}"
+    else
+        # Проверить/создать сеть
+        if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
+            echo -e "${YELLOW}   Создание сети cc1c-local-network...${NC}"
+            docker network create cc1c-local-network
+        fi
+
+        # Запустить мониторинг
+        docker-compose -f docker-compose.local.monitoring.yml up -d
+
+        # Подождать готовности
+        sleep 3
+
+        # Проверить Prometheus
+        if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Prometheus может быть еще не готов${NC}"
+        fi
+
+        # Проверить Grafana
+        if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Grafana запущен (http://localhost:3001)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Grafana может быть еще не готов${NC}"
+        fi
+    fi
+fi
+
 echo ""
 
 ##############################################################################
 # Шаг 2: Django Migrations
 ##############################################################################
-echo -e "${BLUE}[2/11] Применение миграций Django...${NC}"
+echo -e "${BLUE}[2/12] Применение миграций Django...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -205,7 +244,7 @@ echo ""
 ##############################################################################
 # Шаг 3: Django Orchestrator
 ##############################################################################
-echo -e "${BLUE}[3/11] Запуск Django Orchestrator (port 8000)...${NC}"
+echo -e "${BLUE}[3/12] Запуск Django Orchestrator (port 8000)...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -233,7 +272,7 @@ echo ""
 ##############################################################################
 # Шаг 4: Celery Worker
 ##############################################################################
-echo -e "${BLUE}[4/11] Запуск Celery Worker...${NC}"
+echo -e "${BLUE}[4/12] Запуск Celery Worker...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -265,7 +304,7 @@ echo ""
 ##############################################################################
 # Шаг 5: Celery Beat
 ##############################################################################
-echo -e "${BLUE}[5/11] Запуск Celery Beat...${NC}"
+echo -e "${BLUE}[5/12] Запуск Celery Beat...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -295,7 +334,7 @@ echo ""
 ##############################################################################
 # Шаг 6: API Gateway (Go)
 ##############################################################################
-echo -e "${BLUE}[6/11] Запуск API Gateway (port 8080)...${NC}"
+echo -e "${BLUE}[6/12] Запуск API Gateway (port 8080)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
@@ -319,7 +358,7 @@ echo ""
 ##############################################################################
 # Шаг 7: Go Worker
 ##############################################################################
-echo -e "${BLUE}[7/11] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[7/12] Запуск Go Worker...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-worker.exe"
@@ -542,6 +581,11 @@ echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
 echo -e "  Cluster Service:  ${GREEN}http://localhost:8088/health${NC}"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
 echo -e "  ras-grpc-gw:      ${GREEN}http://localhost:8081/health${NC} (gRPC: 9999)"
+echo ""
+echo -e "${BLUE}Мониторинг:${NC}"
+echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
+echo -e "  Grafana:          ${GREEN}http://localhost:3001${NC} (admin/admin)"
+echo -e "  A/B Dashboard:    ${GREEN}http://localhost:3001/d/ab-testing-event-driven${NC}"
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"
 echo -e "${BLUE}Логи:${NC} $LOGS_DIR/"

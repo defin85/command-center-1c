@@ -36,3 +36,11 @@ export interface BatchInstallResponse {
   total_databases: number
   status: string
 }
+
+export interface InstallSingleResponse {
+  task_id: string
+  operation_id: string
+  message: string
+  status: string
+  queued_count?: number
+}

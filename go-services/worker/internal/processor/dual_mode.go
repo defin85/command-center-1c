@@ -117,8 +117,9 @@ func validateExtensionInstallParams(data map[string]interface{}) (extensionName,
 		return "", "", "", fmt.Errorf("extension_name too long (max 255 chars): %d", len(extensionName))
 	}
 
-	// Format validation (alphanumeric + underscore/dash only)
-	validNamePattern := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	// Format validation (allow Unicode letters, digits, underscore/dash/space)
+	// Allow Cyrillic and other Unicode characters for extension names
+	validNamePattern := regexp.MustCompile(`^[\p{L}\p{N}_\- ]+$`)
 	if !validNamePattern.MatchString(extensionName) {
 		return "", "", "", fmt.Errorf("extension_name contains invalid characters: %s", extensionName)
 	}

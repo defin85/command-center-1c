@@ -4,6 +4,7 @@ import {
   BatchInstallResponse,
   InstallationProgress,
   ExtensionInstallation,
+  InstallSingleResponse,
 } from '../../types/installation'
 
 export const installationApi = {
@@ -52,8 +53,8 @@ export const installationApi = {
   installSingle: async (
     databaseId: string,
     extensionConfig: { name: string; path: string }
-  ): Promise<{ task_id: string; message: string }> => {
-    const response = await apiClient.post<{ task_id: string; message: string }>(
+  ): Promise<InstallSingleResponse> => {
+    const response = await apiClient.post<InstallSingleResponse>(
       `/databases/${databaseId}/install-extension/`,
       { extension_config: extensionConfig }
     )

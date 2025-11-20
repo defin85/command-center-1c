@@ -4,10 +4,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
@@ -15,9 +20,6 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
-	"go.uber.org/zap"
-	"net/http"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -120,9 +122,22 @@ func main() {
 	)
 	log.Info("credentials client initialized with encrypted transport")
 
-	// Initialize task processor
-	taskProcessor := processor.NewTaskProcessor(cfg, credsClient)
-	log.Info("task processor initialized")
+	// Initialize Redis client (shared between processor and consumer)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+
+	// Test Redis connection
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatal("failed to connect to Redis", zap.Error(err))
+	}
+	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
+
+	// Initialize task processor with Redis client for event publishing
+	taskProcessor := processor.NewTaskProcessor(cfg, credsClient, redisClient)
+	log.Info("task processor initialized with event publishing")
 
 	// Log feature flags configuration
 	featureFlags := taskProcessor.GetFeatureFlags()
@@ -132,8 +147,8 @@ func main() {
 		zap.Int("max_concurrent_events", featureFlags["max_concurrent_events"].(int)),
 	)
 
-	// Initialize queue consumer
-	consumer, err := queue.NewConsumer(cfg, taskProcessor)
+	// Initialize queue consumer with shared Redis client
+	consumer, err := queue.NewConsumer(cfg, taskProcessor, redisClient)
 	if err != nil {
 		log.Fatal("failed to initialize consumer", zap.Error(err))
 	}

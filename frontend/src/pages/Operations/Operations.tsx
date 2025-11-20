@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Tag, Progress, Modal } from 'antd'
-import { ReloadOutlined, EyeOutlined, StopOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Tag, Progress, Modal, Typography } from 'antd'
+import { ReloadOutlined, EyeOutlined, StopOutlined, MonitorOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import { operationsApi, BatchOperation, Task } from '../../api/endpoints/operations'
 import type { ColumnsType } from 'antd/es/table'
 
+const { Paragraph } = Typography
+
 export const Operations = () => {
+  const navigate = useNavigate()
   const [operations, setOperations] = useState<BatchOperation[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedOperation, setSelectedOperation] = useState<BatchOperation | null>(null)
@@ -73,6 +77,20 @@ export const Operations = () => {
       dataIndex: 'name',
       key: 'name',
       width: 250,
+    },
+    {
+      title: 'Operation ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 200,
+      render: (id: string) => (
+        <Paragraph
+          copyable={{ text: id, tooltips: ['Copy ID', 'Copied!'] }}
+          style={{ marginBottom: 0, fontSize: '12px' }}
+        >
+          <code>{id.substring(0, 8)}...</code>
+        </Paragraph>
+      )
     },
     {
       title: 'Type',
@@ -218,6 +236,36 @@ export const Operations = () => {
         {selectedOperation && (
           <div>
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              {/* Operation ID с кнопкой Monitor Workflow */}
+              <div style={{
+                padding: '12px',
+                background: '#f0f2f5',
+                borderRadius: '8px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <strong>Operation ID:</strong>
+                  <Paragraph
+                    copyable={{ text: selectedOperation.id }}
+                    style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
+                  >
+                    <code>{selectedOperation.id}</code>
+                  </Paragraph>
+                </div>
+                <Button
+                  type="primary"
+                  icon={<MonitorOutlined />}
+                  onClick={() => {
+                    navigate(`/operation-monitor?operation=${selectedOperation.id}`)
+                    setDetailsVisible(false)
+                  }}
+                >
+                  Monitor Workflow
+                </Button>
+              </div>
+
               <div>
                 <strong>Description:</strong> {selectedOperation.description}
               </div>

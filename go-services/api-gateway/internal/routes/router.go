@@ -56,6 +56,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			operations := protected.Group("/operations")
 			{
 				operations.GET("", handlers.ProxyToOrchestrator)
+		operations.GET("/", handlers.ProxyToOrchestrator) // Trailing slash для Django DRF
 				operations.GET("/:id", handlers.ProxyToOrchestrator)
 				operations.POST("/:id/cancel", handlers.ProxyToOrchestrator)
 				operations.POST("/:id/callback", handlers.ProxyToOrchestrator)

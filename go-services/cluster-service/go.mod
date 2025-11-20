@@ -10,8 +10,9 @@ require (
 	github.com/redis/go-redis/v9 v9.16.0
 	github.com/stretchr/testify v1.11.1
 	github.com/v8platform/protos v0.2.0
+	github.com/v8platform/ras-grpc-gw v0.0.0-00010101000000-000000000000
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.40.0
+	google.golang.org/grpc v1.68.1
 )
 
 require (
@@ -68,6 +69,7 @@ require (
 )
 
 replace (
-	google.golang.org/genproto => google.golang.org/genproto/googleapis/rpc v0.0.0-20251111163417-95abcf5c77ba
 	github.com/commandcenter1c/commandcenter/shared => ../shared
+	github.com/v8platform/ras-grpc-gw => ../../../ras-grpc-gw
+	google.golang.org/genproto => google.golang.org/genproto/googleapis/rpc v0.0.0-20251111163417-95abcf5c77ba
 )

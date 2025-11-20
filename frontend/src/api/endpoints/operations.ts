@@ -57,10 +57,17 @@ export interface Operation {
   updated_at: string
 }
 
+interface PaginatedResponse<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
 export const operationsApi = {
   list: async (params?: Record<string, any>): Promise<BatchOperation[]> => {
-    const response = await apiClient.get<BatchOperation[]>('/operations/', { params })
-    return response.data
+    const response = await apiClient.get<PaginatedResponse<BatchOperation>>('/operations/', { params })
+    return response.data.results  // Extract results from paginated response
   },
 
   get: async (id: string): Promise<BatchOperation> => {

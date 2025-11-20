@@ -12,6 +12,11 @@
 |----------|----------|------|--------|
 | **[MESSAGE_BROKER_DECISION.md](MESSAGE_BROKER_DECISION.md)** | Redis vs RabbitMQ - Executive Decision | 2025-11-12 | ✅ APPROVED |
 | **[REDIS_VS_RABBITMQ_COMPARISON.md](REDIS_VS_RABBITMQ_COMPARISON.md)** | Детальное сравнение (40+ стр) | 2025-11-12 | ✅ FINAL |
+| **[RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md)** | Unified Architecture - RAS Adapter (Event-Driven v2.0) | 2025-11-19 | 📋 DESIGN |
+| **[RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md](RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md)** | Compatibility: RAS Adapter ↔ Event-Driven State Machine | 2025-11-19 | 📋 ANALYSIS |
+| **[REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md)** | Distributed Tracing & Real-Time Monitoring | 2025-11-19 | 📋 DESIGN |
+| **[OBSERVABILITY_QUICKSTART.md](OBSERVABILITY_QUICKSTART.md)** | Quick Start - выбор стратегии (MVP/Hybrid/Full) | 2025-11-19 | ⭐ START HERE |
+| **[RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md](RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md)** | Comprehensive endpoint testing (Week 4.5) | 2025-11-19 | 📋 CHECKLIST |
 
 ### Визуализации
 
@@ -56,23 +61,57 @@ architecture/
 
 ---
 
-### 2. Event-Driven Architecture (Future)
+### 2. RAS Adapter - Unified Service Architecture (NEW!)
 
-**Статус:** Планируется для Phase 2+
+**Статус:** 📋 Design Phase (2025-11-19)
 
-**Current State:**
-- Redis Lists для task queues (operations)
-- Redis Pub/Sub для real-time progress updates
-- HTTP calls между сервисами (worker → cluster-service)
+**Проблема:**
+- cluster-service + ras-grpc-gw (2 сервиса) дублируют функции
+- UpdateInfobase через RAS binary protocol не работает (LockInfobase падает)
+- Смешанные протоколы (REST + gRPC + HTTP) вызывают путаницу
+- Отсутствие distributed tracing (невозможно отследить запрос через 7 сервисов)
 
-**Future (Phase 2+):**
+**Решение:**
+- **RAS Adapter** - unified service (слияние cluster-service + ras-grpc-gw)
+- **Hybrid Protocol:** gRPC internal, REST external/legacy
+- **New Lock/Unlock:** Используем RAS RegInfoBase вместо UpdateInfobase
+- **Distributed Tracing:** OpenTelemetry + Jaeger для мониторинга
+- **Debug Tools:** cc1c-debug CLI (ping, trace, health)
+- **Real-Time UI:** Service Mesh Monitor + Operation Trace Viewer
+
+**См.:**
+- **[OBSERVABILITY_QUICKSTART.md](OBSERVABILITY_QUICKSTART.md)** - Quick Start (TL;DR + выбор стратегии) ⭐ START HERE
+- [RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md) - Основной roadmap (Event-Driven v2.0, MVP 5 weeks)
+- [WHY_EVENT_DRIVEN_NOT_GRPC.md](../archive/roadmap_variants/WHY_EVENT_DRIVEN_NOT_GRPC.md) - Architectural decision
+- [REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md) - Distributed Tracing (10 weeks)
+
+---
+
+### 3. Event-Driven Architecture (IMPLEMENTED!)
+
+**Статус:** ✅ Week 1-2 ЗАВЕРШЕНЫ (2025-11-12), Week 3 ~71% готово
+
+**Implemented (Week 1-2):**
+- ✅ Shared Events Library (Redis Pub/Sub + Watermill)
+- ✅ Worker State Machine (extension install orchestration)
+- ✅ cluster-service Event Handlers (lock/unlock/terminate)
+- ✅ batch-service Event Handlers (install extension)
+- ✅ Orchestrator Event Subscriber (Django + Redis Streams)
+- ✅ 149 unit tests, 5 integration tests (all PASS)
+
+**Current State (Week 3):**
+- 🟡 Feature Flags для dual-mode (Event-Driven vs HTTP Sync)
+- 🟡 A/B Testing metrics (Prometheus + Grafana)
+- ⏸️ Production rollout (10% → 50% → 100%)
+
+**Future Enhancements:**
 - Redis Streams для workflow events (optional upgrade)
-- Event-driven coordination для complex workflows (extension install)
+- State Machine persistence (PostgreSQL)
+- OpenTelemetry distributed tracing
 
-**Triggers для upgrade:**
-- Audit log requirements
-- Complex multi-service workflows
-- At-least-once delivery критично
+**См.:**
+- [../EVENT_DRIVEN_ROADMAP.md](../EVENT_DRIVEN_ROADMAP.md) - Детальный roadmap (3 weeks)
+- [../EVENT_DRIVEN_ARCHITECTURE.md](../EVENT_DRIVEN_ARCHITECTURE.md) - Концептуальный дизайн (82KB)
 
 ---
 
@@ -201,6 +240,7 @@ A: Да, см. Migration Path в [REDIS_VS_RABBITMQ_COMPARISON.md](REDIS_VS_RABB
 
 | Дата | Версия | Изменения |
 |------|--------|-----------|
+| 2025-11-19 | 1.1 | Добавлен RAS Adapter roadmap + compatibility analysis + observability documents |
 | 2025-11-12 | 1.0 | Создан comprehensive анализ Redis vs RabbitMQ (3 документа: decision, comparison, diagrams) |
 
 ---

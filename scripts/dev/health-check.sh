@@ -59,6 +59,7 @@ check_process "celery-worker"
 check_process "celery-beat"
 check_process "api-gateway"
 check_process "worker"
+check_process "ras"
 check_process "ras-grpc-gw"
 check_process "cluster-service"
 check_process "batch-service"
@@ -197,6 +198,38 @@ check_port 6379 "Redis"
 echo ""
 
 ##############################################################################
+# Проверка мониторинга (опционально)
+##############################################################################
+echo -e "${BLUE}[6] Проверка мониторинга (опционально):${NC}"
+echo ""
+
+# Проверка Prometheus
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-prometheus-local"; then
+    if curl -sf http://localhost:9090/-/healthy &>/dev/null; then
+        echo -e "  Prometheus: ${GREEN}✓ запущен и готов (http://localhost:9090)${NC}"
+        check_port 9090 "Prometheus" > /dev/null
+    else
+        echo -e "  Prometheus: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+    fi
+else
+    echo -e "  Prometheus: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
+fi
+
+# Проверка Grafana
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-grafana-local"; then
+    if curl -sf http://localhost:3001/api/health &>/dev/null; then
+        echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:3001, admin/admin)${NC}"
+        check_port 3001 "Grafana" > /dev/null
+    else
+        echo -e "  Grafana: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+    fi
+else
+    echo -e "  Grafana: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
+fi
+
+echo ""
+
+##############################################################################
 # Итоговый статус
 ##############################################################################
 echo -e "${BLUE}========================================${NC}"
@@ -205,10 +238,10 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Подсчитать количество работающих сервисов
-TOTAL=9
+TOTAL=10
 RUNNING=0
 
-for service in orchestrator celery-worker celery-beat api-gateway worker ras-grpc-gw cluster-service batch-service frontend; do
+for service in orchestrator celery-worker celery-beat api-gateway worker ras ras-grpc-gw cluster-service batch-service frontend; do
     pid_file="$PIDS_DIR/${service}.pid"
     if [ -f "$pid_file" ]; then
         pid=$(cat "$pid_file")

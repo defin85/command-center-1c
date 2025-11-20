@@ -448,7 +448,7 @@ Approved By: _______________
 
 Access Grafana dashboard:
 ```
-http://localhost:3001/d/event-driven-ab-testing
+http://localhost:3001/d/ab-testing-event-driven
 ```
 
 **Key Panels to Watch:**

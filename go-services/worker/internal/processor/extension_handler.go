@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/workflow"
@@ -161,6 +163,11 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		return result
 	}
 
+	// Publish UPLOADING event - начинаем подготовку к установке
+	if err := p.eventPublisher.PublishUploading(ctx, msg.OperationID, extensionPath); err != nil {
+		log.Error("failed to publish UPLOADING event", zap.Error(err))
+	}
+
 	// NEW: Initialize workflow with Redis Pub/Sub support
 	redisAddr := fmt.Sprintf("%s:%s", p.config.RedisHost, p.config.RedisPort)
 	pubSubEnabled := true // TODO: Add config parameter REDIS_PUBSUB_ENABLED
@@ -215,6 +222,11 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 	log.Infof("calling Batch Service for database %s, url=%s, extension=%s, path=%s",
 		databaseID, batchServiceURL, extensionName, extensionPath)
 
+	// Publish INSTALLING event - начинаем фактическую установку
+	if err := p.eventPublisher.PublishInstalling(ctx, msg.OperationID, extensionName); err != nil {
+		log.Error("failed to publish INSTALLING event", zap.Error(err))
+	}
+
 	installResp, err := p.callBatchService(ctx, batchServiceURL, installReq)
 	if err != nil {
 		// Детальный error log
@@ -240,6 +252,11 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 		result.ErrorCode = "INSTALLATION_FAILED"
 		result.Duration = time.Since(start).Seconds()
 		return result
+	}
+
+	// Publish VERIFYING event - проверяем результат установки
+	if err := p.eventPublisher.PublishVerifying(ctx, msg.OperationID); err != nil {
+		log.Error("failed to publish VERIFYING event", zap.Error(err))
 	}
 
 	// NEW: Execute post-install (unlock jobs)

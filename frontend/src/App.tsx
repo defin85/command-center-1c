@@ -7,6 +7,7 @@ import { Databases } from './pages/Databases/Databases'
 import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { InstallationMonitorPage } from './pages/InstallationMonitor/InstallationMonitorPage'
+import { OperationMonitor } from './pages/OperationMonitor'
 import { Login } from './pages/Login/Login'
 
 // Компонент для защиты маршрутов
@@ -65,6 +66,13 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <InstallationMonitorPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/operation-monitor" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <OperationMonitor />
               </MainLayout>
             </ProtectedRoute>
           } />

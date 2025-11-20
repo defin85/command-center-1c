@@ -7,11 +7,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
 )
 
@@ -24,19 +28,21 @@ type TaskProcessor struct {
 	workerID       string
 	featureFlags   *workerConfig.FeatureFlags  // NEW: Feature flags for dual-mode
 	dualModeProc   *DualModeProcessor          // NEW: Dual-mode processor
+	eventPublisher *events.EventPublisher      // NEW: Event publisher for workflow tracking
 }
 
 // NewTaskProcessor creates a new task processor
-func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher) *TaskProcessor {
+func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redisClient *redis.Client) *TaskProcessor {
 	// Load feature flags from environment
 	featureFlags := workerConfig.LoadFeatureFlagsFromEnv()
 
 	processor := &TaskProcessor{
-		config:       cfg,
-		credsClient:  credsClient,
-		odataClients: make(map[string]*odata.Client),
-		workerID:     cfg.WorkerID,
-		featureFlags: featureFlags,
+		config:         cfg,
+		credsClient:    credsClient,
+		odataClients:   make(map[string]*odata.Client),
+		workerID:       cfg.WorkerID,
+		featureFlags:   featureFlags,
+		eventPublisher: events.NewEventPublisher(redisClient),
 	}
 
 	// Initialize dual-mode processor
@@ -137,9 +143,15 @@ func (p *TaskProcessor) getODataClient(creds *credentials.DatabaseCredentials) *
 
 func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
+	log := logger.GetLogger()
 
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
+	}
+
+	// Publish PROCESSING event
+	if err := p.eventPublisher.PublishProcessing(ctx, msg.OperationID, databaseID, p.workerID); err != nil {
+		log.Error("failed to publish PROCESSING event", zap.Error(err))
 	}
 
 	// Special handling for extension installation (with dual-mode support)
@@ -148,6 +160,18 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		result = p.dualModeProc.ProcessExtensionInstall(ctx, msg, databaseID)
 		result.DatabaseID = databaseID
 		result.Duration = time.Since(start).Seconds()
+
+		// Publish SUCCESS/FAILED event for extension installation
+		if result.Success {
+			if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+				log.Error("failed to publish SUCCESS event", zap.Error(err))
+			}
+		} else {
+			if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+				log.Error("failed to publish FAILED event", zap.Error(err))
+			}
+		}
+
 		return result
 	}
 
@@ -179,6 +203,17 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 
 	result.DatabaseID = databaseID
 	result.Duration = time.Since(start).Seconds()
+
+	// Publish SUCCESS/FAILED event for OData operations
+	if result.Success {
+		if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+			log.Error("failed to publish SUCCESS event", zap.Error(err))
+		}
+	} else {
+		if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+			log.Error("failed to publish FAILED event", zap.Error(err))
+		}
+	}
 
 	return result
 }

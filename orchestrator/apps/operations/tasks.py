@@ -5,6 +5,7 @@ import logging
 
 from .models import BatchOperation, Task
 from .redis_client import redis_client
+from .events import event_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,15 @@ def enqueue_operation(self, operation_id: str):
 
         # 4. Enqueue to Redis
         redis_client.enqueue_operation(message)
+
+        # 4.1. Publish QUEUED event for real-time tracking
+        event_publisher.publish(
+            operation_id=str(operation_id),
+            state='QUEUED',
+            microservice='celery',
+            queue="cc1c:operations:v1",
+            target_databases_count=len(message["target_databases"])
+        )
 
         # 5. Update operation status
         operation.status = BatchOperation.STATUS_QUEUED

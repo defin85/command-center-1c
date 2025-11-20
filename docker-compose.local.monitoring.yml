@@ -1,0 +1,74 @@
+version: '3.9'
+
+##############################################################################
+# Monitoring Services for Local Development
+##############################################################################
+# Этот файл добавляет Prometheus и Grafana к локальной разработке
+# Использование: docker-compose -f docker-compose.local.yml -f docker-compose.local.monitoring.yml up -d
+##############################################################################
+
+services:
+  ##############################################################################
+  # Prometheus - Metrics Collection
+  ##############################################################################
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cc1c-prometheus-local
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml
+      - ./infrastructure/monitoring/prometheus/alerts:/etc/prometheus/alerts
+      - prometheus_data_local:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - cc1c-local
+
+  ##############################################################################
+  # Grafana - Dashboards & Visualization
+  ##############################################################################
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cc1c-grafana-local
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data_local:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    depends_on:
+      - prometheus
+    networks:
+      - cc1c-local
+
+##############################################################################
+# Networks (should match docker-compose.local.yml)
+##############################################################################
+networks:
+  cc1c-local:
+    external: true
+    name: cc1c-local-network
+
+##############################################################################
+# Volumes
+##############################################################################
+volumes:
+  prometheus_data_local:
+    name: cc1c-prometheus-local-data
+  grafana_data_local:
+    name: cc1c-grafana-local-data
