@@ -28,9 +28,13 @@ func NewRouter(
 	{
 		// Cluster routes
 		v1.GET("/clusters", GetClusters(clusterSvc))
+		v1.GET("/clusters/:id", GetClusterByID(clusterSvc))
 
 		// Infobase routes
 		v1.GET("/infobases", GetInfobases(infobaseSvc))
+		v1.GET("/infobases/:id", GetInfobaseByID(infobaseSvc))
+		v1.POST("/infobases", CreateInfobase(infobaseSvc))
+		v1.DELETE("/infobases/:id", DropInfobase(infobaseSvc))
 		v1.POST("/infobases/:infobase_id/lock", LockInfobase(infobaseSvc))
 		v1.POST("/infobases/:infobase_id/unlock", UnlockInfobase(infobaseSvc))
 

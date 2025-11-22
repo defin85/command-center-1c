@@ -84,7 +84,8 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 		zap.String("database_id", payload.DatabaseID))
 
 	// Call service to unlock infobase
-	err = h.service.UnlockInfobase(ctx, payload.ClusterID, payload.InfobaseID)
+	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
+	err = h.service.UnlockInfobase(ctx, payload.ClusterID, payload.InfobaseID, "", "")
 	if err != nil {
 		h.logger.Error("failed to unlock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),

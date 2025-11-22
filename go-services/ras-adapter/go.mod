@@ -2,15 +2,19 @@ module github.com/commandcenter1c/commandcenter/ras-adapter
 
 go 1.24.0
 
-replace github.com/commandcenter1c/commandcenter/shared => ../shared
+replace (
+	github.com/commandcenter1c/commandcenter/shared => ../shared
+	github.com/commandcenter1c/commandcenter/ras-adapter/ras-client => ./ras-client
+)
 
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.1
+	github.com/commandcenter1c/commandcenter/ras-adapter/ras-client v0.0.0-00010101000000-000000000000
 	github.com/commandcenter1c/commandcenter/shared v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
-	github.com/khorevaa/ras-client v0.0.0-20201104084928-a9228766f6ed
 	github.com/redis/go-redis/v9 v9.17.0
 	github.com/satori/go.uuid v1.2.0
+	github.com/sony/gobreaker v1.0.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.1
 )
@@ -75,3 +79,6 @@ require (
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Local vendored copy of khorevaa/ras-client with custom fixes
+replace github.com/commandcenter1c/commandcenter/ras-adapter/ras-client => ./ras-client

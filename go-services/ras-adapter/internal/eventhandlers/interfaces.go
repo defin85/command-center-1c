@@ -17,8 +17,8 @@ type SessionManager interface {
 // InfobaseManager defines the interface for infobase management operations
 // This interface allows for easier testing with mocks
 type InfobaseManager interface {
-	LockInfobase(ctx context.Context, clusterID, infobaseID string) error
-	UnlockInfobase(ctx context.Context, clusterID, infobaseID string) error
+	LockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error
+	UnlockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error
 }
 
 // EventPublisher defines the interface for publishing events

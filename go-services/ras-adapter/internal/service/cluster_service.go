@@ -46,3 +46,27 @@ func (s *ClusterService) GetClusters(ctx context.Context, serverAddr string) ([]
 
 	return clusters, nil
 }
+
+// GetClusterByID retrieves specific cluster by ID from RAS server
+func (s *ClusterService) GetClusterByID(ctx context.Context, serverAddr, clusterID string) (*models.Cluster, error) {
+	// Get all clusters
+	clusters, err := s.GetClusters(ctx, serverAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find cluster by ID
+	for _, cluster := range clusters {
+		if cluster.UUID == clusterID {
+			s.logger.Info("found cluster by ID",
+				zap.String("cluster_id", clusterID),
+				zap.String("name", cluster.Name))
+			return cluster, nil
+		}
+	}
+
+	s.logger.Warn("cluster not found",
+		zap.String("cluster_id", clusterID),
+		zap.String("server", serverAddr))
+	return nil, fmt.Errorf("cluster not found: %s", clusterID)
+}

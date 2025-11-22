@@ -8,6 +8,11 @@ type Infobase struct {
 	DBServer string `json:"db_server"`
 	DBName   string `json:"db_name"`
 
+	// Database credentials (for create/update operations)
+	DBUser string `json:"db_user,omitempty"`
+	DBPwd  string `json:"db_pwd,omitempty"`
+	Locale string `json:"locale,omitempty"`
+
 	// Week 2: Lock/Unlock fields
 	ScheduledJobsDeny bool `json:"scheduled_jobs_deny"` // Блокировка регламентных заданий
 	SessionsDeny      bool `json:"sessions_deny"`        // Блокировка пользователей

@@ -1,95 +1,85 @@
-# CommandCenter1C - Инструкции для AI агентов
+# CommandCenter1C - AI Agent Instructions
 
 > Микросервисная платформа для централизованного управления 700+ базами 1С
 
 ---
 
-## 📚 Навигация
-
-**Быстрый доступ к секциям:**
-
-| Секция | Описание | Время чтения |
-|--------|----------|--------------|
-| **[🚨 AI AGENT INSTRUCTIONS](#-ai-agent-instructions)** | Критичная информация для AI: quick start, tools, constraints, правила | ⏱️ 2 мин |
-| **[📋 PROJECT CONTEXT](#-project-context)** | О проекте: цели, архитектура (краткая), текущая фаза | ⏱️ 3 мин |
-| **[🔧 DEVELOPMENT GUIDE](#-development-guide)** | Ежедневная работа: setup, workflow, testing, troubleshooting | ⏱️ 5 мин |
-| **[📖 REFERENCE](#-reference)** | Детальная справка: архитектура, структура, tech stack, документация | ⏱️ 10 мин |
-
-**💡 Рекомендация для AI агентов:** Начни с секции "🚨 AI AGENT INSTRUCTIONS" - там вся критичная информация для быстрого старта!
-
----
-
-## 🚨 AI AGENT INSTRUCTIONS
-
-### ⚡ КРИТИЧНО
+## 🚨 КРИТИЧНО
 
 **Дата обновления:** 2025-11-08
 **Текущая фаза:** Phase 1, Week 2.5-3 (Core Functionality)
 **Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ (~25% готово) - Task Queue & Worker Integration
 **Режим разработки:** Hybrid (Infrastructure в Docker, Application на хосте)
-**Roadmap:** Balanced Approach (14-16 недель) - ТОЛЬКО этот вариант реализуем
+**Roadmap:** Balanced Approach (14-16 недель) - [docs/ROADMAP.md](docs/ROADMAP.md)
 
 **Завершено:** Sprint 1.1-1.4 (Infrastructure, Models, OData, RAS Integration) ✅
 **В работе:** Sprint 2.1 (Celery ↔ Worker) 🟡 30%, Sprint 2.2 (Template Engine) 🟡 20%
 **Критичные GAPs:** Orchestrator → Worker integration, Template Engine, Real Operation Execution
 
-### 🚀 БЫСТРЫЙ СТАРТ
+---
 
-**Запуск проекта в начале сессии:**
+## 🚀 БЫСТРЫЙ СТАРТ
+
+**Запуск проекта:**
 ```bash
 cd /c/1CProject/command-center-1c
 ./scripts/dev/start-all.sh        # Умный запуск с автопересборкой
 ./scripts/dev/health-check.sh     # Проверить статус
 ```
 
-**Во время разработки:**
+**Управление сервисами:**
 ```bash
-./scripts/dev/restart-all.sh        # Умный перезапуск с автопересборкой
-./scripts/dev/restart.sh <service>  # Перезапуск одного сервиса
+./scripts/dev/restart-all.sh        # Перезапуск всех сервисов
+./scripts/dev/restart.sh <service>  # Один сервис
 ./scripts/dev/logs.sh <service>     # Просмотр логов
 ./scripts/dev/stop-all.sh           # Остановить всё
 ```
 
-**Опции для start-all.sh и restart-all.sh:**
-```bash
---force-rebuild     # Принудительная пересборка всех Go сервисов
---no-rebuild        # Пропустить пересборку (быстрый старт)
---parallel-build    # Параллельная пересборка (быстрее)
---verbose           # Детальный вывод
---help              # Справка
-```
-
 **Доступные сервисы:**
 - `orchestrator`, `celery-worker`, `celery-beat` (Python/Django)
-- `api-gateway`, `worker`, `ras-adapter` (Go) - Week 4: ras-adapter заменил cluster-service
+- `api-gateway`, `worker`, `ras-adapter` (Go)
 - `frontend` (React)
-- ~~cluster-service~~, ~~ras-grpc-gw~~ (DEPRECATED Week 4)
 
-### 🛠️ ДОСТУПНЫЕ ИНСТРУМЕНТЫ
+---
 
-**Skill для DevOps:**
+## 🛠️ ДОСТУПНЫЕ ИНСТРУМЕНТЫ
+
+**Skills (используй через Skill tool):**
 - `cc1c-devops` - управление сервисами, логи, health checks
+- `cc1c-navigator` - навигация по monorepo
+- `cc1c-odata-integration` - работа с OData batch операциями
+- `cc1c-service-builder` - создание Go/Django/React компонентов
+- `cc1c-sprint-guide` - отслеживание прогресса в roadmap
+- `cc1c-test-runner` - запуск и отладка тестов
 
-**Slash Commands:**
+**Slash Commands (используй через SlashCommand tool):**
 - `/dev-start` - запустить все сервисы
 - `/check-health` - проверить статус всех сервисов
 - `/restart-service <name>` - перезапустить сервис
 - `/run-migrations` - применить миграции Django
 - `/test-all` - запустить все тесты
+- `/build-docker` - собрать Docker образы
+
+**MCP Servers для AI-powered debugging:**
+- `mcp-dap-server` - отладка Go сервисов через Delve (SSE transport)
+  - Autonomous bug finding and fixing
+  - Live state inspection (threads, stack traces, variables)
+  - Expression evaluation in debug context
+  - Breakpoint management
+  - См. [DEBUG_WITH_AI.md](docs/DEBUG_WITH_AI.md) для полного руководства
 
 **Endpoints для проверки:**
 - Frontend: http://localhost:5173
 - API Gateway: http://localhost:8080/health
-- Orchestrator:
-  - Admin Panel: http://localhost:8000/admin
-  - API Docs (Swagger): http://localhost:8000/api/docs
-- Cluster Service: http://localhost:8088/health
-- Batch Service: http://localhost:8087/health
-- ras-grpc-gw: http://localhost:8081/health (gRPC: 9999)
+- Orchestrator: http://localhost:8000/admin (Admin Panel)
+- Orchestrator API: http://localhost:8000/api/docs (Swagger)
+- ras-adapter: http://localhost:8088/health
 - Grafana: http://localhost:3001 (admin/admin)
 - Prometheus: http://localhost:9090
 
-### ⚠️ КЛЮЧЕВЫЕ ОГРАНИЧЕНИЯ
+---
+
+## ⚠️ КЛЮЧЕВЫЕ ОГРАНИЧЕНИЯ
 
 1. **Транзакции 1С < 15 секунд** - КРИТИЧНО! Разбивай на короткие транзакции
 2. **Connection limits:** max 3-5 concurrent connections per база 1С
@@ -97,33 +87,23 @@ cd /c/1CProject/command-center-1c
 4. **OData batch:** 100-500 records/batch для групповых операций
 5. **Rate limiting:** 100 req/min per user (default)
 
-### 📐 ПРАВИЛА РАЗРАБОТКИ
+---
+
+## 📐 ПРАВИЛА РАЗРАБОТКИ
 
 1. **Работаем ТОЛЬКО по Balanced roadmap** (docs/ROADMAP.md)
 2. **Следуй monorepo структуре** - не создавай файлы в неправильных местах
 3. **Go shared code** → go-services/shared/ (auth, logger, config)
 4. **Django apps независимы** → минимум cross-app imports
 5. **Frontend → API Gateway ТОЛЬКО** → без прямых вызовов Orchestrator
-6. **ras-grpc-gw запускай первым** → cluster-service зависит от него
-7. **Тесты обязательны** → coverage > 70%
-8. **Локальная разработка** → используй ./scripts/dev/*.sh, НЕ Docker Compose
+6. **Тесты обязательны** → coverage > 70%
+7. **Используй ./scripts/dev/*.sh** для локальной разработки
 
 ---
 
-## 📋 PROJECT CONTEXT
+## 📋 АРХИТЕКТУРА
 
-### О проекте
-
-**Цель:** Микросервисная платформа для централизованного управления 700+ базами 1С:Бухгалтерия 3.0 с параллельной обработкой и real-time мониторингом.
-
-**Экономия:** 10-100x ускорение операций, ROI 260-1200% в первый год.
-
-**Масштаб:**
-- 700+ баз 1С
-- 100-500 параллельных соединений
-- Тысячи операций в минуту
-
-### Архитектура (краткая версия)
+### Краткая схема
 
 ```
 User → Frontend (React:5173)
@@ -134,7 +114,7 @@ API Gateway (Go:8080) → Orchestrator (Django:8000) → PostgreSQL:5432
                           ↓
                     Go Worker Pool (x2) → OData → 1C Bases
                           ↓
-                    ras-adapter (Go:8088) → RAS (1545)  ← Week 4: NEW (replaces cluster-service + ras-grpc-gw)
+                    ras-adapter (Go:8088) → RAS (1545)
 ```
 
 **Поток данных:**
@@ -144,450 +124,6 @@ User → Frontend → API Gateway → Orchestrator → Celery → Redis
 → Results → WebSocket → User
 ```
 
-### Текущая фаза
-
-Актуальную информацию о текущей фазе и спринте см. в начале документа (секция "⚡ КРИТИЧНО").
-
-**История выполненных спринтов:**
-- ✅ Sprint 1.1-1.4: Завершены (см. [Sprint Progress](docs/archive/sprints/))
-- 🟡 Sprint 2.1: Task Queue & Worker (~30% готово, интеграция в TODO)
-- 🟡 Sprint 2.2: Template System (~20% готово, engine в TODO)
-
-**Полный план:**
-- [ROADMAP.md](docs/ROADMAP.md) - Balanced Approach (Phases 1-5, 14-16 недель)
-- [START_HERE.md](docs/START_HERE.md) - Быстрый старт по документации
-
----
-
-## 🔧 DEVELOPMENT GUIDE
-
-### Первоначальная настройка
-
-**Prerequisites:**
-- Docker 20.10+, Docker Compose 2.0+
-- Python 3.11+, Go 1.21+, Node.js 18+
-- Git 2.30+
-
-**Setup:**
-```bash
-git clone <repo>
-cd command-center-1c
-cp .env.local.example .env.local
-# Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
-
-# Python dependencies
-cd orchestrator && python -m venv venv
-source venv/Scripts/activate  # Windows GitBash
-pip install -r requirements.txt
-cd ..
-
-# Node.js dependencies
-cd frontend && npm install && cd ..
-
-# Go dependencies
-cd go-services/api-gateway && go mod download && cd ../..
-cd go-services/worker && go mod download && cd ../..
-cd go-services/cluster-service && go mod download && cd ../..
-
-# Start all
-./scripts/dev/start-all.sh
-./scripts/dev/health-check.sh
-```
-
-### Daily Workflow
-
-**Утром:**
-```bash
-./scripts/dev/start-all.sh         # Умный запуск с автопересборкой измененных сервисов
-./scripts/dev/health-check.sh      # Проверка статуса
-```
-
-**После изменений кода:**
-```bash
-# Для Go сервисов - умный перезапуск с автопересборкой
-./scripts/dev/restart-all.sh
-
-# Для одного Go сервиса
-./scripts/dev/restart-all.sh --service=api-gateway
-
-# Для Python/Frontend (без пересборки)
-./scripts/dev/restart.sh orchestrator
-./scripts/dev/restart.sh frontend
-```
-
-**Просмотр логов:**
-```bash
-./scripts/dev/logs.sh <service-name>
-./scripts/dev/logs.sh all  # Все сервисы
-```
-
-**Вечером:**
-```bash
-./scripts/dev/stop-all.sh
-```
-
-### Тестирование
-
-**Django tests:**
-```bash
-cd orchestrator
-source venv/Scripts/activate
-pytest
-```
-
-**Go tests:**
-```bash
-cd go-services/api-gateway
-go test ./...
-```
-
-**Frontend tests:**
-```bash
-cd frontend
-npm test
-```
-
-**Database migrations:**
-```bash
-cd orchestrator
-source venv/Scripts/activate
-python manage.py makemigrations
-python manage.py migrate
-```
-
-### Troubleshooting
-
-**Распространенные проблемы и решения:**
-
-#### Windows Firewall постоянно спрашивает разрешение
-
-**Причина:** Используется `go run` вместо собранных бинарников → каждый раз новая временная директория
-
-**Решение:**
-```bash
-# Используйте улучшенные скрипты с умной пересборкой:
-./scripts/dev/start-all.sh        # Автоматически собирает бинарники
-./scripts/dev/restart-all.sh      # Умный перезапуск с пересборкой
-
-# Брандмауэр спросит один раз для каждого сервиса и больше не будет беспокоить!
-```
-
-#### Все процессы называются main.exe в Task Manager
-
-**Причина:** Используется `go run` вместо собранных бинарников
-
-**Решение:** См. выше. После использования `start-all.sh` или `restart-all.sh` все процессы будут называться `cc1c-api-gateway.exe`, `cc1c-worker.exe`, и т.д.
-
-#### Сервисы не запускаются
-
-```bash
-# 1. Проверить Docker контейнеры (должны быть: postgres, redis)
-docker ps
-
-# 2. Проверить логи конкретного сервиса
-./scripts/dev/logs.sh <service-name>
-
-# 3. Перезапустить сервис
-./scripts/dev/restart-all.sh --service=<service-name>
-
-# 4. Полный перезапуск всех сервисов с принудительной пересборкой
-./scripts/dev/stop-all.sh
-./scripts/dev/start-all.sh --force-rebuild
-```
-
-#### cluster-service не подключается к ras-grpc-gw
-
-**Причина:** ras-grpc-gw запускается в отдельном репозитории и должен быть запущен первым.
-
-```bash
-# 1. Проверить что ras-grpc-gw запущен
-cd ../ras-grpc-gw
-./start.sh  # или как запускается у вас
-
-# 2. Проверить HTTP endpoint (должен ответить 200 OK)
-curl http://localhost:8081/health
-
-# 3. Проверить что gRPC порт открыт (9999)
-netstat -ano | findstr :9999  # Windows
-# или
-lsof -i :9999  # Linux/Mac
-
-# 4. Посмотреть логи cluster-service
-cd /c/1CProject/command-center-1c
-./scripts/dev/logs.sh cluster-service
-```
-
-**См. также:** [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
-
-#### cluster-service: "connection refused" на порту 9999
-
-**Причина:** ras-grpc-gw не запущен или не готов
-
-**Диагностика:**
-```bash
-# 1. Проверить что gRPC порт слушает
-netstat -ano | findstr :9999  # Windows
-lsof -i :9999  # Linux/Mac
-
-# 2. Проверить процесс ras-grpc-gw
-ps aux | grep ras-grpc-gw  # Linux/Mac
-tasklist | findstr ras-grpc-gw.exe  # Windows
-
-# 3. Проверить health check
-curl http://localhost:8081/health
-# Ожидается: {"service":"ras-grpc-gw","status":"healthy",...}
-```
-
-**Решение:**
-```bash
-# Запустить ras-grpc-gw ПЕРВЫМ
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1545
-
-# Подождать 3-5 секунд, затем запустить cluster-service
-cd /c/1CProject/command-center-1c/go-services/cluster-service
-go run cmd/main.go
-```
-
-**См. также:** [Критичные сервисы → Порядок запуска](#критичные-сервисы)
-
-#### batch-service: "1cv8.exe not found"
-
-**Причина:** Путь к 1cv8.exe не установлен или неправильный
-
-**Диагностика:**
-```bash
-# Проверить переменную окружения
-echo $EXE_1CV8_PATH  # Linux/Mac/GitBash
-set EXE_1CV8_PATH  # Windows CMD
-
-# Проверить что файл существует
-ls "$EXE_1CV8_PATH"  # Linux/Mac/GitBash
-dir "%EXE_1CV8_PATH%"  # Windows CMD
-```
-
-**Решение:**
-```bash
-# Установить правильный путь в .env.local
-cat >> .env.local << EOF
-EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe
-V8_DEFAULT_TIMEOUT=300
-EOF
-
-# Или экспортировать в текущей сессии
-export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
-
-# Перезапустить batch-service
-cd go-services/batch-service
-go run cmd/main.go
-```
-
-#### ras-grpc-gw: "RAS server not available" на порту 1545
-
-**Причина:** RAS сервер 1С не запущен или недоступен
-
-**Диагностика:**
-```bash
-# Проверить подключение к RAS серверу
-telnet localhost 1545
-# или
-nc -zv localhost 1545  # Linux/Mac
-
-# Проверить логи ras-grpc-gw
-cd ../ras-grpc-gw
-cat ras-grpc-gw.log | tail -50
-```
-
-**Решение:**
-
-**Вариант 1: Запустить RAS сервер (если он не запущен):**
-- Открыть консоль администрирования 1С
-- Подключиться к серверу кластера
-- Проверить что RAS работает на порту 1545
-
-**Вариант 2: Изменить порт в параметрах запуска:**
-```bash
-# Если RAS на другом порту (например, 1546)
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1546
-
-# Обновить переменную окружения для cluster-service
-export RAS_SERVER=localhost:1546
-```
-
-**Вариант 3: RAS на удаленном сервере:**
-```bash
-# Указать IP/hostname RAS сервера
-cd ../ras-grpc-gw
-go run cmd/main.go 192.168.1.100:1545
-```
-
-**См. также:** [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md) для детальной настройки RAS
-
-#### Транзакции 1С падают с timeout
-
-**⚠️ КРИТИЧНО:** Транзакции ДОЛЖНЫ быть < 15 секунд!
-
-**Решения:**
-- Разбивай длинные операции на короткие транзакции
-- Используй OData `$batch` для групповых операций (100-500 records/batch)
-- Избегай сложных вычислений внутри транзакций 1С
-- Проверь connection limits (max 3-5 concurrent connections per база)
-
-**См. также:** [ODATA_INTEGRATION.md](docs/ODATA_INTEGRATION.md) для best practices batch операций
-
-#### Database connection error (Django)
-
-```bash
-# 1. Проверить что PostgreSQL запущен
-docker ps | grep postgres
-
-# 2. Проверить что PostgreSQL готов принимать соединения
-docker exec -it postgres pg_isready
-
-# 3. Проверить настройки в .env.local
-cat .env.local | grep DB_HOST
-# Должно быть: DB_HOST=localhost (НЕ postgres!)
-
-# 4. Проверить подключение вручную
-docker exec -it postgres psql -U commandcenter -d commandcenter -c "SELECT 1;"
-
-# 5. Перезапустить Orchestrator
-./scripts/dev/restart.sh orchestrator
-```
-
-#### Redis connection error (Celery)
-
-```bash
-# 1. Проверить что Redis запущен
-docker ps | grep redis
-
-# 2. Тест подключения
-docker exec -it redis redis-cli ping
-# Должно вернуть: PONG
-
-# 3. Проверить настройки в .env.local
-cat .env.local | grep REDIS_HOST
-# Должно быть: REDIS_HOST=localhost (НЕ redis!)
-
-# 4. Перезапустить Celery workers
-./scripts/dev/restart.sh celery-worker
-./scripts/dev/restart.sh celery-beat
-```
-
-#### Django migrations не применяются
-
-```bash
-cd orchestrator
-source venv/Scripts/activate  # Windows GitBash
-# или: source venv/bin/activate  # Linux/Mac
-
-# 1. Проверить статус миграций
-python manage.py showmigrations
-
-# 2. Применить миграции
-python manage.py migrate
-
-# 3. Если нужно откатить
-python manage.py migrate <app_name> <migration_name>
-
-# 4. Создать новые миграции (после изменения models)
-python manage.py makemigrations
-python manage.py migrate
-
-cd ..
-```
-
-#### Frontend не подключается к API Gateway
-
-**Проверь endpoints:**
-```bash
-# API Gateway должен быть доступен
-curl http://localhost:8080/health
-# Ожидается: {"status": "ok"}
-
-# Orchestrator API docs
-curl http://localhost:8000/api/docs
-# Должна открыться Swagger UI
-
-# Frontend должен быть запущен
-curl http://localhost:5173
-```
-
-**Важно:** Frontend общается ТОЛЬКО с API Gateway (`:8080`), НЕ напрямую с Orchestrator (`:8000`)!
-
-**Проверь конфиг Frontend:**
-```bash
-cat frontend/.env.local | grep VITE_API_URL
-# Должно быть: VITE_API_URL=http://localhost:8080/api/v1
-```
-
-#### PID файлы потеряны или повреждены
-
-```bash
-# 1. Очистить все PID файлы
-rm -rf pids/*.pid
-
-# 2. Найти и убить процессы вручную по портам
-# API Gateway (8080)
-netstat -ano | findstr :8080  # Windows
-lsof -i :8080  # Linux/Mac
-
-# Убить процесс
-taskkill /PID <pid> /F  # Windows
-kill -9 <pid>  # Linux/Mac
-
-# 3. Запустить всё заново
-./scripts/dev/start-all.sh
-```
-
-**Дополнительные ресурсы:**
-- Полный troubleshooting guide: [LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md#troubleshooting)
-- DevOps операции: используй Skill `cc1c-devops` или slash command `/check-health`
-
----
-
-## 📖 REFERENCE
-
-### Детальная архитектура
-
-```
-┌─────────┐
-│ React   │ TypeScript + Ant Design
-│ (5173)  │
-└────┬────┘
-     │ HTTP + WebSocket
-┌────▼────┐
-│ Go API  │ Gin + JWT + Rate Limiting
-│ Gateway │
-│ (8080)  │
-└────┬────┘
-     │ HTTP
-┌────▼────────┐
-│ Django      │ DRF + Celery
-│ Orchestr.   │ Business Logic
-│ (8000)      │
-└──┬────┬─────┘
-   │    │
-┌──▼──┐ │  ┌──────────┐
-│Redis│ └─→│PostgreSQL│
-│Queue│    │ (5432)   │
-└──┬──┘    └──────────┘
-   │
-┌──▼──────┐
-│Go Worker│ Goroutines pool (x2 replicas)
-│Pool     │ Parallel: 100-500 bases
-└────┬────┘
-     │ OData + Redis Pub/Sub
-┌────▼────────┐     ┌──────────────┐
-│ 700+ 1C     │ ←───│ ras-adapter  │ ← Week 4 NEW!
-│ Bases       │     │ (8088)       │   (replaces cluster-service + ras-grpc-gw)
-└─────────────┘     └──────┬───────┘
-                           │ khorevaa/ras-client (direct)
-                           ▼
-                       RAS (1545)
-```
-
 ### Структура monorepo
 
 ```
@@ -595,8 +131,8 @@ command-center-1c/
 ├── go-services/              # Go микросервисы
 │   ├── api-gateway/          # HTTP router, auth, rate limit
 │   ├── worker/               # Parallel processing (x2 replicas)
+│   ├── ras-adapter/          # RAS integration (Week 4: replaces cluster-service + ras-grpc-gw)
 │   ├── batch-service/        # Batch operations (в разработке)
-│   ├── cluster-service/      # 1C cluster management (RAS/gRPC)
 │   └── shared/               # Общий код (auth, logger, metrics, models)
 ├── orchestrator/             # Python/Django
 │   ├── apps/
@@ -613,10 +149,10 @@ command-center-1c/
 ├── infrastructure/
 │   ├── docker/               # Dockerfiles
 │   ├── k8s/                  # Kubernetes manifests
-│   ├── monitoring/           # Prometheus + Grafana configs
-│   └── terraform/            # IaC (planned)
+│   └── monitoring/           # Prometheus + Grafana configs
 ├── docs/                     # Документация
-└── docker-compose.yml        # Dev environment (11 services)
+├── scripts/dev/              # Dev scripts
+└── docker-compose.yml        # Dev environment
 ```
 
 ### Технологический стек
@@ -625,487 +161,163 @@ command-center-1c/
 |-----------|------|-----------|------|
 | **API Gateway** | Go 1.21+ | Gin | 8080 |
 | **Workers** | Go 1.21+ | stdlib + goroutines | - |
-| **cluster-service** | Go 1.21+ | gRPC client | 8088 |
+| **ras-adapter** | Go 1.21+ | khorevaa/ras-client | 8088 |
 | **Orchestrator** | Python 3.11+ | Django 4.2+ DRF | 8000 |
 | **Task Queue** | Python 3.11+ | Celery 5.3+ | - |
 | **Frontend** | TypeScript | React 18.2 + Ant Design | 5173 |
 
-**Data:**
-- PostgreSQL 15 (5432) - primary DB
-- Redis 7 (6379) - queue + cache
-- ClickHouse (8123, 9000) - analytics (в dev окружении)
-
-**Monitoring:**
-- Prometheus (9090), Grafana (3001)
-
-**External:**
-- ras-grpc-gw (9999 gRPC, 8081 HTTP) - форк для 1C RAS
+**Data:** PostgreSQL 15 (5432), Redis 7 (6379), ClickHouse (8123, 9000)
+**Monitoring:** Prometheus (9090), Grafana (3001)
 
 ---
 
-## 🔌 Критичные сервисы
+## 🔌 КРИТИЧНЫЕ СЕРВИСЫ
 
-### Разделение ответственности
+### Сервисы и их назначение
 
-| Сервис | Назначение | Протокол | Use Case | Status |
-|--------|------------|----------|----------|--------|
-| **ras-adapter** | **Управление кластерами + Lock/Unlock** | **Redis Pub/Sub + REST** | **Все RAS операции** | ✅ **ACTIVE (Week 4)** |
-| ~~cluster-service~~ | ~~Мониторинг кластеров~~ | ~~gRPC → RAS~~ | ~~Чтение метаданных~~ | ❌ **DEPRECATED** |
-| ~~ras-grpc-gw~~ | ~~Gateway для RAS~~ | ~~gRPC ↔ RAS binary~~ | ~~Прокси~~ | ❌ **DEPRECATED** |
-| **batch-service** | Управление конфигурациями | subprocess → 1cv8.exe | Установка расширений | ⚠️ In Dev |
+| Сервис | Назначение | Порт | Status |
+|--------|------------|------|--------|
+| **ras-adapter** | Управление кластерами + Lock/Unlock через RAS | 8088 | ✅ ACTIVE |
+| **batch-service** | Установка расширений (.cfe) через 1cv8.exe | 8087 | ⚠️ In Dev |
+| ~~cluster-service~~ | ~~Мониторинг кластеров~~ | 8088 | ❌ DEPRECATED |
+| ~~ras-grpc-gw~~ | ~~Gateway для RAS~~ | 8081/9999 | ❌ DEPRECATED |
 
-### ras-grpc-gw (Внешний форк)
-
-**Назначение:** Production-ready gRPC gateway для RAS протокола 1С Enterprise
-- Прокси между gRPC и бинарным протоколом RAS (Remote Administration Server)
-- Connection pooling для масштабирования на 700+ баз
-- Health checks и graceful shutdown
-
-**Технические детали:**
-- **Репозиторий:** `C:\1CProject\ras-grpc-gw` (форк v8platform/ras-grpc-gw)
-- **Версия:** v1.0.0-cc (форк с production features)
-- **Язык:** Go 1.21+
-- **Порты:**
-  - 9999 (gRPC server)
-  - 8081 (HTTP health check)
-- **Протокол:** gRPC ↔ RAS binary protocol
-
-**Запуск:**
-```bash
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1545
-# или с параметрами
-./bin/ras-grpc-gw.exe --bind :9999 --health :8081 localhost:1545
-```
-
-**Health check:**
-```bash
-curl http://localhost:8081/health
-# Ожидается: {"service":"ras-grpc-gw","status":"healthy","version":"v1.0.0-cc"}
-```
-
-**⚠️ ВАЖНО:** Запускать ПЕРВЫМ перед cluster-service!
-
-### cluster-service
-
-**Назначение:** Мониторинг и управление кластерами 1С через gRPC протокол
-- Получение списка кластеров, информационных баз, сессий
-- Real-time мониторинг с низкой latency (<100ms)
-- Integration с Django Orchestrator
-
-**Технические детали:**
-- **Репозиторий:** `go-services/cluster-service`
-- **Язык:** Go 1.21+ / Gin + gRPC client
-- **Порт:** 8088
-- **Зависимости:** ras-grpc-gw (КРИТИЧНО - должен быть запущен)
-
-**API Endpoints:**
-- `GET /health` - health check
-- `GET /api/v1/clusters?server=localhost:1545` - список кластеров
-- `GET /api/v1/infobases?server=localhost:1545` - список информационных баз
-- `GET /api/v1/sessions?cluster=UUID` - активные сессии (Phase 2)
-
-**Запуск:**
-```bash
-cd go-services/cluster-service
-go run cmd/main.go
-```
-
-**Переменные окружения:**
-```bash
-export SERVER_HOST=0.0.0.0
-export SERVER_PORT=8088
-export GRPC_GATEWAY_ADDR=localhost:9999
-export LOG_LEVEL=info
-```
-
-**Health check:**
-```bash
-curl http://localhost:8088/health
-# Ожидается: {"status":"healthy","service":"cluster-service","version":"dev"}
-```
-
-### batch-service
-
-**Назначение:** Установка расширений (.cfe) в базы 1С через subprocess
-- Одиночная установка расширения в базу
-- Batch установка на множество баз параллельно
-- Использует 1cv8.exe напрямую (subprocess)
-
-**Технические детали:**
-- **Репозиторий:** `go-services/batch-service`
-- **Язык:** Go 1.21+ / Gin
-- **Порт:** 8087
-- **Требования:** Путь к 1cv8.exe в переменных окружения
-
-**API Endpoints:**
-- `GET /health` - health check
-- `POST /api/v1/extensions/install` - установка в одну базу
-- `POST /api/v1/extensions/batch-install` - batch установка на несколько баз
-
-**Запуск:**
-```bash
-cd go-services/batch-service
-go run cmd/main.go
-```
-
-**Переменные окружения:**
-```bash
-export SERVER_HOST=0.0.0.0
-export SERVER_PORT=8087
-export EXE_1CV8_PATH="C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe"
-export V8_DEFAULT_TIMEOUT=300
-```
-
-**Health check:**
-```bash
-curl http://localhost:8087/health
-# Ожидается: {"status":"healthy","service":"batch-service","version":"dev"}
-```
-
-### ras-adapter (Week 4 NEW - replaces cluster-service + ras-grpc-gw)
-
-**Назначение:** Unified RAS integration service
+**ras-adapter (Week 4 NEW):**
 - Direct RAS protocol integration (khorevaa/ras-client)
-- Lock/Unlock operations через RegInfoBase
 - Redis Pub/Sub event handlers для Worker State Machine
 - REST API для external clients
+- **Performance:** 30-50% latency improvement (1 network hop вместо 2)
 
-**Технические детали:**
-- **Репозиторий:** `go-services/ras-adapter`
-- **Язык:** Go 1.21+ / Gin + khorevaa/ras-client
-- **Порт:** 8088
-- **Зависимости:** Redis, RAS server (localhost:1545)
+**Подробности:** См. [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md)
 
-**API Endpoints:**
-- `GET /health` - health check
-- `GET /api/v1/clusters?server=localhost:1545` - список кластеров
-- `GET /api/v1/infobases?cluster_id=UUID` - список информационных баз
-- `GET /api/v1/sessions?cluster_id=UUID` - активные сессии
-- `POST /api/v1/infobases/:id/lock` - блокировать регламентные задания
-- `POST /api/v1/infobases/:id/unlock` - разблокировать регламентные задания
-- `POST /api/v1/sessions/terminate` - завершить сессии
+---
 
-**Redis Pub/Sub Channels:**
-- Subscribe: `commands:cluster-service:infobase:lock`
-- Subscribe: `commands:cluster-service:infobase:unlock`
-- Subscribe: `commands:cluster-service:sessions:terminate`
-- Publish: `events:cluster-service:infobase:locked`
-- Publish: `events:cluster-service:infobase:unlocked`
-- Publish: `events:cluster-service:sessions:terminated`
+## 🔧 ПЕРВОНАЧАЛЬНАЯ НАСТРОЙКА
 
-**Запуск:**
+**Prerequisites:**
+- Docker 20.10+, Docker Compose 2.0+
+- Python 3.11+, Go 1.21+, Node.js 18+
+
+**Setup:**
 ```bash
-# Automatic (via start-all.sh)
+git clone <repo>
+cd command-center-1c
+cp .env.local.example .env.local
+# Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
+
+# Python
+cd orchestrator && python -m venv venv
+source venv/Scripts/activate && pip install -r requirements.txt && cd ..
+
+# Node.js
+cd frontend && npm install && cd ..
+
+# Go (опционально - автоматически при старте)
+cd go-services/api-gateway && go mod download && cd ../..
+
+# Start all
 ./scripts/dev/start-all.sh
-
-# Manual
-./bin/cc1c-ras-adapter.exe
-
-# Health check
-curl http://localhost:8088/health
-```
-
-**Performance:**
-- Health Check latency: ~49ms (P95 < 100ms) ✅
-- GET /clusters latency: ~51ms (P95 < 500ms) ✅
-- Throughput: > 100 req/s ✅
-- Success rate: > 99% ✅
-
-**Architecture Improvement:**
-- **Before:** Worker → cluster-service → ras-grpc-gw → RAS (2 network hops)
-- **After:** Worker → ras-adapter → RAS (1 network hop, -50% reduction)
-- **Performance:** 30-50% latency improvement vs old architecture
-
-### Порядок запуска сервисов
-
-**Правильная последовательность:**
-
-1. **Infrastructure** (если не запущено):
-   ```bash
-   docker-compose -f docker-compose.local.yml up -d postgres redis
-   ```
-
-2. **ras-grpc-gw** (ПЕРВЫМ):
-   ```bash
-   cd ../ras-grpc-gw
-   go run cmd/main.go localhost:1545
-   # Подождать 3-5 секунд для инициализации
-   ```
-
-3. **cluster-service** (зависит от ras-grpc-gw):
-   ```bash
-   cd go-services/cluster-service
-   go run cmd/main.go
-   ```
-
-4. **batch-service** (независим):
-   ```bash
-   cd go-services/batch-service
-   go run cmd/main.go
-   ```
-
-5. **Остальные сервисы**:
-   ```bash
-   ./scripts/dev/start-all.sh
-   ```
-
-**Проверка:**
-```bash
-./scripts/dev/health-check.sh
 ```
 
 ---
 
-### Ключевые зависимости
+## 🧪 ТЕСТИРОВАНИЕ
 
-**Runtime dependencies:**
-```
-RAS:1545 ← ras-adapter:8088 (Week 4: direct protocol, khorevaa/ras-client)
-postgres:5432, redis:6379 ← orchestrator:8000, celery-worker, celery-beat
-orchestrator:8000 ← api-gateway:8080
-redis:6379 ← worker (x2 replicas) ← ras-adapter:8088 (Redis Pub/Sub)
-api-gateway:8080 ← frontend:5173
+**Django:**
+```bash
+cd orchestrator && source venv/Scripts/activate && pytest
 ```
 
-**Важно:**
-- API Gateway НЕ зависит напрямую от Workers
-- Workers автономны, масштабируются независимо (deploy.replicas)
-- Frontend общается ТОЛЬКО с API Gateway
-- ras-adapter использует direct RAS protocol (khorevaa/ras-client), больше НЕТ ras-grpc-gw middleman
-- Week 4: 1 network hop вместо 2 (-50% reduction)
+**Go:**
+```bash
+cd go-services/api-gateway && go test ./...
+```
 
-### Документация
+**Frontend:**
+```bash
+cd frontend && npm test
+```
 
-**⭐ Обязательно к прочтению:**
-- **[ROADMAP.md](docs/ROADMAP.md)** - Balanced план (Phases 1-5, 14-16 недель)
-- **[START_HERE.md](docs/START_HERE.md)** - Быстрый старт (2 мин)
-- **[EXECUTIVE_SUMMARY.md](docs/EXECUTIVE_SUMMARY.md)** - Краткое резюме
+**Через Skill:**
+```
+Используй Skill: cc1c-test-runner
+```
+
+---
+
+## 🐛 TROUBLESHOOTING
+
+**Распространенные проблемы:**
+
+1. **Windows Firewall спрашивает разрешение** → используй `./scripts/dev/start-all.sh` (собирает бинарники)
+2. **Сервисы не запускаются** → проверь Docker контейнеры: `docker ps`, затем `./scripts/dev/logs.sh <service>`
+3. **Database connection error** → проверь `.env.local` (DB_HOST=localhost), затем `docker exec -it postgres pg_isready`
+4. **Redis connection error** → проверь `.env.local` (REDIS_HOST=localhost), затем `docker exec -it redis redis-cli ping`
+
+**Полный troubleshooting:** [LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md#troubleshooting)
+
+**Используй Skill для диагностики:**
+```
+Skill: cc1c-devops → автоматическая диагностика и починка
+```
+
+---
+
+## 📖 ДОКУМЕНТАЦИЯ
+
+**⭐ Обязательно:**
+- [ROADMAP.md](docs/ROADMAP.md) - Balanced план (14-16 недель)
+- [START_HERE.md](docs/START_HERE.md) - Быстрый старт (2 мин)
+- [LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md) - Полное руководство
 
 **Практические гайды:**
-- **[LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md)** - Полное руководство (23KB)
-- **[LOCAL_DEV_MIGRATION_SUMMARY.md](LOCAL_DEV_MIGRATION_SUMMARY.md)** - Сводка миграции
-- **[1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md)** - RAS/RAC, gRPC, endpoint management
-- **[DJANGO_CLUSTER_INTEGRATION.md](docs/DJANGO_CLUSTER_INTEGRATION.md)** - cluster-service ↔ Django
-- **[ODATA_INTEGRATION.md](docs/ODATA_INTEGRATION.md)** - Batch операции
+- [1C_ADMINISTRATION_GUIDE.md](docs/1C_ADMINISTRATION_GUIDE.md) - RAS/RAC, endpoint management
+- [ODATA_INTEGRATION.md](docs/ODATA_INTEGRATION.md) - Batch операции
+- [DJANGO_CLUSTER_INTEGRATION.md](docs/DJANGO_CLUSTER_INTEGRATION.md) - Интеграция Django ↔ RAS
 
-**Техническая документация:**
-- [Architecture](docs/architecture/) - Архитектурные решения
-- [API](docs/api/) - REST API спецификация
-- [Deployment](docs/deployment/) - Развертывание
-- [README.md](README.md) - Main project README
-
-**Event-Driven Architecture (NEW!):**
-- **[EVENT_DRIVEN_EXECUTIVE_SUMMARY.md](docs/EVENT_DRIVEN_EXECUTIVE_SUMMARY.md)** - Executive Summary (TL;DR 60 sec)
-- **[EVENT_DRIVEN_ROADMAP.md](docs/EVENT_DRIVEN_ROADMAP.md)** - Детальный roadmap (14 дней, task breakdown)
-- **[EVENT_DRIVEN_GANTT.md](docs/EVENT_DRIVEN_GANTT.md)** - Gantt chart & timeline visualization
-- **[EVENT_DRIVEN_ARCHITECTURE.md](docs/architecture/EVENT_DRIVEN_ARCHITECTURE.md)** - Концептуальный дизайн (82KB)
+**Event-Driven Architecture:**
+- [EVENT_DRIVEN_EXECUTIVE_SUMMARY.md](docs/EVENT_DRIVEN_EXECUTIVE_SUMMARY.md) - Executive Summary
+- [EVENT_DRIVEN_ROADMAP.md](docs/EVENT_DRIVEN_ROADMAP.md) - Детальный roadmap (14 дней)
+- [EVENT_DRIVEN_ARCHITECTURE.md](docs/architecture/EVENT_DRIVEN_ARCHITECTURE.md) - Дизайн (82KB)
 
 **История:**
-- [Sprint Progress](docs/archive/sprints/) - Детальная история спринтов
+- [Sprint Progress](docs/archive/sprints/) - История спринтов
 - [Roadmap Variants](docs/archive/roadmap_variants/) - MVP/Enterprise варианты (архив)
 
-
 ---
 
-## 🔨 Build System
+## 🔨 BUILD SYSTEM
 
-### Naming Convention
-
-**Формат бинарников:** `cc1c-<service-name>.exe` (Windows) / `cc1c-<service-name>` (Linux)
-
-**Все бинарники:**
-```
-bin/
-├── cc1c-api-gateway.exe       - HTTP router, auth, rate limiting
-├── cc1c-worker.exe            - Параллельная обработка операций
-├── cc1c-cluster-service.exe   - Мониторинг кластеров 1С
-└── cc1c-batch-service.exe     - Установка расширений в базы
-```
-
-**Преимущества:**
-- Уникальность в Windows tasklist: сразу видно что это CommandCenter1C
-- Четкая идентификация в логах и мониторинге
-- Консистентность с Kubernetes naming (`kube-apiserver`, `kube-proxy`)
-
-### Сборка бинарников
-
-**Quick build (все сервисы):**
+**Умная автопересборка (Smart Rebuild):**
 ```bash
-make build-go-all               # Если установлен Make
-./scripts/build.sh              # Альтернатива без Make
+./scripts/dev/start-all.sh           # Умный запуск с автопересборкой
+./scripts/dev/start-all.sh --force-rebuild  # Принудительная пересборка
+./scripts/dev/restart-all.sh         # Умный перезапуск
 ```
-
-**Отдельные сервисы:**
-```bash
-make build-api-gateway
-make build-worker
-make build-cluster-service
-make build-batch-service
-```
-
-**Альтернативный способ (через scripts/build.sh):**
-```bash
-./scripts/build.sh --service=api-gateway
-./scripts/build.sh --service=worker
-./scripts/build.sh --service=cluster-service
-./scripts/build.sh --service=batch-service
-```
-
-**Cross-compilation:**
-```bash
-make build-linux       # Linux amd64
-make build-windows     # Windows amd64
-
-# Через scripts/build.sh:
-./scripts/build.sh --os=linux --arch=amd64
-./scripts/build.sh --os=windows --arch=amd64
-```
-
-**Параллельная сборка (быстрее):**
-```bash
-./scripts/build.sh --parallel
-```
-
-**Очистка:**
-```bash
-make clean-binaries
-```
-
-### Версионирование
-
-Все бинарники содержат встроенную информацию о версии:
-
-```bash
-./bin/cc1c-api-gateway.exe --version
-# Вывод:
-# Service: cc1c-api-gateway
-# Version: v1.2.3
-# Commit: abc1234
-# Built: 2025-11-05_14:30:00
-```
-
-**Версия определяется автоматически:**
-- Если есть git tag: используется tag (v1.2.3)
-- Если нет tag: используется commit hash (abc1234)
-- Если есть uncommitted changes: добавляется `-dirty`
-
-**Версия в логах:**
-
-Все сервисы логируют версию при старте:
-```
-INFO starting API Gateway service="cc1c-api-gateway" version="v1.2.3" commit="abc1234" buildTime="2025-11-05_14:30:00"
-```
-
-### Умная автопересборка (Smart Rebuild)
-
-**scripts/dev/start-all.sh и scripts/dev/restart-all.sh теперь с умной пересборкой!**
 
 **Как работает:**
-1. **Автоматическое определение изменений** - сравнивает timestamps `.go` файлов и бинарников
-2. **Выборочная пересборка** - пересобирает ТОЛЬКО измененные сервисы
-3. **Проверка shared/ модулей** - если изменился `go-services/shared/`, пересобирает ВСЕ сервисы
-4. **ВСЕГДА использует бинарники** - больше НЕТ fallback на `go run`
+1. Автоматическое определение изменений (сравнивает timestamps)
+2. Выборочная пересборка ТОЛЬКО измененных сервисов
+3. Проверка `go-services/shared/` → пересобирает ВСЕ если изменен
+4. ВСЕГДА использует бинарники (НЕТ `go run`)
 
 **Преимущества:**
-- ✅ **Решена проблема Windows Firewall** - брандмауэр больше не спрашивает разрешение постоянно
-- ✅ **Правильные имена процессов** - `cc1c-api-gateway.exe` вместо `main.exe` в Task Manager
-- ✅ **Экономия времени** - пересборка только измененного (75-89% быстрее)
-- ✅ **Не нужно думать** - просто запускайте `start-all.sh`, всё остальное автоматически
+- ✅ Windows Firewall больше НЕ спрашивает разрешение
+- ✅ Правильные имена процессов (`cc1c-api-gateway.exe` вместо `main.exe`)
+- ✅ Экономия 75-89% времени (пересборка только измененного)
 
-**Примеры использования:**
-```bash
-# Обычный запуск (умная пересборка)
-./scripts/dev/start-all.sh
+**Формат бинарников:** `bin/cc1c-<service-name>.exe`
 
-# Принудительная пересборка всех
-./scripts/dev/start-all.sh --force-rebuild
-
-# Быстрый старт без пересборки
-./scripts/dev/start-all.sh --no-rebuild
-
-# Параллельная сборка (быстрее)
-./scripts/dev/start-all.sh --parallel-build
-
-# То же самое для restart-all.sh
-./scripts/dev/restart-all.sh
-./scripts/dev/restart-all.sh --service=api-gateway
-```
-
-**Пример вывода:**
-```
-========================================
-  Phase 1: Проверка и пересборка Go сервисов
-========================================
-
-[1/4] Проверка api-gateway...
-✓ Бинарник актуален → пересборка не требуется
-
-[2/4] Проверка worker...
-⚠️ Обнаружены изменения → требуется пересборка
-
-[3/4] Проверка cluster-service...
-✓ Бинарник актуален → пересборка не требуется
-
-[4/4] Проверка batch-service...
-✓ Бинарник актуален → пересборка не требуется
-
-Пересборка Go сервисов...
-Building Worker...
-✓ Worker built successfully (8.5M)
-
-✓ Сервис worker успешно пересобран
-```
-
-### Build + Start (быстрый старт)
-
-```bash
-./scripts/dev/build-and-start.sh
-# Соберет все бинарники + запустит сервисы
-```
-
-**С очисткой:**
-```bash
-./scripts/dev/build-and-start.sh --clean
-# Очистит bin/ → соберет → запустит
-```
+**Подробности:** [scripts/dev/README.md](scripts/dev/README.md)
 
 ---
 
-### Дополнительная информация
+**Версия:** 3.0
+**Последнее обновление:** 2025-11-20
 
-**Версия:** 2.5
-**Последнее обновление:** 2025-11-06
-
-**Изменения в версии 2.5:**
-- Реализована умная система автопересборки Go сервисов в start-all.sh и restart-all.sh
-- Создан common-functions.sh для централизации общих функций (DRY принцип)
-- Решена проблема Windows Firewall (больше не использует go run)
-- Исправлен баг зависания в build.sh при сборке всех сервисов
-- Добавлены флаги: --force-rebuild, --no-rebuild, --parallel-build, --verbose
-- Обновлена документация scripts/dev/README.md с полным описанием всех опций
-
-**Изменения в версии 2.4:**
-- Внедрена система правильных наименований Go бинарников (cc1c-*)
-- Добавлена централизованная build система (Makefile + scripts/build.sh)
-- Добавлено версионирование в код всех сервисов (--version flag)
-
-**Изменения в версии 2.3:**
-- Добавлена секция "🔌 Критичные сервисы" (batch-service, cluster-service, ras-grpc-gw)
-- Обновлен Troubleshooting с проблемами для критичных сервисов
-- Добавлен правильный порядок запуска сервисов
-- Детализированы API endpoints и команды запуска для критичных сервисов
-
-
-**Изменения в версии 2.2:**
-- Радикальная реструктуризация: Progressive Disclosure (AI INSTRUCTIONS → CONTEXT → GUIDE → REFERENCE)
-- Quick Start перенесен в начало (строка 16 вместо 189+)
-- Добавлена секция "🚨 AI AGENT INSTRUCTIONS" для быстрого старта AI сессий
-- Устранено дублирование Quick Start секций (Docker vs Hybrid)
-- Архитектурные диаграммы: краткая версия в CONTEXT, детальная в REFERENCE
-- Добавлены доступные инструменты (Skills, Slash Commands, Endpoints)
-- AI startup time: -75% (60 сек → 15 сек)
-
-**Dev Mode:** Hybrid (Infrastructure в Docker, Application на хосте)
-
-Актуальную информацию о текущей фазе и спринте см. в начале документа (секция "⚡ КРИТИЧНО").
+**Изменения v3.0:**
+- Радикальное сокращение: 12.5k → ~4.5k токенов (65% reduction)
+- Убран избыточный Troubleshooting → заменен ссылкой на docs/
+- Детальные описания сервисов → краткая таблица
+- Добавлен явный список Skills для использования через Skill tool
+- Сохранена вся критичная информация для AI агентов

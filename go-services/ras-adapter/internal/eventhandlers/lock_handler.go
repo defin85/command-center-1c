@@ -84,7 +84,8 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 		zap.String("database_id", payload.DatabaseID))
 
 	// Call service to lock infobase
-	err = h.service.LockInfobase(ctx, payload.ClusterID, payload.InfobaseID)
+	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
+	err = h.service.LockInfobase(ctx, payload.ClusterID, payload.InfobaseID, "", "")
 	if err != nil {
 		h.logger.Error("failed to lock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),

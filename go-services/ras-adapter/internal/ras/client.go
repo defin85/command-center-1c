@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	rclient "github.com/khorevaa/ras-client"
-	"github.com/khorevaa/ras-client/serialize"
+	rclient "github.com/commandcenter1c/commandcenter/ras-adapter/ras-client"
+	"github.com/commandcenter1c/commandcenter/ras-adapter/ras-client/serialize"
 	uuid "github.com/satori/go.uuid"
 
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/models"
@@ -237,6 +237,9 @@ func (c *Client) GetInfobaseInfo(ctx context.Context, clusterID, infobaseID stri
 		DBMS:              rasIB.Dbms,
 		DBServer:          rasIB.DbServer,
 		DBName:            rasIB.DbName,
+		DBUser:            rasIB.DbUser,   // Preserve credentials from RAS metadata
+		DBPwd:             rasIB.DbPwd,    // Required for UpdateInfobase operations
+		Locale:            rasIB.Locale,   // Preserve locale settings
 		ScheduledJobsDeny: rasIB.ScheduledJobsDeny,
 		SessionsDeny:      rasIB.SessionsDeny,
 	}
@@ -280,7 +283,9 @@ func (c *Client) RegInfoBase(ctx context.Context, clusterID string, infobase *mo
 		Dbms:              infobase.DBMS,
 		DbServer:          infobase.DBServer,
 		DbName:            infobase.DBName,
-		ScheduledJobsDeny: infobase.ScheduledJobsDeny, // KEY FIELD for Lock/Unlock
+		DbUser:            infobase.DBUser,             // Required for UpdateInfobase
+		DbPwd:             infobase.DBPwd,              // SDK handles empty passwords correctly now
+		ScheduledJobsDeny: infobase.ScheduledJobsDeny,  // KEY FIELD for Lock/Unlock
 		SessionsDeny:      infobase.SessionsDeny,
 	}
 
@@ -334,7 +339,7 @@ func (c *Client) TerminateSession(ctx context.Context, clusterID, sessionID stri
 }
 
 // LockInfobase locks an infobase (blocks scheduled jobs)
-func (c *Client) LockInfobase(ctx context.Context, clusterID, infobaseID string) error {
+func (c *Client) LockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
 	if clusterID == "" || infobaseID == "" {
 		return ErrInvalidParams
 	}
@@ -354,7 +359,15 @@ func (c *Client) LockInfobase(ctx context.Context, clusterID, infobaseID string)
 	infobase.ScheduledJobsDeny = true
 	infobase.SessionsDeny = false // Explicitly keep sessions allowed
 
-	// 3. Call RegInfoBase
+	// 3. Set credentials if provided (required for databases with authentication)
+	if dbUser != "" {
+		infobase.DBUser = dbUser
+	}
+	if dbPwd != "" {
+		infobase.DBPwd = dbPwd
+	}
+
+	// 4. Call RegInfoBase
 	err = c.RegInfoBase(ctx, clusterID, infobase)
 	if err != nil {
 		return fmt.Errorf("RegInfoBase failed: %w", err)
@@ -364,7 +377,7 @@ func (c *Client) LockInfobase(ctx context.Context, clusterID, infobaseID string)
 }
 
 // UnlockInfobase unlocks an infobase (enables scheduled jobs)
-func (c *Client) UnlockInfobase(ctx context.Context, clusterID, infobaseID string) error {
+func (c *Client) UnlockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
 	if clusterID == "" || infobaseID == "" {
 		return ErrInvalidParams
 	}
@@ -384,11 +397,113 @@ func (c *Client) UnlockInfobase(ctx context.Context, clusterID, infobaseID strin
 	infobase.ScheduledJobsDeny = false
 	infobase.SessionsDeny = false
 
-	// 3. Call RegInfoBase
+	// 3. Set credentials if provided (required for databases with authentication)
+	if dbUser != "" {
+		infobase.DBUser = dbUser
+	}
+	if dbPwd != "" {
+		infobase.DBPwd = dbPwd
+	}
+
+	// 4. Call RegInfoBase
 	err = c.RegInfoBase(ctx, clusterID, infobase)
 	if err != nil {
 		return fmt.Errorf("RegInfoBase failed: %w", err)
 	}
+
+	return nil
+}
+
+// CreateInfobase creates a new infobase (REAL implementation)
+func (c *Client) CreateInfobase(ctx context.Context, clusterID string, infobase *models.Infobase) (string, error) {
+	if clusterID == "" || infobase == nil {
+		return "", ErrInvalidParams
+	}
+
+	c.logger.Debug("CreateInfobase called (REAL RAS protocol)",
+		zap.String("cluster_id", clusterID),
+		zap.String("name", infobase.Name))
+
+	// Parse cluster UUID
+	clusterUUID, err := uuid.FromString(clusterID)
+	if err != nil {
+		return "", fmt.Errorf("invalid cluster UUID: %w", err)
+	}
+
+	// Authenticate cluster
+	c.rasClient.AuthenticateCluster(clusterUUID, "", "")
+
+	// Convert domain model → RAS type
+	rasInfobase := serialize.InfobaseInfo{
+		Name:              infobase.Name,
+		Dbms:              infobase.DBMS,
+		DbServer:          infobase.DBServer,
+		DbName:            infobase.DBName,
+		DbUser:            infobase.DBUser,
+		DbPwd:             infobase.DBPwd,
+		Locale:            infobase.Locale,
+		ScheduledJobsDeny: infobase.ScheduledJobsDeny,
+		SessionsDeny:      infobase.SessionsDeny,
+	}
+
+	// Call real RAS CreateInfobase
+	// mode: 0 = don't create database, 1 = create database
+	createdInfobase, err := c.rasClient.CreateInfobase(ctx, clusterUUID, rasInfobase, 1)
+	if err != nil {
+		c.logger.Error("RAS CreateInfobase failed", zap.Error(err))
+		return "", fmt.Errorf("RAS CreateInfobase failed: %w", err)
+	}
+
+	infobaseID := createdInfobase.UUID.String()
+	c.logger.Info("CreateInfobase completed successfully",
+		zap.String("infobase_id", infobaseID),
+		zap.String("name", createdInfobase.Name))
+
+	return infobaseID, nil
+}
+
+// DropInfobase deletes an infobase (REAL implementation)
+func (c *Client) DropInfobase(ctx context.Context, clusterID, infobaseID string, dropDatabase bool) error {
+	if clusterID == "" || infobaseID == "" {
+		return ErrInvalidParams
+	}
+
+	c.logger.Debug("DropInfobase called (REAL RAS protocol)",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID),
+		zap.Bool("drop_database", dropDatabase))
+
+	// Parse UUIDs
+	clusterUUID, err := uuid.FromString(clusterID)
+	if err != nil {
+		return fmt.Errorf("invalid cluster UUID: %w", err)
+	}
+
+	infobaseUUID, err := uuid.FromString(infobaseID)
+	if err != nil {
+		return fmt.Errorf("invalid infobase UUID: %w", err)
+	}
+
+	// Authenticate cluster
+	c.rasClient.AuthenticateCluster(clusterUUID, "", "")
+
+	// Determine drop mode
+	// mode: 0 = keep database, 1 = drop database
+	mode := 0
+	if dropDatabase {
+		mode = 1
+	}
+
+	// Call real RAS DropInfobase
+	err = c.rasClient.DropInfobase(ctx, clusterUUID, infobaseUUID, mode)
+	if err != nil {
+		c.logger.Error("RAS DropInfobase failed", zap.Error(err))
+		return fmt.Errorf("RAS DropInfobase failed: %w", err)
+	}
+
+	c.logger.Info("DropInfobase completed successfully",
+		zap.String("infobase_id", infobaseID),
+		zap.Bool("database_dropped", dropDatabase))
 
 	return nil
 }

@@ -49,6 +49,7 @@ SPECIFIC_SERVICE=""
 declare -A SERVICES
 SERVICES[api-gateway]="API Gateway"
 SERVICES[worker]="Worker"
+SERVICES[ras-adapter]="RAS Adapter"
 SERVICES[cluster-service]="Cluster Service"
 SERVICES[batch-service]="Batch Service"
 
@@ -124,9 +125,11 @@ build_service() {
     mkdir -p "$BIN_DIR"
 
     # Build с version injection
-    # cluster-service uses its own version package
+    # cluster-service and ras-adapter use their own version package
     if [ "$service" = "cluster-service" ]; then
         LDFLAGS="-X github.com/command-center-1c/cluster-service/internal/version.Version=$VERSION -X github.com/command-center-1c/cluster-service/internal/version.Commit=$COMMIT -X github.com/command-center-1c/cluster-service/internal/version.BuildTime=$BUILD_TIME"
+    elif [ "$service" = "ras-adapter" ]; then
+        LDFLAGS="-X github.com/command-center-1c/ras-adapter/internal/version.Version=$VERSION -X github.com/command-center-1c/ras-adapter/internal/version.Commit=$COMMIT -X github.com/command-center-1c/ras-adapter/internal/version.BuildTime=$BUILD_TIME"
     else
         LDFLAGS="-X main.Version=$VERSION -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
     fi
