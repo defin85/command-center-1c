@@ -15,7 +15,7 @@
 **Архитектура:**
 ```
 Claude Code → MCP DAP Server → Delve → Go Service
-            ↑ SSE (8080)      ↑ DAP  ↑ Debug
+            ↑ SSE (8090)      ↑ DAP  ↑ Debug
 ```
 
 ---
@@ -49,7 +49,7 @@ cd /c/1CProject/command-center-1c
 
 **Проверка:**
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 # Ожидается ответ от сервера
 ```
 
@@ -279,12 +279,12 @@ dlv debug cmd/main.go  # Автоматически без оптимизаци�
 
 ### MCP DAP Server не запускается
 
-**Проблема:** `Cannot start server on :8080`
+**Проблема:** `Cannot start server on :8090`
 
 **Решение:**
 ```bash
 # Проверить что порт свободен
-netstat -ano | grep :8080
+netstat -ano | grep :8090
 
 # Убить процесс если занят
 taskkill /PID <pid> /F
@@ -337,7 +337,7 @@ claude mcp list
 
 # Если нет - переподключить
 claude mcp remove mcp-dap-server
-claude mcp add --transport sse mcp-dap-server http://localhost:8080
+claude mcp add --transport sse mcp-dap-server http://localhost:8090
 
 # Перезапустить Claude Code
 ```
@@ -353,7 +353,7 @@ claude mcp add --transport sse mcp-dap-server http://localhost:8080
 | **ras-adapter** | 2347 | 8088 | ✅ Ready |
 | **batch-service** | 2348 | 8087 | ⚠️ In Dev |
 
-**MCP DAP Server:** http://localhost:8080 (SSE)
+**MCP DAP Server:** http://localhost:8090 (SSE)
 
 ---
 

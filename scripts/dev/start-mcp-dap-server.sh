@@ -5,7 +5,7 @@ set -e
 
 MCP_DAP_SERVER_PATH="/c/Users/Egor/Documents/GitHub/mcp-dap-server"
 PID_FILE="pids/mcp-dap-server.pid"
-PORT=8080
+PORT=8090
 
 echo "=========================================="
 echo "  Starting MCP DAP Server"
