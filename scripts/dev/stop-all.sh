@@ -99,9 +99,6 @@ elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
     stop_service "cluster-service"
 fi
 
-# 9. ras-grpc-gw
-stop_service "ras-grpc-gw"
-
 # 8. RAS (1C Remote Administration Server)
 stop_service "ras"
 
@@ -173,8 +170,6 @@ check_and_kill_port() {
 check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "RAS Adapter / Cluster Service"
-check_and_kill_port 8081 "ras-grpc-gw HTTP"
-check_and_kill_port 9999 "ras-grpc-gw gRPC"
 check_and_kill_port 1545 "RAS"
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"

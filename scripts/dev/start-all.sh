@@ -7,7 +7,7 @@
 # - Docker: PostgreSQL, Redis, ClickHouse
 # - 1C Platform: RAS (Remote Administration Server)
 # - Python: Django Orchestrator, Celery Worker, Celery Beat
-# - Go: API Gateway, Worker, ras-grpc-gw, cluster-service
+# - Go: API Gateway, Worker, RAS Adapter, Batch Service
 # - Frontend: React dev server
 ##############################################################################
 
@@ -420,50 +420,10 @@ else
 fi
 echo ""
 
-# Шаг 9: ras-grpc-gw (Go)
 ##############################################################################
-echo -e "${BLUE}[9/12] Запуск ras-grpc-gw (port 9999)...${NC}"
-
-# Проверить что директория ras-grpc-gw существует
-RAS_GW_DIR="/c/1CProject/ras-grpc-gw"
-if [ ! -d "$RAS_GW_DIR" ]; then
-    echo -e "${RED}✗ Директория ras-grpc-gw не найдена: $RAS_GW_DIR${NC}"
-    echo -e "${YELLOW}   Это форк проекта, должен быть в C:/1CProject/ras-grpc-gw${NC}"
-    exit 1
-fi
-
-cd "$RAS_GW_DIR"
-
-# .env.local уже загружен в начале скрипта
-
-# Проверить наличие бинарника
-BINARY_PATH="$RAS_GW_DIR/bin/ras-grpc-gw.exe"
-if [ -f "$BINARY_PATH" ]; then
-    echo -e "${YELLOW}   Используется собранный бинарник: bin/ras-grpc-gw.exe${NC}"
-    nohup "$BINARY_PATH" --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
-else
-    echo -e "${YELLOW}   Бинарник не найден, используется 'go run'${NC}"
-    echo -e "${YELLOW}   Совет: Запустите 'make build' в $RAS_GW_DIR для компиляции${NC}"
-    nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOGS_DIR/ras-grpc-gw.log" 2>&1 &
-fi
-RAS_GW_PID=$!
-echo $RAS_GW_PID > "$PIDS_DIR/ras-grpc-gw.pid"
-
-sleep 3
-if kill -0 $RAS_GW_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ ras-grpc-gw запущен (PID: $RAS_GW_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить ras-grpc-gw${NC}"
-    cat "$LOGS_DIR/ras-grpc-gw.log"
-    exit 1
-fi
-echo ""
-
+# Шаг 9: RAS Adapter (Go) - NEW Week 4!
 ##############################################################################
-##############################################################################
-# Шаг 10: RAS Adapter (Go) - NEW Week 4!
-##############################################################################
-echo -e "${BLUE}[10/12] Запуск RAS Adapter (port 8088)...${NC}"
+echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8088)...${NC}"
 
 # Проверить переменную окружения для включения ras-adapter (default: true)
 USE_RAS_ADAPTER="${USE_RAS_ADAPTER:-true}"
@@ -506,7 +466,7 @@ if [ "$USE_RAS_ADAPTER" = "true" ]; then
 else
     # DEPRECATED: cluster-service (replaced by ras-adapter in Week 4)
     echo -e "${YELLOW}⚠️  Используется DEPRECATED cluster-service (USE_RAS_ADAPTER=false)${NC}"
-    echo -e "${BLUE}[10/12] Запуск Cluster Service (port 8088) - DEPRECATED...${NC}"
+    echo -e "${BLUE}[9/11] Запуск Cluster Service (port 8088) - DEPRECATED...${NC}"
 
     # Бинарник гарантированно существует и актуален после Phase 1
     BINARY_PATH="$BIN_DIR/cc1c-cluster-service.exe"
@@ -532,9 +492,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 11: Batch Service (Go)
+# Шаг 10: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[11/12] Запуск Batch Service (port 8087)...${NC}"
+echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
@@ -558,9 +518,9 @@ else
 fi
 echo ""
 
-# Шаг 12: Frontend (React)
+# Шаг 11: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[12/12] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[11/11] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -624,7 +584,6 @@ echo -e "    Admin Panel:    ${GREEN}http://localhost:8000/admin${NC}"
 echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
 echo -e "  RAS Adapter:      ${GREEN}http://localhost:8088/health${NC} (Week 4 NEW!)"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
-echo -e "  ras-grpc-gw:      ${GREEN}http://localhost:8081/health${NC} (gRPC: 9999)"
 echo ""
 echo -e "${BLUE}Мониторинг:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"

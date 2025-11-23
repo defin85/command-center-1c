@@ -60,7 +60,6 @@ check_process "celery-beat"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"
-check_process "ras-grpc-gw"
 # Week 4: Check both ras-adapter and cluster-service (only one should be running)
 if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
     check_process "ras-adapter"
@@ -102,7 +101,6 @@ check_http() {
 check_http "Frontend" "http://localhost:5173"
 check_http "API Gateway" "http://localhost:8080/health"
 check_http "Orchestrator" "http://localhost:8000/health"
-check_http "ras-grpc-gw" "http://localhost:8081/health"
 # Week 4: Check RAS Adapter (or Cluster Service for backward compatibility)
 check_http "RAS Adapter / Cluster Service" "http://localhost:8088/health"
 check_http "Batch Service" "http://localhost:8087/health"
@@ -197,8 +195,6 @@ check_port 8080 "API Gateway"
 check_port 8000 "Orchestrator"
 check_port 8088 "RAS Adapter / Cluster Service"
 check_port 8087 "Batch Service"
-check_port 8081 "ras-grpc-gw HTTP"
-check_port 9999 "ras-grpc-gw gRPC"
 check_port 1545 "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
@@ -250,7 +246,7 @@ TOTAL=10
 RUNNING=0
 
 # Week 4: Check ras-adapter OR cluster-service (not both)
-SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "ras-grpc-gw" "batch-service" "frontend")
+SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "batch-service" "frontend")
 
 # Add either ras-adapter or cluster-service based on which PID file exists
 if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
