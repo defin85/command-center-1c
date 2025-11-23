@@ -14,4 +14,31 @@ Components:
 See docs/architecture/UNIFIED_WORKFLOW_VISUALIZATION.md for design details.
 """
 
+from .validator import (
+    DAGValidator,
+    ValidationIssue,
+    ValidationResult,
+    ValidationSeverity,
+    # Exceptions
+    CycleDetectedError,
+    DAGValidationError,
+    InvalidEdgeError,
+    InvalidNodeTypeError,
+    UnreachableNodeError,
+)
+
 __version__ = "1.0.0"
+
+__all__ = [
+    # Validator
+    "DAGValidator",
+    "ValidationIssue",
+    "ValidationResult",
+    "ValidationSeverity",
+    # Exceptions
+    "CycleDetectedError",
+    "DAGValidationError",
+    "InvalidEdgeError",
+    "InvalidNodeTypeError",
+    "UnreachableNodeError",
+]

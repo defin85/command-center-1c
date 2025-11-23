@@ -132,7 +132,7 @@ class TestWorkflowTemplate:
             created_by=admin_user
         )
 
-        with pytest.raises(ValueError, match="non-existent target node"):
+        with pytest.raises(ValueError, match="validation failed"):  # Updated for new DAGValidator message
             template.validate()
 
     @pytest.mark.django_db
@@ -176,7 +176,7 @@ class TestWorkflowTemplate:
             created_by=admin_user
         )
 
-        with pytest.raises(ValueError, match="Self-loop detected"):
+        with pytest.raises(ValueError, match="Self-loop"):  # Updated for new DAGValidator message
             template.validate()
 
     @pytest.mark.django_db

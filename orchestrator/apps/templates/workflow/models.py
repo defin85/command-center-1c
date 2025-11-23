@@ -8,7 +8,6 @@ Implements DAG-based workflow orchestration with:
 """
 
 import uuid
-from collections import defaultdict, deque
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -265,90 +264,9 @@ class WorkflowTemplate(models.Model):
     def __str__(self) -> str:
         return f"{self.name} (v{self.version_number})"
 
-    def _validate_no_self_loops(self, dag: DAGStructure) -> None:
-        """
-        Validate DAG has no self-referencing edges.
-
-        Args:
-            dag: DAG structure to validate
-
-        Raises:
-            ValueError: If self-loop detected
-        """
-        for edge in dag.edges:
-            if edge.from_node == edge.to_node:
-                raise ValueError(f"Self-loop detected: {edge.from_node} -> {edge.to_node}")
-
-    def _validate_dag_acyclic(self, dag: DAGStructure) -> None:
-        """
-        Validate DAG has no cycles using Kahn's algorithm.
-
-        Args:
-            dag: DAG structure to validate
-
-        Raises:
-            ValueError: If cycles detected
-        """
-        # Build adjacency list and in-degree count
-        in_degree = defaultdict(int)
-        adj_list = defaultdict(list)
-
-        # Initialize in-degree for all nodes
-        for node in dag.nodes:
-            in_degree[node.id] = 0
-
-        # Build graph
-        for edge in dag.edges:
-            adj_list[edge.from_node].append(edge.to_node)
-            in_degree[edge.to_node] += 1
-
-        # Kahn's algorithm: topological sort
-        queue = deque([node_id for node_id, degree in in_degree.items() if degree == 0])
-        processed = 0
-
-        while queue:
-            node_id = queue.popleft()
-            processed += 1
-
-            for neighbor in adj_list[node_id]:
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
-
-        # If not all nodes processed → cycle exists
-        if processed != len(dag.nodes):
-            raise ValueError(
-                f"Cycle detected in DAG: processed {processed} of {len(dag.nodes)} nodes"
-            )
-
-    def _validate_dag_topology(self, dag: DAGStructure) -> None:
-        """
-        Validate DAG has proper topology (start and end nodes).
-
-        Args:
-            dag: DAG structure to validate
-
-        Raises:
-            ValueError: If no start or end nodes
-        """
-        if len(dag.nodes) == 0:
-            raise ValueError("Workflow must have at least one node")
-
-        # Find nodes with no incoming/outgoing edges
-        incoming = {edge.to_node for edge in dag.edges}
-        outgoing = {edge.from_node for edge in dag.edges}
-
-        start_nodes = [n.id for n in dag.nodes if n.id not in incoming]
-        end_nodes = [n.id for n in dag.nodes if n.id not in outgoing]
-
-        if not start_nodes:
-            raise ValueError("Workflow must have at least one start node (no incoming edges)")
-        if not end_nodes:
-            raise ValueError("Workflow must have at least one end node (no outgoing edges)")
-
     def validate(self) -> bool:
         """
-        Validate workflow template DAG structure.
+        Validate workflow template DAG structure using DAGValidator.
 
         Checks:
         - Pydantic schema validation (automatic)
@@ -357,40 +275,52 @@ class WorkflowTemplate(models.Model):
         - No cycles (Kahn's algorithm)
         - No self-loops
         - Proper topology (start/end nodes exist)
+        - Connectivity analysis
+        - Component counting
 
         Returns:
             True if validation passed
 
         Raises:
-            ValueError: If validation fails
+            ValueError: If validation fails with aggregated error messages
         """
         try:
+            from apps.templates.workflow.validator import DAGValidator
+
             # Parse and validate schemas (Pydantic)
             # Note: SchemaField returns Pydantic object, not dict
-            dag = self.dag_structure if isinstance(self.dag_structure, DAGStructure) else DAGStructure(**self.dag_structure)
-            config = self.config if isinstance(self.config, WorkflowConfig) else WorkflowConfig(**self.config)
+            dag = (
+                self.dag_structure
+                if isinstance(self.dag_structure, DAGStructure)
+                else DAGStructure(**self.dag_structure)
+            )
+            config = (
+                self.config
+                if isinstance(self.config, WorkflowConfig)
+                else WorkflowConfig(**self.config)
+            )
 
-            # Validate node IDs are unique
-            node_ids = [node.id for node in dag.nodes]
-            if len(node_ids) != len(set(node_ids)):
-                raise ValueError("Duplicate node IDs found in workflow")
+            # Use DAGValidator for comprehensive validation
+            validator = DAGValidator(dag)
+            result = validator.validate()
 
-            # Validate edges reference existing nodes
-            node_id_set = set(node_ids)
-            for edge in dag.edges:
-                if edge.from_node not in node_id_set:
-                    raise ValueError(f"Edge references non-existent source node: {edge.from_node}")
-                if edge.to_node not in node_id_set:
-                    raise ValueError(f"Edge references non-existent target node: {edge.to_node}")
+            if not result.is_valid:
+                # Aggregate all error messages
+                error_messages = [issue.message for issue in result.errors]
+                raise ValueError(f"DAG validation failed: {'; '.join(error_messages)}")
 
-            # Validate no self-loops
-            self._validate_no_self_loops(dag)
+            # Store topological order in metadata (if not already initialized)
+            if not hasattr(self, '_validation_metadata'):
+                self._validation_metadata = {}
 
-            # Validate no cycles (Kahn's algorithm)
-            self._validate_dag_acyclic(dag)
+            self._validation_metadata['topological_order'] = result.topological_order
+            self._validation_metadata['validation_metadata'] = result.metadata
 
-            # Validate topology (start/end nodes)
-            self._validate_dag_topology(dag)
+            # Store warnings for later inspection
+            if result.warnings:
+                self._validation_metadata['warnings'] = [
+                    issue.message for issue in result.warnings
+                ]
 
             self.is_valid = True
             return True
