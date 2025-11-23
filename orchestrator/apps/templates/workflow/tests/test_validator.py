@@ -479,10 +479,15 @@ class TestNodeTypeValidation:
             WorkflowNode(id="op", name="Operation", type="operation", template_id=None)
 
     def test_condition_node_validation(self):
-        """Test condition node (no template_id required)."""
+        """Test condition node requires expression."""
         dag = DAGStructure(
             nodes=[
-                WorkflowNode(id="cond", name="Condition", type="condition"),
+                WorkflowNode(
+                    id="cond",
+                    name="Condition",
+                    type="condition",
+                    config=NodeConfig(expression="{{ True }}")  # expression required
+                ),
             ],
             edges=[]
         )
@@ -524,7 +529,12 @@ class TestNodeTypeValidation:
         dag = DAGStructure(
             nodes=[
                 WorkflowNode(id="op", name="Op", type="operation", template_id="test"),
-                WorkflowNode(id="cond", name="Cond", type="condition"),
+                WorkflowNode(
+                    id="cond",
+                    name="Cond",
+                    type="condition",
+                    config=NodeConfig(expression="{{ True }}")  # expression required
+                ),
                 WorkflowNode(id="par", name="Par", type="parallel", config=NodeConfig(parallel_limit=3)),
                 WorkflowNode(id="loop", name="Loop", type="loop"),
             ],

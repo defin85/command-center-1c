@@ -49,6 +49,9 @@ class NodeConfig(BaseModel):
     parallel_limit: Optional[int] = Field(
         default=None, ge=1, le=100, description="Max parallel executions (Parallel nodes only)"
     )
+    expression: Optional[str] = Field(
+        default=None, description="Jinja2 boolean expression for Condition nodes"
+    )
 
     class Config:
         json_schema_extra = {
@@ -56,6 +59,7 @@ class NodeConfig(BaseModel):
                 "timeout_seconds": 300,
                 "max_retries": 2,
                 "parallel_limit": 10,
+                "expression": "{{ node_1.output.success }}",
             }
         }
 
@@ -104,6 +108,16 @@ class WorkflowNode(BaseModel):
             if self.config.parallel_limit is None:
                 raise ValueError(
                     f"parallel_limit is required for parallel nodes (node: {self.id})"
+                )
+        return self
+
+    @model_validator(mode='after')
+    def validate_expression(self) -> 'WorkflowNode':
+        """Validate expression for condition nodes."""
+        if self.type == "condition":
+            if not self.config.expression:
+                raise ValueError(
+                    f"expression is required for condition nodes (node: {self.id})"
                 )
         return self
 
