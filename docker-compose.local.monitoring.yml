@@ -39,7 +39,7 @@ services:
     container_name: cc1c-grafana-local
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "5000:3000"
     volumes:
       - grafana_data_local:/var/lib/grafana
       - ./infrastructure/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards

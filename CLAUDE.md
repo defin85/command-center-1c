@@ -74,7 +74,7 @@ cd /c/1CProject/command-center-1c
 - Orchestrator: http://localhost:8000/admin (Admin Panel)
 - Orchestrator API: http://localhost:8000/api/docs (Swagger)
 - ras-adapter: http://localhost:8088/health
-- Grafana: http://localhost:3001 (admin/admin)
+- Grafana: http://localhost:5000 (admin/admin)
 - Prometheus: http://localhost:9090
 
 ---

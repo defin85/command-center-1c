@@ -215,9 +215,9 @@ fi
 
 # Проверка Grafana
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-grafana-local"; then
-    if curl -sf http://localhost:3001/api/health &>/dev/null; then
-        echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:3001, admin/admin)${NC}"
-        check_port 3001 "Grafana" > /dev/null
+    if curl -sf http://localhost:5000/api/health &>/dev/null; then
+        echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:5000, admin/admin)${NC}"
+        check_port 5000 "Grafana" > /dev/null
     else
         echo -e "  Grafana: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
     fi

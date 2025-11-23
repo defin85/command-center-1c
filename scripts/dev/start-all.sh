@@ -215,8 +215,8 @@ else
         fi
 
         # Проверить Grafana
-        if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Grafana запущен (http://localhost:3001)${NC}"
+        if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
         else
             echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
         fi
@@ -558,8 +558,8 @@ echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
-echo -e "  Grafana:          ${GREEN}http://localhost:3001${NC} (admin/admin)"
-echo -e "  A/B Dashboard:    ${GREEN}http://localhost:3001/d/ab-testing-event-driven${NC}"
+echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin/admin)"
+echo -e "  A/B Dashboard:    ${GREEN}http://localhost:5000/d/ab-testing-event-driven${NC}"
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"
 echo -e "${BLUE}Логи:${NC} $LOGS_DIR/"
