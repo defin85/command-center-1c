@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/models"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/ras"
@@ -117,6 +118,74 @@ func (s *InfobaseService) UnlockInfobase(ctx context.Context, clusterID, infobas
 	}
 
 	s.logger.Info("infobase unlocked successfully",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	return nil
+}
+
+// BlockSessions blocks new user sessions for maintenance
+func (s *InfobaseService) BlockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string,
+	deniedFrom, deniedTo time.Time, message, permissionCode, parameter string) error {
+
+	if clusterID == "" || infobaseID == "" {
+		return fmt.Errorf("cluster_id and infobase_id are required")
+	}
+
+	s.logger.Info("blocking user sessions",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID),
+		zap.Time("denied_from", deniedFrom),
+		zap.Time("denied_to", deniedTo))
+
+	// Get RAS client from pool
+	client, err := s.rasPool.GetConnection(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get RAS client: %w", err)
+	}
+	defer s.rasPool.ReleaseConnection(client)
+
+	// Call RAS client
+	err = client.BlockSessions(ctx, clusterID, infobaseID, dbUser, dbPwd,
+		deniedFrom, deniedTo, message, permissionCode, parameter)
+	if err != nil {
+		s.logger.Error("failed to block sessions", zap.Error(err))
+		return err
+	}
+
+	s.logger.Info("sessions blocked successfully",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	return nil
+}
+
+// UnblockSessions unblocks user sessions
+func (s *InfobaseService) UnblockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
+
+	if clusterID == "" || infobaseID == "" {
+		return fmt.Errorf("cluster_id and infobase_id are required")
+	}
+
+	s.logger.Info("unblocking user sessions",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	// Get RAS client from pool
+	client, err := s.rasPool.GetConnection(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get RAS client: %w", err)
+	}
+	defer s.rasPool.ReleaseConnection(client)
+
+	// Call RAS client
+	err = client.UnblockSessions(ctx, clusterID, infobaseID, dbUser, dbPwd)
+	if err != nil {
+		s.logger.Error("failed to unblock sessions", zap.Error(err))
+		return err
+	}
+
+	s.logger.Info("sessions unblocked successfully",
 		zap.String("cluster_id", clusterID),
 		zap.String("infobase_id", infobaseID))
 

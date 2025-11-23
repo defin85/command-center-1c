@@ -37,6 +37,8 @@ func NewRouter(
 		v1.DELETE("/infobases/:id", DropInfobase(infobaseSvc))
 		v1.POST("/infobases/:infobase_id/lock", LockInfobase(infobaseSvc))
 		v1.POST("/infobases/:infobase_id/unlock", UnlockInfobase(infobaseSvc))
+		v1.POST("/infobases/:infobase_id/block-sessions", BlockSessions(infobaseSvc))
+		v1.POST("/infobases/:infobase_id/unblock-sessions", UnblockSessions(infobaseSvc))
 
 		// Session routes
 		v1.GET("/sessions", GetSessions(sessionSvc))

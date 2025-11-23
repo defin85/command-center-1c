@@ -414,6 +414,95 @@ func (c *Client) UnlockInfobase(ctx context.Context, clusterID, infobaseID, dbUs
 	return nil
 }
 
+// BlockSessions blocks new user sessions for maintenance
+func (c *Client) BlockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string,
+	deniedFrom, deniedTo time.Time, message, permissionCode, parameter string) error {
+
+	c.logger.Info("blocking user sessions",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID),
+		zap.Time("denied_from", deniedFrom),
+		zap.Time("denied_to", deniedTo))
+
+	// Get current infobase info
+	infobase, err := c.GetInfobaseInfo(ctx, clusterID, infobaseID)
+	if err != nil {
+		return fmt.Errorf("failed to get infobase info: %w", err)
+	}
+
+	// Set sessions_deny fields
+	infobase.SessionsDeny = true
+	infobase.DeniedFrom = deniedFrom
+	infobase.DeniedTo = deniedTo
+	infobase.DeniedMessage = message
+	infobase.PermissionCode = permissionCode
+	infobase.DeniedParameter = parameter
+
+	// Set DB credentials if provided
+	if dbUser != "" {
+		infobase.DBUser = dbUser
+	}
+	if dbPwd != "" {
+		infobase.DBPwd = dbPwd
+	}
+
+	// Call RegInfoBase (same as Lock/Unlock)
+	err = c.RegInfoBase(ctx, clusterID, infobase)
+	if err != nil {
+		c.logger.Error("failed to block sessions", zap.Error(err))
+		return fmt.Errorf("block sessions failed: %w", err)
+	}
+
+	c.logger.Info("sessions blocked successfully",
+		zap.String("infobase_id", infobaseID),
+		zap.Bool("sessions_deny", true))
+
+	return nil
+}
+
+// UnblockSessions unblocks user sessions (allows new connections)
+func (c *Client) UnblockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
+
+	c.logger.Info("unblocking user sessions",
+		zap.String("cluster_id", clusterID),
+		zap.String("infobase_id", infobaseID))
+
+	// Get current infobase info
+	infobase, err := c.GetInfobaseInfo(ctx, clusterID, infobaseID)
+	if err != nil {
+		return fmt.Errorf("failed to get infobase info: %w", err)
+	}
+
+	// Clear sessions_deny
+	infobase.SessionsDeny = false
+	infobase.DeniedFrom = time.Time{}
+	infobase.DeniedTo = time.Time{}
+	infobase.DeniedMessage = ""
+	infobase.PermissionCode = ""
+	infobase.DeniedParameter = ""
+
+	// Set DB credentials if provided
+	if dbUser != "" {
+		infobase.DBUser = dbUser
+	}
+	if dbPwd != "" {
+		infobase.DBPwd = dbPwd
+	}
+
+	// Call RegInfoBase
+	err = c.RegInfoBase(ctx, clusterID, infobase)
+	if err != nil {
+		c.logger.Error("failed to unblock sessions", zap.Error(err))
+		return fmt.Errorf("unblock sessions failed: %w", err)
+	}
+
+	c.logger.Info("sessions unblocked successfully",
+		zap.String("infobase_id", infobaseID),
+		zap.Bool("sessions_deny", false))
+
+	return nil
+}
+
 // CreateInfobase creates a new infobase (REAL implementation)
 func (c *Client) CreateInfobase(ctx context.Context, clusterID string, infobase *models.Infobase) (string, error) {
 	if clusterID == "" || infobase == nil {
