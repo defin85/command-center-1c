@@ -1,8 +1,8 @@
 # RAS Adapter Roadmap - Event-Driven Architecture v2.0
 
-**Version:** 2.0
-**Date:** 2025-11-19 (Last Updated: 2025-11-20)
-**Status:** Week 4 ✅ COMPLETE | Week 4.5 ⏳ PENDING
+**Version:** 2.1
+**Date:** 2025-11-19 (Last Updated: 2025-11-23)
+**Status:** Week 4 ✅ COMPLETE | Week 4.5 ✅ COMPLETE | Week 4.6 ✅ COMPLETE
 **Architecture:** Event-Driven ONLY (Redis Pub/Sub + REST API)
 **Related:** [RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md](../architecture/RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md)
 
@@ -342,22 +342,24 @@ curl http://localhost:8088/api/v1/clusters?server=localhost:1545
 # Expected: Lock/Unlock < 2s P95
 ```
 
-### Week 4.5: Manual Testing Gate ⭐ CRITICAL
+### Week 4.5: Manual Testing Gate ⭐ CRITICAL ✅ COMPLETE
 
 **Goal:** Comprehensive manual validation of ALL RAS Adapter endpoints before production
 
 **⚠️ GATE CONDITION:** ALL tests must PASS before proceeding to production or additional features
 
+**Status:** ✅ COMPLETE (2025-11-23)
+
 **Tasks:**
-- [ ] Run comprehensive manual testing checklist
-- [ ] Test ALL REST API endpoints (GET /clusters, /infobases, /sessions, POST /lock, /unlock, /terminate)
-- [ ] Test Redis Pub/Sub event handlers (Lock, Unlock, Terminate)
-- [ ] Verify Lock/Unlock NEW IMPLEMENTATION (RegInfoBase) works correctly
-- [ ] Test end-to-end workflows (Lock → Verify → Unlock)
-- [ ] Test concurrent requests (10+ parallel lock requests)
-- [ ] Test error handling (RAS unavailable, timeout, invalid parameters)
-- [ ] Performance validation (latency < 2s P95, throughput > 100 ops/min)
-- [ ] Document test results and obtain sign-off
+- [x] Run comprehensive manual testing checklist (20/20 tests PASSED)
+- [x] Test ALL REST API endpoints (GET /clusters, /infobases, /sessions, POST /lock, /unlock, /terminate)
+- [x] Test Redis Pub/Sub event handlers (Lock, Unlock, Terminate) - Week 1-3 tested
+- [x] Verify Lock/Unlock NEW IMPLEMENTATION (RegInfoBase) works correctly
+- [x] Test end-to-end workflows (Lock → Verify → Unlock)
+- [x] Test concurrent requests (10+ parallel lock requests) - covered in Week 4 benchmarks
+- [x] Test error handling (RAS unavailable, timeout, invalid parameters)
+- [x] Performance validation (latency < 2s P95, throughput > 100 ops/min) - Week 4 Day 2
+- [x] Document test results and obtain sign-off (RAS_ADAPTER_MANUAL_TEST_REPORT.md)
 
 **Testing Checklist:** [RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md](../architecture/RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md)
 
@@ -374,17 +376,18 @@ Performance acceptable: [ ] YES [ ] NO
 Ready to proceed to production: [ ] YES [ ] NO
 ```
 
-**Deliverable:**
-- ✅ All manual tests PASSED
-- ✅ Test report documented
-- ✅ Sign-off received
+**Deliverable:** ✅ COMPLETE
+- ✅ All manual tests PASSED (20/20, 100% success rate)
+- ✅ Test report documented (docs/RAS_ADAPTER_MANUAL_TEST_REPORT.md)
+- ✅ Sign-off received (2025-11-23)
 - ✅ Green light to proceed to production
 
-**If tests FAIL:**
-- ❌ DO NOT proceed to production
-- Fix identified issues
-- Re-run manual testing checklist
-- Obtain sign-off before continuing
+**Results:**
+- ✅ Lock/Unlock bug FIXED (no more "no password supplied" error)
+- ✅ Full compatibility with rac utility confirmed
+- ✅ Client notifications working (session terminated dialog)
+- ✅ Real-time synchronization (rac ↔ REST API)
+- ⚠️ API improvements identified (DELETE body, batch operations)
 
 ---
 
@@ -537,3 +540,51 @@ echo "DEPRECATED: Use ras-adapter instead" > go-services/archive/cluster-service
 **Authors:** AI Architect + AI Orchestrator
 
 **Status:** ✅ Active Roadmap
+
+---
+
+### Week 4.6: Additional Features ✅ COMPLETE
+
+**Goal:** Implement sessions-deny functionality for maintenance windows
+
+**Status:** ✅ Completed 2025-11-23
+
+**Tasks:**
+- [x] Design sessions-deny API (block/unblock user sessions)
+- [x] Implement models.Infobase fields (DeniedFrom, DeniedTo, Message, Code, Parameter)
+- [x] Implement RAS client functions (BlockSessions, UnblockSessions)
+- [x] Implement service layer methods
+- [x] Implement REST API handlers with validation
+- [x] Add UUID validation (HTTP 400 instead of 500)
+- [x] Manual testing (block → verify in 1C client → unblock)
+- [x] Code review and merge
+
+**Deliverable:** ✅ COMPLETE
+- New endpoints: POST /api/v1/infobases/:id/block-sessions, unblock-sessions
+- Parameters: denied_from, denied_to, denied_message, permission_code
+- Full integration with rac utility
+- Client receives block message correctly
+
+**Testing results:**
+- ✅ Block sessions: rac confirms sessions-deny: on
+- ✅ All parameters (from, to, message, code) sent to RAS correctly
+- ✅ 1C client shows block message: "Начало сеанса запрещено"
+- ✅ Unblock sessions: rac confirms sessions-deny: off
+- ✅ UUID validation: invalid UUID → HTTP 400
+
+**Known issues:**
+- ⚠️ Cyrillic encoding in console output (кракозябры) - message stored correctly in RAS, display issue only
+  - TODO: Fix UTF-8 encoding in denied_message for proper console display
+  - Priority: LOW (cosmetic, doesn't affect functionality)
+  - Solution: Ensure UTF-8 encoding when setting RAS InfobaseInfo fields
+
+**Implementation:**
+- 5 files changed, 327 insertions(+), 20 deletions(-)
+- Pattern: Follows Lock/Unlock implementation (RegInfoBase method)
+- Time: ~4.5 hours (architect + coder + tester + reviewer)
+
+**Commits:**
+- bb4bbf7 feat(ras-adapter): Implement sessions-deny
+- 9ffd8f1 fix(ras-adapter): Add sessions-deny parameters to RegInfoBase mapping
+
+---
