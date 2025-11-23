@@ -201,8 +201,8 @@ else
             docker network create cc1c-local-network
         fi
 
-        # Запустить мониторинг
-        docker-compose -f docker-compose.local.monitoring.yml up -d
+        # Запустить мониторинг (игнорируем ошибки - не критично)
+        docker-compose -f docker-compose.local.monitoring.yml up -d 2>&1 || true
 
         # Подождать готовности
         sleep 3
@@ -218,10 +218,10 @@ else
         if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
             echo -e "${GREEN}✓ Grafana запущен (http://localhost:3001)${NC}"
         else
-            echo -e "${YELLOW}⚠️  Grafana может быть еще не готов${NC}"
+            echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
         fi
     fi
-fi
+fi 2>/dev/null || echo -e "${YELLOW}⚠️  Мониторинг не запущен (не критично для работы)${NC}"
 
 echo ""
 
