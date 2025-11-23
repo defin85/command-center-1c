@@ -31,17 +31,28 @@ git branch
 # Должно показать: * feature/unified-workflow-platform
 ```
 
-### 2. Setup Python Environment
+### 2. ⚠️ Port Configuration (ВАЖНО!)
+
+**Выбран:** Вариант 1 - Shared Infrastructure
+
+Feature worktree **переиспользует** Docker контейнеры из основной ветки:
+- PostgreSQL (5432), Redis (6379), Prometheus (9090), Grafana (5000)
+- Orchestrator запускается на **порту 8100** (вместо 8000)
+
+**Подробности:** См. `PORTS_CONFIGURATION.md`
+
+### 3. Setup Python Environment
 
 ```bash
 # Activate existing venv (shared with main worktree)
 cd orchestrator
 source venv/Scripts/activate
 
-# OR create isolated venv (recommended for worktree)
-cd orchestrator
-python -m venv venv-workflow
-source venv-workflow/Scripts/activate
+# Verify Python packages
+pip list | grep -E "django|celery|pytest"
+# Должны быть установлены
+
+# If missing, install
 pip install -r requirements.txt
 ```
 
@@ -58,9 +69,33 @@ pip install channels channels-redis
 pip install pytest-django pytest-cov
 ```
 
-### 4. Verify Setup
+### 4. Verify Shared Infrastructure
 
 ```bash
+# ВАЖНО: Убедись что основная ветка запущена!
+cd /c/1CProject/command-center-1c
+docker ps  # Должны быть: cc1c-postgres-local, cc1c-redis-local
+
+# Проверить доступность PostgreSQL
+psql -h localhost -p 5432 -U commandcenter -d commandcenter -c "SELECT version();"
+
+# Проверить доступность Redis
+redis-cli -h localhost -p 6379 ping
+# Должно вернуть: PONG
+```
+
+### 5. Setup Django
+
+```bash
+cd /c/1CProject/command-center-1c-unified-workflow/orchestrator
+source venv/Scripts/activate
+
+# Environment variables (используем shared infrastructure)
+export DB_HOST=localhost
+export DB_PORT=5432  # Shared PostgreSQL
+export REDIS_HOST=localhost
+export REDIS_PORT=6379  # Shared Redis
+
 # Check Django works
 python manage.py check
 
@@ -69,6 +104,23 @@ python manage.py showmigrations templates
 
 # Run existing tests
 pytest apps/templates/engine/tests/ -v
+```
+
+### 6. Start Django on Port 8100 (non-conflicting)
+
+```bash
+# КРИТИЧНО: Запускаем на ДРУГОМ порту!
+cd /c/1CProject/command-center-1c-unified-workflow/orchestrator
+source venv/Scripts/activate
+python manage.py runserver 8100
+
+# Проверить доступность
+curl http://localhost:8100/admin/
+# Должно вернуть HTML
+
+# Основная ветка НЕ должна конфликтовать
+curl http://localhost:8000/admin/
+# Тоже работает!
 ```
 
 ---

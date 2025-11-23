@@ -1,0 +1,826 @@
+"""
+Django models for Workflow Engine.
+
+Implements DAG-based workflow orchestration with:
+- WorkflowTemplate: Stores DAG structure with Pydantic validation
+- WorkflowExecution: Runtime instance with FSM state transitions
+- WorkflowStepResult: Audit trail for each workflow step
+"""
+
+import uuid
+from collections import defaultdict, deque
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db import models, transaction
+from django.db.models import Q
+from django.utils import timezone
+from django_fsm import FSMField, transition
+from django_pydantic_field import SchemaField
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+try:
+    from opentelemetry import trace
+
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
+
+
+User = get_user_model()
+
+
+# ============================================================================
+# Pydantic Schemas for JSON Validation
+# ============================================================================
+
+
+class NodeConfig(BaseModel):
+    """Configuration for a workflow node."""
+
+    timeout_seconds: int = Field(
+        default=300, ge=1, le=3600, description="Node execution timeout (1-3600s)"
+    )
+    max_retries: int = Field(
+        default=0, ge=0, le=5, description="Maximum retry attempts (0-5)"
+    )
+    parallel_limit: Optional[int] = Field(
+        default=None, ge=1, le=100, description="Max parallel executions (Parallel nodes only)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "timeout_seconds": 300,
+                "max_retries": 2,
+                "parallel_limit": 10,
+            }
+        }
+
+
+class WorkflowNode(BaseModel):
+    """Represents a single node in the workflow DAG."""
+
+    id: str = Field(..., min_length=1, max_length=100, description="Unique node identifier")
+    name: str = Field(..., min_length=1, max_length=200, description="Human-readable name")
+    type: str = Field(
+        ...,
+        pattern="^(operation|condition|parallel|loop|subworkflow)$",
+        description="Node type: operation, condition, parallel, loop, subworkflow",
+    )
+    template_id: Optional[str] = Field(
+        default=None, description="Template ID for Operation nodes"
+    )
+    config: NodeConfig = Field(default_factory=NodeConfig, description="Node-specific config")
+
+    @field_validator("type")
+    @classmethod
+    def validate_node_type(cls, v: str) -> str:
+        """Validate node type is supported."""
+        allowed_types = {"operation", "condition", "parallel", "loop", "subworkflow"}
+        if v not in allowed_types:
+            raise ValueError(f"Node type must be one of {allowed_types}")
+        return v
+
+    @model_validator(mode='after')
+    def validate_template_id(self) -> 'WorkflowNode':
+        """Validate template_id based on node type."""
+        if self.type == "operation":
+            if not self.template_id:
+                raise ValueError(f"template_id is required for operation nodes (node: {self.id})")
+        else:
+            if self.template_id is not None:
+                raise ValueError(
+                    f"template_id must be None for {self.type} nodes (node: {self.id})"
+                )
+        return self
+
+    @model_validator(mode='after')
+    def validate_config(self) -> 'WorkflowNode':
+        """Validate config based on node type."""
+        if self.type == "parallel":
+            if self.config.parallel_limit is None:
+                raise ValueError(
+                    f"parallel_limit is required for parallel nodes (node: {self.id})"
+                )
+        return self
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "node_1",
+                "name": "Block Users",
+                "type": "operation",
+                "template_id": "bulk_user_block_v1",
+                "config": {"timeout_seconds": 300, "max_retries": 2},
+            }
+        }
+
+
+class WorkflowEdge(BaseModel):
+    """Represents a directed edge in the workflow DAG."""
+
+    from_node: str = Field(..., alias="from", description="Source node ID")
+    to_node: str = Field(..., alias="to", description="Destination node ID")
+    condition: Optional[str] = Field(
+        default=None, description="Jinja2 expression for conditional edges"
+    )
+
+    class Config:
+        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "from": "node_1",
+                "to": "node_2",
+                "condition": "{{ node_1.output.success }}",
+            }
+        }
+
+
+class DAGStructure(BaseModel):
+    """Complete DAG structure with nodes and edges."""
+
+    nodes: List[WorkflowNode] = Field(..., min_length=1, description="List of workflow nodes")
+    edges: List[WorkflowEdge] = Field(default_factory=list, description="List of directed edges")
+
+    @field_validator("nodes")
+    @classmethod
+    def validate_unique_node_ids(cls, v: List[WorkflowNode]) -> List[WorkflowNode]:
+        """Ensure all node IDs are unique."""
+        node_ids = [node.id for node in v]
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("Node IDs must be unique within the workflow")
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "nodes": [
+                    {"id": "start", "name": "Start", "type": "operation", "template_id": "init"},
+                    {"id": "end", "name": "End", "type": "operation", "template_id": "cleanup"},
+                ],
+                "edges": [{"from": "start", "to": "end"}],
+            }
+        }
+
+
+class WorkflowConfig(BaseModel):
+    """Global workflow configuration."""
+
+    timeout_seconds: int = Field(
+        default=3600, ge=60, le=86400, description="Total workflow timeout (60-86400s)"
+    )
+    max_retries: int = Field(
+        default=0, ge=0, le=3, description="Workflow-level retry attempts"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "timeout_seconds": 3600,
+                "max_retries": 1,
+            }
+        }
+
+
+# ============================================================================
+# Django Models
+# ============================================================================
+
+
+class WorkflowTemplate(models.Model):
+    """
+    Workflow template with DAG structure.
+
+    Stores workflow definitions as versioned templates with Pydantic-validated
+    DAG structures. Supports versioning for iterative development.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, help_text="Workflow template name")
+    description = models.TextField(blank=True, help_text="Workflow description")
+    workflow_type = models.CharField(
+        max_length=100,
+        default="general",
+        help_text="Workflow category (e.g., user_management, database_ops)",
+    )
+
+    # DAG structure (Pydantic-validated)
+    dag_structure = SchemaField(
+        schema=DAGStructure,
+        help_text="DAG structure with nodes and edges (Pydantic-validated)"
+    )
+
+    # Global workflow config (Pydantic-validated)
+    config = SchemaField(
+        schema=WorkflowConfig,
+        default=dict,
+        help_text="Workflow configuration (timeout, retries)"
+    )
+
+    # Validation & activation
+    is_valid = models.BooleanField(
+        default=False, help_text="DAG structure is valid (cycles checked)"
+    )
+    is_active = models.BooleanField(
+        default=True, help_text="Template is active and can be executed"
+    )
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name="created_workflows"
+    )
+
+    # Versioning
+    parent_version = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="child_versions",
+        help_text="Parent template if this is a new version",
+    )
+    version_number = models.PositiveIntegerField(
+        default=1, help_text="Version number (auto-incremented)"
+    )
+
+    class Meta:
+        db_table = "workflow_templates"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["is_active", "is_valid"]),
+            models.Index(fields=["created_by", "-created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "version_number"], name="unique_workflow_name_version"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (v{self.version_number})"
+
+    def _validate_no_self_loops(self, dag: DAGStructure) -> None:
+        """
+        Validate DAG has no self-referencing edges.
+
+        Args:
+            dag: DAG structure to validate
+
+        Raises:
+            ValueError: If self-loop detected
+        """
+        for edge in dag.edges:
+            if edge.from_node == edge.to_node:
+                raise ValueError(f"Self-loop detected: {edge.from_node} -> {edge.to_node}")
+
+    def _validate_dag_acyclic(self, dag: DAGStructure) -> None:
+        """
+        Validate DAG has no cycles using Kahn's algorithm.
+
+        Args:
+            dag: DAG structure to validate
+
+        Raises:
+            ValueError: If cycles detected
+        """
+        # Build adjacency list and in-degree count
+        in_degree = defaultdict(int)
+        adj_list = defaultdict(list)
+
+        # Initialize in-degree for all nodes
+        for node in dag.nodes:
+            in_degree[node.id] = 0
+
+        # Build graph
+        for edge in dag.edges:
+            adj_list[edge.from_node].append(edge.to_node)
+            in_degree[edge.to_node] += 1
+
+        # Kahn's algorithm: topological sort
+        queue = deque([node_id for node_id, degree in in_degree.items() if degree == 0])
+        processed = 0
+
+        while queue:
+            node_id = queue.popleft()
+            processed += 1
+
+            for neighbor in adj_list[node_id]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        # If not all nodes processed → cycle exists
+        if processed != len(dag.nodes):
+            raise ValueError(
+                f"Cycle detected in DAG: processed {processed} of {len(dag.nodes)} nodes"
+            )
+
+    def _validate_dag_topology(self, dag: DAGStructure) -> None:
+        """
+        Validate DAG has proper topology (start and end nodes).
+
+        Args:
+            dag: DAG structure to validate
+
+        Raises:
+            ValueError: If no start or end nodes
+        """
+        if len(dag.nodes) == 0:
+            raise ValueError("Workflow must have at least one node")
+
+        # Find nodes with no incoming/outgoing edges
+        incoming = {edge.to_node for edge in dag.edges}
+        outgoing = {edge.from_node for edge in dag.edges}
+
+        start_nodes = [n.id for n in dag.nodes if n.id not in incoming]
+        end_nodes = [n.id for n in dag.nodes if n.id not in outgoing]
+
+        if not start_nodes:
+            raise ValueError("Workflow must have at least one start node (no incoming edges)")
+        if not end_nodes:
+            raise ValueError("Workflow must have at least one end node (no outgoing edges)")
+
+    def validate(self) -> bool:
+        """
+        Validate workflow template DAG structure.
+
+        Checks:
+        - Pydantic schema validation (automatic)
+        - Node IDs are unique
+        - Edge references valid nodes
+        - No cycles (Kahn's algorithm)
+        - No self-loops
+        - Proper topology (start/end nodes exist)
+
+        Returns:
+            True if validation passed
+
+        Raises:
+            ValueError: If validation fails
+        """
+        try:
+            # Parse and validate schemas (Pydantic)
+            # Note: SchemaField returns Pydantic object, not dict
+            dag = self.dag_structure if isinstance(self.dag_structure, DAGStructure) else DAGStructure(**self.dag_structure)
+            config = self.config if isinstance(self.config, WorkflowConfig) else WorkflowConfig(**self.config)
+
+            # Validate node IDs are unique
+            node_ids = [node.id for node in dag.nodes]
+            if len(node_ids) != len(set(node_ids)):
+                raise ValueError("Duplicate node IDs found in workflow")
+
+            # Validate edges reference existing nodes
+            node_id_set = set(node_ids)
+            for edge in dag.edges:
+                if edge.from_node not in node_id_set:
+                    raise ValueError(f"Edge references non-existent source node: {edge.from_node}")
+                if edge.to_node not in node_id_set:
+                    raise ValueError(f"Edge references non-existent target node: {edge.to_node}")
+
+            # Validate no self-loops
+            self._validate_no_self_loops(dag)
+
+            # Validate no cycles (Kahn's algorithm)
+            self._validate_dag_acyclic(dag)
+
+            # Validate topology (start/end nodes)
+            self._validate_dag_topology(dag)
+
+            self.is_valid = True
+            return True
+
+        except Exception as e:
+            self.is_valid = False
+            raise ValueError(f"Workflow validation failed: {str(e)}")
+
+    def create_execution(self, input_context: Dict[str, Any]) -> "WorkflowExecution":
+        """
+        Create a new execution instance from this template.
+
+        Args:
+            input_context: Initial context data for the workflow.
+
+        Returns:
+            WorkflowExecution: New execution instance in 'pending' state.
+
+        Raises:
+            ValueError: If template is not valid or not active.
+        """
+        if not self.is_valid:
+            raise ValueError("Cannot execute invalid workflow template")
+        if not self.is_active:
+            raise ValueError("Cannot execute inactive workflow template")
+
+        execution = WorkflowExecution.objects.create(
+            workflow_template=self,
+            input_context=input_context,
+            status="pending",
+        )
+        return execution
+
+    def clone_as_new_version(self, created_by: Optional[User] = None) -> "WorkflowTemplate":
+        """
+        Clone this template as a new version.
+
+        Args:
+            created_by: User creating the new version (optional).
+
+        Returns:
+            WorkflowTemplate: New template with incremented version_number.
+        """
+        # Find max version for this workflow name
+        max_version = (
+            WorkflowTemplate.objects.filter(name=self.name).aggregate(
+                max_ver=models.Max("version_number")
+            )["max_ver"]
+            or 0
+        )
+
+        new_template = WorkflowTemplate.objects.create(
+            name=self.name,
+            description=self.description,
+            workflow_type=self.workflow_type,
+            dag_structure=self.dag_structure,
+            config=self.config,
+            is_valid=self.is_valid,
+            is_active=True,
+            created_by=created_by or self.created_by,
+            parent_version=self,
+            version_number=max_version + 1,
+        )
+        return new_template
+
+
+class WorkflowExecution(models.Model):
+    """
+    Runtime instance of a workflow execution.
+
+    Tracks execution state using Django FSM for state transitions.
+    Stores execution context, results, and progress tracking.
+    """
+
+    # Status choices for FSM
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Template reference
+    workflow_template = models.ForeignKey(
+        WorkflowTemplate, on_delete=models.PROTECT, related_name="executions"
+    )
+
+    # Execution data
+    input_context = models.JSONField(
+        default=dict, help_text="Initial input data for the workflow"
+    )
+    final_result = models.JSONField(
+        null=True, blank=True, help_text="Final workflow output data"
+    )
+
+    # State tracking (FSM)
+    status = FSMField(
+        default=STATUS_PENDING,
+        choices=STATUS_CHOICES,
+        protected=True,
+        help_text="Current execution status (FSM-protected)",
+    )
+
+    # Progress tracking
+    current_node_id = models.CharField(
+        max_length=100, blank=True, help_text="Currently executing node ID"
+    )
+    completed_nodes = models.JSONField(
+        default=list, help_text="List of completed node IDs"
+    )
+    failed_nodes = models.JSONField(default=list, help_text="List of failed node IDs")
+    node_statuses = models.JSONField(
+        default=dict,
+        help_text="Map of node_id -> status (pending/running/completed/failed/skipped)",
+    )
+
+    # Error tracking
+    error_message = models.TextField(blank=True, help_text="Error message if failed")
+    error_node_id = models.CharField(
+        max_length=100, blank=True, help_text="Node ID where error occurred"
+    )
+
+    # OpenTelemetry tracing
+    trace_id = models.CharField(
+        max_length=32, blank=True, help_text="OpenTelemetry trace ID (hex)"
+    )
+
+    # Timestamps
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "workflow_executions"
+        ordering = ["-started_at"]
+        indexes = [
+            models.Index(fields=["status", "-started_at"]),
+            models.Index(fields=["workflow_template", "status"]),
+            models.Index(fields=["trace_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Execution {self.id} - {self.workflow_template.name} ({self.status})"
+
+    @property
+    def progress_percent(self) -> Decimal:
+        """
+        Calculate execution progress percentage.
+
+        Returns:
+            Decimal: Progress from 0.00 to 100.00.
+        """
+        # SchemaField returns Pydantic object, not dict
+        dag = self.workflow_template.dag_structure
+        total_nodes = len(dag.nodes) if isinstance(dag, DAGStructure) else len(dag.get("nodes", []))
+        if total_nodes == 0:
+            return Decimal("0.00")
+
+        completed_count = len(self.completed_nodes)
+        return Decimal(str((completed_count / total_nodes) * 100)).quantize(Decimal("0.01"))
+
+    @property
+    def duration(self) -> Optional[float]:
+        """
+        Calculate execution duration in seconds.
+
+        Returns:
+            float: Duration in seconds, or None if not started/completed.
+        """
+        if not self.started_at:
+            return None
+        end_time = self.completed_at or timezone.now()
+        return (end_time - self.started_at).total_seconds()
+
+    @transition(field=status, source=STATUS_PENDING, target=STATUS_RUNNING)
+    def start(self) -> None:
+        """
+        Start workflow execution.
+
+        NOTE: OpenTelemetry span should be created in WorkflowEngine.execute_workflow(),
+        NOT in model transitions. The span should live for the entire workflow execution,
+        not just during the transition.
+
+        For now, we only set trace_id if provided externally via set_trace_id().
+        """
+        self.started_at = timezone.now()
+        # trace_id will be set by WorkflowEngine (Week 12)
+
+    @transition(field=status, source=STATUS_RUNNING, target=STATUS_COMPLETED)
+    def complete(self, result: Dict[str, Any]) -> None:
+        """
+        Complete workflow execution.
+
+        Args:
+            result: Final workflow result data.
+
+        NOTE: OpenTelemetry span will be closed by WorkflowEngine (Week 12).
+        """
+        self.final_result = result
+        self.completed_at = timezone.now()
+
+    @transition(field=status, source=STATUS_RUNNING, target=STATUS_FAILED)
+    def fail(self, error: str, node_id: Optional[str] = None) -> None:
+        """
+        Mark workflow as failed.
+
+        Args:
+            error: Error message describing the failure.
+            node_id: Optional node ID where the error occurred.
+
+        NOTE: OpenTelemetry span will be closed by WorkflowEngine (Week 12).
+        """
+        self.error_message = error
+        self.error_node_id = node_id or ""
+        self.completed_at = timezone.now()
+
+    @transition(
+        field=status, source=[STATUS_PENDING, STATUS_RUNNING], target=STATUS_CANCELLED
+    )
+    def cancel(self) -> None:
+        """
+        Cancel workflow execution.
+
+        NOTE: OpenTelemetry span will be closed by WorkflowEngine (Week 12).
+        """
+        self.completed_at = timezone.now()
+
+    def set_trace_id(self, trace_id: str) -> None:
+        """
+        Set OpenTelemetry trace ID (called by WorkflowEngine).
+
+        Args:
+            trace_id: OpenTelemetry trace ID (32 hex characters).
+
+        Raises:
+            ValueError: If trace_id is not 32 hex characters.
+        """
+        if len(trace_id) != 32:
+            raise ValueError("trace_id must be 32 hex characters")
+        self.trace_id = trace_id
+
+    def get_node_status(self, node_id: str) -> str:
+        """
+        Get current status of a specific node.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            str: Node status (pending/running/completed/failed/skipped).
+        """
+        return self.node_statuses.get(node_id, "pending")
+
+    def update_node_status(self, node_id: str, status: str, result: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Update node status with race condition protection.
+
+        Args:
+            node_id: Node identifier.
+            status: New status (pending/running/completed/failed/skipped).
+            result: Optional result data for the node.
+
+        Raises:
+            ValueError: If status is not valid.
+
+        NOTE: Uses SELECT FOR UPDATE to prevent concurrent update race conditions.
+        """
+        VALID_STATUSES = {"pending", "running", "completed", "failed", "skipped"}
+        if status not in VALID_STATUSES:
+            raise ValueError(f"Invalid status: {status}. Must be one of {VALID_STATUSES}")
+
+        with transaction.atomic():
+            # Lock row to prevent concurrent updates
+            execution = WorkflowExecution.objects.select_for_update().get(pk=self.pk)
+
+            # Refresh JSONFields from DB (exclude FSMField to avoid protection error)
+            execution.refresh_from_db(fields=['node_statuses', 'completed_nodes', 'failed_nodes', 'current_node_id'])
+
+            # Initialize node_statuses if None
+            if execution.node_statuses is None:
+                execution.node_statuses = {}
+
+            # Update node status with timestamp tracking
+            if node_id not in execution.node_statuses:
+                execution.node_statuses[node_id] = {
+                    'status': status,
+                    'started_at': timezone.now().isoformat(),
+                }
+            else:
+                execution.node_statuses[node_id]['status'] = status
+
+                # Calculate duration for terminal states
+                if status in ['completed', 'failed', 'skipped']:
+                    started = execution.node_statuses[node_id].get('started_at')
+                    if started:
+                        started_dt = timezone.datetime.fromisoformat(started)
+                        duration = (timezone.now() - started_dt).total_seconds()
+                        execution.node_statuses[node_id]['duration'] = duration
+
+            # Store result if provided
+            if result:
+                execution.node_statuses[node_id]['result'] = result
+
+            # Update tracking lists (avoid duplicates)
+            if status == 'completed' and node_id not in execution.completed_nodes:
+                execution.completed_nodes = execution.completed_nodes + [node_id]
+            elif status == 'failed' and node_id not in execution.failed_nodes:
+                execution.failed_nodes = execution.failed_nodes + [node_id]
+
+            # Update current node
+            execution.current_node_id = node_id if status == 'running' else ''
+
+            # Save with explicit update_fields
+            execution.save(update_fields=[
+                'node_statuses', 'completed_nodes', 'failed_nodes', 'current_node_id'
+            ])
+
+            # Refresh self to reflect DB state (exclude FSMField)
+            self.refresh_from_db(fields=['node_statuses', 'completed_nodes', 'failed_nodes', 'current_node_id'])
+
+
+class WorkflowStepResult(models.Model):
+    """
+    Audit trail for individual workflow step execution.
+
+    Records detailed results for each node execution including inputs,
+    outputs, errors, and OpenTelemetry span context.
+    """
+
+    # Status choices
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_SKIPPED = "skipped"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_SKIPPED, "Skipped"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Execution reference
+    workflow_execution = models.ForeignKey(
+        WorkflowExecution, on_delete=models.CASCADE, related_name="step_results"
+    )
+
+    # Node identification
+    node_id = models.CharField(max_length=100, help_text="Node ID from DAG structure")
+    node_name = models.CharField(max_length=200, help_text="Human-readable node name")
+    node_type = models.CharField(
+        max_length=50, help_text="Node type (operation/condition/etc)"
+    )
+
+    # Execution data
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    input_data = models.JSONField(default=dict, help_text="Input data for this node")
+    output_data = models.JSONField(
+        null=True, blank=True, help_text="Output data from this node"
+    )
+    error_message = models.TextField(blank=True, help_text="Error message if failed")
+
+    # Timestamps
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # OpenTelemetry tracing
+    span_id = models.CharField(max_length=16, blank=True, help_text="OpenTelemetry span ID (hex)")
+    trace_id = models.CharField(
+        max_length=32, blank=True, help_text="OpenTelemetry trace ID (hex)"
+    )
+
+    class Meta:
+        db_table = "workflow_step_results"
+        ordering = ["workflow_execution", "started_at"]
+        indexes = [
+            models.Index(fields=["workflow_execution", "node_id"]),
+            models.Index(fields=["status", "-started_at"]),
+            models.Index(fields=["trace_id", "span_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workflow_execution", "node_id"],
+                condition=Q(status__in=["completed", "failed", "skipped"]),
+                name="unique_completed_step_per_execution",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Step {self.node_name} ({self.status})"
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """
+        Calculate step execution duration in seconds.
+
+        Returns:
+            float: Duration in seconds, or None if not started/completed.
+        """
+        if not self.started_at or not self.completed_at:
+            return None
+        return (self.completed_at - self.started_at).total_seconds()
+
+    def set_opentelemetry_context(self) -> None:
+        """
+        Extract and store OpenTelemetry trace/span context.
+
+        Sets trace_id and span_id from current trace context.
+        """
+        if not OTEL_AVAILABLE:
+            return
+
+        try:
+            current_span = trace.get_current_span()
+            if current_span.is_recording():
+                ctx = current_span.get_span_context()
+                self.trace_id = format(ctx.trace_id, "032x")
+                self.span_id = format(ctx.span_id, "016x")
+        except Exception:
+            # Silently fail if no active span
+            pass

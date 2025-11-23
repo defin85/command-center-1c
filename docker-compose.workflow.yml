@@ -1,0 +1,89 @@
+version: '3.8'
+
+# Isolated Docker Compose for feature/unified-workflow-platform worktree
+# Ports shifted by +100 to avoid conflicts with main worktree
+
+services:
+  # PostgreSQL Database
+  postgres-workflow:
+    image: postgres:15-alpine
+    container_name: commandcenter-postgres-workflow
+    environment:
+      POSTGRES_DB: commandcenter_workflow
+      POSTGRES_USER: commandcenter
+      POSTGRES_PASSWORD: dev_password_change_in_prod
+    ports:
+      - "5532:5432"  # +100 offset
+    volumes:
+      - postgres_workflow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commandcenter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-workflow-network
+
+  # Redis
+  redis-workflow:
+    image: redis:7-alpine
+    container_name: commandcenter-redis-workflow
+    command: redis-server --appendonly yes
+    ports:
+      - "6479:6379"  # +100 offset
+    volumes:
+      - redis_workflow_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commandcenter-workflow-network
+
+  # Prometheus (Monitoring)
+  prometheus-workflow:
+    image: prom/prometheus:latest
+    container_name: commandcenter-prometheus-workflow
+    ports:
+      - "9190:9090"  # +100 offset
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_workflow_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - commandcenter-workflow-network
+
+  # Grafana (Dashboards)
+  grafana-workflow:
+    image: grafana/grafana:latest
+    container_name: commandcenter-grafana-workflow
+    ports:
+      - "3101:3000"  # +100 offset
+    volumes:
+      - grafana_workflow_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus-workflow
+    networks:
+      - commandcenter-workflow-network
+
+networks:
+  commandcenter-workflow-network:
+    driver: bridge
+
+volumes:
+  postgres_workflow_data:
+  redis_workflow_data:
+  prometheus_workflow_data:
+  grafana_workflow_data:
