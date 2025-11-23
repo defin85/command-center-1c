@@ -572,11 +572,29 @@ echo "DEPRECATED: Use ras-adapter instead" > go-services/archive/cluster-service
 - ✅ Unblock sessions: rac confirms sessions-deny: off
 - ✅ UUID validation: invalid UUID → HTTP 400
 
-**Known issues:**
-- ⚠️ Cyrillic encoding in console output (кракозябры) - message stored correctly in RAS, display issue only
-  - TODO: Fix UTF-8 encoding in denied_message for proper console display
-  - Priority: LOW (cosmetic, doesn't affect functionality)
-  - Solution: Ensure UTF-8 encoding when setting RAS InfobaseInfo fields
+**Encoding investigation - RESOLVED ✅**
+
+**Issue (2025-11-23):**
+- Cyrillic appeared as mojibake (кракозябры) in GitBash console when using curl/rac.exe
+- Initially suspected Windows-1251 encoding issue in RAS protocol
+
+**Investigation (2025-11-23):**
+- ✅ Used RAS Protocol Sniffer (tools/ras-sniffer) to capture raw protocol bytes
+- ✅ Discovered: rac.exe sends **UTF-8** (`d1 80 d0 be` = Cyrillic "ровку")
+- ✅ Tested via Postman → 1C client displays Cyrillic **CORRECTLY**
+- ✅ Baseline test: rac.exe → 1C client works perfectly ("Проверка штатной утилиты")
+- ✅ Final test: Go adapter via Postman → 1C client shows "Тестовое сообщение через Postman" **CORRECTLY**
+
+**Root Cause:**
+- RAS protocol uses **UTF-8** (not Windows-1251)
+- Mojibake was **GitBash console encoding issue** only
+- 1C client receives and displays Cyrillic correctly from both rac.exe and Go adapter
+
+**Resolution:**
+- No code changes needed - RAS already works with UTF-8 ✅
+- Removed experimental StringWindows1251() methods (6 files, -185 lines)
+- Added DeniedMessage/PermissionCode field mapping in client.go (+6 lines)
+- Confirmed UTF-8 is correct encoding via sniffer analysis
 
 **Implementation:**
 - 5 files changed, 327 insertions(+), 20 deletions(-)
@@ -586,5 +604,6 @@ echo "DEPRECATED: Use ras-adapter instead" > go-services/archive/cluster-service
 **Commits:**
 - bb4bbf7 feat(ras-adapter): Implement sessions-deny
 - 9ffd8f1 fix(ras-adapter): Add sessions-deny parameters to RegInfoBase mapping
+- 2f121f1 fix(ras-adapter): Confirm RAS protocol uses UTF-8 for Cyrillic (not Windows-1251)
 
 ---
