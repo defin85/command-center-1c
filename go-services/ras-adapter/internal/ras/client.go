@@ -286,7 +286,12 @@ func (c *Client) RegInfoBase(ctx context.Context, clusterID string, infobase *mo
 		DbUser:            infobase.DBUser,             // Required for UpdateInfobase
 		DbPwd:             infobase.DBPwd,              // SDK handles empty passwords correctly now
 		ScheduledJobsDeny: infobase.ScheduledJobsDeny,  // KEY FIELD for Lock/Unlock
-		SessionsDeny:      infobase.SessionsDeny,
+		SessionsDeny:      infobase.SessionsDeny,       // KEY FIELD for Block/Unblock Sessions
+		DeniedFrom:        infobase.DeniedFrom,         // Week 4.6: Sessions block parameters
+		DeniedTo:          infobase.DeniedTo,
+		DeniedMessage:     infobase.DeniedMessage,
+		PermissionCode:    infobase.PermissionCode,
+		DeniedParameter:   infobase.DeniedParameter,
 	}
 
 	// Call real RAS UpdateInfobase
