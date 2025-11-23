@@ -1,0 +1,760 @@
+definitions:
+  github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Cluster:
+    properties:
+      host:
+        type: string
+      name:
+        type: string
+      port:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Infobase:
+    properties:
+      db_name:
+        type: string
+      db_pwd:
+        type: string
+      db_server:
+        type: string
+      db_user:
+        description: Database credentials (for create/update operations)
+        type: string
+      dbms:
+        type: string
+      denied_from:
+        description: 'Week 4.6: Sessions block parameters'
+        type: string
+      denied_message:
+        type: string
+      denied_parameter:
+        type: string
+      denied_to:
+        type: string
+      locale:
+        type: string
+      name:
+        type: string
+      permission_code:
+        type: string
+      scheduled_jobs_deny:
+        description: 'Week 2: Lock/Unlock fields'
+        type: boolean
+      sessions_deny:
+        description: Блокировка пользователей
+        type: boolean
+      uuid:
+        type: string
+    type: object
+  github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Session:
+    properties:
+      application:
+        type: string
+      session_id:
+        description: Legacy alias for UUID
+        type: string
+      started_at:
+        type: string
+      user_name:
+        type: string
+      uuid:
+        description: RAS internal UUID
+        type: string
+    type: object
+  internal_api_rest_v2.BlockSessionsRequest:
+    properties:
+      db_password:
+        example: password
+        type: string
+      db_user:
+        example: admin
+        type: string
+      denied_from:
+        example: "2025-11-23T12:00:00Z"
+        type: string
+      denied_message:
+        example: Database maintenance in progress
+        type: string
+      denied_to:
+        example: "2025-11-23T18:00:00Z"
+        type: string
+      parameter:
+        example: scheduled_maintenance
+        type: string
+      permission_code:
+        example: MaintenanceMode
+        type: string
+    type: object
+  internal_api_rest_v2.ClusterResponse:
+    properties:
+      cluster:
+        $ref: '#/definitions/github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Cluster'
+    type: object
+  internal_api_rest_v2.ClustersResponse:
+    properties:
+      clusters:
+        items:
+          $ref: '#/definitions/github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Cluster'
+        type: array
+      count:
+        example: 1
+        type: integer
+    type: object
+  internal_api_rest_v2.CreateInfobaseRequest:
+    properties:
+      date_offset:
+        example: 2000
+        type: integer
+      db_name:
+        example: testdb
+        type: string
+      db_password:
+        example: password
+        type: string
+      db_server_name:
+        example: localhost
+        type: string
+      db_user:
+        example: sa
+        type: string
+      dbms:
+        example: MSSQLServer
+        type: string
+      description:
+        example: Test database for development
+        type: string
+      license_distribution:
+        example: true
+        type: boolean
+      locale:
+        example: ru_RU
+        type: string
+      name:
+        example: TestDatabase
+        type: string
+      scheduled_jobs_denied:
+        example: false
+        type: boolean
+      sessions_denied:
+        example: false
+        type: boolean
+    required:
+    - db_name
+    - dbms
+    - name
+    type: object
+  internal_api_rest_v2.CreateInfobaseResponse:
+    properties:
+      infobase_id:
+        example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        type: string
+      message:
+        example: Infobase created successfully
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  internal_api_rest_v2.DropInfobaseRequest:
+    properties:
+      drop_database:
+        example: true
+        type: boolean
+    type: object
+  internal_api_rest_v2.ErrorResponse:
+    properties:
+      code:
+        example: MISSING_PARAMETER
+        type: string
+      details:
+        example: validation failed
+        type: string
+      error:
+        example: cluster_id is required
+        type: string
+    type: object
+  internal_api_rest_v2.InfobaseResponse:
+    properties:
+      infobase:
+        $ref: '#/definitions/github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Infobase'
+    type: object
+  internal_api_rest_v2.InfobasesResponse:
+    properties:
+      count:
+        example: 5
+        type: integer
+      infobases:
+        items:
+          $ref: '#/definitions/github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Infobase'
+        type: array
+    type: object
+  internal_api_rest_v2.LockInfobaseRequest:
+    properties:
+      db_password:
+        example: password
+        type: string
+      db_user:
+        example: admin
+        type: string
+    type: object
+  internal_api_rest_v2.SessionsResponse:
+    properties:
+      count:
+        example: 10
+        type: integer
+      sessions:
+        items:
+          $ref: '#/definitions/github_com_commandcenter1c_commandcenter_ras-adapter_internal_models.Session'
+        type: array
+    type: object
+  internal_api_rest_v2.SuccessResponse:
+    properties:
+      message:
+        example: Operation completed successfully
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  internal_api_rest_v2.TerminateSessionResponse:
+    properties:
+      message:
+        example: Session terminated successfully
+        type: string
+      session_id:
+        example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  internal_api_rest_v2.TerminateSessionsRequest:
+    properties:
+      session_ids:
+        example:
+        - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        - f9e8d7c6-b5a4-3210-9876-543210fedcba
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - session_ids
+    type: object
+  internal_api_rest_v2.TerminateSessionsResponse:
+    properties:
+      failed_count:
+        example: 2
+        type: integer
+      failed_sessions:
+        example:
+        - session-1
+        - session-2
+        items:
+          type: string
+        type: array
+      terminated_count:
+        example: 8
+        type: integer
+    type: object
+  internal_api_rest_v2.UnblockSessionsRequest:
+    properties:
+      db_password:
+        example: password
+        type: string
+      db_user:
+        example: admin
+        type: string
+    type: object
+  internal_api_rest_v2.UnlockInfobaseRequest:
+    properties:
+      db_password:
+        example: password
+        type: string
+      db_user:
+        example: admin
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /block-sessions:
+    post:
+      consumes:
+      - application/json
+      description: Prevent users from starting new sessions during maintenance window
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Block parameters
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.BlockSessionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Block sessions
+      tags:
+      - Infobases
+  /create-infobase:
+    post:
+      consumes:
+      - application/json
+      description: Create new 1C infobase in cluster
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.CreateInfobaseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.CreateInfobaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Create infobase
+      tags:
+      - Infobases
+  /drop-infobase:
+    post:
+      consumes:
+      - application/json
+      description: Delete infobase and optionally drop associated database
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Drop parameters
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.DropInfobaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Drop infobase
+      tags:
+      - Infobases
+  /get-cluster:
+    get:
+      consumes:
+      - application/json
+      description: Get specific cluster by UUID
+      parameters:
+      - description: RAS server address (host:port)
+        in: query
+        name: server
+        required: true
+        type: string
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ClusterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Get cluster
+      tags:
+      - Clusters
+  /get-infobase:
+    get:
+      consumes:
+      - application/json
+      description: Get specific infobase details by UUID
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.InfobaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Get infobase
+      tags:
+      - Infobases
+  /list-clusters:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all 1C clusters from RAS server
+      parameters:
+      - description: RAS server address (host:port)
+        in: query
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ClustersResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: List clusters
+      tags:
+      - Clusters
+  /list-infobases:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all infobases in cluster
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.InfobasesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: List infobases
+      tags:
+      - Infobases
+  /list-sessions:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all user sessions on infobase
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SessionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: List sessions
+      tags:
+      - Sessions
+  /lock-infobase:
+    post:
+      consumes:
+      - application/json
+      description: Lock infobase to block scheduled jobs execution
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Database credentials
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.LockInfobaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Lock infobase
+      tags:
+      - Infobases
+  /terminate-session:
+    post:
+      consumes:
+      - application/json
+      description: Terminate specific user session (NOT IMPLEMENTED - service layer
+        support needed)
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Session UUID
+        in: query
+        name: session_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.TerminateSessionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Terminate session
+      tags:
+      - Sessions
+  /terminate-sessions:
+    post:
+      consumes:
+      - application/json
+      description: Terminate all or specific user sessions on infobase (selective
+        termination not yet implemented)
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Session IDs to terminate (optional)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.TerminateSessionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.TerminateSessionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Terminate sessions
+      tags:
+      - Sessions
+  /unblock-sessions:
+    post:
+      consumes:
+      - application/json
+      description: Allow users to start new sessions after maintenance window
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Database credentials
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.UnblockSessionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Unblock sessions
+      tags:
+      - Infobases
+  /unlock-infobase:
+    post:
+      consumes:
+      - application/json
+      description: Unlock infobase to enable scheduled jobs execution
+      parameters:
+      - description: Cluster UUID
+        in: query
+        name: cluster_id
+        required: true
+        type: string
+      - description: Infobase UUID
+        in: query
+        name: infobase_id
+        required: true
+        type: string
+      - description: Database credentials
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_rest_v2.UnlockInfobaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_rest_v2.ErrorResponse'
+      summary: Unlock infobase
+      tags:
+      - Infobases
+swagger: "2.0"
