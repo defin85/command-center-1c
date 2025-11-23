@@ -60,14 +60,8 @@ check_process "celery-beat"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"
-# Week 4: Check both ras-adapter and cluster-service (only one should be running)
-if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
-    check_process "ras-adapter"
-elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
-    check_process "cluster-service"
-else
-    echo -e "  ras-adapter / cluster-service: ${RED}✗ не запущен (PID файл не найден)${NC}"
-fi
+# Week 4+: RAS Adapter replaces cluster-service
+check_process "ras-adapter"
 check_process "batch-service"
 check_process "frontend"
 
@@ -245,15 +239,8 @@ echo ""
 TOTAL=10
 RUNNING=0
 
-# Week 4: Check ras-adapter OR cluster-service (not both)
-SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "batch-service" "frontend")
-
-# Add either ras-adapter or cluster-service based on which PID file exists
-if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
-    SERVICES+=("ras-adapter")
-elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
-    SERVICES+=("cluster-service")
-fi
+# Week 4+: RAS Adapter is the only RAS service
+SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

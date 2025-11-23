@@ -91,13 +91,8 @@ stop_service "frontend"
 # 11. Batch Service
 stop_service "batch-service"
 
-# 10. RAS Adapter (Week 4 NEW - replaces cluster-service)
-# Try both ras-adapter and cluster-service (for backward compatibility)
-if [ -f "$PIDS_DIR/ras-adapter.pid" ]; then
-    stop_service "ras-adapter"
-elif [ -f "$PIDS_DIR/cluster-service.pid" ]; then
-    stop_service "cluster-service"
-fi
+# 10. RAS Adapter (Week 4+ replaces cluster-service)
+stop_service "ras-adapter"
 
 # 8. RAS (1C Remote Administration Server)
 stop_service "ras"
