@@ -139,6 +139,12 @@ func (c *Client) GetInfobases(ctx context.Context, clusterID string) ([]*models.
 			DBName:            fullInfo.DbName,
 			ScheduledJobsDeny: fullInfo.ScheduledJobsDeny,
 			SessionsDeny:      fullInfo.SessionsDeny,
+			// Week 4.6: Sessions block parameters (decoded from Windows-1251)
+			DeniedFrom:      fullInfo.DeniedFrom,
+			DeniedTo:        fullInfo.DeniedTo,
+			DeniedMessage:   fullInfo.DeniedMessage,
+			DeniedParameter: fullInfo.DeniedParameter,
+			PermissionCode:  fullInfo.PermissionCode,
 		})
 	}
 

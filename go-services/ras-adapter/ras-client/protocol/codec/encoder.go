@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	uuid "github.com/satori/go.uuid"
 	"github.com/xelaj/go-dry"
-	"golang.org/x/text/encoding/charmap"
 	"io"
 	"math"
 	"time"
@@ -193,27 +192,6 @@ func (e *encoder) PasswordString(val string, w io.Writer) {
 	b := []byte(val)
 	e.NullableSize(len(b), w)
 	e.write(w, b)
-}
-
-// StringWindows1251 encodes UTF-8 string as Windows-1251 (for RAS protocol).
-// RAS protocol uses Windows-1251 encoding for certain Cyrillic fields (DeniedMessage, etc).
-// Falls back to UTF-8 if conversion fails (non-lossy).
-func (e *encoder) StringWindows1251(val string, w io.Writer) {
-	if len(val) == 0 {
-		e.Null(w)
-		return
-	}
-
-	encoder := charmap.Windows1251.NewEncoder()
-	win1251Bytes, err := encoder.Bytes([]byte(val))
-	if err != nil {
-		// Fallback to UTF-8 if conversion fails
-		e.String(val, w)
-		return
-	}
-
-	e.NullableSize(len(win1251Bytes), w)
-	e.write(w, win1251Bytes)
 }
 
 func (e *encoder) TypedValue(val interface{}, w io.Writer) {

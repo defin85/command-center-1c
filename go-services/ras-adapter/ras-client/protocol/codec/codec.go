@@ -105,7 +105,6 @@ type Encoder interface {
 	Null(w io.Writer)
 	String(val string, w io.Writer)
 	PasswordString(val string, w io.Writer)
-	StringWindows1251(val string, w io.Writer)
 	TypedValue(val interface{}, w io.Writer)
 	Uuid(val uuid.UUID, w io.Writer)
 	Size(val int, w io.Writer)
