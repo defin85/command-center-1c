@@ -2,10 +2,7 @@ module github.com/commandcenter1c/commandcenter/ras-adapter
 
 go 1.24.0
 
-replace (
-	github.com/commandcenter1c/commandcenter/shared => ../shared
-	github.com/commandcenter1c/commandcenter/ras-adapter/ras-client => ./ras-client
-)
+replace github.com/commandcenter1c/commandcenter/shared => ../shared
 
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.1

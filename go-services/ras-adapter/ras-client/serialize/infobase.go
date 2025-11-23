@@ -268,13 +268,13 @@ func (i InfobaseInfo) Format(encoder Encoder, version int, w io.Writer) {
 	encoder.String(i.DbServer, w)
 	encoder.String(i.DbUser, w)
 	encoder.Time(i.DeniedFrom, w)
-	encoder.String(i.DeniedMessage, w)
-	encoder.String(i.DeniedParameter, w)
+	encoder.StringWindows1251(i.DeniedMessage, w) // Use Windows-1251 for Cyrillic messages
+	encoder.StringWindows1251(i.DeniedParameter, w) // Use Windows-1251 for Cyrillic parameters
 	encoder.Time(i.DeniedTo, w)
 	encoder.String(i.Description, w)
 	encoder.String(i.Locale, w)
 	encoder.String(i.Name, w)
-	encoder.String(i.PermissionCode, w)
+	encoder.StringWindows1251(i.PermissionCode, w) // Use Windows-1251 for permission codes
 	encoder.Bool(i.ScheduledJobsDeny, w)
 	encoder.Int(i.SecurityLevel, w)
 	encoder.Bool(i.SessionsDeny, w)
