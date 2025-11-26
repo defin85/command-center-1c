@@ -18,7 +18,11 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 
 # Import WebSocket routing after Django is initialized
-from apps.templates.routing import websocket_urlpatterns
+from apps.templates.routing import websocket_urlpatterns as templates_ws_patterns
+from apps.operations.routing import websocket_urlpatterns as operations_ws_patterns
+
+# Combine all WebSocket URL patterns
+websocket_urlpatterns = templates_ws_patterns + operations_ws_patterns
 
 application = ProtocolTypeRouter({
     # HTTP requests are handled by Django's ASGI application

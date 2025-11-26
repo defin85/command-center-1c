@@ -1,0 +1,27 @@
+/**
+ * Styles for ServiceMeshTab component
+ */
+
+.service-mesh-tab {
+  width: 100%;
+}
+
+.service-mesh-tab__loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.service-mesh-tab__alert {
+  margin-bottom: 16px;
+}
+
+/* Ensure proper spacing between sections */
+.service-mesh-tab > * {
+  margin-bottom: 16px;
+}
+
+.service-mesh-tab > *:last-child {
+  margin-bottom: 0;
+}

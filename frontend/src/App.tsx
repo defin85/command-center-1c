@@ -9,6 +9,7 @@ import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { InstallationMonitorPage } from './pages/InstallationMonitor/InstallationMonitorPage'
 import { OperationMonitor } from './pages/OperationMonitor'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
+import { ServiceMeshPage } from './pages/ServiceMesh'
 import { Login } from './pages/Login/Login'
 
 // Компонент для защиты маршрутов
@@ -105,6 +106,14 @@ function App() {
           <Route path="/workflows/executions/:executionId" element={
             <ProtectedRoute>
               <WorkflowMonitor />
+            </ProtectedRoute>
+          } />
+          {/* Service Mesh route */}
+          <Route path="/service-mesh" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <ServiceMeshPage />
+              </MainLayout>
             </ProtectedRoute>
           } />
         </Routes>

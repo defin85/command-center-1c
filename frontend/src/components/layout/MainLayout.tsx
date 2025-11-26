@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Dropdown } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, RocketOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, EyeOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, RocketOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, EyeOutlined, ApartmentOutlined, DeploymentUnitOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
@@ -69,6 +69,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       key: '/workflows',
       icon: <ApartmentOutlined />,
       label: 'Workflows',
+    },
+    {
+      key: '/service-mesh',
+      icon: <DeploymentUnitOutlined />,
+      label: 'Service Mesh',
     },
   ]
 

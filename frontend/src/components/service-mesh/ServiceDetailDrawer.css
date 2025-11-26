@@ -1,0 +1,115 @@
+/**
+ * Styles for ServiceDetailDrawer component
+ */
+
+.service-detail-drawer .ant-drawer-body {
+  padding: 16px;
+}
+
+.service-detail-drawer__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.service-detail-drawer__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.service-detail-drawer__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.service-detail-drawer__status-text {
+  font-size: 12px;
+  font-weight: 400;
+  color: #8c8c8c;
+  margin-left: auto;
+}
+
+.service-detail-drawer__description {
+  font-size: 13px;
+  color: #595959;
+  margin-bottom: 16px;
+}
+
+.service-detail-drawer__metrics {
+  margin-bottom: 16px;
+}
+
+.service-detail-drawer__metrics .ant-statistic-title {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.service-detail-drawer__metrics .ant-statistic-content-prefix {
+  font-size: 14px;
+  margin-right: 4px;
+}
+
+.service-detail-drawer__chart-card {
+  margin-bottom: 16px;
+}
+
+.service-detail-drawer__chart-header {
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.service-detail-drawer__time-range {
+  display: flex;
+  gap: 4px;
+}
+
+.service-detail-drawer__time-range .ant-btn {
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.service-detail-drawer__loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+.service-detail-drawer__chart {
+  margin-top: 8px;
+}
+
+.service-detail-drawer__error-chart {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.service-detail-drawer__error-chart-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8c8c8c;
+  margin-bottom: 8px;
+}
+
+.service-detail-drawer__view-all {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  padding: 0;
+}
+
+/* Recharts overrides */
+.service-detail-drawer .recharts-legend-item-text {
+  color: #595959 !important;
+}
+
+.service-detail-drawer .recharts-cartesian-axis-tick-value {
+  fill: #8c8c8c;
+}
