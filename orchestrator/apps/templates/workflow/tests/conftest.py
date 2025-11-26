@@ -9,8 +9,11 @@ from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
 
 
 @pytest.fixture
-def admin_user():
+def admin_user(db):
     """Create admin user for tests."""
+    # Cleanup: delete existing user if present
+    User.objects.filter(username='testadmin').delete()
+    
     return User.objects.create_user(
         username='testadmin',
         email='test@test.com',
@@ -21,7 +24,7 @@ def admin_user():
 
 
 @pytest.fixture
-def simple_workflow_template(admin_user):
+def simple_workflow_template(db, admin_user):
     """Create simple sequential workflow template."""
     return WorkflowTemplate.objects.create(
         name="Simple Test Workflow",
@@ -58,7 +61,7 @@ def simple_workflow_template(admin_user):
 
 
 @pytest.fixture
-def complex_workflow_template(admin_user):
+def complex_workflow_template(db, admin_user):
     """Create complex workflow with parallel and conditions."""
     return WorkflowTemplate.objects.create(
         name="Complex Test Workflow",
@@ -105,6 +108,6 @@ def complex_workflow_template(admin_user):
 
 
 @pytest.fixture
-def workflow_execution(simple_workflow_template):
+def workflow_execution(db, simple_workflow_template):
     """Create workflow execution instance."""
     return simple_workflow_template.create_execution({"test_input": "value"})

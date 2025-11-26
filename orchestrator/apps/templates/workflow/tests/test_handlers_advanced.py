@@ -164,12 +164,13 @@ class TestParallelHandler:
 class TestLoopHandler:
     """Tests for LoopHandler."""
 
-    def test_execute_not_implemented_week8(self, db):
-        """Test that execute returns NotImplementedError in Week 8."""
+    def test_execute_count_mode_success(self, db):
+        """Test that execute runs count loop successfully (Week 9 implementation)."""
+        from uuid import uuid4
         handler = LoopHandler()
 
         execution = Mock(spec=WorkflowExecution)
-        execution.id = "exec-123"
+        execution.id = uuid4()  # Use valid UUID
 
         node = WorkflowNode(
             id="loop_1",
@@ -191,8 +192,11 @@ class TestLoopHandler:
 
                 result = handler.execute(node, context, execution)
 
-                assert result.success is False
-                assert "not available" in result.error.lower()
+                # Loop handler executes successfully (child tasks may fail due to mock)
+                assert result.success is True
+                assert 'iterations' in result.output
+                assert result.output['iterations'] == 10
+                assert result.output['mode'] == 'count'
 
     def test_missing_loop_config(self, db):
         """Test error when loop_config is missing (Pydantic validation)."""

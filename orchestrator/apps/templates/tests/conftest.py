@@ -1,32 +1,66 @@
+# orchestrator/apps/templates/tests/conftest.py
 """
-Pytest configuration for template engine tests.
-
-These tests do NOT require database access.
+Pytest fixtures for templates tests.
 """
 
-import os
-import sys
-from pathlib import Path
+import pytest
+from django.contrib.auth.models import User
+from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
 
-# Настроим окружение Django перед импортом
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-os.environ.setdefault('DJANGO_ENV', 'development')
 
-# Минимальные env переменные для Django
-os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-testing')
-os.environ.setdefault('DEBUG', 'True')
-os.environ.setdefault('ALLOWED_HOSTS', 'localhost,127.0.0.1')
-os.environ.setdefault('DB_NAME', 'test_db')
-os.environ.setdefault('DB_USER', 'test')
-os.environ.setdefault('DB_PASSWORD', 'test')
-os.environ.setdefault('DB_HOST', 'localhost')
-os.environ.setdefault('DB_PORT', '5432')
-os.environ.setdefault('REDIS_HOST', 'localhost')
-os.environ.setdefault('REDIS_PORT', '6379')
-os.environ.setdefault('REDIS_URL', 'redis://localhost:6379/0')
-os.environ.setdefault('DB_ENCRYPTION_KEY', '2KyoQKVSb56ajWuIVq3n11VXLd6YjZ099oABHDXV4V4=')
-os.environ.setdefault('FIELD_ENCRYPTION_KEY', '2KyoQKVSb56ajWuIVq3n11VXLd6YjZ099oABHDXV4V4=')
+@pytest.fixture
+def admin_user(db):
+    """Create admin user for tests."""
+    # Cleanup: delete existing user if present
+    User.objects.filter(username='testadmin').delete()
+    
+    return User.objects.create_user(
+        username='testadmin',
+        email='test@test.com',
+        password='testpass123',
+        is_staff=True,
+        is_superuser=True
+    )
 
-# Импортируем Django после настройки окружения
-import django
-django.setup()
+
+@pytest.fixture
+def simple_workflow_template(db, admin_user):
+    """Create simple sequential workflow template."""
+    return WorkflowTemplate.objects.create(
+        name="Simple Test Workflow",
+        workflow_type="sequential",
+        dag_structure={
+            "nodes": [
+                {
+                    "id": "step1",
+                    "name": "Step 1",
+                    "type": "operation",
+                    "template_id": "test_op1",
+                    "config": {"timeout": 30, "retries": 3}
+                },
+                {
+                    "id": "step2",
+                    "name": "Step 2",
+                    "type": "operation",
+                    "template_id": "test_op2",
+                    "config": {"timeout": 60, "retries": 2}
+                }
+            ],
+            "edges": [
+                {"from": "step1", "to": "step2"}
+            ]
+        },
+        config={
+            "timeout_seconds": 600,
+            "max_retries": 3
+        },
+        created_by=admin_user,
+        is_valid=True,
+        is_active=True
+    )
+
+
+@pytest.fixture
+def workflow_execution(db, simple_workflow_template):
+    """Create workflow execution instance."""
+    return simple_workflow_template.create_execution({"test_input": "value"})
