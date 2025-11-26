@@ -38,11 +38,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Third-party apps
+    'daphne',  # ASGI server - must be before django.contrib.staticfiles
     'rest_framework',
     'corsheaders',
     'django_filters',
     'drf_spectacular',
     'django_celery_beat',  # Database-backed periodic tasks
+    'channels',  # Django Channels for WebSocket support
 
     # Local apps
     'apps.operations',
@@ -82,6 +84,28 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
+
+# Django Channels - Channel Layer Configuration
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [(env('REDIS_HOST', default='localhost'), int(env('REDIS_PORT', default='6379')))],
+            "prefix": "cc1c:ws",
+            # Increase capacity for high traffic
+            "capacity": 1500,
+            "expiry": 60,
+        },
+    },
+}
+
+# For testing - In-memory channel layer
+if env('TESTING', default='false').lower() == 'true':
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
 
 # Database
 DATABASES = {

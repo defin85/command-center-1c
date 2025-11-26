@@ -23,6 +23,10 @@ from apps.templates.tracing import (
     set_span_error,
     start_node_span,
 )
+from apps.templates.consumers import (
+    sync_broadcast_node_update,
+    sync_broadcast_workflow_update,
+)
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.handlers import NodeExecutionMode, NodeHandlerFactory
 from apps.templates.workflow.models import (
@@ -195,6 +199,9 @@ class DAGExecutor:
                     # Skip this node
                     skipped_nodes.add(node_id)
                     self.execution.update_node_status(node_id, 'skipped')
+
+                    # Broadcast node skip via WebSocket
+                    self._broadcast_node_update(node_id, 'skipped')
 
                     logger.info(
                         f"Skipping node {node_id} (conditions not met)",
@@ -389,6 +396,9 @@ class DAGExecutor:
         # Update node status to running
         self.execution.update_node_status(node_id, 'running')
 
+        # Broadcast node start via WebSocket
+        self._broadcast_node_update(node_id, 'running')
+
         # Start OpenTelemetry span for node execution
         with start_node_span(
             node_id=node_id,
@@ -446,6 +456,13 @@ class DAGExecutor:
                         }
                     )
 
+                    # Broadcast node completion via WebSocket
+                    self._broadcast_node_update(
+                        node_id, 'completed',
+                        output=result.output,
+                        duration_ms=int((result.duration_seconds or 0) * 1000)
+                    )
+
                     if span:
                         set_span_attribute("node.status", "completed")
                         set_span_attribute("node.duration_seconds", result.duration_seconds)
@@ -492,6 +509,13 @@ class DAGExecutor:
                             'node_id': node_id,
                             'error': result.error
                         }
+                    )
+
+                    # Broadcast node failure via WebSocket
+                    self._broadcast_node_update(
+                        node_id, 'failed',
+                        error=result.error,
+                        duration_ms=int((result.duration_seconds or 0) * 1000)
                     )
 
                     if span:
@@ -636,6 +660,72 @@ class DAGExecutor:
         )
 
         return next_nodes
+
+    def _broadcast_node_update(
+        self,
+        node_id: str,
+        status: str,
+        output: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        duration_ms: Optional[int] = None
+    ) -> None:
+        """
+        Broadcast node status update via WebSocket.
+
+        Args:
+            node_id: Node identifier
+            status: New node status (running, completed, failed, skipped)
+            output: Optional output data (for completed)
+            error: Optional error message (for failed)
+            duration_ms: Optional duration in milliseconds
+        """
+        try:
+            # Calculate progress based on completed nodes
+            total_nodes = len(self._topological_order) if self._topological_order else 1
+            node_statuses = self.execution.node_statuses or {}
+
+            # Count completed and failed nodes
+            completed = sum(
+                1 for s in node_statuses.values()
+                if isinstance(s, dict) and s.get('status') in ('completed', 'failed', 'skipped')
+            )
+
+            progress = completed / total_nodes if total_nodes > 0 else 0
+
+            # Get current trace context
+            trace_id = self.execution.trace_id
+            span_id = get_current_span_id()
+
+            # Broadcast node update
+            sync_broadcast_node_update(
+                execution_id=str(self.execution.id),
+                node_id=node_id,
+                status=status,
+                output=output,
+                error=error,
+                duration_ms=duration_ms,
+                span_id=span_id
+            )
+
+            # Also broadcast workflow progress update
+            sync_broadcast_workflow_update(
+                execution_id=str(self.execution.id),
+                status='running',
+                progress=progress,
+                current_node_id=node_id,
+                trace_id=trace_id
+            )
+
+        except Exception as exc:
+            # Don't fail execution if broadcast fails
+            logger.warning(
+                f"Failed to broadcast node update: {exc}",
+                extra={
+                    'execution_id': str(self.execution.id),
+                    'node_id': node_id,
+                    'status': status
+                }
+            )
 
     @property
     def topological_order(self) -> List[str]:

@@ -1,0 +1,26 @@
+/**
+ * WorkflowList Page Styles
+ */
+
+.workflow-list-page {
+  padding: 24px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.page-header h3 {
+  margin: 0;
+}
+
+.filters-card {
+  margin-bottom: 16px;
+}
+
+.filters-card .ant-card-body {
+  padding: 12px 16px;
+}

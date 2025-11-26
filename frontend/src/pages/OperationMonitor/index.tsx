@@ -120,31 +120,31 @@ export const OperationMonitor: React.FC = () => {
           <Space direction="vertical" size="middle">
             <div>
               <Text strong>1. Получить Operation ID</Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Запустите любую операцию (установка расширения, обновление БД и т.д.)
               </Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Скопируйте Operation ID из ответа API или списка операций
               </Text>
             </div>
             <div>
               <Text strong>2. Подключиться к мониторингу</Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Вставьте Operation ID в поле выше
               </Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Нажмите "Подключиться"
               </Text>
             </div>
             <div>
               <Text strong>3. Наблюдать workflow</Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Визуальная диаграмма покажет текущее состояние операции
               </Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Временная шкала отобразит все события в хронологическом порядке
               </Text>
-              <Text type="secondary" display="block">
+              <Text type="secondary" style={{ display: 'block' }}>
                 - Обновления поступают в real-time через Server-Sent Events
               </Text>
             </div>

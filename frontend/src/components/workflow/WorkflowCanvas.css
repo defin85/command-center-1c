@@ -1,0 +1,90 @@
+/**
+ * WorkflowCanvas Styles
+ */
+
+.workflow-canvas-wrapper {
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  background: #fafafa;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Design mode styling */
+.workflow-canvas-wrapper.mode-design {
+  border: 2px dashed #d9d9d9;
+}
+
+.workflow-canvas-wrapper.mode-design:hover {
+  border-color: #1890ff;
+}
+
+/* Monitor mode styling */
+.workflow-canvas-wrapper.mode-monitor {
+  border: 2px solid #d9d9d9;
+  background: #fff;
+}
+
+/* React Flow overrides */
+.react-flow__controls {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+.react-flow__controls-button {
+  border-radius: 4px;
+}
+
+.react-flow__minimap {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #1890ff;
+  stroke-width: 3;
+}
+
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: #1890ff;
+  stroke-dasharray: 5;
+  animation: flow 0.5s linear infinite;
+}
+
+@keyframes flow {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Connection line */
+.react-flow__connection-line {
+  stroke: #1890ff;
+  stroke-width: 2;
+  stroke-dasharray: 5;
+}
+
+/* Selection box */
+.react-flow__selection {
+  background: rgba(24, 144, 255, 0.08);
+  border: 1px dashed #1890ff;
+}
+
+/* Attribution removal (if licensed) */
+.react-flow__attribution {
+  display: none;
+}
+
+/* Drop indicator */
+.workflow-canvas-wrapper.mode-design.drag-over {
+  background: rgba(24, 144, 255, 0.05);
+}

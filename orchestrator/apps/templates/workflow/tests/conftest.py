@@ -8,6 +8,16 @@ from django.contrib.auth.models import User
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
 
 
+# Configure pytest-asyncio
+pytest_plugins = ('pytest_asyncio',)
+
+
+@pytest.fixture
+def anyio_backend():
+    """Set asyncio as the async backend for pytest-asyncio."""
+    return 'asyncio'
+
+
 @pytest.fixture
 def admin_user(db):
     """Create admin user for tests."""

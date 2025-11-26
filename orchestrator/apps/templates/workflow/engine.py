@@ -24,6 +24,10 @@ from apps.templates.tracing import (
     set_span_error,
     start_workflow_span,
 )
+from apps.templates.consumers import (
+    sync_broadcast_execution_completed,
+    sync_broadcast_workflow_update,
+)
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.executor import DAGExecutor
 from apps.templates.workflow.models import (
@@ -186,6 +190,14 @@ class WorkflowEngine:
                     extra={'execution_id': str(execution.id)}
                 )
 
+                # Broadcast workflow started via WebSocket
+                sync_broadcast_workflow_update(
+                    execution_id=str(execution.id),
+                    status='running',
+                    progress=0.0,
+                    trace_id=trace_id
+                )
+
                 if span:
                     add_span_event("workflow_started")
 
@@ -208,6 +220,14 @@ class WorkflowEngine:
                             }
                         )
 
+                        # Broadcast workflow completion via WebSocket
+                        sync_broadcast_execution_completed(
+                            execution_id=str(execution.id),
+                            status='completed',
+                            result=result,
+                            duration_ms=int((execution.duration or 0) * 1000)
+                        )
+
                         if span:
                             set_span_attribute("workflow.status", "completed")
                             set_span_attribute("workflow.duration_seconds", execution.duration)
@@ -228,6 +248,14 @@ class WorkflowEngine:
                                 'error_node': error_node,
                                 'duration_seconds': execution.duration
                             }
+                        )
+
+                        # Broadcast workflow failure via WebSocket
+                        sync_broadcast_execution_completed(
+                            execution_id=str(execution.id),
+                            status='failed',
+                            error_message=error_msg,
+                            duration_ms=int((execution.duration or 0) * 1000)
                         )
 
                         if span:
@@ -332,6 +360,12 @@ class WorkflowEngine:
             logger.info(
                 f"Execution {execution_id} cancelled",
                 extra={'execution_id': execution_id}
+            )
+
+            # Broadcast cancellation via WebSocket
+            sync_broadcast_execution_completed(
+                execution_id=str(execution_id),
+                status='cancelled'
             )
 
             return True

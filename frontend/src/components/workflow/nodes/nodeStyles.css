@@ -1,0 +1,241 @@
+/**
+ * Workflow Node Styles for React Flow
+ */
+
+/* Base node styles */
+.workflow-node {
+  min-width: 180px;
+  max-width: 280px;
+}
+
+.workflow-node.selected .node-card {
+  box-shadow: 0 0 0 2px #1890ff;
+}
+
+/* Node card */
+.node-card {
+  border-radius: 8px;
+  transition: box-shadow 0.2s ease;
+}
+
+.node-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Status-based borders */
+.node-card.status-pending {
+  border-left: 3px solid #d9d9d9;
+}
+
+.node-card.status-running {
+  border-left: 3px solid #1890ff;
+  animation: pulse 2s infinite;
+}
+
+.node-card.status-completed {
+  border-left: 3px solid #52c41a;
+}
+
+.node-card.status-failed {
+  border-left: 3px solid #ff4d4f;
+}
+
+.node-card.status-skipped {
+  border-left: 3px solid #faad14;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(24, 144, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0);
+  }
+}
+
+/* Node header */
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-icon {
+  font-size: 14px;
+}
+
+.node-title {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* Status tag */
+.status-tag {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+/* Node content */
+.node-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.node-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.field-label {
+  color: #8c8c8c;
+  flex-shrink: 0;
+}
+
+.field-value {
+  color: #262626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-value.mono {
+  font-family: monospace;
+}
+
+/* Expression field */
+.node-field.expression {
+  background: #f5f5f5;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.node-field.expression code {
+  font-size: 11px;
+  color: #595959;
+}
+
+/* Running state */
+.node-running {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #1890ff;
+  font-size: 12px;
+}
+
+/* Error state */
+.node-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #ff4d4f;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Progress indicator */
+.node-progress {
+  margin-top: 4px;
+}
+
+.iteration-counter {
+  font-size: 11px;
+  color: #8c8c8c;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Handles */
+.node-handle {
+  width: 10px;
+  height: 10px;
+  background: #1890ff;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.node-handle:hover {
+  background: #40a9ff;
+  transform: scale(1.2);
+}
+
+.handle-true {
+  background: #52c41a;
+}
+
+.handle-false {
+  background: #ff4d4f;
+}
+
+.handle-loop-body {
+  background: #722ed1;
+}
+
+/* Sub-workflow link */
+.subworkflow-link {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+}
+
+/* Node type specific styles */
+
+/* Condition node - diamond shape indicator */
+.condition-node .node-card {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 20px;
+  border-bottom-left-radius: 20px;
+  border-bottom-right-radius: 4px;
+}
+
+/* Parallel node - fork indicator */
+.parallel-node .node-card {
+  border-radius: 12px;
+}
+
+/* Loop node - circular indicator */
+.loop-node .node-card {
+  border-radius: 16px;
+}
+
+/* Sub-workflow node - container indicator */
+.subworkflow-node .node-card {
+  border: 2px dashed #eb2f96;
+  border-radius: 8px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .node-card {
+    background: #1f1f1f;
+    border-color: #434343;
+  }
+
+  .node-title,
+  .field-value {
+    color: #f5f5f5;
+  }
+
+  .field-label {
+    color: #8c8c8c;
+  }
+
+  .node-field.expression {
+    background: #262626;
+  }
+
+  .node-field.expression code {
+    color: #d9d9d9;
+  }
+}

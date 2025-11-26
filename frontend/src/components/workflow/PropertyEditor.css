@@ -1,0 +1,95 @@
+/**
+ * PropertyEditor Styles
+ */
+
+.property-editor {
+  width: 280px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.property-editor.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+}
+
+/* Editor header */
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.node-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.node-id {
+  font-size: 11px;
+  font-family: monospace;
+}
+
+/* Form styling */
+.property-editor .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.property-editor .ant-form-item-label {
+  padding-bottom: 4px;
+}
+
+.property-editor .ant-form-item-label > label {
+  font-size: 12px;
+  color: #595959;
+}
+
+/* Collapse styling */
+.property-editor .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-header {
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.property-editor .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
+/* Alert styling */
+.property-editor .ant-alert {
+  font-size: 12px;
+}
+
+.property-editor .ant-alert-message {
+  font-size: 12px;
+}
+
+.property-editor .ant-alert-description {
+  font-size: 11px;
+}
+
+/* TextArea styling */
+.property-editor textarea {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Button spacing */
+.property-editor .ant-space {
+  width: 100%;
+  justify-content: flex-end;
+}
