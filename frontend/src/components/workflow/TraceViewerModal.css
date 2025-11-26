@@ -1,0 +1,289 @@
+/**
+ * TraceViewerModal styles
+ */
+
+.trace-viewer-modal .ant-modal-body {
+  padding: 16px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Loading state */
+.trace-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+/* Header */
+.trace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.trace-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat h5 {
+  margin: 0;
+}
+
+.trace-id-header {
+  font-size: 12px;
+  font-family: monospace;
+}
+
+/* Timeline */
+.trace-timeline {
+  padding: 8px 0;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.timeline-item {
+  cursor: pointer;
+  padding: 8px !important;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.timeline-item:hover {
+  background-color: #f5f5f5;
+}
+
+.timeline-item.selected {
+  background-color: #e6f7ff;
+  border-left: 3px solid #1890ff;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 16px;
+}
+
+.timeline-info {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.span-operation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operation-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.service-tag {
+  font-size: 11px;
+  margin: 0;
+  width: fit-content;
+}
+
+.timeline-bar-container {
+  flex: 1;
+  height: 20px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  position: relative;
+  min-width: 200px;
+}
+
+.timeline-bar {
+  position: absolute;
+  height: 100%;
+  border-radius: 4px;
+  min-width: 4px;
+  transition: opacity 0.2s;
+}
+
+.timeline-bar:hover {
+  opacity: 0.8;
+}
+
+.timeline-duration {
+  width: 80px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Service Flow */
+.service-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.service-card {
+  border-radius: 8px;
+  transition: box-shadow 0.2s;
+}
+
+.service-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.service-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.service-name {
+  margin: 0 !important;
+}
+
+.service-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+.service-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.service-time-bar {
+  margin-bottom: 12px;
+}
+
+.service-operations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operations-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.operation-tag {
+  font-size: 11px;
+  margin: 0;
+}
+
+/* Span Details */
+.span-details {
+  padding: 8px 0;
+}
+
+.span-details .ant-descriptions {
+  margin-bottom: 16px;
+}
+
+.detail-card {
+  margin-bottom: 16px;
+}
+
+.tags-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag-item {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.tag-key {
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.tag-value {
+  word-break: break-all;
+  font-family: monospace;
+}
+
+.log-item {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+}
+
+.log-attributes {
+  margin: 8px 0 0 0;
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-x: auto;
+  max-height: 150px;
+  width: 100%;
+}
+
+.view-in-jaeger {
+  margin-top: 8px;
+  padding: 0;
+}
+
+/* Mono text */
+.mono-text {
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .timeline-row {
+    flex-wrap: wrap;
+  }
+
+  .timeline-info {
+    width: 100%;
+  }
+
+  .timeline-bar-container {
+    min-width: 100%;
+    order: 3;
+    margin-top: 8px;
+  }
+
+  .timeline-duration {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+  }
+
+  .service-flow {
+    grid-template-columns: 1fr;
+  }
+}

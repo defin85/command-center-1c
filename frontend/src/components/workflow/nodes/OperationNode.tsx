@@ -2,6 +2,7 @@
  * OperationNode - Custom React Flow node for operation type.
  *
  * Displays operation node with template info and execution status.
+ * Enhanced with improved error tooltips and trace link indicators.
  */
 
 import { memo } from 'react'
@@ -13,10 +14,17 @@ import {
   CloseCircleOutlined,
   LoadingOutlined,
   ClockCircleOutlined,
-  MinusCircleOutlined
+  MinusCircleOutlined,
+  LinkOutlined
 } from '@ant-design/icons'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
+
+// Extended WorkflowNodeData type with spanId for tracing
+interface OperationNodeData extends WorkflowNodeData {
+  spanId?: string
+  isCurrent?: boolean
+}
 
 const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }> = {
   pending: { color: 'default', icon: <ClockCircleOutlined /> },
@@ -26,12 +34,36 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
   skipped: { color: 'warning', icon: <MinusCircleOutlined /> }
 }
 
-const OperationNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
+const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
+  // Build CSS classes
+  const nodeClasses = [
+    'workflow-node',
+    'operation-node',
+    selected ? 'selected' : '',
+    data.isCurrent ? 'current-node' : ''
+  ].filter(Boolean).join(' ')
+
+  // Format error message for tooltip
+  const formatErrorTooltip = (error: string) => {
+    // Truncate very long errors
+    const maxLength = 500
+    const truncated = error.length > maxLength
+      ? `${error.slice(0, maxLength)}...`
+      : error
+    return (
+      <div className="node-error-tooltip">
+        <strong>Error:</strong>
+        <br />
+        {truncated}
+      </div>
+    )
+  }
+
   return (
-    <div className={`workflow-node operation-node ${selected ? 'selected' : ''}`}>
+    <div className={nodeClasses}>
       <Handle type="target" position={Position.Top} className="node-handle" />
 
       <Card
@@ -84,9 +116,22 @@ const OperationNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           )}
 
           {data.error && (
-            <Tooltip title={data.error}>
+            <Tooltip
+              title={formatErrorTooltip(data.error)}
+              overlayStyle={{ maxWidth: 350 }}
+              placement="bottom"
+            >
               <div className="node-error">
                 <CloseCircleOutlined /> Error
+              </div>
+            </Tooltip>
+          )}
+
+          {data.spanId && (
+            <Tooltip title="Trace available - click to view details">
+              <div className="trace-link-indicator">
+                <LinkOutlined />
+                <span>Trace</span>
               </div>
             </Tooltip>
           )}

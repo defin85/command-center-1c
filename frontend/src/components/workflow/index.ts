@@ -7,6 +7,7 @@
 export { default as WorkflowCanvas } from './WorkflowCanvas'
 export { default as NodePalette } from './NodePalette'
 export { default as PropertyEditor } from './PropertyEditor'
+export { TraceViewerModal } from './TraceViewerModal'
 export { nodeTypes } from './nodes'
 
 // Re-export types

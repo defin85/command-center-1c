@@ -15,11 +15,26 @@
 /* Node card */
 .node-card {
   border-radius: 8px;
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.3s ease;
 }
 
 .node-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Current node - glow effect for the currently executing node */
+.workflow-node.current-node .node-card {
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.5), 0 0 20px rgba(24, 144, 255, 0.3);
+  animation: currentNodeGlow 2s ease-in-out infinite;
+}
+
+@keyframes currentNodeGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.5), 0 0 20px rgba(24, 144, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(24, 144, 255, 0.3), 0 0 30px rgba(24, 144, 255, 0.4);
+  }
 }
 
 /* Status-based borders */
@@ -36,8 +51,42 @@
   border-left: 3px solid #52c41a;
 }
 
+/* Checkmark animation for completed nodes */
+.workflow-node.just-completed .node-card {
+  animation: checkmark 0.4s ease-out;
+}
+
+@keyframes checkmark {
+  0% {
+    transform: scale(1);
+    background-color: inherit;
+  }
+  50% {
+    transform: scale(1.05);
+    background-color: rgba(82, 196, 26, 0.1);
+  }
+  100% {
+    transform: scale(1);
+    background-color: inherit;
+  }
+}
+
 .node-card.status-failed {
   border-left: 3px solid #ff4d4f;
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Shake animation for failed nodes */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-4px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(4px);
+  }
 }
 
 .node-card.status-skipped {
@@ -215,6 +264,42 @@
   border-radius: 8px;
 }
 
+/* Error tooltip styling */
+.node-error-tooltip {
+  max-width: 300px;
+  word-wrap: break-word;
+}
+
+/* Trace link indicator */
+.trace-link-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #1890ff;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.trace-link-indicator:hover {
+  background-color: rgba(24, 144, 255, 0.1);
+}
+
+.trace-link-indicator .anticon {
+  font-size: 12px;
+}
+
+/* Status transition animations */
+.workflow-node {
+  transition: opacity 0.3s ease;
+}
+
+.workflow-node.transitioning {
+  opacity: 0.7;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   .node-card {
@@ -237,5 +322,13 @@
 
   .node-field.expression code {
     color: #d9d9d9;
+  }
+
+  .trace-link-indicator {
+    color: #40a9ff;
+  }
+
+  .trace-link-indicator:hover {
+    background-color: rgba(24, 144, 255, 0.2);
   }
 }

@@ -8,7 +8,7 @@ import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { InstallationMonitorPage } from './pages/InstallationMonitor/InstallationMonitorPage'
 import { OperationMonitor } from './pages/OperationMonitor'
-import { WorkflowList, WorkflowDesigner } from './pages/Workflows'
+import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
 import { Login } from './pages/Login/Login'
 
 // Компонент для защиты маршрутов
@@ -100,6 +100,11 @@ function App() {
           <Route path="/workflows/:id" element={
             <ProtectedRoute>
               <WorkflowDesigner />
+            </ProtectedRoute>
+          } />
+          <Route path="/workflows/executions/:executionId" element={
+            <ProtectedRoute>
+              <WorkflowMonitor />
             </ProtectedRoute>
           } />
         </Routes>
