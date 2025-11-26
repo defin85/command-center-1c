@@ -1,192 +1,199 @@
-# OS
-.DS_Store
-Thumbs.db
+# =============================================================================
+# CommandCenter1C .gitignore
+# =============================================================================
 
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# =============================================================================
+# Environment & Secrets
+# =============================================================================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+credentials.json
+secrets.yaml
 
-# Go
+# =============================================================================
+# Build Artifacts
+# =============================================================================
+bin/
+dist/
+build/
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-*.test
-*.out
-go.work
-vendor/
 
+# =============================================================================
+# Go
+# =============================================================================
+# Binaries
+*.exe
+*.exe~
+*.out
+main
+
+# Coverage
+coverage.out
+coverage*.out
+*.coverprofile
+
+# Vendor (if not using modules)
+# vendor/
+
+# Go workspace (local only)
+go-services/go.work
+go-services/go.work.sum
+
+# =============================================================================
 # Python
+# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
-downloads/
 eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 MANIFEST
-*.mo
-*.pot
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Testing
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Django
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-instance/
-.webassets-cache
-.scrapy
-docs/_build/
-.pybuilder/
-target/
-.ipynb_checkpoints
-profile_default/
-ipython_config.py
-.python-version
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-celerybeat-schedule
-celerybeat.pid
-*.sage.py
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.spyderproject
-.spyproject
-.ropeproject
-/site
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
 
-# Node
+# Celery
+celerybeat-schedule
+celerybeat-schedule.*
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+celerybeat.pid
+
+# =============================================================================
+# Node.js / Frontend
+# =============================================================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 .pnpm-debug.log*
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-pids
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# =============================================================================
+# IDE & Editors
+# =============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# OS Files
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Logs & PIDs
+# =============================================================================
+logs/
+*.log
+pids/
 *.pid
 *.seed
 *.pid.lock
-lib-cov
-coverage
-*.lcov
-.nyc_output
-.grunt
-bower_components
-.lock-wscript
-build/Release
-.npm
-.eslintcache
-.stylelintcache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-.node_repl_history
-*.tgz
-.yarn-integrity
-.cache/
-.parcel-cache
-.next
-out
-.nuxt
-dist
-.cache/
-.vuepress/dist
-.serverless/
-.fusebox/
-.dynamodb/
-.tern-port
-.vscode-test
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
 
-# Docker
-.dockerignore
+# =============================================================================
+# Test Output
+# =============================================================================
+test_output.log
+test-results/
+junit.xml
 
-# Secrets
-*.pem
-*.key
-*.crt
-.env.local
-.env.*.local
-secrets/
-/credentials/
-*.credentials.json
-credentials.yaml
+# =============================================================================
+# Generated Code (policy: regenerate from OpenAPI specs)
+# =============================================================================
+# Go generated servers
+go-services/*/internal/api/generated/
 
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
+# Python generated clients
+orchestrator/apps/databases/clients/generated/
 
-# Databases
-*.sqlite
-*.sqlite3
-*.db
+# Frontend generated API
+frontend/src/api/generated/
 
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-.terraformrc
-terraform.rc
+# =============================================================================
+# External Libraries (download separately)
+# =============================================================================
+# 1C RAS Java SDK
+com._1c.v8.ibis.admin*/
 
-# Kubernetes
-kubeconfig
+# =============================================================================
+# Tools Output
+# =============================================================================
+# RAS Sniffer
+tools/ras-sniffer/*.log
+tools/ras-sniffer/*.exe
 
-# Project specific
-data/
-temp/
-tmp/
+# OpenAPI Generator
+openapitools.json
+
+# =============================================================================
+# Backup Files
+# =============================================================================
+*.bak
+*.backup
+*.orig
 *.tmp
+*~
 
-# Compiled binaries
-bin/
-# Note: *.exe already covered in Go section
+# =============================================================================
+# Docker (local overrides)
+# =============================================================================
+docker-compose.override.yml
+docker-compose.local.yml
+
+# =============================================================================
+# Misc
+# =============================================================================
+.cache/
+tmp/
+temp/

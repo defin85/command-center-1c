@@ -142,6 +142,28 @@ fi
 echo ""
 
 ##############################################################################
+# Phase 1.5: Generate API Clients from OpenAPI Contracts
+##############################################################################
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Phase 1.5: Генерация API клиентов из OpenAPI${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+if [ -f "$PROJECT_ROOT/contracts/scripts/generate-all.sh" ]; then
+    if ! "$PROJECT_ROOT/contracts/scripts/generate-all.sh"; then
+        echo ""
+        echo -e "${RED}✗ Ошибка при генерации API клиентов${NC}"
+        echo -e "${YELLOW}Совет: Проверьте OpenAPI спецификации в contracts/${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}⚠️  Скрипт генерации не найден (contracts/scripts/generate-all.sh)${NC}"
+    echo -e "${YELLOW}   Пропускаем генерацию контрактов${NC}"
+fi
+
+echo ""
+
+##############################################################################
 # Phase 2: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse)
 ##############################################################################
 echo -e "${BLUE}[1/12] Запуск Docker сервисов...${NC}"

@@ -44,7 +44,7 @@ func TestUnlockHandler_HandleUnlockCommand_Success(t *testing.T) {
 	}), "processed", IdempotencyTTL).Return(createBoolCmd(ctx, true, nil))
 
 	// Mock service call
-	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	// Mock event publishing
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").Return(nil)
@@ -168,7 +168,7 @@ func TestUnlockHandler_HandleUnlockCommand_ServiceError(t *testing.T) {
 		Return(createBoolCmd(ctx, true, nil))
 
 	// Service returns error
-	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456").
+	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").
 		Return(fmt.Errorf("RAS connection failed"))
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -250,7 +250,7 @@ func TestUnlockHandler_HandleUnlockCommand_ContextTimeout(t *testing.T) {
 		Return(createBoolCmd(context.Background(), true, nil))
 
 	// Service will receive cancelled context
-	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456").
+	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").
 		Return(context.DeadlineExceeded)
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -289,7 +289,7 @@ func TestUnlockHandler_HandleUnlockCommand_PublishingError(t *testing.T) {
 		Return(createBoolCmd(ctx, true, nil))
 
 	// Service succeeds
-	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	// Publishing fails
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").
@@ -326,7 +326,7 @@ func TestUnlockHandler_HandleUnlockCommand_RedisNotConfigured(t *testing.T) {
 	ctx := context.Background()
 
 	// Service should be called (no idempotency check)
-	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("UnlockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").Return(nil)
 

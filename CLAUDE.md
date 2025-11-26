@@ -98,6 +98,72 @@ cd /c/1CProject/command-center-1c
 5. **Frontend → API Gateway ТОЛЬКО** → без прямых вызовов Orchestrator
 6. **Тесты обязательны** → coverage > 70%
 7. **Используй ./scripts/dev/*.sh** для локальной разработки
+8. **OpenAPI Contract-First** → изменения API начинаются с обновления спецификации
+
+---
+
+## 🔖 OPENAPI CONTRACTS (Contract-First Development)
+
+**Единый источник правды для REST API контрактов.**
+
+### Структура
+
+```
+contracts/
+├── ras-adapter/openapi.yaml         # Спецификация ras-adapter API
+├── api-gateway/openapi.yaml         # (будущее)
+└── scripts/
+    ├── generate-all.sh              # Генерация всех клиентов
+    ├── validate-specs.sh            # Валидация спецификаций
+    └── check-breaking-changes.sh    # Проверка breaking changes
+```
+
+### Workflow изменения API
+
+1. **Обновить OpenAPI спецификацию** (`contracts/<service>/openapi.yaml`)
+2. **Валидировать:** `./contracts/scripts/validate-specs.sh`
+3. **Сгенерировать клиенты:** `./contracts/scripts/generate-all.sh`
+4. **Реализовать handlers** используя сгенерированные типы
+5. **Закоммитить** (pre-commit hook автоматически проверит)
+
+### Генерация
+
+**Автоматическая (при запуске):**
+```bash
+./scripts/dev/start-all.sh  # Phase 1.5: Генерация API клиентов
+```
+
+**Ручная:**
+```bash
+./contracts/scripts/generate-all.sh         # Все сервисы
+./contracts/scripts/generate-all.sh --force # Принудительно
+```
+
+**Результаты:**
+- **Go server types:** `go-services/<service>/internal/api/generated/server.go`
+- **Python client:** `orchestrator/apps/databases/clients/generated/<service>_api_client/`
+
+### Git Hooks
+
+Активируй pre-commit hook для автоматической валидации:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+При коммите изменений в `contracts/**/*.yaml` автоматически:
+1. Валидация OpenAPI спецификации
+2. Проверка breaking changes
+3. Регенерация клиентов
+
+### Best Practices
+
+- **ВСЕГДА** используй параметр `cluster_id` (не `cluster`) для infobases endpoints
+- **Все параметры:** `snake_case` (соответствие Go/Python конвенциям)
+- **Breaking changes:** требуют версионирования API (v1 → v2) и deprecation notice
+- **Переиспользование:** используй `$ref` для общих схем
+
+**Подробности:** См. [contracts/README.md](contracts/README.md)
 
 ---
 

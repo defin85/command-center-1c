@@ -2,9 +2,14 @@ package rest
 
 import (
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/middleware"
+	v2 "github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/rest/v2"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/service"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
+
+	_ "github.com/commandcenter1c/commandcenter/ras-adapter/docs" // swagger docs
 )
 
 // NewRouter creates a new Gin router with all routes configured
@@ -23,27 +28,34 @@ func NewRouter(
 	// Health check endpoint
 	router.GET("/health", Health())
 
-	// API v1 routes
-	v1 := router.Group("/api/v1")
+	// Swagger UI
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// API v1 routes (legacy)
+	apiV1 := router.Group("/api/v1")
 	{
 		// Cluster routes
-		v1.GET("/clusters", GetClusters(clusterSvc))
-		v1.GET("/clusters/:id", GetClusterByID(clusterSvc))
+		apiV1.GET("/clusters", GetClusters(clusterSvc))
+		apiV1.GET("/clusters/:id", GetClusterByID(clusterSvc))
 
 		// Infobase routes
-		v1.GET("/infobases", GetInfobases(infobaseSvc))
-		v1.GET("/infobases/:id", GetInfobaseByID(infobaseSvc))
-		v1.POST("/infobases", CreateInfobase(infobaseSvc))
-		v1.DELETE("/infobases/:id", DropInfobase(infobaseSvc))
-		v1.POST("/infobases/:infobase_id/lock", LockInfobase(infobaseSvc))
-		v1.POST("/infobases/:infobase_id/unlock", UnlockInfobase(infobaseSvc))
-		v1.POST("/infobases/:infobase_id/block-sessions", BlockSessions(infobaseSvc))
-		v1.POST("/infobases/:infobase_id/unblock-sessions", UnblockSessions(infobaseSvc))
+		apiV1.GET("/infobases", GetInfobases(infobaseSvc))
+		apiV1.GET("/infobases/:id", GetInfobaseByID(infobaseSvc))
+		apiV1.POST("/infobases", CreateInfobase(infobaseSvc))
+		apiV1.DELETE("/infobases/:id", DropInfobase(infobaseSvc))
+		apiV1.POST("/infobases/:infobase_id/lock", LockInfobase(infobaseSvc))
+		apiV1.POST("/infobases/:infobase_id/unlock", UnlockInfobase(infobaseSvc))
+		apiV1.POST("/infobases/:infobase_id/block-sessions", BlockSessions(infobaseSvc))
+		apiV1.POST("/infobases/:infobase_id/unblock-sessions", UnblockSessions(infobaseSvc))
 
 		// Session routes
-		v1.GET("/sessions", GetSessions(sessionSvc))
-		v1.POST("/sessions/terminate", TerminateSessions(sessionSvc))
+		apiV1.GET("/sessions", GetSessions(sessionSvc))
+		apiV1.POST("/sessions/terminate", TerminateSessions(sessionSvc))
 	}
+
+	// API v2 routes (action-based)
+	apiV2 := router.Group("/api/v2")
+	v2.SetupRoutes(apiV2, clusterSvc, infobaseSvc, sessionSvc)
 
 	return router
 }

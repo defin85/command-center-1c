@@ -19,13 +19,13 @@ type MockInfobaseManager struct {
 	mock.Mock
 }
 
-func (m *MockInfobaseManager) LockInfobase(ctx context.Context, clusterID, infobaseID string) error {
-	args := m.Called(ctx, clusterID, infobaseID)
+func (m *MockInfobaseManager) LockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
+	args := m.Called(ctx, clusterID, infobaseID, dbUser, dbPwd)
 	return args.Error(0)
 }
 
-func (m *MockInfobaseManager) UnlockInfobase(ctx context.Context, clusterID, infobaseID string) error {
-	args := m.Called(ctx, clusterID, infobaseID)
+func (m *MockInfobaseManager) UnlockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error {
+	args := m.Called(ctx, clusterID, infobaseID, dbUser, dbPwd)
 	return args.Error(0)
 }
 
@@ -98,7 +98,7 @@ func TestLockHandler_HandleLockCommand_Success(t *testing.T) {
 	}), "processed", IdempotencyTTL).Return(createBoolCmd(ctx, true, nil))
 
 	// Mock service call
-	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	// Mock event publishing
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").Return(nil)
@@ -222,7 +222,7 @@ func TestLockHandler_HandleLockCommand_ServiceError(t *testing.T) {
 		Return(createBoolCmd(ctx, true, nil))
 
 	// Service returns error
-	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456").
+	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").
 		Return(fmt.Errorf("RAS connection failed"))
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -304,7 +304,7 @@ func TestLockHandler_HandleLockCommand_ContextTimeout(t *testing.T) {
 		Return(createBoolCmd(context.Background(), true, nil))
 
 	// Service will receive cancelled context
-	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456").
+	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").
 		Return(context.DeadlineExceeded)
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -343,7 +343,7 @@ func TestLockHandler_HandleLockCommand_PublishingError(t *testing.T) {
 		Return(createBoolCmd(ctx, true, nil))
 
 	// Service succeeds
-	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	// Publishing fails
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").
@@ -380,7 +380,7 @@ func TestLockHandler_HandleLockCommand_RedisNotConfigured(t *testing.T) {
 	ctx := context.Background()
 
 	// Service should be called (no idempotency check)
-	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456").Return(nil)
+	mockSvc.On("LockInfobase", mock.Anything, "cluster-123", "infobase-456", "", "").Return(nil)
 
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").Return(nil)
 
