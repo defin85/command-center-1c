@@ -1,0 +1,44 @@
+# docker-compose.tracing.yml
+# OpenTelemetry Tracing Infrastructure for CommandCenter1C
+#
+# Usage:
+#   docker-compose -f docker-compose.tracing.yml up -d
+#
+# Jaeger UI: http://localhost:16686
+
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    container_name: cc1c-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+      # Memory storage (development)
+      - SPAN_STORAGE_TYPE=memory
+      # Optional: Badger for persistence
+      # - SPAN_STORAGE_TYPE=badger
+      # - BADGER_EPHEMERAL=false
+      # - BADGER_DIRECTORY_VALUE=/badger/data
+      # - BADGER_DIRECTORY_KEY=/badger/key
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+      - "6831:6831/udp" # Jaeger Thrift compact (legacy)
+      - "6832:6832/udp" # Jaeger Thrift binary (legacy)
+      - "14268:14268"   # Jaeger HTTP collector (legacy)
+    networks:
+      - cc1c-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  cc1c-network:
+    name: cc1c-network
+    driver: bridge

@@ -15,6 +15,14 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from django.db import transaction
 from django.utils import timezone
 
+from apps.templates.tracing import (
+    add_span_event,
+    get_current_span_id,
+    get_current_trace_id,
+    set_span_attribute,
+    set_span_error,
+    start_node_span,
+)
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.handlers import NodeExecutionMode, NodeHandlerFactory
 from apps.templates.workflow.models import (
@@ -22,6 +30,7 @@ from apps.templates.workflow.models import (
     WorkflowEdge,
     WorkflowExecution,
     WorkflowNode,
+    WorkflowStepResult,
 )
 from apps.templates.workflow.validator import DAGValidator
 
@@ -380,113 +389,216 @@ class DAGExecutor:
         # Update node status to running
         self.execution.update_node_status(node_id, 'running')
 
-        try:
-            # Get appropriate handler
-            handler = NodeHandlerFactory.get_handler(node.type)
+        # Start OpenTelemetry span for node execution
+        with start_node_span(
+            node_id=node_id,
+            node_name=node.name,
+            node_type=node.type,
+            execution_id=str(self.execution.id)
+        ) as span:
+            try:
+                # Get appropriate handler
+                handler = NodeHandlerFactory.get_handler(node.type)
 
-            # Execute node
-            result = handler.execute(
-                node=node,
-                context=context.to_dict(),
-                execution=self.execution,
-                mode=NodeExecutionMode.SYNC
-            )
+                if span:
+                    add_span_event("node_handler_resolved", {"handler_type": node.type})
 
-            if result.success:
-                # Update context with node result
-                updated_context = context.add_node_result(
-                    node_id,
-                    {
-                        'success': True,
-                        'output': result.output,
-                        'duration_seconds': result.duration_seconds
-                    }
+                # Execute node
+                result = handler.execute(
+                    node=node,
+                    context=context.to_dict(),
+                    execution=self.execution,
+                    mode=NodeExecutionMode.SYNC
                 )
 
-                # Update node status
-                self.execution.update_node_status(
-                    node_id, 'completed',
-                    result={'output': result.output, 'duration': result.duration_seconds}
-                )
+                if result.success:
+                    # Update context with node result
+                    updated_context = context.add_node_result(
+                        node_id,
+                        {
+                            'success': True,
+                            'output': result.output,
+                            'duration_seconds': result.duration_seconds
+                        }
+                    )
 
-                logger.info(
-                    f"Node {node_id} completed successfully",
-                    extra={
-                        'execution_id': str(self.execution.id),
+                    # Update node status
+                    self.execution.update_node_status(
+                        node_id, 'completed',
+                        result={'output': result.output, 'duration': result.duration_seconds}
+                    )
+
+                    # Create WorkflowStepResult with tracing info
+                    self._create_step_result(
+                        node_id=node_id,
+                        node=node,
+                        status='completed',
+                        output_data=result.output,
+                        duration_seconds=result.duration_seconds
+                    )
+
+                    logger.info(
+                        f"Node {node_id} completed successfully",
+                        extra={
+                            'execution_id': str(self.execution.id),
+                            'node_id': node_id,
+                            'duration_seconds': result.duration_seconds
+                        }
+                    )
+
+                    if span:
+                        set_span_attribute("node.status", "completed")
+                        set_span_attribute("node.duration_seconds", result.duration_seconds)
+                        add_span_event("node_completed")
+
+                    return True, updated_context
+
+                else:
+                    # Node execution failed
+                    error_context = context.add_node_result(
+                        node_id,
+                        {
+                            'success': False,
+                            'error': result.error,
+                            'duration_seconds': result.duration_seconds
+                        }
+                    )
+
+                    # Store last error for reporting
+                    error_context = error_context.set('_last_error', {
                         'node_id': node_id,
-                        'duration_seconds': result.duration_seconds
-                    }
-                )
+                        'message': result.error
+                    })
 
-                return True, updated_context
+                    # Update node status
+                    self.execution.update_node_status(
+                        node_id, 'failed',
+                        result={'error': result.error, 'duration': result.duration_seconds}
+                    )
 
-            else:
-                # Node execution failed
-                error_context = context.add_node_result(
-                    node_id,
-                    {
-                        'success': False,
-                        'error': result.error,
-                        'duration_seconds': result.duration_seconds
-                    }
-                )
+                    # Create WorkflowStepResult with error
+                    self._create_step_result(
+                        node_id=node_id,
+                        node=node,
+                        status='failed',
+                        error_message=result.error,
+                        duration_seconds=result.duration_seconds
+                    )
 
-                # Store last error for reporting
-                error_context = error_context.set('_last_error', {
-                    'node_id': node_id,
-                    'message': result.error
-                })
+                    logger.error(
+                        f"Node {node_id} failed: {result.error}",
+                        extra={
+                            'execution_id': str(self.execution.id),
+                            'node_id': node_id,
+                            'error': result.error
+                        }
+                    )
 
-                # Update node status
+                    if span:
+                        set_span_attribute("node.status", "failed")
+                        set_span_attribute("node.error", result.error)
+                        add_span_event("node_failed", {"error": result.error})
+
+                    return False, error_context
+
+            except ValueError as exc:
+                # Handler not found or invalid
+                error_msg = f"Handler error for node {node_id}: {exc}"
+                logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
+
                 self.execution.update_node_status(
                     node_id, 'failed',
-                    result={'error': result.error, 'duration': result.duration_seconds}
+                    result={'error': error_msg}
                 )
 
-                logger.error(
-                    f"Node {node_id} failed: {result.error}",
-                    extra={
-                        'execution_id': str(self.execution.id),
-                        'node_id': node_id,
-                        'error': result.error
-                    }
+                # Create WorkflowStepResult with error
+                self._create_step_result(
+                    node_id=node_id,
+                    node=node,
+                    status='failed',
+                    error_message=error_msg
                 )
+
+                error_context = context.set('_last_error', {
+                    'node_id': node_id,
+                    'message': error_msg
+                })
+
+                if span:
+                    set_span_error(exc)
 
                 return False, error_context
 
-        except ValueError as exc:
-            # Handler not found or invalid
-            error_msg = f"Handler error for node {node_id}: {exc}"
-            logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
+            except Exception as exc:
+                # Unexpected error
+                error_msg = f"Unexpected error executing node {node_id}: {exc}"
+                logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
 
-            self.execution.update_node_status(
-                node_id, 'failed',
-                result={'error': error_msg}
-            )
+                self.execution.update_node_status(
+                    node_id, 'failed',
+                    result={'error': error_msg}
+                )
 
-            error_context = context.set('_last_error', {
-                'node_id': node_id,
-                'message': error_msg
-            })
+                # Create WorkflowStepResult with error
+                self._create_step_result(
+                    node_id=node_id,
+                    node=node,
+                    status='failed',
+                    error_message=error_msg
+                )
 
-            return False, error_context
+                error_context = context.set('_last_error', {
+                    'node_id': node_id,
+                    'message': error_msg
+                })
 
-        except Exception as exc:
-            # Unexpected error
-            error_msg = f"Unexpected error executing node {node_id}: {exc}"
-            logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
+                if span:
+                    set_span_error(exc)
 
-            self.execution.update_node_status(
-                node_id, 'failed',
-                result={'error': error_msg}
-            )
+                return False, error_context
 
-            error_context = context.set('_last_error', {
-                'node_id': node_id,
-                'message': error_msg
-            })
+    def _create_step_result(
+        self,
+        node_id: str,
+        node: WorkflowNode,
+        status: str,
+        output_data: Optional[Dict[str, Any]] = None,
+        error_message: str = "",
+        duration_seconds: Optional[float] = None
+    ) -> WorkflowStepResult:
+        """
+        Create WorkflowStepResult with OpenTelemetry tracing context.
 
-            return False, error_context
+        Args:
+            node_id: Node identifier
+            node: WorkflowNode being executed
+            status: Execution status (completed/failed)
+            output_data: Optional output data
+            error_message: Optional error message
+            duration_seconds: Optional duration
+
+        Returns:
+            WorkflowStepResult: Created step result with trace context
+        """
+        # Get current trace context
+        trace_id = get_current_trace_id()
+        span_id = get_current_span_id()
+
+        step_result = WorkflowStepResult.objects.create(
+            workflow_execution=self.execution,
+            node_id=node_id,
+            node_name=node.name,
+            node_type=node.type,
+            status=status,
+            output_data=output_data,
+            error_message=error_message,
+            started_at=timezone.now() - timezone.timedelta(seconds=duration_seconds or 0),
+            completed_at=timezone.now(),
+            trace_id=trace_id,
+            span_id=span_id
+        )
+
+        return step_result
 
     def get_next_nodes(
         self,

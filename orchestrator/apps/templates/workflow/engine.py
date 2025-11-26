@@ -17,6 +17,13 @@ from uuid import UUID
 from django.db import transaction
 from django.utils import timezone
 
+from apps.templates.tracing import (
+    add_span_event,
+    get_current_trace_id,
+    set_span_attribute,
+    set_span_error,
+    start_workflow_span,
+)
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.executor import DAGExecutor
 from apps.templates.workflow.models import (
@@ -155,81 +162,113 @@ class WorkflowEngine:
             }
         )
 
-        try:
-            # Step 3: Start execution (FSM transition)
-            with transaction.atomic():
-                execution.start()
-                execution.save(update_fields=['status', 'started_at'])
+        # Step 3: Start OpenTelemetry span for entire workflow
+        with start_workflow_span(
+            workflow_id=str(template.id),
+            workflow_name=template.name,
+            execution_id=str(execution.id),
+            template_id=str(template.id)
+        ) as span:
+            # Store trace_id in execution for correlation
+            trace_id = get_current_trace_id()
+            if trace_id:
+                execution.set_trace_id(trace_id)
+                execution.save(update_fields=['trace_id'])
 
-            logger.info(
-                f"Execution {execution.id} started",
-                extra={'execution_id': str(execution.id)}
-            )
-
-            # Step 4: Execute DAG
-            success, result = self._execute_dag(template, execution, input_context)
-
-            # Step 5: Complete or Fail execution
-            with transaction.atomic():
-                if success:
-                    execution.complete(result)
-                    execution.save(update_fields=[
-                        'status', 'final_result', 'completed_at'
-                    ])
-
-                    logger.info(
-                        f"Execution {execution.id} completed successfully",
-                        extra={
-                            'execution_id': str(execution.id),
-                            'duration_seconds': execution.duration
-                        }
-                    )
-                else:
-                    error_msg = result.get('error', 'Unknown error')
-                    error_node = result.get('node_id')
-
-                    execution.fail(error_msg, error_node)
-                    execution.save(update_fields=[
-                        'status', 'error_message', 'error_node_id', 'completed_at'
-                    ])
-
-                    logger.error(
-                        f"Execution {execution.id} failed: {error_msg}",
-                        extra={
-                            'execution_id': str(execution.id),
-                            'error_node': error_node,
-                            'duration_seconds': execution.duration
-                        }
-                    )
-
-            return execution
-
-        except Exception as exc:
-            # Handle unexpected errors
-            logger.error(
-                f"Unexpected error during execution {execution.id}: {exc}",
-                extra={'execution_id': str(execution.id)},
-                exc_info=True
-            )
-
-            # Try to mark as failed
             try:
+                # Step 4: Start execution (FSM transition)
                 with transaction.atomic():
-                    # Refresh to get current state
-                    execution.refresh_from_db()
+                    execution.start()
+                    execution.save(update_fields=['status', 'started_at'])
 
-                    if execution.status == WorkflowExecution.STATUS_RUNNING:
-                        execution.fail(str(exc))
-                        execution.save(update_fields=[
-                            'status', 'error_message', 'completed_at'
-                        ])
-            except Exception as save_exc:
-                logger.error(
-                    f"Failed to save error state: {save_exc}",
+                logger.info(
+                    f"Execution {execution.id} started",
                     extra={'execution_id': str(execution.id)}
                 )
 
-            return execution
+                if span:
+                    add_span_event("workflow_started")
+
+                # Step 5: Execute DAG
+                success, result = self._execute_dag(template, execution, input_context)
+
+                # Step 6: Complete or Fail execution
+                with transaction.atomic():
+                    if success:
+                        execution.complete(result)
+                        execution.save(update_fields=[
+                            'status', 'final_result', 'completed_at'
+                        ])
+
+                        logger.info(
+                            f"Execution {execution.id} completed successfully",
+                            extra={
+                                'execution_id': str(execution.id),
+                                'duration_seconds': execution.duration
+                            }
+                        )
+
+                        if span:
+                            set_span_attribute("workflow.status", "completed")
+                            set_span_attribute("workflow.duration_seconds", execution.duration)
+                            add_span_event("workflow_completed")
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        error_node = result.get('node_id')
+
+                        execution.fail(error_msg, error_node)
+                        execution.save(update_fields=[
+                            'status', 'error_message', 'error_node_id', 'completed_at'
+                        ])
+
+                        logger.error(
+                            f"Execution {execution.id} failed: {error_msg}",
+                            extra={
+                                'execution_id': str(execution.id),
+                                'error_node': error_node,
+                                'duration_seconds': execution.duration
+                            }
+                        )
+
+                        if span:
+                            set_span_attribute("workflow.status", "failed")
+                            set_span_attribute("workflow.error", error_msg)
+                            if error_node:
+                                set_span_attribute("workflow.error_node_id", error_node)
+                            add_span_event("workflow_failed", {"error": error_msg})
+
+                return execution
+
+            except Exception as exc:
+                # Handle unexpected errors
+                logger.error(
+                    f"Unexpected error during execution {execution.id}: {exc}",
+                    extra={'execution_id': str(execution.id)},
+                    exc_info=True
+                )
+
+                # Record error in span
+                if span:
+                    set_span_error(exc)
+
+                # Try to mark as failed
+                try:
+                    with transaction.atomic():
+                        # Refresh to get current state
+                        execution.refresh_from_db()
+
+                        if execution.status == WorkflowExecution.STATUS_RUNNING:
+                            execution.fail(str(exc))
+                            execution.save(update_fields=[
+                                'status', 'error_message', 'completed_at'
+                            ])
+                except Exception as save_exc:
+                    logger.error(
+                        f"Failed to save error state: {save_exc}",
+                        extra={'execution_id': str(execution.id)}
+                    )
+
+                return execution
 
     def _execute_dag(
         self,

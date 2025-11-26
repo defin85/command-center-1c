@@ -38,7 +38,21 @@ Jinja2==3.1.6
 django-pydantic-field>=0.3.0  # Pydantic validation for JSONField
 django-fsm>=3.0.0  # Finite State Machine for workflow state
 jsonschema>=4.20.0  # JSON schema validation
-opentelemetry-instrumentation-django>=0.41b0  # Distributed tracing (optional)
+
+# OpenTelemetry Core
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-semantic-conventions>=0.48b0
+
+# OpenTelemetry Exporters
+opentelemetry-exporter-otlp>=1.27.0
+
+# OpenTelemetry Auto-instrumentation
+opentelemetry-instrumentation-django>=0.48b0
+opentelemetry-instrumentation-celery>=0.48b0
+opentelemetry-instrumentation-redis>=0.48b0
+opentelemetry-instrumentation-requests>=0.48b0
+opentelemetry-instrumentation-psycopg2>=0.48b0
 
 # Development
 django-extensions==3.2.3
