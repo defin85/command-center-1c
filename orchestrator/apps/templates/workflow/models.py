@@ -471,7 +471,7 @@ class WorkflowTemplate(models.Model):
         execution = WorkflowExecution.objects.create(
             workflow_template=self,
             input_context=input_context,
-            status="pending",
+            # status uses default=STATUS_PENDING (FSM protected field)
         )
         return execution
 

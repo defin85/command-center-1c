@@ -148,6 +148,11 @@ test_output.log
 test-results/
 junit.xml
 
+# Load test results (Locust)
+orchestrator/tests/load/results/*.csv
+orchestrator/tests/load/results/*.html
+orchestrator/tests/load/results/*.json
+
 # =============================================================================
 # Generated Code (policy: regenerate from OpenAPI specs)
 # =============================================================================
