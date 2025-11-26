@@ -1,6 +1,13 @@
 from django.db import models
 from django.utils import timezone
 
+# Import workflow models to make them discoverable by Django migrations
+from .workflow.models import (  # noqa: F401
+    WorkflowTemplate,
+    WorkflowExecution,
+    WorkflowStepResult,
+)
+
 
 class OperationTemplate(models.Model):
     """Template for creating operations."""

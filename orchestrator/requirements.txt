@@ -34,6 +34,12 @@ pytz==2023.3
 # Template Engine
 Jinja2==3.1.6
 
+# Workflow Engine
+django-pydantic-field>=0.3.0  # Pydantic validation for JSONField
+django-fsm-2>=3.0.0  # Finite State Machine for workflow state
+jsonschema>=4.20.0  # JSON schema validation
+opentelemetry-instrumentation-django>=0.41b0  # Distributed tracing (optional)
+
 # Development
 django-extensions==3.2.3
 pytest==7.4.3
