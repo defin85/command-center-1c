@@ -9,4 +9,6 @@ router.register(r'', views.OperationTemplateViewSet, basename='template')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Workflow Engine API (Week 10)
+    path('workflow/', include('apps.templates.workflow.urls')),
 ]
