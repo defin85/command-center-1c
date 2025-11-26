@@ -1,0 +1,169 @@
+"""
+Base handler classes for Workflow Engine.
+
+Provides abstract base class and common functionality for all node handlers.
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, Optional
+import logging
+import time
+
+from django.utils import timezone
+
+from apps.templates.workflow.models import WorkflowExecution, WorkflowNode, WorkflowStepResult
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Enums and Data Classes
+# ============================================================================
+
+
+class NodeExecutionMode(Enum):
+    """
+    Execution mode for workflow nodes.
+
+    - SYNC: Wait for operation completion before proceeding
+    - ASYNC: Return immediately with task_id (Celery integration - Week 9)
+    """
+    SYNC = "sync"
+    ASYNC = "async"
+
+
+@dataclass
+class NodeExecutionResult:
+    """
+    Result of a node execution.
+
+    Attributes:
+        success: Whether execution succeeded
+        output: Node output data (rendered template, boolean result, etc.)
+        error: Error message if failed (None if success)
+        mode: Execution mode used (sync/async)
+        duration_seconds: Execution duration in seconds (None if async)
+    """
+    success: bool
+    output: Optional[Any]
+    error: Optional[str]
+    mode: NodeExecutionMode
+    duration_seconds: Optional[float]
+
+
+# ============================================================================
+# Base Handler
+# ============================================================================
+
+
+class BaseNodeHandler(ABC):
+    """
+    Abstract base handler for workflow nodes.
+
+    Defines the handler contract and provides common functionality
+    for creating and updating WorkflowStepResult records.
+
+    Subclasses must implement:
+        - execute(): Node execution logic
+    """
+
+    @abstractmethod
+    def execute(
+        self,
+        node: WorkflowNode,
+        context: Dict[str, Any],
+        execution: WorkflowExecution,
+        mode: NodeExecutionMode = NodeExecutionMode.SYNC
+    ) -> NodeExecutionResult:
+        """
+        Execute workflow node.
+
+        Args:
+            node: WorkflowNode Pydantic schema from DAG
+            context: Execution context with variables
+            execution: WorkflowExecution instance for tracking
+            mode: Execution mode (sync/async)
+
+        Returns:
+            NodeExecutionResult with success/output/error
+        """
+        pass
+
+    def _create_step_result(
+        self,
+        execution: WorkflowExecution,
+        node: WorkflowNode,
+        input_data: Dict[str, Any]
+    ) -> WorkflowStepResult:
+        """
+        Create WorkflowStepResult for audit trail.
+
+        Args:
+            execution: WorkflowExecution instance
+            node: WorkflowNode Pydantic schema
+            input_data: Input data for this step
+
+        Returns:
+            WorkflowStepResult: Created step result instance (status=running)
+        """
+        step_result = WorkflowStepResult.objects.create(
+            workflow_execution=execution,
+            node_id=node.id,
+            node_name=node.name,
+            node_type=node.type,
+            status=WorkflowStepResult.STATUS_RUNNING,
+            input_data=input_data,
+            started_at=timezone.now()
+        )
+
+        # Set OpenTelemetry context if available (Week 12)
+        step_result.set_opentelemetry_context()
+        step_result.save(update_fields=['trace_id', 'span_id'])
+
+        logger.info(
+            f"Created step result for node {node.id}",
+            extra={
+                'execution_id': str(execution.id),
+                'node_id': node.id,
+                'node_type': node.type,
+                'step_result_id': str(step_result.id)
+            }
+        )
+
+        return step_result
+
+    def _update_step_result(
+        self,
+        step_result: WorkflowStepResult,
+        result: NodeExecutionResult
+    ) -> None:
+        """
+        Update WorkflowStepResult with execution result.
+
+        Args:
+            step_result: WorkflowStepResult instance to update
+            result: NodeExecutionResult with execution outcome
+        """
+        step_result.status = (
+            WorkflowStepResult.STATUS_COMPLETED if result.success
+            else WorkflowStepResult.STATUS_FAILED
+        )
+        step_result.output_data = result.output
+        step_result.error_message = result.error or ""
+        step_result.completed_at = timezone.now()
+
+        step_result.save(update_fields=[
+            'status', 'output_data', 'error_message', 'completed_at'
+        ])
+
+        logger.info(
+            f"Updated step result for node {step_result.node_id}",
+            extra={
+                'step_result_id': str(step_result.id),
+                'status': step_result.status,
+                'duration_seconds': step_result.duration_seconds,
+                'success': result.success
+            }
+        )

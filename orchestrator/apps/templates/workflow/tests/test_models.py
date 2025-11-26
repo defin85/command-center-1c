@@ -596,14 +596,14 @@ class TestPydanticSchemas:
                 template_id="should_not_exist"  # Invalid!
             )
 
-    def test_workflow_node_parallel_requires_parallel_limit(self):
-        """Test parallel nodes require parallel_limit."""
-        with pytest.raises(ValueError, match="parallel_limit is required"):
+    def test_workflow_node_parallel_requires_parallel_config(self):
+        """Test parallel nodes require parallel_config."""
+        with pytest.raises(ValueError, match="parallel_config is required"):
             WorkflowNode(
                 id="par1",
                 name="Parallel",
                 type="parallel",
-                config={"timeout": 30}  # Missing parallel_limit!
+                config={"timeout": 30}  # Missing parallel_config!
             )
 
     def test_node_config_validation(self):

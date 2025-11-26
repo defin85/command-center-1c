@@ -64,6 +64,74 @@ class NodeConfig(BaseModel):
         }
 
 
+class ParallelConfig(BaseModel):
+    """Configuration for Parallel nodes."""
+
+    parallel_nodes: List[str] = Field(..., min_length=1, max_length=50)
+    wait_for: str = Field(default="all", pattern="^(all|any|\\d+)$")
+    timeout_seconds: int = Field(default=300, ge=1, le=3600)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "parallel_nodes": ["node_1", "node_2", "node_3"],
+                "wait_for": "all",
+                "timeout_seconds": 300,
+            }
+        }
+
+
+class LoopConfig(BaseModel):
+    """Configuration for Loop nodes."""
+
+    mode: str = Field(..., pattern="^(count|while|foreach)$")
+    count: Optional[int] = Field(default=None, ge=1, le=1000)
+    condition: Optional[str] = Field(default=None)
+    items: Optional[str] = Field(default=None)
+    loop_node_id: str = Field(...)
+    max_iterations: int = Field(default=100, ge=1, le=10000)
+
+    @model_validator(mode='after')
+    def validate_loop_mode(self) -> 'LoopConfig':
+        """Validate loop configuration based on mode."""
+        if self.mode == "count" and self.count is None:
+            raise ValueError("count is required for mode='count'")
+        if self.mode == "while" and not self.condition:
+            raise ValueError("condition is required for mode='while'")
+        if self.mode == "foreach" and not self.items:
+            raise ValueError("items is required for mode='foreach'")
+        return self
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "mode": "count",
+                "count": 10,
+                "loop_node_id": "process_item",
+                "max_iterations": 100,
+            }
+        }
+
+
+class SubWorkflowConfig(BaseModel):
+    """Configuration for SubWorkflow nodes."""
+
+    subworkflow_id: str = Field(...)
+    input_mapping: Dict[str, str] = Field(default_factory=dict)
+    output_mapping: Dict[str, str] = Field(default_factory=dict)
+    max_depth: int = Field(default=10, ge=1, le=20)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "subworkflow_id": "sub_workflow_v1",
+                "input_mapping": {"database.id": "target_db_id"},
+                "output_mapping": {"result.status": "sub_status"},
+                "max_depth": 10,
+            }
+        }
+
+
 class WorkflowNode(BaseModel):
     """Represents a single node in the workflow DAG."""
 
@@ -78,6 +146,17 @@ class WorkflowNode(BaseModel):
         default=None, description="Template ID for Operation nodes"
     )
     config: NodeConfig = Field(default_factory=NodeConfig, description="Node-specific config")
+
+    # Node-type specific configurations
+    parallel_config: Optional[ParallelConfig] = Field(
+        default=None, description="Configuration for Parallel nodes"
+    )
+    loop_config: Optional[LoopConfig] = Field(
+        default=None, description="Configuration for Loop nodes"
+    )
+    subworkflow_config: Optional[SubWorkflowConfig] = Field(
+        default=None, description="Configuration for SubWorkflow nodes"
+    )
 
     @field_validator("type")
     @classmethod
@@ -101,15 +180,8 @@ class WorkflowNode(BaseModel):
                 )
         return self
 
-    @model_validator(mode='after')
-    def validate_config(self) -> 'WorkflowNode':
-        """Validate config based on node type."""
-        if self.type == "parallel":
-            if self.config.parallel_limit is None:
-                raise ValueError(
-                    f"parallel_limit is required for parallel nodes (node: {self.id})"
-                )
-        return self
+    # Note: validate_config removed - config validation now handled by validate_node_configs
+    # for parallel/loop/subworkflow nodes (Week 8 refactoring)
 
     @model_validator(mode='after')
     def validate_expression(self) -> 'WorkflowNode':
@@ -119,6 +191,41 @@ class WorkflowNode(BaseModel):
                 raise ValueError(
                     f"expression is required for condition nodes (node: {self.id})"
                 )
+        return self
+
+    @model_validator(mode='after')
+    def validate_node_configs(self) -> 'WorkflowNode':
+        """Validate node-type specific configurations."""
+        if self.type == "parallel":
+            if self.parallel_config is None:
+                raise ValueError(
+                    f"parallel_config is required for parallel nodes (node: {self.id})"
+                )
+        elif self.parallel_config is not None:
+            raise ValueError(
+                f"parallel_config must be None for non-parallel nodes (node: {self.id})"
+            )
+
+        if self.type == "loop":
+            if self.loop_config is None:
+                raise ValueError(
+                    f"loop_config is required for loop nodes (node: {self.id})"
+                )
+        elif self.loop_config is not None:
+            raise ValueError(
+                f"loop_config must be None for non-loop nodes (node: {self.id})"
+            )
+
+        if self.type == "subworkflow":
+            if self.subworkflow_config is None:
+                raise ValueError(
+                    f"subworkflow_config is required for subworkflow nodes (node: {self.id})"
+                )
+        elif self.subworkflow_config is not None:
+            raise ValueError(
+                f"subworkflow_config must be None for non-subworkflow nodes (node: {self.id})"
+            )
+
         return self
 
     class Config:

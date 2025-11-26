@@ -496,25 +496,32 @@ class TestNodeTypeValidation:
 
         assert result.is_valid
 
-    def test_parallel_node_requires_limit(self):
-        """Test parallel node requires parallel_limit in config."""
-        with pytest.raises(ValueError, match="parallel_limit is required"):
+    def test_parallel_node_requires_config(self):
+        """Test parallel node requires parallel_config."""
+        with pytest.raises(ValueError, match="parallel_config is required"):
             WorkflowNode(
                 id="par",
                 name="Parallel",
                 type="parallel",
-                config=NodeConfig(timeout_seconds=30)  # Missing parallel_limit
+                config=NodeConfig(timeout_seconds=30)  # Missing parallel_config
             )
 
     def test_parallel_node_with_limit(self):
-        """Test valid parallel node with parallel_limit."""
+        """Test valid parallel node with parallel_config."""
+        from apps.templates.workflow.models import ParallelConfig
+
         dag = DAGStructure(
             nodes=[
                 WorkflowNode(
                     id="par",
                     name="Parallel",
                     type="parallel",
-                    config=NodeConfig(timeout_seconds=30, parallel_limit=5)
+                    config=NodeConfig(timeout_seconds=30),
+                    parallel_config=ParallelConfig(
+                        parallel_nodes=["node1", "node2", "node3"],
+                        wait_for="all",
+                        timeout_seconds=30
+                    )
                 ),
             ],
             edges=[]
@@ -526,6 +533,8 @@ class TestNodeTypeValidation:
 
     def test_mixed_node_types(self):
         """Test DAG with different node types."""
+        from apps.templates.workflow.models import ParallelConfig, LoopConfig
+
         dag = DAGStructure(
             nodes=[
                 WorkflowNode(id="op", name="Op", type="operation", template_id="test"),
@@ -535,8 +544,25 @@ class TestNodeTypeValidation:
                     type="condition",
                     config=NodeConfig(expression="{{ True }}")  # expression required
                 ),
-                WorkflowNode(id="par", name="Par", type="parallel", config=NodeConfig(parallel_limit=3)),
-                WorkflowNode(id="loop", name="Loop", type="loop"),
+                WorkflowNode(
+                    id="par",
+                    name="Par",
+                    type="parallel",
+                    parallel_config=ParallelConfig(
+                        parallel_nodes=["node1", "node2"],
+                        wait_for="all"
+                    )
+                ),
+                WorkflowNode(
+                    id="loop",
+                    name="Loop",
+                    type="loop",
+                    loop_config=LoopConfig(
+                        mode="count",
+                        count=5,
+                        loop_node_id="op"
+                    )
+                ),
             ],
             edges=[
                 WorkflowEdge(from_node="op", to_node="cond"),

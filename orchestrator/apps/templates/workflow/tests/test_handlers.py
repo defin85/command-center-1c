@@ -128,8 +128,7 @@ class TestOperationHandler:
         assert "not found" in result.error.lower()
         assert result.mode == NodeExecutionMode.SYNC
 
-    @patch('apps.templates.workflow.handlers.TemplateRenderer')
-    def test_operation_handler_success(self, mock_renderer_class, admin_user, workflow_execution):
+    def test_operation_handler_success(self, admin_user, workflow_execution):
         """Test successful operation execution."""
         from apps.templates.models import OperationTemplate
 
@@ -137,15 +136,10 @@ class TestOperationHandler:
         op_template = OperationTemplate.objects.create(
             id="test_template",
             name="Test Template",
-            operation_type="odata_query",
+            operation_type="query",
             target_entity="Users",
             template_data={"query": "SELECT * FROM Users"}
         )
-
-        # Mock renderer
-        mock_renderer = Mock()
-        mock_renderer.render.return_value = {"result": "rendered_data"}
-        mock_renderer_class.return_value = mock_renderer
 
         node = WorkflowNode(
             id="op1",
@@ -156,6 +150,12 @@ class TestOperationHandler:
         context = {"user_id": 123}
 
         handler = OperationHandler()
+
+        # Mock the renderer instance on the handler
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"result": "rendered_data"}
+        handler.renderer = mock_renderer
+
         result = handler.execute(node, context, workflow_execution)
 
         assert result.success is True
@@ -166,8 +166,7 @@ class TestOperationHandler:
         # Verify renderer was called
         mock_renderer.render.assert_called_once()
 
-    @patch('apps.templates.workflow.handlers.TemplateRenderer')
-    def test_operation_handler_render_error(self, mock_renderer_class, admin_user, workflow_execution):
+    def test_operation_handler_render_error(self, admin_user, workflow_execution):
         """Test error handling when template rendering fails."""
         from apps.templates.models import OperationTemplate
         from apps.templates.engine.exceptions import TemplateRenderError
@@ -176,15 +175,10 @@ class TestOperationHandler:
         op_template = OperationTemplate.objects.create(
             id="bad_template",
             name="Bad Template",
-            operation_type="odata_query",
+            operation_type="query",
             target_entity="Users",
-            template_data={}
+            template_data={"query": "test"}
         )
-
-        # Mock renderer to raise error
-        mock_renderer = Mock()
-        mock_renderer.render.side_effect = TemplateRenderError("Syntax error")
-        mock_renderer_class.return_value = mock_renderer
 
         node = WorkflowNode(
             id="op1",
@@ -194,6 +188,12 @@ class TestOperationHandler:
         )
 
         handler = OperationHandler()
+
+        # Mock renderer to raise error
+        mock_renderer = Mock()
+        mock_renderer.render.side_effect = TemplateRenderError("Syntax error")
+        handler.renderer = mock_renderer
+
         result = handler.execute(node, {}, workflow_execution)
 
         assert result.success is False
@@ -413,9 +413,8 @@ class TestConditionHandler:
 class TestHandlersIntegration:
     """Integration tests with real Template Engine."""
 
-    @patch('apps.templates.workflow.handlers.TemplateRenderer')
     def test_operation_handler_with_context_propagation(
-        self, mock_renderer_class, admin_user, simple_workflow_template
+        self, admin_user, simple_workflow_template
     ):
         """Test that operation results are stored in context."""
         from apps.templates.models import OperationTemplate
@@ -424,15 +423,10 @@ class TestHandlersIntegration:
         op_template = OperationTemplate.objects.create(
             id="context_test",
             name="Context Test",
-            operation_type="test",
+            operation_type="query",
             target_entity="Test",
-            template_data={}
+            template_data={"query": "test"}
         )
-
-        # Mock renderer
-        mock_renderer = Mock()
-        mock_renderer.render.return_value = {"result": "operation_output"}
-        mock_renderer_class.return_value = mock_renderer
 
         # Create execution
         execution = simple_workflow_template.create_execution({"initial": "data"})
@@ -448,6 +442,12 @@ class TestHandlersIntegration:
 
         context = {"initial": "data"}
         handler = OperationHandler()
+
+        # Mock renderer
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"result": "operation_output"}
+        handler.renderer = mock_renderer
+
         result = handler.execute(node, context, execution)
 
         # Check result stored in context
