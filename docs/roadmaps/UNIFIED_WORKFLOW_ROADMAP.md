@@ -51,8 +51,8 @@ Week 5-11:  Phase 2 - Workflow Engine Backend (7 weeks) 🔄 IN PROGRESS
             • Week 5: Models + Migrations ✅ COMPLETE (2025-11-23)
             • Week 6: DAGValidator + Kahn's Algorithm ✅ COMPLETE (2025-11-23)
             • Week 7: NodeHandlers (Part 1) ✅ COMPLETE (2025-11-23)
-            • Week 8: NodeHandlers (Part 2) ⏳ NEXT
-            • Week 9: WorkflowEngine + DAGExecutor
+            • Week 8: NodeHandlers (Part 2) ✅ COMPLETE (2025-11-26)
+            • Week 9: WorkflowEngine + DAGExecutor ⏳ NEXT
             • Week 10: REST API
             • Week 11: Celery Tasks + Testing
 Week 12-16: Phase 3 - Real-Time Integration + Service Mesh (5 weeks)
@@ -64,7 +64,7 @@ Week 12-16: Phase 3 - Real-Time Integration + Service Mesh (5 weeks)
 Week 17-18: Phase 4 - Polish & Migration (2 weeks)
 
 Total: 18 weeks (4.5 months)
-Progress: Week 7/18 (39% complete)
+Progress: Week 8/18 (44% complete)
 ```
 
 ---
@@ -282,53 +282,61 @@ pytest apps/templates/tests/test_handlers.py::TestConditionHandler -v
 
 ---
 
-### Week 8: NodeHandlers (Part 2)
+### Week 8: NodeHandlers (Part 2) ✅ COMPLETE
 
 **Effort:** 5 days
+**Status:** ✅ Завершено 2025-11-26
+**Commit:** 7e6685d
 
 #### Tasks
 
 **Day 1-2: ParallelHandler**
-- [ ] Create `ParallelHandler` class
-- [ ] Implement `execute()` method
+- [x] Create `ParallelHandler` class
+- [x] Implement `execute()` method
   - Create Celery group for parallel nodes
   - Execute all nodes concurrently
   - Wait for results (all, any, or N)
   - Aggregate results
-- [ ] Error handling (some nodes fail, timeout)
+- [x] Error handling (some nodes fail, timeout)
 
 **Day 3: LoopHandler**
-- [ ] Create `LoopHandler` class
-- [ ] Implement `execute()` method
+- [x] Create `LoopHandler` class
+- [x] Implement `execute()` method
   - Mode: count (repeat N times)
   - Mode: while (condition-based)
   - Mode: foreach (iterate over items)
   - Safety limit: max_iterations (prevent infinite loops)
-- [ ] Update context with loop_index, loop_item
+- [x] Update context with loop_index, loop_item
 
 **Day 4: SubWorkflowHandler**
-- [ ] Create `SubWorkflowHandler` class
-- [ ] Implement `execute()` method
+- [x] Create `SubWorkflowHandler` class
+- [x] Implement `execute()` method
   - Get sub-workflow template
   - Map input context (parent → child)
   - Execute sub-workflow (RECURSIVE!)
   - Map output context (child → parent)
-  - Track depth (safety limit: max_depth=10)
+  - Track depth (safety limit: max_depth=20)
 
 **Day 5: Unit Tests**
-- [ ] Test ParallelHandler with 3+ nodes
-- [ ] Test ParallelHandler with wait_for modes
-- [ ] Test LoopHandler count mode
-- [ ] Test LoopHandler while mode (with exit condition)
-- [ ] Test LoopHandler foreach mode
-- [ ] Test SubWorkflowHandler recursion (2-3 levels)
-- [ ] Test SubWorkflowHandler max depth limit
+- [x] Test ParallelHandler with 3+ nodes
+- [x] Test ParallelHandler with wait_for modes
+- [x] Test LoopHandler count mode
+- [x] Test LoopHandler while mode (with exit condition)
+- [x] Test LoopHandler foreach mode
+- [x] Test SubWorkflowHandler recursion (2-3 levels)
+- [x] Test SubWorkflowHandler max depth limit
 
-**Deliverable:** All 5 NodeHandlers working
+**Deliverable:** ✅ All 5 NodeHandlers working, 128 tests passing, 90% coverage
+
+**Additional achievements:**
+- Refactored handlers.py into modular handlers/ directory
+- Added Pydantic schemas: ParallelConfig, LoopConfig, SubWorkflowConfig
+- Thread-safe NodeHandlerFactory with double-checked locking
+- Sandboxed Jinja2 for condition evaluation
 
 ```bash
 # Validation
-pytest apps/templates/tests/test_handlers.py -v
+pytest apps/templates/workflow/tests/ -v  # 128 tests passed
 ```
 
 ---
