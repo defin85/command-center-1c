@@ -1,7 +1,7 @@
 # Unified Workflow Visualization Platform - Roadmap
 
-**Version:** 2.0
-**Date:** 2025-11-23
+**Version:** 2.1
+**Date:** 2025-11-26
 **Status:** Approved for Implementation - Extended with Service Mesh
 **Total Duration:** 18 weeks (4.5 months)
 **Design Doc:** [UNIFIED_WORKFLOW_VISUALIZATION.md](../architecture/UNIFIED_WORKFLOW_VISUALIZATION.md) v2.0
@@ -52,7 +52,6 @@ Week 5-11:  Phase 2 - Workflow Engine Backend (7 weeks) 🔄 IN PROGRESS
             • Week 6: DAGValidator + Kahn's Algorithm ✅ COMPLETE (2025-11-23)
             • Week 7: NodeHandlers (Part 1) ✅ COMPLETE (2025-11-23)
             • Week 8: NodeHandlers (Part 2) ⏳ NEXT
-            • Week 8: NodeHandlers (Part 2)
             • Week 9: WorkflowEngine + DAGExecutor
             • Week 10: REST API
             • Week 11: Celery Tasks + Testing
@@ -1196,9 +1195,10 @@ npm install reactflow
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2025-11-23
+**Document Version:** 2.1
+**Last Updated:** 2025-11-26
 **Status:** APPROVED FOR IMPLEMENTATION - Extended with Service Mesh Monitor
+**Note:** Week 8+ work was lost due to uncommitted changes in deleted worktree. Resuming from Week 8.
 **Architecture:** Two-Tab Interface (Service Mesh + My Workflows)
 **Start Date:** Week 5 (TBD)
 **Expected Completion:** Week 22 (TBD) - 18 weeks total
