@@ -1,0 +1,644 @@
+openapi: 3.0.3
+info:
+  title: CommandCenter1C API Gateway
+  description: |
+    Единая точка входа для Frontend приложения CommandCenter1C.
+
+    API Gateway выполняет функции:
+    - JWT аутентификация
+    - Rate limiting (100 req/min per user)
+    - Проксирование запросов к Orchestrator
+    - CORS handling
+
+    **Архитектура:**
+    ```
+    Frontend → API Gateway (8080) → Orchestrator (8000) → Микросервисы
+    ```
+
+    **Важно:** Большинство endpoints проксируются в Django Orchestrator.
+    Schemas описывают итоговые response от всей системы.
+  version: 1.0.0
+  contact:
+    name: CommandCenter1C Team
+    url: https://github.com/commandcenter1c/commandcenter
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://api-gateway:8080
+    description: Docker environment
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+    description: Service health and status
+  - name: operations
+    description: Batch operations management
+  - name: databases
+    description: 1C database management
+  - name: clusters
+    description: 1C cluster management
+  - name: extensions
+    description: Extension management
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns API Gateway health status
+      operationId: healthCheck
+      tags:
+        - health
+      security: []  # No auth required
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns Prometheus-formatted metrics
+      operationId: getMetrics
+      tags:
+        - health
+      security: []  # No auth required
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/public/status:
+    get:
+      summary: Public status
+      description: Returns public system status (no auth required)
+      operationId: getPublicStatus
+      tags:
+        - health
+      security: []  # No auth required
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/v1/operations:
+    get:
+      summary: List operations
+      description: Returns list of batch operations (proxied to Orchestrator)
+      operationId: listOperations
+      tags:
+        - operations
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of operations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/operations/{id}:
+    get:
+      summary: Get operation by ID
+      description: Returns operation details (proxied to Orchestrator)
+      operationId: getOperation
+      tags:
+        - operations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/operations/{id}/cancel:
+    post:
+      summary: Cancel operation
+      description: Cancels a running operation (proxied to Orchestrator)
+      operationId: cancelOperation
+      tags:
+        - operations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/v1/databases:
+    get:
+      summary: List databases
+      description: Returns list of 1C databases (proxied to Orchestrator)
+      operationId: listDatabases
+      tags:
+        - databases
+      parameters:
+        - name: cluster_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of databases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseList'
+
+  /api/v1/databases/{id}:
+    get:
+      summary: Get database by ID
+      description: Returns database details (proxied to Orchestrator)
+      operationId: getDatabase
+      tags:
+        - databases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Database details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Database'
+
+  /api/v1/databases/{id}/health:
+    get:
+      summary: Check database health
+      description: Returns database health status (proxied to Orchestrator)
+      operationId: checkDatabaseHealth
+      tags:
+        - databases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Database health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /api/v1/databases/clusters:
+    get:
+      summary: List clusters
+      description: Returns list of 1C clusters (proxied to Orchestrator)
+      operationId: listClusters
+      tags:
+        - clusters
+      responses:
+        '200':
+          description: List of clusters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterList'
+    post:
+      summary: Create cluster
+      description: Creates a new cluster (proxied to Orchestrator)
+      operationId: createCluster
+      tags:
+        - clusters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterCreate'
+      responses:
+        '201':
+          description: Cluster created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+
+  /api/v1/databases/clusters/{id}:
+    get:
+      summary: Get cluster by ID
+      description: Returns cluster details (proxied to Orchestrator)
+      operationId: getCluster
+      tags:
+        - clusters
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+
+  /api/v1/databases/clusters/{id}/sync:
+    post:
+      summary: Sync cluster databases
+      description: Synchronizes database list from RAS (proxied to Orchestrator)
+      operationId: syncCluster
+      tags:
+        - clusters
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sync completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+
+  /api/v1/extensions/storage:
+    get:
+      summary: List extension files
+      description: Returns list of uploaded extension files (proxied to Orchestrator)
+      operationId: listExtensions
+      tags:
+        - extensions
+      responses:
+        '200':
+          description: List of extensions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionList'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT токен для аутентификации.
+
+        Получить токен: POST /api/v1/auth/login
+
+        Пример заголовка:
+        ```
+        Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        ```
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: healthy
+        service:
+          type: string
+          example: api-gateway
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: "0.1.0"
+
+    StatusResponse:
+      type: object
+      properties:
+        api_gateway:
+          type: string
+          enum: [operational, degraded, down]
+          example: operational
+        orchestrator:
+          type: string
+          enum: [operational, degraded, down, unknown]
+          example: operational
+        timestamp:
+          type: string
+          format: date-time
+
+    OperationList:
+      type: object
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Operation'
+        total:
+          type: integer
+          example: 42
+        limit:
+          type: integer
+          example: 100
+        offset:
+          type: integer
+          example: 0
+
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        operation_type:
+          type: string
+          enum: [install_extension, update_data, query_data]
+          example: install_extension
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+          example: running
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 45
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DatabaseList:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Database'
+        total:
+          type: integer
+
+    Database:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "accounting_2024"
+        cluster_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, locked, maintenance]
+        dbms:
+          type: string
+          enum: [PostgreSQL, MSSQLServer, IBMDB2, OracleDatabase]
+        db_server:
+          type: string
+          example: "localhost"
+        db_name:
+          type: string
+          example: "acc_db"
+        created_at:
+          type: string
+          format: date-time
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, unknown]
+        last_check:
+          type: string
+          format: date-time
+        response_time_ms:
+          type: integer
+          example: 150
+
+    ClusterList:
+      type: object
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cluster'
+        total:
+          type: integer
+
+    Cluster:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Production Cluster"
+        ras_server:
+          type: string
+          example: "localhost:1545"
+        cluster_service_url:
+          type: string
+          example: "http://localhost:8088"
+        status:
+          type: string
+          enum: [active, inactive, error]
+        last_sync:
+          type: string
+          format: date-time
+          nullable: true
+
+    ClusterCreate:
+      type: object
+      required:
+        - name
+        - ras_server
+        - cluster_service_url
+      properties:
+        name:
+          type: string
+          example: "New Cluster"
+        ras_server:
+          type: string
+          example: "localhost:1545"
+        cluster_service_url:
+          type: string
+          example: "http://localhost:8088"
+        cluster_user:
+          type: string
+          example: "admin"
+        cluster_pwd:
+          type: string
+          format: password
+          example: "***SECRET***"
+
+    SyncResult:
+      type: object
+      properties:
+        created:
+          type: integer
+          example: 5
+        updated:
+          type: integer
+          example: 10
+        errors:
+          type: integer
+          example: 0
+        duration_ms:
+          type: integer
+          example: 2500
+
+    ExtensionList:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionFile'
+        total:
+          type: integer
+
+    ExtensionFile:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: "MyExtension_1.0.0.cfe"
+        size:
+          type: integer
+          example: 1048576
+        uploaded_at:
+          type: string
+          format: date-time
+        checksum:
+          type: string
+          example: "a1b2c3d4e5f6..."
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid request parameters"
+        code:
+          type: string
+          example: "INVALID_PARAMS"
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Unauthorized"
+            code: "AUTH_REQUIRED"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Resource not found"
+            code: "NOT_FOUND"
+
+    TooManyRequests:
+      description: Rate limit exceeded (100 req/min)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Rate limit exceeded"
+            code: "RATE_LIMIT"

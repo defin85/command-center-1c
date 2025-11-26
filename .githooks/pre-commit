@@ -1,0 +1,79 @@
+#!/bin/bash
+# Git pre-commit hook для проверки OpenAPI спецификаций
+# Установка: git config core.hooksPath .githooks
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Проверить, изменились ли OpenAPI спецификации
+CHANGED_SPECS=$(git diff --cached --name-only --diff-filter=ACM | grep 'contracts/.*\.yaml$')
+
+if [[ -z "$CHANGED_SPECS" ]]; then
+    # Нет изменений в спецификациях - пропускаем проверку
+    exit 0
+fi
+
+echo -e "${YELLOW}Обнаружены изменения в OpenAPI спецификациях${NC}"
+echo "$CHANGED_SPECS"
+echo ""
+
+# Валидация спецификаций
+echo -e "${GREEN}Запуск валидации...${NC}"
+if ! "$PROJECT_ROOT/contracts/scripts/validate-specs.sh"; then
+    echo ""
+    echo -e "${RED}✗ Валидация не прошла${NC}"
+    echo -e "${YELLOW}Исправьте ошибки в OpenAPI спецификациях перед коммитом${NC}"
+    exit 1
+fi
+
+# Проверка breaking changes (warning only, не блокирует коммит)
+echo ""
+echo -e "${GREEN}Проверка breaking changes...${NC}"
+if ! "$PROJECT_ROOT/contracts/scripts/check-breaking-changes.sh" 2>/dev/null; then
+    echo ""
+    echo -e "${YELLOW}⚠️  Обнаружены breaking changes!${NC}"
+    echo -e "${YELLOW}Убедитесь, что вы:${NC}"
+    echo -e "${YELLOW}  1. Обновили версию API (v1 → v2)${NC}"
+    echo -e "${YELLOW}  2. Добавили deprecation notices${NC}"
+    echo -e "${YELLOW}  3. Создали migration guide${NC}"
+    echo ""
+
+    # В CI/CD окружении breaking changes блокируют коммит
+    if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" || -n "${JENKINS_HOME:-}" ]]; then
+        echo -e "${RED}Breaking changes detected in CI/CD environment${NC}"
+        echo -e "${RED}Please update API version or remove breaking changes${NC}"
+        exit 1
+    fi
+
+    # В локальной разработке спросить у пользователя
+    read -p "Продолжить коммит? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${RED}Коммит отменен${NC}"
+        exit 1
+    fi
+fi
+
+# Регенерация клиентов
+echo ""
+echo -e "${GREEN}Регенерация API клиентов...${NC}"
+if ! "$PROJECT_ROOT/contracts/scripts/generate-all.sh" --force; then
+    echo ""
+    echo -e "${RED}✗ Ошибка генерации клиентов${NC}"
+    exit 1
+fi
+
+# Добавить сгенерированные файлы в коммит (опционально)
+echo ""
+echo -e "${GREEN}Добавляю сгенерированные файлы в коммит...${NC}"
+git add "$PROJECT_ROOT/go-services/ras-adapter/internal/api/generated/" 2>/dev/null || true
+git add "$PROJECT_ROOT/orchestrator/apps/databases/clients/generated/" 2>/dev/null || true
+
+echo ""
+echo -e "${GREEN}✓ Все проверки прошли успешно${NC}"
+exit 0

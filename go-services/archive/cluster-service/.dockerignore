@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+cluster-service
+cluster-service-test.exe
+
+# Test files
+*.test
+*.out
+coverage.html
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+
+# Git
+.git
+.gitignore
+
+# Docs
+README.md
+tests/

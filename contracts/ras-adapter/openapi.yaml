@@ -1,0 +1,850 @@
+openapi: 3.0.3
+info:
+  title: RAS Adapter API
+  description: |
+    REST API для управления кластерами 1С через RAS (Remote Administration Server).
+
+    Адаптер предоставляет унифицированный HTTP интерфейс для операций:
+    - Управление кластерами
+    - Управление информационными базами
+    - Блокировка/разблокировка баз
+    - Управление сессиями
+
+    **КРИТИЧНО**: Используйте `cluster_id` (не `cluster`) для всех endpoints с информационными базами.
+  version: 1.0.0
+  contact:
+    name: CommandCenter1C Team
+    url: https://github.com/commandcenter1c/commandcenter
+
+servers:
+  - url: http://localhost:8088
+    description: Local development server
+  - url: http://ras-adapter:8088
+    description: Docker environment
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: clusters
+    description: 1C cluster management
+  - name: infobases
+    description: Infobase (information base) management
+  - name: sessions
+    description: User session management
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health status
+      operationId: getHealth
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/clusters:
+    get:
+      summary: List clusters
+      description: Returns list of all 1C clusters on specified RAS server
+      operationId: getClusters
+      tags:
+        - clusters
+      parameters:
+        - name: server
+          in: query
+          required: true
+          description: RAS server address (e.g., localhost:1545)
+          schema:
+            type: string
+            example: "localhost:1545"
+      responses:
+        '200':
+          description: List of clusters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClustersResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/clusters/{id}:
+    get:
+      summary: Get cluster by ID
+      description: Returns details of a specific cluster
+      operationId: getClusterById
+      tags:
+        - clusters
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Cluster UUID
+          schema:
+            type: string
+            format: uuid
+        - name: server
+          in: query
+          required: true
+          description: RAS server address
+          schema:
+            type: string
+            example: "localhost:1545"
+      responses:
+        '200':
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases:
+    get:
+      summary: List infobases
+      description: |
+        Returns list of infobases for specified cluster.
+        **ВАЖНО**: Используйте параметр `cluster_id` (не `cluster`).
+      operationId: getInfobases
+      tags:
+        - infobases
+      parameters:
+        - name: cluster_id
+          in: query
+          required: true
+          description: Cluster UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of infobases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobasesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create infobase
+      description: Creates a new infobase in specified cluster
+      operationId: createInfobase
+      tags:
+        - infobases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInfobaseRequest'
+      responses:
+        '201':
+          description: Infobase created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateInfobaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases/{id}:
+    get:
+      summary: Get infobase by ID
+      description: |
+        Returns details of a specific infobase.
+        **ВАЖНО**: Используйте параметр `cluster_id` (не `cluster`).
+      operationId: getInfobaseById
+      tags:
+        - infobases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+        - name: cluster_id
+          in: query
+          required: true
+          description: Cluster UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Infobase details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Infobase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Drop infobase
+      description: Removes infobase from cluster (optionally drops database)
+      operationId: dropInfobase
+      tags:
+        - infobases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DropInfobaseRequest'
+      responses:
+        '200':
+          description: Infobase dropped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases/{infobase_id}/lock:
+    post:
+      summary: Lock infobase
+      description: |
+        Blocks scheduled jobs (регламентные задания) in the infobase.
+        Does NOT block user sessions - use `/block-sessions` for that.
+      operationId: lockInfobase
+      tags:
+        - infobases
+      parameters:
+        - name: infobase_id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockInfobaseRequest'
+      responses:
+        '200':
+          description: Infobase locked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases/{infobase_id}/unlock:
+    post:
+      summary: Unlock infobase
+      description: |
+        Enables scheduled jobs (регламентные задания) in the infobase.
+      operationId: unlockInfobase
+      tags:
+        - infobases
+      parameters:
+        - name: infobase_id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlockInfobaseRequest'
+      responses:
+        '200':
+          description: Infobase unlocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases/{infobase_id}/block-sessions:
+    post:
+      summary: Block user sessions
+      description: |
+        Blocks new user connections to the infobase.
+        Existing sessions continue working until manually terminated.
+      operationId: blockSessions
+      tags:
+        - infobases
+      parameters:
+        - name: infobase_id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockSessionsRequest'
+      responses:
+        '200':
+          description: Sessions blocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockSessionsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/infobases/{infobase_id}/unblock-sessions:
+    post:
+      summary: Unblock user sessions
+      description: Allows new user connections to the infobase
+      operationId: unblockSessions
+      tags:
+        - infobases
+      parameters:
+        - name: infobase_id
+          in: path
+          required: true
+          description: Infobase UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnblockSessionsRequest'
+      responses:
+        '200':
+          description: Sessions unblocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/sessions:
+    get:
+      summary: List sessions
+      description: |
+        Returns list of active user sessions.
+        Can filter by infobase or return all cluster sessions.
+      operationId: getSessions
+      tags:
+        - sessions
+      parameters:
+        - name: cluster_id
+          in: query
+          required: true
+          description: Cluster UUID
+          schema:
+            type: string
+            format: uuid
+        - name: infobase_id
+          in: query
+          required: false
+          description: Infobase UUID (optional - filter by infobase)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/sessions/terminate:
+    post:
+      summary: Terminate sessions
+      description: |
+        Terminates specified user sessions.
+        Current implementation terminates ALL sessions for the infobase (ignores session_ids).
+      operationId: terminateSessions
+      tags:
+        - sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminateSessionsRequest'
+      responses:
+        '200':
+          description: Sessions terminated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminateSessionsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    # Health check schemas
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        service:
+          type: string
+          example: "ras-adapter"
+
+    # Cluster schemas
+    Cluster:
+      type: object
+      required:
+        - uuid
+        - name
+        - host
+        - port
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        name:
+          type: string
+          description: Cluster name
+        host:
+          type: string
+          description: Cluster host address
+        port:
+          type: integer
+          format: int32
+          description: Cluster port
+
+    ClustersResponse:
+      type: object
+      required:
+        - clusters
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cluster'
+
+    # Infobase schemas
+    Infobase:
+      type: object
+      required:
+        - uuid
+        - name
+        - dbms
+        - db_server
+        - db_name
+        - scheduled_jobs_deny
+        - sessions_deny
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Infobase UUID
+        name:
+          type: string
+          description: Infobase name
+        dbms:
+          type: string
+          description: Database type (PostgreSQL, MSSQLServer, etc.)
+          example: "PostgreSQL"
+        db_server:
+          type: string
+          description: Database server address
+        db_name:
+          type: string
+          description: Database name
+        db_user:
+          type: string
+          description: Database user (optional, used for create/update)
+        db_pwd:
+          type: string
+          description: Database password (optional, used for create/update)
+        locale:
+          type: string
+          description: Database locale (optional, used for create)
+        scheduled_jobs_deny:
+          type: boolean
+          description: Whether scheduled jobs are blocked
+        sessions_deny:
+          type: boolean
+          description: Whether user sessions are blocked
+        denied_from:
+          type: string
+          format: date-time
+          description: Session block start time (RFC3339)
+        denied_to:
+          type: string
+          format: date-time
+          description: Session block end time (RFC3339)
+        denied_message:
+          type: string
+          description: Message shown to blocked users
+        permission_code:
+          type: string
+          description: Permission code for exceptions
+        denied_parameter:
+          type: string
+          description: Additional block parameter
+
+    InfobasesResponse:
+      type: object
+      required:
+        - infobases
+      properties:
+        infobases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Infobase'
+
+    CreateInfobaseRequest:
+      type: object
+      required:
+        - cluster_id
+        - name
+        - dbms
+        - db_server
+        - db_name
+        - locale
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        name:
+          type: string
+          description: Infobase name
+        dbms:
+          type: string
+          description: Database type
+          enum: [PostgreSQL, MSSQLServer, IBMDB2, OracleDatabase]
+        db_server:
+          type: string
+          description: Database server address
+        db_name:
+          type: string
+          description: Database name
+        db_user:
+          type: string
+          description: Database user (optional)
+        db_pwd:
+          type: string
+          description: Database password (optional)
+        locale:
+          type: string
+          description: Database locale (e.g., ru_RU, en_US)
+
+    CreateInfobaseResponse:
+      type: object
+      required:
+        - success
+        - infobase_id
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        infobase_id:
+          type: string
+          format: uuid
+          description: Created infobase UUID
+        message:
+          type: string
+          example: "Infobase created successfully"
+
+    DropInfobaseRequest:
+      type: object
+      required:
+        - cluster_id
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        drop_database:
+          type: boolean
+          default: false
+          description: Whether to drop the underlying database
+
+    LockInfobaseRequest:
+      type: object
+      required:
+        - cluster_id
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        db_user:
+          type: string
+          description: Database user (optional, for authenticated databases)
+        db_pwd:
+          type: string
+          description: Database password (optional)
+
+    UnlockInfobaseRequest:
+      type: object
+      required:
+        - cluster_id
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        db_user:
+          type: string
+          description: Database user (optional)
+        db_pwd:
+          type: string
+          description: Database password (optional)
+
+    BlockSessionsRequest:
+      type: object
+      required:
+        - cluster_id
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        db_user:
+          type: string
+          description: Database user (optional)
+        db_pwd:
+          type: string
+          description: Database password (optional)
+        denied_from:
+          type: string
+          format: date-time
+          description: Block start time (RFC3339, default NOW)
+        denied_to:
+          type: string
+          format: date-time
+          description: Block end time (RFC3339, optional)
+        denied_message:
+          type: string
+          description: Message to display to blocked users
+        permission_code:
+          type: string
+          description: Permission code for exceptions
+        denied_parameter:
+          type: string
+          description: Additional parameter
+
+    BlockSessionsResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Sessions blocked successfully"
+        blocked_from:
+          type: string
+          format: date-time
+          description: Actual block start time
+        blocked_to:
+          type: string
+          format: date-time
+          description: Actual block end time
+
+    UnblockSessionsRequest:
+      type: object
+      required:
+        - cluster_id
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        db_user:
+          type: string
+          description: Database user (optional)
+        db_pwd:
+          type: string
+          description: Database password (optional)
+
+    # Session schemas
+    Session:
+      type: object
+      required:
+        - uuid
+        - session_id
+        - user_name
+        - application
+        - started_at
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: RAS internal UUID
+        session_id:
+          type: string
+          description: Legacy alias for UUID
+        user_name:
+          type: string
+          description: Username
+        application:
+          type: string
+          description: Application type (Designer, ThinClient, etc.)
+        started_at:
+          type: string
+          description: Session start time
+
+    SessionsResponse:
+      type: object
+      required:
+        - sessions
+        - count
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        count:
+          type: integer
+          description: Total number of sessions
+
+    TerminateSessionsRequest:
+      type: object
+      required:
+        - cluster_id
+        - infobase_id
+        - session_ids
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster UUID
+        infobase_id:
+          type: string
+          format: uuid
+          description: Infobase UUID
+        session_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: List of session IDs to terminate (currently ignored - terminates ALL)
+
+    TerminateSessionsResponse:
+      type: object
+      required:
+        - terminated_count
+      properties:
+        terminated_count:
+          type: integer
+          description: Number of terminated sessions
+        failed_sessions:
+          type: array
+          items:
+            type: string
+          description: List of session IDs that failed to terminate
+
+    # Common response schemas
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

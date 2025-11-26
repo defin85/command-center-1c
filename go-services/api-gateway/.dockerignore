@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Development
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode
+.idea
+*.iml
+
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+api-gateway
+
+# Test cache
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Vendor (if using)
+vendor/
