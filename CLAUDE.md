@@ -6,11 +6,15 @@
 
 ## 🚨 КРИТИЧНО
 
-**Дата обновления:** 2025-11-08
+**Дата обновления:** 2025-11-27
 **Текущая фаза:** Phase 1, Week 2.5-3 (Core Functionality)
 **Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ (~25% готово) - Task Queue & Worker Integration
 **Режим разработки:** Hybrid (Infrastructure в Docker, Application на хосте)
 **Roadmap:** Balanced Approach (14-16 недель) - [docs/ROADMAP.md](docs/ROADMAP.md)
+
+**API Version:** v2 (action-based) - см. [API_V2_UNIFICATION_ROADMAP.md](docs/roadmaps/API_V2_UNIFICATION_ROADMAP.md)
+- Frontend → API Gateway (8080) `/api/v2/*`
+- v1 endpoints deprecated (Sunset: 2026-03-01)
 
 **Завершено:** Sprint 1.1-1.4 (Infrastructure, Models, OData, RAS Integration) ✅
 **В работе:** Sprint 2.1 (Celery ↔ Worker) 🟡 30%, Sprint 2.2 (Template Engine) 🟡 20%
