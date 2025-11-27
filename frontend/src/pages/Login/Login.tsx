@@ -19,8 +19,11 @@ export const Login = () => {
         setLoading(true)
         try {
             // Auth endpoint is public (no JWT required), uses /api/token
-            const apiUrl = import.meta.env.VITE_API_URL?.replace('/api/v2', '') || 'http://localhost:8080'
-            const response = await axios.post(`${apiUrl}/api/token`, {
+            // Extract base URL without /api/* suffix
+            const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v2')
+                .replace(/\/api\/v\d+\/?$/, '')
+                .replace(/\/api\/?$/, '')
+            const response = await axios.post(`${baseUrl}/api/token`, {
                 username: values.username,
                 password: values.password,
             })
