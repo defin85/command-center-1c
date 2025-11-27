@@ -5,7 +5,8 @@
  * workflow execution, and validation.
  */
 
-import axios from 'axios'
+// v2 migration: using apiClient through API Gateway instead of direct orchestratorClient
+import { apiClient } from '../client'
 import type {
   WorkflowTemplate,
   WorkflowTemplateCreate,
@@ -15,42 +16,6 @@ import type {
   ValidationResult,
   NodeStepResult
 } from '../../types/workflow'
-
-// Orchestrator API client (direct connection for workflows)
-// Note: In production, this would go through API Gateway
-const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL || 'http://localhost:8000'
-
-const orchestratorClient = axios.create({
-  baseURL: `${ORCHESTRATOR_URL}/api/v1`,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-// Add auth token to requests
-orchestratorClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => Promise.reject(error)
-)
-
-// Handle 401 responses
-orchestratorClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token')
-      window.location.href = '/login'
-    }
-    return Promise.reject(error)
-  }
-)
 
 // ============================================================================
 // Workflow Template Endpoints
@@ -79,7 +44,8 @@ export interface PaginatedResponse<T> {
 export const listWorkflowTemplates = async (
   params?: WorkflowTemplateListParams
 ): Promise<PaginatedResponse<WorkflowTemplate>> => {
-  const response = await orchestratorClient.get('/workflows/templates/', { params })
+  // v2 migration: GET /workflows/templates/ → GET /workflows/list-workflows
+  const response = await apiClient.get('/workflows/list-workflows', { params })
   return response.data
 }
 
@@ -87,7 +53,8 @@ export const listWorkflowTemplates = async (
  * Get a single workflow template by ID.
  */
 export const getWorkflowTemplate = async (id: string): Promise<WorkflowTemplate> => {
-  const response = await orchestratorClient.get(`/workflows/templates/${id}/`)
+  // v2 migration: GET /workflows/templates/{id}/ → GET /workflows/get-workflow?workflow_id={id}
+  const response = await apiClient.get('/workflows/get-workflow', { params: { workflow_id: id } })
   return response.data
 }
 
@@ -97,7 +64,8 @@ export const getWorkflowTemplate = async (id: string): Promise<WorkflowTemplate>
 export const createWorkflowTemplate = async (
   data: WorkflowTemplateCreate
 ): Promise<WorkflowTemplate> => {
-  const response = await orchestratorClient.post('/workflows/templates/', data)
+  // v2 migration: POST /workflows/templates/ → POST /workflows/create-workflow
+  const response = await apiClient.post('/workflows/create-workflow', data)
   return response.data
 }
 
@@ -108,7 +76,8 @@ export const updateWorkflowTemplate = async (
   id: string,
   data: WorkflowTemplateUpdate
 ): Promise<WorkflowTemplate> => {
-  const response = await orchestratorClient.patch(`/workflows/templates/${id}/`, data)
+  // v2 migration: PATCH /workflows/templates/{id}/ → POST /workflows/update-workflow?workflow_id={id}
+  const response = await apiClient.post('/workflows/update-workflow', data, { params: { workflow_id: id } })
   return response.data
 }
 
@@ -116,14 +85,16 @@ export const updateWorkflowTemplate = async (
  * Delete a workflow template.
  */
 export const deleteWorkflowTemplate = async (id: string): Promise<void> => {
-  await orchestratorClient.delete(`/workflows/templates/${id}/`)
+  // v2 migration: DELETE /workflows/templates/{id}/ → POST /workflows/delete-workflow?workflow_id={id}
+  await apiClient.post('/workflows/delete-workflow', null, { params: { workflow_id: id } })
 }
 
 /**
  * Validate a workflow template's DAG structure.
  */
 export const validateWorkflowTemplate = async (id: string): Promise<ValidationResult> => {
-  const response = await orchestratorClient.post(`/workflows/templates/${id}/validate/`)
+  // v2 migration: POST /workflows/templates/{id}/validate/ → POST /workflows/validate-workflow?workflow_id={id}
+  const response = await apiClient.post('/workflows/validate-workflow', null, { params: { workflow_id: id } })
   return response.data
 }
 
@@ -134,9 +105,10 @@ export const cloneWorkflowTemplate = async (
   id: string,
   newName?: string
 ): Promise<WorkflowTemplate> => {
-  const response = await orchestratorClient.post(`/workflows/templates/${id}/clone/`, {
+  // v2 migration: POST /workflows/templates/{id}/clone/ → POST /workflows/clone-workflow?workflow_id={id}
+  const response = await apiClient.post('/workflows/clone-workflow', {
     name: newName
-  })
+  }, { params: { workflow_id: id } })
   return response.data
 }
 
@@ -147,7 +119,8 @@ export const executeWorkflowTemplate = async (
   id: string,
   data: WorkflowExecutionCreate
 ): Promise<WorkflowExecution> => {
-  const response = await orchestratorClient.post(`/workflows/templates/${id}/execute/`, data)
+  // v2 migration: POST /workflows/templates/{id}/execute/ → POST /workflows/execute-workflow?workflow_id={id}
+  const response = await apiClient.post('/workflows/execute-workflow', data, { params: { workflow_id: id } })
   return response.data
 }
 
@@ -169,7 +142,8 @@ export interface WorkflowExecutionListParams {
 export const listWorkflowExecutions = async (
   params?: WorkflowExecutionListParams
 ): Promise<PaginatedResponse<WorkflowExecution>> => {
-  const response = await orchestratorClient.get('/workflows/executions/', { params })
+  // v2 migration: GET /workflows/executions/ → GET /workflows/list-executions
+  const response = await apiClient.get('/workflows/list-executions', { params })
   return response.data
 }
 
@@ -177,7 +151,8 @@ export const listWorkflowExecutions = async (
  * Get a single workflow execution by ID.
  */
 export const getWorkflowExecution = async (id: string): Promise<WorkflowExecution> => {
-  const response = await orchestratorClient.get(`/workflows/executions/${id}/`)
+  // v2 migration: GET /workflows/executions/{id}/ → GET /workflows/get-execution?execution_id={id}
+  const response = await apiClient.get('/workflows/get-execution', { params: { execution_id: id } })
   return response.data
 }
 
@@ -191,7 +166,8 @@ export const getWorkflowExecutionStatus = async (id: string): Promise<{
   current_node_id?: string
   error_message?: string
 }> => {
-  const response = await orchestratorClient.get(`/workflows/executions/${id}/status/`)
+  // v2 migration: GET /workflows/executions/{id}/status/ → GET /workflows/get-execution-status?execution_id={id}
+  const response = await apiClient.get('/workflows/get-execution-status', { params: { execution_id: id } })
   return response.data
 }
 
@@ -202,7 +178,8 @@ export const cancelWorkflowExecution = async (id: string): Promise<{
   status: string
   message: string
 }> => {
-  const response = await orchestratorClient.post(`/workflows/executions/${id}/cancel/`)
+  // v2 migration: POST /workflows/executions/{id}/cancel/ → POST /workflows/cancel-execution?execution_id={id}
+  const response = await apiClient.post('/workflows/cancel-execution', null, { params: { execution_id: id } })
   return response.data
 }
 
@@ -210,7 +187,8 @@ export const cancelWorkflowExecution = async (id: string): Promise<{
  * Get step results for a workflow execution.
  */
 export const getWorkflowExecutionSteps = async (id: string): Promise<NodeStepResult[]> => {
-  const response = await orchestratorClient.get(`/workflows/executions/${id}/steps/`)
+  // v2 migration: GET /workflows/executions/{id}/steps/ → GET /workflows/get-execution-steps?execution_id={id}
+  const response = await apiClient.get('/workflows/get-execution-steps', { params: { execution_id: id } })
   return response.data
 }
 
@@ -229,14 +207,9 @@ export interface OperationTemplateListItem {
  * List available operation templates for workflow operations.
  */
 export const listOperationTemplates = async (): Promise<OperationTemplateListItem[]> => {
-  const response = await orchestratorClient.get('/templates/', {
+  // v2 migration: GET /templates/ → GET /operations/list-templates
+  const response = await apiClient.get('/operations/list-templates', {
     params: { page_size: 1000 }  // Get all for dropdown
   })
   return response.data.results || response.data
 }
-
-// ============================================================================
-// Export client for custom requests
-// ============================================================================
-
-export { orchestratorClient }

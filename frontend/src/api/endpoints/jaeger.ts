@@ -4,6 +4,9 @@
  * Provides methods to fetch and parse Jaeger traces for workflow execution monitoring.
  */
 
+// v2 migration: Jaeger через API Gateway proxy
+import { apiClient } from '../client'
+
 const JAEGER_URL = import.meta.env.VITE_JAEGER_URL || 'http://localhost:16686'
 
 // ============================================================================
@@ -70,37 +73,28 @@ export interface JaegerResponse {
  * Includes timeout to prevent hanging when Jaeger is unavailable.
  */
 export const getTraceById = async (traceId: string, timeoutMs: number = 10000): Promise<JaegerTrace | null> => {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
+  // v2 migration: GET /api/traces/{traceId} → GET /tracing/get-trace?trace_id={traceId}
   try {
-    const response = await fetch(`${JAEGER_URL}/api/traces/${traceId}`, {
-      signal: controller.signal
+    const response = await apiClient.get('/tracing/get-trace', {
+      params: { trace_id: traceId },
+      timeout: timeoutMs
     })
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return null
-      }
-      throw new Error(`Jaeger API error: ${response.status} ${response.statusText}`)
-    }
-
-    const data: JaegerResponse = await response.json()
-
-    if (data.data && data.data.length > 0) {
-      return data.data[0]
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      return response.data.data[0]
     }
 
     return null
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+  } catch (error: any) {
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.error(`Jaeger request timed out after ${timeoutMs}ms`)
       throw new Error(`Jaeger request timed out after ${timeoutMs}ms`)
     }
+    if (error.response?.status === 404) {
+      return null
+    }
     console.error('Failed to fetch trace from Jaeger:', error)
     throw error
-  } finally {
-    clearTimeout(timeoutId)
   }
 }
 
@@ -213,39 +207,31 @@ export const searchTraces = async (
   lookback: string = '1h',
   timeoutMs: number = 15000
 ): Promise<JaegerTrace[]> => {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
+  // v2 migration: GET /api/traces?service=... → GET /tracing/search-traces?service=...
   try {
-    const params = new URLSearchParams({
+    const params: any = {
       service,
-      limit: limit.toString(),
+      limit,
       lookback
-    })
+    }
 
     if (operation) {
-      params.append('operation', operation)
+      params.operation = operation
     }
 
-    const response = await fetch(`${JAEGER_URL}/api/traces?${params.toString()}`, {
-      signal: controller.signal
+    const response = await apiClient.get('/tracing/search-traces', {
+      params,
+      timeout: timeoutMs
     })
 
-    if (!response.ok) {
-      throw new Error(`Jaeger API error: ${response.status} ${response.statusText}`)
-    }
-
-    const data: JaegerResponse = await response.json()
-    return data.data || []
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+    return response.data?.data || []
+  } catch (error: any) {
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.error(`Jaeger search timed out after ${timeoutMs}ms`)
       throw new Error(`Jaeger search timed out after ${timeoutMs}ms`)
     }
     console.error('Failed to search traces in Jaeger:', error)
     throw error
-  } finally {
-    clearTimeout(timeoutId)
   }
 }
 

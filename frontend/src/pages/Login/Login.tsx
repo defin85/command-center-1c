@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Form, Input, Button, Card, message, Typography } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
-import axios from 'axios'
+import { apiClient } from '../../api/client'
 
 const { Title } = Typography
 
@@ -18,8 +18,8 @@ export const Login = () => {
     const onFinish = async (values: LoginForm) => {
         setLoading(true)
         try {
-            // Получаем токен от Django напрямую (не через API Gateway)
-            const response = await axios.post('http://localhost:8000/api/token/', {
+            // v2 migration: use apiClient through Gateway
+            const response = await apiClient.post('/auth/token', {
                 username: values.username,
                 password: values.password,
             })

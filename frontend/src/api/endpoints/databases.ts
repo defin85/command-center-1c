@@ -18,23 +18,31 @@ export interface DatabaseListResponse {
 }
 
 export const databasesApi = {
+  // v2 migration: GET /databases → GET /databases/list-databases
   list: async (params?: Record<string, any>) => {
-    const response = await apiClient.get<DatabaseListResponse>('/databases', { params })
+    const response = await apiClient.get<DatabaseListResponse>('/databases/list-databases', { params })
     return response.data.results
   },
 
+  // v2 migration: GET /databases/{id} → GET /databases/get-database?database_id={id}
   get: async (id: string) => {
-    const response = await apiClient.get<Database>(`/databases/${id}`)
+    const response = await apiClient.get<Database>('/databases/get-database', {
+      params: { database_id: id }
+    })
     return response.data
   },
 
+  // v2 migration: POST /databases → POST /databases/create-database
   create: async (data: Partial<Database>) => {
-    const response = await apiClient.post<Database>('/databases', data)
+    const response = await apiClient.post<Database>('/databases/create-database', data)
     return response.data
   },
 
+  // v2 migration: GET /databases/{id}/health → POST /databases/health-check?database_id={id}
   checkHealth: async (id: string) => {
-    const response = await apiClient.get(`/databases/${id}/health`)
+    const response = await apiClient.post(`/databases/health-check`, null, {
+      params: { database_id: id }
+    })
     return response.data
   },
 }

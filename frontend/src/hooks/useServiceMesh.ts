@@ -88,8 +88,8 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   // Get WebSocket URL
   const getWebSocketUrl = useCallback((): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // Connect through API Gateway for production, direct to orchestrator for dev
-    const host = import.meta.env.VITE_WS_HOST || 'localhost:8000'
+    // v2 migration: WebSocket через API Gateway
+    const host = import.meta.env.VITE_WS_HOST || 'localhost:8080'
     return `${protocol}//${host}/ws/service-mesh/`
   }, [])
 

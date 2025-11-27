@@ -50,6 +50,9 @@ import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
 import { getWorkflowExecution, cancelWorkflowExecution, getWorkflowTemplate } from '../../api/endpoints/workflows'
 import './WorkflowMonitor.css'
 
+// v2 migration: использовать env variable для Jaeger UI
+const JAEGER_UI_URL = import.meta.env.VITE_JAEGER_UI_URL || 'http://localhost:16686'
+
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
 
@@ -332,7 +335,7 @@ const WorkflowMonitor = () => {
             <Tooltip title="View trace in Jaeger">
               <Button
                 icon={<ExportOutlined />}
-                href={`http://localhost:16686/trace/${traceId}`}
+                href={`${JAEGER_UI_URL}/trace/${traceId}`}
                 target="_blank"
               >
                 View Trace
@@ -559,7 +562,7 @@ const WorkflowMonitor = () => {
                 <Button
                   type="link"
                   icon={<ExportOutlined />}
-                  href={`http://localhost:16686/trace/${traceId}?uiFind=${selectedNode.status.spanId}`}
+                  href={`${JAEGER_UI_URL}/trace/${traceId}?uiFind=${selectedNode.status.spanId}`}
                   target="_blank"
                   className="trace-link"
                 >

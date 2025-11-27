@@ -34,54 +34,66 @@ export interface ClusterListResponse {
 }
 
 export const clustersApi = {
-    // Получить список кластеров
+    // v2 migration: GET /databases/clusters → GET /clusters/list-clusters
     list: async (params?: Record<string, any>) => {
-        const response = await apiClient.get<ClusterListResponse>('/databases/clusters', { params })
+        const response = await apiClient.get<ClusterListResponse>('/clusters/list-clusters', { params })
         return response.data.results
     },
 
-    // Получить один кластер
+    // v2 migration: GET /databases/clusters/{id} → GET /clusters/get-cluster?cluster_id={id}
     get: async (id: string) => {
-        const response = await apiClient.get<Cluster>(`/databases/clusters/${id}`)
+        const response = await apiClient.get<Cluster>('/clusters/get-cluster', {
+            params: { cluster_id: id }
+        })
         return response.data
     },
 
-    // Создать кластер
+    // v2 migration: POST /databases/clusters → POST /clusters/create-cluster
     create: async (data: ClusterCreateRequest) => {
-        const response = await apiClient.post<Cluster>('/databases/clusters', data)
+        const response = await apiClient.post<Cluster>('/clusters/create-cluster', data)
         return response.data
     },
 
-    // Обновить кластер
+    // v2 migration: PUT /databases/clusters/{id} → PUT /clusters/update-cluster?cluster_id={id}
     update: async (id: string, data: Partial<ClusterCreateRequest>) => {
-        const response = await apiClient.put<Cluster>(`/databases/clusters/${id}`, data)
+        const response = await apiClient.put<Cluster>('/clusters/update-cluster', data, {
+            params: { cluster_id: id }
+        })
         return response.data
     },
 
-    // Частичное обновление кластера
+    // v2 migration: PATCH /databases/clusters/{id} → PATCH /clusters/update-cluster?cluster_id={id}
     patch: async (id: string, data: Partial<ClusterCreateRequest>) => {
-        const response = await apiClient.patch<Cluster>(`/databases/clusters/${id}`, data)
+        const response = await apiClient.patch<Cluster>('/clusters/update-cluster', data, {
+            params: { cluster_id: id }
+        })
         return response.data
     },
 
-    // Удалить кластер
+    // v2 migration: DELETE /databases/clusters/{id} → DELETE /clusters/delete-cluster?cluster_id={id}
     delete: async (id: string) => {
-        await apiClient.delete(`/databases/clusters/${id}`)
+        await apiClient.delete('/clusters/delete-cluster', {
+            params: { cluster_id: id }
+        })
     },
 
-    // Синхронизировать с RAS
+    // v2 migration: POST /databases/clusters/{id}/sync → POST /clusters/sync-cluster?cluster_id={id}
     sync: async (id: string) => {
         const response = await apiClient.post<{
             status: string
             message: string
             databases_found: number
-        }>(`/databases/clusters/${id}/sync`)
+        }>('/clusters/sync-cluster', null, {
+            params: { cluster_id: id }
+        })
         return response.data
     },
 
-    // Получить базы кластера
+    // v2 migration: GET /databases/clusters/{id}/databases → GET /clusters/get-cluster-databases?cluster_id={id}
     getDatabases: async (id: string) => {
-        const response = await apiClient.get(`/databases/clusters/${id}/databases`)
+        const response = await apiClient.get('/clusters/get-cluster-databases', {
+            params: { cluster_id: id }
+        })
         return response.data
     },
 }

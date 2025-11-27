@@ -8,28 +8,30 @@ import {
 } from '../../types/installation'
 
 export const installationApi = {
-  // Запустить массовую установку
+  // v2 migration: POST /databases/batch-install-extension/ → POST /extensions/batch-install
   batchInstall: async (request: BatchInstallRequest): Promise<BatchInstallResponse> => {
     const response = await apiClient.post<BatchInstallResponse>(
-      '/databases/batch-install-extension/',
+      '/extensions/batch-install',
       request
     )
     return response.data
   },
 
-  // Получить прогресс установки
+  // v2 migration: GET /databases/installation-progress/{taskId}/ → GET /extensions/get-install-progress?task_id={taskId}
   getProgress: async (taskId: string): Promise<InstallationProgress> => {
     const response = await apiClient.get<InstallationProgress>(
-      `/databases/installation-progress/${taskId}/`
+      '/extensions/get-install-progress',
+      { params: { task_id: taskId } }
     )
     return response.data
   },
 
-  // Получить статус для конкретной базы
+  // v2 migration: GET /databases/{databaseId}/extension-status/ → GET /extensions/get-install-status?database_id={databaseId}
   getDatabaseStatus: async (databaseId: string): Promise<ExtensionInstallation | null> => {
     try {
       const response = await apiClient.get<ExtensionInstallation>(
-        `/databases/${databaseId}/extension-status/`
+        '/extensions/get-install-status',
+        { params: { database_id: databaseId } }
       )
       return response.data
     } catch (error: any) {
@@ -41,30 +43,33 @@ export const installationApi = {
     }
   },
 
-  // Повторить неудачную установку
+  // v2 migration: POST /databases/{databaseId}/retry-installation/ → POST /extensions/retry-installation?database_id={databaseId}
   retryInstallation: async (databaseId: number): Promise<{ task_id: string }> => {
     const response = await apiClient.post<{ task_id: string }>(
-      `/databases/${databaseId}/retry-installation/`
+      '/extensions/retry-installation',
+      null,
+      { params: { database_id: databaseId } }
     )
     return response.data
   },
 
-  // Установить расширение на одну базу
+  // v2 migration: POST /databases/{databaseId}/install-extension/ → POST /extensions/install-single?database_id={databaseId}
   installSingle: async (
     databaseId: string,
     extensionConfig: { name: string; path: string }
   ): Promise<InstallSingleResponse> => {
     const response = await apiClient.post<InstallSingleResponse>(
-      `/databases/${databaseId}/install-extension/`,
-      { extension_config: extensionConfig }
+      '/extensions/install-single',
+      { extension_config: extensionConfig },
+      { params: { database_id: databaseId } }
     )
     return response.data
   },
 
-  // Получить список всех установок
+  // v2 migration: GET /databases/extension-installations/ → GET /extensions/list-installations
   getAllInstallations: async (): Promise<ExtensionInstallation[]> => {
     const response = await apiClient.get<ExtensionInstallation[]>(
-      '/databases/extension-installations/'
+      '/extensions/list-installations'
     )
     return response.data
   },
