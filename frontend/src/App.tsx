@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ConfigProvider } from 'antd'
+import { ConfigProvider, App as AntApp } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
 import { Dashboard } from './pages/Dashboard/Dashboard'
 import { Operations } from './pages/Operations/Operations'
@@ -30,8 +30,9 @@ function App() {
         colorPrimary: '#1890ff',
       },
     }}>
-      <BrowserRouter>
-        <Routes>
+      <AntApp>
+        <BrowserRouter>
+          <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />
 
@@ -116,8 +117,9 @@ function App() {
               </MainLayout>
             </ProtectedRoute>
           } />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </AntApp>
     </ConfigProvider>
   )
 }

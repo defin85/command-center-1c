@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Form, Input, Button, Card, message, Typography } from 'antd'
+import { Form, Input, Button, Card, Typography, App } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
@@ -14,6 +14,7 @@ interface LoginForm {
 export const Login = () => {
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
+    const { message } = App.useApp()
 
     const onFinish = async (values: LoginForm) => {
         setLoading(true)
