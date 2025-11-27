@@ -123,10 +123,11 @@ func (m *mockInfobaseService) UnblockSessions(ctx context.Context, clusterID, in
 }
 
 type mockSessionService struct {
-	sessions         []*models.Session
-	getError         error
-	terminateError   error
-	terminatedCount  int
+	sessions             []*models.Session
+	getError             error
+	terminateError       error
+	terminateSingleError error
+	terminatedCount      int
 }
 
 func (m *mockSessionService) GetSessions(ctx context.Context, clusterID, infobaseID string) ([]*models.Session, error) {
@@ -141,6 +142,13 @@ func (m *mockSessionService) TerminateSessions(ctx context.Context, clusterID, i
 		return 0, m.terminateError
 	}
 	return m.terminatedCount, nil
+}
+
+func (m *mockSessionService) TerminateSession(ctx context.Context, clusterID, sessionID string) error {
+	if m.terminateSingleError != nil {
+		return m.terminateSingleError
+	}
+	return nil
 }
 
 // ============================================================================
@@ -1231,35 +1239,30 @@ func TestListSessions_ServiceError(t *testing.T) {
 
 func TestTerminateSession_Success(t *testing.T) {
 	clusterID := validUUID()
-	infobaseID := validUUID()
 	sessionID := validUUID()
-	session := newTestSession()
-	session.UUID = sessionID
 
-	mockSessionSvc := &mockSessionService{
-		sessions: []*models.Session{session},
-	}
+	mockSessionSvc := &mockSessionService{}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&infobase_id=%s&session_id=%s", clusterID, infobaseID, sessionID)
+	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&session_id=%s", clusterID, sessionID)
 	w := makeRequest(t, router, "POST", path, map[string]interface{}{}, "application/json")
 
-	// Expect 501 Not Implemented (see HIGH #3 fix - TODO Week 5.2)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp ErrorResponse
+	var resp TerminateSessionResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, "NOT_IMPLEMENTED", resp.Code)
+	assert.True(t, resp.Success)
+	assert.Equal(t, sessionID, resp.SessionID)
+	assert.Contains(t, resp.Message, "terminated")
 }
 
 func TestTerminateSession_MissingClusterID(t *testing.T) {
-	infobaseID := validUUID()
 	sessionID := validUUID()
 	mockSessionSvc := &mockSessionService{}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	path := fmt.Sprintf("/api/v2/terminate-session?infobase_id=%s&session_id=%s", infobaseID, sessionID)
+	path := fmt.Sprintf("/api/v2/terminate-session?session_id=%s", sessionID)
 	w := makeRequest(t, router, "POST", path, map[string]interface{}{}, "application/json")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1267,11 +1270,10 @@ func TestTerminateSession_MissingClusterID(t *testing.T) {
 
 func TestTerminateSession_MissingSessionID(t *testing.T) {
 	clusterID := validUUID()
-	infobaseID := validUUID()
 	mockSessionSvc := &mockSessionService{}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&infobase_id=%s", clusterID, infobaseID)
+	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s", clusterID)
 	w := makeRequest(t, router, "POST", path, map[string]interface{}{}, "application/json")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1281,7 +1283,7 @@ func TestTerminateSession_InvalidUUIDs(t *testing.T) {
 	mockSessionSvc := &mockSessionService{}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	w := makeRequest(t, router, "POST", "/api/v2/terminate-session?cluster_id=bad&infobase_id=bad&session_id=bad", map[string]interface{}{}, "application/json")
+	w := makeRequest(t, router, "POST", "/api/v2/terminate-session?cluster_id=bad&session_id=bad", map[string]interface{}{}, "application/json")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -1291,41 +1293,44 @@ func TestTerminateSession_InvalidUUIDs(t *testing.T) {
 	assert.Equal(t, "INVALID_UUID", resp.Code)
 }
 
-func TestTerminateSession_NotFound(t *testing.T) {
+func TestTerminateSession_SessionNotFound_IsIdempotent(t *testing.T) {
+	// Idempotent behavior: if session not found, return success (session already terminated)
 	clusterID := validUUID()
-	infobaseID := validUUID()
 	sessionID := validUUID()
 	mockSessionSvc := &mockSessionService{
-		sessions: []*models.Session{},
+		// No error - idempotent behavior means success even if session doesn't exist
 	}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&infobase_id=%s&session_id=%s", clusterID, infobaseID, sessionID)
+	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&session_id=%s", clusterID, sessionID)
 	w := makeRequest(t, router, "POST", path, map[string]interface{}{}, "application/json")
 
-	// Expect 501 Not Implemented (see HIGH #3 fix - TODO Week 5.2)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// Idempotent: session not found = success
+	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp ErrorResponse
+	var resp TerminateSessionResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, "NOT_IMPLEMENTED", resp.Code)
+	assert.True(t, resp.Success)
 }
 
 func TestTerminateSession_ServiceError(t *testing.T) {
 	clusterID := validUUID()
-	infobaseID := validUUID()
 	sessionID := validUUID()
 	mockSessionSvc := &mockSessionService{
-		getError: fmt.Errorf("RAS error"),
+		terminateSingleError: fmt.Errorf("RAS error"),
 	}
 	router := setupTestRouter(&mockClusterService{}, &mockInfobaseService{}, mockSessionSvc)
 
-	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&infobase_id=%s&session_id=%s", clusterID, infobaseID, sessionID)
+	path := fmt.Sprintf("/api/v2/terminate-session?cluster_id=%s&session_id=%s", clusterID, sessionID)
 	w := makeRequest(t, router, "POST", path, map[string]interface{}{}, "application/json")
 
-	// Expect 501 Not Implemented (see HIGH #3 fix - TODO Week 5.2)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp ErrorResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Contains(t, resp.Error, "Failed to terminate session")
 }
 
 // ============================================================================

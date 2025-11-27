@@ -40,6 +40,17 @@ type Config struct {
 	// Cluster Service configuration
 	ClusterServiceURL string
 
+	// RAS Adapter configuration
+	RASAdapterURL string
+
+	// Jaeger configuration
+	JaegerURL string
+
+	// API v1 Deprecation configuration
+	V1DeprecationEnabled bool
+	// V1SunsetDate format: RFC 7231 (e.g., "Sun, 01 Mar 2026 00:00:00 GMT")
+	V1SunsetDate string
+
 	// Worker configuration
 	WorkerID         string
 	WorkerAPIKey     string
@@ -94,6 +105,16 @@ func LoadFromEnv() *Config {
 
 		// Cluster Service
 		ClusterServiceURL: getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),
+
+		// RAS Adapter
+		RASAdapterURL: getEnv("RAS_ADAPTER_URL", "http://localhost:8088"),
+
+		// Jaeger
+		JaegerURL: getEnv("JAEGER_URL", "http://localhost:16686"),
+
+		// API v1 Deprecation
+		V1DeprecationEnabled: getBoolEnv("V1_DEPRECATION_ENABLED", true),
+		V1SunsetDate:         getEnv("V1_SUNSET_DATE", "Sun, 01 Mar 2026 00:00:00 GMT"),
 
 		// Worker
 		WorkerID:         getEnv("WORKER_ID", "worker-1"),

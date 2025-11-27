@@ -30,6 +30,9 @@ SECRET_KEY = env('DJANGO_SECRET_KEY', default='django-insecure-change-me-in-prod
 
 # Application definition
 INSTALLED_APPS = [
+    # ASGI server - MUST be before django.contrib.staticfiles
+    'daphne',
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -38,7 +41,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Third-party apps
-    'daphne',  # ASGI server - must be before django.contrib.staticfiles
     'rest_framework',
     'corsheaders',
     'django_filters',
@@ -51,6 +53,7 @@ INSTALLED_APPS = [
     'apps.databases',
     'apps.templates',
     'apps.monitoring',
+    'apps.api_v2',  # API v2 with action-based routing
 ]
 
 MIDDLEWARE = [
@@ -302,7 +305,7 @@ MONITORED_SERVICES = [
         'critical': True,
     },
     {
-        'name': 'cluster-service',
+        'name': 'ras-adapter',
         'type': 'backend',
         'health_url': 'http://localhost:8088/health',
         'critical': True,
@@ -312,11 +315,5 @@ MONITORED_SERVICES = [
         'type': 'backend',
         'health_url': 'http://localhost:8087/health',
         'critical': False,
-    },
-    {
-        'name': 'ras-grpc-gw',
-        'type': 'backend',
-        'health_url': 'http://localhost:8081/health',
-        'critical': True,
     },
 ]

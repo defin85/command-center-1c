@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/models"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/ras"
@@ -107,6 +108,77 @@ func (s *SessionService) TerminateSessions(ctx context.Context, clusterID, infob
 		zap.Int("failed", len(sessions)-terminated))
 
 	return terminated, nil
+}
+
+// TerminateSession terminates a single session by ID.
+// This method is idempotent - if the session doesn't exist, it returns nil (success).
+// Optimized: directly calls TerminateSession and treats "session not found" errors as success.
+func (s *SessionService) TerminateSession(ctx context.Context, clusterID, sessionID string) error {
+	if clusterID == "" {
+		return fmt.Errorf("cluster_id is required")
+	}
+	if sessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+
+	s.logger.Info("terminating single session",
+		zap.String("cluster_id", clusterID),
+		zap.String("session_id", sessionID))
+
+	// Get RAS client from pool
+	client, err := s.rasPool.GetConnection(ctx)
+	if err != nil {
+		s.logger.Error("failed to get RAS client from pool", zap.Error(err))
+		return fmt.Errorf("failed to get RAS client: %w", err)
+	}
+	defer s.rasPool.ReleaseConnection(client)
+
+	// Optimized: directly terminate - no pre-check needed for idempotency
+	// Handle "session not found" error as success (idempotent behavior)
+	err = client.TerminateSession(ctx, clusterID, sessionID)
+	if err != nil {
+		// Check if error indicates session not found (idempotent success case)
+		errStr := err.Error()
+		if isSessionNotFoundError(errStr) {
+			s.logger.Info("session not found (already terminated or never existed) - idempotent success",
+				zap.String("cluster_id", clusterID),
+				zap.String("session_id", sessionID))
+			return nil
+		}
+
+		s.logger.Error("failed to terminate session",
+			zap.String("cluster_id", clusterID),
+			zap.String("session_id", sessionID),
+			zap.Error(err))
+		return fmt.Errorf("failed to terminate session: %w", err)
+	}
+
+	s.logger.Info("session terminated successfully",
+		zap.String("cluster_id", clusterID),
+		zap.String("session_id", sessionID))
+
+	return nil
+}
+
+// isSessionNotFoundError checks if the error indicates that the session was not found.
+// This allows idempotent behavior - treating "not found" as success.
+func isSessionNotFoundError(errStr string) bool {
+	// Common error patterns from RAS when session is not found
+	// These patterns may need adjustment based on actual RAS error messages
+	notFoundPatterns := []string{
+		"session not found",
+		"session does not exist",
+		"no such session",
+		"invalid session",
+	}
+
+	errLower := strings.ToLower(errStr)
+	for _, pattern := range notFoundPatterns {
+		if strings.Contains(errLower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // GetSessionsCount returns the count of active sessions for a cluster and infobase

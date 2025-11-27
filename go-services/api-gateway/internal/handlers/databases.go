@@ -110,3 +110,86 @@ func GetDatabase(c *gin.Context) {
 func CheckDatabaseHealth(c *gin.Context) {
 	ProxyToOrchestrator(c)
 }
+
+// ProxyToOrchestratorV2 proxies v2 API requests to Django Orchestrator
+// V2 uses /api/v2/* paths and maintains the same path structure
+func ProxyToOrchestratorV2(c *gin.Context) {
+	// Get the full path - for v2 we keep the same structure
+	path := c.Request.URL.Path
+
+	// Remove /api/v2 prefix and map to Orchestrator's /api/v2
+	path = strings.TrimPrefix(path, "/api/v2")
+
+	// Handle wildcard paths (e.g., /operations/*path becomes /operations/...)
+	// Gin uses *path param, we need to include it
+	if wildcardPath := c.Param("path"); wildcardPath != "" {
+		// Path already includes the wildcard portion from Gin
+	}
+
+	// Django always requires trailing slash
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+
+	// Build URL to Orchestrator v2 API
+	targetURL := orchestratorURL + "/api/v2" + path
+	if c.Request.URL.RawQuery != "" {
+		targetURL += "?" + c.Request.URL.RawQuery
+	}
+
+	// Read request body into buffer
+	var bodyBytes []byte
+	if c.Request.Body != nil {
+		bodyBytes, _ = io.ReadAll(c.Request.Body)
+		c.Request.Body.Close()
+	}
+
+	// Create new request with buffered body
+	req, err := http.NewRequest(c.Request.Method, targetURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	// Copy headers
+	for key, values := range c.Request.Header {
+		if key == "Host" || key == "Connection" {
+			continue
+		}
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+
+	// Ensure Content-Type for POST/PUT
+	if c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "PATCH" {
+		contentType := c.Request.Header.Get("Content-Type")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		contentLength := c.Request.Header.Get("Content-Length")
+		if contentLength != "" {
+			req.Header.Set("Content-Length", contentLength)
+		}
+	}
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy request to Orchestrator"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers
+	for key, values := range resp.Header {
+		for _, value := range values {
+			c.Header(key, value)
+		}
+	}
+
+	// Copy response body
+	c.Status(resp.StatusCode)
+	io.Copy(c.Writer, resp.Body)
+}

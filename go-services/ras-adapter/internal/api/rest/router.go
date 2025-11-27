@@ -31,8 +31,9 @@ func NewRouter(
 	// Swagger UI
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API v1 routes (legacy)
+	// API v1 routes (legacy, deprecated - sunset 2026-03-01)
 	apiV1 := router.Group("/api/v1")
+	apiV1.Use(middleware.Deprecation(middleware.DefaultDeprecationConfig(logger)))
 	{
 		// Cluster routes
 		apiV1.GET("/clusters", GetClusters(clusterSvc))

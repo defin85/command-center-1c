@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
@@ -25,11 +27,11 @@ type WorkerPool struct {
 }
 
 // NewWorkerPool creates a new worker pool
-func NewWorkerPool(size int, queueClient *queue.RedisQueue, credsClient credentials.Fetcher, cfg *config.Config) *WorkerPool {
+func NewWorkerPool(size int, queueClient *queue.RedisQueue, credsClient credentials.Fetcher, redisClient *redis.Client, cfg *config.Config) *WorkerPool {
 	return &WorkerPool{
 		size:        size,
 		queue:       queueClient,
-		processor:   processor.NewTaskProcessor(cfg, credsClient),
+		processor:   processor.NewTaskProcessor(cfg, credsClient, redisClient),
 		credsClient: credsClient,
 		stopChan:    make(chan struct{}),
 		config:      cfg,

@@ -31,4 +31,6 @@ type InfobaseService interface {
 type SessionService interface {
 	GetSessions(ctx context.Context, clusterID, infobaseID string) ([]*models.Session, error)
 	TerminateSessions(ctx context.Context, clusterID, infobaseID string) (int, error)
+	// TerminateSession terminates a single session by ID (idempotent - returns nil if session not found)
+	TerminateSession(ctx context.Context, clusterID, sessionID string) error
 }

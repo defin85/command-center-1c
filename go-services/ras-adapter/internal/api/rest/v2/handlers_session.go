@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // Session Management Handlers
@@ -20,7 +21,7 @@ import (
 // @Failure      400  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /list-sessions [get]
-func ListSessions(svc SessionService) gin.HandlerFunc {
+func ListSessions(svc SessionService, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Query params validation
 		clusterID := c.Query("cluster_id")
@@ -45,9 +46,16 @@ func ListSessions(svc SessionService) gin.HandlerFunc {
 		// Call service layer
 		sessions, err := svc.GetSessions(c.Request.Context(), clusterID, infobaseID)
 		if err != nil {
+			// Log full error details for debugging, but don't expose to client
+			if logger != nil {
+				logger.Error("failed to retrieve sessions",
+					zap.String("cluster_id", clusterID),
+					zap.String("infobase_id", infobaseID),
+					zap.Error(err))
+			}
 			c.JSON(http.StatusInternalServerError, ErrorResponse{
-				Error:   "Failed to retrieve sessions",
-				Details: err.Error(),
+				Error: "Failed to retrieve sessions",
+				Code:  "INTERNAL_ERROR",
 			})
 			return
 		}
@@ -61,47 +69,59 @@ func ListSessions(svc SessionService) gin.HandlerFunc {
 
 // TerminateSession terminates a specific session
 // @Summary      Terminate session
-// @Description  Terminate specific user session (NOT IMPLEMENTED - service layer support needed)
+// @Description  Terminate specific user session (idempotent - returns success if session already terminated)
 // @Tags         Sessions
 // @Accept       json
 // @Produce      json
 // @Param        cluster_id   query     string  true  "Cluster UUID"
-// @Param        infobase_id  query     string  true  "Infobase UUID"
 // @Param        session_id   query     string  true  "Session UUID"
 // @Success      200  {object}  TerminateSessionResponse
 // @Failure      400  {object}  ErrorResponse
-// @Failure      501  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /terminate-session [post]
-func TerminateSession(svc SessionService) gin.HandlerFunc {
+func TerminateSession(svc SessionService, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Query params validation
 		clusterID := c.Query("cluster_id")
-		infobaseID := c.Query("infobase_id")
 		sessionID := c.Query("session_id")
 
-		if clusterID == "" || infobaseID == "" || sessionID == "" {
+		if clusterID == "" || sessionID == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error: "cluster_id, infobase_id, and session_id are required",
+				Error: "cluster_id and session_id are required",
 				Code:  "MISSING_PARAMETER",
 			})
 			return
 		}
 
-		if !isValidUUID(clusterID) || !isValidUUID(infobaseID) || !isValidUUID(sessionID) {
+		if !isValidUUID(clusterID) || !isValidUUID(sessionID) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error: "cluster_id, infobase_id, and session_id must be valid UUIDs",
+				Error: "cluster_id and session_id must be valid UUIDs",
 				Code:  "INVALID_UUID",
 			})
 			return
 		}
 
-		// TODO(Week 5.2): Implement idempotent TerminateSession(sessionID) in service layer
-		// Race condition: Session may terminate between GetSessions() and termination
-		// Proper solution: service.TerminateSession(clusterID, sessionID) should be idempotent
-		// For now, return 501 Not Implemented to indicate missing functionality
-		c.JSON(http.StatusNotImplemented, ErrorResponse{
-			Error: "Single session termination not yet implemented in service layer",
-			Code:  "NOT_IMPLEMENTED",
+		// Call idempotent TerminateSession
+		err := svc.TerminateSession(c.Request.Context(), clusterID, sessionID)
+		if err != nil {
+			// Log full error details for debugging, but don't expose to client
+			if logger != nil {
+				logger.Error("failed to terminate session",
+					zap.String("cluster_id", clusterID),
+					zap.String("session_id", sessionID),
+					zap.Error(err))
+			}
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error: "Failed to terminate session",
+				Code:  "INTERNAL_ERROR",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, TerminateSessionResponse{
+			Success:   true,
+			Message:   "Session terminated successfully",
+			SessionID: sessionID,
 		})
 	}
 }
@@ -120,7 +140,7 @@ func TerminateSession(svc SessionService) gin.HandlerFunc {
 // @Failure      501  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /terminate-sessions [post]
-func TerminateSessions(svc SessionService) gin.HandlerFunc {
+func TerminateSessions(svc SessionService, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Query params validation
 		clusterID := c.Query("cluster_id")
@@ -151,9 +171,8 @@ func TerminateSessions(svc SessionService) gin.HandlerFunc {
 			for _, sid := range req.SessionIDs {
 				if !isValidUUID(sid) {
 					c.JSON(http.StatusBadRequest, ErrorResponse{
-						Error:   "All session_ids must be valid UUIDs",
-						Code:    "INVALID_UUID",
-						Details: "Invalid session ID: " + sid,
+						Error: "All session_ids must be valid UUIDs",
+						Code:  "INVALID_UUID",
 					})
 					return
 				}
@@ -171,9 +190,16 @@ func TerminateSessions(svc SessionService) gin.HandlerFunc {
 		// Terminate ALL sessions
 		terminatedCount, err := svc.TerminateSessions(c.Request.Context(), clusterID, infobaseID)
 		if err != nil {
+			// Log full error details for debugging, but don't expose to client
+			if logger != nil {
+				logger.Error("failed to terminate sessions",
+					zap.String("cluster_id", clusterID),
+					zap.String("infobase_id", infobaseID),
+					zap.Error(err))
+			}
 			c.JSON(http.StatusInternalServerError, ErrorResponse{
-				Error:   "Failed to terminate sessions",
-				Details: err.Error(),
+				Error: "Failed to terminate sessions",
+				Code:  "INTERNAL_ERROR",
 			})
 			return
 		}
