@@ -32,7 +32,8 @@ export interface SystemHealthResponse {
  * Get system health status for all monitored services
  */
 export const getSystemHealth = async (): Promise<SystemHealthResponse> => {
-    const response = await apiClient.get<SystemHealthResponse>('/system/health');
+    // v2 migration: trailing slash for Django DRF compatibility
+    const response = await apiClient.get<SystemHealthResponse>('/system/health/');
     return response.data;
 };
 
