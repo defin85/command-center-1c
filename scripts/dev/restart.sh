@@ -178,17 +178,6 @@ case "$SERVICE_NAME" in
         NEW_PID=$!
         ;;
 
-    ras-grpc-gw)
-        RAS_GW_DIR="/c/1CProject/ras-grpc-gw"
-        if [ ! -d "$RAS_GW_DIR" ]; then
-            echo -e "${RED}✗ Директория ras-grpc-gw не найдена: $RAS_GW_DIR${NC}"
-            exit 1
-        fi
-        cd "$RAS_GW_DIR"
-        nohup go run cmd/main.go --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545 > "$LOG_FILE" 2>&1 &
-        NEW_PID=$!
-        ;;
-
     ras-adapter)
         # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8088

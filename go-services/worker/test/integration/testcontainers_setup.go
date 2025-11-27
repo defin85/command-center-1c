@@ -2,13 +2,10 @@ package integration
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
-	"github.com/docker/go-connections/nat"
 	"github.com/redis/go-redis/v9"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -17,18 +14,16 @@ import (
 // TestEnvironment holds all test infrastructure
 type TestEnvironment struct {
 	// Containers
-	RedisContainer     testcontainers.Container
-	PostgresContainer  testcontainers.Container
+	RedisContainer testcontainers.Container
 
 	// Clients
 	RedisClient *redis.Client
-	DB          *sql.DB
 
 	// Cleanup function
 	cleanup func()
 }
 
-// SetupTestEnvironment creates isolated test environment with Redis and PostgreSQL
+// SetupTestEnvironment creates isolated test environment with Redis
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	ctx := context.Background()
 
@@ -86,77 +81,12 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	t.Log("✅ Redis client connected successfully")
 
 	// =============================================================================
-	// Setup PostgreSQL Container (optional, for future tests)
-	// =============================================================================
-
-	t.Log("📦 Starting PostgreSQL container...")
-
-	postgresReq := testcontainers.ContainerRequest{
-		Image:        "postgres:15-alpine",
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_USER":     "test",
-			"POSTGRES_DB":       "test",
-		},
-		WaitingFor: wait.ForSQL("5432/tcp", "postgres", func(host string, port nat.Port) string {
-			return fmt.Sprintf("host=%s port=%s user=test password=test dbname=test sslmode=disable", host, port.Port())
-		}).WithStartupTimeout(60 * time.Second),
-	}
-
-	postgresContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: postgresReq,
-		Started:          true,
-	})
-	if err != nil {
-		redisContainer.Terminate(ctx)
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
-	}
-
-	// Get PostgreSQL connection info
-	pgHost, err := postgresContainer.Host(ctx)
-	if err != nil {
-		redisContainer.Terminate(ctx)
-		postgresContainer.Terminate(ctx)
-		t.Fatalf("Failed to get PostgreSQL host: %v", err)
-	}
-
-	pgPort, err := postgresContainer.MappedPort(ctx, "5432")
-	if err != nil {
-		redisContainer.Terminate(ctx)
-		postgresContainer.Terminate(ctx)
-		t.Fatalf("Failed to get PostgreSQL port: %v", err)
-	}
-
-	pgConnStr := fmt.Sprintf("host=%s port=%s user=test password=test dbname=test sslmode=disable", pgHost, pgPort.Port())
-	t.Logf("✅ PostgreSQL container started: %s:%s", pgHost, pgPort.Port())
-
-	// Open PostgreSQL connection
-	db, err := sql.Open("postgres", pgConnStr)
-	if err != nil {
-		redisContainer.Terminate(ctx)
-		postgresContainer.Terminate(ctx)
-		t.Fatalf("Failed to open PostgreSQL connection: %v", err)
-	}
-
-	// Test PostgreSQL connection
-	if err := db.Ping(); err != nil {
-		redisContainer.Terminate(ctx)
-		postgresContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping PostgreSQL: %v", err)
-	}
-
-	t.Log("✅ PostgreSQL client connected successfully")
-
-	// =============================================================================
 	// Create Test Environment
 	// =============================================================================
 
 	env := &TestEnvironment{
-		RedisContainer:    redisContainer,
-		PostgresContainer: postgresContainer,
-		RedisClient:       redisClient,
-		DB:                db,
+		RedisContainer: redisContainer,
+		RedisClient:    redisClient,
 	}
 
 	// Setup cleanup function
@@ -167,23 +97,11 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 			redisClient.Close()
 		}
 
-		if db != nil {
-			db.Close()
-		}
-
 		if redisContainer != nil {
 			if err := redisContainer.Terminate(ctx); err != nil {
 				t.Logf("⚠️ Failed to terminate Redis container: %v", err)
 			} else {
 				t.Log("✅ Redis container terminated")
-			}
-		}
-
-		if postgresContainer != nil {
-			if err := postgresContainer.Terminate(ctx); err != nil {
-				t.Logf("⚠️ Failed to terminate PostgreSQL container: %v", err)
-			} else {
-				t.Log("✅ PostgreSQL container terminated")
 			}
 		}
 

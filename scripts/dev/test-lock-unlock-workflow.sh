@@ -108,7 +108,7 @@ echo ""
 echo "Test 7: Redis Pub/Sub Lock"
 if command -v redis-cli &> /dev/null; then
     warn "Redis Pub/Sub Lock SKIPPED (requires manual test)"
-    echo "  Manual test: redis-cli PUBLISH commands:cluster-service:infobase:lock '{\"cluster_id\":\"...\",\"infobase_id\":\"...\"}'"
+    echo "  Manual test: redis-cli PUBLISH commands:ras-adapter:infobase:lock '{\"cluster_id\":\"...\",\"infobase_id\":\"...\"}'"
 else
     warn "Redis Pub/Sub Lock SKIPPED (redis-cli not installed)"
 fi
@@ -118,7 +118,7 @@ echo ""
 echo "Test 8: Redis Pub/Sub Unlock"
 if command -v redis-cli &> /dev/null; then
     warn "Redis Pub/Sub Unlock SKIPPED (requires manual test)"
-    echo "  Manual test: redis-cli PUBLISH commands:cluster-service:infobase:unlock '{\"cluster_id\":\"...\",\"infobase_id\":\"...\"}'"
+    echo "  Manual test: redis-cli PUBLISH commands:ras-adapter:infobase:unlock '{\"cluster_id\":\"...\",\"infobase_id\":\"...\"}'"
 else
     warn "Redis Pub/Sub Unlock SKIPPED (redis-cli not installed)"
 fi

@@ -39,15 +39,14 @@
 - `api-gateway` - Go API Gateway (port 8080)
 - `worker` - Go Worker
 - `ras` - 1C RAS Server (port 1545)
-- `ras-grpc-gw` - RAS gRPC Gateway (port 9999, HTTP 8081)
-- **`ras-adapter`** - **Go RAS Adapter (port 8088) ← Week 4 NEW!**
-- ~~`cluster-service`~~ - ~~Go Cluster Service (port 8088)~~ **DEPRECATED (replaced by ras-adapter)**
+- `ras-adapter` - Go RAS Adapter (port 8088)
 - `batch-service` - Go Batch Service (port 8087)
 - `frontend` - React Frontend (port 5173)
 
-**Мониторинг (Docker, автозапуск):**
+**Мониторинг и Tracing (Docker, автозапуск):**
 - `prometheus` - Metrics collection (port 9090)
-- `grafana` - Dashboards & visualization (port 3001)
+- `grafana` - Dashboards & visualization (port 5000)
+- `jaeger` - Distributed tracing (port 16686)
 
 ---
 
@@ -72,9 +71,9 @@
 
 ---
 
-## 🆕 RAS Adapter (Week 4 - NEW)
+## RAS Adapter
 
-**Status:** ✅ Deployed (replaces cluster-service)
+**Status:** ✅ Production
 
 RAS Adapter provides direct RAS protocol integration (khorevaa/ras-client) для Lock/Unlock operations.
 
@@ -107,16 +106,6 @@ curl http://localhost:8088/health
 ```
 Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
                               ↓ khorevaa/ras-client (direct)
-                         (1 network hop, NO ras-grpc-gw)
-```
-
-**Replaced:** cluster-service (8088) + ras-grpc-gw (9999) → archived
-
-**Environment Variable:**
-```bash
-# In .env.local (optional, default: true)
-USE_RAS_ADAPTER=true   # Use new RAS Adapter
-USE_RAS_ADAPTER=false  # Use old cluster-service (deprecated)
 ```
 
 ---
@@ -141,7 +130,7 @@ USE_RAS_ADAPTER=false  # Use old cluster-service (deprecated)
    - **Monitoring: Prometheus, Grafana** ← автоматически!
 3. Применяет Django миграции
 4. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
-5. Запускает Go сервисы (api-gateway, worker, ras, ras-grpc-gw, **ras-adapter**, batch-service)
+5. Запускает Go сервисы (api-gateway, worker, ras, ras-adapter, batch-service)
 6. Запускает Frontend (React dev server)
 
 **Особенности:**
@@ -178,11 +167,11 @@ USE_RAS_ADAPTER=false  # Use old cluster-service (deprecated)
 **Порядок остановки:**
 ```
 Application Services:
-  frontend → batch-service → ras-adapter (or cluster-service) → ras-grpc-gw → worker →
+  frontend → batch-service → ras-adapter → worker →
   api-gateway → celery-beat → celery-worker → orchestrator
 
 Docker Services:
-  PostgreSQL, Redis → Prometheus, Grafana
+  PostgreSQL, Redis → Prometheus, Grafana, Jaeger
 ```
 
 **Важно:** Начиная с версии 2.6, скрипт останавливает **ВСЕ сервисы**, включая мониторинг. Если хотите остановить только мониторинг: `./scripts/dev/stop-monitoring.sh`
@@ -353,8 +342,7 @@ Docker Services:
    - Frontend: `http://localhost:5173`
    - API Gateway: `http://localhost:8080/health`
    - Orchestrator: `http://localhost:8000/health`
-   - ras-grpc-gw: `http://localhost:8081/health`
-   - Cluster Service: `http://localhost:8088/health`
+   - RAS Adapter: `http://localhost:8088/health`
    - Batch Service: `http://localhost:8087/health`
 
 3. **Проверка Docker сервисов:**
@@ -401,7 +389,7 @@ Docker Services:
 
 ### start-monitoring.sh
 
-**Назначение:** Запускает Prometheus + Grafana в Docker контейнерах для мониторинга Event-Driven архитектуры
+**Назначение:** Запускает Prometheus + Grafana + Jaeger в Docker контейнерах для мониторинга и tracing
 
 **Использование:**
 ```bash
@@ -413,14 +401,16 @@ Docker Services:
 **Что делает:**
 1. Проверяет что Docker запущен
 2. Создает сеть `cc1c-local-network` если не существует
-3. Запускает Prometheus (`:9090`) и Grafana (`:3001`) через `docker-compose.local.monitoring.yml`
-4. Выполняет health checks обоих сервисов
+3. Запускает Prometheus (`:9090`), Grafana (`:5000`), Jaeger (`:16686`) через `docker-compose.local.monitoring.yml`
+4. Выполняет health checks всех сервисов
 5. Выводит URL для доступа
 
 **Доступ:**
 - Prometheus: http://localhost:9090
-- Grafana: http://localhost:3001 (admin/admin)
-- A/B Testing Dashboard: автоматически провизионируется в Grafana
+- Grafana: http://localhost:5000 (admin/admin)
+- Jaeger: http://localhost:16686 (OpenTelemetry Tracing)
+- OTLP gRPC: localhost:4317
+- OTLP HTTP: localhost:4318
 
 **Примечание:** Мониторинг теперь **запускается автоматически** с `start-all.sh`. Используйте этот скрипт только если хотите запустить мониторинг отдельно без остальных сервисов.
 
@@ -428,7 +418,7 @@ Docker Services:
 
 ### stop-monitoring.sh
 
-**Назначение:** Останавливает Prometheus + Grafana контейнеры
+**Назначение:** Останавливает Prometheus + Grafana + Jaeger контейнеры
 
 **Использование:**
 ```bash
@@ -438,13 +428,13 @@ Docker Services:
 **Опции:** Нет
 
 **Что делает:**
-1. Останавливает контейнеры `cc1c-prometheus-local` и `cc1c-grafana-local`
+1. Останавливает контейнеры `cc1c-prometheus-local`, `cc1c-grafana-local`, `cc1c-jaeger-local`
 2. Удаляет контейнеры
 3. **Сохраняет данные** в volumes: `cc1c-prometheus-local-data`, `cc1c-grafana-local-data`
 
 **Примечание:**
 - Данные НЕ удаляются, так что метрики и дашборды сохранятся при следующем запуске
-- Для полной очистки: `docker volume rm cc1c-prometheus-local-data cc1c-grafana-local-data`
+- Jaeger использует in-memory storage (данные не сохраняются между перезапусками)
 - `stop-all.sh` теперь **автоматически** вызывает `stop-monitoring.sh`
 
 ---
@@ -556,7 +546,7 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 
 | Опция | Описание |
 |-------|----------|
-| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter, cluster-service, batch-service) |
+| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter, batch-service) |
 | `--os=<os>` | Целевая ОС (linux, windows, darwin). По умолчанию: текущая ОС |
 | `--arch=<arch>` | Целевая архитектура (amd64, arm64). По умолчанию: текущая архитектура |
 | `--parallel` | Собрать все сервисы параллельно (быстрее) |
@@ -580,9 +570,6 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 
 # Очистить + собрать параллельно
 ./scripts/build.sh --clean --parallel
-
-# Собрать cluster-service для Windows
-./scripts/build.sh --service=cluster-service --os=windows --arch=amd64
 ```
 
 **Версионирование:**
@@ -604,7 +591,7 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 **Поддерживаемые сервисы:**
 - `api-gateway` - Go API Gateway
 - `worker` - Go Worker
-- `cluster-service` - Go Cluster Service
+- `ras-adapter` - Go RAS Adapter
 - `batch-service` - Go Batch Service
 
 ---
@@ -732,10 +719,6 @@ curl -X POST http://localhost:8088/api/v1/infobases/<INFOBASE_ID>/unlock \
 
 # 8. Просмотр логов
 ./scripts/dev/logs.sh ras-adapter
-
-# 9. Переключение на старый cluster-service (если нужно)
-# В .env.local: USE_RAS_ADAPTER=false
-./scripts/dev/restart-all.sh
 ```
 
 ---
@@ -779,25 +762,6 @@ docker ps
 ./scripts/dev/stop-all.sh
 ./scripts/dev/start-all.sh
 ```
-
-### Проблема: cluster-service не подключается к ras-grpc-gw
-
-**Причина:** ras-grpc-gw запускается в отдельном репозитории и должен быть запущен первым
-
-```bash
-# 1. Запустить ras-grpc-gw (в отдельном терминале)
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1545
-
-# 2. Проверить HTTP endpoint (должен ответить 200 OK)
-curl http://localhost:8081/health
-
-# 3. Запустить cluster-service
-cd /c/1CProject/command-center-1c
-./scripts/dev/restart.sh cluster-service
-```
-
-**См. также:** [1C_ADMINISTRATION_GUIDE.md](../../docs/1C_ADMINISTRATION_GUIDE.md)
 
 ### Проблема: Database connection error (Django)
 
@@ -958,6 +922,12 @@ command-center-1c/
 
 ---
 
-**Версия документации:** 2.1
-**Последнее обновление:** 2025-11-06
+**Версия документации:** 2.2
+**Последнее обновление:** 2025-11-27
 **Автор:** CommandCenter1C Team
+
+**Изменения v2.2:**
+- Удалён cluster-service (заменён на ras-adapter)
+- Удалён ras-grpc-gw (не используется)
+- Добавлен Jaeger для distributed tracing
+- Порт Grafana изменён на 5000

@@ -242,6 +242,13 @@ else
         else
             echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
         fi
+
+        # Проверить Jaeger (Distributed Tracing)
+        if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Jaeger может быть еще не готов (это не критично)${NC}"
+        fi
     fi
 fi 2>/dev/null || echo -e "${YELLOW}⚠️  Мониторинг не запущен (не критично для работы)${NC}"
 
@@ -578,9 +585,10 @@ echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
 echo -e "  RAS Adapter:      ${GREEN}http://localhost:8088/health${NC} (Week 4 NEW!)"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
 echo ""
-echo -e "${BLUE}Мониторинг:${NC}"
+echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
 echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin/admin)"
+echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
 echo -e "  A/B Dashboard:    ${GREEN}http://localhost:5000/d/ab-testing-event-driven${NC}"
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"

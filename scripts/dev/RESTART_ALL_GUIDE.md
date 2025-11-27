@@ -60,8 +60,7 @@
 - `celery-beat`
 - `api-gateway`
 - `worker`
-- `ras-grpc-gw`
-- `cluster-service`
+- `ras-adapter`
 - `batch-service`
 - `frontend`
 
@@ -127,7 +126,7 @@
 ```
 
 **Результат:**
-- Пересоберутся **ВСЕ 4** Go сервиса (`api-gateway`, `worker`, `cluster-service`, `batch-service`)
+- Пересоберутся **ВСЕ 4** Go сервиса (`api-gateway`, `worker`, `ras-adapter`, `batch-service`)
 - Все сервисы перезапустятся
 
 ### Сценарий 3: Бинарники актуальны
@@ -168,7 +167,7 @@
   ✓ worker
 
 Пропущенные сервисы (2):
-  ℹ cluster-service (бинарник актуален)
+  ℹ ras-adapter (бинарник актуален)
   ℹ batch-service (бинарник актуален)
 
 Управление:

@@ -4,9 +4,11 @@ package credentials
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -125,4 +127,58 @@ func DecryptCredentials(resp EncryptedCredentialsResponse, transportKey []byte) 
 
 	// Success: return decrypted credentials
 	return &creds, nil
+}
+
+// EncryptCredentials encrypts credentials for testing purposes.
+// Used by tests to create properly encrypted payloads.
+func EncryptCredentials(creds *DatabaseCredentials, transportKey []byte) (*EncryptedCredentialsResponse, error) {
+	// Validate transport key size (32 bytes for AES-256)
+	if len(transportKey) < aesKeySize {
+		return nil, fmt.Errorf(
+			"transport key too short: %d bytes (expected %d)",
+			len(transportKey),
+			aesKeySize,
+		)
+	}
+
+	// Use first 32 bytes of transport key (for AES-256)
+	key := transportKey[:aesKeySize]
+
+	// Create AES cipher block
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
+	}
+
+	// Create GCM mode
+	aesGcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM mode: %w", err)
+	}
+
+	// Generate random 12-byte nonce
+	nonce := make([]byte, aesGcm.NonceSize())
+	_, err = io.ReadFull(rand.Reader, nonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// Marshal credentials to JSON
+	plaintext, err := json.Marshal(creds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal credentials: %w", err)
+	}
+
+	// Encrypt and authenticate
+	ciphertext := aesGcm.Seal(nil, nonce, plaintext, nil)
+
+	// Create response with encrypted data
+	resp := &EncryptedCredentialsResponse{
+		EncryptedData:     base64.StdEncoding.EncodeToString(ciphertext),
+		Nonce:             base64.StdEncoding.EncodeToString(nonce),
+		EncryptionVersion: encryptionVersionV1,
+		ExpiresAt:         time.Now().Add(5 * time.Minute).Format(time.RFC3339),
+	}
+
+	return resp, nil
 }

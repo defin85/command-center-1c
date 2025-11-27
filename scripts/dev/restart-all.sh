@@ -75,7 +75,7 @@ show_help() {
     echo ""
     echo "Available services:"
     echo "  orchestrator, celery-worker, celery-beat, api-gateway,"
-    echo "  worker, ras-grpc-gw, cluster-service, batch-service, frontend"
+    echo "  worker, ras-adapter, batch-service, frontend"
     echo ""
 }
 

@@ -129,13 +129,13 @@ fi
 echo ""
 
 ##############################################################################
-# Остановка Docker сервисов (Monitoring)
+# Остановка Docker сервисов (Monitoring & Observability)
 ##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (Prometheus, Grafana)...${NC}"
+echo -e "${BLUE}Остановка Docker сервисов (Prometheus, Grafana, Jaeger)...${NC}"
 
 if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
     docker-compose -f docker-compose.local.monitoring.yml down
-    echo -e "${GREEN}✓ Мониторинг остановлен${NC}"
+    echo -e "${GREEN}✓ Мониторинг и tracing остановлены${NC}"
 else
     echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден${NC}"
 fi

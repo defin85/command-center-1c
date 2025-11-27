@@ -139,7 +139,7 @@ func TestLockInfobase_Success(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+	err = svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.NoError(t, err)
 
@@ -155,7 +155,7 @@ func TestLockInfobase_EmptyClusterID(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.LockInfobase(context.Background(), "", "infobase-uuid")
+	err = svc.LockInfobase(context.Background(), "", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -172,7 +172,7 @@ func TestLockInfobase_EmptyInfobaseID(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.LockInfobase(context.Background(), "cluster-uuid", "")
+	err = svc.LockInfobase(context.Background(), "cluster-uuid", "", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -189,7 +189,7 @@ func TestLockInfobase_BothParamsEmpty(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.LockInfobase(context.Background(), "", "")
+	err = svc.LockInfobase(context.Background(), "", "", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -209,7 +209,7 @@ func TestLockInfobase_WithTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = svc.LockInfobase(ctx, "cluster-uuid", "infobase-uuid")
+	err = svc.LockInfobase(ctx, "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.NoError(t, err)
 
@@ -226,7 +226,7 @@ func TestLockInfobase_MultipleCalls(t *testing.T) {
 	svc := NewInfobaseService(pool, logger)
 
 	for i := 0; i < 3; i++ {
-		err := svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		err := svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 		assert.NoError(t, err)
 	}
 
@@ -242,7 +242,7 @@ func TestUnlockInfobase_Success(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.NoError(t, err)
 
@@ -258,7 +258,7 @@ func TestUnlockInfobase_EmptyClusterID(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.UnlockInfobase(context.Background(), "", "infobase-uuid")
+	err = svc.UnlockInfobase(context.Background(), "", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -275,7 +275,7 @@ func TestUnlockInfobase_EmptyInfobaseID(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "")
+	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -292,7 +292,7 @@ func TestUnlockInfobase_BothParamsEmpty(t *testing.T) {
 
 	svc := NewInfobaseService(pool, logger)
 
-	err = svc.UnlockInfobase(context.Background(), "", "")
+	err = svc.UnlockInfobase(context.Background(), "", "", "dbuser", "dbpassword")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
@@ -312,7 +312,7 @@ func TestUnlockInfobase_WithTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = svc.UnlockInfobase(ctx, "cluster-uuid", "infobase-uuid")
+	err = svc.UnlockInfobase(ctx, "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 
 	assert.NoError(t, err)
 
@@ -329,7 +329,7 @@ func TestUnlockInfobase_MultipleCalls(t *testing.T) {
 	svc := NewInfobaseService(pool, logger)
 
 	for i := 0; i < 3; i++ {
-		err := svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		err := svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 		assert.NoError(t, err)
 	}
 
@@ -346,11 +346,11 @@ func TestLockUnlock_Sequence(t *testing.T) {
 	svc := NewInfobaseService(pool, logger)
 
 	// Lock
-	err = svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+	err = svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 	assert.NoError(t, err)
 
 	// Unlock
-	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+	err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 	assert.NoError(t, err)
 
 	pool.Close()
@@ -367,11 +367,11 @@ func TestLockUnlock_MultipleCycles(t *testing.T) {
 
 	for cycle := 0; cycle < 3; cycle++ {
 		// Lock
-		err := svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		err := svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 		assert.NoError(t, err)
 
 		// Unlock
-		err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		err = svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 		assert.NoError(t, err)
 	}
 
@@ -390,7 +390,7 @@ func BenchmarkLockInfobase(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		svc.LockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 	}
 
 	pool.Close()
@@ -408,7 +408,7 @@ func BenchmarkUnlockInfobase(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid")
+		svc.UnlockInfobase(context.Background(), "cluster-uuid", "infobase-uuid", "dbuser", "dbpassword")
 	}
 
 	pool.Close()

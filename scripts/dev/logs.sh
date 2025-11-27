@@ -40,6 +40,11 @@ if [ -z "$1" ]; then
     echo -e "  frontend          - React Frontend"
     echo -e "  all               - Все сервисы вместе"
     echo ""
+    echo -e "${BLUE}Docker services (monitoring):${NC}"
+    echo -e "  prometheus        - Prometheus metrics"
+    echo -e "  grafana           - Grafana dashboards"
+    echo -e "  jaeger            - Jaeger tracing"
+    echo ""
     echo -e "${BLUE}Examples:${NC}"
     echo -e "  ./scripts/dev/logs.sh orchestrator       # tail -f"
     echo -e "  ./scripts/dev/logs.sh api-gateway 100    # last 100 lines + follow"
@@ -70,6 +75,26 @@ view_log() {
 
     # Показать последние N строк и следить за обновлениями
     tail -n "$LINES" -f "$log_file"
+}
+
+##############################################################################
+# Функция для просмотра логов Docker сервиса
+##############################################################################
+view_docker_log() {
+    local service=$1
+    local container_name=$2
+
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}  Логи Docker: ${service}${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "$container_name"; then
+        echo -e "${YELLOW}⚠️  Контейнер $container_name не запущен${NC}"
+        return 1
+    fi
+
+    docker logs -f --tail "$LINES" "$container_name"
 }
 
 ##############################################################################
@@ -113,12 +138,27 @@ case "$SERVICE_NAME" in
         view_log "$SERVICE_NAME"
         ;;
 
+    # Docker services (monitoring & observability)
+    prometheus)
+        view_docker_log "prometheus" "cc1c-prometheus-local"
+        ;;
+
+    grafana)
+        view_docker_log "grafana" "cc1c-grafana-local"
+        ;;
+
+    jaeger)
+        view_docker_log "jaeger" "cc1c-jaeger-local"
+        ;;
+
     *)
         echo -e "${RED}✗ Неизвестный сервис: ${SERVICE_NAME}${NC}"
         echo ""
         echo -e "${BLUE}Available services:${NC}"
         echo -e "  orchestrator, celery-worker, celery-beat, api-gateway,"
         echo -e "  worker, ras, ras-adapter, batch-service, frontend, all"
+        echo -e "${BLUE}Docker services:${NC}"
+        echo -e "  prometheus, grafana, jaeger"
         echo ""
         exit 1
         ;;

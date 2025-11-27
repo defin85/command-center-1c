@@ -225,6 +225,19 @@ else
     echo -e "  Grafana: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
 fi
 
+# Проверка Jaeger (Distributed Tracing)
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-jaeger-local"; then
+    if curl -sf http://localhost:16686/ &>/dev/null; then
+        echo -e "  Jaeger: ${GREEN}✓ запущен и готов (http://localhost:16686)${NC}"
+        check_port 16686 "Jaeger UI" > /dev/null
+        check_port 4317 "OTLP gRPC" > /dev/null
+    else
+        echo -e "  Jaeger: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+    fi
+else
+    echo -e "  Jaeger: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
+fi
+
 echo ""
 
 ##############################################################################

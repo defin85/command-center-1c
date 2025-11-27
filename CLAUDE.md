@@ -76,6 +76,7 @@ cd /c/1CProject/command-center-1c
 - ras-adapter: http://localhost:8088/health
 - Grafana: http://localhost:5000 (admin/admin)
 - Prometheus: http://localhost:9090
+- Jaeger: http://localhost:16686 (OpenTelemetry Tracing)
 
 ---
 

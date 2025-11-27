@@ -46,11 +46,11 @@ BUILD_PARALLEL=false
 SPECIFIC_SERVICE=""
 
 # Список всех сервисов
+# Week 4+: cluster-service удалён (заменён на ras-adapter)
 declare -A SERVICES
 SERVICES[api-gateway]="API Gateway"
 SERVICES[worker]="Worker"
 SERVICES[ras-adapter]="RAS Adapter"
-SERVICES[cluster-service]="Cluster Service"
 SERVICES[batch-service]="Batch Service"
 
 ##############################################################################
@@ -63,7 +63,7 @@ show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --service=<name>    Собрать только указанный сервис (api-gateway, worker, cluster-service, batch-service)"
+    echo "  --service=<name>    Собрать только указанный сервис (api-gateway, worker, ras-adapter, batch-service)"
     echo "  --os=<os>           Целевая ОС (linux, windows, darwin). Default: $(go env GOOS)"
     echo "  --arch=<arch>       Целевая архитектура (amd64, arm64). Default: $(go env GOARCH)"
     echo "  --parallel          Собрать все сервисы параллельно"
@@ -125,10 +125,8 @@ build_service() {
     mkdir -p "$BIN_DIR"
 
     # Build с version injection
-    # cluster-service and ras-adapter use their own version package
-    if [ "$service" = "cluster-service" ]; then
-        LDFLAGS="-X github.com/command-center-1c/cluster-service/internal/version.Version=$VERSION -X github.com/command-center-1c/cluster-service/internal/version.Commit=$COMMIT -X github.com/command-center-1c/cluster-service/internal/version.BuildTime=$BUILD_TIME"
-    elif [ "$service" = "ras-adapter" ]; then
+    # ras-adapter uses its own version package
+    if [ "$service" = "ras-adapter" ]; then
         LDFLAGS="-X github.com/command-center-1c/ras-adapter/internal/version.Version=$VERSION -X github.com/command-center-1c/ras-adapter/internal/version.Commit=$COMMIT -X github.com/command-center-1c/ras-adapter/internal/version.BuildTime=$BUILD_TIME"
     else
         LDFLAGS="-X main.Version=$VERSION -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"

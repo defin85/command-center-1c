@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################
-# Stop Monitoring Services (Prometheus + Grafana)
+# Stop Monitoring & Observability Services (Prometheus + Grafana + Jaeger)
 # Usage: ./scripts/dev/stop-monitoring.sh
 ##############################################################################
 
@@ -13,7 +13,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 echo "========================================="
-echo "  Stopping Monitoring Services"
+echo "  Stopping Monitoring & Observability"
 echo "========================================="
 echo ""
 

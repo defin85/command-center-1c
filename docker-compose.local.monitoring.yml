@@ -1,9 +1,9 @@
 version: '3.9'
 
 ##############################################################################
-# Monitoring Services for Local Development
+# Monitoring & Observability Services for Local Development
 ##############################################################################
-# Этот файл добавляет Prometheus и Grafana к локальной разработке
+# Этот файл добавляет Prometheus, Grafana и Jaeger к локальной разработке
 # Использование: docker-compose -f docker-compose.local.yml -f docker-compose.local.monitoring.yml up -d
 ##############################################################################
 
@@ -53,6 +53,30 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     depends_on:
       - prometheus
+    networks:
+      - cc1c-local
+
+  ##############################################################################
+  # Jaeger - Distributed Tracing (OpenTelemetry)
+  ##############################################################################
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: cc1c-jaeger-local
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+      - SPAN_STORAGE_TYPE=memory
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+      - "6831:6831/udp" # Jaeger Thrift compact (legacy)
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - cc1c-local
 

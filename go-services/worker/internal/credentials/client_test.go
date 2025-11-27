@@ -3,6 +3,7 @@ package credentials
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,25 @@ import (
 )
 
 func TestClient_Fetch_Success(t *testing.T) {
+	// Test key (32 bytes for AES-256)
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
+	}
+
+	// Create encrypted payload
+	creds := &DatabaseCredentials{
+		DatabaseID: "db-123",
+		ODataURL:   "http://localhost/odata",
+		Username:   "admin",
+		Password:   "secret",
+	}
+
+	encResp, err := EncryptCredentials(creds, testKey)
+	if err != nil {
+		t.Fatalf("failed to encrypt credentials: %v", err)
+	}
+
 	// Mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-api-key" {
@@ -18,27 +38,23 @@ func TestClient_Fetch_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
-			"database_id": "db-123",
-			"odata_url": "http://localhost/odata",
-			"username": "admin",
-			"password": "secret"
-		}`))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(encResp)
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key", nil)
+	client := NewClient(server.URL, "test-api-key", testKey)
 
-	creds, err := client.Fetch(context.Background(), "db-123")
+	fetchedCreds, err := client.Fetch(context.Background(), "db-123")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if creds.DatabaseID != "db-123" {
-		t.Errorf("expected database_id db-123, got %s", creds.DatabaseID)
+	if fetchedCreds.DatabaseID != "db-123" {
+		t.Errorf("expected database_id db-123, got %s", fetchedCreds.DatabaseID)
 	}
-	if creds.Password != "secret" {
-		t.Errorf("expected password secret, got %s", creds.Password)
+	if fetchedCreds.Password != "secret" {
+		t.Errorf("expected password secret, got %s", fetchedCreds.Password)
 	}
 }
 
@@ -48,7 +64,8 @@ func TestClient_Fetch_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "invalid-key", nil)
+	testKey := make([]byte, 32)
+	client := NewClient(server.URL, "invalid-key", testKey)
 
 	_, err := client.Fetch(context.Background(), "db-123")
 	if err == nil {
@@ -66,7 +83,8 @@ func TestClient_Fetch_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key", nil)
+	testKey := make([]byte, 32)
+	client := NewClient(server.URL, "test-api-key", testKey)
 
 	_, err := client.Fetch(context.Background(), "db-nonexistent")
 	if err == nil {
@@ -80,15 +98,35 @@ func TestClient_Fetch_NotFound(t *testing.T) {
 }
 
 func TestClient_Fetch_Cache(t *testing.T) {
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
+	}
+
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+
+		creds := &DatabaseCredentials{
+			DatabaseID: "db-123",
+			ODataURL:   "http://localhost",
+			Username:   "admin",
+			Password:   "secret",
+		}
+
+		encResp, err := EncryptCredentials(creds, testKey)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"database_id":"db-123","odata_url":"http://localhost","username":"admin","password":"secret"}`))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(encResp)
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key", nil)
+	client := NewClient(server.URL, "test-api-key", testKey)
 
 	// First call - should hit API
 	_, err := client.Fetch(context.Background(), "db-123")
@@ -108,15 +146,35 @@ func TestClient_Fetch_Cache(t *testing.T) {
 }
 
 func TestClient_Fetch_CacheExpiry(t *testing.T) {
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
+	}
+
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+
+		creds := &DatabaseCredentials{
+			DatabaseID: "db-123",
+			ODataURL:   "http://localhost",
+			Username:   "admin",
+			Password:   "secret",
+		}
+
+		encResp, err := EncryptCredentials(creds, testKey)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"database_id":"db-123","odata_url":"http://localhost","username":"admin","password":"secret"}`))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(encResp)
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key", nil)
+	client := NewClient(server.URL, "test-api-key", testKey)
 	client.cacheTTL = 100 * time.Millisecond // Short TTL for test
 
 	// First call
@@ -134,15 +192,35 @@ func TestClient_Fetch_CacheExpiry(t *testing.T) {
 }
 
 func TestClient_ClearCache(t *testing.T) {
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
+	}
+
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+
+		creds := &DatabaseCredentials{
+			DatabaseID: "db-123",
+			ODataURL:   "http://localhost",
+			Username:   "admin",
+			Password:   "secret",
+		}
+
+		encResp, err := EncryptCredentials(creds, testKey)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"database_id":"db-123","odata_url":"http://localhost","username":"admin","password":"secret"}`))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(encResp)
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-api-key", nil)
+	client := NewClient(server.URL, "test-api-key", testKey)
 
 	// First call
 	_, _ = client.Fetch(context.Background(), "db-123")
