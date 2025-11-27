@@ -279,6 +279,16 @@ BATCH_SERVICE_TIMEOUT = int(env(
     default='60'  # 1 minute
 ))
 
+# RAS Adapter Configuration (replaces cluster-service)
+RAS_ADAPTER_URL = env(
+    'RAS_ADAPTER_URL',
+    default='http://localhost:8088'
+)
+RAS_ADAPTER_TIMEOUT = int(env(
+    'RAS_ADAPTER_TIMEOUT',
+    default='180'  # 3 minutes - RAS operations can be slow
+))
+
 # Health Check Settings
 HEALTH_CHECK_CLUSTER_INTERVAL = 60  # секунды
 HEALTH_CHECK_DATABASE_INTERVAL = 30

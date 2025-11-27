@@ -291,10 +291,11 @@ def subscribe_installation_progress(self):
 def periodic_cluster_health_check():
     """
     Периодическая проверка здоровья всех активных кластеров.
+    Использует RAS Adapter v2 API.
     Запускается каждые 60 секунд через Celery Beat.
     """
     from .models import Cluster
-    from .clients import ClusterServiceClient
+    from .clients import RasAdapterClient
 
     clusters = Cluster.objects.exclude(
         status=Cluster.STATUS_MAINTENANCE
@@ -305,12 +306,13 @@ def periodic_cluster_health_check():
 
     for cluster in clusters:
         try:
-            with ClusterServiceClient(base_url=cluster.cluster_service_url) as client:
+            # cluster_service_url now points to RAS Adapter
+            with RasAdapterClient(base_url=cluster.cluster_service_url) as client:
                 is_healthy = client.health_check()
 
             cluster.mark_health_check(
                 success=is_healthy,
-                error_message=None if is_healthy else "Cluster service unavailable"
+                error_message=None if is_healthy else "RAS Adapter unavailable"
             )
 
             logger.info(f"Cluster {cluster.name} health check: {'OK' if is_healthy else 'FAILED'}")

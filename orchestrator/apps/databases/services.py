@@ -8,7 +8,13 @@ from django.utils import timezone
 
 from .models import Database, DatabaseGroup, Cluster
 from .odata import ODataClient, session_manager, ODataError
-from .clients import ClusterServiceClient
+from .clients import ClusterServiceClient, RasAdapterClient, RasAdapterError
+from .clients.generated.ras_adapter_api_client.models import (
+    Infobase,
+    InfobasesResponse,
+    ClustersResponse,
+)
+from .clients.generated.ras_adapter_api_client.types import UNSET
 
 logger = logging.getLogger(__name__)
 
@@ -367,70 +373,58 @@ class ClusterService:
     @staticmethod
     def create_from_ras(
         ras_server: str,
-        installation_service_url: str,
+        ras_adapter_url: str = None,
         cluster_user: str = None,
         cluster_pwd: str = None
     ) -> Cluster:
         """
-        Create Cluster by connecting to RAS server.
+        Create Cluster by connecting to RAS server via RAS Adapter.
 
         Steps:
-        1. Connect to installation-service
+        1. Connect to RAS Adapter
         2. Health check
-        3. Call get_infobases (detailed=False) to get cluster_id and cluster_name
+        3. Call list_clusters_v2 to get cluster info
         4. Check if cluster already exists
         5. Create Cluster object
 
         Args:
             ras_server: RAS server address (host:port)
-            installation_service_url: URL of installation-service
-            cluster_user: Cluster admin username (optional)
-            cluster_pwd: Cluster admin password (optional)
+            ras_adapter_url: URL of RAS Adapter (default: from settings)
+            cluster_user: Cluster admin username (optional, stored for future use)
+            cluster_pwd: Cluster admin password (optional, stored for future use)
 
         Returns:
             Created Cluster instance
 
         Raises:
             ValueError: If cluster already exists or connection fails
-            Exception: On other errors
+            RasAdapterError: On RAS Adapter errors
         """
-        logger.info(
-            f"Creating cluster from RAS server: {ras_server}, "
-            f"cluster_service: {installation_service_url}"
-        )
+        logger.info(f"Creating cluster from RAS server: {ras_server}")
 
         try:
-            # Connect to cluster-service
-            with ClusterServiceClient(base_url=installation_service_url) as client:
+            with RasAdapterClient(base_url=ras_adapter_url) as client:
                 # Health check
-                logger.info(f"Performing health check for cluster-service: {installation_service_url}")
+                logger.info("Performing RAS Adapter health check")
                 if not client.health_check():
-                    raise ValueError(
-                        f"Cluster-service is not available at {installation_service_url}"
-                    )
+                    raise ValueError("RAS Adapter is not available")
 
-                logger.info("Health check passed, fetching cluster info from RAS")
+                logger.info("Health check passed, fetching clusters from RAS")
 
-                # Get cluster info (detailed=False for faster response)
-                result = client.get_infobases(
-                    server=ras_server,
-                    cluster_user=cluster_user or None,
-                    cluster_pwd=cluster_pwd or None,
-                    detailed=False
-                )
+                # Get clusters from RAS server
+                clusters_response: ClustersResponse = client.list_clusters(server=ras_server)
 
-                cluster_id = result.get('cluster_id')
-                cluster_name = result.get('cluster_name')
+                if clusters_response.count == 0:
+                    raise ValueError(f"No clusters found on RAS server {ras_server}")
 
-                if not cluster_id or not cluster_name:
-                    raise ValueError(
-                        f"Invalid response from installation-service: "
-                        f"missing cluster_id or cluster_name"
-                    )
+                # Use first cluster (typically there's only one per RAS server)
+                cluster_data = clusters_response.clusters[0]
+                cluster_id = str(cluster_data.uuid)
+                cluster_name = cluster_data.name
 
                 logger.info(
                     f"Retrieved cluster info: id={cluster_id}, name={cluster_name}, "
-                    f"infobases_count={result.get('total_count', 0)}"
+                    f"total_clusters={clusters_response.count}"
                 )
 
                 # Check if cluster already exists
@@ -447,20 +441,35 @@ class ClusterService:
                         f"already exists"
                     )
 
+                # Get infobase count for metadata
+                try:
+                    infobases_response = client.list_infobases(cluster_id=cluster_id)
+                    infobase_count = infobases_response.count
+                except Exception as e:
+                    logger.warning(f"Could not get infobase count: {e}")
+                    infobase_count = 0
+
                 # Create Cluster object
+                # Note: cluster_service_url now points to RAS Adapter
+                from django.conf import settings
+                adapter_url = ras_adapter_url or getattr(
+                    settings, 'RAS_ADAPTER_URL', 'http://localhost:8088'
+                )
+
                 cluster = Cluster.objects.create(
                     id=cluster_id,
                     name=cluster_name,
                     ras_server=ras_server,
-                    cluster_service_url=installation_service_url,
+                    cluster_service_url=adapter_url,
                     cluster_user=cluster_user or '',
                     cluster_pwd=cluster_pwd or '',
                     status=Cluster.STATUS_ACTIVE,
                     last_sync_status='pending',
                     metadata={
-                        'infobase_count': result.get('total_count', 0),
-                        'created_via': 'create_from_ras',
-                        'initial_fetch_duration_ms': result.get('duration_ms', 0),
+                        'infobase_count': infobase_count,
+                        'created_via': 'create_from_ras_v2',
+                        'cluster_host': cluster_data.host,
+                        'cluster_port': cluster_data.port,
                     }
                 )
 
@@ -472,7 +481,10 @@ class ClusterService:
                 return cluster
 
         except ValueError:
-            # Re-raise ValueError as-is
+            raise
+
+        except RasAdapterError as e:
+            logger.error(f"RAS Adapter error creating cluster: {e}")
             raise
 
         except Exception as e:
@@ -486,17 +498,17 @@ class ClusterService:
     @transaction.atomic
     def sync_infobases(cluster: Cluster) -> Dict[str, int]:
         """
-        Sync infobases from cluster.
+        Sync infobases from cluster using RAS Adapter v2 API.
         Uses SELECT FOR UPDATE to prevent concurrent syncs on same cluster.
 
         Steps:
         1. Lock cluster row with select_for_update()
         2. Check if already syncing
         3. Mark as pending
-        4. Connect to installation-service
+        4. Connect to RAS Adapter
         5. Health check
-        6. Call get_infobases (detailed=True)
-        7. Call _import_infobases() to create/update Database records
+        6. Call list_infobases_v2
+        7. Call _import_infobases_v2() to create/update Database records
         8. Mark cluster.mark_sync(success=True/False)
 
         Args:
@@ -511,12 +523,11 @@ class ClusterService:
 
         Raises:
             ValueError: If cluster is already being synced
-            Exception: On sync errors
+            RasAdapterError: On RAS Adapter errors
         """
         logger.info(f"Starting sync for cluster: {cluster.name} (id={cluster.id})")
 
         # Lock the cluster row to prevent concurrent syncs
-        # Use nowait=True to immediately reject if cluster is already locked
         try:
             cluster = Cluster.objects.select_for_update(nowait=True).get(pk=cluster.pk)
         except OperationalError:
@@ -538,37 +549,28 @@ class ClusterService:
         cluster.save(update_fields=['last_sync_status'])
 
         try:
-            # Connect to cluster-service
-            with ClusterServiceClient(base_url=cluster.cluster_service_url) as client:
+            # Connect to RAS Adapter
+            with RasAdapterClient(base_url=cluster.cluster_service_url) as client:
                 # Health check
-                logger.info(
-                    f"Performing health check for cluster-service: "
-                    f"{cluster.cluster_service_url}"
-                )
+                logger.info(f"Performing RAS Adapter health check: {cluster.cluster_service_url}")
                 if not client.health_check():
                     raise ValueError(
-                        f"Cluster-service is not available at "
-                        f"{cluster.cluster_service_url}"
+                        f"RAS Adapter is not available at {cluster.cluster_service_url}"
                     )
 
-                logger.info("Health check passed, fetching detailed infobases info")
+                logger.info("Health check passed, fetching infobases via v2 API")
 
-                # Get detailed infobases info
-                result = client.get_infobases(
-                    server=cluster.ras_server,
-                    cluster_id=str(cluster.id),  # Pass cluster ID to avoid authentication issues
-                    cluster_user=cluster.cluster_user or None,
-                    cluster_pwd=cluster.cluster_pwd or None,
-                    detailed=True  # Get full information
+                # Get infobases using v2 API
+                infobases_response: InfobasesResponse = client.list_infobases(
+                    cluster_id=str(cluster.id)
                 )
 
-                infobases = result.get('infobases', [])
-                logger.info(f"Retrieved {len(infobases)} infobases from cluster")
+                logger.info(f"Retrieved {infobases_response.count} infobases from cluster")
 
-                # Import infobases into Database model
-                created_count, updated_count, error_count = ClusterService._import_infobases(
+                # Import infobases into Database model using v2 types
+                created_count, updated_count, error_count = ClusterService._import_infobases_v2(
                     cluster=cluster,
-                    infobases=infobases
+                    infobases=infobases_response.infobases
                 )
 
                 # Mark sync as successful
@@ -576,7 +578,7 @@ class ClusterService:
 
                 # Update metadata with sync info
                 cluster.metadata.update({
-                    'last_sync_infobase_count': len(infobases),
+                    'last_sync_infobase_count': infobases_response.count,
                 })
                 cluster.save(update_fields=['metadata', 'updated_at'])
 
@@ -602,24 +604,25 @@ class ClusterService:
 
             # Mark sync as failed
             cluster.mark_sync(success=False, error_message=error_msg)
-
-            # Re-raise exception
             raise
 
     @staticmethod
-    def _import_infobases(cluster: Cluster, infobases: list) -> Tuple[int, int, int]:
+    def _import_infobases_v2(
+        cluster: Cluster,
+        infobases: List[Infobase]
+    ) -> Tuple[int, int, int]:
         """
-        Import infobases into Database model.
+        Import infobases into Database model using v2 Infobase types.
 
         For each infobase:
-        1. Build OData URL using _build_odata_url()
+        1. Build OData URL using _build_odata_url_v2()
         2. Parse host from db_server using _parse_host()
         3. Create/update Database using update_or_create()
-        4. Fill metadata with all available info
+        4. Fill metadata with all available info from v2 type
 
         Args:
             cluster: Cluster instance
-            infobases: List of infobase dictionaries from installation-service
+            infobases: List of Infobase objects from RAS Adapter v2 API
 
         Returns:
             (created_count, updated_count, error_count)
@@ -632,7 +635,115 @@ class ClusterService:
 
         for ib in infobases:
             try:
-                # Extract infobase data
+                # v2 types have direct attribute access
+                ib_uuid = str(ib.uuid)
+                ib_name = ib.name
+
+                if not ib_uuid or not ib_name:
+                    logger.warning(f"Skipping infobase with missing uuid or name")
+                    error_count += 1
+                    continue
+
+                # Parse host from db_server (handle UNSET)
+                db_server = ib.db_server if not isinstance(ib.db_server, type(UNSET)) else ''
+                host = ClusterService._parse_host(db_server)
+
+                # Build OData URL
+                odata_url = ClusterService._build_odata_url_v2(ib, default_host=host)
+
+                # Get optional fields (handle UNSET)
+                db_name = ib.db_name if not isinstance(ib.db_name, type(UNSET)) else ''
+                locale = ib.locale if not isinstance(ib.locale, type(UNSET)) else ''
+
+                # Prepare metadata with v2 fields
+                metadata = {
+                    'dbms': ib.dbms,
+                    'db_server': db_server,
+                    'db_name': db_name,
+                    'locale': locale,
+                    'sessions_deny': ib.sessions_deny,
+                    'scheduled_jobs_deny': ib.scheduled_jobs_deny,
+                    'imported_from_cluster': True,
+                    'import_timestamp': timezone.now().isoformat(),
+                    'ras_server': cluster.ras_server,
+                    'cluster_id': str(cluster.id),
+                    'cluster_name': cluster.name,
+                    'api_version': 'v2',
+                }
+
+                # Add denied_from/denied_to if set
+                if not isinstance(ib.denied_from, type(UNSET)) and ib.denied_from:
+                    metadata['denied_from'] = ib.denied_from.isoformat()
+                if not isinstance(ib.denied_to, type(UNSET)) and ib.denied_to:
+                    metadata['denied_to'] = ib.denied_to.isoformat()
+                if not isinstance(ib.denied_message, type(UNSET)) and ib.denied_message:
+                    metadata['denied_message'] = ib.denied_message
+
+                # Create or update Database
+                database, created = Database.objects.update_or_create(
+                    id=ib_uuid,
+                    defaults={
+                        'name': ib_name,
+                        'description': '',  # v2 API doesn't have description
+                        'host': host or 'localhost',
+                        'port': 80,
+                        'base_name': ib_name,
+                        'odata_url': odata_url,
+                        'username': '',
+                        'password': '',
+                        'cluster': cluster,
+                        'status': Database.STATUS_INACTIVE,
+                        'metadata': metadata,
+                    }
+                )
+
+                if created:
+                    created_count += 1
+                    logger.info(f"Created database: {ib_name} (id={ib_uuid})")
+                else:
+                    updated_count += 1
+                    logger.debug(f"Updated database: {ib_name} (id={ib_uuid})")
+
+            except Exception as e:
+                error_count += 1
+                logger.error(
+                    f"Failed to import infobase {getattr(ib, 'name', 'unknown')}: "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True
+                )
+
+        logger.info(
+            f"Import completed: created={created_count}, updated={updated_count}, "
+            f"errors={error_count}"
+        )
+
+        return created_count, updated_count, error_count
+
+    @staticmethod
+    def _import_infobases(cluster: Cluster, infobases: list) -> Tuple[int, int, int]:
+        """
+        Import infobases into Database model (legacy dict format).
+
+        DEPRECATED: Use _import_infobases_v2() with Infobase objects instead.
+
+        Args:
+            cluster: Cluster instance
+            infobases: List of infobase dictionaries (legacy format)
+
+        Returns:
+            (created_count, updated_count, error_count)
+        """
+        logger.warning(
+            "_import_infobases() is deprecated. Use _import_infobases_v2() with v2 types."
+        )
+        logger.info(f"Importing {len(infobases)} infobases for cluster {cluster.name}")
+
+        created_count = 0
+        updated_count = 0
+        error_count = 0
+
+        for ib in infobases:
+            try:
                 ib_uuid = ib.get('uuid')
                 ib_name = ib.get('name')
 
@@ -641,14 +752,10 @@ class ClusterService:
                     error_count += 1
                     continue
 
-                # Parse host from db_server
                 db_server = ib.get('db_server', '')
                 host = ClusterService._parse_host(db_server)
-
-                # Build OData URL
                 odata_url = ClusterService._build_odata_url(ib, default_host=host)
 
-                # Prepare metadata
                 metadata = {
                     'dbms': ib.get('dbms', ''),
                     'db_server': db_server,
@@ -660,24 +767,23 @@ class ClusterService:
                     'imported_from_cluster': True,
                     'import_timestamp': timezone.now().isoformat(),
                     'ras_server': cluster.ras_server,
-                    'cluster_id': str(cluster.id),  # Convert UUID to string for JSON
+                    'cluster_id': str(cluster.id),
                     'cluster_name': cluster.name,
                 }
 
-                # Create or update Database
                 database, created = Database.objects.update_or_create(
                     id=ib_uuid,
                     defaults={
                         'name': ib_name,
                         'description': ib.get('description', ''),
                         'host': host or 'localhost',
-                        'port': 80,  # Default HTTP port
+                        'port': 80,
                         'base_name': ib_name,
                         'odata_url': odata_url,
-                        'username': '',  # Will be set manually by admin
-                        'password': '',  # Will be set manually by admin
+                        'username': '',
+                        'password': '',
                         'cluster': cluster,
-                        'status': Database.STATUS_INACTIVE,  # Inactive until credentials configured
+                        'status': Database.STATUS_INACTIVE,
                         'metadata': metadata,
                     }
                 )
@@ -723,19 +829,37 @@ class ClusterService:
         if not db_server:
             return ''
 
-        # Split by backslash (SQL Server instance separator)
         parts = db_server.split('\\')
         return parts[0]
 
     @staticmethod
-    def _build_odata_url(ib: dict, default_host: str) -> str:
+    def _build_odata_url_v2(ib: Infobase, default_host: str) -> str:
         """
-        Build OData URL for infobase.
+        Build OData URL for infobase using v2 Infobase type.
 
         Format: http://host/base_name/odata/standard.odata/
 
         Args:
-            ib: Infobase dictionary from installation-service
+            ib: Infobase object from RAS Adapter v2 API
+            default_host: Default host to use if db_server is not set
+
+        Returns:
+            OData URL string
+        """
+        base_name = ib.name
+        host = default_host or 'localhost'
+
+        return f"http://{host}/{base_name}/odata/standard.odata/"
+
+    @staticmethod
+    def _build_odata_url(ib: dict, default_host: str) -> str:
+        """
+        Build OData URL for infobase (legacy dict format).
+
+        Format: http://host/base_name/odata/standard.odata/
+
+        Args:
+            ib: Infobase dictionary (legacy format)
             default_host: Default host to use if not specified in ib
 
         Returns:
@@ -744,8 +868,4 @@ class ClusterService:
         base_name = ib.get('name', '')
         host = default_host or 'localhost'
 
-        # Build OData URL
-        # Format: http://host/base_name/odata/standard.odata/
-        odata_url = f"http://{host}/{base_name}/odata/standard.odata/"
-
-        return odata_url
+        return f"http://{host}/{base_name}/odata/standard.odata/"
