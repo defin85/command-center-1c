@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Tag, Modal, Form, Input, message, Popconfirm, Select } from 'antd'
+import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { clustersApi, Cluster, ClusterCreateRequest } from '../../api/endpoints/clusters'
@@ -8,6 +8,7 @@ const { TextArea } = Input
 
 export const Clusters = () => {
     const navigate = useNavigate()
+    const { message } = App.useApp()
     const [clusters, setClusters] = useState<Cluster[]>([])
     const [loading, setLoading] = useState(false)
     const [modalVisible, setModalVisible] = useState(false)

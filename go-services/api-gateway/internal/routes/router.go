@@ -94,23 +94,38 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	v2.Use(auth.AuthMiddleware(jwtManager))
 	v2.Use(middleware.RateLimitMiddleware(100, time.Minute)) // 100 req/min
 	{
-		// RAS Adapter routes - Cluster management (GET for list/get operations)
+		// RAS Adapter routes - Infobase management via /infobases/ group
+		infobases := v2.Group("/infobases")
+		{
+			infobases.GET("/list-infobases", rasHandler)
+			infobases.GET("/get-infobase", rasHandler)
+			infobases.POST("/create-infobase", rasHandler)
+			infobases.POST("/drop-infobase", rasHandler)
+			infobases.POST("/lock-infobase", rasHandler)
+			infobases.POST("/unlock-infobase", rasHandler)
+			infobases.POST("/block-sessions", rasHandler)
+			infobases.POST("/unblock-sessions", rasHandler)
+		}
+
+		// RAS Adapter routes - Session management via /sessions/ group
+		sessions := v2.Group("/sessions")
+		{
+			sessions.GET("/list-sessions", rasHandler)
+			sessions.POST("/terminate-session", rasHandler)
+			sessions.POST("/terminate-sessions", rasHandler)
+		}
+
+		// Legacy flat routes (for backward compatibility)
 		v2.GET("/list-clusters", rasHandler)
 		v2.GET("/get-cluster", rasHandler)
-
-		// RAS Adapter routes - Infobase management
 		v2.GET("/list-infobases", rasHandler)
 		v2.GET("/get-infobase", rasHandler)
 		v2.POST("/create-infobase", rasHandler)
 		v2.POST("/drop-infobase", rasHandler)
-
-		// RAS Adapter routes - Lock/Unlock (POST for state-changing operations)
 		v2.POST("/lock-infobase", rasHandler)
 		v2.POST("/unlock-infobase", rasHandler)
 		v2.POST("/block-sessions", rasHandler)
 		v2.POST("/unblock-sessions", rasHandler)
-
-		// RAS Adapter routes - Session management
 		v2.GET("/list-sessions", rasHandler)
 		v2.POST("/terminate-session", rasHandler)
 		v2.POST("/terminate-sessions", rasHandler)
@@ -118,9 +133,10 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 		// Jaeger tracing routes
 		v2.Any("/tracing/*path", jaegerHandler)
 
-		// Orchestrator routes (all other v2 paths)
+		// Orchestrator routes (Django backend for CRUD operations)
 		v2.Any("/operations/*path", handlers.ProxyToOrchestratorV2)
 		v2.Any("/databases/*path", handlers.ProxyToOrchestratorV2)
+		v2.Any("/clusters/*path", handlers.ProxyToOrchestratorV2)  // Cluster CRUD
 		v2.Any("/workflows/*path", handlers.ProxyToOrchestratorV2)
 		v2.Any("/system/*path", handlers.ProxyToOrchestratorV2)
 	}

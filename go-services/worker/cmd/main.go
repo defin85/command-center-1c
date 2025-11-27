@@ -157,12 +157,27 @@ func main() {
 	log.Info("connected to Redis queue")
 
 
-	// Start Prometheus metrics endpoint
+	// Start Prometheus metrics and health endpoints
 	go func() {
 		metricsPort := ":9091"
-		http.Handle("/metrics", promhttp.Handler())
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+
+		// Health endpoint with Redis check
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			// Check Redis connectivity
+			if err := redisClient.Ping(r.Context()).Err(); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte(`{"status":"unhealthy","redis":"disconnected","error":"` + err.Error() + `"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"healthy","redis":"connected","service":"cc1c-worker"}`))
+		})
+
 		log.Info("metrics endpoint started", zap.String("port", metricsPort))
-		if err := http.ListenAndServe(metricsPort, nil); err != nil {
+		if err := http.ListenAndServe(metricsPort, mux); err != nil {
 			log.Error("metrics endpoint failed", zap.Error(err))
 		}
 	}()

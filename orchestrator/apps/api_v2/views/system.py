@@ -20,28 +20,64 @@ logger = logging.getLogger(__name__)
 HEALTH_TIMEOUT = 1.5
 
 
-def check_service(name: str, url: str) -> dict:
+def check_service(name: str, service_type: str, url: str) -> dict:
     """
     Check health of a single service.
 
     Args:
-        name: Service name for response
+        name: Service display name
+        service_type: Service type (go-service, database, cache)
         url: Health check endpoint URL
 
     Returns:
-        dict with 'name' and 'status' keys
+        dict with service health info in frontend-compatible format
     """
+    import time
+    start_time = time.time()
+
     try:
         resp = requests.get(url, timeout=HEALTH_TIMEOUT)
-        status = 'healthy' if resp.status_code == 200 else 'degraded'
-        return {'name': name, 'status': status}
+        response_time_ms = (time.time() - start_time) * 1000
+        status = 'online' if resp.status_code == 200 else 'degraded'
+        return {
+            'name': name,
+            'type': service_type,
+            'url': url,
+            'status': status,
+            'response_time_ms': round(response_time_ms, 2),
+            'last_check': timezone.now().isoformat(),
+        }
     except requests.exceptions.Timeout:
-        return {'name': name, 'status': 'timeout'}
+        return {
+            'name': name,
+            'type': service_type,
+            'url': url,
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': 'timeout'},
+        }
     except requests.exceptions.ConnectionError:
-        return {'name': name, 'status': 'unhealthy'}
+        return {
+            'name': name,
+            'type': service_type,
+            'url': url,
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': 'connection_refused'},
+        }
     except Exception as e:
         logger.warning(f"Health check failed for {name}: {e}")
-        return {'name': name, 'status': 'unhealthy'}
+        return {
+            'name': name,
+            'type': service_type,
+            'url': url,
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': str(e)},
+        }
 
 
 @api_view(['GET'])
@@ -52,22 +88,39 @@ def system_health(request):
 
     Returns comprehensive system health status with parallel service checks.
 
-    Response:
+    Response format matches frontend SystemHealthResponse interface:
         {
-            "status": "healthy|degraded|unhealthy",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "overall_status": "healthy|degraded|critical",
             "services": [
-                {"name": "api-gateway", "status": "healthy"},
-                {"name": "ras-adapter", "status": "healthy"},
-                {"name": "postgresql", "status": "healthy"},
-                {"name": "redis", "status": "healthy"}
+                {
+                    "name": "API Gateway",
+                    "type": "go-service",
+                    "url": "http://localhost:8080/health",
+                    "status": "online|offline|degraded",
+                    "response_time_ms": 12.5,
+                    "last_check": "2024-01-01T00:00:00Z"
+                }
             ],
-            "timestamp": "2024-01-01T00:00:00Z"
+            "statistics": {
+                "total": 4,
+                "online": 3,
+                "offline": 1,
+                "degraded": 0
+            }
         }
     """
-    # External services to check
+    import time
+
+    # Services to check: (name, type, url)
     services = [
-        ('api-gateway', 'http://localhost:8080/health'),
-        ('ras-adapter', 'http://localhost:8088/health'),
+        ('API Gateway', 'go-service', 'http://localhost:8080/health'),
+        ('RAS Adapter', 'go-service', 'http://localhost:8088/health'),
+        ('Worker', 'go-service', 'http://localhost:9091/health'),
+        ('Orchestrator', 'django', 'http://localhost:8000/health'),
+        ('Prometheus', 'monitoring', 'http://localhost:9090/-/healthy'),
+        ('Grafana', 'monitoring', 'http://localhost:5000/api/health'),
+        ('Jaeger', 'tracing', 'http://localhost:16686/'),
     ]
 
     results = []
@@ -75,53 +128,105 @@ def system_health(request):
     # Check external services in parallel
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(check_service, name, url): name
-            for name, url in services
+            executor.submit(check_service, name, stype, url): name
+            for name, stype, url in services
         }
         try:
-            for future in as_completed(futures, timeout=2.0):
+            for future in as_completed(futures, timeout=3.0):
                 try:
                     results.append(future.result())
                 except Exception as e:
                     service_name = futures[future]
                     logger.warning(f"Health check failed for {service_name}: {e}")
-                    results.append({'name': service_name, 'status': 'unhealthy'})
+                    results.append({
+                        'name': service_name,
+                        'type': 'go-service',
+                        'status': 'offline',
+                        'response_time_ms': None,
+                        'last_check': timezone.now().isoformat(),
+                        'details': {'error': str(e)},
+                    })
         except TimeoutError:
-            # Handle case when as_completed times out
             for future, service_name in futures.items():
                 if not future.done():
                     future.cancel()
-                    results.append({'name': service_name, 'status': 'timeout'})
+                    results.append({
+                        'name': service_name,
+                        'type': 'go-service',
+                        'status': 'offline',
+                        'response_time_ms': None,
+                        'last_check': timezone.now().isoformat(),
+                        'details': {'error': 'timeout'},
+                    })
 
     # Check PostgreSQL
     try:
+        start = time.time()
         connection.ensure_connection()
-        results.append({'name': 'postgresql', 'status': 'healthy'})
+        response_time = (time.time() - start) * 1000
+        results.append({
+            'name': 'PostgreSQL',
+            'type': 'database',
+            'status': 'online',
+            'response_time_ms': round(response_time, 2),
+            'last_check': timezone.now().isoformat(),
+        })
     except Exception as e:
         logger.warning(f"PostgreSQL health check failed: {e}")
-        results.append({'name': 'postgresql', 'status': 'unhealthy'})
+        results.append({
+            'name': 'PostgreSQL',
+            'type': 'database',
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': str(e)},
+        })
 
-    # Check Redis
+    # Check Redis (direct connection)
     try:
-        from django_redis import get_redis_connection
-        redis_conn = get_redis_connection("default")
-        redis_conn.ping()
-        results.append({'name': 'redis', 'status': 'healthy'})
+        import redis
+        start = time.time()
+        redis_client = redis.Redis(host='localhost', port=6379, socket_timeout=2)
+        redis_client.ping()
+        response_time = (time.time() - start) * 1000
+        results.append({
+            'name': 'Redis',
+            'type': 'cache',
+            'status': 'online',
+            'response_time_ms': round(response_time, 2),
+            'last_check': timezone.now().isoformat(),
+        })
     except Exception as e:
         logger.warning(f"Redis health check failed: {e}")
-        results.append({'name': 'redis', 'status': 'unhealthy'})
+        results.append({
+            'name': 'Redis',
+            'type': 'cache',
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': str(e)},
+        })
 
-    # Determine overall status
+    # Calculate statistics
     statuses = [r['status'] for r in results]
-    if all(s == 'healthy' for s in statuses):
-        overall = 'healthy'
-    elif any(s == 'unhealthy' for s in statuses):
-        overall = 'unhealthy'
-    else:
+    statistics = {
+        'total': len(results),
+        'online': sum(1 for s in statuses if s == 'online'),
+        'offline': sum(1 for s in statuses if s == 'offline'),
+        'degraded': sum(1 for s in statuses if s == 'degraded'),
+    }
+
+    # Determine overall status (frontend uses: healthy, degraded, critical)
+    if statistics['offline'] > 0:
+        overall = 'critical'
+    elif statistics['degraded'] > 0:
         overall = 'degraded'
+    else:
+        overall = 'healthy'
 
     return Response({
-        'status': overall,
-        'services': results,
         'timestamp': timezone.now().isoformat(),
+        'overall_status': overall,
+        'services': results,
+        'statistics': statistics,
     })

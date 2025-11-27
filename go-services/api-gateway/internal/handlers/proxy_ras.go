@@ -42,12 +42,21 @@ func NewRASProxyHandler(rasAdapterURL string) (*RASProxyHandler, error) {
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 
-		// Path is already /api/v2/* from gateway, RAS Adapter expects the same
-		// No transformation needed since RAS Adapter already uses v2 paths
+		// Transform grouped paths to flat action-based paths for RAS Adapter
+		// /api/v2/clusters/list-clusters → /api/v2/list-clusters
+		// /api/v2/infobases/list-infobases → /api/v2/list-infobases
+		// /api/v2/sessions/list-sessions → /api/v2/list-sessions
+		originalPath := req.URL.Path
+		path := originalPath
+		path = strings.Replace(path, "/api/v2/clusters/", "/api/v2/", 1)
+		path = strings.Replace(path, "/api/v2/infobases/", "/api/v2/", 1)
+		path = strings.Replace(path, "/api/v2/sessions/", "/api/v2/", 1)
+		req.URL.Path = path
 
 		logger.GetLogger().Debug("RAS proxy request",
 			zap.String("method", req.Method),
-			zap.String("path", req.URL.Path),
+			zap.String("original_path", originalPath),
+			zap.String("transformed_path", path),
 			zap.String("target", targetURL.String()),
 		)
 	}

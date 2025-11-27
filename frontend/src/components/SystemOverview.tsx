@@ -18,7 +18,15 @@ interface SystemOverviewProps {
 }
 
 export const SystemOverview: React.FC<SystemOverviewProps> = ({ health }) => {
-    const { statistics, overall_status } = health;
+    const { overall_status } = health;
+
+    // Default statistics if not provided by API
+    const statistics = health.statistics ?? {
+        total: health.services?.length ?? 0,
+        online: health.services?.filter(s => s.status === 'online').length ?? 0,
+        offline: health.services?.filter(s => s.status === 'offline').length ?? 0,
+        degraded: health.services?.filter(s => s.status === 'degraded').length ?? 0,
+    };
 
     const getOverallStatusConfig = () => {
         switch (overall_status) {
@@ -54,7 +62,9 @@ export const SystemOverview: React.FC<SystemOverviewProps> = ({ health }) => {
     };
 
     const statusConfig = getOverallStatusConfig();
-    const healthPercentage = Math.round((statistics.online / statistics.total) * 100);
+    const healthPercentage = statistics.total > 0
+        ? Math.round((statistics.online / statistics.total) * 100)
+        : 0;
 
     return (
         <Space direction="vertical" style={{ width: '100%' }} size="large">
