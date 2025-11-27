@@ -289,8 +289,6 @@ def bulk_health_check(request):
     results = []
     summary = {'total': len(databases), 'healthy': 0, 'degraded': 0, 'down': 0}
 
-    import time
-    import requests as http_requests
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def check_db(db):

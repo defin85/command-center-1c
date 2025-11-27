@@ -212,7 +212,6 @@ def subscribe_installation_progress(self):
         - task_failed: установка завершена с ошибкой
     """
     import signal
-    import sys
     from .models import ExtensionInstallation
 
     redis_client = get_redis_client()

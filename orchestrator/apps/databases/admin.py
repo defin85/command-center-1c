@@ -11,7 +11,7 @@ from django.conf import settings
 from django.db.models import Count, Q
 from .models import Cluster, Database, DatabaseGroup, ExtensionInstallation, BatchService, StatusHistory
 from .services import DatabaseService, ClusterService
-from .clients import ClusterServiceClient, BatchServiceClient, RasAdapterClient, RasAdapterError
+from .clients import BatchServiceClient, RasAdapterClient, RasAdapterError
 from .clients.generated.ras_adapter_api_client.types import UNSET
 
 logger = logging.getLogger(__name__)

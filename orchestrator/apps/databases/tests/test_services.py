@@ -1,8 +1,7 @@
 """Integration tests для DatabaseService и ODataOperationService."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from django.test import TestCase
+from unittest.mock import patch, MagicMock
 
 from apps.databases.models import Database, DatabaseGroup
 from apps.databases.services import DatabaseService, ODataOperationService

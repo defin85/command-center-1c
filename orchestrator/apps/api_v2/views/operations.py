@@ -6,7 +6,6 @@ Provides action-based endpoints for batch operations management.
 
 import logging
 
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -227,7 +226,7 @@ def cancel_operation(request):
 
     # Audit logging
     logger.info(
-        f"Operation cancelled by user",
+        "Operation cancelled by user",
         extra={
             'operation_id': operation_id,
             'operation_type': operation.operation_type,

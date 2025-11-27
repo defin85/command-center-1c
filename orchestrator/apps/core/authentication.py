@@ -4,7 +4,6 @@ Custom JWT Authentication для service-to-service requests.
 """
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
-from django.contrib.auth.models import AnonymousUser
 
 
 class ServiceUser:
@@ -46,7 +45,7 @@ class ServiceJWTAuthentication(JWTAuthentication):
         logger = logging.getLogger(__name__)
 
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        logger.debug(f"ServiceJWT authenticate called", extra={
+        logger.debug("ServiceJWT authenticate called", extra={
             "auth_header_preview": auth_header[:50] if auth_header else 'missing',
             "path": request.path,
         })
@@ -55,7 +54,7 @@ class ServiceJWTAuthentication(JWTAuthentication):
             result = super().authenticate(request)
             if result:
                 user, token = result
-                logger.info(f"ServiceJWT authentication successful", extra={
+                logger.info("ServiceJWT authentication successful", extra={
                     "user": str(user),
                     "is_service": hasattr(user, 'service_name'),
                 })

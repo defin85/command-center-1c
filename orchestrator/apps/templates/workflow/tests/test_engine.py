@@ -12,10 +12,9 @@ Covers:
 
 import pytest
 import threading
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
-from django.db import transaction
 from apps.templates.workflow.engine import WorkflowEngine, WorkflowEngineError, get_workflow_engine
 from apps.templates.workflow.models import WorkflowExecution
 

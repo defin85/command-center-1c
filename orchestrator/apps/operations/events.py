@@ -1,6 +1,6 @@
 """Event publishing для workflow tracking."""
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from django.utils import timezone
 from django.conf import settings
 import redis

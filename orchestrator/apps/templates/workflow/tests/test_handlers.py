@@ -11,8 +11,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from decimal import Decimal
+from unittest.mock import Mock, patch
 
 from apps.templates.workflow.handlers import (
     NodeExecutionMode,
@@ -24,8 +23,6 @@ from apps.templates.workflow.handlers import (
 )
 from apps.templates.workflow.models import (
     WorkflowNode,
-    WorkflowExecution,
-    WorkflowTemplate,
     WorkflowStepResult,
     NodeConfig,
 )

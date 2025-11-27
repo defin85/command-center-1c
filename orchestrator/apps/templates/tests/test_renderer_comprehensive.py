@@ -11,16 +11,12 @@ Tests cover:
 
 import pytest
 import time
-from datetime import datetime, date
-from unittest.mock import Mock, patch
-from decimal import Decimal
+from unittest.mock import Mock
 
 from apps.templates.engine import (
     TemplateRenderer,
     TemplateRenderError,
-    TemplateError,
 )
-from jinja2 import TemplateSyntaxError, UndefinedError
 
 
 class TestEdgeCases:

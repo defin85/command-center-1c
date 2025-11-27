@@ -5,7 +5,7 @@ ResultWaiter - ожидание результатов операции (SYNC р
 """
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from django.db import connection
 

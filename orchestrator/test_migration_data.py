@@ -62,10 +62,10 @@ if services.exists():
     print(f"Type: {type(is_active_compat)}")
 
     if isinstance(is_active_compat, bool):
-        print(f"PASSED: is_active_compat works correctly")
+        print("PASSED: is_active_compat works correctly")
         print(f"Logic: status='{service.status}' -> is_active_compat={is_active_compat}")
     else:
-        print(f"FAILED: is_active_compat should return bool")
+        print("FAILED: is_active_compat should return bool")
         sys.exit(1)
 
 # Summary

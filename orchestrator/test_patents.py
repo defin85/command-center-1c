@@ -2,14 +2,12 @@
 """Тест чтения справочника Патенты."""
 
 import os
-import sys
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from apps.databases.odata import ODataClient
-import json
 
 def test_patents():
     """Прочитать справочник Патенты."""

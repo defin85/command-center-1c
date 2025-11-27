@@ -13,7 +13,6 @@ import json
 
 from apps.templates.engine import (
     TemplateRenderer,
-    TemplateRenderError,
 )
 from apps.templates.engine.renderer import CustomJSONEncoder
 from apps.templates.engine.filters import (

@@ -8,7 +8,6 @@ import os
 import sys
 import django
 import requests
-import json
 from datetime import datetime
 
 # Setup Django
@@ -97,7 +96,7 @@ def test_1_database_models():
         db.mark_health_check(success=True, response_time=15.5)
         db.refresh_from_db()
 
-        print_success(f"Health check updated")
+        print_success("Health check updated")
         print_info(f"  Status: {db.last_check_status}")
         print_info(f"  Avg response time: {db.avg_response_time:.2f}ms")
 
@@ -169,7 +168,7 @@ def test_2_operation_models():
         batch.update_progress()
         batch.refresh_from_db()
 
-        print_success(f"Batch progress updated")
+        print_success("Batch progress updated")
         print_info(f"  Progress: {batch.progress}%")
         print_info(f"  Success rate: {batch.success_rate:.1f}%")
 

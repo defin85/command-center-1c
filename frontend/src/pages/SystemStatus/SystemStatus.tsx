@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Card, Row, Col, Spin, message, Space } from 'antd';
+import { useState, useEffect, useCallback } from 'react';
+import { Card, Row, Col, Spin, Space, App } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { systemApi } from '../../api/endpoints/system';
 import type { SystemHealthResponse } from '../../api/endpoints/system';
@@ -7,10 +7,11 @@ import { SystemOverview } from '../../components/SystemOverview';
 import { ServiceStatusCard } from '../../components/ServiceStatusCard';
 
 export const SystemStatus = () => {
+    const { message } = App.useApp();
     const [health, setHealth] = useState<SystemHealthResponse | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchHealth = async () => {
+    const fetchHealth = useCallback(async () => {
         try {
             const data = await systemApi.getHealth();
             setHealth(data);
@@ -20,7 +21,7 @@ export const SystemStatus = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [message]);
 
     useEffect(() => {
         fetchHealth();
@@ -31,12 +32,14 @@ export const SystemStatus = () => {
         }, 15000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchHealth]);
 
     if (loading) {
         return (
             <div style={{ textAlign: 'center', padding: '50px' }}>
-                <Spin size="large" tip="Загрузка статуса системы..." />
+                <Spin size="large">
+                    <div style={{ padding: '20px' }}>Загрузка статуса системы...</div>
+                </Spin>
             </div>
         );
     }

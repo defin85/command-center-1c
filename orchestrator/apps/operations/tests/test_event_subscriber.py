@@ -4,9 +4,8 @@ Unit tests for Event Subscriber.
 Tests Redis Streams integration, event processing, and Task status updates.
 """
 
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch, MagicMock
 from django.test import TestCase, override_settings
-from django.utils import timezone
 import json
 
 from apps.operations.event_subscriber import EventSubscriber

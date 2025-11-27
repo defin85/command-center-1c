@@ -2,13 +2,12 @@
 
 import logging
 from typing import Dict, List, Any, Tuple
-from datetime import datetime
 from django.db import transaction, OperationalError
 from django.utils import timezone
 
 from .models import Database, DatabaseGroup, Cluster
-from .odata import ODataClient, session_manager, ODataError
-from .clients import ClusterServiceClient, RasAdapterClient, RasAdapterError
+from .odata import session_manager, ODataError
+from .clients import RasAdapterClient, RasAdapterError
 from .clients.generated.ras_adapter_api_client.models import (
     Infobase,
     InfobasesResponse,
@@ -640,7 +639,7 @@ class ClusterService:
                 ib_name = ib.name
 
                 if not ib_uuid or not ib_name:
-                    logger.warning(f"Skipping infobase with missing uuid or name")
+                    logger.warning("Skipping infobase with missing uuid or name")
                     error_count += 1
                     continue
 

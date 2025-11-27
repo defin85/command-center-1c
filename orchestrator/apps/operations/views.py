@@ -7,7 +7,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.conf import settings
 from .models import BatchOperation, Task
-from .serializers import BatchOperationSerializer, TaskSerializer
+from .serializers import BatchOperationSerializer
 from .redis_client import redis_client
 import logging
 import json
@@ -274,9 +274,9 @@ def operation_stream(request, operation_id):
                     "created_at": operation.created_at.isoformat()
                 }
             }
-            logger.info(f"event_stream: Sending initial event")
+            logger.info("event_stream: Sending initial event")
             yield f"data: {json.dumps(initial_event)}\n\n"
-            logger.info(f"event_stream: Initial event sent")
+            logger.info("event_stream: Initial event sent")
         except BatchOperation.DoesNotExist:
             error_event = {
                 "error": "Operation not found",

@@ -9,8 +9,6 @@ Tests:
 - Cache invalidation methods (placeholders)
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from apps.templates.engine import TemplateCompiler
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 

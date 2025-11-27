@@ -6,6 +6,7 @@ Provides real-time and historical metrics for:
 - Request rates, latencies, error rates
 - Active workers and queue depths
 """
+import asyncio
 import httpx
 import logging
 from typing import Optional, List, Dict, Any
@@ -334,10 +335,7 @@ class PrometheusClient:
             # Query for requests between services
             # This is a simplified query - in production, you'd have more specific labels
             source_config = SERVICE_CONFIG.get(source, {})
-            target_config = SERVICE_CONFIG.get(target, {})
-
             source_job = source_config.get('job_patterns', [source])[0]
-            target_job = target_config.get('job_patterns', [target])[0]
 
             # Simplified - just use mock data based on general traffic
             # In production, you'd have specific metrics for inter-service calls

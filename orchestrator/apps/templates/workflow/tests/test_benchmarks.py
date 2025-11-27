@@ -16,9 +16,8 @@ Benchmark Requirements (Week 11):
 
 import pytest
 import time
-from unittest.mock import Mock, patch, MagicMock
-from typing import Any, Dict, List
-from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
+from typing import Any, Dict
 
 from apps.templates.workflow.engine import WorkflowEngine
 from apps.templates.workflow.executor import DAGExecutor
@@ -30,7 +29,6 @@ from apps.templates.workflow.models import (
     WorkflowEdge,
     DAGStructure,
     NodeConfig,
-    ParallelConfig,
 )
 from apps.templates.workflow.handlers import (
     NodeHandlerFactory,

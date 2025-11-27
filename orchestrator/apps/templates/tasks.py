@@ -8,11 +8,10 @@ Provides async task execution for:
 """
 
 import logging
-from typing import Any, Dict, Optional
 
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
-from django.db import transaction, OperationalError
+from django.db import OperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,6 @@ def execute_workflow_node(
     from apps.templates.workflow.models import (
         DAGStructure,
         WorkflowExecution,
-        WorkflowNode,
     )
 
     logger.info(

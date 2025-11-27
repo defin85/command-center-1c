@@ -6,14 +6,12 @@ Provides WebSocket endpoints for:
 - Node execution progress notifications
 - Client-initiated status queries
 """
-import json
 import logging
 from typing import Optional, Any, Dict
 from uuid import UUID
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from asgiref.sync import sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
 
 logger = logging.getLogger(__name__)

@@ -19,11 +19,10 @@ import os
 from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
-from django.utils import timezone
 from django.db import transaction
 import logging
 
-from apps.operations.models import BatchOperation, Task
+from apps.operations.models import Task
 
 logger = logging.getLogger(__name__)
 

@@ -3,11 +3,9 @@ Tests for extension installation callback endpoint.
 Tests the /api/v1/extensions/installation/callback/ endpoint behavior.
 """
 
-from django.test import TestCase, Client
-from django.contrib.auth.models import User
+from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
-from rest_framework import status
 import json
 import uuid
 

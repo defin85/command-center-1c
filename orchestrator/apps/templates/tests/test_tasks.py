@@ -11,10 +11,9 @@ Covers:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
-from celery.exceptions import MaxRetriesExceededError
 
 from apps.templates.tasks import (
     execute_workflow_node,
@@ -165,7 +164,7 @@ class TestExecuteWorkflowNodeTask:
             mock_handler = Mock()
             mock_factory.get_handler.return_value = mock_handler
 
-            from apps.templates.workflow.handlers import NodeExecutionMode, NodeExecutionResult
+            from apps.templates.workflow.handlers import NodeExecutionResult
 
             def capture_context(node, context, execution, mode):
                 context_passed.append(context)

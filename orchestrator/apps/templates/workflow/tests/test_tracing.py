@@ -11,8 +11,7 @@ Covers:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, Mock, call
-from uuid import uuid4
+from unittest.mock import patch, MagicMock
 
 from apps.templates.tracing import (
     OTEL_AVAILABLE,
@@ -35,7 +34,6 @@ from apps.templates.tracing import (
     get_trace_context_for_logging,
     _NoOpSpan,
 )
-from apps.templates.workflow.models import WorkflowExecution, WorkflowStepResult
 
 
 # ============================================================================
@@ -654,7 +652,7 @@ class TestTracingIntegrationScenarios:
                 ) as node_span:
                     # Record some operations
                     trace_workflow_event(
-                        f"node_executed",
+                        "node_executed",
                         str(execution.id),
                         {"node_id": node_id}
                     )

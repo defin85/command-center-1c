@@ -82,7 +82,7 @@ class TemplateCompiler:
         if compiled is None:
             # Cache miss - compile template
             logger.debug(
-                f"Template cache miss - compiling",
+                "Template cache miss - compiling",
                 extra={'template_id': template_id, 'cache_key': cache_key}
             )
 
@@ -104,7 +104,7 @@ class TemplateCompiler:
         else:
             # Cache hit
             logger.debug(
-                f"Template cache hit",
+                "Template cache hit",
                 extra={'template_id': template_id, 'cache_key': cache_key}
             )
 
@@ -132,7 +132,7 @@ class TemplateCompiler:
                 del self._cache[key]
 
             logger.info(
-                f"Cache invalidation completed for template",
+                "Cache invalidation completed for template",
                 extra={'template_id': template_id, 'entries_removed': len(keys_to_remove)}
             )
 

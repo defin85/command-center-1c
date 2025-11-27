@@ -14,117 +14,6 @@ from .services import DatabaseService
 from .storage import ExtensionStorageService
 
 
-class DatabaseViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet для управления базами данных 1С.
-
-    Endpoints:
-    - GET /api/v1/databases/ - список баз
-    - POST /api/v1/databases/ - создать базу
-    - GET /api/v1/databases/{id}/ - получить базу
-    - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-    - DELETE /api/v1/databases/{id}/ - удалить базу
-    - POST /api/v1/databases/{id}/health_check/ - проверить здоровье
-    - POST /api/v1/databases/bulk_health_check/ - проверить все базы
-    """
-
-    queryset = Database.objects.all()
-    serializer_class = DatabaseSerializer
-    filterset_fields = ['status', 'last_check_status']
-    search_fields = ['name', 'host', 'description']
-    ordering_fields = ['name', 'created_at', 'last_check']
-    ordering = ['-created_at']
-
-    @extend_schema(
-        summary="Health check для одной базы",
-        description="Проверяет доступность и работоспособность базы 1С через OData",
-        responses={
-            200: OpenApiResponse(
-                description="Health check выполнен",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'database_id': {'type': 'string'},
-                        'database_name': {'type': 'string'},
-                        'healthy': {'type': 'boolean'},
-                        'response_time': {'type': 'number'},
-                        'error': {'type': 'string', 'nullable': True},
-                        'status_code': {'type': 'integer', 'nullable': True}
-                    }
-                }
-            ),
-            404: OpenApiResponse(description="База не найдена")
-        }
-    )
-    @action(detail=True, methods=['post'], url_path='health-check')
-    def health_check(self, request, pk=None):
-        """
-        Проверить здоровье одной базы.
-
-        POST /api/v1/databases/{id}/health-check/
-        """
-        database = self.get_object()
-
-        # Выполняем health check через service
-        result = DatabaseService.health_check_database(database)
-
-        return Response({
-            'database_id': str(database.id),
-            'database_name': database.name,
-            **result
-        })
-
-    @extend_schema(
-        summary="Bulk health check для всех баз (async)",
-        description="Асинхронная проверка всех баз или отфильтрованного набора баз через Celery",
-        parameters=[
-            OpenApiParameter(
-                name='status',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                description='Фильтр по статусу (active, inactive, error, maintenance)',
-                required=False
-            )
-        ],
-        responses={
-            202: OpenApiResponse(
-                description="Health check задача создана",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'task_id': {'type': 'string'},
-                        'status': {'type': 'string'},
-                        'total_databases': {'type': 'integer'}
-                    }
-                }
-            )
-        }
-    )
-    @action(detail=False, methods=['post'], url_path='bulk-health-check')
-    def bulk_health_check(self, request):
-        """
-        Запланировать асинхронную проверку здоровья всех баз.
-
-        POST /api/v1/databases/bulk-health-check/?status=active
-
-        Возвращает task_id для отслеживания прогресса.
-        """
-        from .tasks import check_databases_health
-
-        # Получаем queryset (может быть отфильтрован)
-        queryset = self.filter_queryset(self.get_queryset())
-        database_ids = list(queryset.values_list('id', flat=True))
-
-        # Запускаем асинхронную задачу
-        task = check_databases_health.delay(database_ids)
-
-        return Response({
-            'task_id': str(task.id),
-            'status': 'scheduled',
-            'total_databases': len(database_ids)
-        }, status=status.HTTP_202_ACCEPTED)
-
-
 class DatabaseGroupViewSet(viewsets.ModelViewSet):
     """
     ViewSet для управления группами баз данных.
@@ -325,7 +214,6 @@ def installation_callback(request):
         "error_message": null
     }
     """
-    from django.utils import timezone
 
     database_id = request.data.get('database_id')
     extension_name = request.data.get('extension_name')
@@ -459,11 +347,106 @@ class ClusterViewSet(viewsets.ModelViewSet):
 
 
 class DatabaseViewSet(viewsets.ModelViewSet):
-    """Extended with installation actions."""
-    
+    """
+    ViewSet для управления базами данных 1С.
+
+    Endpoints:
+    - GET /api/v1/databases/ - список баз
+    - POST /api/v1/databases/ - создать базу
+    - GET /api/v1/databases/{id}/ - получить базу
+    - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
+    - DELETE /api/v1/databases/{id}/ - удалить базу
+    - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
+    - POST /api/v1/databases/bulk-health-check/ - проверить все базы
+    - POST /api/v1/databases/{id}/install-extension/ - установить расширение
+    """
+
     queryset = Database.objects.all()
     serializer_class = DatabaseSerializer
-    
+    filterset_fields = ['status', 'last_check_status']
+    search_fields = ['name', 'host', 'description']
+    ordering_fields = ['name', 'created_at', 'last_check']
+    ordering = ['-created_at']
+
+    @extend_schema(
+        summary="Health check для одной базы",
+        description="Проверяет доступность и работоспособность базы 1С через OData",
+        responses={
+            200: OpenApiResponse(
+                description="Health check выполнен",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'database_id': {'type': 'string'},
+                        'database_name': {'type': 'string'},
+                        'healthy': {'type': 'boolean'},
+                        'response_time': {'type': 'number'},
+                        'error': {'type': 'string', 'nullable': True},
+                        'status_code': {'type': 'integer', 'nullable': True}
+                    }
+                }
+            ),
+            404: OpenApiResponse(description="База не найдена")
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='health-check')
+    def health_check(self, request, pk=None):
+        """
+        Проверить здоровье одной базы.
+
+        POST /api/v1/databases/{id}/health-check/
+        """
+        database = self.get_object()
+        result = DatabaseService.health_check_database(database)
+        return Response({
+            'database_id': str(database.id),
+            'database_name': database.name,
+            **result
+        })
+
+    @extend_schema(
+        summary="Bulk health check для всех баз (async)",
+        description="Асинхронная проверка всех баз или отфильтрованного набора баз через Celery",
+        parameters=[
+            OpenApiParameter(
+                name='status',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description='Фильтр по статусу (active, inactive, error, maintenance)',
+                required=False
+            )
+        ],
+        responses={
+            202: OpenApiResponse(
+                description="Health check задача создана",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'task_id': {'type': 'string'},
+                        'status': {'type': 'string'},
+                        'total_databases': {'type': 'integer'}
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-health-check')
+    def bulk_health_check(self, request):
+        """
+        Запланировать асинхронную проверку здоровья всех баз.
+
+        POST /api/v1/databases/bulk-health-check/?status=active
+        """
+        from .tasks import check_databases_health
+        queryset = self.filter_queryset(self.get_queryset())
+        database_ids = list(queryset.values_list('id', flat=True))
+        task = check_databases_health.delay(database_ids)
+        return Response({
+            'task_id': str(task.id),
+            'status': 'scheduled',
+            'total_databases': len(database_ids)
+        }, status=status.HTTP_202_ACCEPTED)
+
     @extend_schema(
         summary="Установить расширение на базу",
         description="Запускает задачу установки расширения на выбранную базу данных",
@@ -582,38 +565,6 @@ class DatabaseViewSet(viewsets.ModelViewSet):
                 {"error": "No installation found for this database"},
                 status=status.HTTP_404_NOT_FOUND
             )
-    
-    @extend_schema(
-        summary="Повторить установку расширения",
-        description="Повторяет неудачную установку расширения",
-        responses={
-            200: OpenApiResponse(
-                description="Retry task created",
-                response={'type': 'object', 'properties': {'task_id': {'type': 'string'}}}
-            ),
-            404: OpenApiResponse(description="Installation not found")
-        }
-    )
-    @action(detail=True, methods=['post'], url_path='retry-installation')
-    def retry_installation(self, request, pk=None):
-        """
-        Повторить установку расширения.
-        
-        POST /api/v1/databases/{id}/retry-installation/
-        """
-        try:
-            installation = ExtensionInstallation.objects.filter(
-                database_id=pk,
-                status='failed'
-            ).latest('created_at')
-            
-            # TODO: Повторная отправка в очередь
-            return Response({"task_id": "pending_implementation"})
-        except ExtensionInstallation.DoesNotExist:
-            return Response(
-                {"error": "No failed installation found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
 
     @extend_schema(
         summary="Обновить статус установки расширения (для Go Worker)",
@@ -658,7 +609,6 @@ class DatabaseViewSet(viewsets.ModelViewSet):
             "progress_percent": 50
         }
         """
-        from django.utils import timezone
         from apps.operations.models import Task, BatchOperation
         
         database = self.get_object()
@@ -801,7 +751,7 @@ class DatabaseViewSet(viewsets.ModelViewSet):
 
         # Debug logging - incoming request
         auth_header = request.META.get('HTTP_AUTHORIZATION', 'missing')
-        logger.info(f"Credentials request received", extra={
+        logger.info("Credentials request received", extra={
             "database_id": pk,
             "user": str(request.user),
             "auth_header": auth_header[:50] if auth_header else 'missing',
@@ -814,7 +764,7 @@ class DatabaseViewSet(viewsets.ModelViewSet):
             database = self.get_object()
 
             if not database.odata_url or not database.username:
-                logger.warning(f"Database configuration incomplete", extra={
+                logger.warning("Database configuration incomplete", extra={
                     "database_id": str(database.id),
                     "has_odata_url": bool(database.odata_url),
                     "has_username": bool(database.username),
@@ -876,7 +826,7 @@ class DatabaseViewSet(viewsets.ModelViewSet):
             encrypted_payload = encrypt_credentials_for_transport(plain_credentials)
 
             # Success logging
-            logger.info(f"Encrypted credentials returned", extra={
+            logger.info("Encrypted credentials returned", extra={
                 "database_id": str(database.id),
                 "database_name": database.name,
                 "encryption_version": encrypted_payload["encryption_version"],

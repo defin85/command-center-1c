@@ -20,7 +20,6 @@ Run with:
 Web UI available at http://localhost:8089 (default Locust port)
 """
 
-import json
 import logging
 import random
 import time

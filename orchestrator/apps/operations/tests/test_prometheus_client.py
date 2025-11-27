@@ -10,7 +10,6 @@ Tests:
 """
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
 import httpx

@@ -4,7 +4,6 @@ Unit tests for conditional logic in templates.
 Tests {% if %} conditions, {% for %} loops, and custom Jinja2 tests.
 """
 
-import pytest
 from unittest.mock import Mock
 from apps.templates.engine import TemplateRenderer
 

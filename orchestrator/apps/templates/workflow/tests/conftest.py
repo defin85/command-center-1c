@@ -5,7 +5,7 @@ Pytest fixtures for workflow tests.
 
 import pytest
 from django.contrib.auth.models import User
-from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
+from apps.templates.workflow.models import WorkflowTemplate
 
 
 @pytest.fixture

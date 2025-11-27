@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Test BatchService model and mark_health_check() method."""
 import os
-import sys
 import django
 
 # Setup Django
@@ -103,7 +102,7 @@ service.mark_health_check(success=False, error_message="Test error message")
 service.refresh_from_db()
 
 assert 'last_error' in service.metadata, "Expected 'last_error' in metadata"
-assert service.metadata['last_error'] == "Test error message", f"Expected error message in metadata"
+assert service.metadata['last_error'] == "Test error message", "Expected error message in metadata"
 print("PASSED: Error message stored in metadata")
 print(f"  - metadata['last_error']: {service.metadata.get('last_error')}")
 

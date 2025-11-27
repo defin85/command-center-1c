@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Test StatusHistory automatic logging."""
 import os
-import sys
 import django
 
 # Setup Django
@@ -51,7 +50,7 @@ print("PASSED: History record created")
 
 # Check the latest history record
 latest_history = history_records.first()
-print(f"\nLatest history record:")
+print("\nLatest history record:")
 print(f"  - old_status: {latest_history.old_status}")
 print(f"  - new_status: {latest_history.new_status}")
 print(f"  - reason: {latest_history.reason}")
@@ -109,7 +108,7 @@ print(f"  - History count after: {after_count}")
 # Test 4: Check metadata in history
 print("\n--- Test 5.4: Metadata stored in history ---")
 latest = history_records.first()
-print(f"Latest history metadata:")
+print("Latest history metadata:")
 for key, value in latest.metadata.items():
     print(f"  - {key}: {value}")
 

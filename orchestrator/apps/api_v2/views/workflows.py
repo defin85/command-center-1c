@@ -16,7 +16,6 @@ from apps.templates.workflow.serializers import (
     WorkflowTemplateListSerializer,
     WorkflowTemplateDetailSerializer,
     WorkflowExecutionListSerializer,
-    WorkflowExecutionDetailSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -253,7 +252,7 @@ def execute_workflow(request):
 
                 # Audit logging
                 logger.info(
-                    f"Workflow executed synchronously",
+                    "Workflow executed synchronously",
                     extra={
                         'execution_id': str(execution.id),
                         'workflow_id': str(workflow_id),
@@ -288,7 +287,7 @@ def execute_workflow(request):
 
                 # Audit logging
                 logger.info(
-                    f"Workflow execution started asynchronously",
+                    "Workflow execution started asynchronously",
                     extra={
                         'execution_id': str(execution.id),
                         'workflow_id': str(workflow_id),
@@ -315,7 +314,7 @@ def execute_workflow(request):
 
                 # Audit logging for fallback
                 logger.info(
-                    f"Workflow executed synchronously (Celery fallback)",
+                    "Workflow executed synchronously (Celery fallback)",
                     extra={
                         'execution_id': str(execution.id),
                         'workflow_id': str(workflow_id),

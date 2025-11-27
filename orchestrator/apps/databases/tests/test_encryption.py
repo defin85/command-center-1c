@@ -13,7 +13,6 @@ from datetime import timedelta
 from django.utils import timezone
 from django.test import override_settings
 import base64
-import json
 
 from apps.databases.encryption import (
     encrypt_credentials_for_transport,

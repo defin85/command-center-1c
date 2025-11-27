@@ -11,7 +11,7 @@ OData Client для работы с 1С:Предприятие 8.3 OData API.
 
 import logging
 from typing import Dict, List, Optional, Any
-from urllib.parse import urljoin, quote
+from urllib.parse import quote
 
 import requests
 from requests.adapters import HTTPAdapter

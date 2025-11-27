@@ -9,7 +9,7 @@ Provides serializers for:
 - Nested DAG structure serializers
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from django.contrib.auth import get_user_model
 from pydantic import ValidationError as PydanticValidationError
@@ -17,14 +17,8 @@ from rest_framework import serializers
 
 from .models import (
     DAGStructure,
-    NodeConfig,
-    ParallelConfig,
-    LoopConfig,
-    SubWorkflowConfig,
     WorkflowConfig,
-    WorkflowEdge,
     WorkflowExecution,
-    WorkflowNode,
     WorkflowStepResult,
     WorkflowTemplate,
 )

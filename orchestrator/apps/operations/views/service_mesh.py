@@ -17,10 +17,9 @@ from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from asgiref.sync import async_to_sync
 
-from apps.operations.models import BatchOperation, Task
+from apps.operations.models import BatchOperation
 from apps.operations.services.prometheus_client import (
     get_prometheus_client,
-    ServiceMetrics,
     SERVICE_CONFIG,
 )
 

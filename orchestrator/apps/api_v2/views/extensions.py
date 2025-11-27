@@ -6,8 +6,6 @@ Provides action-based endpoints for extension installation management.
 
 import logging
 
-from django.db.models import Q
-from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -269,7 +267,7 @@ def retry_installation(request):
 
         # Audit logging
         logger.info(
-            f"Extension installation retry scheduled",
+            "Extension installation retry scheduled",
             extra={
                 'installation_id': str(installation.id),
                 'database_id': database_id,
@@ -293,7 +291,7 @@ def retry_installation(request):
 
         # Audit logging for fallback
         logger.info(
-            f"Extension installation queued (Celery unavailable)",
+            "Extension installation queued (Celery unavailable)",
             extra={
                 'installation_id': str(installation.id),
                 'database_id': database_id,
@@ -315,7 +313,7 @@ def retry_installation(request):
 
         # Audit logging for fallback
         logger.info(
-            f"Extension installation queued (Celery unavailable)",
+            "Extension installation queued (Celery unavailable)",
             extra={
                 'installation_id': str(installation.id),
                 'database_id': database_id,

@@ -7,15 +7,13 @@ Tests:
 - Broadcast helper functions
 - Error handling
 """
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from channels.testing import WebsocketCommunicator
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from apps.templates.consumers import (
     WorkflowExecutionConsumer,

@@ -6,7 +6,7 @@ Executes loop nodes with count/while/foreach modes.
 
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from jinja2 import StrictUndefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment

@@ -109,7 +109,7 @@ class TemplateRenderer:
 
             # 4. Log rendering
             logger.info(
-                f"Template rendered successfully",
+                "Template rendered successfully",
                 extra={
                     'template_id': str(template.id),
                     'template_name': template.name,

@@ -11,17 +11,15 @@ Covers:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-from django.utils import timezone
 from apps.templates.workflow.context import ContextManager
-from apps.templates.workflow.executor import DAGExecutor, DAGExecutionError
-from apps.templates.workflow.handlers import NodeExecutionMode, NodeExecutionResult
+from apps.templates.workflow.executor import DAGExecutor
+from apps.templates.workflow.handlers import NodeExecutionResult
 from apps.templates.workflow.models import (
     DAGStructure,
     WorkflowNode,
     WorkflowEdge,
-    WorkflowExecution,
 )
 
 

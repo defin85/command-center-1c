@@ -12,9 +12,7 @@ Covers:
 - Edge cases and error handling
 """
 
-import copy
 import pytest
-from jinja2 import TemplateSyntaxError
 
 from apps.templates.workflow.context import ContextManager
 

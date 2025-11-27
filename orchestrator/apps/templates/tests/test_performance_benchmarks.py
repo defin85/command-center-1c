@@ -13,7 +13,6 @@ Targets:
 - Full pipeline: < 5ms (validate + render)
 """
 
-import pytest
 import time
 from unittest.mock import Mock
 from apps.templates.engine import TemplateRenderer, TemplateValidator
@@ -51,7 +50,7 @@ class TestRenderingPerformance:
         assert result1 == result2
 
         # Print performance metrics
-        print(f"\n=== Rendering Performance ===")
+        print("\n=== Rendering Performance ===")
         print(f"First render:  {first_render_time*1000:.4f}ms")
         print(f"Second render: {second_render_time*1000:.4f}ms")
         if first_render_time > 0:
@@ -103,7 +102,7 @@ class TestRenderingPerformance:
 
         avg_latency = duration / 100 * 1000  # ms
 
-        print(f"\n=== Complex Rendering Performance (100 iterations) ===")
+        print("\n=== Complex Rendering Performance (100 iterations) ===")
         print(f"Total time:  {duration*1000:.2f}ms")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
@@ -128,7 +127,7 @@ class TestRenderingPerformance:
 
         avg_latency = duration / 100 * 1000
 
-        print(f"\n=== Cache Hit Rate Test (100 renders) ===")
+        print("\n=== Cache Hit Rate Test (100 renders) ===")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
         # Should be fast even with 100 different contexts
@@ -166,7 +165,7 @@ class TestValidationPerformance:
 
         avg_latency = duration / 1000 * 1000  # ms
 
-        print(f"\n=== Validation Performance (1000 iterations) ===")
+        print("\n=== Validation Performance (1000 iterations) ===")
         print(f"Total time:  {duration*1000:.2f}ms")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
@@ -191,7 +190,7 @@ class TestValidationPerformance:
 
         avg_latency = duration / 100 * 1000  # ms
 
-        print(f"\n=== Security Check Performance (100 iterations, 100 fields each) ===")
+        print("\n=== Security Check Performance (100 iterations, 100 fields each) ===")
         print(f"Total time:  {duration*1000:.2f}ms")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
@@ -219,7 +218,7 @@ class TestValidationPerformance:
 
         avg_latency = duration / 1000 * 1000  # ms
 
-        print(f"\n=== Jinja2 Syntax Validation (1000 iterations) ===")
+        print("\n=== Jinja2 Syntax Validation (1000 iterations) ===")
         print(f"Total time:  {duration*1000:.2f}ms")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
@@ -270,7 +269,7 @@ class TestEndToEndPerformance:
 
         avg_latency = duration / 100 * 1000  # ms
 
-        print(f"\n=== Full Pipeline Performance (validate + render, 100 iterations) ===")
+        print("\n=== Full Pipeline Performance (validate + render, 100 iterations) ===")
         print(f"Total time:  {duration*1000:.2f}ms")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
@@ -307,7 +306,7 @@ class TestEndToEndPerformance:
 
         avg_latency = duration / 1000 * 1000  # ms
 
-        print(f"\n=== Batch Rendering Performance (1000 users) ===")
+        print("\n=== Batch Rendering Performance (1000 users) ===")
         print(f"Total time:  {duration*1000:.2f}ms ({duration:.2f}s)")
         print(f"Avg latency: {avg_latency:.4f}ms")
         print(f"Throughput:  {1000/duration:.0f} renders/sec")
@@ -349,7 +348,7 @@ class TestCacheEffectiveness:
 
         avg_latency = duration / 99 * 1000
 
-        print(f"\n=== Same Template, Different Contexts (99 iterations) ===")
+        print("\n=== Same Template, Different Contexts (99 iterations) ===")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
         # Should be very fast (template cached, only context changes)
@@ -381,7 +380,7 @@ class TestCacheEffectiveness:
 
         avg_latency = duration / 10 * 1000
 
-        print(f"\n=== Different Templates Cache Test (10 templates, 2nd pass) ===")
+        print("\n=== Different Templates Cache Test (10 templates, 2nd pass) ===")
         print(f"Avg latency: {avg_latency:.4f}ms")
 
         # Should be fast (all cached)

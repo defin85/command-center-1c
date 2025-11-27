@@ -3,7 +3,6 @@ Extension Storage Service.
 Управление файлами расширений (.cfe) на сервере.
 """
 
-import os
 from pathlib import Path
 from typing import List, Dict, Any
 from django.conf import settings

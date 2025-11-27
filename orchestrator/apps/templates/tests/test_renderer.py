@@ -8,7 +8,6 @@ from unittest.mock import Mock
 from apps.templates.engine import (
     TemplateRenderer,
     TemplateRenderError,
-    TemplateError,
 )
 
 

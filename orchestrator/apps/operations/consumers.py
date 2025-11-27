@@ -3,14 +3,12 @@ Django Channels consumers for Service Mesh monitoring.
 
 Provides WebSocket endpoint for real-time service mesh metrics updates.
 """
-import json
 import logging
 import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from django.core.serializers.json import DjangoJSONEncoder
 
 from apps.operations.services.prometheus_client import (
     get_prometheus_client,

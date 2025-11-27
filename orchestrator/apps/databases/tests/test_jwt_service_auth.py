@@ -12,12 +12,10 @@
 
 import pytest
 import jwt
-import json
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 from django.conf import settings
-from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -81,7 +79,7 @@ class TestServiceJWTAuthentication:
         secret = settings.SIMPLE_JWT['SIGNING_KEY']
         decoded = jwt.decode(token, secret, algorithms=["HS256"])
 
-        print(f"[OK] Token generated successfully")
+        print("[OK] Token generated successfully")
         print(f"  user_id: {decoded['user_id']}")
         print(f"  service: {decoded['service']}")
         print(f"  iss: {decoded['iss']}")
@@ -225,12 +223,12 @@ class TestJWTSecretConfiguration:
     def test_jwt_algorithm_is_hs256(self):
         """Проверка что используется алгоритм HS256"""
         assert settings.SIMPLE_JWT['ALGORITHM'] == 'HS256'
-        print(f"[OK] JWT algorithm: HS256")
+        print("[OK] JWT algorithm: HS256")
 
     def test_jwt_user_id_claim_is_correct(self):
         """Проверка что используется правильный claim для user_id"""
         assert settings.SIMPLE_JWT['USER_ID_CLAIM'] == 'user_id'
-        print(f"[OK] JWT USER_ID_CLAIM: user_id")
+        print("[OK] JWT USER_ID_CLAIM: user_id")
 
 
 @pytest.mark.django_db
@@ -351,7 +349,7 @@ class TestExtensionInstallationFlow:
         # 2. Генерировать service token как Go Worker
         token = self.generate_service_token("worker")
 
-        print(f"[OK] Service token generated for worker")
+        print("[OK] Service token generated for worker")
 
         # 3. Вызвать credentials endpoint через APIClient (симулируя HTTP request)
         response = self.client.get(
@@ -372,7 +370,7 @@ class TestExtensionInstallationFlow:
         assert 'password' in data
         assert data['odata_url'] == db.odata_url
 
-        print(f"[OK] Worker can fetch credentials successfully")
+        print("[OK] Worker can fetch credentials successfully")
         print(f"  database_id: {data['database_id']}")
         print(f"  username: {data['username']}")
         print(f"  odata_url: {data['odata_url']}")
@@ -394,7 +392,7 @@ class TestServiceUserBehavior:
         assert user.is_staff is False
         assert user.is_superuser is False
 
-        print(f"[OK] ServiceUser properties OK")
+        print("[OK] ServiceUser properties OK")
         print(f"  service_name: {user.service_name}")
         print(f"  username: {user.username}")
         print(f"  is_authenticated: {user.is_authenticated}")

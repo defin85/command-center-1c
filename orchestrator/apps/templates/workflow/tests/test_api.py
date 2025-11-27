@@ -9,14 +9,11 @@ Comprehensive test suite covering:
 - Error handling and edge cases
 """
 
-import json
 import pytest
-from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 

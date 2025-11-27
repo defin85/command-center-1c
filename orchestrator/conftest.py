@@ -4,7 +4,6 @@ Root conftest for pytest - initializes Django before anything else.
 """
 
 import os
-import sys
 import django
 
 # Configure pytest plugins at root level

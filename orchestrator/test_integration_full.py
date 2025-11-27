@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Full integration test for BatchService migration."""
 import os
-import sys
 import django
 
 # Setup Django

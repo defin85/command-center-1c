@@ -12,18 +12,16 @@ Tests cover:
 
 import pytest
 import time
-from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from uuid import uuid4
 
-from django.utils import timezone
 
 from apps.databases.models import Database
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation, Task
 from apps.operations.waiter import ResultWaiter, OperationTimeoutError
 from apps.templates.models import OperationTemplate
-from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
+from apps.templates.workflow.models import WorkflowTemplate
 
 
 # ============================================================================

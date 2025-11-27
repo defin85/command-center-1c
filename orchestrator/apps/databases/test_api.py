@@ -12,7 +12,6 @@ from unittest.mock import Mock, patch
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.utils import timezone
 
 from apps.databases.models import Database, DatabaseGroup
 

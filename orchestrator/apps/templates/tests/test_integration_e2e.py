@@ -7,7 +7,7 @@ Tests full flow: Django model → Template rendering → Celery task
 import pytest
 from apps.templates.models import OperationTemplate
 from apps.operations.models import BatchOperation
-from apps.templates.engine import TemplateRenderer, TemplateValidationError
+from apps.templates.engine import TemplateRenderer
 
 
 @pytest.mark.django_db

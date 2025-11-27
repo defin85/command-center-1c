@@ -13,7 +13,6 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch, AsyncMock, MagicMock
 from django.contrib.auth.models import User
-from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status

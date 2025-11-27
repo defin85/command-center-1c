@@ -12,7 +12,6 @@ Executes workflow DAG in topological order with:
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from django.db import transaction
 from django.utils import timezone
 
 from apps.templates.tracing import (

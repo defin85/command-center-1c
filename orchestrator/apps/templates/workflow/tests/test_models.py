@@ -9,10 +9,8 @@ Tests cover:
 """
 
 import pytest
-import threading
 from decimal import Decimal
 from django.core.exceptions import ValidationError
-from django.contrib.auth.models import User
 from django.utils import timezone
 from django_fsm import TransitionNotAllowed
 
@@ -22,8 +20,6 @@ from apps.templates.workflow.models import (
     WorkflowStepResult,
     NodeConfig,
     WorkflowNode,
-    WorkflowEdge,
-    DAGStructure,
 )
 
 

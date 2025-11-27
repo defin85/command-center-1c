@@ -5,7 +5,7 @@
 1С использует специфичную структуру URL для разных типов объектов.
 """
 
-from typing import Dict, List
+from typing import Dict
 
 
 # Типы сущностей 1С

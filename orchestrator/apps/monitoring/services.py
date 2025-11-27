@@ -5,8 +5,7 @@ Asynchronously checks all monitored services and caches results.
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Dict, Any, Optional
 
 import aiohttp
 from asgiref.sync import sync_to_async

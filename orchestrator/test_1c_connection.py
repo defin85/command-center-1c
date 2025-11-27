@@ -21,8 +21,6 @@ django.setup()
 
 from apps.databases.models import Database
 from apps.databases.odata import ODataClient
-import uuid
-import json
 from datetime import datetime
 
 
@@ -164,7 +162,7 @@ def test_read_data(db: Database):
                     print_success(f"    Успешно! Прочитано {count} записей из {entity}")
 
                     if count > 0:
-                        print_info(f"    Пример первой записи:")
+                        print_info("    Пример первой записи:")
                         first_record = data['value'][0]
                         for key, value in list(first_record.items())[:5]:  # Первые 5 полей
                             print_info(f"      {key}: {value}")
@@ -231,7 +229,7 @@ def test_write_data(db: Database):
 
                 if response.status_code in [200, 201]:
                     created = response.json()
-                    print_success(f"    Запись создана успешно!")
+                    print_success("    Запись создана успешно!")
                     print_info(f"    ID: {created.get('Ref_Key', 'N/A')}")
                     print_info(f"    Наименование: {created.get('Наименование', 'N/A')}")
                     success = True
