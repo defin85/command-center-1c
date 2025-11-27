@@ -159,9 +159,13 @@ class TestOperationHandler:
         result = handler.execute(node, context, workflow_execution)
 
         assert result.success is True
-        assert result.output == {"result": "rendered_data"}
+        # Week 17: Without target_databases, returns wrapped result with execution_skipped
+        assert result.output['rendered_data'] == {"result": "rendered_data"}
+        assert result.output['execution_skipped'] is True
         assert result.mode == NodeExecutionMode.SYNC
         assert result.duration_seconds is not None
+        assert result.operation_id is None  # No operation created without target_databases
+        assert result.task_id is None
 
         # Verify renderer was called
         mock_renderer.render.assert_called_once()

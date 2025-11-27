@@ -61,10 +61,11 @@ Week 12-16: Phase 3 - Real-Time Integration + Service Mesh (5 weeks) ✅ COMPLET
             • Week 14: React Flow Design Mode ✅ COMPLETE (2025-11-26)
             • Week 15: React Flow Monitor Mode ✅ COMPLETE (2025-11-26)
             • Week 16: Service Mesh Monitor ✅ COMPLETE (2025-11-26)
-Week 17-18: Phase 4 - Polish & Migration (2 weeks) ⭐ NEXT
+Week 17-18: Phase 4 - Polish & Migration (2 weeks)
+            • Week 17: OperationHandler → Worker Integration 🔄 IN PROGRESS (2025-11-27)
 
 Total: 18 weeks (4.5 months)
-Progress: Week 16/18 (89% complete)
+Progress: Week 17/18 (94% complete)
 ```
 
 ---
@@ -955,51 +956,85 @@ pytest apps/operations/tests/test_prometheus_client.py -v  # 38/38 ✅
 **Goal:** Production readiness + Worker migration
 **Focus:** Documentation + Migration
 
-### Week 17: Worker Migration
+### Week 17: OperationHandler → Worker Integration 🔄 IN PROGRESS
 
 **Effort:** 5 days
+**Status:** 🔄 В процессе 2025-11-27
+**Goal:** Connect WorkflowEngine (Django) with Go Worker via BatchOperation + Celery
 
 #### Tasks
 
-**Day 1: Create WorkflowTemplates**
-- [ ] Extension Install Workflow (JSON)
-- [ ] Configuration Update Workflow (JSON)
-- [ ] Database Backup Workflow (JSON)
-- [ ] Save to database via Django admin or API
+**Day 1-2: BatchOperationFactory**
+- [x] Create `BatchOperationFactory` class
+  - `create()` method for BatchOperation + Task creation
+  - Transaction atomic for consistency
+  - Bulk create for Task objects
+  - Operation ID generation (batch-{workflow_id}-{node_id}-{timestamp})
+- [x] Tests for factory (9 tests)
 
-**Day 2: Update Worker Code**
-- [ ] Add `orchestratorClient.ExecuteWorkflow()` method
-- [ ] Update `ProcessExtensionInstall()` to call WorkflowEngine
-- [ ] Pass operation_id, database_id, extension_path as context
-- [ ] Handle workflow result (success, failure)
-- [ ] Maintain backward compatibility (feature flag)
+**Day 3: ResultWaiter**
+- [x] Create `ResultWaiter` class
+  - `wait()` method for SYNC mode (DB polling)
+  - `check_status()` method for status inspection
+  - `_collect_task_results()` for aggregating results
+  - Custom `OperationTimeoutError` exception
+- [x] Tests for waiter (8 tests)
 
-**Day 3: Testing**
-- [ ] Test extension install via new workflow
-- [ ] Test all 21 extension install tests still pass
-- [ ] Test failure scenarios (workflow fails at Lock step)
-- [ ] Compare old State Machine vs new Workflow (metrics)
+**Day 4: OperationHandler Integration**
+- [x] Extend `NodeExecutionResult` with operation_id, task_id fields
+- [x] Update `OperationHandler.execute()`:
+  - Extract target_databases from context
+  - Create BatchOperation via factory
+  - Enqueue to Worker via Celery `enqueue_operation.delay()`
+  - SYNC mode: wait via ResultWaiter
+  - ASYNC mode: return immediately with operation_id
+- [x] Tests for integration (7 tests)
 
-**Day 4: Gradual Rollout**
-- [ ] Feature flag: `ENABLE_WORKFLOW_ENGINE=true`
-- [ ] Enable for 10% of operations
-- [ ] Monitor metrics (success rate, latency)
-- [ ] Enable for 50%
-- [ ] Enable for 100%
+**Day 5: Code Review + Documentation**
+- [x] Code review (MINOR_ISSUES - 8/10)
+- [x] Update roadmap
+- [ ] Create git commit
 
-**Day 5: Deprecate State Machine**
-- [ ] Remove old State Machine code
-- [ ] Update documentation
-- [ ] Update tests
+**Deliverable:** OperationHandler creates real BatchOperations and enqueues to Worker
 
-**Deliverable:** Worker uses WorkflowEngine for all operations
+**Files created:**
+- `orchestrator/apps/operations/factory.py` (NEW - 165 lines)
+- `orchestrator/apps/operations/waiter.py` (NEW - 220 lines)
+- `orchestrator/apps/operations/tests/test_factory_waiter.py` (NEW - 716 lines, 24 tests)
+
+**Files modified:**
+- `orchestrator/apps/templates/workflow/handlers/base.py` (NodeExecutionResult extended)
+- `orchestrator/apps/templates/workflow/handlers/operation.py` (Full Worker integration)
 
 ```bash
 # Validation
-export ENABLE_WORKFLOW_ENGINE=true
-./test-extension-install.sh
-# Expected: SUCCESS (via workflow)
+cd orchestrator && pytest apps/operations/tests/test_factory_waiter.py -v
+# Expected: 24/24 passed ✅
 ```
+
+---
+
+### Week 17.5: Worker Migration (Remaining)
+
+**Effort:** 2-3 days (deferred)
+**Status:** ⏸️ DEFERRED
+
+#### Remaining Tasks (from original Week 17 plan)
+
+**Create WorkflowTemplates**
+- [ ] Extension Install Workflow (JSON)
+- [ ] Configuration Update Workflow (JSON)
+- [ ] Database Backup Workflow (JSON)
+
+**Update Worker Code**
+- [ ] Add `orchestratorClient.ExecuteWorkflow()` method
+- [ ] Maintain backward compatibility (feature flag)
+
+**Gradual Rollout**
+- [ ] Feature flag: `ENABLE_WORKFLOW_ENGINE=true`
+- [ ] Enable for 10% → 50% → 100%
+
+**Deliverable:** Worker uses WorkflowEngine for all operations
 
 ---
 
