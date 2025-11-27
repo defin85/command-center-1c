@@ -193,3 +193,71 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 	c.Status(resp.StatusCode)
 	io.Copy(c.Writer, resp.Body)
 }
+
+// ProxyToOrchestratorAuth proxies auth requests to Django Orchestrator
+// This handler is for public endpoints (no JWT required)
+func ProxyToOrchestratorAuth(c *gin.Context) {
+	// Get the path (e.g., /api/token or /api/token/refresh)
+	path := c.Request.URL.Path
+
+	// Django always requires trailing slash
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+
+	// Build URL to Orchestrator
+	targetURL := orchestratorURL + path
+	if c.Request.URL.RawQuery != "" {
+		targetURL += "?" + c.Request.URL.RawQuery
+	}
+
+	// Read request body into buffer
+	var bodyBytes []byte
+	if c.Request.Body != nil {
+		bodyBytes, _ = io.ReadAll(c.Request.Body)
+		c.Request.Body.Close()
+	}
+
+	// Create new request with buffered body
+	req, err := http.NewRequest(c.Request.Method, targetURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	// Copy headers
+	for key, values := range c.Request.Header {
+		if key == "Host" || key == "Connection" {
+			continue
+		}
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+
+	// Ensure Content-Type for POST
+	contentType := c.Request.Header.Get("Content-Type")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy auth request"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers
+	for key, values := range resp.Header {
+		for _, value := range values {
+			c.Header(key, value)
+		}
+	}
+
+	// Copy response body
+	c.Status(resp.StatusCode)
+	io.Copy(c.Writer, resp.Body)
+}

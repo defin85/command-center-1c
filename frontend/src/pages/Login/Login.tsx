@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Form, Input, Button, Card, message, Typography } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
-import { apiClient } from '../../api/client'
+import axios from 'axios'
 
 const { Title } = Typography
 
@@ -18,8 +18,9 @@ export const Login = () => {
     const onFinish = async (values: LoginForm) => {
         setLoading(true)
         try {
-            // v2 migration: use apiClient through Gateway
-            const response = await apiClient.post('/auth/token', {
+            // Auth endpoint is public (no JWT required), uses /api/token
+            const apiUrl = import.meta.env.VITE_API_URL?.replace('/api/v2', '') || 'http://localhost:8080'
+            const response = await axios.post(`${apiUrl}/api/token`, {
                 username: values.username,
                 password: values.password,
             })

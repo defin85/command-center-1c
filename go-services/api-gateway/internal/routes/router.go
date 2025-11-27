@@ -45,6 +45,13 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	}
 
+	// Public auth endpoints (no JWT required)
+	// Proxy to Django Orchestrator for token generation
+	router.POST("/api/token", handlers.ProxyToOrchestratorAuth)
+	router.POST("/api/token/", handlers.ProxyToOrchestratorAuth)
+	router.POST("/api/token/refresh", handlers.ProxyToOrchestratorAuth)
+	router.POST("/api/token/refresh/", handlers.ProxyToOrchestratorAuth)
+
 	// API v2 routes (v1 removed after migration - 2025-11-27)
 	setupV2Routes(router, cfg)
 
