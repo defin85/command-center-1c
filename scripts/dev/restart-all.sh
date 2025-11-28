@@ -290,6 +290,7 @@ main() {
     fi
 
     # Режим: перезапуск всех сервисов
+    # Note: Генерация конфигурации выполняется в start-all.sh (Phase 1.5a)
 
     # Шаг 1: Умная пересборка Go сервисов
     if ! smart_rebuild_services; then

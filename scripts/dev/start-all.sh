@@ -142,10 +142,32 @@ fi
 echo ""
 
 ##############################################################################
-# Phase 1.5: Generate API Clients from OpenAPI Contracts
+# Phase 1.5a: Generate Service Configuration from config/services.json
 ##############################################################################
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Phase 1.5: Генерация API клиентов из OpenAPI${NC}"
+echo -e "${BLUE}  Phase 1.5a: Генерация конфигурации сервисов${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+if [ -f "$PROJECT_ROOT/scripts/config/generate.sh" ]; then
+    if ! "$PROJECT_ROOT/scripts/config/generate.sh" --mode local; then
+        echo ""
+        echo -e "${RED}✗ Ошибка при генерации конфигурации${NC}"
+        echo -e "${YELLOW}Совет: Проверьте config/services.json${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}⚠️  Скрипт генерации не найден (scripts/config/generate.sh)${NC}"
+    echo -e "${YELLOW}   Пропускаем генерацию конфигурации${NC}"
+fi
+
+echo ""
+
+##############################################################################
+# Phase 1.5b: Generate API Clients from OpenAPI Contracts
+##############################################################################
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Phase 1.5b: Генерация API клиентов из OpenAPI${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -273,7 +295,9 @@ echo ""
 ##############################################################################
 # Шаг 3: Django Orchestrator
 ##############################################################################
-echo -e "${BLUE}[3/12] Запуск Django Orchestrator (port 8000)...${NC}"
+# Port 8200 - outside Windows reserved ranges (7913-8012, 8013-8112)
+ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-8200}"
+echo -e "${BLUE}[3/12] Запуск Django Orchestrator (port $ORCHESTRATOR_PORT)...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -284,7 +308,7 @@ fi
 
 # .env.local уже загружен в начале скрипта
 
-nohup python manage.py runserver 0.0.0.0:8000 > "$LOGS_DIR/orchestrator.log" 2>&1 &
+nohup python manage.py runserver 0.0.0.0:$ORCHESTRATOR_PORT > "$LOGS_DIR/orchestrator.log" 2>&1 &
 ORCHESTRATOR_PID=$!
 echo $ORCHESTRATOR_PID > "$PIDS_DIR/orchestrator.pid"
 
@@ -363,7 +387,7 @@ echo ""
 ##############################################################################
 # Шаг 6: API Gateway (Go)
 ##############################################################################
-echo -e "${BLUE}[6/12] Запуск API Gateway (port 8080)...${NC}"
+echo -e "${BLUE}[6/12] Запуск API Gateway (port 8180)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
@@ -452,7 +476,7 @@ echo ""
 ##############################################################################
 # Шаг 9: RAS Adapter (Go) - NEW Week 4!
 ##############################################################################
-echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8088)...${NC}"
+echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
@@ -466,9 +490,7 @@ if [ ! -f "$BINARY_PATH" ]; then
 fi
 
 # .env.local уже загружен в начале скрипта
-
-# Переопределить порт для ras-adapter (default 8088, не 8080 из .env.local)
-export SERVER_PORT=8088
+# RAS_ADAPTER_PORT=8188 is set in .env.local (outside Windows reserved range 8013-8112)
 
 nohup "$BINARY_PATH" > "$LOGS_DIR/ras-adapter.log" 2>&1 &
 RAS_ADAPTER_PID=$!
@@ -479,7 +501,7 @@ if kill -0 $RAS_ADAPTER_PID 2>/dev/null; then
     echo -e "${GREEN}✓ RAS Adapter запущен (PID: $RAS_ADAPTER_PID)${NC}"
 
     # Health check
-    if curl -sf http://localhost:8088/health > /dev/null 2>&1; then
+    if curl -sf http://localhost:8188/health > /dev/null 2>&1; then
         echo -e "${GREEN}✓ RAS Adapter health check PASSED${NC}"
     else
         echo -e "${YELLOW}⚠️  RAS Adapter health check FAILED (может потребоваться время для запуска)${NC}"
@@ -494,15 +516,13 @@ echo ""
 ##############################################################################
 # Шаг 10: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[10/11] Запуск Batch Service (port 8087)...${NC}"
+echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
 BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
 
 # .env.local уже загружен в начале скрипта
-
-# Переопределить порт для batch-service (default 8087, не 8080 из .env.local)
-export SERVER_PORT=8087
+# BATCH_SERVICE_PORT=8187 is set in .env.local (outside Windows reserved range 8013-8112)
 
 nohup "$BINARY_PATH" > "$LOGS_DIR/batch-service.log" 2>&1 &
 BATCH_SERVICE_PID=$!
@@ -578,12 +598,12 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
 echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC}"
-echo -e "  API Gateway:      ${GREEN}http://localhost:8080/health${NC}"
+echo -e "  API Gateway:      ${GREEN}http://localhost:8180/health${NC}"
 echo -e "  Orchestrator:"
-echo -e "    Admin Panel:    ${GREEN}http://localhost:8000/admin${NC}"
-echo -e "    API Docs:       ${GREEN}http://localhost:8000/api/docs${NC}"
-echo -e "  RAS Adapter:      ${GREEN}http://localhost:8088/health${NC} (Week 4 NEW!)"
-echo -e "  Batch Service:    ${GREEN}http://localhost:8087/health${NC}"
+echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC}"
+echo -e "    API Docs:       ${GREEN}http://localhost:8200/api/docs${NC}"
+echo -e "  RAS Adapter:      ${GREEN}http://localhost:8188/health${NC}"
+echo -e "  Batch Service:    ${GREEN}http://localhost:8187/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"

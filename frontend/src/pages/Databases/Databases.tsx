@@ -75,9 +75,9 @@ export const Databases = () => {
   const handleClusterChange = (value: string | undefined) => {
     setSelectedClusterId(value)
 
-    // Найти выбранный кластер
-    const cluster = value ? clusters.find((c) => c.id === value) : null
-    setSelectedCluster(cluster || null)
+    // Найти выбранный кластер (defensive: handle undefined clusters)
+    const cluster = value ? (clusters ?? []).find((c) => c.id === value) : null
+    setSelectedCluster(cluster ?? null)
 
     // Обновить URL
     if (value) {
@@ -233,11 +233,11 @@ export const Databases = () => {
             allowClear
             value={selectedClusterId}
             onChange={handleClusterChange}
-            loading={clusters.length === 0}
+            loading={!clusters || clusters.length === 0}
           >
-            {clusters.map((cluster) => (
+            {(clusters ?? []).map((cluster) => (
               <Select.Option key={cluster.id} value={cluster.id}>
-                {cluster.name} ({cluster.databases_count || 0} databases)
+                {cluster.name} ({cluster.databases_count ?? 0} databases)
               </Select.Option>
             ))}
           </Select>

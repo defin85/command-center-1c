@@ -222,9 +222,10 @@ WORKER_API_KEY = env('WORKER_API_KEY', default='dev-worker-key-change-in-product
 DLQ_RETENTION_DAYS = 7
 
 # CORS
+# Port 8180 - API Gateway outside Windows reserved range (8013-8112)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "http://localhost:8080",
+    "http://localhost:8180",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -259,9 +260,10 @@ if len(CREDENTIALS_TRANSPORT_KEY.encode('utf-8')) < 32:
     )
 
 # Installation Service Configuration
+# Port 8185 - outside Windows reserved range (8013-8112)
 INSTALLATION_SERVICE_URL = env(
     'INSTALLATION_SERVICE_URL',
-    default='http://localhost:8085'
+    default='http://localhost:8185'
 )
 INSTALLATION_SERVICE_TIMEOUT = int(env(
     'INSTALLATION_SERVICE_TIMEOUT',
@@ -269,9 +271,10 @@ INSTALLATION_SERVICE_TIMEOUT = int(env(
 ))
 
 # Batch Service Configuration
+# Port 8187 - outside Windows reserved range (8013-8112)
 BATCH_SERVICE_URL = env(
     'BATCH_SERVICE_URL',
-    default='http://localhost:8087'
+    default='http://localhost:8187'
 )
 BATCH_SERVICE_TIMEOUT = int(env(
     'BATCH_SERVICE_TIMEOUT',
@@ -279,9 +282,10 @@ BATCH_SERVICE_TIMEOUT = int(env(
 ))
 
 # RAS Adapter Configuration (replaces cluster-service)
+# Port 8188 - outside Windows reserved range (8013-8112)
 RAS_ADAPTER_URL = env(
     'RAS_ADAPTER_URL',
-    default='http://localhost:8088'
+    default='http://localhost:8188'
 )
 RAS_ADAPTER_TIMEOUT = int(env(
     'RAS_ADAPTER_TIMEOUT',
@@ -306,23 +310,27 @@ STATUS_HISTORY_RETENTION_DAYS = 90
 EXTENSION_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'extensions'
 
 # ========== System Monitoring Configuration ==========
+# Ports outside Windows reserved range (8013-8112)
+API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
+# Note: BATCH_SERVICE_URL and RAS_ADAPTER_URL defined above
+
 MONITORED_SERVICES = [
     {
         'name': 'API Gateway',
         'type': 'backend',
-        'health_url': 'http://localhost:8080/health',
+        'health_url': f'{API_GATEWAY_URL}/health',
         'critical': True,
     },
     {
         'name': 'ras-adapter',
         'type': 'backend',
-        'health_url': 'http://localhost:8088/health',
+        'health_url': f'{RAS_ADAPTER_URL}/health',
         'critical': True,
     },
     {
         'name': 'batch-service',
         'type': 'backend',
-        'health_url': 'http://localhost:8087/health',
+        'health_url': f'{BATCH_SERVICE_URL}/health',
         'critical': False,
     },
 ]

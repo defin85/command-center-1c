@@ -111,7 +111,9 @@ case "$SERVICE_NAME" in
         if [ -d "venv" ]; then
             source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
         fi
-        nohup python manage.py runserver 0.0.0.0:8000 > "$LOG_FILE" 2>&1 &
+        # Port 8200 - outside Windows reserved ranges (7913-8012, 8013-8112)
+        ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-8200}"
+        nohup python manage.py runserver 0.0.0.0:$ORCHESTRATOR_PORT > "$LOG_FILE" 2>&1 &
         NEW_PID=$!
         ;;
 

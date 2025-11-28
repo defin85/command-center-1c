@@ -1,0 +1,57 @@
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+
+export default tseslint.config(
+  { ignores: ['dist', 'src/api/generated/**'] },
+  {
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+    },
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+
+      // Strict null/undefined safety rules (non-type-aware for faster linting)
+      '@typescript-eslint/no-non-null-assertion': 'warn',
+      // Note: prefer-optional-chain and prefer-nullish-coalescing require type info
+      // Use TypeScript strict mode in tsconfig.json instead
+
+      // Catch potential runtime errors
+      'no-unsafe-optional-chaining': 'error',
+      '@typescript-eslint/no-unnecessary-condition': 'off', // Requires type-aware linting
+
+      // Array access safety
+      '@typescript-eslint/no-unsafe-member-access': 'off', // Too noisy
+      '@typescript-eslint/no-unsafe-call': 'off',
+
+      // General safety
+      'no-constant-binary-expression': 'error',
+      'no-self-compare': 'error',
+      'no-template-curly-in-string': 'warn',
+      'no-unmodified-loop-condition': 'error',
+
+      // Unused variables (already in tsconfig but good to have in ESLint too)
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
+
+      // Downgrade any to warning - fix gradually, not all at once
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
+  },
+)

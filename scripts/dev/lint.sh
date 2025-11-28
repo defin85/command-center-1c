@@ -104,7 +104,7 @@ print_result() {
 }
 
 ##############################################################################
-# TypeScript Check
+# TypeScript Check (tsc + ESLint)
 ##############################################################################
 check_typescript() {
     print_header "TypeScript Check"
@@ -116,12 +116,42 @@ check_typescript() {
         return
     fi
 
+    # 1. TypeScript compiler check
     echo "Running: npx tsc --noEmit"
     if output=$(npx tsc --noEmit 2>&1); then
-        print_result "TypeScript" "OK"
+        print_result "TypeScript (tsc)" "OK"
     else
         echo "$output"
-        print_result "TypeScript" "ERRORS" "(see above)"
+        print_result "TypeScript (tsc)" "ERRORS" "(see above)"
+    fi
+
+    # 2. ESLint check
+    echo ""
+    local eslint_args="src/"
+    if [[ "$FIX_MODE" == true ]]; then
+        eslint_args="src/ --fix"
+        echo "Running: npx eslint $eslint_args"
+    else
+        echo "Running: npx eslint src/ (use --fix to auto-fix)"
+    fi
+
+    if output=$(npx eslint $eslint_args 2>&1); then
+        print_result "ESLint" "OK"
+    else
+        # Count errors vs warnings
+        error_count=$(echo "$output" | grep -c " error " || true)
+        warning_count=$(echo "$output" | grep -c " warning " || true)
+
+        if [[ "$error_count" -gt 0 ]]; then
+            echo "$output" | head -30
+            [[ $(echo "$output" | wc -l) -gt 30 ]] && echo "... (truncated)"
+            print_result "ESLint" "ERRORS" "($error_count errors, $warning_count warnings)"
+        else
+            echo "$output" | head -20
+            [[ $(echo "$output" | wc -l) -gt 20 ]] && echo "... (truncated)"
+            echo -e "${YELLOW}⚠${NC} ESLint: ${YELLOW}WARNINGS${NC} ($warning_count warnings)"
+            # Don't increment ERRORS for warnings-only
+        fi
     fi
 
     cd "$PROJECT_ROOT"

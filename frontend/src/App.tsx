@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider, App as AntApp } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Dashboard } from './pages/Dashboard/Dashboard'
 import { Operations } from './pages/Operations/Operations'
 import { Databases } from './pages/Databases/Databases'
@@ -11,6 +13,7 @@ import { OperationMonitor } from './pages/OperationMonitor'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
 import { ServiceMeshPage } from './pages/ServiceMesh'
 import { Login } from './pages/Login/Login'
+import { API_ERROR_EVENT } from './api/client'
 
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -23,16 +26,65 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>
 }
 
+// Global API error handler component
+// Must be inside AntApp to access notification API
+interface ApiErrorDetail {
+  message: string
+  status?: number
+  code?: string
+}
+
+function GlobalApiErrorHandler() {
+  const { notification } = AntApp.useApp()
+
+  useEffect(() => {
+    const handleApiError = (event: CustomEvent<ApiErrorDetail>) => {
+      const { message, status, code } = event.detail
+
+      // Don't show notification for 401 errors (handled by redirect)
+      if (status === 401) {
+        return
+      }
+
+      // Determine notification type based on status
+      let type: 'error' | 'warning' | 'info' = 'error'
+      if (status === 404) {
+        type = 'warning'
+      } else if (status && status >= 500) {
+        type = 'error'
+      }
+
+      notification[type]({
+        message: 'Request Error',
+        description: message,
+        placement: 'topRight',
+        duration: 5,
+        key: code || `api-error-${Date.now()}`, // Prevent duplicate notifications
+      })
+    }
+
+    window.addEventListener(API_ERROR_EVENT, handleApiError as EventListener)
+
+    return () => {
+      window.removeEventListener(API_ERROR_EVENT, handleApiError as EventListener)
+    }
+  }, [notification])
+
+  return null
+}
+
 function App() {
   return (
-    <ConfigProvider theme={{
-      token: {
-        colorPrimary: '#1890ff',
-      },
-    }}>
-      <AntApp>
-        <BrowserRouter>
-          <Routes>
+    <ErrorBoundary>
+      <ConfigProvider theme={{
+        token: {
+          colorPrimary: '#1890ff',
+        },
+      }}>
+        <AntApp>
+          <GlobalApiErrorHandler />
+          <BrowserRouter>
+            <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />
 
@@ -117,10 +169,11 @@ function App() {
               </MainLayout>
             </ProtectedRoute>
           } />
-          </Routes>
-        </BrowserRouter>
-      </AntApp>
-    </ConfigProvider>
+            </Routes>
+          </BrowserRouter>
+        </AntApp>
+      </ConfigProvider>
+    </ErrorBoundary>
   )
 }
 

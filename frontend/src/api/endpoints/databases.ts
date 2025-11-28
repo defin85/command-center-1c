@@ -12,16 +12,19 @@ export interface Database {
 
 export interface DatabaseListResponse {
   count: number
-  next: string | null
-  previous: string | null
-  results: Database[]
+  total?: number
+  next?: string | null
+  previous?: string | null
+  results?: Database[]
+  databases?: Database[]  // API v2 returns 'databases' instead of 'results'
 }
 
 export const databasesApi = {
   // v2 migration: GET /databases → GET /databases/list-databases
-  list: async (params?: Record<string, any>) => {
+  list: async (params?: Record<string, any>): Promise<Database[]> => {
     const response = await apiClient.get<DatabaseListResponse>('/databases/list-databases', { params })
-    return response.data.results
+    // Defensive: handle both 'databases' (API v2) and 'results' (DRF standard)
+    return response.data?.databases ?? response.data?.results ?? []
   },
 
   // v2 migration: GET /databases/{id} → GET /databases/get-database?database_id={id}

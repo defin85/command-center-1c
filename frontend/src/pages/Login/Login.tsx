@@ -21,7 +21,8 @@ export const Login = () => {
         try {
             // Auth endpoint is public (no JWT required), uses /api/token
             // Extract base URL without /api/* suffix
-            const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v2')
+            // Port 8180 - outside Windows reserved range (8013-8112)
+            const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8180/api/v2')
                 .replace(/\/api\/v\d+\/?$/, '')
                 .replace(/\/api\/?$/, '')
             const response = await axios.post(`${baseUrl}/api/token`, {

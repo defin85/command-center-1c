@@ -83,7 +83,7 @@ const WorkflowList = () => {
         current: page,
         total: response.count
       }))
-    } catch (error) {
+    } catch (_error) {
       message.error('Failed to load workflow templates')
     } finally {
       setLoading(false)
@@ -100,7 +100,7 @@ const WorkflowList = () => {
       await deleteWorkflowTemplate(id)
       message.success('Workflow deleted')
       loadTemplates(pagination.current)
-    } catch (error) {
+    } catch (_error) {
       message.error('Failed to delete workflow')
     }
   }
@@ -111,7 +111,7 @@ const WorkflowList = () => {
       const cloned = await cloneWorkflowTemplate(id, `${name} (Copy)`)
       message.success('Workflow cloned')
       navigate(`/workflows/${cloned.id}`)
-    } catch (error) {
+    } catch (_error) {
       message.error('Failed to clone workflow')
     }
   }

@@ -105,7 +105,7 @@ const WorkflowDesigner = () => {
           name: template.name,
           description: template.description
         })
-      } catch (error) {
+      } catch (_error) {
         message.error('Failed to load workflow template')
         setState((prev) => ({ ...prev, isLoading: false }))
       }
@@ -230,7 +230,7 @@ const WorkflowDesigner = () => {
       } else {
         message.error(`Validation failed: ${result.errors.length} error(s)`)
       }
-    } catch (error) {
+    } catch (_error) {
       message.error('Validation failed')
       setState((prev) => ({ ...prev, isValidating: false }))
     }

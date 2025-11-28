@@ -36,7 +36,7 @@ export const Clusters = () => {
         form.resetFields()
         form.setFieldsValue({
             ras_server: 'localhost:1545',
-            cluster_service_url: 'http://localhost:8088',
+            cluster_service_url: 'http://localhost:8188',
             status: 'active',
         })
         setModalVisible(true)
@@ -62,11 +62,16 @@ export const Clusters = () => {
         try {
             message.loading({ content: `Syncing ${name}...`, key: 'sync' })
             const result = await clustersApi.sync(id)
+            // databases_found may be undefined if sync is async (Celery task)
+            const dbInfo = result.databases_found !== undefined
+                ? `. Found ${result.databases_found} databases.`
+                : ''
             message.success({
-                content: `${result.message}. Found ${result.databases_found} databases.`,
+                content: `${result.message}${dbInfo}`,
                 key: 'sync',
             })
-            fetchClusters()
+            // Refresh cluster list after short delay to allow async sync to complete
+            setTimeout(() => fetchClusters(), 1000)
         } catch (error: any) {
             message.error({ content: 'Sync failed: ' + error.message, key: 'sync' })
         }
@@ -240,7 +245,7 @@ export const Clusters = () => {
                         name="cluster_service_url"
                         rules={[{ required: true, message: 'Please enter cluster service URL' }]}
                     >
-                        <Input placeholder="http://localhost:8088" />
+                        <Input placeholder="http://localhost:8188" />
                     </Form.Item>
 
                     <Form.Item label="Cluster Admin User" name="cluster_user">

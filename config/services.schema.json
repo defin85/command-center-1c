@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://commandcenter1c.local/schemas/services.schema.json",
+  "title": "CommandCenter1C Services Configuration",
+  "description": "Single Source of Truth for all service ports and hosts in CommandCenter1C",
+  "type": "object",
+  "required": ["version", "services", "infrastructure"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to the JSON Schema file"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Configuration version (semver major.minor)"
+    },
+    "services": {
+      "type": "object",
+      "description": "Application services (Go, Python, React)",
+      "additionalProperties": false,
+      "properties": {
+        "frontend": { "$ref": "#/definitions/service" },
+        "api-gateway": { "$ref": "#/definitions/service" },
+        "orchestrator": { "$ref": "#/definitions/service" },
+        "ras-adapter": { "$ref": "#/definitions/service" },
+        "batch-service": { "$ref": "#/definitions/service" },
+        "worker": { "$ref": "#/definitions/service" }
+      },
+      "required": ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    },
+    "infrastructure": {
+      "type": "object",
+      "description": "Infrastructure services (databases, monitoring, etc.)",
+      "additionalProperties": false,
+      "properties": {
+        "postgresql": { "$ref": "#/definitions/infrastructure_service" },
+        "redis": { "$ref": "#/definitions/infrastructure_service" },
+        "clickhouse": { "$ref": "#/definitions/infrastructure_service" },
+        "prometheus": { "$ref": "#/definitions/infrastructure_service" },
+        "grafana": { "$ref": "#/definitions/infrastructure_service" },
+        "jaeger": { "$ref": "#/definitions/infrastructure_service" },
+        "ras": { "$ref": "#/definitions/infrastructure_service" }
+      },
+      "required": ["postgresql", "redis", "prometheus", "grafana", "jaeger", "ras"]
+    }
+  },
+  "definitions": {
+    "service": {
+      "type": "object",
+      "required": ["port", "host", "health_path", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Service port number"
+        },
+        "host": {
+          "type": "object",
+          "required": ["docker", "local"],
+          "additionalProperties": false,
+          "properties": {
+            "docker": {
+              "type": "string",
+              "description": "Hostname when running in Docker (container name)"
+            },
+            "local": {
+              "type": "string",
+              "description": "Hostname when running locally (usually localhost)"
+            }
+          }
+        },
+        "health_path": {
+          "type": ["string", "null"],
+          "description": "Health check endpoint path (null if not available)"
+        },
+        "env_var": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Environment variable name for the port"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable service description"
+        }
+      }
+    },
+    "infrastructure_service": {
+      "type": "object",
+      "required": ["port", "host", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Service port number"
+        },
+        "host": {
+          "type": "object",
+          "required": ["docker", "local"],
+          "additionalProperties": false,
+          "properties": {
+            "docker": {
+              "type": "string",
+              "description": "Hostname when running in Docker (container name)"
+            },
+            "local": {
+              "type": "string",
+              "description": "Hostname when running locally (usually localhost)"
+            }
+          }
+        },
+        "health_path": {
+          "type": ["string", "null"],
+          "description": "Health check endpoint path (null if not available)"
+        },
+        "env_var": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Environment variable name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable service description"
+        }
+      }
+    }
+  }
+}

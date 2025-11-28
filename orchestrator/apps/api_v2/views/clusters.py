@@ -149,14 +149,12 @@ def get_cluster(request):
 @permission_classes([IsAuthenticated])
 def sync_cluster(request):
     """
-    POST /api/v2/clusters/sync-cluster/
+    POST /api/v2/clusters/sync-cluster/?cluster_id=X
 
     Trigger synchronization of a cluster with RAS.
 
-    Request Body:
-        {
-            "cluster_id": "uuid"
-        }
+    Query Parameters:
+        - cluster_id: Cluster UUID (required, can also be in body)
 
     Response:
         {
@@ -165,7 +163,10 @@ def sync_cluster(request):
             "message": "Cluster synchronization started"
         }
     """
-    cluster_id = request.data.get('cluster_id')
+    # Support both query params (frontend) and body (API clients)
+    cluster_id = request.query_params.get('cluster_id')
+    if not cluster_id and request.data:
+        cluster_id = request.data.get('cluster_id')
 
     if not cluster_id:
         return Response({
@@ -189,10 +190,10 @@ def sync_cluster(request):
 
     # Trigger async sync via Celery task
     try:
-        from apps.databases.tasks import periodic_cluster_health_check
-        # Note: Using periodic_cluster_health_check as sync_cluster_task doesn't exist yet
-        # TODO: Implement dedicated sync_cluster_task in apps/databases/tasks.py
-        task = periodic_cluster_health_check.apply_async()
+        from apps.databases.tasks import sync_cluster_task
+
+        # Запускаем задачу синхронизации с передачей cluster_id
+        task = sync_cluster_task.apply_async(args=[str(cluster_id)])
 
         return Response({
             'cluster_id': str(cluster_id),
@@ -202,30 +203,59 @@ def sync_cluster(request):
         })
     except ImportError as e:
         logger.error(f"Celery task not found: {e}")
-        logger.warning("Cluster sync task unavailable - using fallback")
+        # Fallback: выполняем синхронизацию синхронно (как в админке)
+        logger.warning("Celery unavailable - running sync synchronously")
 
-        # Fallback: mark sync as pending
-        cluster.last_sync_status = 'pending'
-        cluster.save(update_fields=['last_sync_status', 'updated_at'])
+        try:
+            from apps.databases.services import ClusterService
+            result = ClusterService.sync_infobases(cluster)
 
-        return Response({
-            'cluster_id': str(cluster_id),
-            'status': 'pending',
-            'message': 'Cluster synchronization queued (Celery unavailable)',
-        })
+            return Response({
+                'cluster_id': str(cluster_id),
+                'status': 'success',
+                'message': 'Cluster synchronization completed',
+                'databases_found': result['created'] + result['updated'],
+                'created': result['created'],
+                'updated': result['updated'],
+                'errors': result['errors'],
+            })
+        except Exception as sync_error:
+            logger.error(f"Sync failed: {sync_error}")
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'SYNC_FAILED',
+                    'message': str(sync_error)
+                }
+            }, status=500)
+
     except Exception as e:
         logger.error(f"Failed to start cluster sync: {e}")
-        logger.warning("Celery unavailable - using fallback")
+        # Fallback: выполняем синхронизацию синхронно
+        logger.warning("Celery error - running sync synchronously")
 
-        # Fallback: mark sync as pending
-        cluster.last_sync_status = 'pending'
-        cluster.save(update_fields=['last_sync_status', 'updated_at'])
+        try:
+            from apps.databases.services import ClusterService
+            result = ClusterService.sync_infobases(cluster)
 
-        return Response({
-            'cluster_id': str(cluster_id),
-            'status': 'pending',
-            'message': 'Cluster synchronization queued (Celery unavailable)',
-        })
+            return Response({
+                'cluster_id': str(cluster_id),
+                'status': 'success',
+                'message': 'Cluster synchronization completed',
+                'databases_found': result['created'] + result['updated'],
+                'created': result['created'],
+                'updated': result['updated'],
+                'errors': result['errors'],
+            })
+        except Exception as sync_error:
+            logger.error(f"Sync failed: {sync_error}")
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'SYNC_FAILED',
+                    'message': str(sync_error)
+                }
+            }, status=500)
 
 
 @api_view(['POST'])

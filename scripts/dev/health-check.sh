@@ -93,11 +93,11 @@ check_http() {
 }
 
 check_http "Frontend" "http://localhost:5173"
-check_http "API Gateway" "http://localhost:8080/health"
-check_http "Orchestrator" "http://localhost:8000/health"
-# Week 4: Check RAS Adapter (or Cluster Service for backward compatibility)
-check_http "RAS Adapter / Cluster Service" "http://localhost:8088/health"
-check_http "Batch Service" "http://localhost:8087/health"
+check_http "API Gateway" "http://localhost:8180/health"
+check_http "Orchestrator" "http://localhost:8200/health"
+# Week 4: Check RAS Adapter (ports outside Windows reserved range 8013-8112)
+check_http "RAS Adapter" "http://localhost:8188/health"
+check_http "Batch Service" "http://localhost:8187/health"
 
 echo ""
 
@@ -148,15 +148,15 @@ echo ""
 echo -e "${BLUE}[4] Проверка соединений:${NC}"
 echo ""
 
-# Проверить JSON response от API Gateway
-if curl -s --max-time 3 http://localhost:8080/health 2>/dev/null | grep -q "healthy\|ok"; then
+# Проверить JSON response от API Gateway (port 8180)
+if curl -s --max-time 3 http://localhost:8180/health 2>/dev/null | grep -q "healthy\|ok"; then
     echo -e "  API Gateway /health: ${GREEN}✓ возвращает валидный JSON${NC}"
 else
     echo -e "  API Gateway /health: ${RED}✗ некорректный ответ${NC}"
 fi
 
-# Проверить JSON response от Orchestrator
-if curl -s --max-time 3 http://localhost:8000/health 2>/dev/null | grep -q "healthy\|ok\|database"; then
+# Проверить JSON response от Orchestrator (port 8200)
+if curl -s --max-time 3 http://localhost:8200/health 2>/dev/null | grep -q "healthy\|ok\|database"; then
     echo -e "  Orchestrator /health: ${GREEN}✓ возвращает валидный JSON${NC}"
 else
     echo -e "  Orchestrator /health: ${RED}✗ некорректный ответ${NC}"
@@ -185,10 +185,10 @@ check_port() {
 }
 
 check_port 5173 "Frontend"
-check_port 8080 "API Gateway"
-check_port 8000 "Orchestrator"
-check_port 8088 "RAS Adapter / Cluster Service"
-check_port 8087 "Batch Service"
+check_port 8180 "API Gateway"
+check_port 8200 "Orchestrator"
+check_port 8188 "RAS Adapter"
+check_port 8187 "Batch Service"
 check_port 1545 "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"

@@ -34,13 +34,38 @@ func LoggerMiddleware() gin.HandlerFunc {
 	}
 }
 
+// CORSConfig holds CORS configuration
+type CORSConfig struct {
+	AllowedOrigins []string
+}
+
 // CORSMiddleware handles CORS headers
-func CORSMiddleware() gin.HandlerFunc {
+// IMPORTANT: Allow-Origin: * + Allow-Credentials: true is FORBIDDEN by CORS spec
+// We must echo the exact origin if it's in the allowed list
+func CORSMiddleware(cfg *CORSConfig) gin.HandlerFunc {
+	// Build a map for O(1) lookup
+	allowedMap := make(map[string]bool)
+	for _, origin := range cfg.AllowedOrigins {
+		allowedMap[origin] = true
+	}
+
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := c.Request.Header.Get("Origin")
+
+		// Check if origin is allowed
+		if origin != "" && allowedMap[origin] {
+			// Echo exact origin (NOT wildcard) when credentials are used
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		} else if origin == "" {
+			// Same-origin requests (no Origin header) - allow for API calls from same domain
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		// If origin is set but not in allowed list - don't set CORS headers (browser will block)
+
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours preflight cache
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

@@ -64,7 +64,7 @@ func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Host:         getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:         getEnv("SERVER_PORT", "8087"),
+			Port:         getEnv("BATCH_SERVICE_PORT", "8187"), // Port 8187 - outside Windows reserved range (8013-8112)
 			ReadTimeout:  getDurationEnv("SERVER_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout: getDurationEnv("SERVER_WRITE_TIMEOUT", 30*time.Second),
 		},
@@ -91,7 +91,7 @@ func Load() *Config {
 			DB:       getIntEnv("REDIS_DB", 0),
 		},
 		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
-		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),
+		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8188"), // Port 8188 - outside Windows reserved range
 		ClusterRequestTimeout: getDurationEnv("CLUSTER_REQUEST_TIMEOUT", 30*time.Second),
 	}
 }

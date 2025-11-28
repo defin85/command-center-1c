@@ -96,7 +96,7 @@ def system_health(request):
                 {
                     "name": "API Gateway",
                     "type": "go-service",
-                    "url": "http://localhost:8080/health",
+                    "url": "http://localhost:8180/health",
                     "status": "online|offline|degraded",
                     "response_time_ms": 12.5,
                     "last_check": "2024-01-01T00:00:00Z"
@@ -113,11 +113,13 @@ def system_health(request):
     import time
 
     # Services to check: (name, type, url)
+    # Ports outside Windows reserved ranges (7913-8012, 8013-8112):
+    # API Gateway: 8180, Orchestrator: 8200, RAS Adapter: 8188
     services = [
-        ('API Gateway', 'go-service', 'http://localhost:8080/health'),
-        ('RAS Adapter', 'go-service', 'http://localhost:8088/health'),
+        ('API Gateway', 'go-service', 'http://localhost:8180/health'),
+        ('RAS Adapter', 'go-service', 'http://localhost:8188/health'),
         ('Worker', 'go-service', 'http://localhost:9091/health'),
-        ('Orchestrator', 'django', 'http://localhost:8000/health'),
+        ('Orchestrator', 'django', 'http://localhost:8200/health'),
         ('Prometheus', 'monitoring', 'http://localhost:9090/-/healthy'),
         ('Grafana', 'monitoring', 'http://localhost:5000/api/health'),
         ('Jaeger', 'tracing', 'http://localhost:16686/'),

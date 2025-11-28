@@ -28,16 +28,18 @@ export interface ClusterCreateRequest {
 
 export interface ClusterListResponse {
     count: number
-    next: string | null
-    previous: string | null
-    results: Cluster[]
+    next?: string | null
+    previous?: string | null
+    results?: Cluster[]
+    clusters?: Cluster[]  // API v2 returns 'clusters' instead of 'results'
 }
 
 export const clustersApi = {
     // v2 migration: GET /databases/clusters → GET /clusters/list-clusters
-    list: async (params?: Record<string, any>) => {
+    list: async (params?: Record<string, any>): Promise<Cluster[]> => {
         const response = await apiClient.get<ClusterListResponse>('/clusters/list-clusters', { params })
-        return response.data.results
+        // Defensive: handle both 'clusters' (API v2) and 'results' (DRF standard)
+        return response.data?.clusters ?? response.data?.results ?? []
     },
 
     // v2 migration: GET /databases/clusters/{id} → GET /clusters/get-cluster?cluster_id={id}
@@ -91,9 +93,10 @@ export const clustersApi = {
 
     // v2 migration: GET /databases/clusters/{id}/databases → GET /clusters/get-cluster-databases?cluster_id={id}
     getDatabases: async (id: string) => {
-        const response = await apiClient.get('/clusters/get-cluster-databases', {
+        const response = await apiClient.get<{ databases?: any[]; results?: any[] }>('/clusters/get-cluster-databases', {
             params: { cluster_id: id }
         })
-        return response.data
+        // Defensive: handle both 'databases' (API v2) and 'results' (DRF standard)
+        return response.data?.databases ?? response.data?.results ?? []
     },
 }

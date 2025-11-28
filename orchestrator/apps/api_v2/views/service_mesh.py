@@ -16,30 +16,32 @@ from rest_framework.response import Response
 logger = logging.getLogger(__name__)
 
 # Service endpoints for metrics collection
+# Ports outside Windows reserved ranges (7913-8012, 8013-8112):
+# API Gateway: 8180, RAS Adapter: 8188, Batch Service: 8187
 MONITORED_SERVICES = [
     {
         'name': 'api-gateway',
         'type': 'backend',
-        'health_url': 'http://localhost:8080/health',
-        'metrics_url': 'http://localhost:8080/metrics',
+        'health_url': 'http://localhost:8180/health',
+        'metrics_url': 'http://localhost:8180/metrics',
     },
     {
         'name': 'ras-adapter',
         'type': 'backend',
-        'health_url': 'http://localhost:8088/health',
-        'metrics_url': 'http://localhost:8088/metrics',
+        'health_url': 'http://localhost:8188/health',
+        'metrics_url': 'http://localhost:8188/metrics',
     },
     {
         'name': 'worker',
         'type': 'backend',
-        'health_url': 'http://localhost:8089/health',
-        'metrics_url': 'http://localhost:8089/metrics',
+        'health_url': 'http://localhost:9091/health',
+        'metrics_url': 'http://localhost:9091/metrics',
     },
     {
         'name': 'batch-service',
         'type': 'backend',
-        'health_url': 'http://localhost:8087/health',
-        'metrics_url': 'http://localhost:8087/metrics',
+        'health_url': 'http://localhost:8187/health',
+        'metrics_url': 'http://localhost:8187/metrics',
     },
 ]
 
@@ -286,3 +288,98 @@ def get_metrics(request):
         response_data['prometheus_metrics'] = prometheus_metrics
 
     return Response(response_data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_history(request):
+    """
+    GET /api/v2/service-mesh/get-history/
+
+    Get historical metrics for a specific service.
+
+    Query Parameters:
+        - service: str (required) - Service name (e.g., 'api-gateway', 'worker')
+        - minutes: int (optional, default=30) - Period of history in minutes
+
+    Response:
+        {
+            "service": "api-gateway",
+            "display_name": "API Gateway",
+            "minutes": 30,
+            "data_points": [
+                {
+                    "timestamp": "2024-01-01T00:00:00",
+                    "ops_per_minute": 150.5,
+                    "p95_latency_ms": 45.2,
+                    "error_rate": 0.001
+                },
+                ...
+            ]
+        }
+    """
+    import asyncio
+    from apps.operations.services.prometheus_client import (
+        get_prometheus_client,
+        SERVICE_CONFIG,
+    )
+
+    service = request.query_params.get('service')
+
+    if not service:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'service parameter is required',
+                'available_services': list(SERVICE_CONFIG.keys())
+            }
+        }, status=400)
+
+    # Validate service name
+    if service not in SERVICE_CONFIG:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'UNKNOWN_SERVICE',
+                'message': f'Unknown service: {service}',
+                'available_services': list(SERVICE_CONFIG.keys())
+            }
+        }, status=400)
+
+    # Parse minutes parameter
+    try:
+        minutes = int(request.query_params.get('minutes', 30))
+        minutes = max(1, min(minutes, 1440))  # Clamp to [1, 1440] (max 24 hours)
+    except (ValueError, TypeError):
+        minutes = 30
+
+    # Get service display name
+    config = SERVICE_CONFIG.get(service, {})
+    display_name = config.get('display_name', service.title())
+
+    # Fetch historical metrics from Prometheus
+    data_points = []
+    try:
+        prometheus_client = get_prometheus_client()
+
+        # Run async function in sync context using asyncio.run()
+        # This is safer than manually managing event loops
+        data_points = asyncio.run(
+            prometheus_client.get_historical_metrics(service, minutes)
+        )
+
+    except Exception as e:
+        logger.warning(
+            f"Failed to fetch Prometheus metrics for {service}: {e}",
+            extra={'service': service, 'minutes': minutes}
+        )
+        # Return empty list on Prometheus error - service mesh page can still work
+        data_points = []
+
+    return Response({
+        'service': service,
+        'display_name': display_name,
+        'minutes': minutes,
+        'data_points': data_points,
+    })

@@ -81,12 +81,13 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   const fetchOperations = async () => {
     setLoading(true)
     try {
-      const response = await serviceMeshApi.getOperations(
-        selectedService || undefined,
-        20
-      )
-      setOperations(response.operations)
-      setTotal(response.total)
+      const response = await serviceMeshApi.getOperations(50)
+      // Apply client-side service filter if selected
+      const filtered = selectedService
+        ? response.operations.filter(op => op.service === selectedService)
+        : response.operations
+      setOperations(filtered.slice(0, 20))
+      setTotal(selectedService ? filtered.length : response.total)
     } catch (error) {
       console.error('Failed to fetch operations:', error)
       setOperations([])
@@ -98,6 +99,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   // Fetch on mount and when service filter changes
   useEffect(() => {
     fetchOperations()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedService])
 
   // Table columns

@@ -35,7 +35,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	// Global middleware
 	router.Use(gin.Recovery())
 	router.Use(middleware.LoggerMiddleware())
-	router.Use(middleware.CORSMiddleware())
+	router.Use(middleware.CORSMiddleware(&middleware.CORSConfig{
+		AllowedOrigins: cfg.CORSAllowedOrigins,
+	}))
 
 	// Health check endpoint (no auth required)
 	router.GET("/health", handlers.HealthCheck)

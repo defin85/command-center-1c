@@ -23,9 +23,9 @@ info:
     url: https://github.com/commandcenter1c/commandcenter
 
 servers:
-  - url: http://localhost:8080
-    description: Local development server
-  - url: http://api-gateway:8080
+  - url: http://localhost:8180
+    description: Local development server (port 8180 - outside Windows reserved range)
+  - url: http://api-gateway:8180
     description: Docker environment
 
 security:

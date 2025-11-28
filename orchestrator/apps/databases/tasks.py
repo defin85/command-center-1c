@@ -326,6 +326,63 @@ def periodic_cluster_health_check():
     }
 
 
+@shared_task
+def sync_cluster_task(cluster_id: str):
+    """
+    Синхронизация инфобаз для одного кластера.
+    Вызывается из API v2 endpoint /clusters/sync-cluster/.
+
+    Использует ClusterService.sync_infobases() - тот же метод что и админка.
+
+    Args:
+        cluster_id: UUID кластера для синхронизации
+
+    Returns:
+        dict: {status, cluster_id, created, updated, errors} или {status, error}
+    """
+    from .models import Cluster
+    from .services import ClusterService
+
+    logger.info(f"Starting sync_cluster_task for cluster_id={cluster_id}")
+
+    try:
+        cluster = Cluster.objects.get(id=cluster_id)
+
+        # Вызываем тот же метод что использует админка
+        result = ClusterService.sync_infobases(cluster)
+
+        logger.info(
+            f"Cluster {cluster.name} sync completed: "
+            f"created={result['created']}, updated={result['updated']}, errors={result['errors']}"
+        )
+
+        return {
+            'status': 'success',
+            'cluster_id': str(cluster_id),
+            'cluster_name': cluster.name,
+            'created': result['created'],
+            'updated': result['updated'],
+            'errors': result['errors'],
+            'databases_found': result['created'] + result['updated'],
+            'timestamp': timezone.now().isoformat()
+        }
+
+    except Cluster.DoesNotExist:
+        logger.error(f"Cluster not found: {cluster_id}")
+        return {
+            'status': 'error',
+            'cluster_id': str(cluster_id),
+            'error': 'Cluster not found'
+        }
+    except Exception as e:
+        logger.error(f"Error syncing cluster {cluster_id}: {e}", exc_info=True)
+        return {
+            'status': 'error',
+            'cluster_id': str(cluster_id),
+            'error': str(e)
+        }
+
+
 @shared_task(bind=True)
 def periodic_database_health_check(self):
     """

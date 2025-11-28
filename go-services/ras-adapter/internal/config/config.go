@@ -50,7 +50,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:            getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:            getEnvInt("SERVER_PORT", 8088),
+			Port:            getEnvInt("RAS_ADAPTER_PORT", 8188), // Port 8188 - outside Windows reserved range (8013-8112)
 			ReadTimeout:     getEnvDuration("SERVER_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout:    getEnvDuration("SERVER_WRITE_TIMEOUT", 10*time.Second),
 			ShutdownTimeout: getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),

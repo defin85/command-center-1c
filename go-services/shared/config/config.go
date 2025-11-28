@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -69,6 +70,9 @@ type Config struct {
 	// Credentials Transport Encryption (AES-256)
 	// ВАЖНО: Должен совпадать с Django CREDENTIALS_TRANSPORT_KEY!
 	CredentialsTransportKey string
+
+	// CORS configuration
+	CORSAllowedOrigins []string
 }
 
 // LoadFromEnv loads configuration from environment variables
@@ -97,17 +101,17 @@ func LoadFromEnv() *Config {
 		DBName:     getEnv("DB_NAME", "commandcenter"),
 		DBSSLM:     getEnv("DB_SSLMODE", "disable"),
 
-		// Orchestrator
-		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
+		// Orchestrator (Port 8200 - outside Windows reserved ranges 7913-8012, 8013-8112)
+		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
 
-		// Batch Service
-		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8087"),
+		// Batch Service (Port 8187 - outside Windows reserved range 8013-8112)
+		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8187"),
 
-		// Cluster Service
-		ClusterServiceURL: getEnv("CLUSTER_SERVICE_URL", "http://localhost:8088"),
+		// Cluster Service (Port 8188 - outside Windows reserved range 8013-8112)
+		ClusterServiceURL: getEnv("CLUSTER_SERVICE_URL", "http://localhost:8188"),
 
-		// RAS Adapter
-		RASAdapterURL: getEnv("RAS_ADAPTER_URL", "http://localhost:8088"),
+		// RAS Adapter (Port 8188 - outside Windows reserved range 8013-8112)
+		RASAdapterURL: getEnv("RAS_ADAPTER_URL", "http://localhost:8188"),
 
 		// Jaeger
 		JaegerURL: getEnv("JAEGER_URL", "http://localhost:16686"),
@@ -133,6 +137,12 @@ func LoadFromEnv() *Config {
 
 		// Credentials Transport Encryption
 		CredentialsTransportKey: getEnv("CREDENTIALS_TRANSPORT_KEY", ""),
+
+		// CORS - default allows localhost frontend
+		CORSAllowedOrigins: getStringSliceEnv("CORS_ALLOWED_ORIGINS", []string{
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		}),
 	}
 }
 
@@ -167,6 +177,23 @@ func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {
 			return duration
+		}
+	}
+	return defaultValue
+}
+
+func getStringSliceEnv(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		// Split by comma and trim whitespace
+		parts := make([]string, 0)
+		for _, part := range strings.Split(value, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				parts = append(parts, trimmed)
+			}
+		}
+		if len(parts) > 0 {
+			return parts
 		}
 	}
 	return defaultValue

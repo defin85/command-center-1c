@@ -73,7 +73,7 @@ class RasAdapterClient:
         """
         self.base_url = (
             base_url or
-            getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8088')
+            getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188')
         ).rstrip('/')
         self.timeout = timeout or getattr(settings, 'RAS_ADAPTER_TIMEOUT', 180)
 

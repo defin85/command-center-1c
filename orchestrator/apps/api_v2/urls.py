@@ -82,6 +82,7 @@ urlpatterns = [
     # Service Mesh
     # ========================================================================
     path('service-mesh/get-metrics/', service_mesh.get_metrics, name='get-metrics'),
+    path('service-mesh/get-history/', service_mesh.get_history, name='get-history'),
 
     # ========================================================================
     # Audit (Internal API for Go Worker)

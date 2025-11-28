@@ -361,6 +361,15 @@ load_env_file() {
         echo "   Go сервисы будут использовать значения по умолчанию"
         echo "   Создайте .env.local из .env.local.example если необходимо"
     fi
+
+    # Load generated service configuration (ports, URLs)
+    local generated_env="$PROJECT_ROOT/generated/.env.services"
+    if [ -f "$generated_env" ]; then
+        set -a
+        source <(grep -v '^#' "$generated_env" | grep -v '^[[:space:]]*$' | grep -v '^=' | sed 's/\r$//')
+        set +a
+        echo "✓ Сгенерированная конфигурация портов загружена"
+    fi
 }
 
 ##############################################################################

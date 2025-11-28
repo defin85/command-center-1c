@@ -14,7 +14,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Port 8180 - outside Windows reserved range (8013-8112)
+        target: 'http://localhost:8180',
         changeOrigin: true,
       }
     },

@@ -1,0 +1,138 @@
+{
+  "$schema": "./services.schema.json",
+  "version": "1.0",
+  "services": {
+    "frontend": {
+      "port": 5173,
+      "host": {
+        "docker": "frontend",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "FRONTEND_PORT",
+      "description": "React frontend application (Vite dev server)"
+    },
+    "api-gateway": {
+      "port": 8180,
+      "host": {
+        "docker": "api-gateway",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "SERVER_PORT",
+      "description": "Go API Gateway - HTTP router, auth, rate limiting"
+    },
+    "orchestrator": {
+      "port": 8200,
+      "host": {
+        "docker": "orchestrator",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "ORCHESTRATOR_PORT",
+      "description": "Django Orchestrator - Task management, Celery coordination"
+    },
+    "ras-adapter": {
+      "port": 8188,
+      "host": {
+        "docker": "ras-adapter",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "RAS_ADAPTER_PORT",
+      "description": "Go RAS Adapter - 1C cluster management via RAS protocol"
+    },
+    "batch-service": {
+      "port": 8187,
+      "host": {
+        "docker": "batch-service",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "BATCH_SERVICE_PORT",
+      "description": "Go Batch Service - Extension installation via 1cv8.exe"
+    },
+    "worker": {
+      "port": 9091,
+      "host": {
+        "docker": "worker",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "WORKER_PORT",
+      "description": "Go Worker - Parallel task processing"
+    }
+  },
+  "infrastructure": {
+    "postgresql": {
+      "port": 5432,
+      "host": {
+        "docker": "postgres",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "DB_PORT",
+      "description": "PostgreSQL 15 - Main database"
+    },
+    "redis": {
+      "port": 6379,
+      "host": {
+        "docker": "redis",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "REDIS_PORT",
+      "description": "Redis 7 - Cache and message broker"
+    },
+    "clickhouse": {
+      "port": 8123,
+      "host": {
+        "docker": "clickhouse",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "CLICKHOUSE_PORT",
+      "description": "ClickHouse - Analytics and event storage"
+    },
+    "prometheus": {
+      "port": 9090,
+      "host": {
+        "docker": "prometheus",
+        "local": "localhost"
+      },
+      "health_path": "/-/healthy",
+      "env_var": "PROMETHEUS_PORT",
+      "description": "Prometheus - Metrics collection"
+    },
+    "grafana": {
+      "port": 5000,
+      "host": {
+        "docker": "grafana",
+        "local": "localhost"
+      },
+      "health_path": "/api/health",
+      "env_var": "GRAFANA_PORT",
+      "description": "Grafana - Monitoring dashboards"
+    },
+    "jaeger": {
+      "port": 16686,
+      "host": {
+        "docker": "jaeger",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "JAEGER_PORT",
+      "description": "Jaeger - Distributed tracing UI"
+    },
+    "ras": {
+      "port": 1545,
+      "host": {
+        "docker": "ras",
+        "local": "localhost"
+      },
+      "health_path": null,
+      "env_var": "RAS_PORT",
+      "description": "1C RAS - Remote Administration Server"
+    }
+  }
+}

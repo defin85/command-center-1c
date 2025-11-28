@@ -202,3 +202,14 @@ docker-compose.local.yml
 .cache/
 tmp/
 temp/
+
+# =============================================================================
+# Generated Configuration (policy: regenerate from config/services.json)
+# =============================================================================
+# Generated config files (keep .gitkeep)
+generated/*
+!generated/.gitkeep
+
+# Generated documentation
+docs/generated/*
+!docs/generated/.gitkeep

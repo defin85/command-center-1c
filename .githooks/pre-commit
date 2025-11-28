@@ -1,5 +1,5 @@
 #!/bin/bash
-# Git pre-commit hook для проверки OpenAPI спецификаций
+# Git pre-commit hook для проверки OpenAPI спецификаций и Service Configuration
 # Установка: git config core.hooksPath .githooks
 
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
@@ -10,6 +10,36 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# =============================================================================
+# Check 1: Service Configuration (config/services.json)
+# =============================================================================
+CHANGED_CONFIG=$(git diff --cached --name-only --diff-filter=ACM | grep 'config/services\.json$')
+
+if [[ -n "$CHANGED_CONFIG" ]]; then
+    echo -e "${YELLOW}Обнаружены изменения в config/services.json${NC}"
+    echo ""
+
+    # Validate and regenerate
+    echo -e "${GREEN}Валидация и регенерация конфигурации...${NC}"
+    if ! python "$PROJECT_ROOT/scripts/config/generate.py" --mode local --verbose; then
+        echo ""
+        echo -e "${RED}✗ Ошибка валидации services.json${NC}"
+        exit 1
+    fi
+
+    # Add generated files to commit
+    echo ""
+    echo -e "${GREEN}Добавляю сгенерированные файлы в коммит...${NC}"
+    git add "$PROJECT_ROOT/generated/" 2>/dev/null || true
+    git add "$PROJECT_ROOT/docs/generated/" 2>/dev/null || true
+
+    echo -e "${GREEN}✓ Service configuration validated${NC}"
+    echo ""
+fi
+
+# =============================================================================
+# Check 2: OpenAPI Specifications
+# =============================================================================
 # Проверить, изменились ли OpenAPI спецификации
 CHANGED_SPECS=$(git diff --cached --name-only --diff-filter=ACM | grep 'contracts/.*\.yaml$')
 

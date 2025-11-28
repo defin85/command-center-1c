@@ -452,7 +452,7 @@ class ClusterService:
                 # Note: cluster_service_url now points to RAS Adapter
                 from django.conf import settings
                 adapter_url = ras_adapter_url or getattr(
-                    settings, 'RAS_ADAPTER_URL', 'http://localhost:8088'
+                    settings, 'RAS_ADAPTER_URL', 'http://localhost:8188'
                 )
 
                 cluster = Cluster.objects.create(

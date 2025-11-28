@@ -73,8 +73,13 @@ interface ServiceOperationResponse {
   progress: number
 }
 
-interface OperationsAPIResponse {
+/**
+ * Response from /operations/list-operations/ endpoint
+ * Has 'count' instead of just 'total'
+ */
+interface ListOperationsAPIResponse {
   operations: ServiceOperationResponse[]
+  count: number
   total: number
 }
 
@@ -133,7 +138,7 @@ function transformOperation(data: ServiceOperationResponse): ServiceOperation {
  * Get current service mesh metrics for all services
  */
 export const getServiceMeshMetrics = async (): Promise<ServiceMeshState> => {
-  const response = await apiClient.get<MeshMetricsAPIResponse>('/operations/service-mesh/metrics/')
+  const response = await apiClient.get<MeshMetricsAPIResponse>('/service-mesh/get-metrics/')
 
   return {
     services: response.data.services.map(transformServiceMetrics),
@@ -155,8 +160,8 @@ export const getServiceHistory = async (
   minutes: number = 30
 ): Promise<HistoricalMetricsResponse> => {
   const response = await apiClient.get<HistoricalAPIResponse>(
-    `/operations/service-mesh/history/${service}/`,
-    { params: { minutes } }
+    '/service-mesh/get-history/',
+    { params: { service, minutes } }
   )
 
   return {
@@ -169,28 +174,23 @@ export const getServiceHistory = async (
 }
 
 /**
- * Get recent operations, optionally filtered by service
+ * Get recent operations, optionally filtered by status
  *
- * @param service - Optional service name filter
  * @param limit - Maximum number of operations to return (default: 50)
  * @param status - Optional status filter
  */
 export const getServiceOperations = async (
-  service?: string,
   limit: number = 50,
   status?: string
 ): Promise<OperationsListResponse> => {
   const params: Record<string, string | number> = { limit }
 
-  if (service) {
-    params.service = service
-  }
   if (status) {
     params.status = status
   }
 
-  const response = await apiClient.get<OperationsAPIResponse>(
-    '/operations/service-mesh/operations/',
+  const response = await apiClient.get<ListOperationsAPIResponse>(
+    '/operations/list-operations/',
     { params }
   )
 

@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-RAS_ADAPTER_URL="${RAS_ADAPTER_URL:-http://localhost:8088}"
+RAS_ADAPTER_URL="${RAS_ADAPTER_URL:-http://localhost:8188}"
 RAS_SERVER="${RAS_SERVER:-localhost:1545}"
 NUM_REQUESTS="${NUM_REQUESTS:-100}"
 CONCURRENCY="${CONCURRENCY:-10}"

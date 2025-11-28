@@ -13,7 +13,7 @@
 **Roadmap:** Balanced Approach (14-16 недель) - [docs/ROADMAP.md](docs/ROADMAP.md)
 
 **API Version:** v2 (action-based) - см. [API_V2_UNIFICATION_ROADMAP.md](docs/roadmaps/API_V2_UNIFICATION_ROADMAP.md)
-- Frontend → API Gateway (8080) `/api/v2/*`
+- Frontend → API Gateway (8180) `/api/v2/*`
 - v1 endpoints deprecated (Sunset: 2026-03-01)
 
 **Завершено:** Sprint 1.1-1.4 (Infrastructure, Models, OData, RAS Integration) ✅
@@ -74,10 +74,11 @@ cd /c/1CProject/command-center-1c
 
 **Endpoints для проверки:**
 - Frontend: http://localhost:5173
-- API Gateway: http://localhost:8080/health
-- Orchestrator: http://localhost:8000/admin (Admin Panel)
-- Orchestrator API: http://localhost:8000/api/docs (Swagger)
-- ras-adapter: http://localhost:8088/health
+- API Gateway: http://localhost:8180/health
+- Orchestrator: http://localhost:8200/admin (Admin Panel)
+- Orchestrator API: http://localhost:8200/api/docs (Swagger)
+- ras-adapter: http://localhost:8188/health
+- batch-service: http://localhost:8187/health
 - Grafana: http://localhost:5000 (admin/admin)
 - Prometheus: http://localhost:9090
 - Jaeger: http://localhost:16686 (OpenTelemetry Tracing)
@@ -179,13 +180,13 @@ git config core.hooksPath .githooks
 ```
 User → Frontend (React:5173)
   ↓
-API Gateway (Go:8080) → Orchestrator (Django:8000) → PostgreSQL:5432
+API Gateway (Go:8180) → Orchestrator (Django:8200) → PostgreSQL:5432
                           ↓
                         Redis:6379 → Celery
                           ↓
                     Go Worker Pool (x2) → OData → 1C Bases
                           ↓
-                    ras-adapter (Go:8088) → RAS (1545)
+                    ras-adapter (Go:8188) → RAS (1545)
 ```
 
 **Поток данных:**
@@ -230,10 +231,11 @@ command-center-1c/
 
 | Компонент | Язык | Фреймворк | Порт |
 |-----------|------|-----------|------|
-| **API Gateway** | Go 1.21+ | Gin | 8080 |
+| **API Gateway** | Go 1.21+ | Gin | 8180 |
 | **Workers** | Go 1.21+ | stdlib + goroutines | - |
-| **ras-adapter** | Go 1.21+ | khorevaa/ras-client | 8088 |
-| **Orchestrator** | Python 3.11+ | Django 4.2+ DRF | 8000 |
+| **ras-adapter** | Go 1.21+ | khorevaa/ras-client | 8188 |
+| **batch-service** | Go 1.21+ | stdlib | 8187 |
+| **Orchestrator** | Python 3.11+ | Django 4.2+ DRF | 8200 |
 | **Task Queue** | Python 3.11+ | Celery 5.3+ | - |
 | **Frontend** | TypeScript | React 18.2 + Ant Design | 5173 |
 
@@ -248,10 +250,12 @@ command-center-1c/
 
 | Сервис | Назначение | Порт | Status |
 |--------|------------|------|--------|
-| **ras-adapter** | Управление кластерами + Lock/Unlock через RAS | 8088 | ✅ ACTIVE |
-| **batch-service** | Установка расширений (.cfe) через 1cv8.exe | 8087 | ⚠️ In Dev |
+| **ras-adapter** | Управление кластерами + Lock/Unlock через RAS | 8188 | ✅ ACTIVE |
+| **batch-service** | Установка расширений (.cfe) через 1cv8.exe | 8187 | ⚠️ In Dev |
 | ~~cluster-service~~ | ~~Мониторинг кластеров~~ | 8088 | ❌ DEPRECATED |
 | ~~ras-grpc-gw~~ | ~~Gateway для RAS~~ | 8081/9999 | ❌ DEPRECATED |
+
+> **Note:** Порты 8180, 8187, 8188, 8200 выбраны вне Windows reserved ranges (7913-8012, 8013-8112)
 
 **ras-adapter (Week 4 NEW):**
 - Direct RAS protocol integration (khorevaa/ras-client)

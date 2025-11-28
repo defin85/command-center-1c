@@ -8,10 +8,10 @@ from drf_spectacular.views import (
     SpectacularRedocView
 )
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView,
     TokenVerifyView,
 )
+from apps.core.jwt_views import CustomTokenObtainPairView
 from apps.health import health_check, health_check_detailed
 
 urlpatterns = [
@@ -22,8 +22,8 @@ urlpatterns = [
     path('health/', health_check, name='health-slash'),
     path('health/detailed', health_check_detailed, name='health-detailed'),
 
-    # JWT Authentication
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # JWT Authentication (custom view adds username + roles claims for Go compatibility)
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
 
