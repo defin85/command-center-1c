@@ -52,6 +52,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	router.POST("/api/token/refresh", handlers.ProxyToOrchestratorAuth)
 	router.POST("/api/token/refresh/", handlers.ProxyToOrchestratorAuth)
 
+	// WebSocket routes (no auth middleware - handles internally)
+	router.GET("/ws/workflow/:execution_id/", handlers.WebSocketWorkflowProxy)
+	router.GET("/ws/service-mesh/", handlers.WebSocketServiceMeshProxy)
+
 	// API v2 routes (v1 removed after migration - 2025-11-27)
 	setupV2Routes(router, cfg)
 
@@ -139,6 +143,8 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 		v2.Any("/clusters/*path", handlers.ProxyToOrchestratorV2)  // Cluster CRUD
 		v2.Any("/workflows/*path", handlers.ProxyToOrchestratorV2)
 		v2.Any("/system/*path", handlers.ProxyToOrchestratorV2)
+		v2.Any("/extensions/*path", handlers.ProxyToOrchestratorV2)
+		v2.Any("/service-mesh/*path", handlers.ProxyToOrchestratorV2)
 	}
 
 	log.Info("API v2 routes configured",
