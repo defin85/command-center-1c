@@ -58,11 +58,11 @@ func DefaultConfig() *Config {
 		ConsumerGroup:         "commandcenter1c",
 		MaxRetries:            3,
 		RetryDelay:            time.Second * 5,
-		MessageTTL:            time.Hour * 24,       // 24 hours
-		MaxLength:             10000,                // Keep last 10k messages per stream
+		MessageTTL:            time.Hour * 24, // 24 hours
+		MaxLength:             10000,          // Keep last 10k messages per stream
 		ApproximateMaxLength:  true,
-		MaxPayloadSize:        1 * 1024 * 1024,      // 1MB default
-		MaxConcurrentHandlers: 100,                  // For 700+ databases, allow 100 concurrent handlers
+		MaxPayloadSize:        1 * 1024 * 1024, // 1MB default
+		MaxConcurrentHandlers: 100,             // For 700+ databases, allow 100 concurrent handlers
 		EnableAutoReconnect:   true,
 		ReconnectInterval:     5 * time.Second,
 		MaxReconnectRetries:   0, // Infinite retries

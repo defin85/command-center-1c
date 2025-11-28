@@ -55,11 +55,11 @@ func TestWithRetry(t *testing.T) {
 	msg := message.NewMessage("test-id", envelopeBytes)
 
 	tests := []struct {
-		name           string
-		maxRetries     int
-		failUntil      int
-		expectedCalls  int
-		expectedError  bool
+		name          string
+		maxRetries    int
+		failUntil     int
+		expectedCalls int
+		expectedError bool
 	}{
 		{
 			name:          "success on first attempt",

@@ -12,6 +12,8 @@ from . import (
     extensions,
     system,
     service_mesh,
+    audit,
+    events,
 )
 
 __all__ = [
@@ -22,4 +24,6 @@ __all__ = [
     'extensions',
     'system',
     'service_mesh',
+    'audit',
+    'events',
 ]

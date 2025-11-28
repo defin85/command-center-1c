@@ -45,6 +45,21 @@ app.conf.beat_schedule = {
         'task': 'apps.databases.tasks.cleanup_old_status_history',
         'schedule': crontab(hour=3, minute=0),
     },
+
+    # Replay failed events каждую минуту
+    'replay-failed-events': {
+        'task': 'apps.operations.tasks.event_replay.replay_failed_events',
+        'schedule': 60.0,  # Each minute
+        'kwargs': {'batch_size': 100},
+        'options': {'expires': 55.0}
+    },
+
+    # Cleanup old replayed events раз в день в 4:00 UTC
+    'cleanup-old-replayed-events': {
+        'task': 'apps.operations.tasks.event_replay.cleanup_old_replayed_events',
+        'schedule': crontab(hour=4, minute=0),
+        'kwargs': {'days': 7},
+    },
 }
 
 # Timezone для beat schedule

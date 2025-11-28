@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/ThreeDotsLabs/watermill"
 )
 
 // Helper to create a test Redis client
@@ -195,9 +195,9 @@ func TestPublisher_PublishWithMetadata(t *testing.T) {
 	payload := map[string]string{"key": "value"}
 	correlationID := "corr-123"
 	metadata := map[string]interface{}{
-		"retry_count":      2,
-		"timeout_seconds":  30,
-		"idempotency_key":  "idem-123",
+		"retry_count":     2,
+		"timeout_seconds": 30,
+		"idempotency_key": "idem-123",
 	}
 
 	err = publisher.PublishWithMetadata(ctx, channel, eventType, payload, correlationID, metadata)

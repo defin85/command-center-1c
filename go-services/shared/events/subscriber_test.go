@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/ThreeDotsLabs/watermill"
 )
 
 func TestNewSubscriber(t *testing.T) {

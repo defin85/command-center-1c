@@ -45,7 +45,8 @@ type ExtensionInstallStateMachine struct {
 	config      *Config
 
 	// Compensation
-	compensationStack []CompensationAction
+	compensationStack    []CompensationAction
+	compensationExecutor *CompensationExecutor
 
 	// Deduplication
 	processedEvents map[string]bool
@@ -62,6 +63,23 @@ type CompensationAction struct {
 	Action func(context.Context) error
 }
 
+// StateMachineOption is a functional option for configuring StateMachine
+type StateMachineOption func(*ExtensionInstallStateMachine)
+
+// WithCompensationExecutor sets the compensation executor for the state machine
+func WithCompensationExecutor(executor *CompensationExecutor) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.compensationExecutor = executor
+	}
+}
+
+// WithCompensationConfig creates and sets a compensation executor with the given config
+func WithCompensationConfig(config *CompensationConfig, auditLogger AuditLogger, metrics MetricsRecorder) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.compensationExecutor = NewCompensationExecutor(config, auditLogger, metrics)
+	}
+}
+
 // NewStateMachine creates new state machine instance
 func NewStateMachine(
 	ctx context.Context,
@@ -70,6 +88,7 @@ func NewStateMachine(
 	subscriber EventSubscriber,
 	redisClient *redis.Client,
 	config *Config,
+	opts ...StateMachineOption,
 ) (*ExtensionInstallStateMachine, error) {
 
 	if publisher == nil {
@@ -107,6 +126,11 @@ func NewStateMachine(
 		batchServiceBreaker:   batchBreaker,
 		ctx:           smCtx,
 		cancel:        cancel,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(sm)
 	}
 
 	// Register event handlers BEFORE router starts

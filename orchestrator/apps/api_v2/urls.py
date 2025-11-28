@@ -15,6 +15,8 @@ from .views import (
     extensions,
     system,
     service_mesh,
+    audit,
+    events,
 )
 
 app_name = 'api_v2'
@@ -80,4 +82,15 @@ urlpatterns = [
     # Service Mesh
     # ========================================================================
     path('service-mesh/get-metrics/', service_mesh.get_metrics, name='get-metrics'),
+
+    # ========================================================================
+    # Audit (Internal API for Go Worker)
+    # ========================================================================
+    path('audit/log-compensation/', audit.log_compensation, name='log-compensation'),
+
+    # ========================================================================
+    # Events (Internal API for failed event storage/replay)
+    # ========================================================================
+    path('events/store-failed/', events.store_failed_event, name='store-failed-event'),
+    path('events/pending/', events.get_pending_events, name='get-pending-events'),
 ]

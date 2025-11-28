@@ -68,11 +68,11 @@ func WithRetry(maxRetries int, initialDelay time.Duration, logger watermill.Logg
 					jitter := time.Duration(rand.Int63n(int64(baseDelay) / 10)) // ±10% jitter
 					delay := baseDelay + jitter
 					logger.Info("Retrying message processing", watermill.LogFields{
-						"message_id": msg.UUID,
-						"attempt":    attempt + 1,
+						"message_id":  msg.UUID,
+						"attempt":     attempt + 1,
 						"max_retries": maxRetries,
-						"delay":      delay.String(),
-						"error":      err.Error(),
+						"delay":       delay.String(),
+						"error":       err.Error(),
 					})
 
 					// Wait before retry

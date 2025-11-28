@@ -1,9 +1,11 @@
 package events
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -17,10 +19,12 @@ import (
 type Publisher struct {
 	watermill      *redisstream.Publisher
 	serviceName    string
+	serviceToken   string // WORKER_API_KEY for internal service authentication
 	logger         watermill.LoggerAdapter
 	closed         bool
 	mu             sync.RWMutex
 	maxPayloadSize int64
+	fallbackClient *http.Client // Reusable HTTP client for fallback requests
 }
 
 // NewPublisher creates a new event publisher
@@ -55,7 +59,7 @@ func NewPublisher(redisClient *redis.Client, serviceName string, logger watermil
 	// Create Watermill Redis Streams publisher
 	publisher, err := redisstream.NewPublisher(
 		redisstream.PublisherConfig{
-			Client: redisClient,
+			Client:     redisClient,
 			Marshaller: &redisstream.DefaultMarshallerUnmarshaller{},
 		},
 		logger,
@@ -70,7 +74,22 @@ func NewPublisher(redisClient *redis.Client, serviceName string, logger watermil
 		logger:         logger,
 		closed:         false,
 		maxPayloadSize: DefaultMaxPayloadSize,
+		fallbackClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				MaxIdleConnsPerHost: 5,
+				IdleConnTimeout:     30 * time.Second,
+			},
+		},
 	}, nil
+}
+
+// SetServiceToken sets the service authentication token for internal API calls
+func (p *Publisher) SetServiceToken(token string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.serviceToken = token
 }
 
 // Publish publishes an event to the specified channel
@@ -219,6 +238,99 @@ func (p *Publisher) PublishWithMetadata(ctx context.Context, channel string, eve
 		"message_id":     envelope.MessageID,
 		"correlation_id": envelope.CorrelationID,
 	})
+
+	return nil
+}
+
+// PublishWithFallback publishes event to Redis with PostgreSQL fallback
+// If Redis publish fails, stores event in PostgreSQL via Orchestrator API
+func (p *Publisher) PublishWithFallback(
+	ctx context.Context,
+	channel string,
+	eventType string,
+	payload interface{},
+	correlationID string,
+	fallbackURL string, // Orchestrator URL, e.g., "http://localhost:8000"
+) error {
+	// Try Redis first
+	err := p.Publish(ctx, channel, eventType, payload, correlationID)
+	if err == nil {
+		return nil
+	}
+
+	// Redis failed, log and fallback to PostgreSQL
+	p.logger.Info("Redis publish failed, using PostgreSQL fallback",
+		watermill.LogFields{
+			"channel":        channel,
+			"event_type":     eventType,
+			"correlation_id": correlationID,
+			"error":          err.Error(),
+		})
+
+	return p.storeFailedEvent(ctx, channel, eventType, payload, correlationID, fallbackURL)
+}
+
+// storeFailedEvent stores failed event in PostgreSQL via Orchestrator API
+func (p *Publisher) storeFailedEvent(
+	ctx context.Context,
+	channel string,
+	eventType string,
+	payload interface{},
+	correlationID string,
+	fallbackURL string,
+) error {
+	// Serialize payload
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	fallbackPayload := map[string]interface{}{
+		"channel":            channel,
+		"event_type":         eventType,
+		"correlation_id":     correlationID,
+		"payload":            json.RawMessage(payloadBytes),
+		"source_service":     p.serviceName,
+		"original_timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(fallbackPayload)
+	if err != nil {
+		return fmt.Errorf("marshal fallback: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v2/events/store-failed/", fallbackURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add service authentication token (requires WORKER_API_KEY)
+	p.mu.RLock()
+	if p.serviceToken != "" {
+		req.Header.Set("X-Internal-Service-Token", p.serviceToken)
+	}
+	p.mu.RUnlock()
+
+	// Use reusable HTTP client for connection pooling
+	resp, err := p.fallbackClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("fallback API returned %d", resp.StatusCode)
+	}
+
+	p.logger.Info("Event stored in PostgreSQL fallback",
+		watermill.LogFields{
+			"channel":        channel,
+			"event_type":     eventType,
+			"correlation_id": correlationID,
+		})
 
 	return nil
 }

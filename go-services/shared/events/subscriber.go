@@ -246,7 +246,6 @@ func (s *Subscriber) Close() error {
 	return nil
 }
 
-
 // Router returns the underlying message router for middleware configuration
 // This allows tests and advanced users to add middleware
 func (s *Subscriber) Router() *message.Router {

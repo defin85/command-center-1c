@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/ThreeDotsLabs/watermill"
 )
 
 // TestIntegration_PublishSubscribe tests the full publish-subscribe flow
