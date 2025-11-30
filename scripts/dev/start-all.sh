@@ -255,30 +255,45 @@ echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)$
 
 # Проверка мониторинга (уже запущен выше вместе с infrastructure)
 if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    echo -e "${YELLOW}   Проверка мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
+    echo -e "${CYAN}   Ожидание готовности мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
 
-    # Подождать готовности
-    sleep 3
+    # Функция ожидания сервиса с retry
+    wait_for_service() {
+        local name=$1
+        local url=$2
+        local max_attempts=${3:-10}
+        local attempt=1
 
-    # Проверить Prometheus
-    if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
+        while [ $attempt -le $max_attempts ]; do
+            # --noproxy '*' важен для WSL где может быть настроен proxy
+            if curl --noproxy '*' -sf "$url" > /dev/null 2>&1; then
+                return 0
+            fi
+            sleep 1
+            attempt=$((attempt + 1))
+        done
+        return 1
+    }
+
+    # Проверить Prometheus (до 10 секунд)
+    if wait_for_service "Prometheus" "http://localhost:9090/-/healthy" 10; then
         echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
     else
-        echo -e "${YELLOW}⚠️  Prometheus может быть еще не готов${NC}"
+        echo -e "${YELLOW}⚠️  Prometheus не отвечает (проверьте docker logs prometheus)${NC}"
     fi
 
-    # Проверить Grafana
-    if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
+    # Проверить Grafana (до 15 секунд - стартует дольше)
+    if wait_for_service "Grafana" "http://localhost:5000/api/health" 15; then
         echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
     else
-        echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
+        echo -e "${YELLOW}⚠️  Grafana не отвечает (это не критично)${NC}"
     fi
 
-    # Проверить Jaeger (Distributed Tracing)
-    if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
+    # Проверить Jaeger (до 10 секунд)
+    if wait_for_service "Jaeger" "http://localhost:16686/" 10; then
         echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
     else
-        echo -e "${YELLOW}⚠️  Jaeger может быть еще не готов (это не критично)${NC}"
+        echo -e "${YELLOW}⚠️  Jaeger не отвечает (это не критично)${NC}"
     fi
 fi
 
@@ -549,7 +564,7 @@ if kill -0 $RAS_ADAPTER_PID 2>/dev/null; then
     echo -e "${GREEN}✓ RAS Adapter запущен (PID: $RAS_ADAPTER_PID)${NC}"
 
     # Health check
-    if curl -sf http://localhost:8188/health > /dev/null 2>&1; then
+    if curl --noproxy '*' -sf http://localhost:8188/health > /dev/null 2>&1; then
         echo -e "${GREEN}✓ RAS Adapter health check PASSED${NC}"
     else
         echo -e "${YELLOW}⚠️  RAS Adapter health check FAILED (может потребоваться время для запуска)${NC}"

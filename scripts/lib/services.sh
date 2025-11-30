@@ -48,6 +48,7 @@ CC1C_LIB_SERVICES_LOADED=true
 # check_port_listening - проверка занятости порта
 # Usage: if check_port_listening 8080; then echo "Port is in use"; fi
 # Returns: 0 if port is listening, 1 otherwise
+# Note: В WSL проверяет оба окружения (Linux и Windows) для полной картины
 check_port_listening() {
     local port=$1
 
@@ -55,8 +56,20 @@ check_port_listening() {
         windows)
             netstat -ano 2>/dev/null | grep -q ":${port}.*LISTENING"
             ;;
-        wsl|linux)
-            # ss более современная альтернатива netstat
+        wsl)
+            # WSL: проверяем И Linux порты (ss) И Windows порты (netstat.exe)
+            # Это важно для сервисов типа ragent/ras которые работают на Windows
+            if command -v ss &>/dev/null; then
+                ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+            else
+                netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+            fi
+            # Fallback: проверить Windows порты через netstat.exe
+            netstat.exe -an 2>/dev/null | grep -q ":${port}.*LISTENING" && return 0
+            return 1
+            ;;
+        linux)
+            # Native Linux
             if command -v ss &>/dev/null; then
                 ss -tlnp 2>/dev/null | grep -q ":${port} "
             else
@@ -348,7 +361,8 @@ check_health_endpoint() {
     local timeout=${2:-5}
 
     if command -v curl &>/dev/null; then
-        curl -sf --max-time "$timeout" "$url" >/dev/null 2>&1
+        # --noproxy '*' важен для WSL где может быть настроен proxy для localhost
+        curl --noproxy '*' -sf --max-time "$timeout" "$url" >/dev/null 2>&1
     elif command -v wget &>/dev/null; then
         wget -q --timeout="$timeout" -O /dev/null "$url" 2>/dev/null
     else
