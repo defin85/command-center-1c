@@ -316,7 +316,9 @@ fi
 
 # .env.local уже загружен в начале скрипта
 
-nohup python manage.py runserver 0.0.0.0:$ORCHESTRATOR_PORT > "$LOGS_DIR/orchestrator.log" 2>&1 &
+# Используем Daphne (ASGI) вместо runserver для поддержки WebSocket
+# Daphne поддерживает HTTP + WebSocket через единый порт
+nohup daphne -b 0.0.0.0 -p $ORCHESTRATOR_PORT config.asgi:application > "$LOGS_DIR/orchestrator.log" 2>&1 &
 ORCHESTRATOR_PID=$!
 echo $ORCHESTRATOR_PID > "$PIDS_DIR/orchestrator.pid"
 

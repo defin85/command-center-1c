@@ -109,7 +109,8 @@ case "$SERVICE_NAME" in
         fi
         # Port 8200 - outside Windows reserved ranges (7913-8012, 8013-8112)
         ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-8200}"
-        nohup python manage.py runserver 0.0.0.0:$ORCHESTRATOR_PORT > "$LOG_FILE" 2>&1 &
+        # Используем Daphne (ASGI) вместо runserver для поддержки WebSocket
+        nohup daphne -b 0.0.0.0 -p $ORCHESTRATOR_PORT config.asgi:application > "$LOG_FILE" 2>&1 &
         NEW_PID=$!
         ;;
 

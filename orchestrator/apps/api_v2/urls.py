@@ -17,6 +17,7 @@ from .views import (
     service_mesh,
     audit,
     events,
+    templates,
 )
 
 app_name = 'api_v2'
@@ -77,6 +78,13 @@ urlpatterns = [
     path('extensions/list-extensions/', extensions.list_extensions, name='list-extensions'),
     path('extensions/get-install-status/', extensions.get_install_status, name='get-install-status'),
     path('extensions/retry-installation/', extensions.retry_installation, name='retry-installation'),
+    path('extensions/batch-install/', extensions.batch_install, name='batch-install'),
+    path('extensions/get-install-progress/', extensions.get_install_progress, name='get-install-progress'),
+
+    # ========================================================================
+    # Templates
+    # ========================================================================
+    path('templates/list-templates/', templates.list_templates, name='list-templates'),
 
     # ========================================================================
     # Service Mesh

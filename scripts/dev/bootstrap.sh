@@ -185,6 +185,10 @@ main() {
                 exit 1
             fi
         fi
+
+        # Настроить глобальные симлинки для python/go
+        # (для Claude Code субагентов и скриптов без доступа к mise shims)
+        setup_global_symlinks
     fi
     echo ""
 

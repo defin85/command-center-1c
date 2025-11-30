@@ -385,6 +385,87 @@ install_runtimes() {
     echo ""
     log_info "Установленные версии:"
     mise current
+
+    # Создать глобальные симлинки для python/go
+    # Это нужно для Claude Code субагентов и скриптов без доступа к mise shims
+    setup_global_symlinks
+}
+
+##############################################################################
+# GLOBAL SYMLINKS (для Claude Code субагентов)
+##############################################################################
+
+# setup_global_symlinks - создание симлинков для python/go в /usr/local/bin
+setup_global_symlinks() {
+    log_step "Настройка глобальных симлинков..."
+
+    local mise_installs_dir="$HOME/.local/share/mise/installs"
+    local symlink_dir="/usr/local/bin"
+    local created=0
+
+    # Найти Python
+    local python_bin=""
+    local python3_bin=""
+    if [[ -d "$mise_installs_dir/python" ]]; then
+        local python_version
+        python_version=$(ls -1 "$mise_installs_dir/python" 2>/dev/null | sort -V | tail -1)
+        if [[ -n "$python_version" ]]; then
+            python_bin="$mise_installs_dir/python/$python_version/bin/python"
+            python3_bin="$mise_installs_dir/python/$python_version/bin/python3"
+        fi
+    fi
+
+    # Найти Go
+    local go_bin=""
+    if [[ -d "$mise_installs_dir/go" ]]; then
+        local go_version
+        go_version=$(ls -1 "$mise_installs_dir/go" 2>/dev/null | sort -V | tail -1)
+        if [[ -n "$go_version" ]]; then
+            go_bin="$mise_installs_dir/go/$go_version/bin/go"
+        fi
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будут созданы симлинки в $symlink_dir:"
+        [[ -x "$python_bin" ]] && log_info "  python -> $python_bin"
+        [[ -x "$python3_bin" ]] && log_info "  python3 -> $python3_bin"
+        [[ -x "$go_bin" ]] && log_info "  go -> $go_bin"
+        return 0
+    fi
+
+    # Создать симлинки
+    local symlinks=()
+    [[ -x "$python_bin" ]] && symlinks+=("python:$python_bin")
+    [[ -x "$python3_bin" ]] && symlinks+=("python3:$python3_bin")
+    [[ -x "$go_bin" ]] && symlinks+=("go:$go_bin")
+
+    if [[ ${#symlinks[@]} -eq 0 ]]; then
+        log_warning "Не найдены mise installations для симлинков"
+        return 0
+    fi
+
+    for entry in "${symlinks[@]}"; do
+        local name="${entry%%:*}"
+        local target="${entry#*:}"
+        local symlink_path="$symlink_dir/$name"
+
+        # Пропустить если уже актуален
+        if [[ -L "$symlink_path" ]]; then
+            local current=$(readlink -f "$symlink_path" 2>/dev/null)
+            [[ "$current" == "$target" ]] && continue
+        elif [[ -e "$symlink_path" ]]; then
+            continue  # Не симлинк, не трогаем
+        fi
+
+        # Создать симлинк
+        if [[ -w "$symlink_dir" ]]; then
+            ln -sf "$target" "$symlink_path" && ((created++))
+        else
+            sudo ln -sf "$target" "$symlink_path" && ((created++))
+        fi
+    done
+
+    [[ $created -gt 0 ]] && log_success "Создано симлинков: $created"
 }
 
 ##############################################################################

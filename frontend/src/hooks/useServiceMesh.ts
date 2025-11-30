@@ -85,13 +85,20 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttemptsRef = useRef<number>(0) // Ref to avoid stale closure
 
-  // Get WebSocket URL
+  // Get WebSocket URL with auth token
   const getWebSocketUrl = useCallback((): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     // WebSocket directly to Orchestrator (Django Channels)
     // Port 8200 - Django/Orchestrator service
     const host = import.meta.env.VITE_WS_HOST || 'localhost:8200'
-    return `${protocol}//${host}/ws/service-mesh/`
+    const baseUrl = `${protocol}//${host}/ws/service-mesh/`
+
+    // Add JWT token for authentication
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      return `${baseUrl}?token=${token}`
+    }
+    return baseUrl
   }, [])
 
   // Handle incoming WebSocket message

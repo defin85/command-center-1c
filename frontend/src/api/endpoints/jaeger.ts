@@ -73,10 +73,9 @@ export interface JaegerResponse {
  * Includes timeout to prevent hanging when Jaeger is unavailable.
  */
 export const getTraceById = async (traceId: string, timeoutMs: number = 10000): Promise<JaegerTrace | null> => {
-  // v2 migration: GET /api/traces/{traceId} → GET /tracing/get-trace?trace_id={traceId}
+  // Standard Jaeger API: GET /tracing/traces/{traceId}
   try {
-    const response = await apiClient.get('/tracing/get-trace', {
-      params: { trace_id: traceId },
+    const response = await apiClient.get(`/tracing/traces/${traceId}`, {
       timeout: timeoutMs
     })
 
@@ -207,7 +206,7 @@ export const searchTraces = async (
   lookback: string = '1h',
   timeoutMs: number = 15000
 ): Promise<JaegerTrace[]> => {
-  // v2 migration: GET /api/traces?service=... → GET /tracing/search-traces?service=...
+  // Standard Jaeger API: GET /tracing/traces?service=...
   try {
     const params: any = {
       service,
@@ -219,7 +218,7 @@ export const searchTraces = async (
       params.operation = operation
     }
 
-    const response = await apiClient.get('/tracing/search-traces', {
+    const response = await apiClient.get('/tracing/traces', {
       params,
       timeout: timeoutMs
     })

@@ -14,6 +14,7 @@ from . import (
     service_mesh,
     audit,
     events,
+    templates,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     'service_mesh',
     'audit',
     'events',
+    'templates',
 ]

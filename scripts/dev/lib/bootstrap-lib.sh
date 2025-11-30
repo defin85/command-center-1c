@@ -268,6 +268,145 @@ should_skip() {
 }
 
 ##############################################################################
+# GLOBAL SYMLINKS FOR mise TOOLS
+##############################################################################
+
+# setup_global_symlinks - создание симлинков для python/go в /usr/local/bin
+# Это нужно для субагентов Claude Code и скриптов, которые не имеют доступа к mise shims
+# Usage: setup_global_symlinks
+setup_global_symlinks() {
+    log_info "Настройка глобальных симлинков для mise tools..."
+
+    local mise_installs_dir="$HOME/.local/share/mise/installs"
+    local symlink_dir="/usr/local/bin"
+    local created=0
+    local skipped=0
+
+    # Определить пути к бинарникам mise
+    local python_bin=""
+    local python3_bin=""
+    local go_bin=""
+
+    # Найти Python
+    if [[ -d "$mise_installs_dir/python" ]]; then
+        # Найти последнюю версию Python
+        local python_version
+        python_version=$(ls -1 "$mise_installs_dir/python" 2>/dev/null | sort -V | tail -1)
+        if [[ -n "$python_version" ]]; then
+            python_bin="$mise_installs_dir/python/$python_version/bin/python"
+            python3_bin="$mise_installs_dir/python/$python_version/bin/python3"
+        fi
+    fi
+
+    # Найти Go
+    if [[ -d "$mise_installs_dir/go" ]]; then
+        local go_version
+        go_version=$(ls -1 "$mise_installs_dir/go" 2>/dev/null | sort -V | tail -1)
+        if [[ -n "$go_version" ]]; then
+            go_bin="$mise_installs_dir/go/$go_version/bin/go"
+        fi
+    fi
+
+    # Создать симлинки
+    local symlinks_to_create=()
+
+    # Python symlinks
+    if [[ -x "$python_bin" ]]; then
+        symlinks_to_create+=("python:$python_bin")
+    fi
+    if [[ -x "$python3_bin" ]]; then
+        symlinks_to_create+=("python3:$python3_bin")
+    fi
+
+    # Go symlink
+    if [[ -x "$go_bin" ]]; then
+        symlinks_to_create+=("go:$go_bin")
+    fi
+
+    if [[ ${#symlinks_to_create[@]} -eq 0 ]]; then
+        log_warning "Не найдены mise installations для создания симлинков"
+        return 0
+    fi
+
+    # Проверить права на /usr/local/bin
+    if [[ ! -w "$symlink_dir" ]]; then
+        log_info "Требуются права sudo для создания симлинков в $symlink_dir"
+    fi
+
+    for entry in "${symlinks_to_create[@]}"; do
+        local name="${entry%%:*}"
+        local target="${entry#*:}"
+        local symlink_path="$symlink_dir/$name"
+
+        # Проверить существует ли уже симлинк на правильный target
+        if [[ -L "$symlink_path" ]]; then
+            local current_target
+            current_target=$(readlink -f "$symlink_path" 2>/dev/null)
+            if [[ "$current_target" == "$target" ]]; then
+                log_verbose "Симлинк $name уже существует и актуален"
+                ((skipped++))
+                continue
+            else
+                log_info "Обновление симлинка $name: $current_target -> $target"
+            fi
+        elif [[ -e "$symlink_path" ]]; then
+            log_verbose "Пропуск $name: уже существует (не симлинк)"
+            ((skipped++))
+            continue
+        fi
+
+        # Создать симлинк
+        if [[ -w "$symlink_dir" ]]; then
+            ln -sf "$target" "$symlink_path" && ((created++)) || log_warning "Не удалось создать $symlink_path"
+        else
+            sudo ln -sf "$target" "$symlink_path" && ((created++)) || log_warning "Не удалось создать $symlink_path"
+        fi
+    done
+
+    if [[ $created -gt 0 ]]; then
+        log_success "Создано симлинков: $created"
+    fi
+    if [[ $skipped -gt 0 ]]; then
+        log_verbose "Пропущено симлинков: $skipped"
+    fi
+}
+
+# remove_global_symlinks - удаление симлинков из /usr/local/bin
+# Usage: remove_global_symlinks
+remove_global_symlinks() {
+    log_info "Удаление глобальных симлинков..."
+
+    local symlink_dir="/usr/local/bin"
+    local mise_installs_dir="$HOME/.local/share/mise/installs"
+    local removed=0
+
+    for name in python python3 go; do
+        local symlink_path="$symlink_dir/$name"
+
+        if [[ -L "$symlink_path" ]]; then
+            local target
+            target=$(readlink -f "$symlink_path" 2>/dev/null)
+
+            # Удалять только симлинки, указывающие на mise installs
+            if [[ "$target" == "$mise_installs_dir"* ]]; then
+                if [[ -w "$symlink_dir" ]]; then
+                    rm -f "$symlink_path" && ((removed++))
+                else
+                    sudo rm -f "$symlink_path" && ((removed++))
+                fi
+                log_verbose "Удален симлинк: $name"
+            fi
+        fi
+    done
+
+    if [[ $removed -gt 0 ]]; then
+        log_success "Удалено симлинков: $removed"
+    else
+        log_info "Симлинки не найдены"
+    fi
+}
+
+##############################################################################
 # DEPENDENCIES CHECK
 ##############################################################################
 

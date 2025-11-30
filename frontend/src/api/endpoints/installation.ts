@@ -43,12 +43,23 @@ export const installationApi = {
     }
   },
 
-  // v2 migration: POST /databases/{databaseId}/retry-installation/ → POST /extensions/retry-installation?database_id={databaseId}
-  retryInstallation: async (databaseId: number): Promise<{ task_id: string }> => {
-    const response = await apiClient.post<{ task_id: string }>(
-      '/extensions/retry-installation',
-      null,
-      { params: { database_id: databaseId } }
+  // v2 migration: POST /databases/{databaseId}/retry-installation/ → POST /extensions/retry-installation/
+  retryInstallation: async (databaseId: string): Promise<{
+    database_id: string
+    installation_id: string
+    status: string
+    celery_task_id?: string
+    message: string
+  }> => {
+    const response = await apiClient.post<{
+      database_id: string
+      installation_id: string
+      status: string
+      celery_task_id?: string
+      message: string
+    }>(
+      '/extensions/retry-installation/',
+      { database_id: databaseId }
     )
     return response.data
   },
@@ -66,11 +77,19 @@ export const installationApi = {
     return response.data
   },
 
-  // v2 migration: GET /databases/extension-installations/ → GET /extensions/list-installations
+  // v2 migration: GET /databases/extension-installations/ → GET /extensions/list-extensions/
   getAllInstallations: async (): Promise<ExtensionInstallation[]> => {
-    const response = await apiClient.get<ExtensionInstallation[]>(
-      '/extensions/list-installations'
-    )
-    return response.data
+    const response = await apiClient.get<{
+      extensions: ExtensionInstallation[]
+      count: number
+      total: number
+      summary: {
+        pending: number
+        in_progress: number
+        completed: number
+        failed: number
+      }
+    }>('/extensions/list-extensions/')
+    return response.data.extensions
   },
 }
