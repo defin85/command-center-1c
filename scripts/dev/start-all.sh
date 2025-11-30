@@ -446,36 +446,74 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[8/12] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
-# Проверить что PLATFORM_1C_BIN_PATH задан
-if [ -z "$PLATFORM_1C_BIN_PATH" ]; then
-    echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
-    echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
-    echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=C:\\Program Files\\1cv8\\8.3.27.1786\\bin${NC}"
-    echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
-else
-    RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+# Определяем порт ragent (1C Server Agent)
+RAGENT_PORT="${RAGENT_PORT:-1540}"
+RAGENT_HOST="${RAGENT_HOST:-localhost}"
 
-    # Проверить что ras.exe существует
-    if [ ! -f "$RAS_EXE" ]; then
-        echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+# Проверить что RAS еще не запущен
+if check_port_listening "${RAS_PORT:-1545}"; then
+    echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
+    echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
+else
+    # Проверить что ragent доступен (порт 1540)
+    if ! check_port_listening "$RAGENT_PORT"; then
+        echo -e "${YELLOW}⚠️  1C Server Agent (ragent) не найден на порту $RAGENT_PORT${NC}"
+        echo -e "${YELLOW}   Убедитесь, что служба 'Агент сервера 1С:Предприятия' запущена${NC}"
+        echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+    elif [ -z "$PLATFORM_1C_BIN_PATH" ]; then
+        echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
+        echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
+        if is_wsl; then
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
+        else
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"C:\\Program Files\\1cv8\\8.3.27.1786\\bin\"${NC}"
+        fi
         echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
     else
-        # Проверить что RAS еще не запущен
-        if check_port_listening "${RAS_PORT:-1545}"; then
-            echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
-            echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
+        # Определяем путь к ras.exe в зависимости от платформы
+        if is_wsl; then
+            # WSL: конвертируем путь и запускаем через PowerShell
+            if [[ "$PLATFORM_1C_BIN_PATH" == /mnt/* ]]; then
+                # WSL путь типа /mnt/c/Program Files/... -> C:\Program Files\...
+                WIN_DRIVE=$(echo "$PLATFORM_1C_BIN_PATH" | sed 's|/mnt/\([a-z]\)/|\U\1:\\|' | sed 's|/|\\|g')
+                RAS_WIN_PATH="${WIN_DRIVE}\\ras.exe"
+            else
+                RAS_WIN_PATH="${PLATFORM_1C_BIN_PATH}\\ras.exe"
+            fi
+            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
         else
-            # Запустить RAS
-            nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} > "$LOGS_DIR/ras.log" 2>&1 &
-            RAS_PID=$!
-            echo $RAS_PID > "$PIDS_DIR/ras.pid"
+            # Native Windows (Git Bash / MSYS2): используем путь напрямую
+            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+            RAS_WIN_PATH="$PLATFORM_1C_BIN_PATH\\ras.exe"
+        fi
 
+        # Проверить что ras.exe существует
+        if [ ! -f "$RAS_EXE" ]; then
+            echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+            echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+        else
+            # RAS в режиме cluster подключается к ragent и предоставляет API на порту 1545
+            echo -e "${CYAN}   Запуск: ras.exe cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
+
+            if is_wsl; then
+                # WSL: запуск через PowerShell (создает Windows процесс)
+                powershell.exe -Command "Start-Process -FilePath '$RAS_WIN_PATH' -ArgumentList 'cluster','--port=${RAS_PORT:-1545}','${RAGENT_HOST}:${RAGENT_PORT}' -WindowStyle Hidden" > "$LOGS_DIR/ras.log" 2>&1
+            else
+                # Native Windows: запуск напрямую в фоне
+                nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
+                RAS_PID=$!
+                echo $RAS_PID > "$PIDS_DIR/ras.pid"
+            fi
+
+            # Ждем запуска RAS
             sleep 3
-            if kill -0 $RAS_PID 2>/dev/null; then
-                echo -e "${GREEN}✓ RAS запущен (PID: $RAS_PID, port: ${RAS_PORT:-1545})${NC}"
+
+            if check_port_listening "${RAS_PORT:-1545}"; then
+                echo -e "${GREEN}✓ RAS запущен (port: ${RAS_PORT:-1545}, ragent: ${RAGENT_HOST}:${RAGENT_PORT})${NC}"
             else
                 echo -e "${RED}✗ Не удалось запустить RAS${NC}"
-                cat "$LOGS_DIR/ras.log"
+                echo -e "${YELLOW}   Проверьте логи: $LOGS_DIR/ras.log${NC}"
+                cat "$LOGS_DIR/ras.log" 2>/dev/null || true
                 echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
             fi
         fi

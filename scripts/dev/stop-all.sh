@@ -93,7 +93,18 @@ stop_service "batch-service"
 stop_service "ras-adapter"
 
 # 8. RAS (1C Remote Administration Server)
-stop_service "ras"
+echo -e "${BLUE}Остановка RAS (1C Remote Administration Server)...${NC}"
+if is_wsl; then
+    # WSL: RAS запущен как Windows процесс, останавливаем через PowerShell
+    if powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; then
+        echo -e "${GREEN}✓ RAS остановлен (Windows процесс)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  RAS: процесс не найден или уже остановлен${NC}"
+    fi
+else
+    # Native Windows: используем стандартную остановку по PID
+    stop_service "ras"
+fi
 
 # 7. Go Worker
 stop_service "worker"
@@ -155,7 +166,15 @@ check_and_kill_port() {
 check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "RAS Adapter / Cluster Service"
-check_and_kill_port 1545 "RAS"
+# RAS (1545) - в WSL это Windows процесс
+if check_port_listening 1545; then
+    echo -e "${YELLOW}   Порт 1545 (RAS) все еще занят, принудительная остановка...${NC}"
+    if is_wsl; then
+        powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
+    else
+        check_and_kill_port 1545 "RAS"
+    fi
+fi
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"
 

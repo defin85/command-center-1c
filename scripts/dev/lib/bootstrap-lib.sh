@@ -599,6 +599,43 @@ ensure_env_local() {
         log_verbose "CREDENTIALS_TRANSPORT_KEY уже установлен"
     fi
 
+    # Настроить PLATFORM_1C_BIN_PATH в зависимости от платформы
+    local platform_path
+    platform_path=$(grep -E "^PLATFORM_1C_BIN_PATH=" "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"')
+
+    # Проверяем, нужно ли обновить путь (placeholder или неправильный формат для платформы)
+    local needs_update=false
+    local default_path=""
+
+    if is_wsl; then
+        # WSL: путь должен быть в формате /mnt/c/...
+        default_path="/mnt/c/Program Files/1cv8/8.3.27.1786/bin"
+        if [[ "$platform_path" == "C:\\"* ]] || [[ "$platform_path" == "C:/"* ]] || [[ -z "$platform_path" ]]; then
+            needs_update=true
+        fi
+    else
+        # Native Windows (Git Bash / MSYS2): путь в формате C:\...
+        default_path="C:\\Program Files\\1cv8\\8.3.27.1786\\bin"
+        if [[ "$platform_path" == "/mnt/"* ]] || [[ -z "$platform_path" ]]; then
+            needs_update=true
+        fi
+    fi
+
+    if [[ "$needs_update" == "true" ]]; then
+        log_info "Настройка PLATFORM_1C_BIN_PATH для $(detect_platform)..."
+
+        if grep -q "^PLATFORM_1C_BIN_PATH=" "$env_file" 2>/dev/null; then
+            sed -i "s|^PLATFORM_1C_BIN_PATH=.*|PLATFORM_1C_BIN_PATH=\"$default_path\"|" "$env_file"
+        else
+            echo "PLATFORM_1C_BIN_PATH=\"$default_path\"" >> "$env_file"
+        fi
+
+        log_success "PLATFORM_1C_BIN_PATH установлен: $default_path"
+        log_info "Проверьте версию платформы 1С и измените путь при необходимости"
+    else
+        log_verbose "PLATFORM_1C_BIN_PATH уже настроен: $platform_path"
+    fi
+
     return 0
 }
 
