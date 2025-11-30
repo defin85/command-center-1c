@@ -6,9 +6,9 @@
 # Автоматический откат Event-Driven Architecture к HTTP Sync режиму
 #
 # Usage:
-#   ./scripts/rollback-event-driven.sh           # Normal rollback
-#   ./scripts/rollback-event-driven.sh --dry-run # Preview changes only
-#   ./scripts/rollback-event-driven.sh --help    # Show help
+#   ./scripts/utils/rollback-event-driven.sh           # Normal rollback
+#   ./scripts/utils/rollback-event-driven.sh --dry-run # Preview changes only
+#   ./scripts/utils/rollback-event-driven.sh --help    # Show help
 #
 # Exit codes:
 #   0 - Success
@@ -20,7 +20,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Colors for output
 RED='\033[0;31m'

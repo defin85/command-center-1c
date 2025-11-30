@@ -56,11 +56,11 @@ register_temp_file() {
     TEMP_FILES+=("$1")
 }
 
-# Загрузка общих функций (с проверкой)
-if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
-    source "$SCRIPT_DIR/lib/common.sh"
+# Подключение единой библиотеки
+if [[ -f "$PROJECT_ROOT/scripts/lib/init.sh" ]]; then
+    source "$PROJECT_ROOT/scripts/lib/init.sh"
 else
-    echo "FATAL: lib/common.sh не найден в $SCRIPT_DIR/lib/" >&2
+    echo "FATAL: scripts/lib/init.sh не найден в $PROJECT_ROOT" >&2
     exit 1
 fi
 

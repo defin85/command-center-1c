@@ -11,10 +11,12 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Source common functions for cross-platform support
-source "$PROJECT_ROOT/scripts/dev/common-functions.sh"
+# Source unified library
+source "$PROJECT_ROOT/scripts/lib/init.sh"
 
+# Константы проекта
 PIDS_DIR="$PROJECT_ROOT/pids"
+LOGS_DIR="$PROJECT_ROOT/logs"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Stopping Services  ${NC}"
@@ -111,29 +113,27 @@ stop_service "orchestrator"
 echo ""
 
 ##############################################################################
-# Остановка Docker сервисов (Infrastructure)
+# Остановка Docker сервисов (Infrastructure + Monitoring)
 ##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis)...${NC}"
+echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
 
+# Единое имя проекта (должно совпадать с start-all.sh)
+COMPOSE_PROJECT="cc1c-local"
+
+# Собрать список compose файлов
+COMPOSE_FILES=""
 if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
-    docker-compose -f docker-compose.local.yml down
-    echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
-else
-    echo -e "${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
+    COMPOSE_FILES="-f docker-compose.local.yml"
+fi
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
 fi
 
-echo ""
-
-##############################################################################
-# Остановка Docker сервисов (Monitoring & Observability)
-##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (Prometheus, Grafana, Jaeger)...${NC}"
-
-if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    docker-compose -f docker-compose.local.monitoring.yml down
-    echo -e "${GREEN}✓ Мониторинг и tracing остановлены${NC}"
+if [ -n "$COMPOSE_FILES" ]; then
+    docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES down
+    echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
 else
-    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден${NC}"
+    echo -e "${YELLOW}⚠️  docker-compose файлы не найдены${NC}"
 fi
 
 echo ""

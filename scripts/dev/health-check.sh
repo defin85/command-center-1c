@@ -6,12 +6,16 @@
 # Проверяет статус всех сервисов
 ##############################################################################
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Определение путей
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Подключение библиотеки
+source "$PROJECT_ROOT/scripts/lib/init.sh"
+
 cd "$PROJECT_ROOT"
 
-# Source common functions for cross-platform support
-source "$PROJECT_ROOT/scripts/dev/common-functions.sh"
-
+# Константы проекта
 PIDS_DIR="$PROJECT_ROOT/pids"
 
 echo -e "${BLUE}========================================${NC}"

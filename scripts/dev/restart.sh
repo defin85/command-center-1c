@@ -9,25 +9,20 @@
 
 set -e
 
-# Source common functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common-functions.sh"
-
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# Source unified library
+source "$PROJECT_ROOT/scripts/lib/init.sh"
 
 # Load environment variables from .env.local
 load_env_file
 
+# Константы проекта
 PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"
-
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+BIN_DIR="$PROJECT_ROOT/bin"
+GO_SERVICES=("api-gateway" "worker" "ras-adapter" "batch-service")
 
 ##############################################################################
 # Проверка аргументов

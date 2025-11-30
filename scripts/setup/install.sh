@@ -54,38 +54,12 @@ register_temp_file() {
     TEMP_FILES+=("$1")
 }
 
-# Загрузить общие функции
-if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
-    source "$SCRIPT_DIR/lib/common.sh"
+# Подключение единой библиотеки
+if [[ -f "$PROJECT_ROOT/scripts/lib/init.sh" ]]; then
+    source "$PROJECT_ROOT/scripts/lib/init.sh"
 else
-    # Fallback: минимальные определения если common.sh не найден
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    CYAN='\033[0;36m'
-    BOLD='\033[1m'
-    NC='\033[0m'
-    log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
-    log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
-    log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-    log_error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
-    log_step()    { echo -e "${CYAN}[STEP]${NC} $1"; }
-    log_verbose() { [[ "${VERBOSE:-false}" == "true" ]] && echo -e "${BLUE}[VERBOSE]${NC} $1"; }
-    detect_platform() {
-        if [[ -f /proc/version ]] && grep -qi microsoft /proc/version 2>/dev/null; then
-            if command -v pacman &>/dev/null; then echo "wsl-pacman"
-            elif command -v apt &>/dev/null; then echo "wsl-apt"
-            else echo "wsl"; fi
-            return
-        fi
-        if [[ "$OSTYPE" == "darwin"* ]]; then echo "macos"; return; fi
-        if command -v pacman &>/dev/null; then echo "linux-pacman"
-        elif command -v apt &>/dev/null; then echo "linux-apt"
-        elif command -v dnf &>/dev/null; then echo "linux-dnf"
-        else echo "unknown"; fi
-    }
-    is_wsl() { [[ "$(detect_platform)" == wsl* ]]; }
+    echo "FATAL: scripts/lib/init.sh не найден в $PROJECT_ROOT" >&2
+    exit 1
 fi
 
 ##############################################################################
@@ -393,6 +367,19 @@ install_runtimes() {
     # Установка всех инструментов из .tool-versions
     log_info "Установка инструментов из .tool-versions..."
     mise install --yes
+
+    # Создать shims для всех инструментов
+    log_info "Создание shims..."
+    mise reshim
+
+    # Добавить shims в PATH для текущей сессии
+    export PATH="$HOME/.local/share/mise/shims:$PATH"
+
+    # Установка Go инструментов для разработки
+    log_info "Установка Go инструментов (oapi-codegen)..."
+    if command -v go &>/dev/null; then
+        go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest 2>/dev/null || true
+    fi
 
     # Вывод установленных версий
     echo ""

@@ -83,7 +83,7 @@ function App() {
       }}>
         <AntApp>
           <GlobalApiErrorHandler />
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />

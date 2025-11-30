@@ -1,5 +1,3 @@
-version: '3.9'
-
 ##############################################################################
 # Monitoring & Observability Services for Local Development
 ##############################################################################
@@ -69,8 +67,8 @@ services:
       - SPAN_STORAGE_TYPE=memory
     ports:
       - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC receiver
-      - "4318:4318"     # OTLP HTTP receiver
+      - "14317:4317"    # OTLP gRPC receiver (remapped from 4317 - often conflicts in WSL2)
+      - "14318:4318"    # OTLP HTTP receiver (remapped from 4318)
       - "6831:6831/udp" # Jaeger Thrift compact (legacy)
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]

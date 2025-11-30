@@ -1,4 +1,3 @@
-version: '3.8'
 
 # Минимальный стек для тестирования подключения к 1С
 # Запуск: docker-compose -f docker-compose.minimal.yml up

@@ -1,4 +1,3 @@
-version: '3.8'
 
 # Isolated Docker Compose for feature/unified-workflow-platform worktree
 # Ports shifted by +100 to avoid conflicts with main worktree

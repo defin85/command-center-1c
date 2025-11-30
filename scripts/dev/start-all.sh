@@ -13,9 +13,19 @@
 
 set -e
 
-# Source common functions
+# Source library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common-functions.sh"
+source "$SCRIPT_DIR/../lib/init.sh"
+
+# Project-specific constants
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GO_SERVICES_DIR="$PROJECT_ROOT/go-services"
+BIN_DIR="$PROJECT_ROOT/bin"
+PIDS_DIR="$PROJECT_ROOT/pids"
+LOGS_DIR="$PROJECT_ROOT/logs"
+
+# Список Go сервисов (в порядке приоритета)
+GO_SERVICES=("api-gateway" "worker" "ras-adapter" "batch-service")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
@@ -197,12 +207,26 @@ if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
     exit 1
 fi
 
-docker-compose -f docker-compose.local.yml up -d
+# Единое имя проекта для всех compose файлов (избегает orphan containers warning)
+COMPOSE_PROJECT="cc1c-local"
+
+# Создать сеть если не существует (нужна для external: true в monitoring compose)
+if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
+    docker network create cc1c-local-network > /dev/null 2>&1
+fi
+
+# Собрать список compose файлов для запуска
+COMPOSE_FILES="-f docker-compose.local.yml"
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
+fi
+
+docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES up -d
 
 # Ожидать готовности БД
 echo -e "${YELLOW}   Ожидание готовности PostgreSQL...${NC}"
 for i in {1..30}; do
-    if docker-compose -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
+    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
         echo -e "${GREEN}✓ PostgreSQL готов${NC}"
         break
     fi
@@ -216,7 +240,7 @@ done
 # Ожидать готовности Redis
 echo -e "${YELLOW}   Ожидание готовности Redis...${NC}"
 for i in {1..30}; do
-    if docker-compose -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
+    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
         echo -e "${GREEN}✓ Redis готов${NC}"
         break
     fi
@@ -229,50 +253,34 @@ done
 
 echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)${NC}"
 
-# Запуск мониторинга (Prometheus + Grafana)
-echo -e "${YELLOW}   Запуск мониторинга (Prometheus, Grafana)...${NC}"
+# Проверка мониторинга (уже запущен выше вместе с infrastructure)
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    echo -e "${YELLOW}   Проверка мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
 
-if [ ! -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден, пропускаем мониторинг${NC}"
-else
-    # Проверить что Docker запущен
-    if ! docker info > /dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Docker не запущен, пропускаем мониторинг${NC}"
+    # Подождать готовности
+    sleep 3
+
+    # Проверить Prometheus
+    if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
     else
-        # Проверить/создать сеть
-        if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
-            echo -e "${YELLOW}   Создание сети cc1c-local-network...${NC}"
-            docker network create cc1c-local-network
-        fi
-
-        # Запустить мониторинг (игнорируем ошибки - не критично)
-        docker-compose -f docker-compose.local.monitoring.yml up -d 2>&1 || true
-
-        # Подождать готовности
-        sleep 3
-
-        # Проверить Prometheus
-        if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Prometheus может быть еще не готов${NC}"
-        fi
-
-        # Проверить Grafana
-        if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
-        fi
-
-        # Проверить Jaeger (Distributed Tracing)
-        if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Jaeger может быть еще не готов (это не критично)${NC}"
-        fi
+        echo -e "${YELLOW}⚠️  Prometheus может быть еще не готов${NC}"
     fi
-fi 2>/dev/null || echo -e "${YELLOW}⚠️  Мониторинг не запущен (не критично для работы)${NC}"
+
+    # Проверить Grafana
+    if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
+    fi
+
+    # Проверить Jaeger (Distributed Tracing)
+    if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Jaeger может быть еще не готов (это не критично)${NC}"
+    fi
+fi
 
 echo ""
 
@@ -597,17 +605,17 @@ echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${N
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
-echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC}"
+echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC} (admin / p-123456)"
 echo -e "  API Gateway:      ${GREEN}http://localhost:8180/health${NC}"
 echo -e "  Orchestrator:"
-echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC}"
+echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC} (admin / p-123456)"
 echo -e "    API Docs:       ${GREEN}http://localhost:8200/api/docs${NC}"
 echo -e "  RAS Adapter:      ${GREEN}http://localhost:8188/health${NC}"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8187/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
-echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin/admin)"
+echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin / admin)"
 echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
 echo -e "  A/B Dashboard:    ${GREEN}http://localhost:5000/d/ab-testing-event-driven${NC}"
 echo ""
