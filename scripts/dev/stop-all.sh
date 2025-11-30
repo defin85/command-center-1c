@@ -11,14 +11,10 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PIDS_DIR="$PROJECT_ROOT/pids"
+# Source common functions for cross-platform support
+source "$PROJECT_ROOT/scripts/dev/common-functions.sh"
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+PIDS_DIR="$PROJECT_ROOT/pids"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Stopping Services  ${NC}"
@@ -147,19 +143,13 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}Проверка остаточных процессов...${NC}"
 
-# Поиск процессов по портам
+# Поиск процессов по портам (используем кросс-платформенную функцию из common-functions.sh)
 check_and_kill_port() {
     local port=$1
     local service_name=$2
 
-    # Windows (GitBash)
-    local pid=$(netstat -ano 2>/dev/null | grep ":$port" | grep LISTENING | awk '{print $5}' | head -1)
-
-    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-        echo -e "${YELLOW}⚠️  Найден процесс на порту $port ($service_name), PID: $pid${NC}"
-        taskkill //PID "$pid" //F 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
-        echo -e "${GREEN}✓ Процесс на порту $port остановлен${NC}"
-    fi
+    # Используем кросс-платформенную функцию
+    kill_process_on_port "$port" "$service_name" || true
 }
 
 check_and_kill_port 5173 "Frontend"

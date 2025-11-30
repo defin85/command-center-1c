@@ -9,14 +9,10 @@
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PIDS_DIR="$PROJECT_ROOT/pids"
+# Source common functions for cross-platform support
+source "$PROJECT_ROOT/scripts/dev/common-functions.sh"
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+PIDS_DIR="$PROJECT_ROOT/pids"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Health Check${NC}"
@@ -174,8 +170,8 @@ check_port() {
     local port=$1
     local service=$2
 
-    # Windows (GitBash) - netstat
-    if netstat -ano 2>/dev/null | grep ":$port" | grep -q LISTENING; then
+    # Кросс-платформенная проверка (из common-functions.sh)
+    if check_port_listening "$port"; then
         echo -e "  Port $port ($service): ${GREEN}✓ открыт${NC}"
         return 0
     else

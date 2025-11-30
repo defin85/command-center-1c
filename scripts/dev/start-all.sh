@@ -285,7 +285,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение если есть
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 python manage.py migrate --noinput
@@ -303,7 +303,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # .env.local уже загружен в начале скрипта
@@ -331,7 +331,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # NOTE: Using gevent pool for async I/O operations (Windows compatible)
@@ -363,7 +363,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # Удалить старый celerybeat-schedule файл
@@ -390,7 +390,7 @@ echo ""
 echo -e "${BLUE}[6/12] Запуск API Gateway (port 8180)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
+BINARY_PATH=$(get_binary_path "api-gateway")
 
 # .env.local уже загружен в начале скрипта
 
@@ -414,7 +414,7 @@ echo ""
 echo -e "${BLUE}[7/12] Запуск Go Worker...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-worker.exe"
+BINARY_PATH=$(get_binary_path "worker")
 
 # .env.local уже загружен в начале скрипта
 
@@ -451,7 +451,7 @@ else
         echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
     else
         # Проверить что RAS еще не запущен
-        if netstat -ano 2>/dev/null | grep -q ":${RAS_PORT:-1545}.*LISTENING" || lsof -i ":${RAS_PORT:-1545}" >/dev/null 2>&1; then
+        if check_port_listening "${RAS_PORT:-1545}"; then
             echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
             echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
         else
@@ -480,12 +480,12 @@ echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-ras-adapter.exe"
+BINARY_PATH=$(get_binary_path "ras-adapter")
 
 # Проверить что бинарник существует
 if [ ! -f "$BINARY_PATH" ]; then
     echo -e "${RED}✗ RAS Adapter бинарник не найден: $BINARY_PATH${NC}"
-    echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o ../../bin/cc1c-ras-adapter.exe cmd/main.go${NC}"
+    echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o \$(get_binary_path ras-adapter) cmd/main.go${NC}"
     exit 1
 fi
 
@@ -519,7 +519,7 @@ echo ""
 echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
+BINARY_PATH=$(get_binary_path "batch-service")
 
 # .env.local уже загружен в начале скрипта
 # BATCH_SERVICE_PORT=8187 is set in .env.local (outside Windows reserved range 8013-8112)

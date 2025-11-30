@@ -82,7 +82,12 @@ if needs_regeneration "$RAS_SPEC" "$RAS_PY_OUTPUT"; then
     echo "  → Generating Python client..."
 
     # Check if openapi-python-client is installed
-    VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/Scripts/activate"
+    # Кроссплатформенный путь к activate (Linux: bin, Windows: Scripts)
+    if [[ -f "$PROJECT_ROOT/orchestrator/venv/bin/activate" ]]; then
+        VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/bin/activate"
+    else
+        VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/Scripts/activate"
+    fi
 
     if [[ ! -f "$VENV_ACTIVATE" ]]; then
         echo -e "${RED}Error: Django venv not found at $VENV_ACTIVATE${NC}"

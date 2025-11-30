@@ -21,6 +21,262 @@ fi
 COMMON_FUNCTIONS_LOADED=true
 
 ##############################################################################
+# [СЕКЦИЯ 0: OS DETECTION]
+##############################################################################
+# Определение операционной среды и экспорт ОС-специфичных переменных
+# ДОЛЖНА быть первой секцией после guard clause
+##############################################################################
+
+# detect_os - определение типа операционной системы
+# Usage: os=$(detect_os)
+# Returns: windows | wsl | linux | macos | unknown
+detect_os() {
+    local os_type=""
+
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            os_type="windows"
+            ;;
+        Linux)
+            # Проверка WSL через /proc/version
+            if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; then
+                os_type="wsl"
+            else
+                os_type="linux"
+            fi
+            ;;
+        Darwin)
+            os_type="macos"
+            ;;
+        *)
+            # Fallback - попытка через $OSTYPE
+            case "$OSTYPE" in
+                msys*|cygwin*|mingw*)
+                    os_type="windows"
+                    ;;
+                linux*)
+                    os_type="linux"
+                    ;;
+                darwin*)
+                    os_type="macos"
+                    ;;
+                *)
+                    os_type="unknown"
+                    ;;
+            esac
+            ;;
+    esac
+
+    echo "$os_type"
+}
+
+# init_os_environment - инициализация ОС-специфичных переменных
+# Вызывается автоматически при source common-functions.sh
+init_os_environment() {
+    # Определить тип ОС
+    OS_TYPE=$(detect_os)
+    export OS_TYPE
+
+    # Расширение бинарных файлов
+    case "$OS_TYPE" in
+        windows)
+            BIN_EXT=".exe"
+            ;;
+        *)
+            BIN_EXT=""
+            ;;
+    esac
+    export BIN_EXT
+
+    # Путь к venv activate (относительно venv/)
+    case "$OS_TYPE" in
+        windows)
+            VENV_BIN_DIR="Scripts"
+            ;;
+        *)
+            VENV_BIN_DIR="bin"
+            ;;
+    esac
+    export VENV_BIN_DIR
+}
+
+# check_port_listening - кросс-платформенная проверка занятости порта
+# Usage: check_port_listening PORT
+# Returns: 0 if port is listening, 1 otherwise
+check_port_listening() {
+    local port=$1
+
+    case "$OS_TYPE" in
+        windows)
+            netstat -ano 2>/dev/null | grep -q ":${port}.*LISTENING"
+            ;;
+        wsl|linux)
+            # ss более современная альтернатива netstat
+            if command -v ss &>/dev/null; then
+                ss -tlnp 2>/dev/null | grep -q ":${port} "
+            else
+                netstat -tlnp 2>/dev/null | grep -q ":${port} "
+            fi
+            ;;
+        macos)
+            lsof -iTCP:${port} -sTCP:LISTEN -n -P 2>/dev/null | grep -q LISTEN
+            ;;
+        *)
+            # Fallback - пробуем lsof
+            lsof -i ":${port}" 2>/dev/null | grep -q LISTEN
+            ;;
+    esac
+}
+
+# get_pid_on_port - получение PID процесса на порту
+# Usage: pid=$(get_pid_on_port PORT)
+# Returns: PID or empty string
+get_pid_on_port() {
+    local port=$1
+    local pid=""
+
+    case "$OS_TYPE" in
+        windows)
+            pid=$(netstat -ano 2>/dev/null | grep ":${port}.*LISTENING" | awk '{print $5}' | head -1)
+            ;;
+        wsl|linux)
+            # ss -tlnp показывает PID в формате "users:(("name",pid=123,fd=4))"
+            if command -v ss &>/dev/null; then
+                pid=$(ss -tlnp 2>/dev/null | grep ":${port} " | sed -E 's/.*pid=([0-9]+).*/\1/' | head -1)
+            else
+                pid=$(netstat -tlnp 2>/dev/null | grep ":${port} " | awk '{print $7}' | cut -d'/' -f1 | head -1)
+            fi
+            ;;
+        macos)
+            pid=$(lsof -iTCP:${port} -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR==2{print $2}')
+            ;;
+        *)
+            pid=$(lsof -i ":${port}" 2>/dev/null | awk 'NR==2{print $2}')
+            ;;
+    esac
+
+    echo "$pid"
+}
+
+# kill_process_on_port - принудительное завершение процесса на порту
+# Usage: kill_process_on_port PORT SERVICE_NAME
+# Returns: 0 on success, 1 if no process found
+kill_process_on_port() {
+    local port=$1
+    local service_name=$2
+
+    local pid=$(get_pid_on_port "$port")
+
+    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+        echo -e "${YELLOW}⚠️  Найден процесс на порту $port ($service_name), PID: $pid${NC}"
+
+        case "$OS_TYPE" in
+            windows)
+                # Windows: taskkill требует // для флагов в GitBash
+                taskkill //PID "$pid" //F 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+                ;;
+            *)
+                # Unix-like: стандартный kill
+                kill -9 "$pid" 2>/dev/null || true
+                ;;
+        esac
+
+        echo -e "${GREEN}✓ Процесс на порту $port остановлен${NC}"
+        return 0
+    fi
+
+    return 1
+}
+
+# activate_venv - кросс-платформенная активация Python venv
+# Usage: activate_venv VENV_PATH
+# Example: activate_venv "$PROJECT_ROOT/orchestrator/venv"
+activate_venv() {
+    local venv_path=$1
+    local activate_script="$venv_path/$VENV_BIN_DIR/activate"
+
+    if [ -f "$activate_script" ]; then
+        source "$activate_script"
+        return 0
+    else
+        echo -e "${YELLOW}⚠️  Warning: venv activate не найден: $activate_script${NC}"
+        return 1
+    fi
+}
+
+# get_binary_path - получение пути к бинарнику Go сервиса
+# Usage: path=$(get_binary_path SERVICE_NAME)
+# Returns: полный путь к бинарнику с правильным расширением
+get_binary_path() {
+    local service=$1
+    echo "$BIN_DIR/cc1c-${service}${BIN_EXT}"
+}
+
+# get_file_mtime - кросс-платформенное получение mtime файла (Unix timestamp)
+# Usage: mtime=$(get_file_mtime "/path/to/file")
+# Returns: Unix timestamp или пустую строку при ошибке
+get_file_mtime() {
+    local file_path=$1
+
+    if [ ! -f "$file_path" ]; then
+        echo ""
+        return 1
+    fi
+
+    case "$OS_TYPE" in
+        macos)
+            # BSD stat: -f %m returns modification time as Unix timestamp
+            stat -f %m "$file_path" 2>/dev/null
+            ;;
+        *)
+            # GNU stat (Linux, WSL, Windows/MSYS): -c %Y
+            stat -c %Y "$file_path" 2>/dev/null
+            ;;
+    esac
+}
+
+# find_newest_file - кросс-платформенный поиск самого нового файла
+# Usage: newest=$(find_newest_file "/path/to/dir" "*.go")
+# Returns: путь к самому новому файлу или пустую строку
+find_newest_file() {
+    local search_dir=$1
+    local pattern=$2
+    local newest_file=""
+    local newest_time=0
+
+    # Используем find + while read для кросс-платформенности
+    # Избегаем -printf (GNU specific)
+    while IFS= read -r -d '' file; do
+        local file_time=$(get_file_mtime "$file")
+        if [ -n "$file_time" ] && [ "$file_time" -gt "$newest_time" ]; then
+            newest_time="$file_time"
+            newest_file="$file"
+        fi
+    done < <(find "$search_dir" -name "$pattern" -type f -print0 2>/dev/null)
+
+    echo "$newest_file"
+}
+
+# is_file_newer - кросс-платформенная проверка "файл A новее файла B"
+# Usage: if is_file_newer "/path/a" "/path/b"; then ...
+# Returns: 0 if file_a is newer than file_b, 1 otherwise
+is_file_newer() {
+    local file_a=$1
+    local file_b=$2
+
+    # Используем встроенную проверку bash -nt (newer than)
+    # Это работает на всех платформах
+    if [ "$file_a" -nt "$file_b" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Автоматическая инициализация при source
+init_os_environment
+
+##############################################################################
 # [СЕКЦИЯ 1: CONSTANTS & CONFIGURATION]
 ##############################################################################
 
@@ -103,7 +359,7 @@ verbose_log() {
 detect_go_service_changes() {
     local service=$1
     local service_dir="$GO_SERVICES_DIR/$service"
-    local binary_path="$BIN_DIR/cc1c-${service}.exe"
+    local binary_path=$(get_binary_path "$service")
 
     verbose_log "Проверка изменений для сервиса: $service"
     verbose_log "  Директория: $service_dir"
@@ -117,8 +373,8 @@ detect_go_service_changes() {
     fi
 
     # Шаг 2: Найти самый новый .go файл в директории сервиса
-    local newest_source=$(find "$service_dir" -name "*.go" -type f -printf '%T@ %p\n' 2>/dev/null | \
-                          sort -rn | head -1 | cut -d' ' -f2-)
+    # Используем кросс-платформенную функцию (работает на macOS, Linux, Windows)
+    local newest_source=$(find_newest_file "$service_dir" "*.go")
 
     if [ -z "$newest_source" ]; then
         verbose_log "  Исходные файлы .go не найдены -> NO_SOURCES"
@@ -129,7 +385,7 @@ detect_go_service_changes() {
     verbose_log "  Самый новый .go файл: $newest_source"
 
     # Шаг 3: Сравнить timestamps (используем -nt для "newer than")
-    if [ "$newest_source" -nt "$binary_path" ]; then
+    if is_file_newer "$newest_source" "$binary_path"; then
         verbose_log "  Исходники новее бинарника -> REBUILD_NEEDED"
         echo "REBUILD_NEEDED"
         return
@@ -137,13 +393,12 @@ detect_go_service_changes() {
 
     # Шаг 4: Проверить shared/ зависимости
     if [ -d "$GO_SERVICES_DIR/shared" ]; then
-        local newest_shared=$(find "$GO_SERVICES_DIR/shared" -name "*.go" -type f -printf '%T@ %p\n' 2>/dev/null | \
-                             sort -rn | head -1 | cut -d' ' -f2-)
+        local newest_shared=$(find_newest_file "$GO_SERVICES_DIR/shared" "*.go")
 
         if [ -n "$newest_shared" ]; then
             verbose_log "  Самый новый shared/ файл: $newest_shared"
 
-            if [ "$newest_shared" -nt "$binary_path" ]; then
+            if is_file_newer "$newest_shared" "$binary_path"; then
                 verbose_log "  shared/ новее бинарника -> REBUILD_NEEDED"
                 echo "REBUILD_NEEDED"
                 return
@@ -217,8 +472,8 @@ smart_rebuild_services() {
     if [ -d "$GO_SERVICES_DIR/shared" ]; then
         echo -e "${BLUE}Проверка shared/ модулей...${NC}"
 
-        local newest_shared=$(find "$GO_SERVICES_DIR/shared" -name "*.go" -type f -printf '%T@ %p\n' 2>/dev/null | \
-                             sort -rn | head -1 | cut -d' ' -f2-)
+        # Используем кросс-платформенную функцию
+        local newest_shared=$(find_newest_file "$GO_SERVICES_DIR/shared" "*.go")
 
         if [ -n "$newest_shared" ]; then
             # Найти самый старый бинарник
@@ -226,10 +481,12 @@ smart_rebuild_services() {
             local oldest_time=""
 
             for service in "${GO_SERVICES[@]}"; do
-                local binary_path="$BIN_DIR/cc1c-${service}.exe"
+                local binary_path=$(get_binary_path "$service")
 
                 if [ -f "$binary_path" ]; then
-                    local binary_time=$(stat -c %Y "$binary_path" 2>/dev/null || echo "0")
+                    # Используем кросс-платформенную функцию
+                    local binary_time=$(get_file_mtime "$binary_path")
+                    binary_time=${binary_time:-0}
 
                     if [ -z "$oldest_time" ] || [ "$binary_time" -lt "$oldest_time" ]; then
                         oldest_binary="$binary_path"
@@ -239,7 +496,7 @@ smart_rebuild_services() {
             done
 
             # Если есть бинарники И shared/ новее самого старого бинарника
-            if [ -n "$oldest_binary" ] && [ "$newest_shared" -nt "$oldest_binary" ]; then
+            if [ -n "$oldest_binary" ] && is_file_newer "$newest_shared" "$oldest_binary"; then
                 print_status "warning" "Обнаружены изменения в shared/ модулях"
                 echo -e "${YELLOW}   Все Go сервисы будут пересобраны${NC}"
 

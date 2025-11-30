@@ -109,7 +109,8 @@ case "$SERVICE_NAME" in
     orchestrator)
         cd "$PROJECT_ROOT/orchestrator"
         if [ -d "venv" ]; then
-            source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+            # Используем кросс-платформенную функцию activate_venv() из common-functions.sh
+            activate_venv "$(pwd)/venv"
         fi
         # Port 8200 - outside Windows reserved ranges (7913-8012, 8013-8112)
         ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-8200}"
@@ -120,7 +121,7 @@ case "$SERVICE_NAME" in
     celery-worker)
         cd "$PROJECT_ROOT/orchestrator"
         if [ -d "venv" ]; then
-            source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+            activate_venv "$(pwd)/venv"
         fi
         # Using gevent pool for async I/O operations (Windows compatible)
         # -P gevent: lightweight concurrency via green threads
@@ -132,7 +133,7 @@ case "$SERVICE_NAME" in
     celery-beat)
         cd "$PROJECT_ROOT/orchestrator"
         if [ -d "venv" ]; then
-            source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+            activate_venv "$(pwd)/venv"
         fi
         rm -f celerybeat-schedule celerybeat-schedule.db
         nohup celery -A config beat --loglevel=info > "$LOG_FILE" 2>&1 &
@@ -141,7 +142,8 @@ case "$SERVICE_NAME" in
 
 
     api-gateway)
-        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-api-gateway.exe"
+        # Используем кросс-платформенную функцию get_binary_path() из common-functions.sh
+        BINARY_PATH=$(get_binary_path "api-gateway")
         if [ -f "$BINARY_PATH" ]; then
             nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
         else
@@ -152,7 +154,7 @@ case "$SERVICE_NAME" in
         ;;
 
     worker)
-        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-worker.exe"
+        BINARY_PATH=$(get_binary_path "worker")
         if [ -f "$BINARY_PATH" ]; then
             nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
         else
@@ -184,7 +186,7 @@ case "$SERVICE_NAME" in
         # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8088
 
-        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-ras-adapter.exe"
+        BINARY_PATH=$(get_binary_path "ras-adapter")
         if [ -f "$BINARY_PATH" ]; then
             nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
         else
@@ -197,8 +199,8 @@ case "$SERVICE_NAME" in
     batch-service)
         # .env.local уже загружен в начале скрипта
         export SERVER_PORT=8087
-        
-        BINARY_PATH="$PROJECT_ROOT/bin/cc1c-batch-service.exe"
+
+        BINARY_PATH=$(get_binary_path "batch-service")
         if [ -f "$BINARY_PATH" ]; then
             nohup "$BINARY_PATH" > "$LOG_FILE" 2>&1 &
         else
