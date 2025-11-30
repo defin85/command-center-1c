@@ -3,376 +3,471 @@
 ##############################################################################
 # CommandCenter1C - Setup Common Functions
 ##############################################################################
-# Общие функции для скриптов установки
 #
-# Usage:
-#   source scripts/setup/lib/common.sh
+# Общие функции для install.sh, uninstall.sh и offline.sh
+# Используется через source.
+#
+# Требования:
+#   SCRIPT_DIR и PROJECT_ROOT должны быть установлены ДО source common.sh
+#
+# Version: 1.0.0
 ##############################################################################
 
+# Проверка версии bash
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    echo "FATAL: Требуется bash 4.0 или выше (текущая: ${BASH_VERSION})" >&2
+    exit 1
+fi
+
 # Предотвращение повторного sourcing
-if [ -n "$SETUP_COMMON_LOADED" ]; then
+if [[ -n "$SETUP_COMMON_LOADED" ]]; then
     return 0
 fi
 SETUP_COMMON_LOADED=true
 
-# Определить директории (ДО загрузки dev/common-functions.sh)
-SETUP_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_DIR="$(cd "$SETUP_SCRIPT_DIR/.." && pwd)"
-_SETUP_PROJECT_ROOT="$(cd "$SETUP_DIR/../.." && pwd)"
-
-# Загрузить common-functions.sh из dev/ для переиспользования
-# Он переопределит PROJECT_ROOT, но нам нужна только его функциональность
-if [ -f "$_SETUP_PROJECT_ROOT/scripts/dev/common-functions.sh" ]; then
-    source "$_SETUP_PROJECT_ROOT/scripts/dev/common-functions.sh"
-fi
-
-# Восстановить PROJECT_ROOT (dev/common-functions.sh может его переопределить)
-PROJECT_ROOT="$_SETUP_PROJECT_ROOT"
-
 ##############################################################################
-# ЦВЕТА И ФОРМАТИРОВАНИЕ
+# COLORS
 ##############################################################################
 
-# Цвета (если не определены)
-RED="${RED:-\033[0;31m}"
-GREEN="${GREEN:-\033[0;32m}"
-YELLOW="${YELLOW:-\033[1;33m}"
-BLUE="${BLUE:-\033[0;34m}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC="${NC:-\033[0m}"
+NC='\033[0m'
 
 ##############################################################################
 # LOGGING FUNCTIONS
 ##############################################################################
 
-# log_info - информационное сообщение
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+log_step()    { echo -e "${CYAN}[STEP]${NC} $1"; }
 
-# log_success - успешное действие
-log_success() {
-    echo -e "${GREEN}[OK]${NC} $1"
-}
-
-# log_warning - предупреждение
-log_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-# log_error - ошибка
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-}
-
-# log_step - шаг процесса (с номером)
-log_step() {
-    local step=$1
-    local total=$2
-    local message=$3
-    echo -e "${CYAN}[${step}/${total}]${NC} ${message}"
-}
-
-# log_section - заголовок секции
-log_section() {
-    local title=$1
-    echo ""
-    echo -e "${BOLD}${BLUE}════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BOLD}${BLUE}  ${title}${NC}"
-    echo -e "${BOLD}${BLUE}════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-}
-
-# log_subsection - подзаголовок
-log_subsection() {
-    local title=$1
-    echo ""
-    echo -e "${CYAN}── ${title} ──${NC}"
-    echo ""
+# Verbose logging (только если VERBOSE=true)
+log_verbose() {
+    if [[ "${VERBOSE:-false}" == "true" ]]; then
+        echo -e "${BLUE}[VERBOSE]${NC} $1"
+    fi
 }
 
 ##############################################################################
-# VERSION COMPARISON
+# PLATFORM DETECTION
 ##############################################################################
 
-# version_compare - сравнение semver версий
-# Usage: version_compare "1.2.3" "1.2.4"
-# Returns: -1 (first < second), 0 (equal), 1 (first > second)
-version_compare() {
-    local v1=$1
-    local v2=$2
-
-    # Убрать префикс 'v' если есть
-    v1="${v1#v}"
-    v2="${v2#v}"
-
-    # Разбить на части
-    IFS='.' read -ra V1_PARTS <<< "$v1"
-    IFS='.' read -ra V2_PARTS <<< "$v2"
-
-    # Сравнить каждую часть
-    local max_parts=${#V1_PARTS[@]}
-    [ ${#V2_PARTS[@]} -gt $max_parts ] && max_parts=${#V2_PARTS[@]}
-
-    for ((i=0; i<max_parts; i++)); do
-        local part1=${V1_PARTS[$i]:-0}
-        local part2=${V2_PARTS[$i]:-0}
-
-        # Убрать нечисловые суффиксы (например, "1.24.0-rc1" -> "1.24.0")
-        part1=$(echo "$part1" | grep -oE '^[0-9]+' || echo "0")
-        part2=$(echo "$part2" | grep -oE '^[0-9]+' || echo "0")
-
-        if [ "$part1" -lt "$part2" ]; then
-            echo "-1"
-            return
-        elif [ "$part1" -gt "$part2" ]; then
-            echo "1"
-            return
+detect_platform() {
+    # WSL detection
+    if [[ -f /proc/version ]] && grep -qi microsoft /proc/version 2>/dev/null; then
+        # Определяем дистрибутив внутри WSL
+        if command -v pacman &>/dev/null; then
+            echo "wsl-pacman"
+        elif command -v apt &>/dev/null; then
+            echo "wsl-apt"
+        elif command -v dnf &>/dev/null; then
+            echo "wsl-dnf"
+        else
+            echo "wsl"
         fi
-    done
+        return
+    fi
 
-    echo "0"
-}
+    # macOS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+        return
+    fi
 
-# version_gte - проверка что v1 >= v2
-# Usage: if version_gte "1.24.0" "1.21.0"; then ...
-version_gte() {
-    local result=$(version_compare "$1" "$2")
-    [ "$result" -ge 0 ]
-}
-
-# version_gt - проверка что v1 > v2
-version_gt() {
-    local result=$(version_compare "$1" "$2")
-    [ "$result" -gt 0 ]
-}
-
-##############################################################################
-# PLATFORM DETECTION (расширение)
-##############################################################################
-
-# detect_distro - определение дистрибутива Linux
-# Returns: ubuntu | debian | fedora | rhel | centos | arch | alpine | unknown
-detect_distro() {
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-        case "$ID" in
-            ubuntu)   echo "ubuntu" ;;
-            debian)   echo "debian" ;;
-            fedora)   echo "fedora" ;;
-            rhel|rocky|almalinux) echo "rhel" ;;
-            centos)   echo "centos" ;;
-            arch|manjaro) echo "arch" ;;
-            alpine)   echo "alpine" ;;
-            *)        echo "unknown" ;;
-        esac
-    elif [ -f /etc/debian_version ]; then
-        echo "debian"
-    elif [ -f /etc/redhat-release ]; then
-        echo "rhel"
+    # Linux - по пакетному менеджеру
+    if command -v pacman &>/dev/null; then
+        echo "linux-pacman"
+    elif command -v apt &>/dev/null; then
+        echo "linux-apt"
+    elif command -v dnf &>/dev/null; then
+        echo "linux-dnf"
+    elif command -v apk &>/dev/null; then
+        echo "linux-apk"
     else
         echo "unknown"
     fi
 }
 
-# detect_package_manager - определение пакетного менеджера
-# Returns: apt | dnf | yum | pacman | apk | brew | unknown
-detect_package_manager() {
-    local os=$(detect_os)
-
-    case "$os" in
-        macos)
-            if command -v brew &>/dev/null; then
-                echo "brew"
-            else
-                echo "unknown"
-            fi
-            ;;
-        wsl|linux)
-            if command -v apt &>/dev/null; then
-                echo "apt"
-            elif command -v dnf &>/dev/null; then
-                echo "dnf"
-            elif command -v yum &>/dev/null; then
-                echo "yum"
-            elif command -v pacman &>/dev/null; then
-                echo "pacman"
-            elif command -v apk &>/dev/null; then
-                echo "apk"
-            else
-                echo "unknown"
-            fi
-            ;;
-        windows)
-            if command -v winget &>/dev/null; then
-                echo "winget"
-            elif command -v choco &>/dev/null; then
-                echo "choco"
-            else
-                echo "unknown"
-            fi
-            ;;
-        *)
-            echo "unknown"
-            ;;
-    esac
-}
-
-# is_wsl - проверка что работаем в WSL
 is_wsl() {
-    [ "$(detect_os)" = "wsl" ]
+    [[ "$(detect_platform)" == wsl* ]]
 }
 
-# is_root - проверка root прав
-is_root() {
-    [ "$(id -u)" -eq 0 ]
+is_macos() {
+    [[ "$(detect_platform)" == "macos" ]]
 }
 
-# sudo_cmd - команда sudo если не root
-sudo_cmd() {
-    if is_root; then
-        "$@"
+##############################################################################
+# USER INTERACTION
+##############################################################################
+
+# Confirmation prompt
+# Usage: confirm_action "Удалить все файлы?" "n"  # default: no
+#        confirm_action "Продолжить?" "y"         # default: yes
+confirm_action() {
+    local message=$1
+    local default=${2:-n}  # default: no
+
+    # Пропуск в режиме --force
+    if [[ "${FORCE:-false}" == "true" ]]; then
+        return 0
+    fi
+
+    local prompt
+    if [[ "$default" == "y" ]]; then
+        prompt="[Y/n]"
     else
-        sudo "$@"
+        prompt="[y/N]"
+    fi
+
+    echo ""
+    read -p "$(echo -e "${YELLOW}$message${NC} $prompt: ")" response
+    response=${response:-$default}
+    [[ "$response" =~ ^[Yy]$ ]]
+}
+
+# Multi-choice prompt
+# Usage: choice=$(select_option "Выберите действие:" "Удалить" "Сохранить" "Отмена")
+select_option() {
+    local prompt=$1
+    shift
+    local options=("$@")
+
+    echo ""
+    echo -e "${YELLOW}$prompt${NC}"
+    local i=1
+    for opt in "${options[@]}"; do
+        echo "  $i) $opt"
+        ((i++))
+    done
+
+    while true; do
+        read -p "Выбор [1-${#options[@]}]: " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
+            echo "${options[$((choice-1))]}"
+            return 0
+        fi
+        echo "Неверный выбор. Попробуйте снова."
+    done
+}
+
+##############################################################################
+# FILE SIZE UTILITIES
+##############################################################################
+
+# Human-readable size
+# Usage: format_size 1073741824  # Output: "1 GB"
+format_size() {
+    local bytes=$1
+    if [[ $bytes -gt 1073741824 ]]; then
+        echo "$(( bytes / 1073741824 )) GB"
+    elif [[ $bytes -gt 1048576 ]]; then
+        echo "$(( bytes / 1048576 )) MB"
+    elif [[ $bytes -gt 1024 ]]; then
+        echo "$(( bytes / 1024 )) KB"
+    else
+        echo "$bytes B"
     fi
 }
 
-##############################################################################
-# COMMAND CHECKS
-##############################################################################
-
-# command_exists - проверка наличия команды
-command_exists() {
-    command -v "$1" &>/dev/null
+# Get directory size in bytes
+# Usage: size=$(get_dir_size "/path/to/dir")
+get_dir_size() {
+    local dir=$1
+    if [[ -d "$dir" ]]; then
+        # macOS du не поддерживает -b, используем -k и умножаем на 1024
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            local kb
+            kb=$(du -sk "$dir" 2>/dev/null | cut -f1)
+            echo $((kb * 1024))
+        else
+            du -sb "$dir" 2>/dev/null | cut -f1
+        fi
+    else
+        echo "0"
+    fi
 }
 
-# get_command_version - получение версии команды
-# Usage: ver=$(get_command_version "go" "version")
-get_command_version() {
-    local cmd=$1
-    local version_arg=${2:-"--version"}
+# Get directory size formatted
+# Usage: get_dir_size_human "/path/to/dir"  # Output: "125 MB"
+get_dir_size_human() {
+    local dir=$1
+    local bytes=$(get_dir_size "$dir")
+    format_size "$bytes"
+}
 
-    if ! command_exists "$cmd"; then
+##############################################################################
+# SHELL CONFIGURATION
+##############################################################################
+
+# Detect user's shell config file
+get_shell_config() {
+    local shell_name=$(basename "$SHELL")
+
+    case "$shell_name" in
+        bash) echo "$HOME/.bashrc" ;;
+        zsh)  echo "$HOME/.zshrc" ;;
+        fish) echo "$HOME/.config/fish/config.fish" ;;
+        *)    echo "$HOME/.profile" ;;
+    esac
+}
+
+# Check if string exists in shell config
+has_in_shell_config() {
+    local pattern=$1
+    local config=$(get_shell_config)
+
+    [[ -f "$config" ]] && grep -q "$pattern" "$config" 2>/dev/null
+}
+
+##############################################################################
+# BACKUP UTILITIES
+##############################################################################
+
+# Create timestamped backup of a file
+# Usage: backup_file "/path/to/file"
+# Returns: path to backup file
+backup_file() {
+    local file=$1
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup="${file}.backup_${timestamp}"
+
+    if [[ -f "$file" ]]; then
+        cp "$file" "$backup"
+        echo "$backup"
+    fi
+}
+
+# Create backup directory with timestamp
+# Usage: backup_dir=$(create_backup_dir "cc1c-setup")
+create_backup_dir() {
+    local prefix=${1:-"backup"}
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_dir="$HOME/.cc1c-backups/${prefix}_${timestamp}"
+
+    mkdir -p "$backup_dir"
+    echo "$backup_dir"
+}
+
+##############################################################################
+# COMPONENT DETECTION
+##############################################################################
+
+# Check if mise is installed
+is_mise_installed() {
+    command -v mise &>/dev/null || [[ -x "$HOME/.local/bin/mise" ]]
+}
+
+# Check if Docker is installed
+is_docker_installed() {
+    command -v docker &>/dev/null
+}
+
+# Check if Docker daemon is running
+is_docker_running() {
+    docker info &>/dev/null 2>&1
+}
+
+# Check if project venv exists
+has_python_venv() {
+    [[ -d "${PROJECT_ROOT:-}/orchestrator/venv" ]]
+}
+
+# Check if node_modules exists
+has_node_modules() {
+    [[ -d "${PROJECT_ROOT:-}/frontend/node_modules" ]]
+}
+
+# Check if Go modules are downloaded
+has_go_modules() {
+    local go_mod_cache="$HOME/go/pkg/mod"
+    [[ -d "$go_mod_cache" ]] && [[ -n "$(ls -A "$go_mod_cache" 2>/dev/null)" ]]
+}
+
+##############################################################################
+# MISE UTILITIES
+##############################################################################
+
+# Get mise data directory
+get_mise_data_dir() {
+    if [[ -n "${MISE_DATA_DIR:-}" ]]; then
+        echo "$MISE_DATA_DIR"
+    elif [[ -d "$HOME/.local/share/mise" ]]; then
+        echo "$HOME/.local/share/mise"
+    elif [[ -d "$HOME/.mise" ]]; then
+        echo "$HOME/.mise"
+    else
         echo ""
+    fi
+}
+
+# Get mise config directory
+get_mise_config_dir() {
+    if [[ -n "${MISE_CONFIG_DIR:-}" ]]; then
+        echo "$MISE_CONFIG_DIR"
+    elif [[ -d "$HOME/.config/mise" ]]; then
+        echo "$HOME/.config/mise"
+    else
+        echo ""
+    fi
+}
+
+##############################################################################
+# VERSION PARSING
+##############################################################################
+
+# Parse version from string (e.g., "mise 2024.1.0" -> "2024.1.0")
+parse_version() {
+    local input=$1
+    echo "$input" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
+}
+
+# Compare versions (returns 0 if v1 >= v2)
+version_gte() {
+    local v1=$1
+    local v2=$2
+
+    # Use sort -V for version comparison
+    local min=$(printf '%s\n%s' "$v1" "$v2" | sort -V | head -1)
+    [[ "$min" == "$v2" ]]
+}
+
+##############################################################################
+# SAFE FILE OPERATIONS
+##############################################################################
+
+# Безопасное удаление с проверкой пути
+# Usage: safe_rm "/path/to/dir" [force]
+# Returns: 0 on success, 1 on error
+safe_rm() {
+    local path="$1"
+    local force="${2:-false}"
+
+    # Проверка что путь не пустой
+    if [[ -z "$path" ]]; then
+        log_error "safe_rm: пустой путь"
         return 1
     fi
 
-    case "$cmd" in
-        go)
-            go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/go//'
-            ;;
-        python|python3)
-            "$cmd" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
-            ;;
-        node)
-            node --version 2>/dev/null | sed 's/v//'
-            ;;
-        npm)
-            npm --version 2>/dev/null
-            ;;
-        docker)
-            docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
-            ;;
-        docker-compose|compose)
-            docker compose version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || \
-            docker-compose --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
-            ;;
-        *)
-            "$cmd" $version_arg 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
-            ;;
-    esac
-}
-
-##############################################################################
-# TABLE FORMATTING
-##############################################################################
-
-# print_table_header - печать заголовка таблицы
-print_table_header() {
-    echo "┌────────────┬────────────┬────────────┬─────────────┐"
-    echo "│ Runtime    │ Required   │ Current    │ Action      │"
-    echo "├────────────┼────────────┼────────────┼─────────────┤"
-}
-
-# print_table_row - печать строки таблицы
-# Usage: print_table_row "Go" "1.24.0" "1.22.5" "UPGRADE"
-print_table_row() {
-    local runtime=$1
-    local required=$2
-    local current=$3
-    local action=$4
-
-    # Цвет для action
-    local action_color=""
-    case "$action" in
-        "OK"|"SKIP")     action_color="${GREEN}" ;;
-        "INSTALL")       action_color="${YELLOW}" ;;
-        "UPGRADE")       action_color="${YELLOW}" ;;
-        "FIX"|"INCOMPLETE") action_color="${CYAN}" ;;
-        "ERROR"|"FAIL")  action_color="${RED}" ;;
-        *)               action_color="${NC}" ;;
-    esac
-
-    printf "│ %-10s │ %-10s │ %-10s │ ${action_color}%-11s${NC} │\n" \
-        "$runtime" "$required" "${current:-not found}" "$action"
-}
-
-# print_table_footer - печать подвала таблицы
-print_table_footer() {
-    echo "└────────────┴────────────┴────────────┴─────────────┘"
-}
-
-##############################################################################
-# DOWNLOAD HELPERS
-##############################################################################
-
-# download_file - скачивание файла с прогрессом
-# Usage: download_file "https://example.com/file.tar.gz" "/tmp/file.tar.gz"
-download_file() {
-    local url=$1
-    local output=$2
-
-    if command_exists curl; then
-        curl -fsSL --progress-bar -o "$output" "$url"
-    elif command_exists wget; then
-        wget -q --show-progress -O "$output" "$url"
-    else
-        log_error "Не найден curl или wget для скачивания"
+    # Проверка что путь не содержит только пробелы (ДО нормализации)
+    if [[ "$path" =~ ^[[:space:]]*$ ]]; then
+        log_error "safe_rm: путь содержит только пробелы"
         return 1
     fi
-}
 
-##############################################################################
-# CONFIRMATION
-##############################################################################
+    # Запрещенные пути (защита от случайного удаления) - проверяем ДО нормализации
+    local -a forbidden_paths=(
+        "/"
+        "/home"
+        "/root"
+        "/etc"
+        "/usr"
+        "/var"
+        "/bin"
+        "/sbin"
+        "/lib"
+        "/lib64"
+        "/boot"
+        "/dev"
+        "/proc"
+        "/sys"
+        "/tmp"
+        "$HOME"
+    )
 
-# confirm - запрос подтверждения
-# Usage: if confirm "Продолжить?"; then ...
-confirm() {
-    local prompt=${1:-"Продолжить?"}
-    local default=${2:-"y"}
+    for forbidden in "${forbidden_paths[@]}"; do
+        # Сравниваем и с оригинальным путем, и с нормализованным
+        if [[ "$path" == "$forbidden" ]] || [[ "${path%/}" == "$forbidden" ]]; then
+            log_error "safe_rm: отказ в удалении защищенного пути: $path"
+            return 1
+        fi
+    done
 
-    local yn
-    if [ "$default" = "y" ]; then
-        read -p "$prompt [Y/n] " yn
-        yn=${yn:-y}
-    else
-        read -p "$prompt [y/N] " yn
-        yn=${yn:-n}
+    # Нормализация пути (убираем trailing slashes) ПОСЛЕ проверки forbidden
+    path="${path%/}"
+
+    # Проверка что путь существует
+    if [[ ! -e "$path" ]]; then
+        log_verbose "safe_rm: путь не существует: $path"
+        return 0
     fi
 
-    case "$yn" in
-        [Yy]*) return 0 ;;
-        *)     return 1 ;;
-    esac
+    # Удаление
+    if [[ "$force" == "true" ]]; then
+        rm -rf "$path"
+    else
+        rm -r "$path"
+    fi
 }
 
-# Загрузить проверки полноты установки
-if [ -f "$SETUP_SCRIPT_DIR/completeness-checks.sh" ]; then
-    source "$SETUP_SCRIPT_DIR/completeness-checks.sh"
-fi
+# Портабельный sed -i (работает на Linux и macOS)
+# Usage: sed_inplace "s/old/new/g" "/path/to/file"
+sed_inplace() {
+    local expression="$1"
+    local file="$2"
+
+    if [[ ! -f "$file" ]]; then
+        log_error "sed_inplace: файл не найден: $file"
+        return 1
+    fi
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "$expression" "$file"
+    else
+        sed -i "$expression" "$file"
+    fi
+}
 
 ##############################################################################
-# End of common.sh
+# SUDO UTILITIES
 ##############################################################################
+
+# Проверка возможности sudo
+# Usage: if check_sudo_available; then sudo cmd; fi
+check_sudo_available() {
+    if ! command -v sudo &>/dev/null; then
+        return 1
+    fi
+
+    # Проверка без пароля
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+
+    # Попытка получить sudo с паролем
+    log_info "Для некоторых операций требуется sudo"
+    if sudo -v 2>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+##############################################################################
+# DISTRO DETECTION (safe parsing without source)
+##############################################################################
+
+# Безопасное получение ID дистрибутива
+# Usage: distro=$(get_distro_id)
+get_distro_id() {
+    local distro=""
+    if [[ -f /etc/os-release ]]; then
+        distro=$(grep -E "^ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
+    fi
+    echo "$distro"
+}
+
+# Безопасное получение VERSION_CODENAME
+# Usage: codename=$(get_distro_codename)
+get_distro_codename() {
+    local codename=""
+    if [[ -f /etc/os-release ]]; then
+        codename=$(grep -E "^VERSION_CODENAME=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
+    fi
+    echo "$codename"
+}

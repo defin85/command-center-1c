@@ -1,0 +1,11 @@
+# Offline bundle - не коммитить (большие файлы)
+# Этот bundle генерируется локально через:
+#   source scripts/setup/lib/offline.sh
+#   prepare_offline_bundle
+#
+# Размер bundle: ~500MB (Go + Python + Node.js + зависимости)
+
+# Игнорировать всё кроме этого файла и README
+*
+!.gitignore
+!README.md

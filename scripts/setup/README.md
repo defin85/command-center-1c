@@ -1,113 +1,76 @@
 # Development Environment Setup
 
-Автоматическая установка зависимостей для разработки CommandCenter1C.
+Автоматическая установка dev-окружения для CommandCenter1C с использованием **mise**.
 
 ## Быстрый старт
-
-### Linux / WSL
 
 ```bash
 ./scripts/setup/install.sh
 ```
 
-### Windows (PowerShell)
+Это установит:
+- **mise** — универсальный менеджер версий runtime'ов
+- **Go, Python, Node.js** — версии из `.tool-versions`
+- **Docker** — платформо-зависимо
+- **Зависимости проекта** — pip, npm, go mod
 
-```powershell
-.\scripts\setup\install.ps1
-```
+## Что такое mise?
 
-## Возможности
+[mise](https://mise.jdx.dev) (произносится "meez") — современный менеджер версий для dev-инструментов:
 
-- **Автоматическое определение версий** — читает требуемые версии из файлов проекта:
-  - Go: из `go-services/*/go.mod`
-  - Python: по версии Django в `orchestrator/requirements.txt`
-  - Node.js: по версии Vite в `frontend/package.json`
-  - Или из `.tool-versions` (приоритетный источник)
-
-- **Кроссплатформенность:**
-  - Linux (Ubuntu, Debian, Fedora, Arch)
-  - WSL (Windows Subsystem for Linux)
-  - Windows (через winget или chocolatey)
-
-- **Идемпотентность** — безопасный повторный запуск
-
-- **Модульность** — возможность установки отдельных компонентов
+- Управляет Go, Python, Node.js и 100+ других инструментов
+- Совместим с `.tool-versions` (asdf) и `.nvmrc`
+- Автоматически переключает версии при входе в директорию
+- Быстрее asdf в 10-100x (написан на Rust)
 
 ## Опции
-
-### Linux / WSL
 
 ```bash
 ./scripts/setup/install.sh [OPTIONS]
 
 Options:
-  --dry-run           Показать что будет установлено без изменений
-  --only-go           Установить только Go
-  --only-python       Установить только Python + venv
-  --only-nodejs       Установить только Node.js + npm
+  --dry-run           Показать план без изменений
+  --only-mise         Установить только mise + runtime'ы
   --only-docker       Установить только Docker
   --only-deps         Установить только зависимости проекта
-  --skip-docker       Пропустить установку Docker
-  --skip-deps         Пропустить установку зависимостей проекта
-  --force             Принудительная переустановка
+  --skip-mise         Пропустить mise и runtime'ы
+  --skip-docker       Пропустить Docker
+  --skip-deps         Пропустить зависимости проекта
   --verbose, -v       Подробный вывод
   --help, -h          Показать справку
 ```
 
-### Windows (PowerShell)
-
-```powershell
-.\scripts\setup\install.ps1 [OPTIONS]
-
-Options:
-  -DryRun             Показать что будет установлено без изменений
-  -OnlyGo             Установить только Go
-  -OnlyPython         Установить только Python
-  -OnlyNodeJS         Установить только Node.js
-  -OnlyDocker         Установить только Docker Desktop
-  -OnlyDeps           Установить только зависимости проекта
-  -SkipDocker         Пропустить установку Docker
-  -SkipDeps           Пропустить установку зависимостей проекта
-  -Force              Принудительная переустановка
-```
-
-## Примеры использования
-
-### Проверить что будет установлено
+## Примеры
 
 ```bash
-# Linux/WSL
+# Показать план установки
 ./scripts/setup/install.sh --dry-run
 
-# Windows
-.\scripts\setup\install.ps1 -DryRun
-```
+# Установить только mise и runtime'ы
+./scripts/setup/install.sh --only-mise
 
-### Установить только Go и Python
-
-```bash
-# Linux/WSL
-./scripts/setup/install.sh --only-go --only-python
-
-# Windows
-.\scripts\setup\install.ps1 -OnlyGo -OnlyPython
-```
-
-### Полная установка без Docker
-
-```bash
-# Linux/WSL
+# Всё кроме Docker (если уже установлен)
 ./scripts/setup/install.sh --skip-docker
 
-# Windows
-.\scripts\setup\install.ps1 -SkipDocker
+# Только зависимости проекта (pip, npm, go mod)
+./scripts/setup/install.sh --only-deps
 ```
+
+## Поддерживаемые платформы
+
+| Платформа | mise | Docker |
+|-----------|------|--------|
+| **Arch Linux** | pacman | pacman |
+| **Ubuntu/Debian** | apt (официальный репо) | apt (официальный репо) |
+| **Fedora** | dnf | dnf |
+| **macOS** | Homebrew | Docker Desktop |
+| **WSL** | зависит от дистрибутива | Docker Desktop (Windows) |
 
 ## Управление версиями
 
 ### .tool-versions
 
-Файл `.tool-versions` в корне проекта — единый источник правды для версий:
+Файл `.tool-versions` в корне проекта — единый источник версий:
 
 ```
 go 1.24.0
@@ -115,101 +78,122 @@ python 3.11
 nodejs 20
 ```
 
-Этот файл совместим с [asdf](https://asdf-vm.com) и [mise](https://mise.jdx.dev).
+После установки mise автоматически использует эти версии при входе в директорию проекта.
 
-### Автоматическое определение
+### Ручное управление через mise
 
-Если `.tool-versions` отсутствует, скрипт определяет версии из:
+```bash
+# Показать текущие версии
+mise current
 
-| Инструмент | Источник | Логика |
-|------------|----------|--------|
-| Go | `go-services/*/go.mod` | Максимальная версия из всех go.mod |
-| Python | `orchestrator/requirements.txt` | По версии Django (4.x → 3.11, 5.x → 3.12) |
-| Node.js | `frontend/package.json` | По версии Vite (5.x → 20, 6.x → 22) |
+# Установить инструменты из .tool-versions
+mise install
 
-## Что устанавливается
+# Установить конкретную версию
+mise install go@1.24.0
 
-### Системные пакеты (Linux)
+# Глобально использовать версию
+mise use -g go@1.24.0
 
-- `build-essential` / `gcc` — компиляция
-- `git`, `curl`, `wget` — утилиты
-- `jq` — парсинг JSON
-- `libpq-dev` — PostgreSQL клиент
+# Обновить mise
+mise self-update
+```
 
-### Runtime'ы
-
-| Компонент | Linux | Windows |
-|-----------|-------|---------|
-| Go | Официальный бинарник в `/usr/local/go` | winget / choco |
-| Python | apt (deadsnakes PPA) / dnf | winget / choco |
-| Node.js | NodeSource репозиторий | winget / choco |
-| Docker | docker-ce официальный | Docker Desktop |
-
-### Зависимости проекта
-
-- **Python:** venv + `pip install -r requirements.txt`
-- **Node.js:** `npm ci` (или `npm install`)
-- **Go:** `go mod download` для всех сервисов
-
-## Структура
+## Структура файлов
 
 ```
 scripts/setup/
-├── install.sh          # Entry point для Linux/WSL
-├── install.ps1         # Entry point для Windows
+├── install.sh          # Основной скрипт (~350 строк)
+├── install.ps1         # Windows PowerShell (legacy)
 ├── README.md           # Эта документация
 └── lib/
-    ├── common.sh       # Общие функции (logging, version compare)
-    ├── version-parser.sh   # Парсинг версий из проекта
-    └── installers/     # (будущее) Отдельные установщики
+    └── docker.sh       # Docker установка (~250 строк)
 ```
 
 ## Troubleshooting
 
-### Linux: Permission denied
+### mise не найден после установки
+
+Перезапустите терминал или:
+
+```bash
+source ~/.bashrc  # или ~/.zshrc
+```
+
+### WSL: Docker не работает
+
+Docker в WSL использует Docker Desktop из Windows:
+
+1. Установите [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/)
+2. В настройках включите **WSL Integration** для вашего дистрибутива
+3. Перезапустите WSL: `wsl --shutdown` (в PowerShell)
+
+### Arch Linux: mise не в репозиториях
+
+mise доступен в официальных репозиториях Arch Linux:
+
+```bash
+sudo pacman -S mise
+```
+
+Если пакет не найден, обновите базу данных:
+
+```bash
+sudo pacman -Sy
+```
+
+### Permission denied
 
 ```bash
 chmod +x ./scripts/setup/install.sh
 ```
 
-### Windows: Execution Policy
+### Python venv не создаётся
 
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### WSL: Docker не найден
-
-Docker в WSL работает через Docker Desktop для Windows:
-
-1. Установите [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-2. В настройках включите **WSL 2 integration**
-3. Перезапустите WSL
-
-### Go/Python/Node не найден после установки
-
-Перезапустите терминал или выполните:
+В Arch Linux venv включен в пакет python. Если проблема сохраняется:
 
 ```bash
-# Linux/WSL
-source ~/.bashrc
+# Arch
+sudo pacman -S python
 
-# Windows PowerShell
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+# Ubuntu/Debian
+sudo apt install python3-venv
 ```
 
 ## После установки
 
 ```bash
-# 1. Запустить инфраструктуру
+# 1. Перезапустите терминал
+source ~/.bashrc
+
+# 2. Проверьте версии
+mise current
+
+# 3. Запустите инфраструктуру
 docker compose up -d postgres redis
 
-# 2. Применить миграции
+# 4. Примените миграции
 ./scripts/dev/run-migrations.sh
 
-# 3. Запустить все сервисы
+# 5. Запустите все сервисы
 ./scripts/dev/start-all.sh
 
-# 4. Проверить статус
+# 6. Проверьте статус
 ./scripts/dev/health-check.sh
 ```
+
+## Миграция с предыдущей версии
+
+Если вы использовали старый install.sh (без mise):
+
+1. Удалите старые установки Go/Python/Node.js (опционально)
+2. Запустите новый `./scripts/setup/install.sh`
+3. mise автоматически установит правильные версии
+
+Старые установки не конфликтуют — mise использует изолированные директории в `~/.local/share/mise/`.
+
+## Ссылки
+
+- [mise документация](https://mise.jdx.dev)
+- [mise GitHub](https://github.com/jdx/mise)
+- [Docker установка](https://docs.docker.com/engine/install/)
