@@ -313,6 +313,11 @@ fi
 
 python manage.py migrate --noinput
 echo -e "${GREEN}✓ Миграции применены${NC}"
+
+# Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
+echo -e "${CYAN}   Сборка статических файлов...${NC}"
+python manage.py collectstatic --noinput -v 0
+echo -e "${GREEN}✓ Статика собрана${NC}"
 echo ""
 
 ##############################################################################

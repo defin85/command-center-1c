@@ -880,6 +880,12 @@ run_django_migrations() {
         python manage.py migrate --noinput
         migrate_result=$?
 
+        if [[ $migrate_result -eq 0 ]]; then
+            # Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
+            python manage.py collectstatic --noinput -v 0
+            migrate_result=$?
+        fi
+
         deactivate 2>/dev/null || true
 
         # Явно вернуть результат миграции
@@ -888,9 +894,9 @@ run_django_migrations() {
 
     local result=$?
     if [[ $result -eq 0 ]]; then
-        log_success "Миграции применены"
+        log_success "Миграции и статика применены"
     else
-        log_error "Ошибка применения миграций (код: $result)"
+        log_error "Ошибка применения миграций/статики (код: $result)"
         return 1
     fi
 
