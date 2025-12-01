@@ -35,12 +35,6 @@ export const databasesApi = {
     return response.data
   },
 
-  // v2 migration: POST /databases → POST /databases/create-database
-  create: async (data: Partial<Database>) => {
-    const response = await apiClient.post<Database>('/databases/create-database', data)
-    return response.data
-  },
-
   // v2 migration: GET /databases/{id}/health → POST /databases/health-check?database_id={id}
   checkHealth: async (id: string) => {
     const response = await apiClient.post(`/databases/health-check`, null, {

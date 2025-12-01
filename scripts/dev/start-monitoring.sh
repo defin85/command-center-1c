@@ -7,62 +7,60 @@
 
 set -euo pipefail
 
+# Определение путей
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Подключение библиотеки
+source "$PROJECT_ROOT/scripts/lib/init.sh"
+
 cd "$PROJECT_ROOT"
 
-echo "========================================="
-echo "  Starting Monitoring & Observability"
-echo "========================================="
-echo ""
+print_header "Starting Monitoring & Observability"
 
 # Check if docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo "❌ Docker is not running. Please start Docker first."
+if ! is_docker_running; then
+    log_error "Docker is not running. Please start Docker first."
     exit 1
 fi
 
 # Check if base network exists
 if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
-    echo "⚠️  Network cc1c-local-network not found. Creating..."
+    log_warning "Network cc1c-local-network not found. Creating..."
     docker network create cc1c-local-network
 fi
 
 # Start monitoring services
-echo "🚀 Starting Prometheus, Grafana and Jaeger..."
+log_step "Starting Prometheus, Grafana and Jaeger..."
 docker-compose -f docker-compose.local.monitoring.yml up -d
 
 # Wait for services to be ready
 echo ""
-echo "⏳ Waiting for services to be ready..."
+log_info "Waiting for services to be ready..."
 sleep 5
 
 # Check Prometheus
-if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
-    echo "✅ Prometheus is ready: http://localhost:9090"
+if check_health_endpoint "http://localhost:9090/-/healthy"; then
+    print_status "success" "Prometheus is ready: http://localhost:9090"
 else
-    echo "⚠️  Prometheus may not be ready yet. Check: docker logs cc1c-prometheus-local"
+    print_status "warning" "Prometheus may not be ready yet. Check: docker logs cc1c-prometheus-local"
 fi
 
 # Check Grafana
-if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
-    echo "✅ Grafana is ready: http://localhost:5000 (admin/admin)"
+if check_health_endpoint "http://localhost:5000/api/health"; then
+    print_status "success" "Grafana is ready: http://localhost:5000 (admin/admin)"
 else
-    echo "⚠️  Grafana may not be ready yet. Check: docker logs cc1c-grafana-local"
+    print_status "warning" "Grafana may not be ready yet. Check: docker logs cc1c-grafana-local"
 fi
 
 # Check Jaeger
-if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
-    echo "✅ Jaeger is ready: http://localhost:16686"
+if check_health_endpoint "http://localhost:16686/"; then
+    print_status "success" "Jaeger is ready: http://localhost:16686"
 else
-    echo "⚠️  Jaeger may not be ready yet. Check: docker logs cc1c-jaeger-local"
+    print_status "warning" "Jaeger may not be ready yet. Check: docker logs cc1c-jaeger-local"
 fi
 
-echo ""
-echo "========================================="
-echo "  Monitoring & Observability Started!"
-echo "========================================="
+print_header "Monitoring & Observability Started!"
 echo ""
 echo "📊 Prometheus:  http://localhost:9090"
 echo "📈 Grafana:     http://localhost:5000 (admin/admin)"

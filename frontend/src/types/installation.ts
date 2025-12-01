@@ -1,6 +1,6 @@
 export interface ExtensionInstallation {
   id: string
-  database_id: number
+  database_id: string
   database_name: string
   extension_name: string
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
@@ -24,7 +24,7 @@ export interface InstallationProgress {
 }
 
 export interface BatchInstallRequest {
-  database_ids: number[] | 'all'
+  database_ids: string[] | 'all'
   extension_config: {
     name: string
     path: string

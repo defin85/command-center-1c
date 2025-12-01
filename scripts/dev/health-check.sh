@@ -6,17 +6,17 @@
 # Проверяет статус всех сервисов
 ##############################################################################
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Определение путей
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Подключение библиотеки
+source "$PROJECT_ROOT/scripts/lib/init.sh"
+
 cd "$PROJECT_ROOT"
 
+# Константы проекта
 PIDS_DIR="$PROJECT_ROOT/pids"
-
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Health Check${NC}"
@@ -78,7 +78,8 @@ check_http() {
     local url=$2
     local timeout=${3:-5}
 
-    local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null)
+    # --noproxy '*' важен для WSL где может быть настроен proxy
+    local http_code=$(curl --noproxy '*' -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null)
 
     if [ "$http_code" = "200" ]; then
         echo -e "  ${service_name}: ${GREEN}✓ доступен (HTTP $http_code)${NC}"
@@ -149,14 +150,14 @@ echo -e "${BLUE}[4] Проверка соединений:${NC}"
 echo ""
 
 # Проверить JSON response от API Gateway (port 8180)
-if curl -s --max-time 3 http://localhost:8180/health 2>/dev/null | grep -q "healthy\|ok"; then
+if curl --noproxy '*' -s --max-time 3 http://localhost:8180/health 2>/dev/null | grep -q "healthy\|ok"; then
     echo -e "  API Gateway /health: ${GREEN}✓ возвращает валидный JSON${NC}"
 else
     echo -e "  API Gateway /health: ${RED}✗ некорректный ответ${NC}"
 fi
 
 # Проверить JSON response от Orchestrator (port 8200)
-if curl -s --max-time 3 http://localhost:8200/health 2>/dev/null | grep -q "healthy\|ok\|database"; then
+if curl --noproxy '*' -s --max-time 3 http://localhost:8200/health 2>/dev/null | grep -q "healthy\|ok\|database"; then
     echo -e "  Orchestrator /health: ${GREEN}✓ возвращает валидный JSON${NC}"
 else
     echo -e "  Orchestrator /health: ${RED}✗ некорректный ответ${NC}"
@@ -174,8 +175,8 @@ check_port() {
     local port=$1
     local service=$2
 
-    # Windows (GitBash) - netstat
-    if netstat -ano 2>/dev/null | grep ":$port" | grep -q LISTENING; then
+    # Кросс-платформенная проверка (из common-functions.sh)
+    if check_port_listening "$port"; then
         echo -e "  Port $port ($service): ${GREEN}✓ открыт${NC}"
         return 0
     else
@@ -203,7 +204,7 @@ echo ""
 
 # Проверка Prometheus
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-prometheus-local"; then
-    if curl -sf http://localhost:9090/-/healthy &>/dev/null; then
+    if curl --noproxy '*' -sf http://localhost:9090/-/healthy &>/dev/null; then
         echo -e "  Prometheus: ${GREEN}✓ запущен и готов (http://localhost:9090)${NC}"
         check_port 9090 "Prometheus" > /dev/null
     else
@@ -215,7 +216,7 @@ fi
 
 # Проверка Grafana
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-grafana-local"; then
-    if curl -sf http://localhost:5000/api/health &>/dev/null; then
+    if curl --noproxy '*' -sf http://localhost:5000/api/health &>/dev/null; then
         echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:5000, admin/admin)${NC}"
         check_port 5000 "Grafana" > /dev/null
     else
@@ -227,7 +228,7 @@ fi
 
 # Проверка Jaeger (Distributed Tracing)
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-jaeger-local"; then
-    if curl -sf http://localhost:16686/ &>/dev/null; then
+    if curl --noproxy '*' -sf http://localhost:16686/ &>/dev/null; then
         echo -e "  Jaeger: ${GREEN}✓ запущен и готов (http://localhost:16686)${NC}"
         check_port 16686 "Jaeger UI" > /dev/null
         check_port 4317 "OTLP gRPC" > /dev/null

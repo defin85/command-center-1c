@@ -48,8 +48,6 @@ def list_clusters(request):
     status = request.query_params.get('status')
     ras_server = request.query_params.get('ras_server')
 
-    from django.db.models import Q
-
     qs = Cluster.objects.annotate(
         databases_count=Count('databases'),
         healthy_databases_count=Count(

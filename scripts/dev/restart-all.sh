@@ -22,17 +22,26 @@ set -e
 # [СЕКЦИЯ 1: INITIALIZATION]
 ##############################################################################
 
-# Source common functions
+# Source library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common-functions.sh"
+source "$SCRIPT_DIR/../lib/init.sh"
+
+# Project-specific constants
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GO_SERVICES_DIR="$PROJECT_ROOT/go-services"
+BIN_DIR="$PROJECT_ROOT/bin"
+PIDS_DIR="$PROJECT_ROOT/pids"
+LOGS_DIR="$PROJECT_ROOT/logs"
+SCRIPTS_DIR="$PROJECT_ROOT/scripts/dev"
+
+# Список Go сервисов (в порядке приоритета)
+GO_SERVICES=("api-gateway" "worker" "ras-adapter" "batch-service")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
 
 # Load environment variables from .env.local
 load_env_file
-
-SCRIPTS_DIR="$PROJECT_ROOT/scripts/dev"
 
 # Флаги по умолчанию
 FORCE_REBUILD=false
@@ -240,12 +249,12 @@ main() {
 
     # Вывести параметры в verbose режиме
     if [ "$VERBOSE" = true ]; then
-        verbose_log "Параметры:"
-        verbose_log "  FORCE_REBUILD: $FORCE_REBUILD"
-        verbose_log "  NO_REBUILD: $NO_REBUILD"
-        verbose_log "  PARALLEL_BUILD: $PARALLEL_BUILD"
-        verbose_log "  SINGLE_SERVICE: $SINGLE_SERVICE"
-        verbose_log ""
+        log_verbose "Параметры:"
+        log_verbose "  FORCE_REBUILD: $FORCE_REBUILD"
+        log_verbose "  NO_REBUILD: $NO_REBUILD"
+        log_verbose "  PARALLEL_BUILD: $PARALLEL_BUILD"
+        log_verbose "  SINGLE_SERVICE: $SINGLE_SERVICE"
+        log_verbose ""
     fi
 
     # Режим: перезапуск одного сервиса

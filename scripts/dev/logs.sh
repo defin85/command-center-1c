@@ -10,14 +10,11 @@
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-LOGS_DIR="$PROJECT_ROOT/logs"
+# Source unified library
+source "$PROJECT_ROOT/scripts/lib/init.sh"
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Константы проекта
+LOGS_DIR="$PROJECT_ROOT/logs"
 
 ##############################################################################
 # Проверка аргументов

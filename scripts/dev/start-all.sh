@@ -13,9 +13,19 @@
 
 set -e
 
-# Source common functions
+# Source library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common-functions.sh"
+source "$SCRIPT_DIR/../lib/init.sh"
+
+# Project-specific constants
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GO_SERVICES_DIR="$PROJECT_ROOT/go-services"
+BIN_DIR="$PROJECT_ROOT/bin"
+PIDS_DIR="$PROJECT_ROOT/pids"
+LOGS_DIR="$PROJECT_ROOT/logs"
+
+# Список Go сервисов (в порядке приоритета)
+GO_SERVICES=("api-gateway" "worker" "ras-adapter" "batch-service")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
@@ -197,12 +207,26 @@ if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
     exit 1
 fi
 
-docker-compose -f docker-compose.local.yml up -d
+# Единое имя проекта для всех compose файлов (избегает orphan containers warning)
+COMPOSE_PROJECT="cc1c-local"
+
+# Создать сеть если не существует (нужна для external: true в monitoring compose)
+if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
+    docker network create cc1c-local-network > /dev/null 2>&1
+fi
+
+# Собрать список compose файлов для запуска
+COMPOSE_FILES="-f docker-compose.local.yml"
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
+fi
+
+docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES up -d
 
 # Ожидать готовности БД
 echo -e "${YELLOW}   Ожидание готовности PostgreSQL...${NC}"
 for i in {1..30}; do
-    if docker-compose -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
+    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
         echo -e "${GREEN}✓ PostgreSQL готов${NC}"
         break
     fi
@@ -216,7 +240,7 @@ done
 # Ожидать готовности Redis
 echo -e "${YELLOW}   Ожидание готовности Redis...${NC}"
 for i in {1..30}; do
-    if docker-compose -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
+    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
         echo -e "${GREEN}✓ Redis готов${NC}"
         break
     fi
@@ -229,50 +253,49 @@ done
 
 echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)${NC}"
 
-# Запуск мониторинга (Prometheus + Grafana)
-echo -e "${YELLOW}   Запуск мониторинга (Prometheus, Grafana)...${NC}"
+# Проверка мониторинга (уже запущен выше вместе с infrastructure)
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    echo -e "${CYAN}   Ожидание готовности мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
 
-if [ ! -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден, пропускаем мониторинг${NC}"
-else
-    # Проверить что Docker запущен
-    if ! docker info > /dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Docker не запущен, пропускаем мониторинг${NC}"
+    # Функция ожидания сервиса с retry
+    wait_for_service() {
+        local name=$1
+        local url=$2
+        local max_attempts=${3:-10}
+        local attempt=1
+
+        while [ $attempt -le $max_attempts ]; do
+            # --noproxy '*' важен для WSL где может быть настроен proxy
+            if curl --noproxy '*' -sf "$url" > /dev/null 2>&1; then
+                return 0
+            fi
+            sleep 1
+            attempt=$((attempt + 1))
+        done
+        return 1
+    }
+
+    # Проверить Prometheus (до 10 секунд)
+    if wait_for_service "Prometheus" "http://localhost:9090/-/healthy" 10; then
+        echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
     else
-        # Проверить/создать сеть
-        if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
-            echo -e "${YELLOW}   Создание сети cc1c-local-network...${NC}"
-            docker network create cc1c-local-network
-        fi
-
-        # Запустить мониторинг (игнорируем ошибки - не критично)
-        docker-compose -f docker-compose.local.monitoring.yml up -d 2>&1 || true
-
-        # Подождать готовности
-        sleep 3
-
-        # Проверить Prometheus
-        if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Prometheus может быть еще не готов${NC}"
-        fi
-
-        # Проверить Grafana
-        if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Grafana может быть еще не готов (это не критично)${NC}"
-        fi
-
-        # Проверить Jaeger (Distributed Tracing)
-        if curl -sf http://localhost:16686/ > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Jaeger может быть еще не готов (это не критично)${NC}"
-        fi
+        echo -e "${YELLOW}⚠️  Prometheus не отвечает (проверьте docker logs prometheus)${NC}"
     fi
-fi 2>/dev/null || echo -e "${YELLOW}⚠️  Мониторинг не запущен (не критично для работы)${NC}"
+
+    # Проверить Grafana (до 15 секунд - стартует дольше)
+    if wait_for_service "Grafana" "http://localhost:5000/api/health" 15; then
+        echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Grafana не отвечает (это не критично)${NC}"
+    fi
+
+    # Проверить Jaeger (до 10 секунд)
+    if wait_for_service "Jaeger" "http://localhost:16686/" 10; then
+        echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Jaeger не отвечает (это не критично)${NC}"
+    fi
+fi
 
 echo ""
 
@@ -285,11 +308,16 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение если есть
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 python manage.py migrate --noinput
 echo -e "${GREEN}✓ Миграции применены${NC}"
+
+# Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
+echo -e "${CYAN}   Сборка статических файлов...${NC}"
+python manage.py collectstatic --noinput -v 0
+echo -e "${GREEN}✓ Статика собрана${NC}"
 echo ""
 
 ##############################################################################
@@ -303,12 +331,14 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # .env.local уже загружен в начале скрипта
 
-nohup python manage.py runserver 0.0.0.0:$ORCHESTRATOR_PORT > "$LOGS_DIR/orchestrator.log" 2>&1 &
+# Используем Daphne (ASGI) вместо runserver для поддержки WebSocket
+# Daphne поддерживает HTTP + WebSocket через единый порт
+nohup daphne -b 0.0.0.0 -p $ORCHESTRATOR_PORT config.asgi:application > "$LOGS_DIR/orchestrator.log" 2>&1 &
 ORCHESTRATOR_PID=$!
 echo $ORCHESTRATOR_PID > "$PIDS_DIR/orchestrator.pid"
 
@@ -331,7 +361,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # NOTE: Using gevent pool for async I/O operations (Windows compatible)
@@ -363,7 +393,7 @@ cd "$PROJECT_ROOT/orchestrator"
 
 # Активировать виртуальное окружение
 if [ -d "venv" ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    activate_venv "$(pwd)/venv"
 fi
 
 # Удалить старый celerybeat-schedule файл
@@ -390,7 +420,7 @@ echo ""
 echo -e "${BLUE}[6/12] Запуск API Gateway (port 8180)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-api-gateway.exe"
+BINARY_PATH=$(get_binary_path "api-gateway")
 
 # .env.local уже загружен в начале скрипта
 
@@ -414,7 +444,7 @@ echo ""
 echo -e "${BLUE}[7/12] Запуск Go Worker...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-worker.exe"
+BINARY_PATH=$(get_binary_path "worker")
 
 # .env.local уже загружен в начале скрипта
 
@@ -436,36 +466,74 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[8/12] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
-# Проверить что PLATFORM_1C_BIN_PATH задан
-if [ -z "$PLATFORM_1C_BIN_PATH" ]; then
-    echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
-    echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
-    echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=C:\\Program Files\\1cv8\\8.3.27.1786\\bin${NC}"
-    echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
-else
-    RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+# Определяем порт ragent (1C Server Agent)
+RAGENT_PORT="${RAGENT_PORT:-1540}"
+RAGENT_HOST="${RAGENT_HOST:-localhost}"
 
-    # Проверить что ras.exe существует
-    if [ ! -f "$RAS_EXE" ]; then
-        echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+# Проверить что RAS еще не запущен
+if check_port_listening "${RAS_PORT:-1545}"; then
+    echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
+    echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
+else
+    # Проверить что ragent доступен (порт 1540)
+    if ! check_port_listening "$RAGENT_PORT"; then
+        echo -e "${YELLOW}⚠️  1C Server Agent (ragent) не найден на порту $RAGENT_PORT${NC}"
+        echo -e "${YELLOW}   Убедитесь, что служба 'Агент сервера 1С:Предприятия' запущена${NC}"
+        echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+    elif [ -z "$PLATFORM_1C_BIN_PATH" ]; then
+        echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
+        echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
+        if is_wsl; then
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
+        else
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"C:\\Program Files\\1cv8\\8.3.27.1786\\bin\"${NC}"
+        fi
         echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
     else
-        # Проверить что RAS еще не запущен
-        if netstat -ano 2>/dev/null | grep -q ":${RAS_PORT:-1545}.*LISTENING" || lsof -i ":${RAS_PORT:-1545}" >/dev/null 2>&1; then
-            echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
-            echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
+        # Определяем путь к ras.exe в зависимости от платформы
+        if is_wsl; then
+            # WSL: конвертируем путь и запускаем через PowerShell
+            if [[ "$PLATFORM_1C_BIN_PATH" == /mnt/* ]]; then
+                # WSL путь типа /mnt/c/Program Files/... -> C:\Program Files\...
+                WIN_DRIVE=$(echo "$PLATFORM_1C_BIN_PATH" | sed 's|/mnt/\([a-z]\)/|\U\1:\\|' | sed 's|/|\\|g')
+                RAS_WIN_PATH="${WIN_DRIVE}\\ras.exe"
+            else
+                RAS_WIN_PATH="${PLATFORM_1C_BIN_PATH}\\ras.exe"
+            fi
+            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
         else
-            # Запустить RAS
-            nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} > "$LOGS_DIR/ras.log" 2>&1 &
-            RAS_PID=$!
-            echo $RAS_PID > "$PIDS_DIR/ras.pid"
+            # Native Windows (Git Bash / MSYS2): используем путь напрямую
+            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
+            RAS_WIN_PATH="$PLATFORM_1C_BIN_PATH\\ras.exe"
+        fi
 
+        # Проверить что ras.exe существует
+        if [ ! -f "$RAS_EXE" ]; then
+            echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+            echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
+        else
+            # RAS в режиме cluster подключается к ragent и предоставляет API на порту 1545
+            echo -e "${CYAN}   Запуск: ras.exe cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
+
+            if is_wsl; then
+                # WSL: запуск через PowerShell (создает Windows процесс)
+                powershell.exe -Command "Start-Process -FilePath '$RAS_WIN_PATH' -ArgumentList 'cluster','--port=${RAS_PORT:-1545}','${RAGENT_HOST}:${RAGENT_PORT}' -WindowStyle Hidden" > "$LOGS_DIR/ras.log" 2>&1
+            else
+                # Native Windows: запуск напрямую в фоне
+                nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
+                RAS_PID=$!
+                echo $RAS_PID > "$PIDS_DIR/ras.pid"
+            fi
+
+            # Ждем запуска RAS
             sleep 3
-            if kill -0 $RAS_PID 2>/dev/null; then
-                echo -e "${GREEN}✓ RAS запущен (PID: $RAS_PID, port: ${RAS_PORT:-1545})${NC}"
+
+            if check_port_listening "${RAS_PORT:-1545}"; then
+                echo -e "${GREEN}✓ RAS запущен (port: ${RAS_PORT:-1545}, ragent: ${RAGENT_HOST}:${RAGENT_PORT})${NC}"
             else
                 echo -e "${RED}✗ Не удалось запустить RAS${NC}"
-                cat "$LOGS_DIR/ras.log"
+                echo -e "${YELLOW}   Проверьте логи: $LOGS_DIR/ras.log${NC}"
+                cat "$LOGS_DIR/ras.log" 2>/dev/null || true
                 echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
             fi
         fi
@@ -480,12 +548,12 @@ echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-ras-adapter.exe"
+BINARY_PATH=$(get_binary_path "ras-adapter")
 
 # Проверить что бинарник существует
 if [ ! -f "$BINARY_PATH" ]; then
     echo -e "${RED}✗ RAS Adapter бинарник не найден: $BINARY_PATH${NC}"
-    echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o ../../bin/cc1c-ras-adapter.exe cmd/main.go${NC}"
+    echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o \$(get_binary_path ras-adapter) cmd/main.go${NC}"
     exit 1
 fi
 
@@ -501,7 +569,7 @@ if kill -0 $RAS_ADAPTER_PID 2>/dev/null; then
     echo -e "${GREEN}✓ RAS Adapter запущен (PID: $RAS_ADAPTER_PID)${NC}"
 
     # Health check
-    if curl -sf http://localhost:8188/health > /dev/null 2>&1; then
+    if curl --noproxy '*' -sf http://localhost:8188/health > /dev/null 2>&1; then
         echo -e "${GREEN}✓ RAS Adapter health check PASSED${NC}"
     else
         echo -e "${YELLOW}⚠️  RAS Adapter health check FAILED (может потребоваться время для запуска)${NC}"
@@ -519,7 +587,7 @@ echo ""
 echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
 
 # Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH="$BIN_DIR/cc1c-batch-service.exe"
+BINARY_PATH=$(get_binary_path "batch-service")
 
 # .env.local уже загружен в начале скрипта
 # BATCH_SERVICE_PORT=8187 is set in .env.local (outside Windows reserved range 8013-8112)
@@ -597,17 +665,17 @@ echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${N
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
-echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC}"
+echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC} (admin / p-123456)"
 echo -e "  API Gateway:      ${GREEN}http://localhost:8180/health${NC}"
 echo -e "  Orchestrator:"
-echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC}"
+echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC} (admin / p-123456)"
 echo -e "    API Docs:       ${GREEN}http://localhost:8200/api/docs${NC}"
 echo -e "  RAS Adapter:      ${GREEN}http://localhost:8188/health${NC}"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8187/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
-echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin/admin)"
+echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin / admin)"
 echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
 echo -e "  A/B Dashboard:    ${GREEN}http://localhost:5000/d/ab-testing-event-driven${NC}"
 echo ""

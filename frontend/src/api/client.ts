@@ -68,7 +68,7 @@ async function refreshAccessToken(): Promise<string | null> {
       localStorage.setItem('refresh_token', refresh)
     }
     return access
-  } catch (error) {
+  } catch (_error) {
     // Refresh failed - clear tokens and redirect to login
     localStorage.removeItem('auth_token')
     localStorage.removeItem('refresh_token')

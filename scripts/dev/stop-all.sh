@@ -11,14 +11,12 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PIDS_DIR="$PROJECT_ROOT/pids"
+# Source unified library
+source "$PROJECT_ROOT/scripts/lib/init.sh"
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Константы проекта
+PIDS_DIR="$PROJECT_ROOT/pids"
+LOGS_DIR="$PROJECT_ROOT/logs"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Stopping Services  ${NC}"
@@ -95,7 +93,18 @@ stop_service "batch-service"
 stop_service "ras-adapter"
 
 # 8. RAS (1C Remote Administration Server)
-stop_service "ras"
+echo -e "${BLUE}Остановка RAS (1C Remote Administration Server)...${NC}"
+if is_wsl; then
+    # WSL: RAS запущен как Windows процесс, останавливаем через PowerShell
+    if powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; then
+        echo -e "${GREEN}✓ RAS остановлен (Windows процесс)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  RAS: процесс не найден или уже остановлен${NC}"
+    fi
+else
+    # Native Windows: используем стандартную остановку по PID
+    stop_service "ras"
+fi
 
 # 7. Go Worker
 stop_service "worker"
@@ -115,29 +124,27 @@ stop_service "orchestrator"
 echo ""
 
 ##############################################################################
-# Остановка Docker сервисов (Infrastructure)
+# Остановка Docker сервисов (Infrastructure + Monitoring)
 ##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis)...${NC}"
+echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
 
+# Единое имя проекта (должно совпадать с start-all.sh)
+COMPOSE_PROJECT="cc1c-local"
+
+# Собрать список compose файлов
+COMPOSE_FILES=""
 if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
-    docker-compose -f docker-compose.local.yml down
-    echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
-else
-    echo -e "${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
+    COMPOSE_FILES="-f docker-compose.local.yml"
+fi
+if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
 fi
 
-echo ""
-
-##############################################################################
-# Остановка Docker сервисов (Monitoring & Observability)
-##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (Prometheus, Grafana, Jaeger)...${NC}"
-
-if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    docker-compose -f docker-compose.local.monitoring.yml down
-    echo -e "${GREEN}✓ Мониторинг и tracing остановлены${NC}"
+if [ -n "$COMPOSE_FILES" ]; then
+    docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES down
+    echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
 else
-    echo -e "${YELLOW}⚠️  docker-compose.local.monitoring.yml не найден${NC}"
+    echo -e "${YELLOW}⚠️  docker-compose файлы не найдены${NC}"
 fi
 
 echo ""
@@ -147,25 +154,27 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}Проверка остаточных процессов...${NC}"
 
-# Поиск процессов по портам
+# Поиск процессов по портам (используем кросс-платформенную функцию из common-functions.sh)
 check_and_kill_port() {
     local port=$1
     local service_name=$2
 
-    # Windows (GitBash)
-    local pid=$(netstat -ano 2>/dev/null | grep ":$port" | grep LISTENING | awk '{print $5}' | head -1)
-
-    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-        echo -e "${YELLOW}⚠️  Найден процесс на порту $port ($service_name), PID: $pid${NC}"
-        taskkill //PID "$pid" //F 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
-        echo -e "${GREEN}✓ Процесс на порту $port остановлен${NC}"
-    fi
+    # Используем кросс-платформенную функцию
+    kill_process_on_port "$port" "$service_name" || true
 }
 
 check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "RAS Adapter / Cluster Service"
-check_and_kill_port 1545 "RAS"
+# RAS (1545) - в WSL это Windows процесс
+if check_port_listening 1545; then
+    echo -e "${YELLOW}   Порт 1545 (RAS) все еще занят, принудительная остановка...${NC}"
+    if is_wsl; then
+        powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
+    else
+        check_and_kill_port 1545 "RAS"
+    fi
+fi
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"
 

@@ -13,7 +13,7 @@ export const InstallationStatusTable: React.FC = () => {
   const [filter, setFilter] = useState<string>('all')
   const [searchText, setSearchText] = useState('')
   const [modalVisible, setModalVisible] = useState(false)
-  const [selectedDatabase, setSelectedDatabase] = useState<{ id: number; name: string } | null>(null)
+  const [selectedDatabase, setSelectedDatabase] = useState<{ id: string; name: string } | null>(null)
   const [form] = Form.useForm()
 
   const fetchInstallations = async () => {
@@ -34,7 +34,7 @@ export const InstallationStatusTable: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const handleRetry = async (databaseId: number) => {
+  const handleRetry = async (databaseId: string) => {
     try {
       await installationApi.retryInstallation(databaseId)
       message.success('Installation retry started')
@@ -45,7 +45,7 @@ export const InstallationStatusTable: React.FC = () => {
     }
   }
 
-  const handleInstallSingle = async (databaseId: number, databaseName: string) => {
+  const handleInstallSingle = async (databaseId: string, databaseName: string) => {
     setSelectedDatabase({ id: databaseId, name: databaseName })
     setModalVisible(true)
   }

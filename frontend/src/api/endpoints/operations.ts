@@ -57,26 +57,43 @@ export interface Operation {
   updated_at: string
 }
 
-interface PaginatedResponse<T> {
+// API v2 response format
+interface ListOperationsResponse {
+  operations: BatchOperation[]
   count: number
-  next: string | null
-  previous: string | null
-  results: T[]
+  total: number
+}
+
+interface GetOperationResponse {
+  operation: BatchOperation
+  tasks?: Task[]
+  progress: {
+    total: number
+    completed: number
+    failed: number
+    pending: number
+    processing: number
+    percent: number
+  }
 }
 
 export const operationsApi = {
+  // API v2 action-based endpoints
   list: async (params?: Record<string, any>): Promise<BatchOperation[]> => {
-    const response = await apiClient.get<PaginatedResponse<BatchOperation>>('/operations/', { params })
-    return response.data.results  // Extract results from paginated response
+    const response = await apiClient.get<ListOperationsResponse>('/operations/list-operations/', { params })
+    return response.data.operations
   },
 
   get: async (id: string): Promise<BatchOperation> => {
-    const response = await apiClient.get<BatchOperation>(`/operations/${id}/`)
-    return response.data
+    const response = await apiClient.get<GetOperationResponse>('/operations/get-operation/', { params: { operation_id: id } })
+    return response.data.operation
   },
 
-  cancel: async (id: string): Promise<{ status: string }> => {
-    const response = await apiClient.post<{ status: string }>(`/operations/${id}/cancel/`)
+  cancel: async (id: string): Promise<{ cancelled: boolean; message: string }> => {
+    const response = await apiClient.post<{ operation_id: string; cancelled: boolean; message: string }>(
+      '/operations/cancel-operation/',
+      { operation_id: id }
+    )
     return response.data
   }
 }

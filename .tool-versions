@@ -1,0 +1,16 @@
+# CommandCenter1C - Required Tool Versions
+# Этот файл является единым источником правды для версий инструментов разработки.
+# Используется скриптами установки (scripts/setup/install.sh)
+# Совместим с asdf (https://asdf-vm.com) и mise (https://mise.jdx.dev)
+#
+# Формат: tool_name version
+#
+# Обновление:
+#   - Go: синхронизировать с go-services/*/go.mod
+#   - Python: синхронизировать с Django версией в orchestrator/requirements.txt
+#   - Node.js: синхронизировать с Vite версией в frontend/package.json
+
+go 1.24.0
+python 3.11
+nodejs 20
+java temurin-17.0.17+10

@@ -1,8 +1,11 @@
 #!/bin/bash
 # Create Django migrations for Sprint 1.2
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 echo "Creating migrations for databases app..."
-cd orchestrator
+cd "$PROJECT_ROOT/orchestrator"
 python manage.py makemigrations databases
 
 echo ""
