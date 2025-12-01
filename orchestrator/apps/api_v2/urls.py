@@ -46,6 +46,7 @@ urlpatterns = [
     path('clusters/update-cluster/', clusters.update_cluster, name='update-cluster'),
     path('clusters/delete-cluster/', clusters.delete_cluster, name='delete-cluster'),
     path('clusters/get-cluster-databases/', clusters.get_cluster_databases, name='get-cluster-databases'),
+    path('clusters/reset-sync-status/', clusters.reset_sync_status, name='reset-sync-status'),
 
     # ========================================================================
     # Operations

@@ -1,0 +1,68 @@
+# Prometheus configuration for native mode (without Docker)
+# Use this when running services directly on host with USE_DOCKER=false
+#
+# Installation (Arch Linux):
+#   pacman -S prometheus
+#   sudo cp prometheus-native.yml /etc/prometheus/prometheus.yml
+#   sudo systemctl enable prometheus
+#   sudo systemctl start prometheus
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'commandcenter1c'
+    environment: 'development'
+
+rule_files:
+  - "recording_rules.yml"
+
+scrape_configs:
+  # Application services running on localhost (native mode)
+  # All services are on localhost, no Docker networking required
+
+  # API Gateway (Go) - port 8180
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['localhost:8180']
+    metrics_path: '/metrics'
+
+  # Worker (Go) - port 9091 (metrics endpoint)
+  - job_name: 'worker'
+    static_configs:
+      - targets: ['localhost:9091']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # RAS Adapter (Go) - port 8188
+  # Uncomment when RAS Adapter exports /metrics
+  # - job_name: 'ras-adapter'
+  #   static_configs:
+  #     - targets: ['localhost:8188']
+  #   metrics_path: '/metrics'
+
+  # Orchestrator (Django) - requires django-prometheus middleware
+  # Uncomment when Django exports metrics
+  # - job_name: 'orchestrator'
+  #   static_configs:
+  #     - targets: ['localhost:8200']
+  #   metrics_path: '/metrics'
+
+  # PostgreSQL exporter (if installed)
+  # Installation: pacman -S prometheus-postgres-exporter
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['localhost:9187']
+
+  # Redis exporter (if installed)
+  # Installation: pacman -S prometheus-redis-exporter
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['localhost:9121']
+
+  # Node exporter for system metrics (optional)
+  # Installation: pacman -S prometheus-node-exporter
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['localhost:9100']

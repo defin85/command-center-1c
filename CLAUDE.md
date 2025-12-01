@@ -6,10 +6,10 @@
 
 ## 🚨 КРИТИЧНО
 
-**Дата обновления:** 2025-11-27
+**Дата обновления:** 2025-12-01
 **Текущая фаза:** Phase 1, Week 2.5-3 (Core Functionality)
 **Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ (~25% готово) - Task Queue & Worker Integration
-**Режим разработки:** Hybrid (Infrastructure в Docker, Application на хосте)
+**Режим разработки:** Native WSL (USE_DOCKER=false в .env.local)
 **Roadmap:** Balanced Approach (14-16 недель) - [docs/ROADMAP.md](docs/ROADMAP.md)
 
 **API Version:** v2 (action-based) - см. [API_V2_UNIFICATION_ROADMAP.md](docs/roadmaps/API_V2_UNIFICATION_ROADMAP.md)
@@ -79,9 +79,17 @@ cd /c/1CProject/command-center-1c
 - Orchestrator API: http://localhost:8200/api/docs (Swagger)
 - ras-adapter: http://localhost:8188/health
 - batch-service: http://localhost:8187/health
-- Grafana: http://localhost:5000 (admin/admin)
-- Prometheus: http://localhost:9090
-- Jaeger: http://localhost:16686 (OpenTelemetry Tracing)
+- Flower (Celery UI): http://localhost:5555
+
+**Мониторинг (порты зависят от режима):**
+
+| Сервис | Native (systemd) | Docker |
+|--------|------------------|--------|
+| Prometheus | http://localhost:9090 | http://localhost:9090 |
+| Grafana | http://localhost:3000 | http://localhost:5000 |
+| Jaeger | требует установки | http://localhost:16686 |
+
+> **Note:** Режим определяется переменной `USE_DOCKER` в `.env.local`
 
 ---
 
@@ -240,7 +248,7 @@ command-center-1c/
 | **Frontend** | TypeScript | React 18.2 + Ant Design | 5173 |
 
 **Data:** PostgreSQL 15 (5432), Redis 7 (6379), ClickHouse (8123, 9000)
-**Monitoring:** Prometheus (9090), Grafana (3001)
+**Monitoring:** Prometheus (9090), Grafana (3000 native / 5000 docker), Jaeger (16686 docker only)
 
 ---
 
@@ -270,19 +278,23 @@ command-center-1c/
 ## 🔧 ПЕРВОНАЧАЛЬНАЯ НАСТРОЙКА
 
 **Prerequisites:**
-- Docker 20.10+, Docker Compose 2.0+
 - Python 3.11+, Go 1.21+, Node.js 18+
+- **Native режим (WSL):** PostgreSQL, Redis через systemd (pacman -S postgresql redis)
+- **Docker режим:** Docker 20.10+, Docker Compose 2.0+
 
 **Setup:**
 ```bash
 git clone <repo>
 cd command-center-1c
 cp .env.local.example .env.local
-# Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
+# Отредактировать .env.local:
+#   DB_HOST=localhost, REDIS_HOST=localhost
+#   USE_DOCKER=false  # для Native режима (WSL/Linux)
+#   USE_DOCKER=true   # для Docker режима
 
 # Python
 cd orchestrator && python -m venv venv
-source venv/Scripts/activate && pip install -r requirements.txt && cd ..
+source venv/bin/activate && pip install -r requirements.txt && cd ..
 
 # Node.js
 cd frontend && npm install && cd ..
@@ -292,6 +304,17 @@ cd go-services/api-gateway && go mod download && cd ../..
 
 # Start all
 ./scripts/dev/start-all.sh
+```
+
+**Native режим (WSL/Arch Linux):**
+```bash
+# Установка и включение сервисов
+sudo pacman -S postgresql redis prometheus grafana
+sudo systemctl enable --now postgresql redis
+
+# Мониторинг (опционально)
+sudo systemctl enable --now prometheus grafana
+# Jaeger: yay -S jaeger (из AUR) или скачать бинарник
 ```
 
 ---
@@ -324,10 +347,22 @@ cd frontend && npm test
 
 **Распространенные проблемы:**
 
-1. **Windows Firewall спрашивает разрешение** → используй `./scripts/dev/start-all.sh` (собирает бинарники)
-2. **Сервисы не запускаются** → проверь Docker контейнеры: `docker ps`, затем `./scripts/dev/logs.sh <service>`
-3. **Database connection error** → проверь `.env.local` (DB_HOST=localhost), затем `docker exec -it postgres pg_isready`
-4. **Redis connection error** → проверь `.env.local` (REDIS_HOST=localhost), затем `docker exec -it redis redis-cli ping`
+1. **Database connection error:**
+   - Native: `systemctl status postgresql`, `pg_isready -h localhost`
+   - Docker: `docker ps`, `docker exec -it postgres pg_isready`
+
+2. **Redis connection error:**
+   - Native: `systemctl status redis`, `redis-cli ping`
+   - Docker: `docker exec -it redis redis-cli ping`
+
+3. **Grafana/Jaeger показывает connection_refused на System Status:**
+   - Native режим: Grafana на порту **3000** (не 5000!), Jaeger требует отдельной установки
+   - Проверь: `systemctl status grafana prometheus`
+   - Установка Jaeger: `yay -S jaeger` или скачать с GitHub
+
+4. **Мониторинг не запускается:**
+   - `./scripts/dev/start-monitoring.sh` - запуск в зависимости от режима
+   - Native: проверь `systemctl status prometheus grafana`
 
 **Полный troubleshooting:** [LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md#troubleshooting)
 
@@ -387,8 +422,15 @@ Skill: cc1c-devops → автоматическая диагностика и п
 
 ---
 
-**Версия:** 3.0
-**Последнее обновление:** 2025-11-20
+**Версия:** 3.1
+**Последнее обновление:** 2025-12-01
+
+**Изменения v3.1:**
+- Обновлена документация для Native WSL режима (USE_DOCKER=false)
+- Добавлена таблица портов мониторинга для Native vs Docker режимов
+- Grafana: 3000 (native) vs 5000 (docker)
+- Jaeger: требует отдельной установки в native режиме
+- Обновлён troubleshooting для dual-mode setup
 
 **Изменения v3.0:**
 - Радикальное сокращение: 12.5k → ~4.5k токенов (65% reduction)

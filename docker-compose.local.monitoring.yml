@@ -13,6 +13,9 @@ services:
     image: prom/prometheus:latest
     container_name: cc1c-prometheus-local
     restart: unless-stopped
+    extra_hosts:
+      # WSL2: хост доступен через gateway IP
+      - "host.docker.internal:172.20.16.1"
     ports:
       - "9090:9090"
     volumes:

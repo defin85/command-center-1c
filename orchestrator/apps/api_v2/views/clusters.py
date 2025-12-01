@@ -517,6 +517,101 @@ def delete_cluster(request):
     })
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def reset_sync_status(request):
+    """
+    POST /api/v2/clusters/reset-sync-status/?cluster_id=X
+
+    Reset sync status for a stuck cluster (pending -> idle).
+
+    Query Parameters:
+        - cluster_id: Cluster UUID (optional, resets specific cluster)
+
+    Request Body (optional):
+        {
+            "cluster_id": "uuid",  // optional, reset specific cluster
+            "all": false  // optional, reset all stuck clusters
+        }
+
+    Response (200):
+        {
+            "message": "Sync status reset successfully",
+            "reset_count": 1,
+            "clusters": [
+                {"id": "uuid", "name": "cluster-name", "old_status": "pending"}
+            ]
+        }
+
+    Errors:
+        404 - Cluster not found (when cluster_id specified)
+    """
+    cluster_id = request.query_params.get('cluster_id') or request.data.get('cluster_id')
+    reset_all = request.data.get('all', False)
+
+    reset_clusters = []
+
+    if cluster_id:
+        # Reset specific cluster
+        try:
+            cluster = Cluster.objects.get(id=cluster_id)
+        except Cluster.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'CLUSTER_NOT_FOUND',
+                    'message': 'Cluster not found'
+                }
+            }, status=404)
+
+        old_status = cluster.last_sync_status
+        if old_status != 'idle':
+            cluster.last_sync_status = 'idle'
+            cluster.last_sync_error = None
+            cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
+            reset_clusters.append({
+                'id': str(cluster.id),
+                'name': cluster.name,
+                'old_status': old_status
+            })
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+
+    elif reset_all:
+        # Reset all non-idle clusters
+        clusters = Cluster.objects.exclude(last_sync_status='idle')
+        for cluster in clusters:
+            old_status = cluster.last_sync_status
+            cluster.last_sync_status = 'idle'
+            cluster.last_sync_error = None
+            cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
+            reset_clusters.append({
+                'id': str(cluster.id),
+                'name': cluster.name,
+                'old_status': old_status
+            })
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+
+    else:
+        # Reset only stuck clusters (pending status)
+        stuck_clusters = Cluster.objects.filter(last_sync_status='pending')
+        for cluster in stuck_clusters:
+            cluster.last_sync_status = 'idle'
+            cluster.last_sync_error = None
+            cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
+            reset_clusters.append({
+                'id': str(cluster.id),
+                'name': cluster.name,
+                'old_status': 'pending'
+            })
+            logger.info(f"Reset sync status for cluster {cluster.name}: pending -> idle")
+
+    return Response({
+        'message': 'Sync status reset successfully' if reset_clusters else 'No clusters to reset',
+        'reset_count': len(reset_clusters),
+        'clusters': reset_clusters
+    })
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_cluster_databases(request):

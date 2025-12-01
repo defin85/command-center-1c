@@ -43,6 +43,11 @@ class Cluster(models.Model):
         default="localhost:1545",
         help_text="RAS server address (host:port)"
     )
+    ras_cluster_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="UUID кластера в RAS (заполняется при первой успешной синхронизации)"
+    )
 
     # Installation Service
     cluster_service_url = models.URLField(

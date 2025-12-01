@@ -551,5 +551,332 @@ get_mise_config_dir() {
 }
 
 ##############################################################################
+# SYSTEMD SERVICE UTILITIES (for native infrastructure)
+##############################################################################
+
+# check_systemd_service - проверка статуса systemd сервиса
+# Usage: if check_systemd_service "postgresql"; then echo "running"; fi
+# Returns: 0 if active, 1 otherwise
+check_systemd_service() {
+    local service=$1
+    systemctl is-active --quiet "$service" 2>/dev/null
+}
+
+# start_systemd_service - запуск systemd сервиса
+# Usage: start_systemd_service "postgresql"
+# Returns: 0 on success, 1 on failure
+start_systemd_service() {
+    local service=$1
+
+    if check_systemd_service "$service"; then
+        log_verbose "Сервис $service уже запущен"
+        return 0
+    fi
+
+    log_info "Запуск сервиса $service..."
+    if sudo systemctl start "$service"; then
+        log_success "$service запущен"
+        return 0
+    else
+        log_error "Не удалось запустить $service"
+        return 1
+    fi
+}
+
+# stop_systemd_service - остановка systemd сервиса
+# Usage: stop_systemd_service "postgresql"
+# Returns: 0 on success, 1 on failure
+stop_systemd_service() {
+    local service=$1
+
+    if ! check_systemd_service "$service"; then
+        log_verbose "Сервис $service уже остановлен"
+        return 0
+    fi
+
+    log_info "Остановка сервиса $service..."
+    if sudo systemctl stop "$service"; then
+        log_success "$service остановлен"
+        return 0
+    else
+        log_error "Не удалось остановить $service"
+        return 1
+    fi
+}
+
+# enable_systemd_service - включение автозапуска systemd сервиса
+# Usage: enable_systemd_service "postgresql"
+enable_systemd_service() {
+    local service=$1
+
+    if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+        log_verbose "Сервис $service уже включен в автозапуск"
+        return 0
+    fi
+
+    log_info "Включение автозапуска $service..."
+    sudo systemctl enable "$service"
+}
+
+##############################################################################
+# NATIVE INFRASTRUCTURE UTILITIES
+##############################################################################
+
+# wait_for_postgres_native - ожидание готовности PostgreSQL (нативный)
+# Usage: wait_for_postgres_native 30
+# Returns: 0 when ready, 1 on timeout
+wait_for_postgres_native() {
+    local timeout=${1:-30}
+    local elapsed=0
+    local interval=1
+
+    log_info "Ожидание готовности PostgreSQL (native)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        # Пробуем pg_isready локально
+        if pg_isready -h localhost -p "${DB_PORT:-5432}" -U "${DB_USER:-commandcenter}" &>/dev/null; then
+            log_success "PostgreSQL готов"
+            return 0
+        fi
+
+        sleep "$interval"
+        ((elapsed+=interval))
+    done
+
+    log_error "PostgreSQL не готов за ${timeout}с"
+    return 1
+}
+
+# wait_for_redis_native - ожидание готовности Redis (нативный)
+# Usage: wait_for_redis_native 30
+# Returns: 0 when ready, 1 on timeout
+wait_for_redis_native() {
+    local timeout=${1:-30}
+    local elapsed=0
+    local interval=1
+
+    log_info "Ожидание готовности Redis (native)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        # Пробуем redis-cli ping
+        if redis-cli -h localhost -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q "PONG"; then
+            log_success "Redis готов"
+            return 0
+        fi
+
+        sleep "$interval"
+        ((elapsed+=interval))
+    done
+
+    log_error "Redis не готов за ${timeout}с"
+    return 1
+}
+
+# start_native_infrastructure - запуск нативной инфраструктуры (PostgreSQL, Redis)
+# Usage: start_native_infrastructure
+# Returns: 0 on success, 1 on failure
+start_native_infrastructure() {
+    log_step "Запуск нативной инфраструктуры (PostgreSQL, Redis)..."
+
+    local success=true
+
+    # PostgreSQL
+    if ! start_systemd_service "postgresql"; then
+        success=false
+    fi
+
+    # Redis
+    if ! start_systemd_service "redis"; then
+        success=false
+    fi
+
+    # Ожидание готовности
+    if [[ "$success" == "true" ]]; then
+        if ! wait_for_postgres_native 30; then
+            success=false
+        fi
+
+        if ! wait_for_redis_native 30; then
+            success=false
+        fi
+    fi
+
+    if [[ "$success" == "true" ]]; then
+        log_success "Нативная инфраструктура запущена"
+        return 0
+    else
+        log_error "Ошибка запуска нативной инфраструктуры"
+        return 1
+    fi
+}
+
+# stop_native_infrastructure - остановка нативной инфраструктуры
+# Usage: stop_native_infrastructure
+stop_native_infrastructure() {
+    log_step "Остановка нативной инфраструктуры..."
+
+    stop_systemd_service "redis"
+    stop_systemd_service "postgresql"
+
+    log_success "Нативная инфраструктура остановлена"
+}
+
+# check_native_infrastructure_health - проверка состояния нативной инфраструктуры
+# Usage: check_native_infrastructure_health
+# Returns: 0 if all healthy, 1 otherwise
+check_native_infrastructure_health() {
+    local healthy=true
+
+    # PostgreSQL
+    if check_systemd_service "postgresql"; then
+        if pg_isready -h localhost -p "${DB_PORT:-5432}" -U "${DB_USER:-commandcenter}" &>/dev/null; then
+            print_status "success" "PostgreSQL: запущен и готов"
+        else
+            print_status "warning" "PostgreSQL: запущен, но не готов"
+            healthy=false
+        fi
+    else
+        print_status "error" "PostgreSQL: не запущен"
+        healthy=false
+    fi
+
+    # Redis
+    if check_systemd_service "redis"; then
+        if redis-cli -h localhost -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q "PONG"; then
+            print_status "success" "Redis: запущен и готов"
+        else
+            print_status "warning" "Redis: запущен, но не готов"
+            healthy=false
+        fi
+    else
+        print_status "error" "Redis: не запущен"
+        healthy=false
+    fi
+
+    [[ "$healthy" == "true" ]]
+}
+
+##############################################################################
+# NATIVE MONITORING UTILITIES
+##############################################################################
+
+# start_native_monitoring - запуск мониторинга в нативном режиме
+# Usage: start_native_monitoring
+# Returns: 0 on success, 1 on failure
+# Note: Prometheus и Grafana запускаются как systemd сервисы
+start_native_monitoring() {
+    log_step "Запуск нативного мониторинга (Prometheus, Grafana)..."
+
+    local success=true
+
+    # Prometheus
+    if command -v prometheus &>/dev/null; then
+        if ! start_systemd_service "prometheus"; then
+            log_warning "Prometheus не удалось запустить как сервис"
+            success=false
+        fi
+    else
+        log_warning "Prometheus не установлен (pacman -S prometheus)"
+        success=false
+    fi
+
+    # Grafana
+    if command -v grafana &>/dev/null || command -v grafana-server &>/dev/null; then
+        if ! start_systemd_service "grafana"; then
+            log_warning "Grafana не удалось запустить как сервис"
+            success=false
+        fi
+    else
+        log_warning "Grafana не установлен (pacman -S grafana)"
+        success=false
+    fi
+
+    # Jaeger (опционально)
+    if command -v jaeger-all-in-one &>/dev/null; then
+        if ! start_systemd_service "jaeger"; then
+            log_warning "Jaeger не удалось запустить (это не критично)"
+        fi
+    else
+        log_warning "Jaeger не установлен (опционально)"
+    fi
+
+    if [[ "$success" == "true" ]]; then
+        log_success "Нативный мониторинг запущен"
+        return 0
+    else
+        log_warning "Мониторинг частично запущен (см. предупреждения выше)"
+        return 1
+    fi
+}
+
+# stop_native_monitoring - остановка нативного мониторинга
+# Usage: stop_native_monitoring
+stop_native_monitoring() {
+    log_step "Остановка нативного мониторинга..."
+
+    # Остановка в обратном порядке
+    stop_systemd_service "jaeger" 2>/dev/null || true
+    stop_systemd_service "grafana"
+    stop_systemd_service "prometheus"
+
+    log_success "Нативный мониторинг остановлен"
+}
+
+# check_native_monitoring_health - проверка состояния нативного мониторинга
+# Usage: check_native_monitoring_health
+check_native_monitoring_health() {
+    # Prometheus
+    if check_systemd_service "prometheus"; then
+        if check_health_endpoint "http://localhost:9090/-/healthy" 2; then
+            print_status "success" "Prometheus: запущен (http://localhost:9090)"
+        else
+            print_status "warning" "Prometheus: запущен, но не отвечает"
+        fi
+    else
+        print_status "warning" "Prometheus: не запущен (systemctl start prometheus)"
+    fi
+
+    # Grafana
+    if check_systemd_service "grafana"; then
+        if check_health_endpoint "http://localhost:3000/api/health" 2; then
+            print_status "success" "Grafana: запущен (http://localhost:3000, admin/admin)"
+        else
+            print_status "warning" "Grafana: запущен, но не отвечает"
+        fi
+    else
+        print_status "warning" "Grafana: не запущен (systemctl start grafana)"
+    fi
+
+    # Jaeger
+    if check_systemd_service "jaeger"; then
+        if check_health_endpoint "http://localhost:16686/" 2; then
+            print_status "success" "Jaeger: запущен (http://localhost:16686)"
+        else
+            print_status "warning" "Jaeger: запущен, но не отвечает"
+        fi
+    else
+        print_status "warning" "Jaeger: не запущен (опционально)"
+    fi
+}
+
+##############################################################################
+# USE_DOCKER FLAG UTILITIES
+##############################################################################
+
+# is_docker_mode - проверка режима Docker
+# Usage: if is_docker_mode; then ...
+# Note: По умолчанию USE_DOCKER=true (обратная совместимость)
+is_docker_mode() {
+    local use_docker="${USE_DOCKER:-true}"
+    is_true "$use_docker"
+}
+
+# is_native_mode - проверка нативного режима
+# Usage: if is_native_mode; then ...
+is_native_mode() {
+    ! is_docker_mode
+}
+
+##############################################################################
 # End of services.sh
 ##############################################################################

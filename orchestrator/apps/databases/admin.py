@@ -264,6 +264,55 @@ def sync_infobases_action(modeladmin, request, queryset):
         )
 
 
+@admin.action(description='Reset sync status (unlock stuck clusters)')
+def reset_sync_status_action(modeladmin, request, queryset):
+    """
+    Сбросить статус синхронизации для выбранных кластеров.
+
+    Используется когда кластер "застрял" в статусе 'pending'
+    после неудачной синхронизации.
+    """
+    reset_count = 0
+
+    for cluster in queryset:
+        old_status = cluster.last_sync_status
+        if old_status != 'idle':
+            cluster.last_sync_status = 'idle'
+            cluster.last_sync_error = None
+            cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
+            reset_count += 1
+
+            modeladmin.message_user(
+                request,
+                format_html(
+                    '🔓 <strong>{}</strong>: {} → idle',
+                    cluster.name,
+                    old_status
+                ),
+                level=messages.SUCCESS
+            )
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+        else:
+            modeladmin.message_user(
+                request,
+                format_html(
+                    'ℹ️ <strong>{}</strong>: already idle',
+                    cluster.name
+                ),
+                level=messages.INFO
+            )
+
+    if reset_count > 0:
+        modeladmin.message_user(
+            request,
+            format_html(
+                '✅ Reset {} cluster(s)',
+                reset_count
+            ),
+            level=messages.SUCCESS
+        )
+
+
 @admin.register(Cluster)
 class ClusterAdmin(admin.ModelAdmin):
     """Admin для Cluster model."""
@@ -298,7 +347,9 @@ class ClusterAdmin(admin.ModelAdmin):
             'fields': ('name', 'description', 'status')
         }),
         ('RAS Connection', {
-            'fields': ('ras_server', 'cluster_user', 'cluster_pwd')
+            'fields': ('ras_server', 'ras_cluster_uuid', 'cluster_user', 'cluster_pwd'),
+            'description': 'ras_cluster_uuid заполняется автоматически при первой синхронизации. '
+                           'Укажите вручную если на RAS сервере несколько кластеров.'
         }),
         ('Cluster Service', {
             'fields': ('cluster_service_url',)
@@ -328,7 +379,7 @@ class ClusterAdmin(admin.ModelAdmin):
         }),
     )
 
-    actions = [check_cluster_service_status_action, sync_infobases_action]
+    actions = [check_cluster_service_status_action, sync_infobases_action, reset_sync_status_action]
 
     def get_queryset(self, request):
         """Optimize queries with annotate to prevent N+1 queries."""

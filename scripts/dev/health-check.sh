@@ -57,6 +57,7 @@ check_process() {
 check_process "orchestrator"
 check_process "celery-worker"
 check_process "celery-beat"
+check_process "flower"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"
@@ -103,42 +104,58 @@ check_http "Batch Service" "http://localhost:8187/health"
 echo ""
 
 ##############################################################################
-# Проверка Docker сервисов
+# Проверка инфраструктуры (Docker или Native)
 ##############################################################################
-echo -e "${BLUE}[3] Проверка Docker сервисов:${NC}"
+echo -e "${BLUE}[3] Проверка инфраструктуры:${NC}"
 echo ""
 
-if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
-    # PostgreSQL
-    if docker-compose -f docker-compose.local.yml ps postgres 2>/dev/null | grep -q "Up"; then
-        if docker-compose -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
-            echo -e "  PostgreSQL: ${GREEN}✓ запущен и готов${NC}"
+# Загрузить переменные окружения для определения режима
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+    set -a
+    source "$PROJECT_ROOT/.env.local"
+    set +a
+fi
+
+if is_docker_mode; then
+    echo -e "  ${CYAN}Режим: Docker${NC}"
+
+    if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
+        # PostgreSQL
+        if docker-compose -f docker-compose.local.yml ps postgres 2>/dev/null | grep -q "Up"; then
+            if docker-compose -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
+                echo -e "  PostgreSQL: ${GREEN}✓ запущен и готов${NC}"
+            else
+                echo -e "  PostgreSQL: ${YELLOW}⚠️  запущен, но не готов${NC}"
+            fi
         else
-            echo -e "  PostgreSQL: ${YELLOW}⚠️  запущен, но не готов${NC}"
+            echo -e "  PostgreSQL: ${RED}✗ не запущен${NC}"
+        fi
+
+        # Redis
+        if docker-compose -f docker-compose.local.yml ps redis 2>/dev/null | grep -q "Up"; then
+            if docker-compose -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null | grep -q "PONG"; then
+                echo -e "  Redis: ${GREEN}✓ запущен и готов${NC}"
+            else
+                echo -e "  Redis: ${YELLOW}⚠️  запущен, но не готов${NC}"
+            fi
+        else
+            echo -e "  Redis: ${RED}✗ не запущен${NC}"
+        fi
+
+        # ClickHouse
+        if docker-compose -f docker-compose.local.yml ps clickhouse 2>/dev/null | grep -q "Up"; then
+            echo -e "  ClickHouse: ${GREEN}✓ запущен${NC}"
+        else
+            echo -e "  ClickHouse: ${YELLOW}⚠️  не запущен (опционально)${NC}"
         fi
     else
-        echo -e "  PostgreSQL: ${RED}✗ не запущен${NC}"
-    fi
-
-    # Redis
-    if docker-compose -f docker-compose.local.yml ps redis 2>/dev/null | grep -q "Up"; then
-        if docker-compose -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null | grep -q "PONG"; then
-            echo -e "  Redis: ${GREEN}✓ запущен и готов${NC}"
-        else
-            echo -e "  Redis: ${YELLOW}⚠️  запущен, но не готов${NC}"
-        fi
-    else
-        echo -e "  Redis: ${RED}✗ не запущен${NC}"
-    fi
-
-    # ClickHouse
-    if docker-compose -f docker-compose.local.yml ps clickhouse 2>/dev/null | grep -q "Up"; then
-        echo -e "  ClickHouse: ${GREEN}✓ запущен${NC}"
-    else
-        echo -e "  ClickHouse: ${YELLOW}⚠️  не запущен (опционально)${NC}"
+        echo -e "  ${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
     fi
 else
-    echo -e "  ${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
+    echo -e "  ${CYAN}Режим: Native (systemd)${NC}"
+
+    # Проверка нативной инфраструктуры
+    check_native_infrastructure_health
 fi
 
 echo ""
@@ -202,41 +219,47 @@ echo ""
 echo -e "${BLUE}[6] Проверка мониторинга (опционально):${NC}"
 echo ""
 
-# Проверка Prometheus
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-prometheus-local"; then
-    if curl --noproxy '*' -sf http://localhost:9090/-/healthy &>/dev/null; then
-        echo -e "  Prometheus: ${GREEN}✓ запущен и готов (http://localhost:9090)${NC}"
-        check_port 9090 "Prometheus" > /dev/null
+if is_docker_mode; then
+    # Docker режим - проверяем контейнеры
+    # Проверка Prometheus
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-prometheus-local"; then
+        if curl --noproxy '*' -sf http://localhost:9090/-/healthy &>/dev/null; then
+            echo -e "  Prometheus: ${GREEN}✓ запущен и готов (http://localhost:9090)${NC}"
+            check_port 9090 "Prometheus" > /dev/null
+        else
+            echo -e "  Prometheus: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        fi
     else
-        echo -e "  Prometheus: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        echo -e "  Prometheus: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
     fi
-else
-    echo -e "  Prometheus: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
-fi
 
-# Проверка Grafana
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-grafana-local"; then
-    if curl --noproxy '*' -sf http://localhost:5000/api/health &>/dev/null; then
-        echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:5000, admin/admin)${NC}"
-        check_port 5000 "Grafana" > /dev/null
+    # Проверка Grafana
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-grafana-local"; then
+        if curl --noproxy '*' -sf http://localhost:5000/api/health &>/dev/null; then
+            echo -e "  Grafana: ${GREEN}✓ запущен и готов (http://localhost:5000, admin/admin)${NC}"
+            check_port 5000 "Grafana" > /dev/null
+        else
+            echo -e "  Grafana: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        fi
     else
-        echo -e "  Grafana: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        echo -e "  Grafana: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
     fi
-else
-    echo -e "  Grafana: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
-fi
 
-# Проверка Jaeger (Distributed Tracing)
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-jaeger-local"; then
-    if curl --noproxy '*' -sf http://localhost:16686/ &>/dev/null; then
-        echo -e "  Jaeger: ${GREEN}✓ запущен и готов (http://localhost:16686)${NC}"
-        check_port 16686 "Jaeger UI" > /dev/null
-        check_port 4317 "OTLP gRPC" > /dev/null
+    # Проверка Jaeger (Distributed Tracing)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cc1c-jaeger-local"; then
+        if curl --noproxy '*' -sf http://localhost:16686/ &>/dev/null; then
+            echo -e "  Jaeger: ${GREEN}✓ запущен и готов (http://localhost:16686)${NC}"
+            check_port 16686 "Jaeger UI" > /dev/null
+            check_port 4317 "OTLP gRPC" > /dev/null
+        else
+            echo -e "  Jaeger: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        fi
     else
-        echo -e "  Jaeger: ${YELLOW}⚠️  запущен, но не отвечает${NC}"
+        echo -e "  Jaeger: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
     fi
 else
-    echo -e "  Jaeger: ${YELLOW}⚠️  не запущен (запустить: ./scripts/dev/start-monitoring.sh)${NC}"
+    # Native режим - проверяем systemd сервисы
+    check_native_monitoring_health
 fi
 
 echo ""
@@ -254,7 +277,7 @@ TOTAL=10
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
+SERVICES=("orchestrator" "celery-worker" "celery-beat" "flower" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

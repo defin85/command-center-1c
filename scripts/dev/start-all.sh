@@ -196,104 +196,127 @@ fi
 echo ""
 
 ##############################################################################
-# Phase 2: Запуск Docker сервисов (PostgreSQL, Redis, ClickHouse)
+# Phase 2: Запуск инфраструктуры (PostgreSQL, Redis) - Docker или Native
 ##############################################################################
-echo -e "${BLUE}[1/12] Запуск Docker сервисов...${NC}"
+echo -e "${BLUE}[1/12] Запуск инфраструктуры...${NC}"
 
-# Проверить docker-compose.local.yml
-if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
-    echo -e "${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
-    echo -e "${YELLOW}   Используйте docker-compose.local.yml для запуска ТОЛЬКО инфраструктурных сервисов${NC}"
-    exit 1
-fi
+# Определить режим запуска (Docker по умолчанию для обратной совместимости)
+if is_docker_mode; then
+    echo -e "${CYAN}   Режим: Docker${NC}"
 
-# Единое имя проекта для всех compose файлов (избегает orphan containers warning)
-COMPOSE_PROJECT="cc1c-local"
-
-# Создать сеть если не существует (нужна для external: true в monitoring compose)
-if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
-    docker network create cc1c-local-network > /dev/null 2>&1
-fi
-
-# Собрать список compose файлов для запуска
-COMPOSE_FILES="-f docker-compose.local.yml"
-if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
-fi
-
-docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES up -d
-
-# Ожидать готовности БД
-echo -e "${YELLOW}   Ожидание готовности PostgreSQL...${NC}"
-for i in {1..30}; do
-    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
-        echo -e "${GREEN}✓ PostgreSQL готов${NC}"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo -e "${RED}✗ PostgreSQL не запустился${NC}"
+    # Проверить docker-compose.local.yml
+    if [ ! -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
+        echo -e "${YELLOW}⚠️  docker-compose.local.yml не найден${NC}"
+        echo -e "${YELLOW}   Используйте docker-compose.local.yml для запуска ТОЛЬКО инфраструктурных сервисов${NC}"
         exit 1
     fi
-    sleep 1
-done
 
-# Ожидать готовности Redis
-echo -e "${YELLOW}   Ожидание готовности Redis...${NC}"
-for i in {1..30}; do
-    if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
-        echo -e "${GREEN}✓ Redis готов${NC}"
-        break
+    # Единое имя проекта для всех compose файлов (избегает orphan containers warning)
+    COMPOSE_PROJECT="cc1c-local"
+
+    # Создать сеть если не существует (нужна для external: true в monitoring compose)
+    if ! docker network inspect cc1c-local-network > /dev/null 2>&1; then
+        docker network create cc1c-local-network > /dev/null 2>&1
     fi
-    if [ $i -eq 30 ]; then
-        echo -e "${RED}✗ Redis не запустился${NC}"
+
+    # Собрать список compose файлов для запуска
+    COMPOSE_FILES="-f docker-compose.local.yml"
+    if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
+    fi
+
+    docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES up -d
+
+    # Ожидать готовности БД
+    echo -e "${YELLOW}   Ожидание готовности PostgreSQL...${NC}"
+    for i in {1..30}; do
+        if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T postgres pg_isready -U commandcenter &>/dev/null; then
+            echo -e "${GREEN}✓ PostgreSQL готов${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}✗ PostgreSQL не запустился${NC}"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    # Ожидать готовности Redis
+    echo -e "${YELLOW}   Ожидание готовности Redis...${NC}"
+    for i in {1..30}; do
+        if docker compose -p "$COMPOSE_PROJECT" -f docker-compose.local.yml exec -T redis redis-cli ping &>/dev/null; then
+            echo -e "${GREEN}✓ Redis готов${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}✗ Redis не запустился${NC}"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)${NC}"
+
+    # Проверка мониторинга (уже запущен выше вместе с infrastructure)
+    if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+        echo -e "${CYAN}   Ожидание готовности мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
+
+        # Функция ожидания сервиса с retry
+        wait_for_monitoring_service() {
+            local name=$1
+            local url=$2
+            local max_attempts=${3:-10}
+            local attempt=1
+
+            while [ $attempt -le $max_attempts ]; do
+                # --noproxy '*' важен для WSL где может быть настроен proxy
+                if curl --noproxy '*' -sf "$url" > /dev/null 2>&1; then
+                    return 0
+                fi
+                sleep 1
+                attempt=$((attempt + 1))
+            done
+            return 1
+        }
+
+        # Проверить Prometheus (до 10 секунд)
+        if wait_for_monitoring_service "Prometheus" "http://localhost:9090/-/healthy" 10; then
+            echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Prometheus не отвечает (проверьте docker logs prometheus)${NC}"
+        fi
+
+        # Проверить Grafana (до 15 секунд - стартует дольше)
+        if wait_for_monitoring_service "Grafana" "http://localhost:5000/api/health" 15; then
+            echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Grafana не отвечает (это не критично)${NC}"
+        fi
+
+        # Проверить Jaeger (до 10 секунд)
+        if wait_for_monitoring_service "Jaeger" "http://localhost:16686/" 10; then
+            echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Jaeger не отвечает (это не критично)${NC}"
+        fi
+    fi
+else
+    # Native mode - использует systemd сервисы
+    echo -e "${CYAN}   Режим: Native (systemd)${NC}"
+
+    # Запуск нативной инфраструктуры (PostgreSQL, Redis через systemd)
+    if ! start_native_infrastructure; then
+        echo -e "${RED}✗ Ошибка запуска нативной инфраструктуры${NC}"
+        echo -e "${YELLOW}Совет: Проверьте что PostgreSQL и Redis установлены:${NC}"
+        echo -e "${YELLOW}  pacman -S postgresql redis${NC}"
+        echo -e "${YELLOW}  sudo systemctl enable postgresql redis${NC}"
         exit 1
     fi
-    sleep 1
-done
 
-echo -e "${GREEN}✓ Docker infrastructure запущена (PostgreSQL, Redis)${NC}"
-
-# Проверка мониторинга (уже запущен выше вместе с infrastructure)
-if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    echo -e "${CYAN}   Ожидание готовности мониторинга (Prometheus, Grafana, Jaeger)...${NC}"
-
-    # Функция ожидания сервиса с retry
-    wait_for_service() {
-        local name=$1
-        local url=$2
-        local max_attempts=${3:-10}
-        local attempt=1
-
-        while [ $attempt -le $max_attempts ]; do
-            # --noproxy '*' важен для WSL где может быть настроен proxy
-            if curl --noproxy '*' -sf "$url" > /dev/null 2>&1; then
-                return 0
-            fi
-            sleep 1
-            attempt=$((attempt + 1))
-        done
-        return 1
-    }
-
-    # Проверить Prometheus (до 10 секунд)
-    if wait_for_service "Prometheus" "http://localhost:9090/-/healthy" 10; then
-        echo -e "${GREEN}✓ Prometheus запущен (http://localhost:9090)${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Prometheus не отвечает (проверьте docker logs prometheus)${NC}"
-    fi
-
-    # Проверить Grafana (до 15 секунд - стартует дольше)
-    if wait_for_service "Grafana" "http://localhost:5000/api/health" 15; then
-        echo -e "${GREEN}✓ Grafana запущен (http://localhost:5000)${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Grafana не отвечает (это не критично)${NC}"
-    fi
-
-    # Проверить Jaeger (до 10 секунд)
-    if wait_for_service "Jaeger" "http://localhost:16686/" 10; then
-        echo -e "${GREEN}✓ Jaeger запущен (http://localhost:16686)${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Jaeger не отвечает (это не критично)${NC}"
+    # Запуск мониторинга (опционально)
+    echo -e "${CYAN}   Запуск нативного мониторинга...${NC}"
+    if ! start_native_monitoring; then
+        echo -e "${YELLOW}⚠️  Мониторинг не полностью запущен (это не критично)${NC}"
     fi
 fi
 
@@ -313,6 +336,25 @@ fi
 
 python manage.py migrate --noinput
 echo -e "${GREEN}✓ Миграции применены${NC}"
+
+# Создание superuser если не существует
+echo -e "${CYAN}   Проверка superuser...${NC}"
+DJANGO_SUPERUSER_USERNAME="${DJANGO_SUPERUSER_USERNAME:-admin}"
+DJANGO_SUPERUSER_EMAIL="${DJANGO_SUPERUSER_EMAIL:-admin@localhost}"
+DJANGO_SUPERUSER_PASSWORD="${DJANGO_SUPERUSER_PASSWORD:-p-123456}"
+
+# Проверяем существование пользователя и создаем если нет
+if python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); exit(0 if User.objects.filter(username='$DJANGO_SUPERUSER_USERNAME').exists() else 1)" 2>/dev/null; then
+    echo -e "${GREEN}✓ Superuser '$DJANGO_SUPERUSER_USERNAME' уже существует${NC}"
+else
+    echo -e "${CYAN}   Создание superuser '$DJANGO_SUPERUSER_USERNAME'...${NC}"
+    DJANGO_SUPERUSER_PASSWORD="$DJANGO_SUPERUSER_PASSWORD" python manage.py createsuperuser --noinput --username "$DJANGO_SUPERUSER_USERNAME" --email "$DJANGO_SUPERUSER_EMAIL" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Superuser '$DJANGO_SUPERUSER_USERNAME' создан (пароль: $DJANGO_SUPERUSER_PASSWORD)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось создать superuser (возможно, уже существует)${NC}"
+    fi
+fi
 
 # Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
 echo -e "${CYAN}   Сборка статических файлов...${NC}"
@@ -412,6 +454,44 @@ else
     exit 1
 fi
 echo ""
+
+##############################################################################
+# Шаг 5.5: Flower (Celery Web UI) - опционально
+##############################################################################
+FLOWER_ENABLED="${FLOWER_ENABLED:-true}"
+FLOWER_PORT="${FLOWER_PORT:-5555}"
+
+if [ "$FLOWER_ENABLED" = "true" ]; then
+    echo -e "${BLUE}[5.5/12] Запуск Flower (Celery UI, port $FLOWER_PORT)...${NC}"
+
+    cd "$PROJECT_ROOT/orchestrator"
+
+    # Остановить предыдущий процесс если есть
+    if [ -f "$PIDS_DIR/flower.pid" ]; then
+        OLD_PID=$(cat "$PIDS_DIR/flower.pid")
+        if kill -0 $OLD_PID 2>/dev/null; then
+            kill $OLD_PID 2>/dev/null
+            sleep 1
+        fi
+        rm -f "$PIDS_DIR/flower.pid"
+    fi
+
+    nohup celery -A config flower --port=$FLOWER_PORT --broker="${CELERY_BROKER_URL:-redis://localhost:6379/0}" > "$LOGS_DIR/flower.log" 2>&1 &
+    FLOWER_PID=$!
+    echo $FLOWER_PID > "$PIDS_DIR/flower.pid"
+
+    sleep 2
+    if kill -0 $FLOWER_PID 2>/dev/null; then
+        echo -e "${GREEN}✓ Flower запущен (PID: $FLOWER_PID, http://localhost:$FLOWER_PORT)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось запустить Flower (не критично)${NC}"
+        # Не выходим - Flower опционален
+    fi
+    echo ""
+else
+    echo -e "${YELLOW}[5.5/12] Flower отключен (FLOWER_ENABLED=false)${NC}"
+    echo ""
+fi
 
 ##############################################################################
 ##############################################################################
@@ -679,10 +759,44 @@ echo -e "  RAS Adapter:      ${GREEN}http://localhost:8188/health${NC}"
 echo -e "  Batch Service:    ${GREEN}http://localhost:8187/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
-echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
-echo -e "  Grafana:          ${GREEN}http://localhost:5000${NC} (admin / admin)"
-echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
-echo -e "  A/B Dashboard:    ${GREEN}http://localhost:5000/d/ab-testing-event-driven${NC}"
+
+# Flower - проверяем PID
+if [ -f "$PIDS_DIR/flower.pid" ] && kill -0 "$(cat "$PIDS_DIR/flower.pid")" 2>/dev/null; then
+    echo -e "  Flower (Celery):  ${GREEN}http://localhost:${FLOWER_PORT:-5555}${NC}"
+else
+    echo -e "  Flower (Celery):  ${YELLOW}не запущен${NC}"
+fi
+
+# Prometheus - проверяем реальный health endpoint
+if curl --noproxy '*' -sf http://localhost:9090/-/healthy &>/dev/null; then
+    echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
+else
+    echo -e "  Prometheus:       ${YELLOW}не запущен${NC}"
+fi
+
+# Grafana - порт зависит от режима (Native: 3000, Docker: 5000)
+if is_docker_mode; then
+    GRAFANA_PORT=5000
+else
+    GRAFANA_PORT=3000
+fi
+if curl --noproxy '*' -sf "http://localhost:${GRAFANA_PORT}/api/health" &>/dev/null; then
+    echo -e "  Grafana:          ${GREEN}http://localhost:${GRAFANA_PORT}${NC} (admin / admin)"
+else
+    echo -e "  Grafana:          ${YELLOW}не запущен (порт ${GRAFANA_PORT})${NC}"
+fi
+
+# Jaeger - проверяем реальный endpoint
+if curl --noproxy '*' -sf http://localhost:16686/ &>/dev/null; then
+    echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
+else
+    if is_docker_mode; then
+        echo -e "  Jaeger UI:        ${YELLOW}не запущен${NC}"
+    else
+        echo -e "  Jaeger UI:        ${YELLOW}не установлен (yay -S jaeger)${NC}"
+    fi
+fi
+
 echo ""
 echo -e "${BLUE}PID файлы:${NC} $PIDS_DIR/"
 echo -e "${BLUE}Логи:${NC} $LOGS_DIR/"

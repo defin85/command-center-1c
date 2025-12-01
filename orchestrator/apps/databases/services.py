@@ -557,11 +557,64 @@ class ClusterService:
                         f"RAS Adapter is not available at {cluster.cluster_service_url}"
                     )
 
-                logger.info("Health check passed, fetching infobases via v2 API")
+                logger.info("Health check passed, resolving RAS cluster UUID")
 
-                # Get infobases using v2 API
+                # If ras_cluster_uuid is already saved, use it directly
+                if cluster.ras_cluster_uuid:
+                    ras_cluster_uuid = str(cluster.ras_cluster_uuid)
+                    logger.info(
+                        f"Using saved RAS cluster UUID: {ras_cluster_uuid}"
+                    )
+                else:
+                    # Need to resolve UUID from RAS - get list of clusters
+                    logger.info("No saved RAS cluster UUID, fetching from RAS")
+                    clusters_response = client.list_clusters(server=cluster.ras_server)
+
+                    if not clusters_response.clusters:
+                        raise ValueError(f"No clusters found on RAS server {cluster.ras_server}")
+
+                    # Find the cluster - use first one if only one exists, otherwise match by name
+                    ras_cluster = None
+                    if len(clusters_response.clusters) == 1:
+                        ras_cluster = clusters_response.clusters[0]
+                        logger.info(
+                            f"Single cluster on RAS server, using: {ras_cluster.name}"
+                        )
+                    else:
+                        # Try to match by name
+                        for c in clusters_response.clusters:
+                            if c.name == cluster.name:
+                                ras_cluster = c
+                                logger.info(
+                                    f"Matched cluster by name: {ras_cluster.name}"
+                                )
+                                break
+
+                        if not ras_cluster:
+                            # Cannot auto-resolve - require manual configuration
+                            available_clusters = [
+                                f"'{c.name}' (uuid={c.uuid})"
+                                for c in clusters_response.clusters
+                            ]
+                            raise ValueError(
+                                f"Cannot auto-match cluster '{cluster.name}' on RAS server. "
+                                f"Multiple clusters available: {', '.join(available_clusters)}. "
+                                f"Please set 'ras_cluster_uuid' field manually in admin panel "
+                                f"to specify which RAS cluster to use."
+                            )
+
+                    ras_cluster_uuid = str(ras_cluster.uuid)
+
+                    # Save the resolved UUID for future syncs
+                    cluster.ras_cluster_uuid = ras_cluster.uuid
+                    cluster.save(update_fields=['ras_cluster_uuid', 'updated_at'])
+                    logger.info(
+                        f"Saved RAS cluster UUID: {ras_cluster_uuid} for cluster {cluster.name}"
+                    )
+
+                # Get infobases using v2 API with correct RAS cluster UUID
                 infobases_response: InfobasesResponse = client.list_infobases(
-                    cluster_id=str(cluster.id)
+                    cluster_id=ras_cluster_uuid
                 )
 
                 logger.info(f"Retrieved {infobases_response.count} infobases from cluster")

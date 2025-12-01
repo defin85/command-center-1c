@@ -9,13 +9,16 @@ rule_files:
   - "recording_rules.yml"
 
 scrape_configs:
-  # Application services running on HOST machine (not in Docker)
-  # Use host.docker.internal to access host from Docker container
+  # Application services running on WSL HOST machine
+  # Use host.docker.internal (mapped to WSL gateway in docker-compose)
+
+  # API Gateway (Go) - порт 8180
   - job_name: 'api-gateway'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['host.docker.internal:8180']
     metrics_path: '/metrics'
 
+  # Worker (Go) - порт 9091 (metrics endpoint)
   - job_name: 'worker'
     static_configs:
       - targets: ['host.docker.internal:9091']
@@ -23,10 +26,19 @@ scrape_configs:
     scrape_interval: 15s
     scrape_timeout: 10s
 
-  - job_name: 'orchestrator'
-    static_configs:
-      - targets: ['host.docker.internal:8000']
-    metrics_path: '/metrics'
+  # RAS Adapter (Go) - порт 8188
+  # Пока отключено - RAS Adapter не экспортирует /metrics
+  # - job_name: 'ras-adapter'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8188']
+  #   metrics_path: '/metrics'
+
+  # Orchestrator (Django) - требует django-prometheus middleware
+  # Пока отключено - Django не экспортирует метрики по умолчанию
+  # - job_name: 'orchestrator'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8200']
+  #   metrics_path: '/metrics'
 
   # Infrastructure services in Docker (these don't have /metrics endpoints by default)
   # Uncomment and configure exporters if needed

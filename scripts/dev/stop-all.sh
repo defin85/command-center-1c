@@ -112,6 +112,9 @@ stop_service "worker"
 # 6. API Gateway
 stop_service "api-gateway"
 
+# 5.5 Flower (Celery UI)
+stop_service "flower"
+
 # 5. Celery Beat
 stop_service "celery-beat"
 
@@ -124,27 +127,47 @@ stop_service "orchestrator"
 echo ""
 
 ##############################################################################
-# Остановка Docker сервисов (Infrastructure + Monitoring)
+# Остановка инфраструктуры (Docker или Native)
 ##############################################################################
-echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
 
-# Единое имя проекта (должно совпадать с start-all.sh)
-COMPOSE_PROJECT="cc1c-local"
-
-# Собрать список compose файлов
-COMPOSE_FILES=""
-if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
-    COMPOSE_FILES="-f docker-compose.local.yml"
-fi
-if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
+# Загрузить переменные окружения для определения режима
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+    set -a
+    source "$PROJECT_ROOT/.env.local"
+    set +a
 fi
 
-if [ -n "$COMPOSE_FILES" ]; then
-    docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES down
-    echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
+if is_docker_mode; then
+    echo -e "${BLUE}Остановка Docker сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
+
+    # Единое имя проекта (должно совпадать с start-all.sh)
+    COMPOSE_PROJECT="cc1c-local"
+
+    # Собрать список compose файлов
+    COMPOSE_FILES=""
+    if [ -f "$PROJECT_ROOT/docker-compose.local.yml" ]; then
+        COMPOSE_FILES="-f docker-compose.local.yml"
+    fi
+    if [ -f "$PROJECT_ROOT/docker-compose.local.monitoring.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.monitoring.yml"
+    fi
+
+    if [ -n "$COMPOSE_FILES" ]; then
+        docker compose -p "$COMPOSE_PROJECT" $COMPOSE_FILES down
+        echo -e "${GREEN}✓ Docker сервисы остановлены${NC}"
+    else
+        echo -e "${YELLOW}⚠️  docker-compose файлы не найдены${NC}"
+    fi
 else
-    echo -e "${YELLOW}⚠️  docker-compose файлы не найдены${NC}"
+    echo -e "${BLUE}Остановка нативных сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
+
+    # Остановка мониторинга
+    stop_native_monitoring
+
+    # Остановка инфраструктуры
+    stop_native_infrastructure
+
+    echo -e "${GREEN}✓ Нативные сервисы остановлены${NC}"
 fi
 
 echo ""
