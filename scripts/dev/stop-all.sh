@@ -166,14 +166,19 @@ check_and_kill_port() {
 check_and_kill_port 5173 "Frontend"
 check_and_kill_port 8087 "Batch Service"
 check_and_kill_port 8088 "RAS Adapter / Cluster Service"
-# RAS (1545) - в WSL это Windows процесс
-if check_port_listening 1545; then
-    echo -e "${YELLOW}   Порт 1545 (RAS) все еще занят, принудительная остановка...${NC}"
-    if is_wsl; then
-        powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
-    else
-        check_and_kill_port 1545 "RAS"
+# RAS - пропускаем если работает как Windows служба (RAS_SKIP_START=true)
+if [ "${RAS_SKIP_START:-false}" != "true" ]; then
+    RAS_CHECK_PORT="${RAS_PORT:-1539}"
+    if check_port_listening "$RAS_CHECK_PORT"; then
+        echo -e "${YELLOW}   Порт $RAS_CHECK_PORT (RAS) все еще занят, принудительная остановка...${NC}"
+        if is_wsl; then
+            powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
+        else
+            check_and_kill_port "$RAS_CHECK_PORT" "RAS"
+        fi
     fi
+else
+    echo -e "${CYAN}   RAS работает как Windows служба, пропускаем остановку${NC}"
 fi
 check_and_kill_port 8080 "API Gateway"
 check_and_kill_port 8000 "Orchestrator"

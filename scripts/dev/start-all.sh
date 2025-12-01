@@ -466,15 +466,20 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[8/12] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
-# Определяем порт ragent (1C Server Agent)
-RAGENT_PORT="${RAGENT_PORT:-1540}"
-RAGENT_HOST="${RAGENT_HOST:-localhost}"
+# Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
+if [ "${RAS_SKIP_START:-false}" = "true" ]; then
+    echo -e "${GREEN}✓ RAS запущен как Windows служба (RAS_SKIP_START=true)${NC}"
+    echo -e "${CYAN}   Используется внешний RAS на порту ${RAS_PORT:-1545}${NC}"
+    echo ""
 
 # Проверить что RAS еще не запущен
-if check_port_listening "${RAS_PORT:-1545}"; then
+elif check_port_listening "${RAS_PORT:-1545}"; then
     echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
     echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
 else
+    # Определяем порт ragent (1C Server Agent)
+    RAGENT_PORT="${RAGENT_PORT:-1540}"
+    RAGENT_HOST="${RAGENT_HOST:-localhost}"
     # Проверить что ragent доступен (порт 1540)
     if ! check_port_listening "$RAGENT_PORT"; then
         echo -e "${YELLOW}⚠️  1C Server Agent (ragent) не найден на порту $RAGENT_PORT${NC}"

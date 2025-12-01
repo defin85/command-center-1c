@@ -10,13 +10,8 @@ INSTALLED_APPS += [
     'django_extensions',
 ]
 
-# Use SQLite for development (easier setup)
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+# Use PostgreSQL from base.py (configured via .env.local)
+# SQLite removed - doesn't support concurrent access from Celery workers
 
 # Отключаем аутентификацию для demo/dev режима (оставляем JWT, но делаем AllowAny)
 REST_FRAMEWORK = {

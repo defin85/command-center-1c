@@ -137,6 +137,13 @@ func main() {
 			zap.String("terminate_channel", eventhandlers.TerminateCommandChannel),
 			zap.String("lock_channel", eventhandlers.LockCommandChannel),
 			zap.String("unlock_channel", eventhandlers.UnlockCommandChannel))
+
+		// Start subscriber router in background
+		go func() {
+			if err := subscriber.Run(context.Background()); err != nil {
+				logger.Error("subscriber router error", zap.Error(err))
+			}
+		}()
 	} else {
 		logger.Info("Redis Pub/Sub disabled, skipping event subscriptions")
 	}

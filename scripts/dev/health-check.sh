@@ -190,7 +190,7 @@ check_port 8180 "API Gateway"
 check_port 8200 "Orchestrator"
 check_port 8188 "RAS Adapter"
 check_port 8187 "Batch Service"
-check_port 1545 "RAS (1C Remote Admin)"
+check_port "${RAS_PORT:-1539}" "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
 
