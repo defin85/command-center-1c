@@ -2,15 +2,8 @@
 Django settings for CommandCenter1C orchestrator.
 Base settings shared across all environments.
 """
-import os
 from pathlib import Path
 import environ
-
-# Configure NO_PROXY for localhost before any requests are made
-# This ensures health checks and internal service calls bypass HTTP proxy
-# See: https://github.com/psf/requests/issues/879
-os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1,::1,host.docker.internal')
-os.environ.setdefault('no_proxy', os.environ.get('NO_PROXY', ''))
 
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
