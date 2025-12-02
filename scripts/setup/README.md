@@ -28,6 +28,7 @@ source ~/.bashrc
 | **Системные пакеты** | git, curl, wget, jq, ripgrep, fd, htop, build-essential |
 | **PostgreSQL 15** | База данных + пользователь `commandcenter` + база `commandcenter` |
 | **Redis 7** | Кеш и очередь задач |
+| **pgAdmin 4** | Web-интерфейс для управления PostgreSQL |
 | **mise** | Менеджер версий для Go/Python/Node.js |
 | **Go 1.24** | Backend сервисы |
 | **Python 3.11** | Django Orchestrator |
@@ -83,7 +84,7 @@ Options:
 
 Устанавливает: git, curl, wget, jq, ripgrep, fd, htop, tree, unzip, zip, openssh, base-devel
 
-### install-infra.sh — PostgreSQL + Redis
+### install-infra.sh — PostgreSQL + Redis + pgAdmin
 
 ```bash
 ./scripts/setup/install-infra.sh [OPTIONS]
@@ -91,8 +92,10 @@ Options:
 Options:
   --only-postgres     Только PostgreSQL
   --only-redis        Только Redis
+  --only-pgadmin      Только pgAdmin
   --skip-postgres     Пропустить PostgreSQL
   --skip-redis        Пропустить Redis
+  --skip-pgadmin      Пропустить pgAdmin
   --dry-run           Показать план
 ```
 
@@ -102,6 +105,11 @@ PostgreSQL:
 - Настройка pg_hba.conf
 - Создание пользователя и базы данных
 - Автозапуск через systemd
+
+pgAdmin 4:
+- Установка пакета pgadmin4
+- Web UI: http://127.0.0.1:5050
+- Запуск: `pgadmin4`
 
 ### install-monitoring.sh — Мониторинг
 
@@ -171,7 +179,7 @@ scripts/setup/
 ├── bootstrap.sh          # Единая точка входа
 ├── install.sh            # mise + Go/Python/Node.js + deps
 ├── install-system.sh     # Системные пакеты
-├── install-infra.sh      # PostgreSQL + Redis
+├── install-infra.sh      # PostgreSQL + Redis + pgAdmin
 ├── install-monitoring.sh # Prometheus, Grafana, Exporters
 ├── install-exporters.sh  # Legacy (используется install-monitoring.sh)
 ├── verify.sh             # Проверка установки
@@ -297,6 +305,7 @@ mise current
 # 5. Откройте в браузере
 # Frontend: http://localhost:5173
 # Admin: http://localhost:8200/admin (admin / p-123456)
+# pgAdmin: http://localhost:5050 (запустите: pgadmin4)
 # Prometheus: http://localhost:9090
 # Grafana: http://localhost:3000 (admin / admin)
 ```
@@ -305,6 +314,7 @@ mise current
 
 - [mise документация](https://mise.jdx.dev)
 - [PostgreSQL](https://www.postgresql.org/docs/)
+- [pgAdmin](https://www.pgadmin.org/docs/)
 - [Redis](https://redis.io/docs/)
 - [Prometheus](https://prometheus.io/docs/)
 - [Grafana](https://grafana.com/docs/)

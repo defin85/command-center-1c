@@ -61,6 +61,7 @@ declare -gA _PKG_MAP=(
     # Базы данных
     ["postgresql"]="postgresql|postgresql|postgresql"
     ["redis"]="redis|redis|redis"
+    ["pgadmin"]="pgadmin4|pgadmin4|pgadmin4"
 
     # Мониторинг
     ["prometheus"]="prometheus|prometheus|prometheus2"

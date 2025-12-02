@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ##############################################################################
-# CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis)
+# CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + pgAdmin)
 ##############################################################################
 #
-# Установка и настройка PostgreSQL и Redis для локальной разработки.
+# Установка и настройка PostgreSQL, Redis и pgAdmin для локальной разработки.
 # Использует библиотеки проекта для кросс-платформенной поддержки.
 #
 # Usage:
@@ -13,8 +13,10 @@
 # Options:
 #   --only-postgres     Установить только PostgreSQL
 #   --only-redis        Установить только Redis
+#   --only-pgadmin      Установить только pgAdmin
 #   --skip-postgres     Пропустить установку PostgreSQL
 #   --skip-redis        Пропустить установку Redis
+#   --skip-pgadmin      Пропустить установку pgAdmin
 #   --dry-run           Показать план без изменений
 #   --verbose, -v       Подробный вывод
 #   --help, -h          Показать справку
@@ -33,6 +35,7 @@
 #   ./scripts/setup/install-infra.sh --dry-run        # Показать план
 #   ./scripts/setup/install-infra.sh --only-postgres  # Только PostgreSQL
 #   ./scripts/setup/install-infra.sh --skip-redis     # Без Redis
+#   ./scripts/setup/install-infra.sh --skip-pgadmin   # Без pgAdmin
 #
 # Version: 1.0.0
 ##############################################################################
@@ -103,16 +106,20 @@ DRY_RUN=false
 VERBOSE=false
 SKIP_POSTGRES=false
 SKIP_REDIS=false
+SKIP_PGADMIN=false
 ONLY_POSTGRES=false
 ONLY_REDIS=false
+ONLY_PGADMIN=false
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --only-postgres)  ONLY_POSTGRES=true; shift ;;
             --only-redis)     ONLY_REDIS=true; shift ;;
+            --only-pgadmin)   ONLY_PGADMIN=true; shift ;;
             --skip-postgres)  SKIP_POSTGRES=true; shift ;;
             --skip-redis)     SKIP_REDIS=true; shift ;;
+            --skip-pgadmin)   SKIP_PGADMIN=true; shift ;;
             --dry-run)        DRY_RUN=true; shift ;;
             --verbose|-v)     VERBOSE=true; export VERBOSE; shift ;;
             --help|-h)        show_help; exit 0 ;;
@@ -139,7 +146,17 @@ validate_flags() {
         exit 1
     fi
 
-    if [[ "$ONLY_POSTGRES" == "true" && "$ONLY_REDIS" == "true" ]]; then
+    if [[ "$ONLY_PGADMIN" == "true" && "$SKIP_PGADMIN" == "true" ]]; then
+        log_error "Конфликтующие флаги: --only-pgadmin и --skip-pgadmin"
+        exit 1
+    fi
+
+    local only_count=0
+    [[ "$ONLY_POSTGRES" == "true" ]] && ((only_count++))
+    [[ "$ONLY_REDIS" == "true" ]] && ((only_count++))
+    [[ "$ONLY_PGADMIN" == "true" ]] && ((only_count++))
+
+    if [[ $only_count -gt 1 ]]; then
         log_error "Можно указать только один --only-X флаг"
         exit 1
     fi
@@ -147,7 +164,7 @@ validate_flags() {
 
 show_help() {
     cat << 'EOF'
-CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis)
+CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + pgAdmin)
 
 Usage:
   ./scripts/setup/install-infra.sh [OPTIONS]
@@ -155,8 +172,10 @@ Usage:
 Options:
   --only-postgres     Установить только PostgreSQL
   --only-redis        Установить только Redis
+  --only-pgadmin      Установить только pgAdmin
   --skip-postgres     Пропустить установку PostgreSQL
   --skip-redis        Пропустить установку Redis
+  --skip-pgadmin      Пропустить установку pgAdmin
   --dry-run           Показать план без изменений
   --verbose, -v       Подробный вывод
   --help, -h          Показать эту справку
@@ -175,6 +194,7 @@ Examples:
   ./scripts/setup/install-infra.sh --dry-run        # Показать план
   ./scripts/setup/install-infra.sh --only-postgres  # Только PostgreSQL
   ./scripts/setup/install-infra.sh --skip-redis     # Без Redis
+  ./scripts/setup/install-infra.sh --skip-pgadmin   # Без pgAdmin
 EOF
 }
 
@@ -183,10 +203,11 @@ should_install() {
     local component=$1
 
     # Если указан --only-X, устанавливаем только его
-    if [[ "$ONLY_POSTGRES" == "true" || "$ONLY_REDIS" == "true" ]]; then
+    if [[ "$ONLY_POSTGRES" == "true" || "$ONLY_REDIS" == "true" || "$ONLY_PGADMIN" == "true" ]]; then
         case $component in
             postgres) [[ "$ONLY_POSTGRES" == "true" ]] ;;
             redis)    [[ "$ONLY_REDIS" == "true" ]] ;;
+            pgadmin)  [[ "$ONLY_PGADMIN" == "true" ]] ;;
             *)        return 1 ;;
         esac
     else
@@ -194,6 +215,7 @@ should_install() {
         case $component in
             postgres) [[ "$SKIP_POSTGRES" != "true" ]] ;;
             redis)    [[ "$SKIP_REDIS" != "true" ]] ;;
+            pgadmin)  [[ "$SKIP_PGADMIN" != "true" ]] ;;
             *)        return 1 ;;
         esac
     fi
@@ -357,6 +379,35 @@ install_redis() {
 }
 
 ##############################################################################
+# PGADMIN INSTALLATION
+##############################################################################
+
+install_pgadmin() {
+    log_step "Установка pgAdmin 4..."
+
+    # 1. Установка пакета
+    if pkg_is_installed "pgadmin4"; then
+        log_info "pgAdmin 4 уже установлен"
+    else
+        if $DRY_RUN; then
+            log_info "[DRY-RUN] Будет установлен пакет: pgadmin4"
+        else
+            log_info "Установка пакета pgadmin4..."
+            pkg_install "pgadmin"
+        fi
+    fi
+
+    # 2. Вывод информации о запуске
+    if ! $DRY_RUN; then
+        log_info "pgAdmin 4 установлен"
+        log_info "Для запуска выполните: pgadmin4"
+        log_info "Web-интерфейс будет доступен по адресу: http://127.0.0.1:5050"
+    fi
+
+    log_success "pgAdmin 4 установлен"
+}
+
+##############################################################################
 # PRINT PLAN (dry-run mode)
 ##############################################################################
 
@@ -383,6 +434,13 @@ print_plan() {
         echo "  - Enable autostart (systemd)"
         echo "  - Start service"
         echo "  - Verify connection (redis-cli ping)"
+        echo ""
+    fi
+
+    if should_install "pgadmin"; then
+        echo "pgAdmin 4:"
+        echo "  - Install package: pgadmin4"
+        echo "  - Web UI: http://127.0.0.1:5050"
         echo ""
     fi
 
@@ -433,6 +491,18 @@ print_report() {
         echo ""
     fi
 
+    if should_install "pgadmin"; then
+        echo "pgAdmin 4:"
+        if command -v pgadmin4 &>/dev/null; then
+            print_status "success" "Установлен"
+        else
+            print_status "warning" "Не установлен"
+        fi
+        echo "  Запуск: pgadmin4"
+        echo "  Web UI: http://127.0.0.1:5050"
+        echo ""
+    fi
+
     echo "Следующие шаги:"
     echo ""
     echo "  1. Проверьте подключение:"
@@ -467,7 +537,7 @@ main() {
     echo ""
 
     # Проверка: нечего устанавливать?
-    if ! should_install "postgres" && ! should_install "redis"; then
+    if ! should_install "postgres" && ! should_install "redis" && ! should_install "pgadmin"; then
         log_warning "Нечего устанавливать (все компоненты пропущены)"
         exit 0
     fi
@@ -487,6 +557,12 @@ main() {
     # Redis
     if should_install "redis"; then
         install_redis
+        echo ""
+    fi
+
+    # pgAdmin
+    if should_install "pgadmin"; then
+        install_pgadmin
         echo ""
     fi
 
