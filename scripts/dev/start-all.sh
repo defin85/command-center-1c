@@ -198,7 +198,11 @@ echo ""
 ##############################################################################
 # Phase 2: Запуск инфраструктуры (PostgreSQL, Redis) - Docker или Native
 ##############################################################################
-echo -e "${BLUE}[1/12] Запуск инфраструктуры...${NC}"
+if is_native_mode; then
+    echo -e "${BLUE}[1/12] Проверка инфраструктуры (systemd)...${NC}"
+else
+    echo -e "${BLUE}[1/12] Запуск инфраструктуры...${NC}"
+fi
 
 # Определить режим запуска (Docker по умолчанию для обратной совместимости)
 if is_docker_mode; then
@@ -304,19 +308,21 @@ else
     # Native mode - использует systemd сервисы
     echo -e "${CYAN}   Режим: Native (systemd)${NC}"
 
-    # Запуск нативной инфраструктуры (PostgreSQL, Redis через systemd)
+    # Проверка/запуск нативной инфраструктуры (PostgreSQL, Redis через systemd)
+    # Если сервисы в автозапуске - только проверяет статус
     if ! start_native_infrastructure; then
-        echo -e "${RED}✗ Ошибка запуска нативной инфраструктуры${NC}"
+        echo -e "${RED}✗ Ошибка проверки нативной инфраструктуры${NC}"
         echo -e "${YELLOW}Совет: Проверьте что PostgreSQL и Redis установлены:${NC}"
         echo -e "${YELLOW}  pacman -S postgresql redis${NC}"
         echo -e "${YELLOW}  sudo systemctl enable postgresql redis${NC}"
         exit 1
     fi
 
-    # Запуск мониторинга (опционально)
-    echo -e "${CYAN}   Запуск нативного мониторинга...${NC}"
+    # Проверка/запуск мониторинга (опционально)
+    # Если сервисы в автозапуске - только проверяет статус
+    echo -e "${CYAN}   Проверка нативного мониторинга...${NC}"
     if ! start_native_monitoring; then
-        echo -e "${YELLOW}⚠️  Мониторинг не полностью запущен (это не критично)${NC}"
+        echo -e "${YELLOW}⚠️  Мониторинг не полностью готов (это не критично)${NC}"
     fi
 fi
 

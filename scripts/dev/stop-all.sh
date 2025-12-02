@@ -159,15 +159,16 @@ if is_docker_mode; then
         echo -e "${YELLOW}⚠️  docker-compose файлы не найдены${NC}"
     fi
 else
-    echo -e "${BLUE}Остановка нативных сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
+    echo -e "${BLUE}Проверка нативных сервисов (PostgreSQL, Redis, Prometheus, Grafana, Jaeger)...${NC}"
 
-    # Остановка мониторинга
+    # Остановка мониторинга (пропускает сервисы с автозапуском)
     stop_native_monitoring
 
-    # Остановка инфраструктуры
+    # Остановка инфраструктуры (пропускает сервисы с автозапуском)
     stop_native_infrastructure
 
-    echo -e "${GREEN}✓ Нативные сервисы остановлены${NC}"
+    echo -e "${GREEN}✓ Нативные сервисы проверены (автозапуск сохранён)${NC}"
+    echo -e "${CYAN}   Для принудительной остановки: ./scripts/dev/infrastructure.sh stop${NC}"
 fi
 
 echo ""

@@ -618,6 +618,14 @@ enable_systemd_service() {
     sudo systemctl enable "$service"
 }
 
+# check_systemd_autostart - проверка включен ли автозапуск сервиса
+# Usage: if check_systemd_autostart "postgresql"; then ...
+# Returns: 0 if enabled, 1 otherwise
+check_systemd_autostart() {
+    local service=$1
+    systemctl is-enabled --quiet "$service" 2>/dev/null
+}
+
 ##############################################################################
 # NATIVE INFRASTRUCTURE UTILITIES
 ##############################################################################
@@ -675,29 +683,58 @@ wait_for_redis_native() {
 # start_native_infrastructure - запуск нативной инфраструктуры (PostgreSQL, Redis)
 # Usage: start_native_infrastructure
 # Returns: 0 on success, 1 on failure
+# Note: Сервисы с автозапуском только проверяются, не запускаются
 start_native_infrastructure() {
     log_step "Запуск нативной инфраструктуры (PostgreSQL, Redis)..."
 
     local success=true
 
     # PostgreSQL
-    if ! start_systemd_service "postgresql"; then
-        success=false
+    if check_systemd_autostart "postgresql"; then
+        if check_systemd_service "postgresql"; then
+            log_info "PostgreSQL: запущен (systemd, автозапуск)"
+        else
+            log_warning "PostgreSQL: не запущен, но в автозапуске - ожидание..."
+            if ! wait_for_postgres_native 30; then
+                log_error "PostgreSQL: не удалось дождаться запуска"
+                success=false
+            fi
+        fi
+    else
+        if ! start_systemd_service "postgresql"; then
+            success=false
+        fi
     fi
 
     # Redis
-    if ! start_systemd_service "redis"; then
-        success=false
-    fi
-
-    # Ожидание готовности
-    if [[ "$success" == "true" ]]; then
-        if ! wait_for_postgres_native 30; then
+    if check_systemd_autostart "redis"; then
+        if check_systemd_service "redis"; then
+            log_info "Redis: запущен (systemd, автозапуск)"
+        else
+            log_warning "Redis: не запущен, но в автозапуске - ожидание..."
+            if ! wait_for_redis_native 30; then
+                log_error "Redis: не удалось дождаться запуска"
+                success=false
+            fi
+        fi
+    else
+        if ! start_systemd_service "redis"; then
             success=false
         fi
+    fi
 
-        if ! wait_for_redis_native 30; then
-            success=false
+    # Ожидание готовности (только для не-автозапуск сервисов, которые мы запустили)
+    if [[ "$success" == "true" ]]; then
+        if ! check_systemd_autostart "postgresql"; then
+            if ! wait_for_postgres_native 30; then
+                success=false
+            fi
+        fi
+
+        if ! check_systemd_autostart "redis"; then
+            if ! wait_for_redis_native 30; then
+                success=false
+            fi
         fi
     fi
 
@@ -712,11 +749,23 @@ start_native_infrastructure() {
 
 # stop_native_infrastructure - остановка нативной инфраструктуры
 # Usage: stop_native_infrastructure
+# Note: Сервисы с автозапуском НЕ останавливаются
 stop_native_infrastructure() {
     log_step "Остановка нативной инфраструктуры..."
 
-    stop_systemd_service "redis"
-    stop_systemd_service "postgresql"
+    # Redis
+    if check_systemd_autostart "redis"; then
+        log_info "Redis: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "redis"
+    fi
+
+    # PostgreSQL
+    if check_systemd_autostart "postgresql"; then
+        log_info "PostgreSQL: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "postgresql"
+    fi
 
     log_success "Нативная инфраструктура остановлена"
 }
@@ -728,28 +777,38 @@ check_native_infrastructure_health() {
     local healthy=true
 
     # PostgreSQL
+    local pg_suffix=""
+    if check_systemd_autostart "postgresql"; then
+        pg_suffix=" (systemd, автозапуск)"
+    fi
+
     if check_systemd_service "postgresql"; then
         if pg_isready -h localhost -p "${DB_PORT:-5432}" -U "${DB_USER:-commandcenter}" &>/dev/null; then
-            print_status "success" "PostgreSQL: запущен и готов"
+            print_status "success" "PostgreSQL: запущен и готов${pg_suffix}"
         else
-            print_status "warning" "PostgreSQL: запущен, но не готов"
+            print_status "warning" "PostgreSQL: запущен, но не готов${pg_suffix}"
             healthy=false
         fi
     else
-        print_status "error" "PostgreSQL: не запущен"
+        print_status "error" "PostgreSQL: не запущен${pg_suffix}"
         healthy=false
     fi
 
     # Redis
+    local redis_suffix=""
+    if check_systemd_autostart "redis"; then
+        redis_suffix=" (systemd, автозапуск)"
+    fi
+
     if check_systemd_service "redis"; then
         if redis-cli -h localhost -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q "PONG"; then
-            print_status "success" "Redis: запущен и готов"
+            print_status "success" "Redis: запущен и готов${redis_suffix}"
         else
-            print_status "warning" "Redis: запущен, но не готов"
+            print_status "warning" "Redis: запущен, но не готов${redis_suffix}"
             healthy=false
         fi
     else
-        print_status "error" "Redis: не запущен"
+        print_status "error" "Redis: не запущен${redis_suffix}"
         healthy=false
     fi
 
@@ -764,6 +823,7 @@ check_native_infrastructure_health() {
 # Usage: start_native_monitoring
 # Returns: 0 on success, 1 on failure
 # Note: Prometheus и Grafana запускаются как systemd сервисы
+# Note: Сервисы с автозапуском только проверяются, не запускаются
 start_native_monitoring() {
     log_step "Запуск нативного мониторинга (Prometheus, Grafana)..."
 
@@ -771,9 +831,22 @@ start_native_monitoring() {
 
     # Prometheus
     if command -v prometheus &>/dev/null; then
-        if ! start_systemd_service "prometheus"; then
-            log_warning "Prometheus не удалось запустить как сервис"
-            success=false
+        if check_systemd_autostart "prometheus"; then
+            if check_systemd_service "prometheus"; then
+                log_info "Prometheus: запущен (systemd, автозапуск)"
+            else
+                log_warning "Prometheus: не запущен, но в автозапуске - ожидание..."
+                sleep 5
+                if ! check_systemd_service "prometheus"; then
+                    log_warning "Prometheus не удалось дождаться запуска"
+                    success=false
+                fi
+            fi
+        else
+            if ! start_systemd_service "prometheus"; then
+                log_warning "Prometheus не удалось запустить как сервис"
+                success=false
+            fi
         fi
     else
         log_warning "Prometheus не установлен (pacman -S prometheus)"
@@ -782,9 +855,22 @@ start_native_monitoring() {
 
     # Grafana
     if command -v grafana &>/dev/null || command -v grafana-server &>/dev/null; then
-        if ! start_systemd_service "grafana"; then
-            log_warning "Grafana не удалось запустить как сервис"
-            success=false
+        if check_systemd_autostart "grafana"; then
+            if check_systemd_service "grafana"; then
+                log_info "Grafana: запущен (systemd, автозапуск)"
+            else
+                log_warning "Grafana: не запущен, но в автозапуске - ожидание..."
+                sleep 5
+                if ! check_systemd_service "grafana"; then
+                    log_warning "Grafana не удалось дождаться запуска"
+                    success=false
+                fi
+            fi
+        else
+            if ! start_systemd_service "grafana"; then
+                log_warning "Grafana не удалось запустить как сервис"
+                success=false
+            fi
         fi
     else
         log_warning "Grafana не установлен (pacman -S grafana)"
@@ -792,9 +878,18 @@ start_native_monitoring() {
     fi
 
     # Jaeger (опционально)
-    if command -v jaeger-all-in-one &>/dev/null; then
-        if ! start_systemd_service "jaeger"; then
-            log_warning "Jaeger не удалось запустить (это не критично)"
+    if command -v jaeger &>/dev/null || [[ -x "/usr/local/bin/jaeger" ]]; then
+        if check_systemd_autostart "jaeger"; then
+            if check_systemd_service "jaeger"; then
+                log_info "Jaeger: запущен (systemd, автозапуск)"
+            else
+                log_warning "Jaeger: не запущен, но в автозапуске - ожидание..."
+                sleep 3
+            fi
+        else
+            if ! start_systemd_service "jaeger"; then
+                log_warning "Jaeger не удалось запустить (это не критично)"
+            fi
         fi
     else
         log_warning "Jaeger не установлен (опционально)"
@@ -811,13 +906,30 @@ start_native_monitoring() {
 
 # stop_native_monitoring - остановка нативного мониторинга
 # Usage: stop_native_monitoring
+# Note: Сервисы с автозапуском НЕ останавливаются
 stop_native_monitoring() {
     log_step "Остановка нативного мониторинга..."
 
-    # Остановка в обратном порядке
-    stop_systemd_service "jaeger" 2>/dev/null || true
-    stop_systemd_service "grafana"
-    stop_systemd_service "prometheus"
+    # Jaeger
+    if check_systemd_autostart "jaeger"; then
+        log_info "Jaeger: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "jaeger" 2>/dev/null || true
+    fi
+
+    # Grafana
+    if check_systemd_autostart "grafana"; then
+        log_info "Grafana: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "grafana"
+    fi
+
+    # Prometheus
+    if check_systemd_autostart "prometheus"; then
+        log_info "Prometheus: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "prometheus"
+    fi
 
     log_success "Нативный мониторинг остановлен"
 }
@@ -826,36 +938,51 @@ stop_native_monitoring() {
 # Usage: check_native_monitoring_health
 check_native_monitoring_health() {
     # Prometheus
+    local prom_suffix=""
+    if check_systemd_autostart "prometheus"; then
+        prom_suffix=" (systemd, автозапуск)"
+    fi
+
     if check_systemd_service "prometheus"; then
         if check_health_endpoint "http://localhost:9090/-/healthy" 2; then
-            print_status "success" "Prometheus: запущен (http://localhost:9090)"
+            print_status "success" "Prometheus: запущен (http://localhost:9090)${prom_suffix}"
         else
-            print_status "warning" "Prometheus: запущен, но не отвечает"
+            print_status "warning" "Prometheus: запущен, но не отвечает${prom_suffix}"
         fi
     else
-        print_status "warning" "Prometheus: не запущен (systemctl start prometheus)"
+        print_status "warning" "Prometheus: не запущен (systemctl start prometheus)${prom_suffix}"
     fi
 
     # Grafana
+    local grafana_suffix=""
+    if check_systemd_autostart "grafana"; then
+        grafana_suffix=" (systemd, автозапуск)"
+    fi
+
     if check_systemd_service "grafana"; then
         if check_health_endpoint "http://localhost:3000/api/health" 2; then
-            print_status "success" "Grafana: запущен (http://localhost:3000, admin/admin)"
+            print_status "success" "Grafana: запущен (http://localhost:3000, admin/admin)${grafana_suffix}"
         else
-            print_status "warning" "Grafana: запущен, но не отвечает"
+            print_status "warning" "Grafana: запущен, но не отвечает${grafana_suffix}"
         fi
     else
-        print_status "warning" "Grafana: не запущен (systemctl start grafana)"
+        print_status "warning" "Grafana: не запущен (systemctl start grafana)${grafana_suffix}"
     fi
 
     # Jaeger
+    local jaeger_suffix=""
+    if check_systemd_autostart "jaeger"; then
+        jaeger_suffix=" (systemd, автозапуск)"
+    fi
+
     if check_systemd_service "jaeger"; then
         if check_health_endpoint "http://localhost:16686/" 2; then
-            print_status "success" "Jaeger: запущен (http://localhost:16686)"
+            print_status "success" "Jaeger: запущен (http://localhost:16686)${jaeger_suffix}"
         else
-            print_status "warning" "Jaeger: запущен, но не отвечает"
+            print_status "warning" "Jaeger: запущен, но не отвечает${jaeger_suffix}"
         fi
     else
-        print_status "warning" "Jaeger: не запущен (опционально)"
+        print_status "warning" "Jaeger: не запущен (опционально)${jaeger_suffix}"
     fi
 }
 
