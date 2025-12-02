@@ -18,7 +18,7 @@ type Client struct {
 // NewClient creates a new Django client
 func NewClient(baseURL string) *Client {
 	if baseURL == "" {
-		baseURL = "http://localhost:8000"
+		baseURL = "http://localhost:8200"
 	}
 
 	return &Client{

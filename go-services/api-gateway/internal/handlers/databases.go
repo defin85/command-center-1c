@@ -15,7 +15,7 @@ var orchestratorURL = getOrchestratorURL()
 func getOrchestratorURL() string {
 	url := os.Getenv("ORCHESTRATOR_URL")
 	if url == "" {
-		url = "http://localhost:8000"
+		url = "http://localhost:8200"
 	}
 	return url
 }

@@ -250,7 +250,7 @@ func (p *Publisher) PublishWithFallback(
 	eventType string,
 	payload interface{},
 	correlationID string,
-	fallbackURL string, // Orchestrator URL, e.g., "http://localhost:8000"
+	fallbackURL string, // Orchestrator URL, e.g., "http://localhost:8200"
 ) error {
 	// Try Redis first
 	err := p.Publish(ctx, channel, eventType, payload, correlationID)

@@ -78,9 +78,9 @@ type Config struct {
 // LoadFromEnv loads configuration from environment variables
 func LoadFromEnv() *Config {
 	return &Config{
-		// Server
+		// Server (Port 8180 - outside Windows reserved ranges 7913-8012, 8013-8112)
 		ServerHost: getEnv("SERVER_HOST", "0.0.0.0"),
-		ServerPort: getEnv("SERVER_PORT", "8080"),
+		ServerPort: getEnv("SERVER_PORT", "8180"),
 
 		// JWT
 		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),

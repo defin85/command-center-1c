@@ -60,7 +60,7 @@ func setupTestWatchdog(t *testing.T) (*Watchdog, *miniredis.Miniredis, *mockPubl
 		MaxRecoveryBatch: 5,
 	}
 
-	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8000", nil, config)
+	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, config)
 
 	return watchdog, mr, publisher
 }
@@ -94,7 +94,7 @@ func TestNewWatchdog_WithNilConfig(t *testing.T) {
 	})
 	publisher := &mockPublisher{}
 
-	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8000", nil, nil)
+	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, nil)
 
 	assert.NotNil(t, watchdog.config)
 	assert.Equal(t, 5*time.Minute, watchdog.config.CheckInterval)

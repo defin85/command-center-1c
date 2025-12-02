@@ -25,7 +25,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name:    "with default URL",
 			baseURL: "",
-			wantURL: "http://localhost:8000",
+			wantURL: "http://localhost:8200",
 		},
 		{
 			name:    "with https URL",

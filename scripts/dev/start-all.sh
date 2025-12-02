@@ -756,13 +756,14 @@ echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${N
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
-echo -e "  Frontend:         ${GREEN}http://localhost:5173${NC} (admin / p-123456)"
-echo -e "  API Gateway:      ${GREEN}http://localhost:8180/health${NC}"
+echo -e "  Frontend:         ${GREEN}http://localhost:${FRONTEND_PORT:-5173}${NC} (admin / p-123456)"
+echo -e "  API Gateway:      ${GREEN}http://localhost:${SERVER_PORT:-8180}/health${NC}"
 echo -e "  Orchestrator:"
-echo -e "    Admin Panel:    ${GREEN}http://localhost:8200/admin${NC} (admin / p-123456)"
-echo -e "    API Docs:       ${GREEN}http://localhost:8200/api/docs${NC}"
-echo -e "  RAS Adapter:      ${GREEN}http://localhost:8188/health${NC}"
-echo -e "  Batch Service:    ${GREEN}http://localhost:8187/health${NC}"
+echo -e "    Admin Panel:    ${GREEN}http://localhost:${ORCHESTRATOR_PORT:-8200}/admin${NC} (admin / p-123456)"
+echo -e "    API Docs:       ${GREEN}http://localhost:${ORCHESTRATOR_PORT:-8200}/api/docs${NC}"
+echo -e "  RAS Adapter:      ${GREEN}http://localhost:${RAS_ADAPTER_PORT:-8188}/health${NC}"
+echo -e "  Worker:           ${GREEN}http://localhost:${WORKER_PORT:-9091}/health${NC}"
+echo -e "  Batch Service:    ${GREEN}http://localhost:${BATCH_SERVICE_PORT:-8187}/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 
@@ -774,27 +775,29 @@ else
 fi
 
 # Prometheus - проверяем реальный health endpoint
-if curl --noproxy '*' -sf http://localhost:9090/-/healthy &>/dev/null; then
-    echo -e "  Prometheus:       ${GREEN}http://localhost:9090${NC}"
+PROM_PORT="${PROMETHEUS_PORT:-9090}"
+if curl --noproxy '*' -sf "http://localhost:${PROM_PORT}/-/healthy" &>/dev/null; then
+    echo -e "  Prometheus:       ${GREEN}http://localhost:${PROM_PORT}${NC}"
 else
     echo -e "  Prometheus:       ${YELLOW}не запущен${NC}"
 fi
 
-# Grafana - порт зависит от режима (Native: 3000, Docker: 5000)
+# Grafana - порт зависит от режима (Native: 3000, Docker: из конфига)
 if is_docker_mode; then
-    GRAFANA_PORT=5000
+    GRAFANA_DISPLAY_PORT="${GRAFANA_PORT:-5000}"
 else
-    GRAFANA_PORT=3000
+    GRAFANA_DISPLAY_PORT=3000  # Native systemd использует стандартный порт
 fi
-if curl --noproxy '*' -sf "http://localhost:${GRAFANA_PORT}/api/health" &>/dev/null; then
-    echo -e "  Grafana:          ${GREEN}http://localhost:${GRAFANA_PORT}${NC} (admin / admin)"
+if curl --noproxy '*' -sf "http://localhost:${GRAFANA_DISPLAY_PORT}/api/health" &>/dev/null; then
+    echo -e "  Grafana:          ${GREEN}http://localhost:${GRAFANA_DISPLAY_PORT}${NC} (admin / admin)"
 else
-    echo -e "  Grafana:          ${YELLOW}не запущен (порт ${GRAFANA_PORT})${NC}"
+    echo -e "  Grafana:          ${YELLOW}не запущен (порт ${GRAFANA_DISPLAY_PORT})${NC}"
 fi
 
 # Jaeger - проверяем реальный endpoint
-if curl --noproxy '*' -sf http://localhost:16686/ &>/dev/null; then
-    echo -e "  Jaeger UI:        ${GREEN}http://localhost:16686${NC} (OpenTelemetry Tracing)"
+JAEGER_DISPLAY_PORT="${JAEGER_PORT:-16686}"
+if curl --noproxy '*' -sf "http://localhost:${JAEGER_DISPLAY_PORT}/" &>/dev/null; then
+    echo -e "  Jaeger UI:        ${GREEN}http://localhost:${JAEGER_DISPLAY_PORT}${NC} (OpenTelemetry Tracing)"
 else
     if is_docker_mode; then
         echo -e "  Jaeger UI:        ${YELLOW}не запущен${NC}"

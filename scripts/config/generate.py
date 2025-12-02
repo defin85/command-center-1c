@@ -36,6 +36,7 @@ CONFIG_FILE = PROJECT_ROOT / "config" / "services.json"
 SCHEMA_FILE = PROJECT_ROOT / "config" / "services.schema.json"
 GENERATED_DIR = PROJECT_ROOT / "generated"
 DOCS_GENERATED_DIR = PROJECT_ROOT / "docs" / "generated"
+GO_PORTS_DIR = PROJECT_ROOT / "go-services" / "shared" / "ports"
 
 HEADER_COMMENT = """# =============================================================================
 # AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
@@ -103,6 +104,9 @@ def validate_schema(config: dict, schema: dict) -> list[str]:
             infra_errors = validate_service(infra, infrastructure[infra], is_infra=True)
             errors.extend(infra_errors)
 
+    # Check for duplicate ports
+    errors.extend(validate_unique_ports(config))
+
     return errors
 
 
@@ -132,6 +136,30 @@ def validate_service(name: str, svc: dict, is_infra: bool = False) -> list[str]:
     # Check description
     if "description" not in svc or not isinstance(svc.get("description"), str):
         errors.append(f"{name}: description is required and must be a string")
+
+    return errors
+
+
+def validate_unique_ports(config: dict) -> list[str]:
+    """Validate that all ports are unique across services and infrastructure."""
+    errors = []
+    ports = {}
+
+    # Check services
+    for name, svc in config.get("services", {}).items():
+        port = svc.get("port")
+        if port in ports:
+            errors.append(f"Port {port} conflict: '{name}' and '{ports[port]}'")
+        else:
+            ports[port] = name
+
+    # Check infrastructure
+    for name, infra in config.get("infrastructure", {}).items():
+        port = infra.get("port")
+        if port in ports:
+            errors.append(f"Port {port} conflict: '{name}' and '{ports[port]}'")
+        else:
+            ports[port] = name
 
     return errors
 
@@ -193,6 +221,8 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
     lines = [GO_HEADER.format(timestamp=timestamp, mode=mode)]
     lines.append("package ports")
     lines.append("")
+    lines.append('import "fmt"')
+    lines.append("")
 
     # Port constants
     lines.append("// Service ports")
@@ -219,6 +249,22 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
     # Host key for mode
     host_key = mode
 
+    # Default URLs constants
+    lines.append("// Default service URLs (for config fallbacks)")
+    lines.append("const (")
+
+    default_url_services = ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    for name in default_url_services:
+        if name in config["services"]:
+            svc = config["services"][name]
+            const_name = "Default" + to_go_const(name) + "URL"
+            host = svc["host"][host_key]
+            port = svc["port"]
+            lines.append(f'\t{const_name} = "http://{host}:{port}"')
+
+    lines.append(")")
+    lines.append("")
+
     # ServiceURLs map
     lines.append("// ServiceURLs maps service names to their URLs")
     lines.append("var ServiceURLs = map[string]string{")
@@ -241,6 +287,18 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
             lines.append(f'\t"{name}": "{health_path}",')
 
     lines.append("}")
+    lines.append("")
+
+    # Address builder functions
+    lines.append("// Address builders for http.ListenAndServe")
+
+    addr_services = ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    for name in addr_services:
+        if name in config["services"]:
+            func_name = to_go_const(name) + "Addr"
+            const_name = to_go_const(name)
+            lines.append(f'func {func_name}() string {{ return fmt.Sprintf(":%d", {const_name}) }}')
+
     lines.append("")
 
     return "\n".join(lines)
@@ -522,11 +580,12 @@ Examples:
     # Ensure directories exist
     ensure_dir(GENERATED_DIR)
     ensure_dir(DOCS_GENERATED_DIR)
+    ensure_dir(GO_PORTS_DIR)
 
     # Generate all files
     files_to_generate = [
         (GENERATED_DIR / ".env.services", generate_env_services(config, mode, timestamp)),
-        (GENERATED_DIR / "ports.go", generate_ports_go(config, mode, timestamp)),
+        (GO_PORTS_DIR / "ports.go", generate_ports_go(config, mode, timestamp)),
         (GENERATED_DIR / "frontend.env", generate_frontend_env(config, mode, timestamp)),
         (GENERATED_DIR / "docker-compose.ports.yml", generate_docker_compose_ports(config, mode, timestamp)),
         (DOCS_GENERATED_DIR / "PORTS.md", generate_ports_md(config, mode, timestamp)),

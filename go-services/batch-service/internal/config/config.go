@@ -90,7 +90,7 @@ func Load() *Config {
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getIntEnv("REDIS_DB", 0),
 		},
-		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8000"),
+		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
 		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8188"), // Port 8188 - outside Windows reserved range
 		ClusterRequestTimeout: getDurationEnv("CLUSTER_REQUEST_TIMEOUT", 30*time.Second),
 	}

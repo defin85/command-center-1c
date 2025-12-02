@@ -93,17 +93,22 @@ stop_service "batch-service"
 stop_service "ras-adapter"
 
 # 8. RAS (1C Remote Administration Server)
-echo -e "${BLUE}Остановка RAS (1C Remote Administration Server)...${NC}"
-if is_wsl; then
-    # WSL: RAS запущен как Windows процесс, останавливаем через PowerShell
-    if powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; then
-        echo -e "${GREEN}✓ RAS остановлен (Windows процесс)${NC}"
-    else
-        echo -e "${YELLOW}⚠️  RAS: процесс не найден или уже остановлен${NC}"
-    fi
+# Если RAS_SKIP_START=true, значит RAS работает как Windows служба — не трогаем
+if [ "${RAS_SKIP_START:-false}" == "true" ]; then
+    echo -e "${CYAN}ℹ️  RAS: пропущен (работает как Windows служба)${NC}"
 else
-    # Native Windows: используем стандартную остановку по PID
-    stop_service "ras"
+    echo -e "${BLUE}Остановка RAS (1C Remote Administration Server)...${NC}"
+    if is_wsl; then
+        # WSL: RAS запущен как Windows процесс, останавливаем через PowerShell
+        if powershell.exe -Command "Get-Process ras -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; then
+            echo -e "${GREEN}✓ RAS остановлен (Windows процесс)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  RAS: процесс не найден или уже остановлен${NC}"
+        fi
+    else
+        # Native Windows: используем стандартную остановку по PID
+        stop_service "ras"
+    fi
 fi
 
 # 7. Go Worker
@@ -204,8 +209,12 @@ if [ "${RAS_SKIP_START:-false}" != "true" ]; then
 else
     echo -e "${CYAN}   RAS работает как Windows служба, пропускаем остановку${NC}"
 fi
-check_and_kill_port 8080 "API Gateway"
-check_and_kill_port 8000 "Orchestrator"
+# Legacy порты (для очистки устаревших процессов)
+check_and_kill_port 8080 "API Gateway (legacy)"
+check_and_kill_port 8000 "Orchestrator (legacy)"
+# Актуальные порты
+check_and_kill_port 8180 "API Gateway"
+check_and_kill_port 8200 "Orchestrator"
 
 # Мониторинг (обычно не нужно, т.к. Docker контейнеры)
 # check_and_kill_port 9090 "Prometheus"

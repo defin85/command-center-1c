@@ -30,6 +30,6 @@ COPY --from=builder /build/api-gateway/api-gateway .
 # Copy config if exists
 COPY --from=builder /build/api-gateway/configs/ ./configs/
 
-EXPOSE 8080
+EXPOSE 8180
 
 CMD ["./api-gateway"]
