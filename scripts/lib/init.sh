@@ -16,11 +16,13 @@
 #   CC1C_LIB_SKIP_PROMPTS=1    # Не загружать prompts.sh
 #   CC1C_LIB_SKIP_SERVICES=1   # Не загружать services.sh
 #   CC1C_LIB_SKIP_BUILD=1      # Не загружать build.sh
+#   CC1C_LIB_SKIP_PACKAGES=1   # Не загружать packages.sh
 #   CC1C_LIB_MINIMAL=1         # Только core.sh + platform.sh
 #
 # После загрузки доступны:
 #   - core.sh:     Цвета, логирование, guards
 #   - platform.sh: Определение ОС, платформы
+#   - packages.sh: Кросс-платформенный пакетный менеджер
 #   - prompts.sh:  Взаимодействие с пользователем
 #   - files.sh:    Работа с файлами
 #   - services.sh: Порты, процессы, health checks
@@ -82,6 +84,19 @@ source "$CC1C_LIB_DIR/platform.sh"
 if [[ "${CC1C_LIB_MINIMAL:-}" == "1" ]]; then
     log_debug "Minimal mode: only core.sh and platform.sh loaded"
     return 0
+fi
+
+##############################################################################
+# LOAD PACKAGES (опционально)
+##############################################################################
+
+if [[ "${CC1C_LIB_SKIP_PACKAGES:-}" != "1" ]]; then
+    if [[ -f "$CC1C_LIB_DIR/packages.sh" ]]; then
+        # shellcheck source=packages.sh
+        source "$CC1C_LIB_DIR/packages.sh"
+    else
+        log_debug "packages.sh not found, skipping"
+    fi
 fi
 
 ##############################################################################

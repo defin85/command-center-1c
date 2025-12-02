@@ -1,0 +1,19 @@
+[Unit]
+Description=Prometheus PostgreSQL Exporter
+Documentation=https://github.com/prometheus-community/postgres_exporter
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=egor
+# Connection via Unix socket (most secure for local)
+Environment="DATA_SOURCE_NAME=postgresql:///postgres?host=/var/run/postgresql"
+# Alternative with TCP (requires explicit credentials):
+# Set DATA_SOURCE_NAME in /etc/conf.d/postgres-exporter or via systemd override
+# Example format: postgresql://user:password@localhost:5432/dbname?sslmode=disable
+ExecStart=/usr/bin/prometheus-postgres-exporter --web.listen-address=:9187
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

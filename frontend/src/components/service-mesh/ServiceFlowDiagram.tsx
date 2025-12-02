@@ -31,6 +31,7 @@ import type {
   ServiceLayoutConfig,
 } from '../../types/serviceMesh'
 import { DEFAULT_SERVICE_POSITIONS, STATUS_COLORS } from '../../types/serviceMesh'
+import { calculateDagreLayout } from '../../utils/graphLayout'
 import './ServiceFlowDiagram.css'
 
 // Register custom node types
@@ -94,10 +95,22 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     [selectedService, onServiceSelect]
   )
 
+  // Calculate positions using dagre (memoized)
+  const calculatedPositions = useMemo(() => {
+    if (services.length === 0) {
+      return positions // fallback to default
+    }
+    return calculateDagreLayout(services, connections, {
+      direction: 'TB',
+      rankSep: 120,
+      nodeSep: 100,
+    })
+  }, [services, connections])  // positions is fallback only, doesn't affect calculation
+
   // Create nodes from services
   const nodes: Node<ServiceNodeData>[] = useMemo(() => {
     return services.map((service) => {
-      const position = positions[service.name] || { x: 0, y: 0 }
+      const position = calculatedPositions[service.name] || positions[service.name] || { x: 0, y: 0 }
 
       return {
         id: service.name,
@@ -111,7 +124,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         draggable: true,
       }
     })
-  }, [services, positions, selectedService, handleServiceSelect])
+  }, [services, calculatedPositions, positions, selectedService, handleServiceSelect])
 
   // Create edges from connections
   const edges: Edge[] = useMemo(() => {

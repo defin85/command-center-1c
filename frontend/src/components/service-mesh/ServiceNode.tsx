@@ -15,16 +15,18 @@ import {
   ApartmentOutlined,
   ThunderboltOutlined,
   ApiOutlined,
+  SyncOutlined,
+  ClockCircleOutlined,
+  BuildOutlined,
+  DatabaseOutlined,
+  CloudServerOutlined,
 } from '@ant-design/icons'
-import type { ServiceMetrics, ServiceStatus } from '../../types/serviceMesh'
+import type { ServiceStatus, ServiceNodeData } from '../../types/serviceMesh'
 import { STATUS_COLORS, STATUS_TEXT } from '../../types/serviceMesh'
 import './ServiceNode.css'
 
-export interface ServiceNodeData {
-  metrics: ServiceMetrics
-  onSelect: (service: string) => void
-  isSelected: boolean
-}
+// Re-export for backward compatibility with existing imports
+export type { ServiceNodeData }
 
 const SERVICE_ICONS: Record<string, React.ReactNode> = {
   frontend: <DesktopOutlined />,
@@ -32,6 +34,11 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
   'ras-adapter': <ApiOutlined />,
+  'celery-worker': <SyncOutlined />,
+  'celery-beat': <ClockCircleOutlined />,
+  'batch-service': <BuildOutlined />,
+  postgresql: <DatabaseOutlined />,
+  redis: <CloudServerOutlined />,
 }
 
 /**

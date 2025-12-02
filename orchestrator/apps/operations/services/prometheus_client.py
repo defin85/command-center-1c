@@ -88,16 +88,56 @@ SERVICE_CONFIG = {
         'job_patterns': ['frontend', 'react'],
         'namespace': 'frontend',
     },
+    'celery-worker': {
+        'display_name': 'Celery Worker',
+        'job_patterns': ['celery_worker', 'celery-worker', 'celery'],
+        'namespace': 'celery',
+    },
+    'celery-beat': {
+        'display_name': 'Celery Beat',
+        'job_patterns': ['celery_beat', 'celery-beat'],
+        'namespace': 'celery',
+    },
+    'batch-service': {
+        'display_name': 'Batch Service',
+        'job_patterns': ['batch_service', 'batch-service', 'batchservice'],
+        'namespace': 'cc1c',
+    },
+    'postgresql': {
+        'display_name': 'PostgreSQL',
+        'job_patterns': ['postgresql', 'postgres_exporter', 'postgres'],
+        'namespace': 'pg',  # postgres_exporter uses pg_* prefix
+    },
+    'redis': {
+        'display_name': 'Redis',
+        'job_patterns': ['redis', 'redis_exporter'],
+        'namespace': 'redis',  # redis_exporter uses redis_* prefix
+    },
 }
 
 # Service mesh topology (connections between services)
 SERVICE_TOPOLOGY = [
+    # Level 0 → 1: Client → Gateway
     ('frontend', 'api-gateway'),
+
+    # Level 1 → 2: Gateway → Core
     ('api-gateway', 'orchestrator'),
     ('api-gateway', 'worker'),
     ('api-gateway', 'ras-adapter'),
-    ('orchestrator', 'worker'),
+
+    # Level 2 → 3: Core → Workers
+    ('orchestrator', 'celery-worker'),
+    ('orchestrator', 'celery-beat'),
+    ('worker', 'batch-service'),
     ('worker', 'ras-adapter'),
+
+    # Level 2/3 → 4: Services → Infrastructure
+    ('orchestrator', 'postgresql'),
+    ('orchestrator', 'redis'),
+    ('celery-worker', 'redis'),
+    ('celery-beat', 'redis'),
+    ('worker', 'redis'),
+    ('batch-service', 'postgresql'),  # Extension install status storage
 ]
 
 
@@ -326,24 +366,33 @@ class PrometheusClient:
         Uses the SERVICE_TOPOLOGY to determine connections and
         queries for request rates between services.
 
+        Optimized: executes all queries in parallel using asyncio.gather.
+
         Returns:
             List of ServiceConnection objects
         """
-        connections = []
+        # Step 1: Build all queries upfront
+        queries = []
+        topology_info = []  # Track (source, target) for each query pair
 
         for source, target in SERVICE_TOPOLOGY:
-            # Query for requests between services
-            # This is a simplified query - in production, you'd have more specific labels
             source_config = SERVICE_CONFIG.get(source, {})
             source_job = source_config.get('job_patterns', [source])[0]
 
-            # Simplified - just use mock data based on general traffic
-            # In production, you'd have specific metrics for inter-service calls
             rpm_query = f'sum(rate(cc1c_requests_total{{job=~"{source_job}"}}[5m])) * 60'
             latency_query = f'avg(rate(cc1c_request_duration_seconds_sum{{job=~"{source_job}"}}[5m]) / rate(cc1c_request_duration_seconds_count{{job=~"{source_job}"}}[5m])) * 1000'
 
-            rpm_result = await self.query(rpm_query)
-            latency_result = await self.query(latency_query)
+            queries.extend([rpm_query, latency_query])
+            topology_info.append((source, target))
+
+        # Step 2: Execute ALL queries in parallel (single await)
+        results = await self._execute_queries(queries)
+
+        # Step 3: Build connections from results
+        connections = []
+        for i, (source, target) in enumerate(topology_info):
+            rpm_result = results[i * 2]
+            latency_result = results[i * 2 + 1]
 
             rpm = self._extract_value(rpm_result)
             latency = self._extract_value(latency_result)

@@ -40,12 +40,23 @@ scrape_configs:
   #     - targets: ['host.docker.internal:8200']
   #   metrics_path: '/metrics'
 
-  # Infrastructure services in Docker (these don't have /metrics endpoints by default)
-  # Uncomment and configure exporters if needed
-  # - job_name: 'postgres'
-  #   static_configs:
-  #     - targets: ['postgres-exporter:9187']
-  #
-  # - job_name: 'redis'
-  #   static_configs:
-  #     - targets: ['redis-exporter:9121']
+  # Infrastructure Exporters (running on WSL host)
+  # PostgreSQL Exporter - порт 9187
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['host.docker.internal:9187']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'postgresql'
+
+  # Redis Exporter - порт 9121
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['host.docker.internal:9121']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis'

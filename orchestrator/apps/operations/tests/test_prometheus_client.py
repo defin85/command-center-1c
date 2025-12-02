@@ -495,23 +495,62 @@ class TestServiceConnections:
     async def test_get_service_connections(self, client):
         """Test retrieving service connections."""
         with patch.object(client, 'query', new_callable=AsyncMock) as mock_query:
+            # SERVICE_TOPOLOGY has 14 connections, each needs 2 queries (rpm + latency)
+            # Total: 28 query results needed
             mock_query.side_effect = [
-                # Requests for frontend->api-gateway
-                {'data': {'result': [{'value': ['1234567890', '500']}]}},
-                {'data': {'result': [{'value': ['1234567890', '100']}]}},
-                # Requests for api-gateway->orchestrator
-                {'data': {'result': [{'value': ['1234567890', '400']}]}},
-                {'data': {'result': [{'value': ['1234567890', '150']}]}},
-                # ... more for each connection in SERVICE_TOPOLOGY
-            ] + [
-                {'data': {'result': []}}  # Default for remaining calls
-            ] * 20
+                # For each connection, provide rpm result and latency result
+                # frontend->api-gateway
+                {'data': {'result': [{'value': ['1234567890', '500']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '100']}]}},  # latency
+                # api-gateway->orchestrator
+                {'data': {'result': [{'value': ['1234567890', '400']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '150']}]}},  # latency
+                # api-gateway->worker
+                {'data': {'result': [{'value': ['1234567890', '350']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '120']}]}},  # latency
+                # api-gateway->ras-adapter
+                {'data': {'result': [{'value': ['1234567890', '200']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '180']}]}},  # latency
+                # orchestrator->celery-worker
+                {'data': {'result': [{'value': ['1234567890', '300']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '50']}]}},   # latency
+                # orchestrator->celery-beat
+                {'data': {'result': []}},  # rpm (no data)
+                {'data': {'result': []}},  # latency (no data)
+                # worker->batch-service
+                {'data': {'result': [{'value': ['1234567890', '100']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '80']}]}},   # latency
+                # worker->ras-adapter
+                {'data': {'result': [{'value': ['1234567890', '150']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '200']}]}},  # latency
+                # orchestrator->postgresql
+                {'data': {'result': [{'value': ['1234567890', '1000']}]}}, # rpm
+                {'data': {'result': [{'value': ['1234567890', '10']}]}},   # latency
+                # orchestrator->redis
+                {'data': {'result': [{'value': ['1234567890', '2000']}]}}, # rpm
+                {'data': {'result': [{'value': ['1234567890', '5']}]}},    # latency
+                # celery-worker->redis
+                {'data': {'result': [{'value': ['1234567890', '500']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '3']}]}},    # latency
+                # celery-beat->redis
+                {'data': {'result': []}},  # rpm (no data)
+                {'data': {'result': []}},  # latency (no data)
+                # worker->redis
+                {'data': {'result': [{'value': ['1234567890', '800']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '4']}]}},    # latency
+                # batch-service->postgresql
+                {'data': {'result': [{'value': ['1234567890', '50']}]}},   # rpm
+                {'data': {'result': [{'value': ['1234567890', '15']}]}},   # latency
+            ]
 
             connections = await client.get_service_connections()
 
             # Should have connections for each pair in SERVICE_TOPOLOGY
             assert len(connections) == len(SERVICE_TOPOLOGY)
             assert all(isinstance(c, ServiceConnection) for c in connections)
+            # Verify some connections have expected values
+            assert connections[0].requests_per_minute == 500.0
+            assert connections[0].avg_latency_ms == 100.0
 
     @pytest.mark.asyncio
     async def test_service_connection_to_dict(self):

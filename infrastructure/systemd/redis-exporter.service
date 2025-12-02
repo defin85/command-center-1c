@@ -1,0 +1,14 @@
+[Unit]
+Description=Prometheus Redis Exporter
+Documentation=https://github.com/oliver006/redis_exporter
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=egor
+ExecStart=/usr/bin/prometheus-redis-exporter --redis.addr=redis://localhost:6379 --web.listen-address=:9121
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

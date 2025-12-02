@@ -158,11 +158,21 @@ export interface ServiceLayoutConfig {
  * Default service positions for the flow diagram
  */
 export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
-  frontend: { x: 350, y: 50 },
-  'api-gateway': { x: 350, y: 150 },
+  // Level 0: Client
+  frontend: { x: 400, y: 50 },
+  // Level 1: Entry Point
+  'api-gateway': { x: 400, y: 150 },
+  // Level 2: Core Services
   orchestrator: { x: 150, y: 300 },
-  worker: { x: 350, y: 300 },
-  'ras-adapter': { x: 550, y: 300 },
+  worker: { x: 400, y: 300 },
+  'ras-adapter': { x: 650, y: 300 },
+  // Level 3: Workers
+  'celery-beat': { x: 50, y: 450 },
+  'celery-worker': { x: 250, y: 450 },
+  'batch-service': { x: 550, y: 450 },
+  // Level 4: Infrastructure
+  postgresql: { x: 250, y: 600 },
+  redis: { x: 550, y: 600 },
 }
 
 /**
@@ -208,6 +218,36 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'RAS Adapter',
     icon: 'api',
     description: '1C cluster management',
+  },
+  'celery-worker': {
+    name: 'celery-worker',
+    displayName: 'Celery Worker',
+    icon: 'sync',
+    description: 'Async task processing',
+  },
+  'celery-beat': {
+    name: 'celery-beat',
+    displayName: 'Celery Beat',
+    icon: 'clock-circle',
+    description: 'Scheduled tasks',
+  },
+  'batch-service': {
+    name: 'batch-service',
+    displayName: 'Batch Service',
+    icon: 'build',
+    description: 'Extension installation via 1cv8.exe',
+  },
+  postgresql: {
+    name: 'postgresql',
+    displayName: 'PostgreSQL',
+    icon: 'database',
+    description: 'Primary database (port 5432)',
+  },
+  redis: {
+    name: 'redis',
+    displayName: 'Redis',
+    icon: 'cloud-server',
+    description: 'Queue and cache (port 6379)',
   },
 }
 
