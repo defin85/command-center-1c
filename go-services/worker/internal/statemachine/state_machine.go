@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
@@ -54,7 +55,11 @@ type ExtensionInstallStateMachine struct {
 	// Control
 	ctx    context.Context
 	cancel context.CancelFunc
-	closed bool
+
+	// Critical #3 Fix: Safe channel closing with sync.Once and atomic flag
+	closeOnce     sync.Once
+	closedFlag    atomic.Bool
+	eventChanDone chan struct{} // Signal channel to stop writes to eventChan
 }
 
 // CompensationAction represents a compensation action
@@ -126,6 +131,7 @@ func NewStateMachine(
 		batchServiceBreaker:   batchBreaker,
 		ctx:           smCtx,
 		cancel:        cancel,
+		eventChanDone: make(chan struct{}),
 	}
 
 	// Apply options
@@ -144,9 +150,16 @@ func NewStateMachine(
 // This must be called BEFORE subscriber.Run() starts the router
 func (sm *ExtensionInstallStateMachine) registerEventHandlers() {
 	handler := func(ctx context.Context, envelope *events.Envelope) error {
+		// Critical #3 Fix: Check if SM is closed before writing to channel
+		if sm.closedFlag.Load() {
+			return nil // Silently ignore events after close
+		}
+
 		if envelope.CorrelationID == sm.CorrelationID {
 			select {
 			case sm.eventChan <- envelope:
+			case <-sm.eventChanDone:
+				return nil // SM is closing, ignore event
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -274,27 +287,37 @@ func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) erro
 }
 
 // Close closes state machine and releases resources
+// Critical #3 Fix: Uses sync.Once to ensure safe single close
 func (sm *ExtensionInstallStateMachine) Close() error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	sm.closeOnce.Do(func() {
+		// Set closed flag FIRST to prevent new writes to eventChan
+		sm.closedFlag.Store(true)
 
-	if sm.closed {
-		return nil // Already closed
+		// Signal writers to stop (non-blocking)
+		close(sm.eventChanDone)
+
+		// Cancel context
+		sm.cancel()
+
+		sm.mu.Lock()
+		// Clear event buffer
+		sm.eventBuffer = nil
+		sm.mu.Unlock()
+
+		// Note: We intentionally don't close eventChan here.
+		// The channel will be garbage collected when all references are gone.
+		// This prevents "send on closed channel" panics from racing goroutines.
+	})
+
+	return nil
+}
+
+// ClosePublisher closes the publisher associated with this state machine
+// Critical #2 Fix: Allows external cleanup of per-SM publisher
+func (sm *ExtensionInstallStateMachine) ClosePublisher() error {
+	if sm.publisher != nil {
+		return sm.publisher.Close()
 	}
-
-	sm.cancel()
-	sm.closed = true
-
-	// Clear event buffer
-	sm.eventBuffer = nil
-
-	// Close channel safely
-	select {
-	case <-sm.eventChan:
-	default:
-		close(sm.eventChan)
-	}
-
 	return nil
 }
 

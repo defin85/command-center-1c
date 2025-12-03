@@ -53,8 +53,8 @@ func LoadFeatureFlagsFromEnv() *FeatureFlags {
 	// Main toggle
 	ff.EnableEventDriven = getBoolEnvFF("ENABLE_EVENT_DRIVEN", false)
 
-	// Percentage rollout
-	ff.RolloutPercentage = getFloat64EnvFF("EVENT_DRIVEN_ROLLOUT_PERCENT", 0.0)
+	// Percentage rollout (default 100% - no gradual rollout needed)
+	ff.RolloutPercentage = getFloat64EnvFF("EVENT_DRIVEN_ROLLOUT_PERCENT", 1.0)
 	if ff.RolloutPercentage < 0.0 {
 		ff.RolloutPercentage = 0.0
 	}

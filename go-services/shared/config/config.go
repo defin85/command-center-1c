@@ -53,11 +53,12 @@ type Config struct {
 	V1SunsetDate string
 
 	// Worker configuration
-	WorkerID         string
-	WorkerAPIKey     string
-	WorkerPoolSize   int
-	WorkerMaxRetries int
-	WorkerTimeout    time.Duration
+	WorkerID            string
+	WorkerAPIKey        string
+	WorkerPoolSize      int
+	WorkerMaxRetries    int
+	WorkerTimeout       time.Duration
+	WorkerConsumerGroup string
 
 	// Logging configuration
 	LogLevel  string
@@ -121,11 +122,12 @@ func LoadFromEnv() *Config {
 		V1SunsetDate:         getEnv("V1_SUNSET_DATE", "Sun, 01 Mar 2026 00:00:00 GMT"),
 
 		// Worker
-		WorkerID:         getEnv("WORKER_ID", "worker-1"),
-		WorkerAPIKey:     getEnv("WORKER_API_KEY", "dev-worker-key-change-in-production"),
-		WorkerPoolSize:   getIntEnv("WORKER_POOL_SIZE", 50),
-		WorkerMaxRetries: getIntEnv("WORKER_MAX_RETRIES", 3),
-		WorkerTimeout:    getDurationEnv("WORKER_TIMEOUT", 5*time.Minute),
+		WorkerID:            getEnv("WORKER_ID", "worker-1"),
+		WorkerAPIKey:        getEnv("WORKER_API_KEY", "dev-worker-key-change-in-production"),
+		WorkerPoolSize:      getIntEnv("WORKER_POOL_SIZE", 50),
+		WorkerMaxRetries:    getIntEnv("WORKER_MAX_RETRIES", 3),
+		WorkerTimeout:       getDurationEnv("WORKER_TIMEOUT", 5*time.Minute),
+		WorkerConsumerGroup: getEnv("WORKER_CONSUMER_GROUP", "worker-state-machine"),
 
 		// Logging
 		LogLevel:  getEnv("LOG_LEVEL", "info"),

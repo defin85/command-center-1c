@@ -69,7 +69,7 @@ func Load() (*Config, error) {
 		},
 		Monitor: MonitorConfig{
 			SessionMonitorInterval: getEnvDuration("SESSION_MONITOR_INTERVAL", 1*time.Second),
-			PubSubEnabled:          getBoolEnv("REDIS_PUBSUB_ENABLED", true),
+			PubSubEnabled:          getBoolEnv("REDIS_PUBSUB_ENABLED", false), // Default false for safety
 		},
 		Log: LogConfig{
 			Level: getEnv("LOG_LEVEL", "info"),

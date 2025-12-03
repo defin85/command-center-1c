@@ -482,7 +482,9 @@ if [ "$FLOWER_ENABLED" = "true" ]; then
         rm -f "$PIDS_DIR/flower.pid"
     fi
 
-    nohup celery -A config flower --port=$FLOWER_PORT --broker="${CELERY_BROKER_URL:-redis://localhost:6379/0}" > "$LOGS_DIR/flower.log" 2>&1 &
+    # Формируем broker URL из REDIS_HOST/REDIS_PORT (согласованно с Django)
+    BROKER_URL="redis://${REDIS_HOST:-localhost}:${REDIS_PORT:-6379}/0"
+    nohup celery -A config flower --port=$FLOWER_PORT --broker="$BROKER_URL" > "$LOGS_DIR/flower.log" 2>&1 &
     FLOWER_PID=$!
     echo $FLOWER_PID > "$PIDS_DIR/flower.pid"
 

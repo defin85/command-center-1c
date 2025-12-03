@@ -336,7 +336,7 @@ func TestStateMachine_Close_Idempotent(t *testing.T) {
 	// First close
 	err = sm.Close()
 	assert.NoError(t, err)
-	assert.True(t, sm.closed)
+	assert.True(t, sm.closedFlag.Load())
 
 	// Second close (idempotent)
 	err = sm.Close()

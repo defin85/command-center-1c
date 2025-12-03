@@ -53,10 +53,11 @@ type BackupConfig struct {
 
 // RedisConfig holds Redis configuration
 type RedisConfig struct {
-	Host     string
-	Port     string
-	Password string
-	DB       int
+	Host          string
+	Port          string
+	Password      string
+	DB            int
+	PubSubEnabled bool // Feature toggle for Redis Pub/Sub event handlers
 }
 
 // Load reads configuration from environment variables
@@ -85,10 +86,11 @@ func Load() *Config {
 			RetentionBackups: getIntEnv("RETENTION_BACKUPS", 5),
 		},
 		Redis: RedisConfig{
-			Host:     getEnv("REDIS_HOST", "localhost"),
-			Port:     getEnv("REDIS_PORT", "6379"),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getIntEnv("REDIS_DB", 0),
+			Host:          getEnv("REDIS_HOST", "localhost"),
+			Port:          getEnv("REDIS_PORT", "6379"),
+			Password:      getEnv("REDIS_PASSWORD", ""),
+			DB:            getIntEnv("REDIS_DB", 0),
+			PubSubEnabled: getBoolEnv("REDIS_PUBSUB_ENABLED", false), // Feature toggle, default: false
 		},
 		OrchestratorURL:       getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
 		ClusterServiceURL:     getEnv("CLUSTER_SERVICE_URL", "http://localhost:8188"), // Port 8188 - outside Windows reserved range
@@ -119,6 +121,17 @@ func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {
 			return time.Duration(seconds) * time.Second
+		}
+	}
+	return defaultValue
+}
+
+// getBoolEnv returns a bool from environment variable or default
+// Uses strconv.ParseBool for standard boolean parsing
+func getBoolEnv(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

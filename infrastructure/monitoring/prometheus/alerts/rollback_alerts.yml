@@ -16,6 +16,8 @@ groups:
             /
             rate(worker_execution_mode_total{mode="event_driven"}[5m])
           ) < 0.95
+          and
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) > 0
         for: 5m
         labels:
           severity: critical
@@ -38,13 +40,13 @@ groups:
           impact: "HIGH - Users may experience failed operations and data inconsistencies"
 
           action: |
-            1. Verify alert in Grafana dashboard: http://localhost:3001/d/ab-testing-event-driven
+            1. Verify alert in Grafana dashboard: http://localhost:3000/d/ab-testing-event-driven
             2. Check Worker logs for errors: tail -100 logs/worker.log
             3. Execute rollback: ./scripts/rollback-event-driven.sh
             4. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-success-rate-low"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: |
             rate(worker_execution_success_total{mode="event_driven"}[5m])
@@ -81,14 +83,14 @@ groups:
           impact: "HIGH - Users experience slow operation execution, may timeout"
 
           action: |
-            1. Check Grafana latency panel: http://localhost:3001/d/ab-testing-event-driven
+            1. Check Grafana latency panel: http://localhost:3000/d/ab-testing-event-driven
             2. Verify Redis health: docker exec redis redis-cli INFO
             3. Check database connections: docker exec postgres psql -U commandcenter -c "SELECT count(*) FROM pg_stat_activity;"
             4. Execute rollback: ./scripts/rollback-event-driven.sh
             5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-latency-high"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: |
             histogram_quantile(0.99,
@@ -105,6 +107,8 @@ groups:
             /
             rate(worker_execution_mode_total{mode="event_driven"}[5m])
           ) > 0.10
+          and
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) > 0
         for: 5m
         labels:
           severity: warning
@@ -129,13 +133,13 @@ groups:
 
           action: |
             1. Review compensation reasons in logs: grep "compensation" logs/worker.log
-            2. Check Grafana compensation panel: http://localhost:3001/d/ab-testing-event-driven
+            2. Check Grafana compensation panel: http://localhost:3000/d/ab-testing-event-driven
             3. Analyze failure patterns by reason
             4. If rate continues > 15 minutes, consider rollback
             5. Execute rollback: ./scripts/rollback-event-driven.sh
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-compensation-high"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: |
             rate(worker_compensation_executed_total{mode="event_driven"}[5m])
@@ -146,7 +150,7 @@ groups:
       # Critical Alert: Redis Unavailable
       ##########################################################################
       - alert: EventDrivenRedisUnavailable
-        expr: up{job="redis"} == 0
+        expr: up{job="redis"} == 0 or absent(up{job="redis"})
         for: 1m
         labels:
           severity: critical
@@ -179,7 +183,7 @@ groups:
             5. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/redis-unavailable"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: up{job="redis"}
 
@@ -213,7 +217,7 @@ groups:
             4. If trips continue > 5 in 10 minutes, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/circuit-breaker-tripped"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: increase(worker_circuit_breaker_trips_total{mode="event_driven"}[10m])
 
@@ -227,6 +231,8 @@ groups:
             /
             rate(worker_execution_mode_total{mode="event_driven"}[5m])
           ) > 0.15
+          and
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) > 0
         for: 5m
         labels:
           severity: warning
@@ -252,7 +258,7 @@ groups:
             4. Monitor for 15 minutes - if continues or worsens, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/retry-rate-high"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: |
             rate(worker_retry_attempts_total{mode="event_driven"}[5m])
@@ -292,7 +298,7 @@ groups:
             2. Verify ENABLE_EVENT_DRIVEN=true
             3. Verify EVENT_DRIVEN_ROLLOUT_PERCENT > 0.0
 
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
       ##########################################################################
       # Warning Alert: Queue Depth Growing
@@ -325,9 +331,192 @@ groups:
             5. If queue depth > 1000, consider rollback
 
           runbook_url: "https://wiki.commandcenter1c.local/runbooks/queue-depth-growing"
-          dashboard_url: "http://localhost:3001/d/ab-testing-event-driven"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
 
           query: deriv(worker_queue_depth{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Critical Alert: High Timeout Rate
+      ##########################################################################
+      - alert: EventDrivenTimeoutRateHigh
+        expr: |
+          (
+            rate(worker_state_machine_timeout_total[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+          ) > 0.10
+          and
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "State Machine timeout rate exceeds 10% - ROLLBACK RECOMMENDED"
+          description: |
+            State Machine timeout rate is {{ $value | humanizePercentage }},
+            which exceeds the 10% threshold.
+
+            Current rate: {{ $value | humanizePercentage }}
+            Threshold: 10%
+            Duration: 5 minutes
+
+            High timeout rate indicates operations are taking too long to complete,
+            potentially due to resource exhaustion, deadlocks, or infrastructure issues.
+
+          impact: "HIGH - Operations failing due to timeouts, users experiencing failures"
+
+          action: |
+            1. Check State Machine metrics in Grafana: http://localhost:3000/d/ab-testing-event-driven
+            2. Review Worker logs for timeout patterns: grep "timeout" logs/worker.log
+            3. Verify Redis and Database health
+            4. Check for slow operations or deadlocks
+            5. Execute rollback: ./scripts/rollback-event-driven.sh
+            6. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-timeout-rate-high"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
+
+          query: |
+            rate(worker_state_machine_timeout_total[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Warning Alert: Early Compensation Warning
+      ##########################################################################
+      - alert: EventDrivenCompensationWarning
+        expr: |
+          (
+            rate(worker_compensation_executed_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+          ) > 0.05
+          and
+          rate(worker_execution_mode_total{mode="event_driven"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: manual
+        annotations:
+          summary: "Compensation rate exceeds 5% - early warning"
+          description: |
+            Compensation rate is {{ $value | humanizePercentage }},
+            which exceeds the 5% early warning threshold.
+
+            Current rate: {{ $value | humanizePercentage }}
+            Threshold: 5%
+            Duration: 5 minutes
+
+            This is an early warning indicator before reaching critical 10% threshold.
+            Monitor closely and investigate compensation failure reasons.
+
+          impact: "LOW-MEDIUM - Increased compensation activity, may escalate"
+
+          action: |
+            1. Review compensation failure reasons in logs: grep "compensation.*failed" logs/worker.log
+            2. Check Grafana compensation panel: http://localhost:3000/d/ab-testing-event-driven
+            3. Analyze patterns by operation type
+            4. Monitor for escalation to 10% threshold
+            5. If rate continues > 20 minutes or reaches 10%, consider rollback
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/event-driven-compensation-warning"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
+
+          query: |
+            rate(worker_compensation_executed_total{mode="event_driven"}[5m])
+            /
+            rate(worker_execution_mode_total{mode="event_driven"}[5m])
+
+      ##########################################################################
+      # Critical Alert: Queue Depth Critical
+      ##########################################################################
+      - alert: EventDrivenQueueDepthCritical
+        expr: worker_queue_depth{mode="event_driven"} > 1000
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: automatic
+        annotations:
+          summary: "Queue depth exceeds 1000 - workers cannot keep up"
+          description: |
+            Event-Driven queue depth is {{ $value }}, exceeding critical threshold of 1000.
+
+            Current depth: {{ $value }}
+            Threshold: 1000
+            Duration: 2 minutes
+
+            Workers cannot process operations fast enough to keep up with incoming requests.
+            This may lead to severe latency degradation and eventual system unavailability.
+
+          impact: "CRITICAL - Severe latency degradation, risk of system overload"
+
+          action: |
+            1. Check current queue depth: docker exec redis redis-cli LLEN operations_queue
+            2. Verify worker health and resource usage
+            3. Check for stuck operations or deadlocks
+            4. Check infrastructure health (Redis, Database, Network)
+            5. Consider immediate scaling of worker pool
+            6. If queue continues growing > 5 minutes:
+               - Execute rollback: ./scripts/rollback-event-driven.sh
+               - Notify platform team: #platform-emergency
+            7. Follow runbook: docs/EVENT_DRIVEN_ROLLBACK_PLAN.md
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/queue-depth-critical"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
+
+          query: worker_queue_depth{mode="event_driven"}
+
+      ##########################################################################
+      # Warning Alert: High Active State Machine Count
+      ##########################################################################
+      - alert: StateMachineActiveCountHigh
+        expr: worker_state_machine_active_count > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: worker
+          component: event_driven
+          trigger: manual
+        annotations:
+          summary: "Too many concurrent state machines - possible leak"
+          description: |
+            Active State Machine count is {{ $value }}, exceeding threshold of 100.
+
+            Current count: {{ $value }}
+            Threshold: 100
+            Duration: 5 minutes
+
+            High number of concurrent state machines may indicate:
+            - Memory leak (state machines not being cleaned up)
+            - Stuck operations not completing
+            - Resource exhaustion preventing cleanup
+
+          impact: "MEDIUM - Increased memory usage, potential resource exhaustion"
+
+          action: |
+            1. Check State Machine metrics: http://localhost:9090
+            2. Review Worker logs for stuck operations: grep "state_machine" logs/worker.log
+            3. Check memory usage: docker stats worker
+            4. Identify long-running state machines
+            5. Check for operations in terminal states not cleaned up
+            6. If count > 200 or continues growing, consider rollback
+            7. May need Worker restart to clear leaked state machines
+
+          runbook_url: "https://wiki.commandcenter1c.local/runbooks/state-machine-active-count-high"
+          dashboard_url: "http://localhost:3000/d/ab-testing-event-driven"
+
+          query: worker_state_machine_active_count
 
 ##############################################################################
 # Alert Routing Configuration

@@ -158,76 +158,86 @@ func main() {
 	var eventPublisher *events.Publisher
 	var eventSubscriber *events.Subscriber
 
-	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
-	redisClient = redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	// Feature toggle for Redis Pub/Sub event handlers
+	pubSubEnabled := cfg.Redis.PubSubEnabled
+	logger.Info("Redis Pub/Sub configuration",
+		zap.Bool("pubsub_enabled", pubSubEnabled),
+		zap.String("env_var", "REDIS_PUBSUB_ENABLED"))
 
-	// Test Redis connection
-	ctx := context.Background()
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		logger.Error("failed to connect to Redis",
-			zap.String("addr", redisAddr),
-			zap.Error(err),
-		)
-		// Continue without event bus (graceful degradation)
+	if !pubSubEnabled {
+		logger.Info("Redis Pub/Sub disabled by feature toggle (REDIS_PUBSUB_ENABLED=false)")
 	} else {
-		logger.Info("Redis client initialized",
-			zap.String("addr", redisAddr),
-		)
+		redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
 
-		// Initialize Watermill logger
-		watermillLogger := watermill.NewStdLogger(false, false)
-
-		// Initialize Event Publisher
-		eventPublisher, err = events.NewPublisher(redisClient, "batch-service", watermillLogger)
-		if err != nil {
-			logger.Error("failed to create event publisher",
+		// Test Redis connection
+		ctx := context.Background()
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			logger.Error("failed to connect to Redis",
+				zap.String("addr", redisAddr),
 				zap.Error(err),
 			)
+			// Continue without event bus (graceful degradation)
 		} else {
-			logger.Info("event publisher initialized")
-		}
-
-		// Initialize Event Subscriber
-		eventSubscriber, err = events.NewSubscriber(redisClient, "batch-service-consumer", watermillLogger)
-		if err != nil {
-			logger.Error("failed to create event subscriber",
-				zap.Error(err),
+			logger.Info("Redis client initialized",
+				zap.String("addr", redisAddr),
 			)
-		} else {
-			logger.Info("event subscriber initialized")
-		}
-	}
 
-	// Register Event Handlers (if event system is available)
-	if eventPublisher != nil && eventSubscriber != nil {
-		logger.Info("registering event handlers")
+			// Initialize Watermill logger
+			watermillLogger := watermill.NewStdLogger(false, false)
 
-		// Create handlers (pass redisClient for idempotency checks)
-		installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, logger)
-
-		// Subscribe to command channels
-		if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {
-			logger.Error("failed to subscribe to install commands",
-				zap.String("channel", eventhandlers.InstallCommandChannel),
-				zap.Error(err))
-		} else {
-			logger.Info("subscribed to install commands",
-				zap.String("channel", eventhandlers.InstallCommandChannel))
-		}
-
-		// Start event subscriber in background
-		go func() {
-			logger.Info("starting event subscriber")
-			if err := eventSubscriber.Run(ctx); err != nil {
-				logger.Error("event subscriber error", zap.Error(err))
+			// Initialize Event Publisher
+			eventPublisher, err = events.NewPublisher(redisClient, "batch-service", watermillLogger)
+			if err != nil {
+				logger.Error("failed to create event publisher",
+					zap.Error(err),
+				)
+			} else {
+				logger.Info("event publisher initialized")
 			}
-		}()
-	} else {
-		logger.Warn("event system not available, event handlers disabled")
+
+			// Initialize Event Subscriber
+			eventSubscriber, err = events.NewSubscriber(redisClient, "batch-service-consumer", watermillLogger)
+			if err != nil {
+				logger.Error("failed to create event subscriber",
+					zap.Error(err),
+				)
+			} else {
+				logger.Info("event subscriber initialized")
+			}
+		}
+
+		// Register Event Handlers (if event system is available)
+		if eventPublisher != nil && eventSubscriber != nil {
+			logger.Info("registering event handlers")
+
+			// Create handlers (pass redisClient for idempotency checks)
+			installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, logger)
+
+			// Subscribe to command channels
+			if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {
+				logger.Error("failed to subscribe to install commands",
+					zap.String("channel", eventhandlers.InstallCommandChannel),
+					zap.Error(err))
+			} else {
+				logger.Info("subscribed to install commands",
+					zap.String("channel", eventhandlers.InstallCommandChannel))
+			}
+
+			// Start event subscriber in background
+			go func() {
+				logger.Info("starting event subscriber")
+				if err := eventSubscriber.Run(ctx); err != nil {
+					logger.Error("event subscriber error", zap.Error(err))
+				}
+			}()
+		} else {
+			logger.Warn("event system not available, event handlers disabled")
+		}
 	}
 
 	// Setup router with all services

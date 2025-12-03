@@ -18,6 +18,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
+	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
 )
@@ -135,9 +136,10 @@ func main() {
 	}
 	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
 
-	// Initialize task processor with Redis client for event publishing
+	// Initialize task processor with Redis client for event publishing and State Machine
 	taskProcessor := processor.NewTaskProcessor(cfg, credsClient, redisClient)
-	log.Info("task processor initialized with event publishing")
+	defer taskProcessor.Close() // Graceful shutdown for event subscriber
+	log.Info("task processor initialized with event publishing and State Machine support")
 
 	// Log feature flags configuration
 	featureFlags := taskProcessor.GetFeatureFlags()
@@ -163,10 +165,15 @@ func main() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
 
-		// Health endpoint with Redis check
+		// Health endpoint with Redis check (with timeout to prevent hanging)
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			// Create context with 5 second timeout to prevent hanging
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+
 			// Check Redis connectivity
-			if err := redisClient.Ping(r.Context()).Err(); err != nil {
+			if err := redisClient.Ping(ctx).Err(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				w.Write([]byte(`{"status":"unhealthy","redis":"disconnected","error":"` + err.Error() + `"}`))
 				return
@@ -175,6 +182,10 @@ func main() {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"status":"healthy","redis":"connected","service":"cc1c-worker"}`))
 		})
+
+		// Rollout stats endpoint for Event-Driven rollout monitoring
+		rolloutHandler := handlers.NewRolloutStatsHandler(taskProcessor.GetFeatureFlags)
+		mux.Handle("/rollout-stats", rolloutHandler)
 
 		log.Info("metrics endpoint started", zap.String("port", metricsPort))
 		if err := http.ListenAndServe(metricsPort, mux); err != nil {

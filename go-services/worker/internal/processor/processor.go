@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
+	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
@@ -26,15 +28,31 @@ type TaskProcessor struct {
 	odataClients   map[string]*odata.Client // Cache clients per database
 	clientsMutex   sync.RWMutex
 	workerID       string
-	featureFlags   *workerConfig.FeatureFlags  // NEW: Feature flags for dual-mode
-	dualModeProc   *DualModeProcessor          // NEW: Dual-mode processor
-	eventPublisher *events.EventPublisher      // NEW: Event publisher for workflow tracking
+	featureFlags   *workerConfig.FeatureFlags  // Feature flags for dual-mode
+	dualModeProc   *DualModeProcessor          // Dual-mode processor
+	eventPublisher *events.EventPublisher      // Event publisher for workflow tracking (internal)
+
+	// State Machine dependencies (Sprint 2.1)
+	redisClient     *redis.Client             // Redis client for State Machine persistence
+	eventSubscriber *sharedEvents.Subscriber  // Subscriber for events from ras-adapter/batch-service
 }
+
+// DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
+// Can be overridden via WORKER_CONSUMER_GROUP environment variable
+const DefaultConsumerGroupWorker = "worker-state-machine"
 
 // NewTaskProcessor creates a new task processor
 func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redisClient *redis.Client) *TaskProcessor {
+	log := logger.GetLogger()
+
 	// Load feature flags from environment
 	featureFlags := workerConfig.LoadFeatureFlagsFromEnv()
+
+	// Get consumer group from config (configurable via WORKER_CONSUMER_GROUP env var)
+	consumerGroup := cfg.WorkerConsumerGroup
+	if consumerGroup == "" {
+		consumerGroup = DefaultConsumerGroupWorker
+	}
 
 	processor := &TaskProcessor{
 		config:         cfg,
@@ -43,10 +61,28 @@ func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redis
 		workerID:       cfg.WorkerID,
 		featureFlags:   featureFlags,
 		eventPublisher: events.NewEventPublisher(redisClient),
+		redisClient:    redisClient,
 	}
 
 	// Initialize dual-mode processor
 	processor.dualModeProc = NewDualModeProcessor(featureFlags, processor)
+
+	// Initialize shared events subscriber for State Machine
+	// Uses Watermill logger adapter
+	wmLogger := watermill.NewStdLogger(false, false)
+	subscriber, err := sharedEvents.NewSubscriber(redisClient, consumerGroup, wmLogger)
+	if err != nil {
+		log.Error("failed to create event subscriber, State Machine events disabled",
+			zap.Error(err),
+			zap.String("consumer_group", consumerGroup),
+		)
+		// Continue without subscriber - State Machine will work in degraded mode
+	} else {
+		processor.eventSubscriber = subscriber
+		log.Info("event subscriber initialized",
+			zap.String("consumer_group", consumerGroup),
+		)
+	}
 
 	return processor
 }
@@ -380,4 +416,54 @@ func (p *TaskProcessor) GetFeatureFlags() map[string]interface{} {
 // ReloadFeatureFlags hot-reloads feature flags from environment
 func (p *TaskProcessor) ReloadFeatureFlags() error {
 	return p.dualModeProc.ReloadFeatureFlags()
+}
+
+// --- State Machine methods (Sprint 2.1) ---
+
+// GetEventSubscriber returns the shared events subscriber for State Machine
+// Returns nil if subscriber initialization failed
+func (p *TaskProcessor) GetEventSubscriber() *sharedEvents.Subscriber {
+	return p.eventSubscriber
+}
+
+// GetRedisClient returns the Redis client for State Machine persistence
+func (p *TaskProcessor) GetRedisClient() *redis.Client {
+	return p.redisClient
+}
+
+// StartEventSubscriber starts the event subscriber in background
+// Call this after registering all event handlers
+// Returns immediately, subscriber runs in background goroutine
+func (p *TaskProcessor) StartEventSubscriber(ctx context.Context) error {
+	if p.eventSubscriber == nil {
+		return nil // Subscriber not initialized, skip
+	}
+
+	log := logger.GetLogger()
+	log.Info("starting event subscriber for State Machine")
+
+	go func() {
+		if err := p.eventSubscriber.Run(ctx); err != nil && err != context.Canceled {
+			log.Error("event subscriber stopped with error", zap.Error(err))
+		}
+	}()
+
+	return nil
+}
+
+// Close gracefully shuts down the processor and its dependencies
+func (p *TaskProcessor) Close() error {
+	log := logger.GetLogger()
+	log.Info("closing TaskProcessor")
+
+	// Close event subscriber if initialized
+	if p.eventSubscriber != nil {
+		if err := p.eventSubscriber.Close(); err != nil {
+			log.Error("failed to close event subscriber", zap.Error(err))
+			return err
+		}
+		log.Info("event subscriber closed")
+	}
+
+	return nil
 }

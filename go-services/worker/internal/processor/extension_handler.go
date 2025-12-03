@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -44,39 +45,32 @@ type StatusUpdateRequest struct {
 	ProgressPercent int    `json:"progress_percent,omitempty"`
 }
 
-// ClusterInfo represents cluster metadata for workflow operations
-type ClusterInfo struct {
-	DatabaseID string `json:"database_id"`
-	ClusterID  string `json:"cluster_id"`
-	InfobaseID string `json:"infobase_id"`
-}
+// Note: ClusterInfo is defined in cluster_resolver.go
 
-// fetchClusterInfo получает cluster_id и infobase_id через Orchestrator API
+// fetchClusterInfo получает cluster_id и infobase_id через ClusterInfoResolver
+// DEPRECATED: This method is kept for backward compatibility in HTTP Sync mode.
+// New code should use DualModeProcessor.ResolveClusterInfo() which has caching support.
 func (p *TaskProcessor) fetchClusterInfo(ctx context.Context, databaseID string) (*ClusterInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/databases/%s/cluster-info", p.config.OrchestratorURL, databaseID)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
+	// Use ClusterResolver from DualModeProcessor if available (preferred - has caching)
+	if p.dualModeProc != nil {
+		resolver := p.dualModeProc.GetClusterResolver()
+		if resolver != nil {
+			return resolver.Resolve(ctx, databaseID)
+		}
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	// Fallback: Create temporary resolver for legacy code paths
+	// This path should rarely be hit in normal operation
+	log := logger.GetLogger()
+	log.Warn("using temporary ClusterResolver - DualModeProcessor not available",
+		zap.String("database_id", databaseID))
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("cluster-info endpoint returned status %d", resp.StatusCode)
+	resolverCfg := DefaultResolverConfig()
+	if p.redisClient != nil {
+		resolverCfg.RedisClient = p.redisClient
 	}
-
-	var info ClusterInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, err
-	}
-
-	return &info, nil
+	resolver := NewOrchestratorClusterResolver(resolverCfg)
+	return resolver.Resolve(ctx, databaseID)
 }
 
 // executeExtensionInstall handles extension installation via Batch Service
@@ -170,7 +164,7 @@ func (p *TaskProcessor) executeExtensionInstall(ctx context.Context, msg *models
 
 	// NEW: Initialize workflow with Redis Pub/Sub support
 	redisAddr := fmt.Sprintf("%s:%s", p.config.RedisHost, p.config.RedisPort)
-	pubSubEnabled := true // TODO: Add config parameter REDIS_PUBSUB_ENABLED
+	pubSubEnabled := os.Getenv("REDIS_PUBSUB_ENABLED") == "true"
 
 	workflowOrchestrator := workflow.NewExtensionInstallWorkflow(
 		p.config.ClusterServiceURL,

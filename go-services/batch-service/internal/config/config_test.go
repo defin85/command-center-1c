@@ -165,11 +165,11 @@ func TestLoadDefaultValues(t *testing.T) {
 
 	cfg := Load()
 
-	// Verify defaults
-	assert.Equal(t, "http://localhost:8088", cfg.ClusterServiceURL,
-		"Default CLUSTER_SERVICE_URL should be http://localhost:8088")
-	assert.Equal(t, "8087", cfg.Server.Port,
-		"Default SERVER_PORT should be 8087")
+	// Verify defaults (ras-adapter on port 8188, not deprecated cluster-service on 8088)
+	assert.Equal(t, "http://localhost:8188", cfg.ClusterServiceURL,
+		"Default CLUSTER_SERVICE_URL should be http://localhost:8188 (ras-adapter)")
+	assert.Equal(t, "8187", cfg.Server.Port,
+		"Default SERVER_PORT should be 8187")
 	assert.Equal(t, 30*time.Second, cfg.ClusterRequestTimeout,
 		"Default CLUSTER_REQUEST_TIMEOUT should be 30s")
 
@@ -204,7 +204,7 @@ func TestClusterServiceURLConfiguration(t *testing.T) {
 		{
 			name:        "default URL",
 			envValue:    "",
-			expectedURL: "http://localhost:8088",
+			expectedURL: "http://localhost:8188",
 		},
 		{
 			name:        "custom localhost with different port",
@@ -388,6 +388,150 @@ func TestClusterRequestTimeoutEdgeCases(t *testing.T) {
 
 			assert.Equal(t, tc.expected, cfg.ClusterRequestTimeout,
 				"CLUSTER_REQUEST_TIMEOUT=%s should be %v", tc.envValue, tc.expected)
+		})
+	}
+}
+
+// TestGetBoolEnvFunction verifies boolean environment variable loading
+func TestGetBoolEnvFunction(t *testing.T) {
+	testCases := []struct {
+		name         string
+		envVar       string
+		envValue     string
+		defaultValue bool
+		expected     bool
+	}{
+		{
+			name:         "env var set to true",
+			envVar:       "TEST_BOOL_1",
+			envValue:     "true",
+			defaultValue: false,
+			expected:     true,
+		},
+		{
+			name:         "env var set to TRUE",
+			envVar:       "TEST_BOOL_2",
+			envValue:     "TRUE",
+			defaultValue: false,
+			expected:     true,
+		},
+		{
+			name:         "env var set to 1",
+			envVar:       "TEST_BOOL_3",
+			envValue:     "1",
+			defaultValue: false,
+			expected:     true,
+		},
+		{
+			name:         "env var set to yes",
+			envVar:       "TEST_BOOL_4",
+			envValue:     "yes",
+			defaultValue: false,
+			expected:     true,
+		},
+		{
+			name:         "env var set to false",
+			envVar:       "TEST_BOOL_5",
+			envValue:     "false",
+			defaultValue: true,
+			expected:     false,
+		},
+		{
+			name:         "env var set to 0",
+			envVar:       "TEST_BOOL_6",
+			envValue:     "0",
+			defaultValue: true,
+			expected:     false,
+		},
+		{
+			name:         "env var set to no",
+			envVar:       "TEST_BOOL_7",
+			envValue:     "no",
+			defaultValue: true,
+			expected:     false,
+		},
+		{
+			name:         "env var not set, use default true",
+			envVar:       "TEST_BOOL_8_NOT_SET",
+			envValue:     "",
+			defaultValue: true,
+			expected:     true,
+		},
+		{
+			name:         "env var not set, use default false",
+			envVar:       "TEST_BOOL_9_NOT_SET",
+			envValue:     "",
+			defaultValue: false,
+			expected:     false,
+		},
+		{
+			name:         "env var invalid, use default",
+			envVar:       "TEST_BOOL_10",
+			envValue:     "invalid",
+			defaultValue: true,
+			expected:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envValue != "" {
+				os.Setenv(tc.envVar, tc.envValue)
+			} else {
+				os.Unsetenv(tc.envVar)
+			}
+			defer os.Unsetenv(tc.envVar)
+
+			result := getBoolEnv(tc.envVar, tc.defaultValue)
+
+			assert.Equal(t, tc.expected, result,
+				"getBoolEnv(%s=%q, %v) should return %v", tc.envVar, tc.envValue, tc.defaultValue, tc.expected)
+		})
+	}
+}
+
+// TestRedisPubSubEnabledConfiguration verifies Redis Pub/Sub feature toggle
+func TestRedisPubSubEnabledConfiguration(t *testing.T) {
+	testCases := []struct {
+		name     string
+		envValue string
+		expected bool
+	}{
+		{
+			name:     "default (disabled)",
+			envValue: "",
+			expected: false,
+		},
+		{
+			name:     "explicitly enabled",
+			envValue: "true",
+			expected: true,
+		},
+		{
+			name:     "enabled with 1",
+			envValue: "1",
+			expected: true,
+		},
+		{
+			name:     "explicitly disabled",
+			envValue: "false",
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envValue != "" {
+				os.Setenv("REDIS_PUBSUB_ENABLED", tc.envValue)
+			} else {
+				os.Unsetenv("REDIS_PUBSUB_ENABLED")
+			}
+			defer os.Unsetenv("REDIS_PUBSUB_ENABLED")
+
+			cfg := Load()
+
+			assert.Equal(t, tc.expected, cfg.Redis.PubSubEnabled,
+				"REDIS_PUBSUB_ENABLED=%q should result in PubSubEnabled=%v", tc.envValue, tc.expected)
 		})
 	}
 }

@@ -2,6 +2,7 @@ package statemachine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -96,6 +97,24 @@ func (sm *ExtensionInstallStateMachine) waitForEvent(
 					return envelope, nil
 				}
 
+				// Check for failure events (e.g., "cluster.infobase.lock-failed")
+				if isFailureEvent(envelope.EventType, expectedEventType) {
+					sm.markEventProcessed(envelope.MessageID)
+					fmt.Printf("[StateMachine] Received failure event: %s (expected: %s)\n",
+						envelope.EventType, expectedEventType)
+
+					// Extract error message from payload
+					errorMsg := "operation failed"
+					var payloadData map[string]interface{}
+					if err := json.Unmarshal(envelope.Payload, &payloadData); err == nil {
+						if errPayload, ok := payloadData["error"].(string); ok {
+							errorMsg = errPayload
+						}
+					}
+
+					return nil, fmt.Errorf("%s: %s", envelope.EventType, errorMsg)
+				}
+
 				// Unexpected event - save to buffer
 				sm.mu.Lock()
 				sm.eventBuffer = append(sm.eventBuffer, envelope)
@@ -115,6 +134,11 @@ func (sm *ExtensionInstallStateMachine) waitForEvent(
 			return envelope, nil
 		}
 
+		// If we got an error (not timeout), return immediately
+		if err != nil {
+			return nil, err
+		}
+
 		// Retry with exponential backoff
 		if attempt < sm.config.MaxRetries {
 			fmt.Printf("[StateMachine] Timeout waiting for %s, retry %d/%d\n",
@@ -127,6 +151,23 @@ func (sm *ExtensionInstallStateMachine) waitForEvent(
 
 	return nil, fmt.Errorf("timeout waiting for event %s after %d attempts",
 		expectedEventType, sm.config.MaxRetries)
+}
+
+// isFailureEvent checks if an event is a failure variant of the expected event
+func isFailureEvent(eventType, expectedEventType string) bool {
+	// Map expected events to their failure counterparts
+	failureMap := map[string]string{
+		"cluster.infobase.locked":       "cluster.infobase.lock-failed",
+		"cluster.sessions.closed":       "cluster.sessions.terminate-failed",
+		"cluster.infobase.unlocked":     "cluster.infobase.unlock-failed",
+		"batch.extension.installed":     "batch.extension.install-failed",
+	}
+
+	if failureType, ok := failureMap[expectedEventType]; ok {
+		return eventType == failureType
+	}
+
+	return false
 }
 
 // calculateBackoff calculates exponential backoff with jitter

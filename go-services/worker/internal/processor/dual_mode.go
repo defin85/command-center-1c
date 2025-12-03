@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
-	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
+	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
+	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
 )
 
 // ExecutionMode represents execution mode (Event-Driven vs HTTP Sync)
@@ -25,15 +27,45 @@ const (
 
 // DualModeProcessor handles dual-mode execution
 type DualModeProcessor struct {
-	featureFlags *config.FeatureFlags
-	processor    *TaskProcessor
+	featureFlags    *config.FeatureFlags
+	processor       *TaskProcessor
+	smConfig        *statemachine.Config    // State Machine configuration
+	clusterResolver ClusterInfoResolver     // Resolver for cluster/infobase IDs
 }
 
 // NewDualModeProcessor creates new DualModeProcessor instance
 func NewDualModeProcessor(ff *config.FeatureFlags, processor *TaskProcessor) *DualModeProcessor {
+	log := logger.GetLogger()
+
+	// Load State Machine config from environment
+	// Pass nil for logger since logrus doesn't implement zap interface
+	// Config loading will skip debug logging
+	smConfig := statemachine.LoadFromEnv(nil)
+
+	// Initialize ClusterInfoResolver
+	// Uses OrchestratorClusterResolver with Redis caching if available
+	var clusterResolver ClusterInfoResolver
+	resolverCfg := DefaultResolverConfig()
+
+	if processor != nil && processor.GetRedisClient() != nil {
+		resolverCfg.RedisClient = processor.GetRedisClient()
+	}
+
+	if resolverCfg.OrchestratorURL != "" {
+		clusterResolver = NewOrchestratorClusterResolver(resolverCfg)
+		log.Info("ClusterInfoResolver initialized with OrchestratorClusterResolver")
+	} else {
+		clusterResolver = &NullClusterResolver{}
+		log.Warn("ClusterInfoResolver not configured (OrchestratorURL is empty), Event-Driven mode will fail")
+	}
+
+	log.Info("DualModeProcessor initialized with State Machine config")
+
 	return &DualModeProcessor{
-		featureFlags: ff,
-		processor:    processor,
+		featureFlags:    ff,
+		processor:       processor,
+		smConfig:        smConfig,
+		clusterResolver: clusterResolver,
 	}
 }
 
@@ -153,81 +185,158 @@ func validateExtensionInstallParams(data map[string]interface{}) (extensionName,
 }
 
 // processEventDriven executes through Event-Driven State Machine
+// This is the REAL implementation - NO fallback to HTTP Sync!
 func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	log := logger.GetLogger()
+	start := time.Now()
 
-	log.Infof("executing via Event-Driven State Machine: operation_id=%s, database_id=%s",
+	log.Infof("[Event-Driven] Starting State Machine execution: operation_id=%s, database_id=%s",
 		msg.OperationID, databaseID)
 
-	// Validate parameters
-	_, _, _, err := validateExtensionInstallParams(msg.Payload.Data)
+	// Step 1: Validate parameters
+	extensionName, extensionPath, _, err := validateExtensionInstallParams(msg.Payload.Data)
 	if err != nil {
-		return models.DatabaseResultV2{}, err
+		log.Errorf("[Event-Driven] Parameter validation failed: %v", err)
+		return models.DatabaseResultV2{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("parameter validation failed: %v", err),
+			ErrorCode:  "VALIDATION_ERROR",
+			Duration:   time.Since(start).Seconds(),
+		}, err
 	}
 
-	// NOTE: This is a simplified version for Task 3.2.1
-	// Full State Machine integration requires Redis Pub/Sub setup (from Task 2.1)
+	log.Infof("[Event-Driven] Parameters validated: extension_name=%s, extension_path=%s",
+		extensionName, extensionPath)
+
+	// Step 2: Generate correlation ID for this workflow
 	correlationID := fmt.Sprintf("%s-%s-%d", msg.OperationID, databaseID, time.Now().UnixNano())
 
-	// TODO: Initialize real EventPublisher and EventSubscriber (from Task 2.1)
-	// For now, this is a placeholder that shows the integration pattern
-	log.Warnf("Event-Driven mode selected but State Machine integration not fully implemented: correlation_id=%s, operation_id=%s, database_id=%s",
-		correlationID, msg.OperationID, databaseID)
+	log.Infof("[Event-Driven] Generated correlation_id=%s", correlationID)
 
-	// Fallback to HTTP Sync for now
-	log.Infof("falling back to HTTP Sync mode (Event-Driven not fully implemented yet)")
-	return dm.processHTTPSync(ctx, msg, databaseID)
+	// Step 3: Resolve cluster info from Orchestrator (NO fallback!)
+	resolveStart := time.Now()
+	clusterInfo, err := dm.clusterResolver.Resolve(ctx, databaseID)
+	resolveDuration := time.Since(resolveStart)
+	metrics.RecordClusterResolveDuration(resolveDuration.Seconds())
 
-	// FUTURE: Full State Machine integration
-	/*
-	sm, err := statemachine.NewStateMachine(
+	if err != nil {
+		log.Errorf("[Event-Driven] Failed to resolve cluster info: database_id=%s, error=%v, duration=%v",
+			databaseID, err, resolveDuration)
+		// NO fallback - return error directly
+		return models.DatabaseResultV2{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("failed to resolve cluster info: %v", err),
+			ErrorCode:  "CLUSTER_RESOLVE_ERROR",
+			Duration:   time.Since(start).Seconds(),
+		}, fmt.Errorf("failed to resolve cluster info for database %s: %w", databaseID, err)
+	}
+
+	log.Infof("[Event-Driven] Cluster info resolved: database_id=%s, cluster_id=%s, infobase_id=%s, duration=%v",
+		databaseID, clusterInfo.ClusterID, clusterInfo.InfobaseID, resolveDuration)
+
+	// Step 4: Create State Machine
+	sm, err := dm.createStateMachine(
 		ctx,
 		msg.OperationID,
 		databaseID,
 		correlationID,
-		publisher,   // TODO: Get from TaskProcessor
-		subscriber,  // TODO: Get from TaskProcessor
-		redisClient, // TODO: Get from TaskProcessor
-		smConfig,    // TODO: Load from config
+		clusterInfo,
+		extensionName,
+		extensionPath,
 	)
 	if err != nil {
-		return models.DatabaseResultV2{}, fmt.Errorf("failed to create state machine: %w", err)
+		metrics.RecordStateMachineCreated(false)
+		log.Errorf("[Event-Driven] Failed to create State Machine: operation_id=%s, error=%v",
+			msg.OperationID, err)
+		// NO fallback - return error directly
+		return models.DatabaseResultV2{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("failed to create state machine: %v", err),
+			ErrorCode:  "STATE_MACHINE_CREATE_ERROR",
+			Duration:   time.Since(start).Seconds(),
+		}, fmt.Errorf("failed to create state machine: %w", err)
 	}
 
-	// Set workflow data
-	sm.ClusterID = clusterInfo.ClusterID
-	sm.InfobaseID = clusterInfo.InfobaseID
-	sm.ExtensionPath = extensionPath
-	sm.ExtensionName = extensionName
+	metrics.RecordStateMachineCreated(true)
+	log.Infof("[Event-Driven] State Machine created: sm_id=%s, correlation_id=%s",
+		sm.ID, correlationID)
 
-	// Run State Machine
-	if err := sm.Run(ctx); err != nil {
-		return models.DatabaseResultV2{}, fmt.Errorf("state machine failed: %w", err)
-	}
+	// Step 5: Run State Machine
+	log.Infof("[Event-Driven] Running State Machine: sm_id=%s", sm.ID)
+	runErr := sm.Run(ctx)
 
-	// Get final state
-	finalState := sm.GetState()
+	// Critical #2 Fix: Ensure publisher is closed after SM completes (success or failure)
+	// Publisher is created per-SM in createStateMachine, so we must clean it up here
+	defer func() {
+		if closeErr := sm.ClosePublisher(); closeErr != nil {
+			log.Warnf("[Event-Driven] Failed to close publisher for SM %s: %v", sm.ID, closeErr)
+		}
+	}()
 
-	// Build result based on final state
+	// Get final state BEFORE closing (important!)
+	finalState := sm.State
+	smDuration := time.Since(start)
+
+	log.Infof("[Event-Driven] State Machine finished: sm_id=%s, final_state=%s, duration=%v, error=%v",
+		sm.ID, finalState, smDuration, runErr)
+
+	// Record State Machine final state metric
+	metrics.RecordStateMachineFinalState(string(finalState))
+
+	// Step 6: Build result based on final state
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
+		Duration:   smDuration.Seconds(),
 	}
 
+	// Check final state to determine success/failure
 	if finalState == statemachine.StateCompleted {
 		result.Success = true
 		result.Data = map[string]interface{}{
 			"extension_name": extensionName,
+			"extension_path": extensionPath,
 			"mode":           "event_driven",
 			"correlation_id": correlationID,
+			"cluster_id":     clusterInfo.ClusterID,
+			"infobase_id":    clusterInfo.InfobaseID,
+			"final_state":    string(finalState),
 		}
+		log.Infof("[Event-Driven] Operation completed successfully: operation_id=%s, database_id=%s",
+			msg.OperationID, databaseID)
 	} else {
 		result.Success = false
-		result.Error = fmt.Sprintf("state machine ended in state: %s", finalState)
 		result.ErrorCode = "STATE_MACHINE_ERROR"
+
+		// Build error message based on state and run error
+		if runErr != nil {
+			result.Error = fmt.Sprintf("state machine failed in state '%s': %v", finalState, runErr)
+		} else {
+			result.Error = fmt.Sprintf("state machine ended in unexpected state: %s", finalState)
+		}
+
+		// Add additional context to Data for debugging
+		result.Data = map[string]interface{}{
+			"mode":           "event_driven",
+			"correlation_id": correlationID,
+			"final_state":    string(finalState),
+		}
+
+		log.Errorf("[Event-Driven] Operation failed: operation_id=%s, database_id=%s, final_state=%s, error=%s",
+			msg.OperationID, databaseID, finalState, result.Error)
+
+		// If SM reached Compensating state, compensation was executed
+		if finalState == statemachine.StateFailed {
+			log.Infof("[Event-Driven] State Machine executed compensation actions before failing")
+		}
 	}
 
-	return result, nil
-	*/
+	// Note: Metrics for Event-Driven execution are recorded in ProcessExtensionInstall()
+	// Additional SM-specific metrics can be added here if needed
+
+	return result, runErr
 }
 
 // processHTTPSync executes through HTTP Sync calls (legacy mode)
@@ -258,6 +367,133 @@ func (dm *DualModeProcessor) ReloadFeatureFlags() error {
 	log := logger.GetLogger()
 	log.Infof("reloading feature flags from environment")
 	return dm.featureFlags.Reload()
+}
+
+// GetClusterResolver returns the ClusterInfoResolver instance
+func (dm *DualModeProcessor) GetClusterResolver() ClusterInfoResolver {
+	return dm.clusterResolver
+}
+
+// SetClusterResolver sets a custom ClusterInfoResolver (useful for testing)
+func (dm *DualModeProcessor) SetClusterResolver(resolver ClusterInfoResolver) {
+	dm.clusterResolver = resolver
+}
+
+// ResolveClusterInfo resolves cluster info for a database ID
+// This is a convenience method that wraps clusterResolver.Resolve
+func (dm *DualModeProcessor) ResolveClusterInfo(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	if dm.clusterResolver == nil {
+		return nil, fmt.Errorf("ClusterInfoResolver not configured")
+	}
+	return dm.clusterResolver.Resolve(ctx, databaseID)
+}
+
+// --- State Machine Factory ---
+
+// Note: ClusterInfo is defined in cluster_resolver.go
+
+// publisherWrapper wraps shared/events.Publisher to implement statemachine.EventPublisher
+type publisherWrapper struct {
+	publisher *events.Publisher
+}
+
+// Publish implements statemachine.EventPublisher
+func (pw *publisherWrapper) Publish(ctx context.Context, channel string, eventType string, payload interface{}, correlationID string) error {
+	return pw.publisher.Publish(ctx, channel, eventType, payload, correlationID)
+}
+
+// Close implements statemachine.EventPublisher
+func (pw *publisherWrapper) Close() error {
+	return pw.publisher.Close()
+}
+
+// subscriberWrapper wraps shared/events.Subscriber to implement statemachine.EventSubscriber
+// IMPORTANT: This wrapper does NOT close the underlying subscriber because it's shared
+// across multiple State Machines and managed by TaskProcessor
+type subscriberWrapper struct {
+	subscriber *events.Subscriber
+}
+
+// Subscribe implements statemachine.EventSubscriber
+func (sw *subscriberWrapper) Subscribe(channel string, handler events.HandlerFunc) error {
+	return sw.subscriber.Subscribe(channel, handler)
+}
+
+// Close implements statemachine.EventSubscriber
+// DO NOT close shared subscriber - it's managed by TaskProcessor
+func (sw *subscriberWrapper) Close() error {
+	// Critical #1 Fix: shared subscriber lifecycle is managed by TaskProcessor,
+	// not by individual State Machines. Closing here would break all other SMs.
+	return nil
+}
+
+// createStateMachine creates a new ExtensionInstallStateMachine instance
+// Returns error if required dependencies are not available
+func (dm *DualModeProcessor) createStateMachine(
+	ctx context.Context,
+	operationID string,
+	databaseID string,
+	correlationID string,
+	clusterInfo *ClusterInfo,
+	extensionName string,
+	extensionPath string,
+) (*statemachine.ExtensionInstallStateMachine, error) {
+	log := logger.GetLogger()
+
+	// Get dependencies from TaskProcessor
+	redisClient := dm.processor.GetRedisClient()
+	subscriber := dm.processor.GetEventSubscriber()
+
+	// Check subscriber availability (graceful degradation)
+	if subscriber == nil {
+		log.Warnf("event subscriber not available, State Machine cannot be created: operation_id=%s, database_id=%s",
+			operationID, databaseID)
+		return nil, fmt.Errorf("event subscriber not available for State Machine")
+	}
+
+	// Create publisher for State Machine
+	// Note: We create a new publisher instance for each State Machine
+	// to ensure proper isolation and cleanup
+	publisher, err := events.NewPublisher(redisClient, "worker-state-machine", nil)
+	if err != nil {
+		log.Errorf("failed to create event publisher for State Machine: %v", err)
+		return nil, fmt.Errorf("failed to create event publisher: %w", err)
+	}
+
+	// Wrap publisher and subscriber to implement statemachine interfaces
+	pubWrapper := &publisherWrapper{publisher: publisher}
+	subWrapper := &subscriberWrapper{subscriber: subscriber}
+
+	// Create State Machine
+	sm, err := statemachine.NewStateMachine(
+		ctx,
+		operationID,
+		databaseID,
+		correlationID,
+		pubWrapper,
+		subWrapper,
+		redisClient,
+		dm.smConfig,
+	)
+	if err != nil {
+		// Clean up publisher on error
+		publisher.Close()
+		log.Errorf("failed to create State Machine: %v", err)
+		return nil, fmt.Errorf("failed to create State Machine: %w", err)
+	}
+
+	// Set workflow data from ClusterInfo
+	if clusterInfo != nil {
+		sm.ClusterID = clusterInfo.ClusterID
+		sm.InfobaseID = clusterInfo.InfobaseID
+	}
+	sm.ExtensionName = extensionName
+	sm.ExtensionPath = extensionPath
+
+	log.Infof("State Machine created: id=%s, operation_id=%s, database_id=%s, correlation_id=%s",
+		sm.ID, operationID, databaseID, correlationID)
+
+	return sm, nil
 }
 
 // Metrics recording functions (placeholder - to be implemented with Prometheus)

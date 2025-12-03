@@ -147,6 +147,32 @@ services:
     networks:
       - commandcenter-network
 
+  # Flower (Celery Web UI)
+  flower:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: commandcenter-flower
+    command: celery -A config flower --port=5555 --broker=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    environment:
+      - DEBUG=True
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=commandcenter
+      - DB_USER=commandcenter
+      - DB_PASSWORD=dev_password_change_in_prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - SECRET_KEY=dev-secret-key-change-in-prod
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - commandcenter-network
+
   # RAS gRPC Gateway (форк для взаимодействия с 1C RAC)
   ras-grpc-gw:
     build:

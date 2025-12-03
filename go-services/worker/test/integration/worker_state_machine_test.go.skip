@@ -110,7 +110,7 @@ func TestStateMachine_LockFailed(t *testing.T) {
 	// Assertions
 	t.Log("📊 Verifying results...")
 
-	assert.Error(t, err, "State Machine should return error")
+	require.Error(t, err, "State Machine should return error")
 	assert.Contains(t, err.Error(), "failed waiting for locked event", "Error should mention lock failure")
 
 	// State should be Failed or Compensating (depends on implementation)

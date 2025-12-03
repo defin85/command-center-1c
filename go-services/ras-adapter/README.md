@@ -169,7 +169,7 @@ Response:
 | `RAS_MAX_CONNECTIONS` | `10` | Max RAS connections in pool |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_PUBSUB_ENABLED` | `true` | Enable Redis Pub/Sub |
+| `REDIS_PUBSUB_ENABLED` | `false` | Enable Redis Pub/Sub (default: disabled for safety) |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 
 ## Build & Run
