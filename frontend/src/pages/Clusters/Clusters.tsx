@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { clustersApi, Cluster, ClusterCreateRequest } from '../../api/endpoints/clusters'
+import { clustersApi, Cluster, ClusterCreateRequest } from '../../api/adapters/clusters'
 
 const { TextArea } = Input
 

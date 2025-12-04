@@ -206,6 +206,9 @@ export const getWorkflowExecutionSteps = async (id: string): Promise<NodeStepRes
 // Operation Templates (for operation node configuration)
 // ============================================================================
 
+/**
+ * @deprecated Use '@/api/adapters/templates' instead.
+ */
 export interface OperationTemplateListItem {
   id: string
   name: string
@@ -215,6 +218,16 @@ export interface OperationTemplateListItem {
 
 /**
  * List available operation templates for workflow operations.
+ *
+ * @deprecated Use '@/api/adapters/templates' instead:
+ *   import { listOperationTemplates } from '@/api/adapters/templates'
+ *
+ * The templates adapter provides additional functions:
+ *   - listTemplates() - list with filtering
+ *   - getTemplate() - get single template
+ *   - createTemplate() - create new template
+ *   - updateTemplate() - update existing template
+ *   - deleteTemplate() - delete template
  */
 export const listOperationTemplates = async (): Promise<OperationTemplateListItem[]> => {
   // v2 migration: GET /templates/ → GET /templates/list-templates/

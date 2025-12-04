@@ -380,13 +380,6 @@ export interface WorkflowExecutionCreate {
   mode?: 'sync' | 'async'
 }
 
-export interface OperationTemplateListItem {
-  id: string
-  name: string
-  operation_type: string
-  description?: string
-}
-
 // ============================================================================
 // Workflow Template Endpoints
 // ============================================================================
@@ -714,23 +707,11 @@ export const getWorkflowExecutionSteps = async (id: string): Promise<LegacyNodeS
 }
 
 // ============================================================================
-// Operation Templates (for operation node configuration)
+// Operation Templates (re-exported from templates adapter)
 // ============================================================================
 
-/**
- * List available operation templates for workflow operations.
- */
-export const listOperationTemplates = async (): Promise<OperationTemplateListItem[]> => {
-  interface ListTemplatesResponse {
-    templates: OperationTemplateListItem[]
-    count: number
-  }
-
-  const response = await customInstance<ListTemplatesResponse>({
-    url: '/api/v2/templates/list-templates/',
-    method: 'GET',
-    params: { limit: 1000 }, // Get all for dropdown
-  })
-
-  return response.templates ?? (response as unknown as OperationTemplateListItem[])
-}
+// Re-export from dedicated templates adapter for backward compatibility
+export {
+  listOperationTemplates,
+  type OperationTemplateListItem,
+} from './templates'

@@ -1,5 +1,19 @@
+/**
+ * @deprecated This module is deprecated. Use '../adapters/operations' instead.
+ * This file will be removed in a future version.
+ *
+ * Migration guide:
+ * - Replace: import { operationsApi, BatchOperation, Task } from '../api/endpoints/operations'
+ * - With:    import { operationsApi, BatchOperation, Task } from '../api/adapters/operations'
+ *
+ * Or use individual functions:
+ * - import { listOperations, getOperation, cancelOperation } from '../api/adapters/operations'
+ */
 import { apiClient } from '../client'
 
+/**
+ * @deprecated Use Task from '../adapters/operations' instead.
+ */
 export interface Task {
   id: string
   database: string
@@ -18,6 +32,9 @@ export interface Task {
   updated_at: string
 }
 
+/**
+ * @deprecated Use BatchOperation from '../adapters/operations' instead.
+ */
 export interface BatchOperation {
   id: string
   name: string
@@ -44,7 +61,10 @@ export interface BatchOperation {
   tasks: Task[]
 }
 
-// Legacy interface for backward compatibility
+/**
+ * @deprecated Use Operation from '../adapters/operations' instead.
+ * Legacy interface for backward compatibility.
+ */
 export interface Operation {
   id: string
   type: string
@@ -77,6 +97,10 @@ interface GetOperationResponse {
   }
 }
 
+/**
+ * @deprecated Use operationsApi from '../adapters/operations' instead,
+ * or use individual functions: listOperations, getOperation, cancelOperation.
+ */
 export const operationsApi = {
   // API v2 action-based endpoints
   list: async (params?: Record<string, any>): Promise<BatchOperation[]> => {

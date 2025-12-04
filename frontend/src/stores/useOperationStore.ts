@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { Operation } from '../api/endpoints/operations'
+import { Operation } from '../api/adapters/operations'
 
 interface OperationStore {
   operations: Operation[]

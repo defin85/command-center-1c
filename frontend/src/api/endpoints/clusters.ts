@@ -1,5 +1,14 @@
+/**
+ * @deprecated This file is deprecated. Use '../adapters/clusters.ts' instead.
+ * Migration completed: 2025-12-04
+ *
+ * Import path change:
+ * - OLD: import { clustersApi, Cluster } from '../../api/endpoints/clusters'
+ * - NEW: import { clustersApi, Cluster } from '../../api/adapters/clusters'
+ */
 import { apiClient } from '../client'
 
+/** @deprecated Use Cluster from '../adapters/clusters' */
 export interface Cluster {
     id: string
     name: string
@@ -16,6 +25,7 @@ export interface Cluster {
     updated_at: string
 }
 
+/** @deprecated Use ClusterCreateRequest from '../adapters/clusters' */
 export interface ClusterCreateRequest {
     name: string
     description?: string
@@ -34,6 +44,7 @@ export interface ClusterListResponse {
     clusters?: Cluster[]  // API v2 returns 'clusters' instead of 'results'
 }
 
+/** @deprecated Use clustersApi from '../adapters/clusters' */
 export const clustersApi = {
     // v2 migration: GET /databases/clusters → GET /clusters/list-clusters
     list: async (params?: Record<string, any>): Promise<Cluster[]> => {

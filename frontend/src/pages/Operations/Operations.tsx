@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Progress, Modal, Typography } from 'antd'
 import { ReloadOutlined, EyeOutlined, StopOutlined, MonitorOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { operationsApi, BatchOperation, Task } from '../../api/endpoints/operations'
+import { operationsApi, BatchOperation, Task } from '../../api/adapters/operations'
 import type { ColumnsType } from 'antd/es/table'
 
 const { Paragraph } = Typography

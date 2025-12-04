@@ -1,5 +1,15 @@
+/**
+ * @deprecated This file is deprecated. Use '../adapters/databases' instead.
+ * Migration: endpoints/databases.ts -> adapters/databases.ts
+ *
+ * This file will be removed in a future release.
+ * Sunset date: 2026-03-01
+ */
 import { apiClient } from '../client'
 
+/**
+ * @deprecated Use Database from '../adapters/databases' instead
+ */
 export interface Database {
   id: string
   name: string
@@ -10,6 +20,9 @@ export interface Database {
   created_at: string
 }
 
+/**
+ * @deprecated Use DatabaseListResponse from '../adapters/databases' instead
+ */
 export interface DatabaseListResponse {
   count: number
   total?: number
@@ -19,6 +32,9 @@ export interface DatabaseListResponse {
   databases?: Database[]  // API v2 returns 'databases' instead of 'results'
 }
 
+/**
+ * @deprecated Use databasesApi from '../adapters/databases' instead
+ */
 export const databasesApi = {
   // v2 migration: GET /databases → GET /databases/list-databases
   list: async (params?: Record<string, any>): Promise<Database[]> => {
