@@ -308,7 +308,9 @@ export const TraceViewerModal = ({
     >
       {isLoading && (
         <div className="trace-loading">
-          <Spin size="large" tip="Loading trace..." />
+          <Spin size="large" tip="Loading trace...">
+            <div style={{ minHeight: 200 }} />
+          </Spin>
         </div>
       )}
 

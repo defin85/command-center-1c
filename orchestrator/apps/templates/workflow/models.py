@@ -309,6 +309,15 @@ class WorkflowConfig(BaseModel):
 # ============================================================================
 
 
+class WorkflowType(models.TextChoices):
+    """Workflow type choices for WorkflowTemplate."""
+
+    SEQUENTIAL = "sequential", "Sequential"
+    CONDITIONAL = "conditional", "Conditional"
+    PARALLEL = "parallel", "Parallel"
+    COMPLEX = "complex", "Complex"
+
+
 class WorkflowTemplate(models.Model):
     """
     Workflow template with DAG structure.
@@ -322,8 +331,9 @@ class WorkflowTemplate(models.Model):
     description = models.TextField(blank=True, help_text="Workflow description")
     workflow_type = models.CharField(
         max_length=100,
-        default="general",
-        help_text="Workflow category (e.g., user_management, database_ops)",
+        choices=WorkflowType.choices,
+        default=WorkflowType.SEQUENTIAL,
+        help_text="Workflow type: sequential, conditional, parallel, complex",
     )
 
     # DAG structure (Pydantic-validated)

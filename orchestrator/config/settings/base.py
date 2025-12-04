@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'django_celery_beat',  # Database-backed periodic tasks
     'channels',  # Django Channels for WebSocket support
+    'django_json_widget',  # JSON Editor widget for Admin
 
     # Local apps
     'apps.operations',

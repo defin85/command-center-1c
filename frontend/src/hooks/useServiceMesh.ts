@@ -88,9 +88,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   // Get WebSocket URL with auth token
   const getWebSocketUrl = useCallback((): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // WebSocket directly to Orchestrator (Django Channels)
-    // Port 8200 - Django/Orchestrator service
-    const host = import.meta.env.VITE_WS_HOST || 'localhost:8200'
+    // WebSocket through API Gateway (which proxies to Orchestrator)
+    // Port 8180 - API Gateway service
+    const host = import.meta.env.VITE_WS_HOST || 'localhost:8180'
     const baseUrl = `${protocol}//${host}/ws/service-mesh/`
 
     // Add JWT token for authentication

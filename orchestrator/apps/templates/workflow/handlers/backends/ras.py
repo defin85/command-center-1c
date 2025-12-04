@@ -21,6 +21,15 @@ from apps.databases.models import Database
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
 
+# Import registry types
+from apps.templates.registry import (
+    get_registry,
+    OperationType,
+    BackendType,
+    TargetEntity,
+    ParameterSchema,
+)
+
 # Import generated RAS adapter client
 from apps.databases.clients.generated.ras_adapter_api_client import Client
 from apps.databases.clients.generated.ras_adapter_api_client.api.infobases_v2 import (
@@ -48,14 +57,6 @@ from .base import AbstractOperationBackend
 logger = logging.getLogger(__name__)
 
 
-# RAS operation type constants
-TYPE_LOCK_SCHEDULED_JOBS = 'lock_scheduled_jobs'
-TYPE_UNLOCK_SCHEDULED_JOBS = 'unlock_scheduled_jobs'
-TYPE_TERMINATE_SESSIONS = 'terminate_sessions'
-TYPE_BLOCK_SESSIONS = 'block_sessions'
-TYPE_UNBLOCK_SESSIONS = 'unblock_sessions'
-
-
 class RASBackendError(Exception):
     """Exception raised when RAS operation fails."""
 
@@ -80,17 +81,108 @@ class RASBackend(AbstractOperationBackend):
         - unblock_sessions: Allow new connections
     """
 
-    # Operation types handled by RAS backend
-    SUPPORTED_TYPES: Set[str] = {
-        TYPE_LOCK_SCHEDULED_JOBS,
-        TYPE_UNLOCK_SCHEDULED_JOBS,
-        TYPE_TERMINATE_SESSIONS,
-        TYPE_BLOCK_SESSIONS,
-        TYPE_UNBLOCK_SESSIONS,
-    }
+    # Operation type definitions with full metadata
+    OPERATION_TYPES: List[OperationType] = [
+        OperationType(
+            id='lock_scheduled_jobs',
+            name='Lock Scheduled Jobs',
+            description='Disable scheduled jobs (reglament tasks) for infobase. '
+                       'Jobs will not run until unlocked.',
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            required_parameters=[
+                ParameterSchema('db_user', 'string', description='Database administrator username'),
+                ParameterSchema('db_password', 'string', description='Database administrator password'),
+            ],
+            optional_parameters=[],
+            is_async=False,
+            timeout_seconds=30,
+            category='admin',
+            tags=['cluster', 'jobs', 'maintenance'],
+        ),
+        OperationType(
+            id='unlock_scheduled_jobs',
+            name='Unlock Scheduled Jobs',
+            description='Enable scheduled jobs (reglament tasks) for infobase. '
+                       'Jobs will resume according to their schedule.',
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            required_parameters=[
+                ParameterSchema('db_user', 'string', description='Database administrator username'),
+                ParameterSchema('db_password', 'string', description='Database administrator password'),
+            ],
+            optional_parameters=[],
+            is_async=False,
+            timeout_seconds=30,
+            category='admin',
+            tags=['cluster', 'jobs', 'maintenance'],
+        ),
+        OperationType(
+            id='terminate_sessions',
+            name='Terminate Sessions',
+            description='Terminate all active user sessions for infobase. '
+                       'Users will be disconnected immediately.',
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            required_parameters=[],
+            optional_parameters=[],
+            is_async=False,
+            timeout_seconds=60,
+            category='admin',
+            tags=['cluster', 'sessions', 'maintenance'],
+        ),
+        OperationType(
+            id='block_sessions',
+            name='Block Sessions',
+            description='Block new user connections to infobase. '
+                       'Existing sessions are not affected.',
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            required_parameters=[
+                ParameterSchema('db_user', 'string', description='Database administrator username'),
+                ParameterSchema('db_password', 'string', description='Database administrator password'),
+            ],
+            optional_parameters=[
+                ParameterSchema('denied_message', 'string', required=False,
+                              description='Message shown to users trying to connect', default=''),
+                ParameterSchema('permission_code', 'string', required=False,
+                              description='Permission code to bypass block', default=''),
+            ],
+            is_async=False,
+            timeout_seconds=30,
+            category='admin',
+            tags=['cluster', 'sessions', 'access'],
+        ),
+        OperationType(
+            id='unblock_sessions',
+            name='Unblock Sessions',
+            description='Allow new user connections to infobase. '
+                       'Removes session blocking.',
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            required_parameters=[
+                ParameterSchema('db_user', 'string', description='Database administrator username'),
+                ParameterSchema('db_password', 'string', description='Database administrator password'),
+            ],
+            optional_parameters=[],
+            is_async=False,
+            timeout_seconds=30,
+            category='admin',
+            tags=['cluster', 'sessions', 'access'],
+        ),
+    ]
+
+    # Computed from OPERATION_TYPES for backward compatibility
+    SUPPORTED_TYPES: Set[str] = {op.id for op in OPERATION_TYPES}
 
     # Default timeout for RAS operations (seconds)
     DEFAULT_TIMEOUT_SECONDS = 30
+
+    @classmethod
+    def register_operations(cls) -> None:
+        """Register all RAS operations in the global registry."""
+        registry = get_registry()
+        registry.register_many(cls.OPERATION_TYPES)
 
     def __init__(self, base_url: Optional[str] = None, timeout: Optional[int] = None):
         """
@@ -303,15 +395,15 @@ class RASBackend(AbstractOperationBackend):
 
         # 3. Execute operation
         try:
-            if operation_type == TYPE_LOCK_SCHEDULED_JOBS:
+            if operation_type == 'lock_scheduled_jobs':
                 return self._lock_scheduled_jobs(client, cluster_id, infobase_id, db_user, db_password)
-            elif operation_type == TYPE_UNLOCK_SCHEDULED_JOBS:
+            elif operation_type == 'unlock_scheduled_jobs':
                 return self._unlock_scheduled_jobs(client, cluster_id, infobase_id, db_user, db_password)
-            elif operation_type == TYPE_TERMINATE_SESSIONS:
+            elif operation_type == 'terminate_sessions':
                 return self._terminate_sessions(client, cluster_id, infobase_id)
-            elif operation_type == TYPE_BLOCK_SESSIONS:
+            elif operation_type == 'block_sessions':
                 return self._block_sessions(client, cluster_id, infobase_id, db_user, db_password, rendered_data)
-            elif operation_type == TYPE_UNBLOCK_SESSIONS:
+            elif operation_type == 'unblock_sessions':
                 return self._unblock_sessions(client, cluster_id, infobase_id, db_user, db_password)
             else:
                 raise RASBackendError(

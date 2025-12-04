@@ -56,6 +56,9 @@ opentelemetry-instrumentation-redis>=0.48b0
 opentelemetry-instrumentation-requests>=0.48b0
 opentelemetry-instrumentation-psycopg2>=0.48b0
 
+# Admin Enhancements
+django-json-widget>=1.1.1  # JSON Editor widget for Django Admin
+
 # Development
 django-extensions==3.2.3
 pytest==7.4.3

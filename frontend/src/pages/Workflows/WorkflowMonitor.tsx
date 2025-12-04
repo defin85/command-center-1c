@@ -266,7 +266,9 @@ const WorkflowMonitor = () => {
   if (isLoading) {
     return (
       <div className="workflow-monitor-loading">
-        <Spin size="large" tip="Loading execution..." />
+        <Spin size="large" tip="Loading execution...">
+          <div style={{ minHeight: 200 }} />
+        </Spin>
       </div>
     )
   }

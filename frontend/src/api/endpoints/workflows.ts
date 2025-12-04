@@ -209,7 +209,7 @@ export interface OperationTemplateListItem {
 export const listOperationTemplates = async (): Promise<OperationTemplateListItem[]> => {
   // v2 migration: GET /templates/ → GET /templates/list-templates/
   const response = await apiClient.get('/templates/list-templates/', {
-    params: { page_size: 1000 }  // Get all for dropdown
+    params: { limit: 1000 }  // Get all for dropdown
   })
-  return response.data.results || response.data
+  return response.data.templates || response.data
 }

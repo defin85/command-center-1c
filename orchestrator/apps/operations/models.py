@@ -21,18 +21,33 @@ class BatchOperation(models.Model):
         (STATUS_CANCELLED, 'Cancelled'),
     ]
 
+    # OData operation types
     TYPE_CREATE = 'create'
     TYPE_UPDATE = 'update'
     TYPE_DELETE = 'delete'
     TYPE_QUERY = 'query'
     TYPE_INSTALL_EXTENSION = 'install_extension'
 
+    # RAS operation types
+    TYPE_LOCK_SCHEDULED_JOBS = 'lock_scheduled_jobs'
+    TYPE_UNLOCK_SCHEDULED_JOBS = 'unlock_scheduled_jobs'
+    TYPE_TERMINATE_SESSIONS = 'terminate_sessions'
+    TYPE_BLOCK_SESSIONS = 'block_sessions'
+    TYPE_UNBLOCK_SESSIONS = 'unblock_sessions'
+
     TYPE_CHOICES = [
+        # OData operations
         (TYPE_CREATE, 'Create'),
         (TYPE_UPDATE, 'Update'),
         (TYPE_DELETE, 'Delete'),
         (TYPE_QUERY, 'Query'),
         (TYPE_INSTALL_EXTENSION, 'Install Extension'),
+        # RAS operations
+        (TYPE_LOCK_SCHEDULED_JOBS, 'Lock Scheduled Jobs'),
+        (TYPE_UNLOCK_SCHEDULED_JOBS, 'Unlock Scheduled Jobs'),
+        (TYPE_TERMINATE_SESSIONS, 'Terminate Sessions'),
+        (TYPE_BLOCK_SESSIONS, 'Block Sessions'),
+        (TYPE_UNBLOCK_SESSIONS, 'Unblock Sessions'),
     ]
 
     # Identity
@@ -41,7 +56,7 @@ class BatchOperation(models.Model):
     description = models.TextField(blank=True)
 
     # Operation Details
-    operation_type = models.CharField(max_length=20, choices=TYPE_CHOICES, db_index=True)
+    operation_type = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
     target_entity = models.CharField(max_length=255, help_text="1C entity name (e.g., Справочник_Пользователи)")
 
     # Target databases (M2M)

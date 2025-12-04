@@ -1,0 +1,46 @@
+{# Operation Templates Reference Panel - для выбора шаблонов при создании DAG #}
+<fieldset class="module aligned collapse" id="operation-templates-panel">
+    <h2>Operation Templates Reference</h2>
+    <div class="panel-content" style="padding: 15px;">
+        <!-- Search and Filter -->
+        <div class="template-search-container">
+            <input type="text" id="template-search" placeholder="Search by name or ID...">
+            <select id="template-type-filter">
+                <option value="">All Types</option>
+            </select>
+        </div>
+
+        <!-- Templates List -->
+        <div id="templates-list" class="templates-grid">
+            {% for tpl in operation_templates %}
+            <div class="template-card"
+                 data-type="{{ tpl.operation_type }}"
+                 data-name="{{ tpl.name|lower }}"
+                 data-id="{{ tpl.id|lower }}">
+                <div class="template-header">
+                    <span class="template-id">{{ tpl.id }}</span>
+                    <span class="template-type">{{ tpl.operation_type }}</span>
+                </div>
+                <div class="template-name">{{ tpl.name }}</div>
+                <div class="template-info">
+                    Target: {{ tpl.target_entity }}
+                </div>
+                <button type="button" class="copy-json-btn"
+                        data-template-id="{{ tpl.id }}"
+                        data-template-type="{{ tpl.operation_type }}">
+                    Copy Node JSON
+                </button>
+            </div>
+            {% empty %}
+            <div class="no-templates-message">
+                <p>No active operation templates found.</p>
+                <p><a href="{% url 'admin:templates_operationtemplate_add' %}">Create a new Operation Template</a></p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="templates-count" id="templates-count">
+            Showing <span id="visible-count">{{ operation_templates|length }}</span> of {{ operation_templates|length }} templates
+        </div>
+    </div>
+</fieldset>

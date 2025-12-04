@@ -484,8 +484,8 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"result": "test_data"}
 
-            # Mock enqueue_operation
-            with patch('apps.templates.workflow.handlers.operation.enqueue_operation') as mock_enqueue:
+            # Mock enqueue_operation (now in backends.odata)
+            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
                 mock_enqueue.delay.return_value = MagicMock(id="celery_task_id")
 
                 # Use ASYNC mode to test BatchOperation creation without waiting
@@ -526,7 +526,7 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"data": "test"}
 
-            with patch('apps.templates.workflow.handlers.operation.enqueue_operation') as mock_enqueue:
+            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
                 mock_enqueue.delay.return_value = MagicMock(id="celery_123")
 
                 result = handler.execute(
@@ -578,10 +578,10 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"test": "data"}
 
-            with patch('apps.templates.workflow.handlers.operation.enqueue_operation') as mock_enqueue:
+            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
                 mock_enqueue.delay.return_value = MagicMock(id="celery_456")
 
-                with patch('apps.templates.workflow.handlers.operation.BatchOperationFactory.create') as mock_factory:
+                with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory.create') as mock_factory:
                     mock_factory.return_value = operation
 
                     result = handler.execute(

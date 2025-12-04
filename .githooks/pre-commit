@@ -102,6 +102,7 @@ fi
 echo ""
 echo -e "${GREEN}Добавляю сгенерированные файлы в коммит...${NC}"
 git add "$PROJECT_ROOT/go-services/ras-adapter/internal/api/generated/" 2>/dev/null || true
+git add "$PROJECT_ROOT/go-services/api-gateway/internal/routes/generated/" 2>/dev/null || true
 git add "$PROJECT_ROOT/orchestrator/apps/databases/clients/generated/" 2>/dev/null || true
 
 echo ""

@@ -16,13 +16,15 @@ from uuid import uuid4
 from apps.templates.workflow.handlers.backends.ras import (
     RASBackend,
     RASBackendError,
-    TYPE_LOCK_SCHEDULED_JOBS,
-    TYPE_UNLOCK_SCHEDULED_JOBS,
-    TYPE_TERMINATE_SESSIONS,
-    TYPE_BLOCK_SESSIONS,
-    TYPE_UNBLOCK_SESSIONS,
 )
 from apps.templates.workflow.handlers.base import NodeExecutionMode, NodeExecutionResult
+
+# Operation type string constants (previously TYPE_* module constants)
+TYPE_LOCK_SCHEDULED_JOBS = 'lock_scheduled_jobs'
+TYPE_UNLOCK_SCHEDULED_JOBS = 'unlock_scheduled_jobs'
+TYPE_TERMINATE_SESSIONS = 'terminate_sessions'
+TYPE_BLOCK_SESSIONS = 'block_sessions'
+TYPE_UNBLOCK_SESSIONS = 'unblock_sessions'
 
 
 class TestRASBackendOperationTypeSupport:

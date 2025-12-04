@@ -64,6 +64,28 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Function to check if spec file changed since last generation
+needs_regeneration() {
+    local spec_file="$1"
+    local output_path="$2"
+
+    if [[ "$FORCE_REGEN" == "true" ]]; then
+        return 0
+    fi
+
+    # If output doesn't exist (file or directory), needs generation
+    if [[ ! -e "$output_path" ]]; then
+        return 0
+    fi
+
+    # Check if spec is newer than output
+    if [[ "$spec_file" -nt "$output_path" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 echo -e "${GREEN}=== API Client Generation ===${NC}"
 echo "Contracts directory: $CONTRACTS_DIR"
 echo ""
@@ -75,27 +97,56 @@ if [[ "$1" == "--force" ]]; then
     echo -e "${YELLOW}Force regeneration enabled${NC}"
 fi
 
-# Function to check if spec file changed since last generation
-needs_regeneration() {
-    local spec_file="$1"
-    local output_dir="$2"
+# ============================
+# Generate Orchestrator proxy routes
+# ============================
+echo -e "${GREEN}[0/3] Orchestrator proxy routes...${NC}"
 
-    if [[ "$FORCE_REGEN" == "true" ]]; then
-        return 0
+ORCHESTRATOR_SPEC="$CONTRACTS_DIR/orchestrator/openapi.yaml"
+ORCHESTRATOR_ROUTES_OUTPUT="$PROJECT_ROOT/go-services/api-gateway/internal/routes/generated/orchestrator_routes.go"
+
+# Auto-export OpenAPI from Django if spec is missing or outdated
+DJANGO_API_DIR="$PROJECT_ROOT/orchestrator/apps/api_v2"
+if [[ ! -f "$ORCHESTRATOR_SPEC" ]] || [[ "$DJANGO_API_DIR" -nt "$ORCHESTRATOR_SPEC" ]] || [[ "$FORCE_REGEN" == "true" ]]; then
+    echo "  -> Exporting OpenAPI from Django..."
+    if [[ -f "$SCRIPT_DIR/export-django-openapi.sh" ]]; then
+        if "$SCRIPT_DIR/export-django-openapi.sh" > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓ OpenAPI exported${NC}"
+        else
+            echo -e "  ${YELLOW}! OpenAPI export failed (Django not running?)${NC}"
+        fi
     fi
+fi
 
-    # If output doesn't exist, needs generation
-    if [[ ! -d "$output_dir" ]]; then
-        return 0
+if [[ ! -f "$ORCHESTRATOR_SPEC" ]]; then
+    echo -e "  ${YELLOW}! OpenAPI spec not found - skipping proxy routes${NC}"
+else
+    if needs_regeneration "$ORCHESTRATOR_SPEC" "$ORCHESTRATOR_ROUTES_OUTPUT"; then
+        echo "  -> Generating Go proxy routes..."
+
+        # Activate venv for Python script
+        if [[ -f "$PROJECT_ROOT/orchestrator/venv/bin/activate" ]]; then
+            VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/bin/activate"
+        else
+            VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/Scripts/activate"
+        fi
+
+        if [[ -f "$VENV_ACTIVATE" ]]; then
+            source "$VENV_ACTIVATE"
+        fi
+
+        python3 "$SCRIPT_DIR/generate-proxy-routes.py" \
+            --spec "$ORCHESTRATOR_SPEC" \
+            --output "$ORCHESTRATOR_ROUTES_OUTPUT" \
+            --package generated
+
+        echo -e "  ${GREEN}✓ Go proxy routes generated${NC}"
+    else
+        echo -e "  ${YELLOW}⊘ Proxy routes unchanged (skip)${NC}"
     fi
+fi
 
-    # Check if spec is newer than output
-    if [[ "$spec_file" -nt "$output_dir" ]]; then
-        return 0
-    fi
-
-    return 1
-}
+echo ""
 
 # ============================
 # Generate ras-adapter clients
@@ -107,7 +158,7 @@ RAS_GO_OUTPUT="$PROJECT_ROOT/go-services/ras-adapter/internal/api/generated"
 RAS_PY_OUTPUT="$PROJECT_ROOT/orchestrator/apps/databases/clients/generated"
 
 if needs_regeneration "$RAS_SPEC" "$RAS_GO_OUTPUT"; then
-    echo "  → Generating Go server types..."
+    echo "  -> Generating Go server types..."
 
     # Check if oapi-codegen is installed
     if ! command -v oapi-codegen &> /dev/null; then
@@ -129,7 +180,7 @@ else
 fi
 
 if needs_regeneration "$RAS_SPEC" "$RAS_PY_OUTPUT"; then
-    echo "  → Generating Python client..."
+    echo "  -> Generating Python client..."
 
     # Check if openapi-python-client is installed
     # Кроссплатформенный путь к activate (Linux: bin, Windows: Scripts)
@@ -169,7 +220,7 @@ fi
 echo ""
 
 # ============================
-# api-gateway → TypeScript client for Frontend
+# api-gateway -> TypeScript client for Frontend
 # ============================
 echo -e "${GREEN}[2/3] api-gateway API (TypeScript client)...${NC}"
 
@@ -178,49 +229,47 @@ GATEWAY_TS_OUTPUT="$PROJECT_ROOT/frontend/src/api/generated"
 
 if [[ ! -f "$GATEWAY_SPEC" ]]; then
     echo -e "  ${YELLOW}⊘ OpenAPI spec not found (skip)${NC}"
-    echo ""
-    continue
-fi
-
-# Check if we need to regenerate
-if needs_regeneration "$GATEWAY_SPEC" "$GATEWAY_TS_OUTPUT"; then
-    # Check for Java (required for openapi-generator-cli)
-    if ! command -v java &> /dev/null; then
-        echo -e "  ${YELLOW}⊘ Java not found - skipping TypeScript generation${NC}"
-        echo -e "  ${DIM}  Install with: sudo pacman -S jdk-openjdk${NC}"
-    else
-        # Check for openapi-generator-cli
-        if command -v openapi-generator-cli &> /dev/null; then
-            GENERATOR_CMD="openapi-generator-cli"
-        elif command -v npx &> /dev/null; then
-            GENERATOR_CMD="npx @openapitools/openapi-generator-cli"
+else
+    # Check if we need to regenerate
+    if needs_regeneration "$GATEWAY_SPEC" "$GATEWAY_TS_OUTPUT"; then
+        # Check for Java (required for openapi-generator-cli)
+        if ! command -v java &> /dev/null; then
+            echo -e "  ${YELLOW}⊘ Java not found - skipping TypeScript generation${NC}"
+            echo -e "  ${DIM}  Install with: sudo pacman -S jdk-openjdk${NC}"
         else
-            echo -e "  ${YELLOW}Warning: openapi-generator-cli not found${NC}"
-            echo -e "  ${YELLOW}Install with: npm install -g @openapitools/openapi-generator-cli${NC}"
-            echo -e "  ${YELLOW}Skipping TypeScript generation...${NC}"
-            echo ""
-        fi
-
-        if [[ -n "${GENERATOR_CMD:-}" ]]; then
-            # Generate TypeScript Axios client
-            start_spinner "Generating TypeScript client (this may take a minute)..."
-            $GENERATOR_CMD generate \
-                -i "$GATEWAY_SPEC" \
-                -g typescript-axios \
-                -o "$GATEWAY_TS_OUTPUT" \
-                --skip-validate-spec \
-                --additional-properties=supportsES6=true,npmName=@cc1c/api-client,npmVersion=1.0.0,withInterfaces=true \
-                > /dev/null 2>&1
-
-            if [[ $? -eq 0 ]]; then
-                stop_spinner "success" "TypeScript client generated"
+            # Check for openapi-generator-cli
+            if command -v openapi-generator-cli &> /dev/null; then
+                GENERATOR_CMD="openapi-generator-cli"
+            elif command -v npx &> /dev/null; then
+                GENERATOR_CMD="npx @openapitools/openapi-generator-cli"
             else
-                stop_spinner "error" "TypeScript generation failed (non-critical)"
+                echo -e "  ${YELLOW}Warning: openapi-generator-cli not found${NC}"
+                echo -e "  ${YELLOW}Install with: npm install -g @openapitools/openapi-generator-cli${NC}"
+                echo -e "  ${YELLOW}Skipping TypeScript generation...${NC}"
+                GENERATOR_CMD=""
+            fi
+
+            if [[ -n "${GENERATOR_CMD:-}" ]]; then
+                # Generate TypeScript Axios client
+                start_spinner "Generating TypeScript client (this may take a minute)..."
+                $GENERATOR_CMD generate \
+                    -i "$GATEWAY_SPEC" \
+                    -g typescript-axios \
+                    -o "$GATEWAY_TS_OUTPUT" \
+                    --skip-validate-spec \
+                    --additional-properties=supportsES6=true,npmName=@cc1c/api-client,npmVersion=1.0.0,withInterfaces=true \
+                    > /dev/null 2>&1
+
+                if [[ $? -eq 0 ]]; then
+                    stop_spinner "success" "TypeScript client generated"
+                else
+                    stop_spinner "error" "TypeScript generation failed (non-critical)"
+                fi
             fi
         fi
+    else
+        echo -e "  ${YELLOW}⊘ TypeScript client unchanged (skip)${NC}"
     fi
-else
-    echo -e "  ${YELLOW}⊘ TypeScript client unchanged (skip)${NC}"
 fi
 
 echo ""
@@ -238,10 +287,13 @@ echo ""
 echo -e "${GREEN}=== Generation Complete ===${NC}"
 echo ""
 echo "Generated clients:"
-echo "  • ras-adapter Go server:     $RAS_GO_OUTPUT/server.go"
-echo "  • ras-adapter Python client: $RAS_PY_OUTPUT/ras_adapter_api_client/"
+if [[ -f "$ORCHESTRATOR_ROUTES_OUTPUT" ]]; then
+    echo "  * Orchestrator proxy routes: $ORCHESTRATOR_ROUTES_OUTPUT"
+fi
+echo "  * ras-adapter Go server:     $RAS_GO_OUTPUT/server.go"
+echo "  * ras-adapter Python client: $RAS_PY_OUTPUT/ras_adapter_api_client/"
 if [[ -d "$GATEWAY_TS_OUTPUT" ]]; then
-    echo "  • api-gateway TypeScript:    $GATEWAY_TS_OUTPUT/"
+    echo "  * api-gateway TypeScript:    $GATEWAY_TS_OUTPUT/"
 fi
 echo ""
 echo "Next steps:"

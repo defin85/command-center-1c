@@ -58,7 +58,7 @@ func proxyWebSocket(c *gin.Context, upstreamPath string) {
 	log := logger.GetLogger()
 
 	// Build upstream URL
-	upstreamURL, err := buildUpstreamWsURL(upstreamPath)
+	upstreamURL, err := buildUpstreamWsURL(upstreamPath, c.Request.URL.RawQuery)
 	if err != nil {
 		log.WithError(err).Error("Failed to build upstream URL")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -207,7 +207,7 @@ func pingTicker(conn *websocket.Conn, done chan struct{}, closeDone func()) {
 	}
 }
 
-func buildUpstreamWsURL(path string) (string, error) {
+func buildUpstreamWsURL(path string, queryString string) (string, error) {
 	baseURL, err := url.Parse(getWsOrchestratorURL())
 	if err != nil {
 		return "", err
@@ -218,7 +218,11 @@ func buildUpstreamWsURL(path string) (string, error) {
 		scheme = "wss"
 	}
 
-	return fmt.Sprintf("%s://%s%s", scheme, baseURL.Host, path), nil
+	wsURL := fmt.Sprintf("%s://%s%s", scheme, baseURL.Host, path)
+	if queryString != "" {
+		wsURL += "?" + queryString
+	}
+	return wsURL, nil
 }
 
 func buildUpstreamHeaders(c *gin.Context) http.Header {
