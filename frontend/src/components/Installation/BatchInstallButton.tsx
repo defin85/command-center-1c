@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Button, Modal, Form, Input, message } from 'antd'
 import { RocketOutlined } from '@ant-design/icons'
-import { installationApi } from '../../api/endpoints/installation'
+import { installationApi } from '../../api/adapters/installation'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
 
 interface BatchInstallButtonProps {

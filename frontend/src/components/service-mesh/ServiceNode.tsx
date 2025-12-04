@@ -108,10 +108,12 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
         <span className="service-node__icon">{icon}</span>
         <span className="service-node__name">{metrics.displayName}</span>
         <Tooltip title={STATUS_TEXT[metrics.status]}>
-          <Badge
-            status={getStatusBadge(metrics.status)}
-            className="service-node__status"
-          />
+          <span>
+            <Badge
+              status={getStatusBadge(metrics.status)}
+              className="service-node__status"
+            />
+          </span>
         </Tooltip>
       </div>
 

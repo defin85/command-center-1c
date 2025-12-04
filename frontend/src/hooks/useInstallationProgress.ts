@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { InstallationProgress } from '../types/installation'
-import { installationApi } from '../api/endpoints/installation'
+import { installationApi } from '../api/adapters/installation'
 
 interface UseInstallationProgressProps {
   taskId: string | null

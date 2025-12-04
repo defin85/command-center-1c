@@ -1,5 +1,9 @@
 /**
  * System monitoring API endpoints
+ *
+ * @deprecated This module is deprecated. Use `@/api/adapters/system` instead.
+ * Migration: Replace imports from 'endpoints/system' with 'adapters/system'.
+ * Scheduled for removal in v3.0.0.
  */
 
 import { apiClient } from '../client';

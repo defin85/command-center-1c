@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Row, Col, Spin, Space, App } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
-import { systemApi } from '../../api/endpoints/system';
-import type { SystemHealthResponse } from '../../api/endpoints/system';
+import { systemApi } from '../../api/adapters/system';
+import type { SystemHealthResponse } from '../../api/adapters/system';
 import { SystemOverview } from '../../components/SystemOverview';
 import { ServiceStatusCard } from '../../components/ServiceStatusCard';
 

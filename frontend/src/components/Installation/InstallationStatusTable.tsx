@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Table, Tag, Button, Input, Select, Space, message, Modal, Form } from 'antd'
 import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
-import { installationApi } from '../../api/endpoints/installation'
+import { installationApi } from '../../api/adapters/installation'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
 
 const { Option } = Select

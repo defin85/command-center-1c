@@ -11,7 +11,7 @@ import { Table, Tag, Tooltip, Button, Empty } from 'antd'
 import { ReloadOutlined, EyeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { ServiceOperation } from '../../types/serviceMesh'
-import { serviceMeshApi } from '../../api/endpoints/serviceMesh'
+import { serviceMeshApi } from '../../api/adapters/serviceMesh'
 import './RecentOperationsTable.css'
 
 interface RecentOperationsTableProps {

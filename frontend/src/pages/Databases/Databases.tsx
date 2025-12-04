@@ -4,7 +4,7 @@ import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined } from '@an
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { databasesApi, Database } from '../../api/adapters/databases'
 import { clustersApi, Cluster } from '../../api/adapters/clusters'
-import { installationApi } from '../../api/endpoints/installation'
+import { installationApi } from '../../api/adapters/installation'
 import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
 import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
 

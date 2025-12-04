@@ -83,7 +83,10 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   // Refs
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null) // Delay for StrictMode
   const reconnectAttemptsRef = useRef<number>(0) // Ref to avoid stale closure
+  const isMountedRef = useRef<boolean>(false) // Track mount state for StrictMode
+  const isIntentionalCloseRef = useRef<boolean>(false) // Track intentional disconnect
 
   // Get WebSocket URL with auth token
   const getWebSocketUrl = useCallback((): string => {
@@ -147,22 +150,12 @@ export const useServiceMesh = (): UseServiceMeshResult => {
     }
   }, [])
 
-  // Connect to WebSocket
-  const connect = useCallback(() => {
-    // Clear any existing reconnect timeout
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
+  // Actually create WebSocket connection (called after delay)
+  const createWebSocket = useCallback((url: string) => {
+    // Final check before creating connection
+    if (!isMountedRef.current) {
+      return
     }
-
-    // Close existing connection
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-
-    const url = getWebSocketUrl()
-    console.log('Service mesh WebSocket connecting to:', url)
 
     try {
       const ws = new WebSocket(url)
@@ -184,14 +177,26 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       }
 
       ws.onerror = (event) => {
+        // Skip error logging if unmounted (StrictMode cleanup)
+        if (!isMountedRef.current) return
+
         console.error('Service mesh WebSocket error:', event)
         setConnectionError('WebSocket connection error')
       }
 
       ws.onclose = (event) => {
-        console.log('Service mesh WebSocket closed:', event.code, event.reason)
+        // Skip logging for intentional closes (StrictMode unmount)
+        if (!isIntentionalCloseRef.current) {
+          console.log('Service mesh WebSocket closed:', event.code, event.reason || '')
+        }
+
         setIsConnected(false)
         wsRef.current = null
+
+        // Don't reconnect if intentionally closed or unmounted
+        if (isIntentionalCloseRef.current || !isMountedRef.current) {
+          return
+        }
 
         // Attempt to reconnect - use ref to avoid stale closure
         const currentAttempts = reconnectAttemptsRef.current
@@ -208,6 +213,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
           setConnectionError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s...`)
 
           reconnectTimeoutRef.current = setTimeout(() => {
+            // Double-check still mounted before reconnecting
+            if (!isMountedRef.current) return
+
             reconnectAttemptsRef.current += 1
             setReconnectAttempts(reconnectAttemptsRef.current)
             connect()
@@ -222,7 +230,44 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       console.error('Service mesh WebSocket connection failed:', err)
       setConnectionError('Failed to establish WebSocket connection')
     }
-  }, [getWebSocketUrl, handleMessage]) // Removed reconnectAttempts - using ref instead
+  }, [handleMessage])
+
+  // Connect to WebSocket with delay (StrictMode protection)
+  const connect = useCallback(() => {
+    // Clear any existing timeouts
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current)
+      connectTimeoutRef.current = null
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+
+    // Close existing connection
+    if (wsRef.current) {
+      isIntentionalCloseRef.current = true
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
+    // Don't connect if unmounted
+    if (!isMountedRef.current) {
+      return
+    }
+
+    isIntentionalCloseRef.current = false
+    const url = getWebSocketUrl()
+
+    // Delay connection to allow StrictMode cleanup to complete
+    // This prevents "WebSocket is closed before connection established" errors
+    connectTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) {
+        console.log('Service mesh WebSocket connecting to:', url)
+        createWebSocket(url)
+      }
+    }, 0)
+  }, [getWebSocketUrl, createWebSocket])
 
   // Request immediate refresh
   const refresh = useCallback(() => {
@@ -240,12 +285,18 @@ export const useServiceMesh = (): UseServiceMeshResult => {
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
+    // Clear all pending timeouts
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current)
+      connectTimeoutRef.current = null
+    }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
 
     if (wsRef.current) {
+      isIntentionalCloseRef.current = true
       wsRef.current.close()
       wsRef.current = null
     }
@@ -253,11 +304,14 @@ export const useServiceMesh = (): UseServiceMeshResult => {
     setIsConnected(false)
   }, [])
 
-  // Connect on mount
+  // Connect on mount, disconnect on unmount
   useEffect(() => {
+    isMountedRef.current = true
+    reconnectAttemptsRef.current = 0
     connect()
 
     return () => {
+      isMountedRef.current = false
       disconnect()
     }
   }, [connect, disconnect])

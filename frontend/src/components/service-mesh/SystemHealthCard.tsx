@@ -167,13 +167,15 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
                   : 'Connecting...'
               }
             >
-              {isConnected ? (
-                <Badge status="success" text={<WifiOutlined />} />
-              ) : connectionError ? (
-                <Badge status="error" text={<DisconnectOutlined />} />
-              ) : (
-                <Badge status="processing" text={<SyncOutlined spin />} />
-              )}
+              <span>
+                {isConnected ? (
+                  <Badge status="success" text={<WifiOutlined />} />
+                ) : connectionError ? (
+                  <Badge status="error" text={<DisconnectOutlined />} />
+                ) : (
+                  <Badge status="processing" text={<SyncOutlined spin />} />
+                )}
+              </span>
             </Tooltip>
           </div>
         </Col>

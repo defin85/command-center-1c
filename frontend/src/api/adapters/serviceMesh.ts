@@ -1,24 +1,20 @@
 /**
- * Service Mesh API endpoints.
+ * Service Mesh API Adapter.
  *
- * Provides functions for fetching service mesh metrics, history, and operations.
+ * Bridges the gap between the old endpoint-based API and the new
+ * generated API from OpenAPI specifications.
  *
- * @deprecated This file is deprecated. Use `api/adapters/serviceMesh.ts` instead.
- * This file uses the old apiClient directly, while the adapter uses customInstance
- * with v2 API endpoints.
+ * This adapter:
+ * 1. Uses customInstance (same as generated code) for API calls
+ * 2. Provides the same function signatures as endpoints/serviceMesh.ts
+ * 3. Maps parameters to the v2 action-based endpoints
+ * 4. Preserves type transformations between snake_case API and camelCase UI types
  *
- * Migration:
- * ```typescript
- * // Before (deprecated)
- * import { serviceMeshApi } from '../api/endpoints/serviceMesh'
- *
- * // After
- * import { serviceMeshApi } from '../api/adapters/serviceMesh'
- * ```
- *
- * Sunset: 2026-03-01
+ * Note: Generated types for service-mesh endpoints return void, so we keep
+ * using legacy types from types/serviceMesh.ts for proper typing.
  */
-import { apiClient } from '../client'
+
+import { customInstance } from '../mutator'
 import type {
   ServiceMeshState,
   HistoricalMetricsResponse,
@@ -29,9 +25,38 @@ import type {
   ServiceOperation,
 } from '../../types/serviceMesh'
 
-/**
- * API response types (snake_case from backend)
- */
+// Re-export all types and constants from serviceMesh types for convenience
+export type {
+  ServiceMeshState,
+  HistoricalMetricsResponse,
+  OperationsListResponse,
+  ServiceMetrics,
+  ServiceConnection,
+  HistoricalDataPoint,
+  ServiceOperation,
+  ServiceStatus,
+  ServiceMeshMessageType,
+  ServiceMeshWSMessage,
+  ServiceMeshWSAction,
+  ServiceMeshWSRequest,
+  ServiceNodePosition,
+  ServiceNodeData,
+  ServiceLayoutConfig,
+  ServiceDisplayConfig,
+} from '../../types/serviceMesh'
+
+// Re-export constants for UI components
+export {
+  DEFAULT_SERVICE_POSITIONS,
+  SERVICE_DISPLAY_CONFIG,
+  STATUS_COLORS,
+  STATUS_TEXT,
+} from '../../types/serviceMesh'
+
+// ============================================================================
+// API Response Types (snake_case from backend)
+// ============================================================================
+
 interface ServiceMetricsResponse {
   name: string
   display_name: string
@@ -98,8 +123,12 @@ interface ListOperationsAPIResponse {
   total: number
 }
 
+// ============================================================================
+// Type Transformations (snake_case API -> camelCase UI)
+// ============================================================================
+
 /**
- * Transform snake_case API response to camelCase
+ * Transform snake_case API response to camelCase ServiceMetrics
  */
 function transformServiceMetrics(data: ServiceMetricsResponse): ServiceMetrics {
   return {
@@ -114,6 +143,9 @@ function transformServiceMetrics(data: ServiceMetricsResponse): ServiceMetrics {
   }
 }
 
+/**
+ * Transform snake_case API response to camelCase ServiceConnection
+ */
 function transformServiceConnection(data: ServiceConnectionResponse): ServiceConnection {
   return {
     source: data.source,
@@ -123,6 +155,9 @@ function transformServiceConnection(data: ServiceConnectionResponse): ServiceCon
   }
 }
 
+/**
+ * Transform snake_case API response to camelCase HistoricalDataPoint
+ */
 function transformHistoricalDataPoint(data: HistoricalDataPointResponse): HistoricalDataPoint {
   return {
     timestamp: data.timestamp,
@@ -132,6 +167,9 @@ function transformHistoricalDataPoint(data: HistoricalDataPointResponse): Histor
   }
 }
 
+/**
+ * Transform snake_case API response to camelCase ServiceOperation
+ */
 function transformOperation(data: ServiceOperationResponse): ServiceOperation {
   return {
     id: data.id,
@@ -149,23 +187,34 @@ function transformOperation(data: ServiceOperationResponse): ServiceOperation {
   }
 }
 
+// ============================================================================
+// Service Mesh API Functions
+// ============================================================================
+
 /**
- * Get current service mesh metrics for all services
+ * Get current service mesh metrics for all services.
+ *
+ * Maps to: GET /api/v2/service-mesh/get-metrics/
  */
 export const getServiceMeshMetrics = async (): Promise<ServiceMeshState> => {
-  const response = await apiClient.get<MeshMetricsAPIResponse>('/service-mesh/get-metrics/')
+  const response = await customInstance<MeshMetricsAPIResponse>({
+    url: '/api/v2/service-mesh/get-metrics/',
+    method: 'GET',
+  })
 
   return {
-    services: response.data.services.map(transformServiceMetrics),
-    connections: response.data.connections.map(transformServiceConnection),
-    overallHealth: response.data.overall_health,
-    timestamp: response.data.timestamp,
-    error: response.data.error,
+    services: response.services.map(transformServiceMetrics),
+    connections: response.connections.map(transformServiceConnection),
+    overallHealth: response.overall_health,
+    timestamp: response.timestamp,
+    error: response.error,
   }
 }
 
 /**
- * Get historical metrics for a specific service
+ * Get historical metrics for a specific service.
+ *
+ * Maps to: GET /api/v2/service-mesh/get-history/
  *
  * @param service - Service name (e.g., 'api-gateway', 'worker')
  * @param minutes - Number of minutes of history (default: 30)
@@ -174,22 +223,25 @@ export const getServiceHistory = async (
   service: string,
   minutes: number = 30
 ): Promise<HistoricalMetricsResponse> => {
-  const response = await apiClient.get<HistoricalAPIResponse>(
-    '/service-mesh/get-history/',
-    { params: { service, minutes } }
-  )
+  const response = await customInstance<HistoricalAPIResponse>({
+    url: '/api/v2/service-mesh/get-history/',
+    method: 'GET',
+    params: { service, minutes },
+  })
 
   return {
-    service: response.data.service,
-    displayName: response.data.display_name,
-    minutes: response.data.minutes,
-    dataPoints: response.data.data_points.map(transformHistoricalDataPoint),
-    error: response.data.error,
+    service: response.service,
+    displayName: response.display_name,
+    minutes: response.minutes,
+    dataPoints: response.data_points.map(transformHistoricalDataPoint),
+    error: response.error,
   }
 }
 
 /**
- * Get recent operations, optionally filtered by status
+ * Get recent operations, optionally filtered by status.
+ *
+ * Maps to: GET /api/v2/operations/list-operations/
  *
  * @param limit - Maximum number of operations to return (default: 50)
  * @param status - Optional status filter
@@ -204,19 +256,28 @@ export const getServiceOperations = async (
     params.status = status
   }
 
-  const response = await apiClient.get<ListOperationsAPIResponse>(
-    '/operations/list-operations/',
-    { params }
-  )
+  const response = await customInstance<ListOperationsAPIResponse>({
+    url: '/api/v2/operations/list-operations/',
+    method: 'GET',
+    params,
+  })
 
   return {
-    operations: response.data.operations.map(transformOperation),
-    total: response.data.total,
+    operations: response.operations.map(transformOperation),
+    total: response.total,
   }
 }
 
+// ============================================================================
+// Service Mesh API Object (for convenient imports)
+// ============================================================================
+
 /**
- * Service Mesh API object for convenient imports
+ * Service Mesh API object for convenient imports.
+ *
+ * Usage:
+ *   import { serviceMeshApi } from '../api/adapters/serviceMesh'
+ *   const metrics = await serviceMeshApi.getMetrics()
  */
 export const serviceMeshApi = {
   getMetrics: getServiceMeshMetrics,

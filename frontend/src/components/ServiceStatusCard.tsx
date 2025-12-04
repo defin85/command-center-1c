@@ -8,7 +8,7 @@ import {
     CloseCircleOutlined,
     ExclamationCircleOutlined,
 } from '@ant-design/icons';
-import type { ServiceHealth } from '@/api/endpoints/system';
+import type { ServiceHealth } from '@/api/adapters/system';
 
 const { Text } = Typography;
 
@@ -73,14 +73,14 @@ export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ service })
 
                 {service.details && Object.keys(service.details).length > 0 && (
                     <div style={{ marginTop: 8 }}>
-                        {service.details.error && (
+                        {'error' in service.details && service.details.error != null && (
                             <Text type="danger" style={{ fontSize: 12 }}>
-                                Error: {service.details.error}
+                                Error: {String(service.details.error)}
                             </Text>
                         )}
-                        {service.details.version && (
+                        {'version' in service.details && service.details.version != null && (
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                v{service.details.version}
+                                v{String(service.details.version)}
                             </Text>
                         )}
                     </div>

@@ -31,12 +31,12 @@ import type {
   ServiceMetrics,
   HistoricalDataPoint,
 } from '../../types/serviceMesh'
-import { serviceMeshApi } from '../../api/endpoints/serviceMesh'
 import {
+  serviceMeshApi,
   STATUS_COLORS,
   STATUS_TEXT,
   SERVICE_DISPLAY_CONFIG,
-} from '../../types/serviceMesh'
+} from '../../api/adapters/serviceMesh'
 import './ServiceDetailDrawer.css'
 
 interface ServiceDetailDrawerProps {

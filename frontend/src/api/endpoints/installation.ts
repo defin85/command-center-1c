@@ -1,3 +1,9 @@
+/**
+ * @deprecated This file is deprecated. Use `src/api/adapters/installation.ts` instead.
+ * Migration: import { installationApi } from '../api/adapters/installation'
+ *
+ * This file will be removed in a future release.
+ */
 import { apiClient } from '../client'
 import {
   BatchInstallRequest,
@@ -7,6 +13,9 @@ import {
   InstallSingleResponse,
 } from '../../types/installation'
 
+/**
+ * @deprecated Use installationApi from '../api/adapters/installation' instead.
+ */
 export const installationApi = {
   // v2 migration: POST /databases/batch-install-extension/ → POST /extensions/batch-install
   batchInstall: async (request: BatchInstallRequest): Promise<BatchInstallResponse> => {
