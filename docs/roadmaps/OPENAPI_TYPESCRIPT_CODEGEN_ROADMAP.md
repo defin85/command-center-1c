@@ -258,7 +258,7 @@ frontend/src/
 - [x] 75 model interfaces generated
 - [x] TypeScript compilation passing
 
-### Phase 3: Migration (3-5 days) 🔄 IN PROGRESS
+### Phase 3: Migration (3-5 days) ✅ COMPLETED 2025-12-04
 
 **Tasks:**
 1. Migrate workflow endpoints
@@ -269,10 +269,17 @@ frontend/src/
 6. Remove deprecated manual types
 
 **Deliverables:**
-- [ ] All endpoints migrated
-- [ ] `frontend/src/types/` deprecated
-- [ ] `frontend/src/api/endpoints/` deprecated
-- [ ] All components using generated types
+- [x] All endpoints migrated (5 adapters created)
+- [x] `frontend/src/api/endpoints/` marked @deprecated
+- [x] All components using adapters (pages + stores)
+- [ ] `frontend/src/types/` cleanup (optional, low priority)
+
+**Adapters created:**
+- `workflows.ts` (22KB) - full CRUD + execution + validation
+- `clusters.ts` (6.7KB) - CRUD + sync + getDatabases
+- `databases.ts` (3.9KB) - list + health checks
+- `operations.ts` (9.7KB) - list + cancel
+- `templates.ts` (8.4KB) - full CRUD
 
 ### Phase 4: CI Integration (4-8 hours)
 
