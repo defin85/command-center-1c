@@ -79,6 +79,12 @@ async function refreshAccessToken(): Promise<string | null> {
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
+    // Ensure trailing slash (Django convention)
+    // This normalizes all requests to match Django URL patterns
+    if (config.url && !config.url.endsWith('/') && !config.url.includes('?')) {
+      config.url += '/'
+    }
+
     // Add auth token if available
     const token = localStorage.getItem('auth_token')
     if (token) {

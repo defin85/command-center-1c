@@ -95,6 +95,7 @@ def extract_routes(spec: dict[str, Any], api_prefix: str = "/api/v2") -> list[di
             relative_path = "/" + relative_path
 
         # Convert {param} to :param for Gin
+        # Keep trailing slash from Django convention (source of truth)
         gin_path = convert_path_params(relative_path)
 
         for method in http_methods:

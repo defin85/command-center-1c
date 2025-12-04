@@ -29,6 +29,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	router := gin.New()
 
 	// Отключаем автоматические редиректы trailing slash
+	// Convention: все routes и запросы используют trailing slash (Django source of truth)
+	// Frontend interceptor автоматически добавляет trailing slash
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
 
