@@ -274,12 +274,15 @@ frontend/src/
 - [x] All components using adapters (pages + stores)
 - [ ] `frontend/src/types/` cleanup (optional, low priority)
 
-**Adapters created:**
+**Adapters created (8 total):**
 - `workflows.ts` (22KB) - full CRUD + execution + validation
 - `clusters.ts` (6.7KB) - CRUD + sync + getDatabases
 - `databases.ts` (3.9KB) - list + health checks
 - `operations.ts` (9.7KB) - list + cancel
 - `templates.ts` (8.4KB) - full CRUD
+- `installation.ts` - batch install + progress + retry
+- `system.ts` - system health monitoring
+- `serviceMesh.ts` - metrics + history + WebSocket types
 
 ### Phase 4: CI Integration (4-8 hours)
 
