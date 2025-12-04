@@ -33,9 +33,11 @@ export interface WorkflowTemplateListParams {
 
 export interface PaginatedResponse<T> {
   count: number
+  total?: number  // API v2 alternative
   next: string | null
   previous: string | null
   results: T[]
+  workflows?: T[]  // API v2 returns 'workflows' instead of 'results'
 }
 
 /**
@@ -55,7 +57,8 @@ export const listWorkflowTemplates = async (
 export const getWorkflowTemplate = async (id: string): Promise<WorkflowTemplate> => {
   // v2 migration: GET /workflows/templates/{id}/ → GET /workflows/get-workflow?workflow_id={id}
   const response = await apiClient.get('/workflows/get-workflow', { params: { workflow_id: id } })
-  return response.data
+  // API v2 wraps response in { workflow: {...}, statistics: {...}, executions: [...] }
+  return response.data.workflow || response.data
 }
 
 /**

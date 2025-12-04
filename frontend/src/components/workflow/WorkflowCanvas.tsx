@@ -9,7 +9,7 @@
  * - Design mode vs Monitor mode
  */
 
-import { useCallback, useRef, useMemo } from 'react'
+import { useCallback, useRef, useMemo, useEffect } from 'react'
 import ReactFlow, {
   ReactFlowProvider,
   Controls,
@@ -134,10 +134,19 @@ const WorkflowCanvasInner = ({
       return dagToReactFlow(dagStructure)
     }
     return { nodes: [], edges: [] }
-  }, [dagStructure])
+  }, []) // Empty deps - only for initial render
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialData.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialData.edges)
+
+  // Sync external dagStructure changes with internal state
+  useEffect(() => {
+    if (dagStructure) {
+      const { nodes: newNodes, edges: newEdges } = dagToReactFlow(dagStructure)
+      setNodes(newNodes)
+      setEdges(newEdges)
+    }
+  }, [dagStructure, setNodes, setEdges])
 
   // Update node statuses in monitor mode
   const nodesWithStatus = useMemo(() => {

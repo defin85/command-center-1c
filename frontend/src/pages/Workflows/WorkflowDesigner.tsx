@@ -428,6 +428,7 @@ const WorkflowDesigner = () => {
         onOk={handleSave}
         onCancel={() => setSaveModalVisible(false)}
         confirmLoading={state.isSaving}
+        forceRender
       >
         <Form form={form} layout="vertical">
           <Form.Item
@@ -443,7 +444,7 @@ const WorkflowDesigner = () => {
         </Form>
       </Modal>
 
-      {/* Execute Modal */}
+      {/* Execute Modal - uses controlled input without Form to avoid useForm warning */}
       <Modal
         title="Execute Workflow"
         open={executeModalVisible}
@@ -451,20 +452,19 @@ const WorkflowDesigner = () => {
         onCancel={() => setExecuteModalVisible(false)}
         okText="Execute"
       >
-        <Form layout="vertical">
-          <Form.Item
-            label="Input Context (JSON)"
-            help="Provide input variables for the workflow"
-          >
-            <Input.TextArea
-              rows={6}
-              value={executeInput}
-              onChange={(e) => setExecuteInput(e.target.value)}
-              placeholder='{"database_id": "123", "extension_path": "/path/to/ext.cfe"}'
-              style={{ fontFamily: 'monospace' }}
-            />
-          </Form.Item>
-        </Form>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ fontWeight: 500 }}>Input Context (JSON)</label>
+        </div>
+        <Input.TextArea
+          rows={6}
+          value={executeInput}
+          onChange={(e) => setExecuteInput(e.target.value)}
+          placeholder='{"database_id": "123", "extension_path": "/path/to/ext.cfe"}'
+          style={{ fontFamily: 'monospace' }}
+        />
+        <div style={{ marginTop: 4, color: 'rgba(0, 0, 0, 0.45)', fontSize: 12 }}>
+          Provide input variables for the workflow
+        </div>
       </Modal>
     </Layout>
   )
