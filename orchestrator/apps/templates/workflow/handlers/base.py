@@ -72,6 +72,9 @@ class BaseNodeHandler(ABC):
         - execute(): Node execution logic
     """
 
+    # Sensitive keys to sanitize before storing
+    SENSITIVE_KEYS = {'db_password', 'password', 'secret', 'token', 'api_key'}
+
     @abstractmethod
     def execute(
         self,
@@ -94,6 +97,23 @@ class BaseNodeHandler(ABC):
         """
         pass
 
+    def _sanitize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove sensitive fields before storing.
+
+        Args:
+            data: Dictionary that may contain sensitive fields
+
+        Returns:
+            Dictionary with sensitive fields masked as '***'
+        """
+        if not data:
+            return data
+        return {
+            k: ('***' if k.lower() in self.SENSITIVE_KEYS else v)
+            for k, v in data.items()
+        }
+
     def _create_step_result(
         self,
         execution: WorkflowExecution,
@@ -111,13 +131,16 @@ class BaseNodeHandler(ABC):
         Returns:
             WorkflowStepResult: Created step result instance (status=running)
         """
+        # Sanitize sensitive data before storing
+        sanitized_input_data = self._sanitize_data(input_data)
+
         step_result = WorkflowStepResult.objects.create(
             workflow_execution=execution,
             node_id=node.id,
             node_name=node.name,
             node_type=node.type,
             status=WorkflowStepResult.STATUS_RUNNING,
-            input_data=input_data,
+            input_data=sanitized_input_data,
             started_at=timezone.now()
         )
 

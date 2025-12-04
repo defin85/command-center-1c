@@ -1,55 +1,63 @@
 """
 OperationHandler for Workflow Engine.
 
-Executes operation nodes by rendering templates and creating batch operations.
+Executes operation nodes by rendering templates and routing to appropriate backends.
+Uses Strategy pattern to delegate execution to ODataBackend or RASBackend.
+
 Phase 4 Week 17: Full integration with Worker via BatchOperationFactory.
+Enhanced: Strategy pattern for backend routing (OData/RAS).
 """
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from apps.databases.models import Database
-from apps.operations.factory import BatchOperationFactory
-from apps.operations.models import BatchOperation
-from apps.operations.tasks import enqueue_operation
-from apps.operations.waiter import OperationTimeoutError, ResultWaiter
+from apps.operations.waiter import OperationTimeoutError
 from apps.templates.engine.exceptions import TemplateRenderError, TemplateValidationError
 from apps.templates.engine.renderer import TemplateRenderer
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
+from .backends import AbstractOperationBackend, ODataBackend, RASBackend
 
 logger = logging.getLogger(__name__)
 
 
 class OperationHandler(BaseNodeHandler):
     """
-    Handler for Operation nodes.
+    Handler for Operation nodes with Strategy pattern for backend routing.
 
-    Flow (Week 17 - Full Integration):
+    Flow:
         1. Get OperationTemplate by node.template_id
-        2. Render template via TemplateRenderer (Track 1 integration)
+        2. Render template via TemplateRenderer
         3. Extract target_databases from context
-        4. Create BatchOperation via BatchOperationFactory
-        5. Enqueue to Worker via Celery task
-        6. SYNC: Wait for completion / ASYNC: Return immediately
+        4. Route to appropriate backend based on operation_type:
+           - ODataBackend: create, update, delete, query, install_extension
+           - RASBackend: lock_scheduled_jobs, unlock_scheduled_jobs,
+                        terminate_sessions, block_sessions, unblock_sessions
+        5. Execute via backend and return result
 
-    Integration:
-        - apps.templates.models.OperationTemplate: Template storage
-        - apps.templates.engine.renderer.TemplateRenderer: Rendering
-        - apps.operations.factory.BatchOperationFactory: Operation creation
-        - apps.operations.tasks.enqueue_operation: Celery task
-        - apps.operations.waiter.ResultWaiter: Sync waiting
+    Backend Selection (Strategy Pattern):
+        - Each backend declares supported operation types
+        - Handler iterates backends and selects first match
+        - Default fallback to ODataBackend for backward compatibility
     """
 
     # Default timeout for SYNC mode (seconds)
     DEFAULT_TIMEOUT_SECONDS = 300
 
     def __init__(self):
-        """Initialize OperationHandler with TemplateRenderer."""
+        """Initialize OperationHandler with TemplateRenderer and backends."""
         self.renderer = TemplateRenderer()
+
+        # Initialize backends in priority order
+        # RASBackend checked first (more specific), ODataBackend as fallback
+        self._backends: List[AbstractOperationBackend] = [
+            RASBackend(),
+            ODataBackend(),
+        ]
 
     def execute(
         self,
@@ -59,7 +67,7 @@ class OperationHandler(BaseNodeHandler):
         mode: NodeExecutionMode = NodeExecutionMode.SYNC
     ) -> NodeExecutionResult:
         """
-        Execute operation node by rendering template and creating batch operation.
+        Execute operation node by rendering template and routing to backend.
 
         Args:
             node: WorkflowNode with template_id
@@ -98,6 +106,7 @@ class OperationHandler(BaseNodeHandler):
                     'node_id': node.id,
                     'template_id': node.template_id,
                     'template_name': template.name,
+                    'operation_type': template.operation_type,
                     'mode': mode.value
                 }
             )
@@ -125,53 +134,38 @@ class OperationHandler(BaseNodeHandler):
                     start_time=start_time
                 )
 
-            # 4. Create BatchOperation
-            operation = BatchOperationFactory.create(
+            # 4. Select backend based on operation_type
+            backend = self._get_backend(template.operation_type)
+
+            logger.info(
+                f"Routing to {backend.__class__.__name__}",
+                extra={
+                    'node_id': node.id,
+                    'operation_type': template.operation_type,
+                    'backend': backend.__class__.__name__
+                }
+            )
+
+            # 5. Prepare context with additional info
+            execution_context = {
+                **context,
+                'node_id': str(node.id) if node else None,
+                'timeout_seconds': self._get_timeout(node)
+            }
+
+            # 6. Execute via backend
+            result = backend.execute(
                 template=template,
                 rendered_data=rendered_data,
                 target_databases=target_databases,
-                workflow_execution_id=str(execution.id) if execution else None,
-                node_id=str(node.id) if node else None,
-                created_by=context.get('user_id', 'workflow')
+                context=execution_context,
+                execution=execution,
+                mode=mode
             )
 
-            logger.info(
-                f"BatchOperation created for node {node.id}",
-                extra={
-                    'node_id': node.id,
-                    'operation_id': operation.id,
-                    'target_databases_count': len(target_databases)
-                }
-            )
-
-            # 5. Enqueue to Worker via Celery
-            celery_result = enqueue_operation.delay(operation.id)
-
-            logger.info(
-                f"Operation {operation.id} enqueued to Celery",
-                extra={
-                    'node_id': node.id,
-                    'operation_id': operation.id,
-                    'celery_task_id': celery_result.id
-                }
-            )
-
-            # 6. SYNC vs ASYNC execution
-            if mode == NodeExecutionMode.ASYNC:
-                return self._return_async(
-                    operation=operation,
-                    celery_task_id=celery_result.id,
-                    step_result=step_result,
-                    start_time=start_time
-                )
-            else:
-                return self._return_sync(
-                    operation=operation,
-                    celery_task_id=celery_result.id,
-                    node=node,
-                    step_result=step_result,
-                    start_time=start_time
-                )
+            # Update step result with backend result
+            self._update_step_result(step_result, result)
+            return result
 
         except OperationTemplate.DoesNotExist:
             error_msg = f"OperationTemplate not found: {node.template_id}"
@@ -219,6 +213,42 @@ class OperationHandler(BaseNodeHandler):
                 exc_info=True
             )
             return self._return_error(error_msg, step_result, start_time)
+
+    def _get_backend(self, operation_type: str) -> AbstractOperationBackend:
+        """
+        Select appropriate backend for operation type.
+
+        Uses Strategy pattern - iterates backends and returns first match.
+        ODataBackend is last in list and acts as default fallback.
+
+        Args:
+            operation_type: Operation type string (e.g., 'create', 'lock_scheduled_jobs')
+
+        Returns:
+            Backend instance that supports the operation type
+
+        Raises:
+            ValueError: If no backend supports the operation type
+        """
+        for backend in self._backends:
+            if backend.supports_operation_type(operation_type):
+                return backend
+
+        # This should not happen if ODataBackend is configured as fallback
+        # But handle gracefully just in case
+        raise ValueError(
+            f"No backend supports operation type: {operation_type}. "
+            f"Available types: OData={ODataBackend.get_supported_types()}, "
+            f"RAS={RASBackend.get_supported_types()}"
+        )
+
+    def _get_timeout(self, node: WorkflowNode) -> int:
+        """Get timeout from node config or use default."""
+        if node.config:
+            # NodeConfig is a Pydantic model - use model_dump() for safe access
+            config_dict = node.config.model_dump() if hasattr(node.config, 'model_dump') else {}
+            return config_dict.get('timeout_seconds', self.DEFAULT_TIMEOUT_SECONDS)
+        return self.DEFAULT_TIMEOUT_SECONDS
 
     def _extract_target_databases(
         self,
@@ -287,98 +317,6 @@ class OperationHandler(BaseNodeHandler):
         self._update_step_result(step_result, result)
         return result
 
-    def _return_async(
-        self,
-        operation: BatchOperation,
-        celery_task_id: str,
-        step_result,
-        start_time: float
-    ) -> NodeExecutionResult:
-        """Return async result immediately after enqueueing."""
-        duration = time.time() - start_time
-
-        result = NodeExecutionResult(
-            success=True,
-            output={
-                'operation_id': operation.id,
-                'status': 'queued',
-                'celery_task_id': celery_task_id,
-                'total_tasks': operation.total_tasks
-            },
-            error=None,
-            mode=NodeExecutionMode.ASYNC,
-            duration_seconds=duration,
-            operation_id=operation.id,
-            task_id=celery_task_id
-        )
-
-        self._update_step_result(step_result, result)
-
-        logger.info(
-            f"ASYNC operation {operation.id} queued successfully",
-            extra={
-                'operation_id': operation.id,
-                'celery_task_id': celery_task_id,
-                'duration_seconds': duration
-            }
-        )
-
-        return result
-
-    def _return_sync(
-        self,
-        operation: BatchOperation,
-        celery_task_id: str,
-        node: WorkflowNode,
-        step_result,
-        start_time: float
-    ) -> NodeExecutionResult:
-        """Wait for operation completion and return result."""
-        # Get timeout from node config or use default (NodeConfig is Pydantic model)
-        timeout = self.DEFAULT_TIMEOUT_SECONDS
-        if node.config:
-            timeout = getattr(node.config, 'timeout_seconds', self.DEFAULT_TIMEOUT_SECONDS)
-
-        logger.info(
-            f"SYNC waiting for operation {operation.id} (timeout: {timeout}s)",
-            extra={
-                'operation_id': operation.id,
-                'timeout_seconds': timeout
-            }
-        )
-
-        # Wait for completion
-        wait_result = ResultWaiter.wait(
-            operation_id=operation.id,
-            timeout_seconds=timeout
-        )
-
-        duration = time.time() - start_time
-
-        result = NodeExecutionResult(
-            success=wait_result['success'],
-            output=wait_result,
-            error=wait_result.get('error'),
-            mode=NodeExecutionMode.SYNC,
-            duration_seconds=duration,
-            operation_id=operation.id,
-            task_id=celery_task_id
-        )
-
-        self._update_step_result(step_result, result)
-
-        logger.info(
-            f"SYNC operation {operation.id} completed",
-            extra={
-                'operation_id': operation.id,
-                'success': wait_result['success'],
-                'status': wait_result['status'],
-                'duration_seconds': duration
-            }
-        )
-
-        return result
-
     def _return_error(
         self,
         error_msg: str,
@@ -399,3 +337,16 @@ class OperationHandler(BaseNodeHandler):
 
         self._update_step_result(step_result, result)
         return result
+
+    @classmethod
+    def get_all_supported_types(cls) -> Dict[str, List[str]]:
+        """
+        Get all supported operation types grouped by backend.
+
+        Returns:
+            Dict mapping backend name to list of supported types
+        """
+        return {
+            'odata': list(ODataBackend.get_supported_types()),
+            'ras': list(RASBackend.get_supported_types()),
+        }
