@@ -225,7 +225,7 @@ frontend/src/
 
 ## Implementation Plan
 
-### Phase 1: Setup (2-4 hours)
+### Phase 1: Setup (2-4 hours) ✅ COMPLETED 2025-12-04
 
 **Tasks:**
 1. Install Orval: `npm install -D orval`
@@ -234,12 +234,17 @@ frontend/src/
 4. Update `package.json` scripts
 
 **Deliverables:**
-- [ ] Orval installed
-- [ ] Configuration file created
-- [ ] OpenAPI schema exported
-- [ ] `npm run generate:api` working
+- [x] Orval installed (v7.13.2)
+- [x] Configuration file created (`orval.config.ts` with tags-split, v2 filter)
+- [x] OpenAPI schema exported (already existed)
+- [x] `npm run generate:api` working
 
-### Phase 2: Initial Generation (1-2 hours)
+**Additional:**
+- [x] Custom mutator with AbortController (modern API)
+- [x] ErrorType/BodyType exports for React Query
+- [x] Generated code gitignored (regenerates on build)
+
+### Phase 2: Initial Generation (1-2 hours) ✅ COMPLETED 2025-12-04
 
 **Tasks:**
 1. Run initial generation
@@ -248,10 +253,12 @@ frontend/src/
 4. Fix any schema issues
 
 **Deliverables:**
-- [ ] `frontend/src/api/generated/` populated
-- [ ] Types validated against actual API
+- [x] `frontend/src/api/generated/` populated (89 files)
+- [x] Types validated against actual API
+- [x] 75 model interfaces generated
+- [x] TypeScript compilation passing
 
-### Phase 3: Migration (3-5 days)
+### Phase 3: Migration (3-5 days) 🔄 IN PROGRESS
 
 **Tasks:**
 1. Migrate workflow endpoints

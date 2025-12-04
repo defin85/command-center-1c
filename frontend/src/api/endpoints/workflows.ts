@@ -1,8 +1,15 @@
 /**
  * Workflow API endpoints.
  *
- * Provides methods for workflow template CRUD operations,
- * workflow execution, and validation.
+ * @deprecated This module is deprecated. Use '@/api/adapters/workflows' instead.
+ * Migration guide:
+ *   - Replace: import { ... } from '@/api/endpoints/workflows'
+ *   - With:    import { ... } from '@/api/adapters/workflows'
+ *
+ * The new adapter uses generated types from OpenAPI spec and provides
+ * better type safety with the same function signatures.
+ *
+ * Scheduled for removal: 2026-03-01 (when v1 API is sunset)
  */
 
 // v2 migration: using apiClient through API Gateway instead of direct orchestratorClient

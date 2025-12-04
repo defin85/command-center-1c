@@ -30,19 +30,19 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined
+  CloseCircleOutlined,
+  SearchOutlined
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { WorkflowTemplate } from '../../types/workflow'
+import type { WorkflowTemplateList } from '../../api/adapters/workflows'
 import {
   listWorkflowTemplates,
   deleteWorkflowTemplate,
   cloneWorkflowTemplate
-} from '../../api/endpoints/workflows'
+} from '../../api/adapters/workflows'
 import './WorkflowList.css'
 
 const { Title } = Typography
-const { Search } = Input
 
 const workflowTypeColors: Record<string, string> = {
   sequential: 'blue',
@@ -53,7 +53,7 @@ const workflowTypeColors: Record<string, string> = {
 
 const WorkflowList = () => {
   const navigate = useNavigate()
-  const [templates, setTemplates] = useState<WorkflowTemplate[]>([])
+  const [templates, setTemplates] = useState<WorkflowTemplateList[]>([])
   const [loading, setLoading] = useState(true)
   const [pagination, setPagination] = useState({
     current: 1,
@@ -65,6 +65,7 @@ const WorkflowList = () => {
     workflow_type: '',
     is_active: undefined as boolean | undefined
   })
+  const [searchValue, setSearchValue] = useState('')
 
   // Load templates
   const loadTemplates = async (page = 1) => {
@@ -77,11 +78,12 @@ const WorkflowList = () => {
         workflow_type: filters.workflow_type || undefined,
         is_active: filters.is_active
       })
-      setTemplates(response.results)
+      // API v2 returns 'workflows', DRF standard returns 'results'
+      setTemplates(response.workflows ?? response.results ?? [])
       setPagination((prev) => ({
         ...prev,
         current: page,
-        total: response.count
+        total: response.count ?? response.total ?? 0
       }))
     } catch (_error) {
       message.error('Failed to load workflow templates')
@@ -116,7 +118,7 @@ const WorkflowList = () => {
     }
   }
 
-  const columns: ColumnsType<WorkflowTemplate> = [
+  const columns: ColumnsType<WorkflowTemplateList> = [
     {
       title: 'Name',
       dataIndex: 'name',
@@ -156,7 +158,8 @@ const WorkflowList = () => {
     {
       title: 'Nodes',
       key: 'nodes',
-      render: (_, record) => record.dag_structure?.nodes?.length || 0
+      dataIndex: 'node_count',
+      render: (count) => count ?? 0
     },
     {
       title: 'Updated',
@@ -222,12 +225,20 @@ const WorkflowList = () => {
 
       <Card className="filters-card">
         <Space wrap>
-          <Search
-            placeholder="Search workflows..."
-            allowClear
-            style={{ width: 250 }}
-            onSearch={(value) => setFilters((prev) => ({ ...prev, search: value }))}
-          />
+          <Space.Compact>
+            <Input
+              placeholder="Search workflows..."
+              allowClear
+              style={{ width: 200 }}
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onPressEnter={() => setFilters((prev) => ({ ...prev, search: searchValue }))}
+            />
+            <Button
+              icon={<SearchOutlined />}
+              onClick={() => setFilters((prev) => ({ ...prev, search: searchValue }))}
+            />
+          </Space.Compact>
           <Select
             placeholder="Workflow Type"
             allowClear

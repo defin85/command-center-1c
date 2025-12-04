@@ -31,12 +31,14 @@ import {
   ArrowLeftOutlined
 } from '@ant-design/icons'
 import { WorkflowCanvas, NodePalette, PropertyEditor } from '../../components/workflow'
+// Types for React Flow integration (DAGStructure, WorkflowNodeData, etc.)
+import type { WorkflowNodeData } from '../../types/workflow'
+// Types and functions from generated API adapter
 import type {
   DAGStructure,
   WorkflowTemplate,
-  WorkflowNodeData,
   ValidationResult
-} from '../../types/workflow'
+} from '../../api/adapters/workflows'
 import {
   getWorkflowTemplate,
   createWorkflowTemplate,
@@ -44,7 +46,7 @@ import {
   validateWorkflowTemplate,
   executeWorkflowTemplate,
   listOperationTemplates
-} from '../../api/endpoints/workflows'
+} from '../../api/adapters/workflows'
 import './WorkflowDesigner.css'
 
 const { Header, Sider, Content } = Layout
@@ -292,7 +294,7 @@ const WorkflowDesigner = () => {
 
     try {
       const inputContext = JSON.parse(executeInput)
-      const execution = await executeWorkflowTemplate(state.template.id, {
+      const result = await executeWorkflowTemplate(state.template.id, {
         input_context: inputContext,
         async: true
       })
@@ -301,12 +303,13 @@ const WorkflowDesigner = () => {
       setExecuteModalVisible(false)
 
       // Navigate to monitor page
-      navigate(`/workflows/executions/${execution.id}`)
-    } catch (error: any) {
+      navigate(`/workflows/executions/${result.execution_id}`)
+    } catch (error: unknown) {
       if (error instanceof SyntaxError) {
         message.error('Invalid JSON input')
       } else {
-        message.error(error.response?.data?.detail || 'Failed to execute workflow')
+        const axiosError = error as { response?: { data?: { detail?: string } } }
+        message.error(axiosError.response?.data?.detail || 'Failed to execute workflow')
       }
     }
   }

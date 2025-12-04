@@ -46,8 +46,8 @@ import {
 import { WorkflowCanvas } from '../../components/workflow'
 import { TraceViewerModal } from '../../components/workflow/TraceViewerModal'
 import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
-import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
-import { getWorkflowExecution, cancelWorkflowExecution, getWorkflowTemplate } from '../../api/endpoints/workflows'
+import type { DAGStructure, WorkflowExecution } from '../../api/adapters/workflows'
+import { getWorkflowExecution, cancelWorkflowExecution, getWorkflowTemplate } from '../../api/adapters/workflows'
 import './WorkflowMonitor.css'
 
 // v2 migration: использовать env variable для Jaeger UI
