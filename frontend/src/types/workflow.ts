@@ -1,8 +1,25 @@
 /**
- * Workflow Types for React Flow integration.
+ * Workflow Types - Frontend-specific types for React Flow workflow designer.
  *
- * These types mirror the Django backend models and Pydantic schemas
- * for workflow templates and executions.
+ * This file contains TWO categories of types:
+ *
+ * 1. API Mirror Types (lines 12-175):
+ *    - DAGNode, DAGEdge, DAGStructure
+ *    - WorkflowTemplate, WorkflowExecution, etc.
+ *    - These DUPLICATE generated types but are kept for React Flow compatibility
+ *    - TODO: Migrate to generated types when React Flow adapter is ready
+ *
+ * 2. Frontend-only Types (lines 177-301):
+ *    - WorkflowNodeData, WorkflowNode, WorkflowEdge (React Flow specific)
+ *    - Conversion functions (dagNodeToReactFlow, reactFlowToDagNode, etc.)
+ *    - NODE_TYPE_INFO constants for palette
+ *    - These will NEVER be generated as they are UI-specific
+ *
+ * Related:
+ * - frontend/src/api/generated/model/workflow*.ts (generated API types)
+ * - frontend/src/components/workflow/ (React Flow components)
+ *
+ * @module types/workflow
  */
 
 // ============================================================================

@@ -6,7 +6,7 @@
 
 ## 🚨 КРИТИЧНО
 
-**Дата обновления:** 2025-12-01
+**Дата обновления:** 2025-12-05
 **Текущая фаза:** Phase 1, Week 2.5-3 (Core Functionality)
 **Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ (~25% готово) - Task Queue & Worker Integration
 **Режим разработки:** Native WSL (USE_DOCKER=false в .env.local)
@@ -26,7 +26,7 @@
 
 **Запуск проекта:**
 ```bash
-cd /c/1CProject/command-center-1c
+# из корня проекта
 ./scripts/dev/start-all.sh        # Умный запуск с автопересборкой
 ./scripts/dev/health-check.sh     # Проверить статус
 ```
@@ -37,6 +37,13 @@ cd /c/1CProject/command-center-1c
 ./scripts/dev/restart.sh <service>  # Один сервис
 ./scripts/dev/logs.sh <service>     # Просмотр логов
 ./scripts/dev/stop-all.sh           # Остановить всё
+```
+
+**Качество кода:**
+```bash
+./scripts/dev/lint.sh              # Проверить всё (tsc, eslint, ruff, go vet)
+./scripts/dev/lint.sh --fix        # Авто-исправление
+./scripts/dev/lint.sh --ts         # Только TypeScript
 ```
 
 **Доступные сервисы:**
@@ -319,20 +326,23 @@ sudo systemctl enable --now prometheus grafana
 
 ---
 
-## 🧪 ТЕСТИРОВАНИЕ
+## 🧪 ТЕСТИРОВАНИЕ И ЛИНТИНГ
 
-**Django:**
+**Линтинг (все компоненты):**
 ```bash
-cd orchestrator && source venv/Scripts/activate && pytest
+./scripts/dev/lint.sh              # tsc + eslint + ruff + go vet
+./scripts/dev/lint.sh --fix        # Авто-исправление
 ```
 
-**Go:**
+**Тесты:**
 ```bash
+# Django
+cd orchestrator && source venv/bin/activate && pytest
+
+# Go
 cd go-services/api-gateway && go test ./...
-```
 
-**Frontend:**
-```bash
+# Frontend
 cd frontend && npm test
 ```
 
@@ -422,8 +432,13 @@ Skill: cc1c-devops → автоматическая диагностика и п
 
 ---
 
-**Версия:** 3.1
-**Последнее обновление:** 2025-12-01
+**Версия:** 3.2
+**Последнее обновление:** 2025-12-05
+
+**Изменения v3.2:**
+- Добавлен `./scripts/dev/lint.sh` для проверки качества кода
+- Объединены секции тестирования и линтинга
+- Исправлен путь в БЫСТРЫЙ СТАРТ (относительный вместо абсолютного)
 
 **Изменения v3.1:**
 - Обновлена документация для Native WSL режима (USE_DOCKER=false)

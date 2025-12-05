@@ -1,9 +1,20 @@
 /**
- * Types for Service Mesh monitoring.
+ * Service Mesh Types - Frontend-specific types for service mesh visualization.
  *
- * These types mirror the backend data structures from:
+ * IMPORTANT: These types are NOT generated from OpenAPI because the service mesh
+ * monitoring uses Prometheus metrics and WebSocket streams, not REST API.
+ *
+ * This file contains:
+ * - Prometheus metrics types (ServiceMetrics, ServiceConnection)
+ * - WebSocket message types (ServiceMeshWSMessage, ServiceMeshWSRequest)
+ * - React Flow diagram types (ServiceNodeData, ServiceLayoutConfig)
+ * - UI constants (STATUS_COLORS, DEFAULT_SERVICE_POSITIONS)
+ *
+ * Related backend:
  * - orchestrator/apps/operations/services/prometheus_client.py
  * - orchestrator/apps/operations/views/service_mesh.py
+ *
+ * @module types/serviceMesh
  */
 
 /**

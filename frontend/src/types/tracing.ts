@@ -1,8 +1,20 @@
 /**
- * Tracing Types for workflow execution monitoring.
+ * Tracing Types - Frontend-specific types for distributed tracing visualization.
  *
- * These types are used for displaying trace information in the UI,
- * abstracting away Jaeger-specific details.
+ * IMPORTANT: These types are NOT generated from OpenAPI because tracing data
+ * comes directly from Jaeger API, not our backend REST API.
+ *
+ * This file contains:
+ * - Trace data structures (TraceSpan, TraceData, TraceEvent)
+ * - Timeline visualization types (TimelineItem, ServiceSummary)
+ * - Jaeger-to-frontend conversion utilities (convertJaegerTrace, etc.)
+ * - Display helpers (formatTraceDuration)
+ *
+ * Related:
+ * - frontend/src/api/endpoints/jaeger.ts (Jaeger API client)
+ * - frontend/src/components/workflow/TraceViewerModal.tsx
+ *
+ * @module types/tracing
  */
 
 // ============================================================================
