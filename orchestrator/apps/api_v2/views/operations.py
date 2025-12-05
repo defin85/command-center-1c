@@ -7,9 +7,11 @@ Provides action-based endpoints for batch operations management.
 import logging
 
 from django.utils import timezone
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
@@ -17,6 +19,95 @@ from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure."""
+    code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
+    message = serializers.CharField(help_text="Human-readable error message")
+    details = serializers.DictField(required=False, help_text="Additional error details")
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Standard error response."""
+    success = serializers.BooleanField(default=False)
+    error = ErrorDetailSerializer()
+
+
+class OperationProgressSerializer(serializers.Serializer):
+    """Progress information for an operation."""
+    total = serializers.IntegerField(help_text="Total number of tasks")
+    completed = serializers.IntegerField(help_text="Number of completed tasks")
+    failed = serializers.IntegerField(help_text="Number of failed tasks")
+    pending = serializers.IntegerField(help_text="Number of pending/queued tasks")
+    processing = serializers.IntegerField(help_text="Number of processing tasks")
+    percent = serializers.IntegerField(help_text="Completion percentage (0-100)")
+
+
+class OperationListResponseSerializer(serializers.Serializer):
+    """Response for list_operations endpoint."""
+    operations = BatchOperationSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of operations in current page")
+    total = serializers.IntegerField(help_text="Total number of operations matching filters")
+
+
+class OperationDetailResponseSerializer(serializers.Serializer):
+    """Response for get_operation endpoint."""
+    operation = BatchOperationSerializer()
+    tasks = TaskSerializer(many=True, required=False, help_text="Task details (if include_tasks=true)")
+    progress = OperationProgressSerializer()
+
+
+class OperationCancelResponseSerializer(serializers.Serializer):
+    """Response for cancel_operation endpoint."""
+    operation_id = serializers.CharField(help_text="ID of the cancelled operation")
+    cancelled = serializers.BooleanField(help_text="Whether cancellation was successful")
+    message = serializers.CharField(help_text="Status message")
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='List batch operations',
+    description='List all batch operations with optional filtering by status, type, and creator.',
+    parameters=[
+        OpenApiParameter(
+            name='status',
+            type=str,
+            required=False,
+            description='Filter by status (pending, queued, processing, completed, failed, cancelled)'
+        ),
+        OpenApiParameter(
+            name='operation_type',
+            type=str,
+            required=False,
+            description='Filter by type (create, update, delete, query, install_extension)'
+        ),
+        OpenApiParameter(
+            name='created_by',
+            type=str,
+            required=False,
+            description='Filter by creator username'
+        ),
+        OpenApiParameter(
+            name='limit',
+            type=int,
+            required=False,
+            description='Maximum results (default: 50, max: 1000)'
+        ),
+        OpenApiParameter(
+            name='offset',
+            type=int,
+            required=False,
+            description='Pagination offset (default: 0)'
+        ),
+    ],
+    responses={
+        200: OperationListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_operations(request):
@@ -80,6 +171,31 @@ def list_operations(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get operation details',
+    description='Get detailed information about a specific operation including tasks and progress.',
+    parameters=[
+        OpenApiParameter(
+            name='operation_id',
+            type=str,
+            required=True,
+            description='Operation ID (UUID)'
+        ),
+        OpenApiParameter(
+            name='include_tasks',
+            type=bool,
+            required=False,
+            description='Include task details (default: true, max 100 tasks)'
+        ),
+    ],
+    responses={
+        200: OperationDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_operation(request):
@@ -155,6 +271,23 @@ def get_operation(request):
     return Response(response_data)
 
 
+class CancelOperationRequestSerializer(serializers.Serializer):
+    """Request body for cancel_operation endpoint."""
+    operation_id = serializers.CharField(help_text="ID of the operation to cancel (UUID)")
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Cancel operation',
+    description='Cancel a running or pending operation. Already completed or cancelled operations cannot be cancelled.',
+    request=CancelOperationRequestSerializer,
+    responses={
+        200: OperationCancelResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def cancel_operation(request):

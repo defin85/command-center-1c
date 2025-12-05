@@ -7,9 +7,11 @@ Provides action-based endpoints for workflow management.
 import logging
 
 from django.db.models import Count
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 import uuid
 
@@ -20,12 +22,232 @@ from apps.templates.workflow.serializers import (
     WorkflowExecutionListSerializer,
     WorkflowExecutionDetailSerializer,
     WorkflowStepResultSerializer,
-    WorkflowCancelResponseSerializer,
+    WorkflowCancelResponseSerializer as BaseWorkflowCancelResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure."""
+    code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
+    message = serializers.CharField(help_text="Human-readable error message")
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Standard error response."""
+    success = serializers.BooleanField(default=False)
+    error = ErrorDetailSerializer()
+
+
+# --- Workflow Template Response Serializers ---
+
+class WorkflowStatisticsSerializer(serializers.Serializer):
+    """Statistics for a workflow template."""
+    total_executions = serializers.IntegerField()
+    successful = serializers.IntegerField()
+    failed = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    running = serializers.IntegerField()
+    average_duration = serializers.FloatField(allow_null=True)
+
+
+class WorkflowListResponseSerializer(serializers.Serializer):
+    """Response for list_workflows endpoint."""
+    workflows = WorkflowTemplateListSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of workflows in current page")
+    total = serializers.IntegerField(help_text="Total number of workflows")
+
+
+class WorkflowDetailResponseSerializer(serializers.Serializer):
+    """Response for get_workflow endpoint."""
+    workflow = WorkflowTemplateDetailSerializer()
+    statistics = WorkflowStatisticsSerializer()
+    executions = WorkflowExecutionListSerializer(many=True, required=False)
+
+
+class WorkflowCreateResponseSerializer(serializers.Serializer):
+    """Response for create_workflow endpoint."""
+    workflow = WorkflowTemplateDetailSerializer()
+    message = serializers.CharField()
+
+
+class WorkflowUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_workflow endpoint."""
+    workflow = WorkflowTemplateDetailSerializer()
+    updated_fields = serializers.ListField(child=serializers.CharField())
+    message = serializers.CharField()
+
+
+class WorkflowDeleteResponseSerializer(serializers.Serializer):
+    """Response for delete_workflow endpoint."""
+    workflow_id = serializers.UUIDField()
+    deleted = serializers.BooleanField()
+    message = serializers.CharField()
+
+
+class ValidationIssueSerializer(serializers.Serializer):
+    """Validation issue detail."""
+    code = serializers.CharField()
+    message = serializers.CharField()
+    node_id = serializers.CharField(allow_null=True, required=False)
+    severity = serializers.CharField(required=False)
+
+
+class WorkflowValidateResponseSerializer(serializers.Serializer):
+    """Response for validate_workflow endpoint."""
+    valid = serializers.BooleanField()
+    errors = ValidationIssueSerializer(many=True, required=False)
+    warnings = ValidationIssueSerializer(many=True, required=False)
+    metadata = serializers.DictField(required=False)
+    topological_order = serializers.ListField(
+        child=serializers.CharField(), required=False
+    )
+
+
+class WorkflowCloneResponseSerializer(serializers.Serializer):
+    """Response for clone_workflow endpoint."""
+    workflow = WorkflowTemplateDetailSerializer()
+    cloned_from = serializers.UUIDField()
+    message = serializers.CharField()
+
+
+# --- Workflow Execution Response Serializers ---
+
+class ExecuteWorkflowRequestSerializer(serializers.Serializer):
+    """Request for execute_workflow endpoint."""
+    workflow_id = serializers.UUIDField(help_text="Workflow template UUID")
+    input_context = serializers.DictField(
+        required=False, default=dict, help_text="Initial context for workflow"
+    )
+    mode = serializers.ChoiceField(
+        choices=['sync', 'async'], default='async',
+        help_text="Execution mode: sync (blocking) or async (background)"
+    )
+
+
+class ExecuteWorkflowResponseSerializer(serializers.Serializer):
+    """Response for execute_workflow endpoint."""
+    execution_id = serializers.UUIDField()
+    status = serializers.CharField()
+    mode = serializers.CharField()
+    message = serializers.CharField()
+    celery_task_id = serializers.CharField(required=False)
+    final_result = serializers.DictField(required=False, allow_null=True)
+    duration = serializers.FloatField(required=False, allow_null=True)
+    error_message = serializers.CharField(required=False)
+
+
+class ExecutionListResponseSerializer(serializers.Serializer):
+    """Response for list_executions endpoint."""
+    executions = WorkflowExecutionListSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of executions in current page")
+    total = serializers.IntegerField(help_text="Total number of executions")
+
+
+class ExecutionDetailResponseSerializer(serializers.Serializer):
+    """Response for get_execution endpoint."""
+    execution = WorkflowExecutionDetailSerializer()
+    steps = WorkflowStepResultSerializer(many=True)
+
+
+class ExecutionCancelRequestSerializer(serializers.Serializer):
+    """Request for cancel_execution endpoint."""
+    execution_id = serializers.UUIDField(help_text="Execution UUID")
+
+
+class ExecutionCancelResponseSerializer(serializers.Serializer):
+    """Response for cancel_execution endpoint."""
+    execution_id = serializers.UUIDField()
+    cancelled = serializers.BooleanField()
+    status = serializers.CharField()
+    message = serializers.CharField()
+
+
+class ExecutionStepsResponseSerializer(serializers.Serializer):
+    """Response for get_execution_steps endpoint."""
+    steps = WorkflowStepResultSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+# --- Request Serializers ---
+
+class CreateWorkflowRequestSerializer(serializers.Serializer):
+    """Request for create_workflow endpoint."""
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    workflow_type = serializers.CharField(default='general')
+    dag_structure = serializers.DictField(help_text="DAG structure with nodes and edges")
+    is_active = serializers.BooleanField(default=True)
+
+
+class UpdateWorkflowRequestSerializer(serializers.Serializer):
+    """Request for update_workflow endpoint."""
+    workflow_id = serializers.UUIDField()
+    name = serializers.CharField(max_length=200, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    workflow_type = serializers.CharField(required=False)
+    dag_structure = serializers.DictField(required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class DeleteWorkflowRequestSerializer(serializers.Serializer):
+    """Request for delete_workflow endpoint."""
+    workflow_id = serializers.UUIDField()
+    force = serializers.BooleanField(default=False)
+
+
+class ValidateWorkflowRequestSerializer(serializers.Serializer):
+    """Request for validate_workflow endpoint."""
+    workflow_id = serializers.UUIDField(required=False)
+    dag_structure = serializers.DictField(required=False)
+
+
+class CloneWorkflowRequestSerializer(serializers.Serializer):
+    """Request for clone_workflow endpoint."""
+    workflow_id = serializers.UUIDField()
+    new_name = serializers.CharField(max_length=200, required=False)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='List workflow templates',
+    description='List all workflow templates with optional filtering by type, active status, and search.',
+    parameters=[
+        OpenApiParameter(
+            name='workflow_type', type=str, required=False,
+            description='Filter by workflow type (general, user_management, database_ops, etc.)'
+        ),
+        OpenApiParameter(
+            name='is_active', type=str, required=False,
+            description='Filter by active status (true/false)'
+        ),
+        OpenApiParameter(
+            name='is_valid', type=str, required=False,
+            description='Filter by validation status (true/false)'
+        ),
+        OpenApiParameter(
+            name='search', type=str, required=False,
+            description='Search by name or description'
+        ),
+        OpenApiParameter(
+            name='limit', type=int, required=False,
+            description='Maximum results (default: 50, max: 1000)'
+        ),
+        OpenApiParameter(
+            name='offset', type=int, required=False,
+            description='Pagination offset (default: 0)'
+        ),
+    ],
+    responses={
+        200: WorkflowListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_workflows(request):
@@ -97,6 +319,27 @@ def list_workflows(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get workflow template details',
+    description='Get detailed information about a specific workflow template including statistics and recent executions.',
+    parameters=[
+        OpenApiParameter(
+            name='workflow_id', type=str, required=True,
+            description='Workflow template UUID'
+        ),
+        OpenApiParameter(
+            name='include_executions', type=str, required=False,
+            description='Include recent executions (default: true)'
+        ),
+    ],
+    responses={
+        200: WorkflowDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_workflow(request):
@@ -176,6 +419,19 @@ def get_workflow(request):
     return Response(response_data)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Execute workflow',
+    description='Execute a workflow template. Supports sync (blocking) and async (background via Celery) modes.',
+    request=ExecuteWorkflowRequestSerializer,
+    responses={
+        200: ExecuteWorkflowResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def execute_workflow(request):
@@ -355,6 +611,17 @@ def execute_workflow(request):
         }, status=500)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Create workflow template',
+    description='Create a new workflow template. The DAG structure is auto-validated.',
+    request=CreateWorkflowRequestSerializer,
+    responses={
+        201: WorkflowCreateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_workflow(request):
@@ -447,6 +714,19 @@ def create_workflow(request):
         }, status=400)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Update workflow template',
+    description='Update an existing workflow template. Supports partial updates. Cannot update if workflow has running executions.',
+    request=UpdateWorkflowRequestSerializer,
+    responses={
+        200: WorkflowUpdateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_workflow(request):
@@ -567,6 +847,20 @@ def update_workflow(request):
         }, status=400)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Delete workflow template',
+    description='Delete a workflow template (soft delete - deactivates). Use force=true to also cancel running executions.',
+    request=DeleteWorkflowRequestSerializer,
+    responses={
+        200: WorkflowDeleteResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def delete_workflow(request):
@@ -661,6 +955,18 @@ def delete_workflow(request):
         }, status=500)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Validate workflow DAG',
+    description='Validate a workflow DAG structure. Can validate by workflow_id or by providing dag_structure directly.',
+    request=ValidateWorkflowRequestSerializer,
+    responses={
+        200: WorkflowValidateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def validate_workflow(request):
@@ -780,6 +1086,18 @@ def validate_workflow(request):
         })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Clone workflow template',
+    description='Clone a workflow template. If new_name is provided, creates as new workflow (v1). Otherwise, creates as new version.',
+    request=CloneWorkflowRequestSerializer,
+    responses={
+        201: WorkflowCloneResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def clone_workflow(request):
@@ -871,6 +1189,34 @@ def clone_workflow(request):
 # ============================================================================
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='List workflow executions',
+    description='List workflow executions with optional filtering by workflow template and status.',
+    parameters=[
+        OpenApiParameter(
+            name='workflow_id', type=str, required=False,
+            description='Filter by workflow template UUID'
+        ),
+        OpenApiParameter(
+            name='status', type=str, required=False,
+            description='Filter by status (pending, running, completed, failed, cancelled)'
+        ),
+        OpenApiParameter(
+            name='limit', type=int, required=False,
+            description='Maximum results (default: 50, max: 1000)'
+        ),
+        OpenApiParameter(
+            name='offset', type=int, required=False,
+            description='Pagination offset (default: 0)'
+        ),
+    ],
+    responses={
+        200: ExecutionListResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_executions(request):
@@ -971,6 +1317,23 @@ def list_executions(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get execution details',
+    description='Get detailed information about a specific workflow execution including step results.',
+    parameters=[
+        OpenApiParameter(
+            name='execution_id', type=str, required=True,
+            description='Execution UUID'
+        ),
+    ],
+    responses={
+        200: ExecutionDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_execution(request):
@@ -1047,6 +1410,20 @@ def get_execution(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Cancel execution',
+    description='Cancel a running or pending workflow execution. Only pending or running executions can be cancelled.',
+    request=ExecutionCancelRequestSerializer,
+    responses={
+        200: ExecutionCancelResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def cancel_execution(request):
@@ -1152,6 +1529,27 @@ def cancel_execution(request):
         }, status=500)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get execution steps',
+    description='Get all step results for a workflow execution with optional filtering by step status.',
+    parameters=[
+        OpenApiParameter(
+            name='execution_id', type=str, required=True,
+            description='Execution UUID'
+        ),
+        OpenApiParameter(
+            name='status', type=str, required=False,
+            description='Filter by step status (pending, running, completed, failed, skipped)'
+        ),
+    ],
+    responses={
+        200: ExecutionStepsResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_execution_steps(request):

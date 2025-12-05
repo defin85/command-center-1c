@@ -1,20 +1,64 @@
 """
-System health check endpoints for API v2.
+System health check and configuration endpoints for API v2.
 
-Provides comprehensive system health monitoring with parallel service checks.
+Provides comprehensive system health monitoring with parallel service checks
+and system configuration for frontend defaults.
 """
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+from django.conf import settings
 from django.db import connection
 from django.utils import timezone
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ServiceHealthSerializer(serializers.Serializer):
+    """Health status of a single service."""
+    name = serializers.CharField(help_text="Service name (e.g., API Gateway, PostgreSQL)")
+    type = serializers.CharField(help_text="Service type (go-service, django, database, cache, monitoring, tracing)")
+    url = serializers.CharField(required=False, help_text="Health check URL")
+    status = serializers.ChoiceField(
+        choices=['online', 'offline', 'degraded'],
+        help_text="Service status"
+    )
+    response_time_ms = serializers.FloatField(
+        required=False, allow_null=True,
+        help_text="Response time in milliseconds"
+    )
+    last_check = serializers.DateTimeField(help_text="Timestamp of last health check")
+    details = serializers.DictField(required=False, help_text="Additional details (error info, etc.)")
+
+
+class SystemStatisticsSerializer(serializers.Serializer):
+    """Aggregated statistics for all services."""
+    total = serializers.IntegerField(help_text="Total number of services")
+    online = serializers.IntegerField(help_text="Number of online services")
+    offline = serializers.IntegerField(help_text="Number of offline services")
+    degraded = serializers.IntegerField(help_text="Number of degraded services")
+
+
+class SystemHealthResponseSerializer(serializers.Serializer):
+    """Response for system_health endpoint."""
+    timestamp = serializers.DateTimeField(help_text="Current timestamp")
+    overall_status = serializers.ChoiceField(
+        choices=['healthy', 'degraded', 'critical'],
+        help_text="Overall system status"
+    )
+    services = ServiceHealthSerializer(many=True, help_text="List of service health statuses")
+    statistics = SystemStatisticsSerializer(help_text="Aggregated statistics")
 
 # Health check timeout in seconds
 HEALTH_TIMEOUT = 1.5
@@ -80,6 +124,15 @@ def check_service(name: str, service_type: str, url: str) -> dict:
         }
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get system health status',
+    description='Returns comprehensive system health status with parallel service checks for all monitored services.',
+    responses={
+        200: SystemHealthResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def system_health(request):
@@ -239,4 +292,48 @@ def system_health(request):
         'overall_status': overall,
         'services': results,
         'statistics': statistics,
+    })
+
+
+# =============================================================================
+# System Configuration Endpoint
+# =============================================================================
+
+class SystemConfigSerializer(serializers.Serializer):
+    """System configuration for frontend defaults."""
+    ras_default_server = serializers.CharField(
+        help_text="Default RAS server address for new clusters (e.g., localhost:1545)"
+    )
+    ras_adapter_url = serializers.CharField(
+        help_text="RAS Adapter service URL (e.g., http://localhost:8188)"
+    )
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get system configuration',
+    description='Returns system configuration values for frontend defaults.',
+    responses={
+        200: SystemConfigSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def system_config(request):
+    """
+    GET /api/v2/system/config/
+
+    Returns system configuration for frontend defaults.
+    These values come from Django settings (environment variables).
+
+    Response:
+        {
+            "ras_default_server": "localhost:1539",
+            "ras_adapter_url": "http://localhost:8188"
+        }
+    """
+    return Response({
+        'ras_default_server': getattr(settings, 'RAS_DEFAULT_SERVER', 'localhost:1545'),
+        'ras_adapter_url': getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188'),
     })

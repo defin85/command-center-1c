@@ -46,12 +46,17 @@ import {
 import { WorkflowCanvas } from '../../components/workflow'
 import { TraceViewerModal } from '../../components/workflow/TraceViewerModal'
 import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
-import type { DAGStructure, WorkflowExecution } from '../../api/adapters/workflows'
-import { getWorkflowExecution, cancelWorkflowExecution, getWorkflowTemplate } from '../../api/adapters/workflows'
+// Generated API + transforms (migrated from adapter)
+import { getV2 } from '../../api/generated'
+import { convertExecutionToLegacy, convertDAGToLegacy } from '../../utils/workflowTransforms'
+import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
 import './WorkflowMonitor.css'
 
 // v2 migration: использовать env variable для Jaeger UI
 const JAEGER_UI_URL = import.meta.env.VITE_JAEGER_UI_URL || 'http://localhost:16686'
+
+// Initialize v2 API
+const api = getV2()
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
@@ -122,12 +127,14 @@ const WorkflowMonitor = () => {
 
       try {
         setIsLoading(true)
-        const execData = await getWorkflowExecution(executionId)
+        // Use generated API directly with transforms
+        const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
+        const execData = convertExecutionToLegacy(execResponse.execution)
         setExecution(execData)
 
         // Load template for DAG structure
-        const template = await getWorkflowTemplate(execData.workflow_template)
-        setDagStructure(template.dag_structure)
+        const templateResponse = await api.getWorkflowsGetWorkflow({ workflow_id: execData.workflow_template })
+        setDagStructure(convertDAGToLegacy(templateResponse.workflow.dag_structure))
 
         setError(null)
       } catch (err: any) {
@@ -170,7 +177,8 @@ const WorkflowMonitor = () => {
 
     try {
       setIsCancelling(true)
-      await cancelWorkflowExecution(executionId)
+      // Use generated API directly
+      await api.postWorkflowsCancelExecution({ execution_id: executionId })
     } catch (err: any) {
       console.error('Failed to cancel execution:', err)
     } finally {
@@ -183,8 +191,9 @@ const WorkflowMonitor = () => {
     if (!executionId) return
 
     try {
-      const execData = await getWorkflowExecution(executionId)
-      setExecution(execData)
+      // Use generated API directly with transforms
+      const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
+      setExecution(convertExecutionToLegacy(execResponse.execution))
     } catch (err: any) {
       console.error('Failed to refresh:', err)
     }

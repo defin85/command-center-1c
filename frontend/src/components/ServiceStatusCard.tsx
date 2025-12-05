@@ -8,7 +8,7 @@ import {
     CloseCircleOutlined,
     ExclamationCircleOutlined,
 } from '@ant-design/icons';
-import type { ServiceHealth } from '@/api/adapters/system';
+import type { ServiceHealth } from '@/api/generated/model';
 
 const { Text } = Typography;
 

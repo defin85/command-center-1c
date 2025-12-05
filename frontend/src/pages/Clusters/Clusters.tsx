@@ -2,9 +2,19 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { clustersApi, Cluster, ClusterCreateRequest } from '../../api/adapters/clusters'
+import { getV2, Cluster } from '../../api/generated'
+import { apiClient } from '../../api/client'
 
 const { TextArea } = Input
+
+// Initialize API client
+const api = getV2()
+
+// System config interface
+interface SystemConfig {
+    ras_default_server: string
+    ras_adapter_url: string
+}
 
 export const Clusters = () => {
     const navigate = useNavigate()
@@ -13,13 +23,28 @@ export const Clusters = () => {
     const [loading, setLoading] = useState(false)
     const [modalVisible, setModalVisible] = useState(false)
     const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
+    const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null)
     const [form] = Form.useForm()
+
+    const fetchSystemConfig = async () => {
+        try {
+            const response = await apiClient.get<SystemConfig>('/api/v2/system/config/')
+            setSystemConfig(response.data)
+        } catch (error) {
+            // Use fallback defaults if config endpoint fails
+            console.warn('Failed to load system config, using defaults')
+            setSystemConfig({
+                ras_default_server: 'localhost:1545',
+                ras_adapter_url: 'http://localhost:8188',
+            })
+        }
+    }
 
     const fetchClusters = async () => {
         try {
             setLoading(true)
-            const data = await clustersApi.list()
-            setClusters(data)
+            const response = await api.getClustersListClusters()
+            setClusters(response.clusters ?? [])
         } catch (error: any) {
             message.error('Failed to load clusters: ' + error.message)
         } finally {
@@ -28,6 +53,7 @@ export const Clusters = () => {
     }
 
     useEffect(() => {
+        fetchSystemConfig()
         fetchClusters()
     }, [])
 
@@ -35,8 +61,8 @@ export const Clusters = () => {
         setEditingCluster(null)
         form.resetFields()
         form.setFieldsValue({
-            ras_server: 'localhost:1545',
-            cluster_service_url: 'http://localhost:8188',
+            ras_server: systemConfig?.ras_default_server ?? 'localhost:1545',
+            cluster_service_url: systemConfig?.ras_adapter_url ?? 'http://localhost:8188',
             status: 'active',
         })
         setModalVisible(true)
@@ -50,7 +76,7 @@ export const Clusters = () => {
 
     const handleDelete = async (id: string) => {
         try {
-            await clustersApi.delete(id)
+            await api.delClustersDeleteCluster({ cluster_id: id })
             message.success('Cluster deleted successfully')
             fetchClusters()
         } catch (error: any) {
@@ -61,7 +87,7 @@ export const Clusters = () => {
     const handleSync = async (id: string, name: string) => {
         try {
             message.loading({ content: `Syncing ${name}...`, key: 'sync' })
-            const result = await clustersApi.sync(id)
+            const result = await api.postClustersSyncCluster({ cluster_id: id })
             // databases_found may be undefined if sync is async (Celery task)
             const dbInfo = result.databases_found !== undefined
                 ? `. Found ${result.databases_found} databases.`
@@ -84,13 +110,12 @@ export const Clusters = () => {
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields()
-            const requestData: ClusterCreateRequest = values
 
             if (editingCluster) {
-                await clustersApi.update(editingCluster.id, requestData)
+                await api.putClustersUpdateCluster(values, { cluster_id: editingCluster.id })
                 message.success('Cluster updated successfully')
             } else {
-                await clustersApi.create(requestData)
+                await api.postClustersCreateCluster(values)
                 message.success('Cluster created successfully')
             }
 
@@ -237,7 +262,7 @@ export const Clusters = () => {
                         name="ras_server"
                         rules={[{ required: true, message: 'Please enter RAS server address' }]}
                     >
-                        <Input placeholder="localhost:1545" />
+                        <Input placeholder={systemConfig?.ras_default_server ?? 'localhost:1545'} />
                     </Form.Item>
 
                     <Form.Item
@@ -245,7 +270,7 @@ export const Clusters = () => {
                         name="cluster_service_url"
                         rules={[{ required: true, message: 'Please enter cluster service URL' }]}
                     >
-                        <Input placeholder="http://localhost:8188" />
+                        <Input placeholder={systemConfig?.ras_adapter_url ?? 'http://localhost:8188'} />
                     </Form.Item>
 
                     <Form.Item label="Cluster Admin User" name="cluster_user">

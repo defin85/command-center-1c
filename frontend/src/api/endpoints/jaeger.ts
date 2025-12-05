@@ -75,7 +75,7 @@ export interface JaegerResponse {
 export const getTraceById = async (traceId: string, timeoutMs: number = 10000): Promise<JaegerTrace | null> => {
   // Standard Jaeger API: GET /tracing/traces/{traceId}
   try {
-    const response = await apiClient.get(`/tracing/traces/${traceId}`, {
+    const response = await apiClient.get(`/api/v2/tracing/traces/${traceId}`, {
       timeout: timeoutMs
     })
 
@@ -218,7 +218,7 @@ export const searchTraces = async (
       params.operation = operation
     }
 
-    const response = await apiClient.get('/tracing/traces', {
+    const response = await apiClient.get('/api/v2/tracing/traces', {
       params,
       timeout: timeoutMs
     })

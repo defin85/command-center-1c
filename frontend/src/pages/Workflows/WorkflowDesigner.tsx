@@ -7,6 +7,9 @@
  * - Property editor for selected node
  * - Save/Load workflow templates via API
  * - Validation before save
+ *
+ * Migration: Uses generated API directly with transform utilities.
+ * Legacy adapter (api/adapters/workflows) is no longer used here.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -31,23 +34,29 @@ import {
   ArrowLeftOutlined
 } from '@ant-design/icons'
 import { WorkflowCanvas, NodePalette, PropertyEditor } from '../../components/workflow'
-// Types for React Flow integration (DAGStructure, WorkflowNodeData, etc.)
-import type { WorkflowNodeData } from '../../types/workflow'
-// Types and functions from generated API adapter
+
+// Types from types/workflow (legacy format for UI components)
 import type {
+  WorkflowNodeData,
   DAGStructure,
   WorkflowTemplate,
   ValidationResult
-} from '../../api/adapters/workflows'
+} from '../../types/workflow'
+
+// Generated API
+import { getV2 } from '../../api/generated/v2/v2'
+
+// Transform utilities for API <-> UI type conversion
 import {
-  getWorkflowTemplate,
-  createWorkflowTemplate,
-  updateWorkflowTemplate,
-  validateWorkflowTemplate,
-  executeWorkflowTemplate,
-  listOperationTemplates
-} from '../../api/adapters/workflows'
+  convertTemplateToLegacy,
+  convertValidationToLegacy,
+  convertDAGToGenerated,
+} from '../../utils/workflowTransforms'
+
 import './WorkflowDesigner.css'
+
+// Initialize generated API
+const api = getV2()
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -96,7 +105,9 @@ const WorkflowDesigner = () => {
       if (!templateId) return
 
       try {
-        const template = await getWorkflowTemplate(templateId)
+        // Use generated API directly with transform
+        const response = await api.getWorkflowsGetWorkflow({ workflow_id: templateId })
+        const template = convertTemplateToLegacy(response.workflow)
         setState((prev) => ({
           ...prev,
           template,
@@ -120,10 +131,15 @@ const WorkflowDesigner = () => {
   useEffect(() => {
     const loadOperationTemplates = async () => {
       try {
-        const templates = await listOperationTemplates()
+        const response = await api.getTemplatesListTemplates({ limit: 1000 })
+        const templates = response.templates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          operation_type: t.operation_type,
+        }))
         setState((prev) => ({
           ...prev,
-          operationTemplates: templates
+          operationTemplates: templates,
         }))
       } catch (error) {
         console.error('Failed to load operation templates:', error)
@@ -220,7 +236,9 @@ const WorkflowDesigner = () => {
     setState((prev) => ({ ...prev, isValidating: true }))
 
     try {
-      const result = await validateWorkflowTemplate(state.template.id)
+      // Use generated API directly with transform
+      const response = await api.postWorkflowsValidateWorkflow({ workflow_id: state.template.id })
+      const result = convertValidationToLegacy(response)
       setState((prev) => ({
         ...prev,
         validationResult: result,
@@ -245,22 +263,32 @@ const WorkflowDesigner = () => {
 
       setState((prev) => ({ ...prev, isSaving: true }))
 
-      const templateData = {
-        name: values.name,
-        description: values.description,
-        dag_structure: state.dagStructure,
-        workflow_type: 'complex' as const
-      }
+      // Convert DAG to generated format for API
+      // Use type assertion because generated type uses { [key: string]: unknown }
+      const dagStructureForApi = convertDAGToGenerated(state.dagStructure) as unknown as { [key: string]: unknown }
 
       let savedTemplate: WorkflowTemplate
 
       if (state.template?.id) {
-        // Update existing
-        savedTemplate = await updateWorkflowTemplate(state.template.id, templateData)
+        // Update existing - use generated API directly
+        const response = await api.postWorkflowsUpdateWorkflow({
+          workflow_id: state.template.id,
+          name: values.name,
+          description: values.description,
+          dag_structure: dagStructureForApi,
+          workflow_type: 'complex',
+        })
+        savedTemplate = convertTemplateToLegacy(response.workflow)
         message.success('Workflow saved successfully')
       } else {
-        // Create new
-        savedTemplate = await createWorkflowTemplate(templateData)
+        // Create new - use generated API directly
+        const response = await api.postWorkflowsCreateWorkflow({
+          name: values.name,
+          description: values.description,
+          dag_structure: dagStructureForApi,
+          workflow_type: 'complex',
+        })
+        savedTemplate = convertTemplateToLegacy(response.workflow)
         message.success('Workflow created successfully')
         // Navigate to edit URL
         navigate(`/workflows/${savedTemplate.id}`, { replace: true })
@@ -274,8 +302,9 @@ const WorkflowDesigner = () => {
       }))
 
       setSaveModalVisible(false)
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to save workflow')
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { detail?: string } } }
+      message.error(axiosError.response?.data?.detail || 'Failed to save workflow')
       setState((prev) => ({ ...prev, isSaving: false }))
     }
   }
@@ -294,16 +323,18 @@ const WorkflowDesigner = () => {
 
     try {
       const inputContext = JSON.parse(executeInput)
-      const result = await executeWorkflowTemplate(state.template.id, {
+      // Use generated API directly
+      const response = await api.postWorkflowsExecuteWorkflow({
+        workflow_id: state.template.id,
         input_context: inputContext,
-        async: true
+        mode: 'async',
       })
 
       message.success('Workflow execution started')
       setExecuteModalVisible(false)
 
       // Navigate to monitor page
-      navigate(`/workflows/executions/${result.execution_id}`)
+      navigate(`/workflows/executions/${response.execution_id}`)
     } catch (error: unknown) {
       if (error instanceof SyntaxError) {
         message.error('Invalid JSON input')

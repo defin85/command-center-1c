@@ -27,6 +27,7 @@ urlpatterns = [
     # System
     # ========================================================================
     path('system/health/', system.system_health, name='system-health'),
+    path('system/config/', system.system_config, name='system-config'),
 
     # ========================================================================
     # Databases

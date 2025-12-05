@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { InstallationProgress } from '../types/installation'
-import { installationApi } from '../api/adapters/installation'
+import { customInstance } from '../api/mutator'
+import { convertProgressToLegacy } from '../utils/installationTransforms'
+import type { InstallProgressResponse } from '../api/generated/model'
 
 interface UseInstallationProgressProps {
   taskId: string | null
@@ -17,8 +19,14 @@ export const useInstallationProgress = ({ taskId, enabled }: UseInstallationProg
 
     setLoading(true)
     try {
-      const data = await installationApi.getProgress(taskId)
-      setProgress(data)
+      // Note: task_id parameter is not in OpenAPI spec yet, use customInstance directly
+      const response = await customInstance<InstallProgressResponse>({
+        url: '/extensions/get-install-progress/',
+        method: 'GET',
+        params: { task_id: taskId },
+      })
+      // Transform generated response to legacy format
+      setProgress(convertProgressToLegacy(response.progress))
       setError(null)
     } catch (err: any) {
       setError(err.message || 'Failed to fetch progress')

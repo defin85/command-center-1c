@@ -34,13 +34,11 @@ import {
   SearchOutlined
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { WorkflowTemplateList } from '../../api/adapters/workflows'
-import {
-  listWorkflowTemplates,
-  deleteWorkflowTemplate,
-  cloneWorkflowTemplate
-} from '../../api/adapters/workflows'
+import { getV2 } from '../../api/generated'
+import type { WorkflowTemplateList } from '../../api/generated/model'
 import './WorkflowList.css'
+
+const api = getV2()
 
 const { Title } = Typography
 
@@ -71,19 +69,18 @@ const WorkflowList = () => {
   const loadTemplates = async (page = 1) => {
     setLoading(true)
     try {
-      const response = await listWorkflowTemplates({
-        page,
-        page_size: pagination.pageSize,
+      const response = await api.getWorkflowsListWorkflows({
+        limit: pagination.pageSize,
+        offset: (page - 1) * pagination.pageSize,
         search: filters.search || undefined,
         workflow_type: filters.workflow_type || undefined,
-        is_active: filters.is_active
+        is_active: filters.is_active !== undefined ? String(filters.is_active) : undefined
       })
-      // API v2 returns 'workflows', DRF standard returns 'results'
-      setTemplates(response.workflows ?? response.results ?? [])
+      setTemplates(response.workflows ?? [])
       setPagination((prev) => ({
         ...prev,
         current: page,
-        total: response.count ?? response.total ?? 0
+        total: response.total ?? 0
       }))
     } catch (_error) {
       message.error('Failed to load workflow templates')
@@ -99,7 +96,7 @@ const WorkflowList = () => {
   // Handle delete
   const handleDelete = async (id: string) => {
     try {
-      await deleteWorkflowTemplate(id)
+      await api.postWorkflowsDeleteWorkflow({ workflow_id: id })
       message.success('Workflow deleted')
       loadTemplates(pagination.current)
     } catch (_error) {
@@ -110,7 +107,10 @@ const WorkflowList = () => {
   // Handle clone
   const handleClone = async (id: string, name: string) => {
     try {
-      const cloned = await cloneWorkflowTemplate(id, `${name} (Copy)`)
+      const cloned = await api.postWorkflowsCloneWorkflow({
+        workflow_id: id,
+        new_name: `${name} (Copy)`
+      })
       message.success('Workflow cloned')
       navigate(`/workflows/${cloned.id}`)
     } catch (_error) {

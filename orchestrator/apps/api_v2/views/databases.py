@@ -7,14 +7,108 @@ Provides action-based endpoints for database operations.
 import logging
 
 from django.db.models import Q
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.databases.models import Database
-from apps.databases.serializers import DatabaseSerializer
+from apps.databases.serializers import DatabaseSerializer, ClusterSerializer
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure."""
+    code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
+    message = serializers.CharField(help_text="Human-readable error message")
+    details = serializers.DictField(required=False, help_text="Additional error details")
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Standard error response."""
+    success = serializers.BooleanField(default=False)
+    error = ErrorDetailSerializer()
+
+
+class DatabaseListFiltersSerializer(serializers.Serializer):
+    """Applied filters for database list."""
+    cluster_id = serializers.UUIDField(required=False)
+    status = serializers.CharField(required=False)
+    health_status = serializers.CharField(required=False)
+    search = serializers.CharField(required=False)
+
+
+class DatabaseListResponseSerializer(serializers.Serializer):
+    """Response for list_databases endpoint."""
+    databases = DatabaseSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of databases in current page")
+    total = serializers.IntegerField(help_text="Total number of databases matching filters")
+
+
+class DatabaseDetailResponseSerializer(serializers.Serializer):
+    """Response for get_database endpoint."""
+    database = DatabaseSerializer()
+    cluster = ClusterSerializer(required=False, allow_null=True, help_text="Cluster info if database belongs to a cluster")
+
+
+class HealthCheckResponseSerializer(serializers.Serializer):
+    """Response for health_check endpoint."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    status = serializers.ChoiceField(
+        choices=['ok', 'degraded', 'down'],
+        help_text="Health status: ok, degraded, or down"
+    )
+    response_time_ms = serializers.FloatField(help_text="Response time in milliseconds")
+    checked_at = serializers.DateTimeField(help_text="Timestamp of the health check")
+
+
+class HealthCheckResultSerializer(serializers.Serializer):
+    """Single result in bulk health check."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    status = serializers.ChoiceField(
+        choices=['ok', 'degraded', 'down', 'error'],
+        help_text="Health status"
+    )
+    response_time_ms = serializers.FloatField(required=False, help_text="Response time in milliseconds")
+    error = serializers.CharField(required=False, help_text="Error message if check failed")
+
+
+class HealthCheckSummarySerializer(serializers.Serializer):
+    """Summary of bulk health check results."""
+    total = serializers.IntegerField(help_text="Total databases checked")
+    healthy = serializers.IntegerField(help_text="Number of healthy databases (status=ok)")
+    degraded = serializers.IntegerField(help_text="Number of degraded databases")
+    down = serializers.IntegerField(help_text="Number of down databases")
+
+
+class BulkHealthCheckResponseSerializer(serializers.Serializer):
+    """Response for bulk_health_check endpoint."""
+    results = HealthCheckResultSerializer(many=True)
+    summary = HealthCheckSummarySerializer()
+
+
+class BulkHealthCheckRequestSerializer(serializers.Serializer):
+    """Request body for bulk_health_check endpoint."""
+    database_ids = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="List of database UUIDs to check"
+    )
+    cluster_id = serializers.UUIDField(
+        required=False,
+        help_text="Check all databases in this cluster"
+    )
+
+
+class HealthCheckRequestSerializer(serializers.Serializer):
+    """Request body for health_check endpoint."""
+    database_id = serializers.CharField(help_text="Database UUID to check")
 
 
 def _perform_odata_health_check(db, timeout=None):
@@ -59,6 +153,23 @@ def _perform_odata_health_check(db, timeout=None):
     return health_status, response_time
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='List all databases',
+    description='List all databases with optional filtering by cluster, status, health status, and search term. Supports pagination.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=False, description='Filter by cluster UUID'),
+        OpenApiParameter(name='status', type=str, required=False, description='Filter by status (active, inactive, error, maintenance)'),
+        OpenApiParameter(name='health_status', type=str, required=False, description='Filter by health status (ok, degraded, down, unknown)'),
+        OpenApiParameter(name='search', type=str, required=False, description='Search by name or description'),
+        OpenApiParameter(name='limit', type=int, required=False, description='Maximum results (default: 100, max: 1000)'),
+        OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
+    ],
+    responses={
+        200: DatabaseListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_databases(request):
@@ -129,6 +240,20 @@ def list_databases(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get database details',
+    description='Get detailed information about a specific database including cluster info.',
+    parameters=[
+        OpenApiParameter(name='database_id', type=str, required=True, description='Database UUID'),
+    ],
+    responses={
+        200: DatabaseDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_database(request):
@@ -173,7 +298,6 @@ def get_database(request):
     # Include cluster info if available
     cluster_info = None
     if db.cluster:
-        from apps.databases.serializers import ClusterSerializer
         cluster_info = ClusterSerializer(db.cluster).data
 
     return Response({
@@ -182,6 +306,18 @@ def get_database(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Health check database',
+    description='Perform OData health check on a specific database. Checks connectivity and response time.',
+    request=HealthCheckRequestSerializer,
+    responses={
+        200: HealthCheckResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def health_check(request):
@@ -238,6 +374,17 @@ def health_check(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Bulk health check databases',
+    description='Perform health check on multiple databases in parallel. Provide either database_ids or cluster_id. Max 50 databases per request.',
+    request=BulkHealthCheckRequestSerializer,
+    responses={
+        200: BulkHealthCheckResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_health_check(request):

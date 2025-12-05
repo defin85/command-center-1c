@@ -17,6 +17,7 @@
 #   CC1C_LIB_SKIP_SERVICES=1   # Не загружать services.sh
 #   CC1C_LIB_SKIP_BUILD=1      # Не загружать build.sh
 #   CC1C_LIB_SKIP_PACKAGES=1   # Не загружать packages.sh
+#   CC1C_LIB_SKIP_LIFECYCLE=1  # Не загружать lifecycle.sh
 #   CC1C_LIB_MINIMAL=1         # Только core.sh + platform.sh
 #
 # После загрузки доступны:
@@ -25,10 +26,11 @@
 #   - packages.sh: Кросс-платформенный пакетный менеджер
 #   - prompts.sh:  Взаимодействие с пользователем
 #   - files.sh:    Работа с файлами
-#   - services.sh: Порты, процессы, health checks
-#   - build.sh:    Сборка Go сервисов
+#   - services.sh:  Порты, процессы, health checks
+#   - build.sh:     Сборка Go сервисов
+#   - lifecycle.sh: Управление жизненным циклом сервисов
 #
-# Version: 1.0.0
+# Version: 1.1.0
 ##############################################################################
 
 # Определить директорию библиотеки
@@ -146,6 +148,19 @@ if [[ "${CC1C_LIB_SKIP_BUILD:-}" != "1" ]]; then
         source "$CC1C_LIB_DIR/build.sh"
     else
         log_debug "build.sh not found, skipping"
+    fi
+fi
+
+##############################################################################
+# LOAD LIFECYCLE (опционально)
+##############################################################################
+
+if [[ "${CC1C_LIB_SKIP_LIFECYCLE:-}" != "1" ]]; then
+    if [[ -f "$CC1C_LIB_DIR/lifecycle.sh" ]]; then
+        # shellcheck source=lifecycle.sh
+        source "$CC1C_LIB_DIR/lifecycle.sh"
+    else
+        log_debug "lifecycle.sh not found, skipping"
     fi
 fi
 

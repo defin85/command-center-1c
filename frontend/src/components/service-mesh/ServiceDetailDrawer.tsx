@@ -32,12 +32,15 @@ import type {
   HistoricalDataPoint,
 } from '../../types/serviceMesh'
 import {
-  serviceMeshApi,
   STATUS_COLORS,
   STATUS_TEXT,
   SERVICE_DISPLAY_CONFIG,
-} from '../../api/adapters/serviceMesh'
+} from '../../types/serviceMesh'
+import { getV2 } from '../../api/generated'
+import { transformServiceHistoryResponse } from '../../utils/serviceMeshTransforms'
 import './ServiceDetailDrawer.css'
+
+const api = getV2()
 
 interface ServiceDetailDrawerProps {
   service: ServiceMetrics | null
@@ -82,10 +85,11 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
 
     setLoading(true)
     try {
-      const response = await serviceMeshApi.getHistory(
-        service.name,
-        selectedMinutes
-      )
+      const rawResponse = await api.getServiceMeshGetHistory({
+        service: service.name,
+        minutes: selectedMinutes,
+      })
+      const response = transformServiceHistoryResponse(rawResponse)
       setHistoricalData(response.dataPoints)
     } catch (error) {
       console.error('Failed to fetch historical data:', error)

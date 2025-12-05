@@ -1,8 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// v2 migration: update default API URL to v2
+// API Gateway base URL (without path prefix - generated code includes full paths)
 // Port 8180 - outside Windows reserved range (8013-8112)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8180/api/v2'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8180'
 
 // Token refresh endpoint (goes through API Gateway to Django)
 const TOKEN_REFRESH_URL = 'http://localhost:8180/api/token/refresh/'

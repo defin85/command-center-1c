@@ -9,11 +9,105 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from django.utils import timezone
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure."""
+    code = serializers.CharField(help_text="Error code")
+    message = serializers.CharField(help_text="Human-readable error message")
+    available_services = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="List of available service names"
+    )
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Standard error response."""
+    success = serializers.BooleanField(default=False)
+    error = ErrorDetailSerializer()
+
+
+class ServiceMetricSerializer(serializers.Serializer):
+    """Metrics for a single service."""
+    name = serializers.CharField(help_text="Service name (e.g., api-gateway, worker)")
+    type = serializers.CharField(help_text="Service type (backend, internal)")
+    status = serializers.ChoiceField(
+        choices=['healthy', 'degraded', 'timeout', 'unreachable', 'error', 'unknown'],
+        help_text="Service health status"
+    )
+    response_time_ms = serializers.FloatField(
+        required=False, allow_null=True,
+        help_text="Response time in milliseconds"
+    )
+    error = serializers.CharField(required=False, allow_null=True, help_text="Error message if any")
+    details = serializers.DictField(required=False, help_text="Additional service details")
+
+
+class ServiceMeshSummarySerializer(serializers.Serializer):
+    """Summary statistics for service mesh."""
+    total = serializers.IntegerField(help_text="Total number of services")
+    healthy = serializers.IntegerField(help_text="Number of healthy services")
+    degraded = serializers.IntegerField(help_text="Number of degraded services")
+    unreachable = serializers.IntegerField(help_text="Number of unreachable services")
+    error = serializers.IntegerField(help_text="Number of services in error state")
+
+
+class PrometheusMetricSerializer(serializers.Serializer):
+    """Prometheus metrics for a service."""
+    service = serializers.CharField(help_text="Service name")
+    metrics = serializers.CharField(help_text="Raw Prometheus metrics text")
+
+
+class ServiceMetricsResponseSerializer(serializers.Serializer):
+    """Response for get_metrics endpoint."""
+    status = serializers.ChoiceField(
+        choices=['healthy', 'degraded', 'unhealthy'],
+        help_text="Overall service mesh status"
+    )
+    services = ServiceMetricSerializer(many=True, help_text="List of service metrics")
+    summary = ServiceMeshSummarySerializer(help_text="Summary statistics")
+    timestamp = serializers.DateTimeField(help_text="Timestamp of metrics collection")
+    prometheus_metrics = PrometheusMetricSerializer(
+        many=True, required=False,
+        help_text="Raw Prometheus metrics (only if include_prometheus=true)"
+    )
+
+
+class HistoryDataPointSerializer(serializers.Serializer):
+    """Single data point in history."""
+    timestamp = serializers.DateTimeField(help_text="Data point timestamp")
+    ops_per_minute = serializers.FloatField(
+        required=False, allow_null=True,
+        help_text="Operations per minute"
+    )
+    p95_latency_ms = serializers.FloatField(
+        required=False, allow_null=True,
+        help_text="95th percentile latency in milliseconds"
+    )
+    error_rate = serializers.FloatField(
+        required=False, allow_null=True,
+        help_text="Error rate (0.0 to 1.0)"
+    )
+
+
+class ServiceHistoryResponseSerializer(serializers.Serializer):
+    """Response for get_history endpoint."""
+    service = serializers.CharField(help_text="Service name")
+    display_name = serializers.CharField(help_text="Human-readable service name")
+    minutes = serializers.IntegerField(help_text="History period in minutes")
+    data_points = HistoryDataPointSerializer(many=True, help_text="Historical data points")
 
 # Service endpoints for metrics collection
 # Ports outside Windows reserved ranges (7913-8012, 8013-8112):
@@ -98,6 +192,20 @@ def fetch_service_health(service: dict, timeout: float = 2.0) -> dict:
     return result
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get service mesh metrics',
+    description='Get service mesh metrics and health status for all monitored services including Go services, Celery workers, Redis, and PostgreSQL.',
+    parameters=[
+        OpenApiParameter(name='service', type=str, required=False, description='Filter by service name (e.g., api-gateway, worker)'),
+        OpenApiParameter(name='include_prometheus', type=bool, required=False, description='Include raw Prometheus metrics (default: false)'),
+    ],
+    responses={
+        200: ServiceMetricsResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_metrics(request):
@@ -290,6 +398,20 @@ def get_metrics(request):
     return Response(response_data)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get service metrics history',
+    description='Get historical metrics for a specific service from Prometheus. Returns ops/minute, p95 latency, and error rate over time.',
+    parameters=[
+        OpenApiParameter(name='service', type=str, required=True, description='Service name (e.g., api-gateway, worker, ras-adapter)'),
+        OpenApiParameter(name='minutes', type=int, required=False, description='History period in minutes (default: 30, max: 1440)'),
+    ],
+    responses={
+        200: ServiceHistoryResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_history(request):

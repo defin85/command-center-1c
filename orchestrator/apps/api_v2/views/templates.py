@@ -10,6 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.templates.models import OperationTemplate
 
@@ -35,6 +36,32 @@ class OperationTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class TemplateListResponseSerializer(serializers.Serializer):
+    """Response for list_templates endpoint."""
+    templates = OperationTemplateSerializer(many=True, help_text="List of operation templates")
+    count = serializers.IntegerField(help_text="Total number of templates (before pagination)")
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='List operation templates',
+    description='List all operation templates with optional filtering by type, target entity, and active status.',
+    parameters=[
+        OpenApiParameter(name='operation_type', type=str, required=False, description='Filter by operation type'),
+        OpenApiParameter(name='target_entity', type=str, required=False, description='Filter by target entity'),
+        OpenApiParameter(name='is_active', type=bool, required=False, description='Filter by active status (true/false)'),
+        OpenApiParameter(name='limit', type=int, required=False, description='Maximum results (default: 50, max: 1000)'),
+        OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
+    ],
+    responses={
+        200: TemplateListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_templates(request):

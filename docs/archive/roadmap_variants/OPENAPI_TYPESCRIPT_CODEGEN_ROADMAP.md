@@ -1,8 +1,9 @@
 # OpenAPI TypeScript Code Generation Roadmap
 
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2025-12-05
-**Status:** Phases 1-3 Completed, Phase 4 Skipped
+**Status:** ✅ COMPLETED (Phase 4 Skipped)
+**Next:** [ADAPTERS_TO_GENERATED_MIGRATION.md](./ADAPTERS_TO_GENERATED_MIGRATION.md)
 **Total Duration:** 1-2 weeks
 **Related:** [contracts/](../../contracts/), [frontend/src/api/](../../frontend/src/api/)
 
@@ -505,3 +506,4 @@ frontend/src/
 |---------|------|--------|---------|
 | 1.0 | 2025-12-04 | AI Architect | Initial draft |
 | 1.1 | 2025-12-05 | AI Architect | Phase 4 marked as skipped (CI integration deprioritized) |
+| 1.2 | 2025-12-05 | AI Architect | Closed as completed, linked to next roadmap |

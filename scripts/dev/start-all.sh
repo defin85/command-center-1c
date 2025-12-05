@@ -149,6 +149,9 @@ if ! smart_rebuild_services; then
     exit 1
 fi
 
+# После Phase 1 Go бинарники гарантированно актуальны - пропускаем rebuild в start_service
+export SKIP_GO_REBUILD=true
+
 echo ""
 
 ##############################################################################
@@ -174,13 +177,29 @@ fi
 echo ""
 
 ##############################################################################
-# Phase 1.5b: Generate API Clients from OpenAPI Contracts
+# Phase 1.5b: Validate OpenAPI + Generate API Clients + Verify Generated Code
 ##############################################################################
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Phase 1.5b: Генерация API клиентов из OpenAPI${NC}"
+echo -e "${BLUE}  Phase 1.5b: OpenAPI Validation & Generation${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
+# Step 1: Validate OpenAPI specifications
+echo -e "${CYAN}   [1/3] Валидация OpenAPI спецификаций...${NC}"
+if [ -f "$PROJECT_ROOT/contracts/scripts/validate-specs.sh" ]; then
+    if ! "$PROJECT_ROOT/contracts/scripts/validate-specs.sh"; then
+        echo ""
+        echo -e "${RED}✗ OpenAPI спецификации невалидны${NC}"
+        echo -e "${YELLOW}Совет: Проверьте YAML синтаксис и структуру в contracts/*/openapi.yaml${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}⚠️  Скрипт валидации не найден (contracts/scripts/validate-specs.sh)${NC}"
+fi
+echo ""
+
+# Step 2: Generate API clients from OpenAPI specs
+echo -e "${CYAN}   [2/3] Генерация API клиентов...${NC}"
 if [ -f "$PROJECT_ROOT/contracts/scripts/generate-all.sh" ]; then
     if ! "$PROJECT_ROOT/contracts/scripts/generate-all.sh"; then
         echo ""
@@ -191,6 +210,21 @@ if [ -f "$PROJECT_ROOT/contracts/scripts/generate-all.sh" ]; then
 else
     echo -e "${YELLOW}⚠️  Скрипт генерации не найден (contracts/scripts/generate-all.sh)${NC}"
     echo -e "${YELLOW}   Пропускаем генерацию контрактов${NC}"
+fi
+echo ""
+
+# Step 3: Verify generated code compiles
+echo -e "${CYAN}   [3/3] Проверка сгенерированного кода...${NC}"
+if [ -f "$PROJECT_ROOT/contracts/scripts/verify-generated-code.sh" ]; then
+    # Use --quick mode during startup for faster feedback
+    if ! "$PROJECT_ROOT/contracts/scripts/verify-generated-code.sh" --quick; then
+        echo ""
+        echo -e "${RED}✗ Сгенерированный код не компилируется${NC}"
+        echo -e "${YELLOW}Совет: Запустите contracts/scripts/generate-all.sh --force${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}⚠️  Скрипт верификации не найден (contracts/scripts/verify-generated-code.sh)${NC}"
 fi
 
 echo ""
@@ -507,20 +541,8 @@ fi
 ##############################################################################
 echo -e "${BLUE}[6/12] Запуск API Gateway (port 8180)...${NC}"
 
-# Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH=$(get_binary_path "api-gateway")
-
-# .env.local уже загружен в начале скрипта
-
-nohup "$BINARY_PATH" > "$LOGS_DIR/api-gateway.log" 2>&1 &
-API_GATEWAY_PID=$!
-echo $API_GATEWAY_PID > "$PIDS_DIR/api-gateway.pid"
-
-sleep 3
-if kill -0 $API_GATEWAY_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ API Gateway запущен (PID: $API_GATEWAY_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить API Gateway${NC}"
+if ! start_service "api-gateway"; then
+    log_error "Не удалось запустить api-gateway"
     cat "$LOGS_DIR/api-gateway.log"
     exit 1
 fi
@@ -531,20 +553,8 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[7/12] Запуск Go Worker...${NC}"
 
-# Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH=$(get_binary_path "worker")
-
-# .env.local уже загружен в начале скрипта
-
-nohup "$BINARY_PATH" > "$LOGS_DIR/worker.log" 2>&1 &
-WORKER_PID=$!
-echo $WORKER_PID > "$PIDS_DIR/worker.pid"
-
-sleep 2
-if kill -0 $WORKER_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ Go Worker запущен (PID: $WORKER_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить Go Worker${NC}"
+if ! start_service "worker"; then
+    log_error "Не удалось запустить worker"
     cat "$LOGS_DIR/worker.log"
     exit 1
 fi
@@ -679,21 +689,8 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
 
-# Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH=$(get_binary_path "batch-service")
-
-# .env.local уже загружен в начале скрипта
-# BATCH_SERVICE_PORT=8187 is set in .env.local (outside Windows reserved range 8013-8112)
-
-nohup "$BINARY_PATH" > "$LOGS_DIR/batch-service.log" 2>&1 &
-BATCH_SERVICE_PID=$!
-echo $BATCH_SERVICE_PID > "$PIDS_DIR/batch-service.pid"
-
-sleep 2
-if kill -0 $BATCH_SERVICE_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ Batch Service запущен (PID: $BATCH_SERVICE_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить Batch Service${NC}"
+if ! start_service "batch-service"; then
+    log_error "Не удалось запустить batch-service"
     cat "$LOGS_DIR/batch-service.log"
     exit 1
 fi

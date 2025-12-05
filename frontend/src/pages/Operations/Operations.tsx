@@ -2,23 +2,31 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Progress, Modal, Typography } from 'antd'
 import { ReloadOutlined, EyeOutlined, StopOutlined, MonitorOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { operationsApi, BatchOperation, Task } from '../../api/adapters/operations'
+import { getV2 } from '../../api/generated'
+import {
+  transformBatchOperation,
+  type UIBatchOperation,
+  type UITask,
+} from '../../utils/operationTransforms'
 import type { ColumnsType } from 'antd/es/table'
 
 const { Paragraph } = Typography
 
+// Initialize generated API
+const api = getV2()
+
 export const Operations = () => {
   const navigate = useNavigate()
-  const [operations, setOperations] = useState<BatchOperation[]>([])
+  const [operations, setOperations] = useState<UIBatchOperation[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedOperation, setSelectedOperation] = useState<BatchOperation | null>(null)
+  const [selectedOperation, setSelectedOperation] = useState<UIBatchOperation | null>(null)
   const [detailsVisible, setDetailsVisible] = useState(false)
 
   const fetchOperations = async () => {
     try {
       setLoading(true)
-      const data = await operationsApi.list()
-      setOperations(data)
+      const response = await api.getOperationsListOperations()
+      setOperations(response.operations.map(transformBatchOperation))
     } catch (error) {
       console.error('Failed to load operations:', error)
     } finally {
@@ -36,14 +44,14 @@ export const Operations = () => {
 
   const handleCancel = async (id: string) => {
     try {
-      await operationsApi.cancel(id)
+      await api.postOperationsCancelOperation({ operation_id: id })
       fetchOperations()
     } catch (error) {
       console.error('Failed to cancel operation:', error)
     }
   }
 
-  const showDetails = (operation: BatchOperation) => {
+  const showDetails = (operation: UIBatchOperation) => {
     setSelectedOperation(operation)
     setDetailsVisible(true)
   }
@@ -71,7 +79,7 @@ export const Operations = () => {
     return labels[type] || type
   }
 
-  const columns: ColumnsType<BatchOperation> = [
+  const columns: ColumnsType<UIBatchOperation> = [
     {
       title: 'Name',
       dataIndex: 'name',
@@ -172,7 +180,7 @@ export const Operations = () => {
     }
   ]
 
-  const taskColumns: ColumnsType<Task> = [
+  const taskColumns: ColumnsType<UITask> = [
     {
       title: 'Database',
       dataIndex: 'database_name',

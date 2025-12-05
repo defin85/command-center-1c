@@ -11,8 +11,11 @@ import { Table, Tag, Tooltip, Button, Empty } from 'antd'
 import { ReloadOutlined, EyeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { ServiceOperation } from '../../types/serviceMesh'
-import { serviceMeshApi } from '../../api/adapters/serviceMesh'
+import { getV2 } from '../../api/generated'
+import { transformOperationListResponse } from '../../utils/serviceMeshTransforms'
 import './RecentOperationsTable.css'
+
+const api = getV2()
 
 interface RecentOperationsTableProps {
   selectedService: string | null
@@ -81,7 +84,8 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   const fetchOperations = async () => {
     setLoading(true)
     try {
-      const response = await serviceMeshApi.getOperations(50)
+      const rawResponse = await api.getOperationsListOperations({ limit: 50 })
+      const response = transformOperationListResponse(rawResponse)
       // Apply client-side service filter if selected
       const filtered = selectedService
         ? response.operations.filter(op => op.service === selectedService)

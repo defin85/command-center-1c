@@ -8,9 +8,11 @@ import logging
 
 from django.db import IntegrityError
 from django.db.models import Count, Q
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.databases.models import Cluster
 from apps.databases.serializers import ClusterSerializer, DatabaseSerializer
@@ -18,6 +20,115 @@ from apps.databases.serializers import ClusterSerializer, DatabaseSerializer
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure."""
+    code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
+    message = serializers.CharField(help_text="Human-readable error message")
+    details = serializers.DictField(required=False, help_text="Additional error details")
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Standard error response."""
+    success = serializers.BooleanField(default=False)
+    error = ErrorDetailSerializer()
+
+
+class ClusterListResponseSerializer(serializers.Serializer):
+    """Response for list_clusters endpoint."""
+    clusters = ClusterSerializer(many=True)
+    count = serializers.IntegerField(help_text="Total number of clusters")
+
+
+class ClusterStatisticsSerializer(serializers.Serializer):
+    """Statistics for a cluster."""
+    total_databases = serializers.IntegerField()
+    healthy_databases = serializers.IntegerField()
+    databases_by_status = serializers.DictField(child=serializers.IntegerField())
+
+
+class ClusterDetailResponseSerializer(serializers.Serializer):
+    """Response for get_cluster endpoint."""
+    cluster = ClusterSerializer()
+    databases = DatabaseSerializer(many=True)
+    statistics = ClusterStatisticsSerializer()
+
+
+class ClusterCreateResponseSerializer(serializers.Serializer):
+    """Response for create_cluster endpoint."""
+    cluster = ClusterSerializer()
+    message = serializers.CharField()
+
+
+class ClusterUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_cluster endpoint."""
+    cluster = ClusterSerializer()
+    message = serializers.CharField()
+
+
+class ClusterDeleteResponseSerializer(serializers.Serializer):
+    """Response for delete_cluster endpoint."""
+    message = serializers.CharField()
+    cluster_id = serializers.UUIDField()
+
+
+class ClusterSyncResponseSerializer(serializers.Serializer):
+    """Response for sync_cluster endpoint."""
+    cluster_id = serializers.UUIDField()
+    status = serializers.CharField(help_text="Sync status: syncing, success")
+    task_id = serializers.CharField(required=False, help_text="Celery task ID (if async)")
+    message = serializers.CharField()
+    databases_found = serializers.IntegerField(required=False)
+    created = serializers.IntegerField(required=False)
+    updated = serializers.IntegerField(required=False)
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+
+
+class ClusterFiltersSerializer(serializers.Serializer):
+    """Applied filters."""
+    status = serializers.CharField(required=False)
+    health_status = serializers.CharField(required=False)
+
+
+class ClusterDatabasesResponseSerializer(serializers.Serializer):
+    """Response for get_cluster_databases endpoint."""
+    cluster_id = serializers.UUIDField()
+    cluster_name = serializers.CharField()
+    databases = DatabaseSerializer(many=True)
+    count = serializers.IntegerField()
+    filters = ClusterFiltersSerializer()
+
+
+class ResetClusterInfoSerializer(serializers.Serializer):
+    """Info about reset cluster."""
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    old_status = serializers.CharField()
+
+
+class ResetSyncStatusResponseSerializer(serializers.Serializer):
+    """Response for reset_sync_status endpoint."""
+    message = serializers.CharField()
+    reset_count = serializers.IntegerField()
+    clusters = ResetClusterInfoSerializer(many=True)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='List all clusters',
+    description='List all clusters with database counts. Supports filtering by status and RAS server.',
+    parameters=[
+        OpenApiParameter(name='status', type=str, required=False, description='Filter by status (active, inactive, error, maintenance)'),
+        OpenApiParameter(name='ras_server', type=str, required=False, description='Filter by RAS server address'),
+    ],
+    responses={
+        200: ClusterListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_clusters(request):
@@ -74,6 +185,20 @@ def list_clusters(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get cluster details',
+    description='Get detailed information about a specific cluster including databases and statistics.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=True, description='Cluster UUID'),
+    ],
+    responses={
+        200: ClusterDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_cluster(request):
@@ -143,6 +268,22 @@ def get_cluster(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Sync cluster with RAS',
+    description='Trigger synchronization of a cluster with RAS. The sync runs asynchronously via Celery if available.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=False, description='Cluster UUID (can also be in request body)'),
+    ],
+    request=None,
+    responses={
+        200: ClusterSyncResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def sync_cluster(request):
@@ -256,6 +397,18 @@ def sync_cluster(request):
             }, status=500)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Create a new cluster',
+    description='Create a new cluster. Requires name, ras_server, and cluster_service_url.',
+    request=ClusterSerializer,
+    responses={
+        201: ClusterCreateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        409: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_cluster(request):
@@ -351,6 +504,22 @@ def create_cluster(request):
         }, status=409)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Update cluster',
+    description='Update cluster information. Supports partial updates.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=False, description='Cluster UUID (can also be in request body)'),
+    ],
+    request=ClusterSerializer,
+    responses={
+        200: ClusterUpdateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+    }
+)
 @api_view(['PUT', 'POST'])
 @permission_classes([IsAuthenticated])
 def update_cluster(request):
@@ -440,6 +609,22 @@ def update_cluster(request):
         }, status=409)
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Delete cluster',
+    description='Delete a cluster. Use force=true to delete cluster with existing databases.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=False, description='Cluster UUID (can also be in request body)'),
+    ],
+    request=None,
+    responses={
+        200: ClusterDeleteResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+    }
+)
 @api_view(['DELETE', 'POST'])
 @permission_classes([IsAuthenticated])
 def delete_cluster(request):
@@ -517,6 +702,20 @@ def delete_cluster(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Reset sync status',
+    description='Reset sync status for stuck clusters (pending -> idle). Can reset specific cluster or all stuck clusters.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=False, description='Cluster UUID (optional, resets specific cluster)'),
+    ],
+    request=None,
+    responses={
+        200: ResetSyncStatusResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def reset_sync_status(request):
@@ -612,6 +811,22 @@ def reset_sync_status(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get cluster databases',
+    description='Get all databases for a specific cluster with optional filtering by status.',
+    parameters=[
+        OpenApiParameter(name='cluster_id', type=str, required=True, description='Cluster UUID'),
+        OpenApiParameter(name='status', type=str, required=False, description='Filter by database status'),
+        OpenApiParameter(name='health_status', type=str, required=False, description='Filter by health check status'),
+    ],
+    responses={
+        200: ClusterDatabasesResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_cluster_databases(request):

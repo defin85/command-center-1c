@@ -1,11 +1,27 @@
 import { create } from 'zustand'
-import { Operation } from '../api/adapters/operations'
+import type { UIBatchOperation } from '../utils/operationTransforms'
+
+/**
+ * Legacy Operation interface for backward compatibility.
+ * @deprecated Use UIBatchOperation from operationTransforms instead.
+ */
+export interface Operation {
+  id: string
+  type: string
+  status: string
+  database: string
+  payload: Record<string, unknown>
+  result?: Record<string, unknown>
+  error?: string
+  created_at: string
+  updated_at: string
+}
 
 interface OperationStore {
-  operations: Operation[]
+  operations: UIBatchOperation[]
   loading: boolean
   error: string | null
-  setOperations: (operations: Operation[]) => void
+  setOperations: (operations: UIBatchOperation[]) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
 }

@@ -303,6 +303,13 @@ RAS_ADAPTER_TIMEOUT = int(env(
     default='180'  # 3 minutes - RAS operations can be slow
 ))
 
+# Default RAS Server address (used for new clusters)
+# Should match RAS_SERVER_ADDR in Go services and RAS_PORT in start scripts
+RAS_DEFAULT_SERVER = env(
+    'RAS_SERVER_ADDR',
+    default='localhost:1545'
+)
+
 # Health Check Settings
 HEALTH_CHECK_CLUSTER_INTERVAL = 60  # секунды
 HEALTH_CHECK_DATABASE_INTERVAL = 30

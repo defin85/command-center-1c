@@ -9,7 +9,7 @@ import {
     ExclamationCircleOutlined,
     ThunderboltOutlined,
 } from '@ant-design/icons';
-import type { SystemHealthResponse } from '@/api/adapters/system';
+import type { SystemHealthResponse } from '@/api/generated/model';
 
 const { Title, Text } = Typography;
 

@@ -10,14 +10,99 @@ import uuid as uuid_lib
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Q
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.databases.models import Database, ExtensionInstallation
 from apps.databases.serializers import ExtensionInstallationSerializer
+from apps.api_v2.views.clusters import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Response Serializers for OpenAPI documentation
+# =============================================================================
+
+class ExtensionSummarySerializer(serializers.Serializer):
+    """Summary statistics for extensions."""
+    pending = serializers.IntegerField(help_text="Number of pending installations")
+    in_progress = serializers.IntegerField(help_text="Number of installations in progress")
+    completed = serializers.IntegerField(help_text="Number of completed installations")
+    failed = serializers.IntegerField(help_text="Number of failed installations")
+
+
+class ExtensionListResponseSerializer(serializers.Serializer):
+    """Response for list_extensions endpoint."""
+    extensions = ExtensionInstallationSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of extensions returned")
+    total = serializers.IntegerField(help_text="Total number of extensions matching filters")
+    summary = ExtensionSummarySerializer()
+
+
+class InstallStatusResponseSerializer(serializers.Serializer):
+    """Response for get_install_status endpoint."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    database_name = serializers.CharField(help_text="Database name")
+    extension_name = serializers.CharField(help_text="Extension name")
+    status = serializers.CharField(help_text="Current status: completed, failed, pending, in_progress, none")
+    installation = ExtensionInstallationSerializer(required=False, allow_null=True)
+    history = ExtensionInstallationSerializer(many=True)
+
+
+class InstallProgressStatsSerializer(serializers.Serializer):
+    """Progress statistics for batch installation."""
+    total = serializers.IntegerField(help_text="Total number of installations")
+    pending = serializers.IntegerField(help_text="Number of pending installations")
+    in_progress = serializers.IntegerField(help_text="Number of installations in progress")
+    completed = serializers.IntegerField(help_text="Number of completed installations")
+    failed = serializers.IntegerField(help_text="Number of failed installations")
+    percent_complete = serializers.FloatField(help_text="Percentage of completed installations")
+
+
+class InstallProgressDatabaseSerializer(serializers.Serializer):
+    """Database status in installation progress."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    database_name = serializers.CharField(help_text="Database name")
+    status = serializers.CharField(help_text="Installation status")
+    error_message = serializers.CharField(required=False, allow_null=True)
+    updated_at = serializers.CharField(required=False, allow_null=True)
+
+
+class InstallProgressResponseSerializer(serializers.Serializer):
+    """Response for get_install_progress endpoint."""
+    progress = InstallProgressStatsSerializer()
+    databases = InstallProgressDatabaseSerializer(many=True)
+
+
+class BatchInstallItemSerializer(serializers.Serializer):
+    """Single item in batch installation result."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    installation_id = serializers.CharField(required=False, help_text="Installation UUID (if queued)")
+    status = serializers.CharField(help_text="Status: pending or skipped")
+    reason = serializers.CharField(required=False, help_text="Skip reason (if skipped)")
+    existing_installation_id = serializers.CharField(required=False, help_text="Existing installation ID (if skipped)")
+
+
+class BatchInstallResponseSerializer(serializers.Serializer):
+    """Response for batch_install endpoint."""
+    batch_id = serializers.CharField(help_text="Batch operation UUID")
+    total = serializers.IntegerField(help_text="Total number of databases in request")
+    queued = serializers.IntegerField(help_text="Number of installations queued")
+    skipped = serializers.IntegerField(help_text="Number of databases skipped")
+    installations = BatchInstallItemSerializer(many=True)
+
+
+class RetryInstallationResponseSerializer(serializers.Serializer):
+    """Response for retry_installation endpoint."""
+    database_id = serializers.CharField(help_text="Database UUID")
+    installation_id = serializers.CharField(help_text="New installation UUID")
+    status = serializers.CharField(help_text="Installation status: pending")
+    celery_task_id = serializers.CharField(required=False, help_text="Celery task ID (if async)")
+    message = serializers.CharField(help_text="Status message")
 
 # Configuration
 EXTENSION_BASE_PATH = getattr(settings, 'EXTENSION_BASE_PATH', '/var/lib/1c/extensions')
@@ -33,6 +118,22 @@ def validate_uuid(value: str, param_name: str = 'id') -> bool:
         return False
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='List extension installations',
+    description='List all extension installations with optional filtering by database, status, and extension name.',
+    parameters=[
+        OpenApiParameter(name='database_id', type=str, required=False, description='Filter by database UUID'),
+        OpenApiParameter(name='status', type=str, required=False, description='Filter by status (pending, in_progress, completed, failed)'),
+        OpenApiParameter(name='extension_name', type=str, required=False, description='Filter by extension name'),
+        OpenApiParameter(name='limit', type=int, required=False, description='Maximum results (default: 50, max: 1000)'),
+        OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
+    ],
+    responses={
+        200: ExtensionListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_extensions(request):
@@ -112,6 +213,21 @@ def list_extensions(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get extension installation status',
+    description='Get extension installation status for a specific database, including latest installation and history.',
+    parameters=[
+        OpenApiParameter(name='database_id', type=str, required=True, description='Database UUID (required)'),
+        OpenApiParameter(name='extension_name', type=str, required=False, description='Extension name (default: ODataAutoConfig)'),
+    ],
+    responses={
+        200: InstallStatusResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_install_status(request):
@@ -195,6 +311,24 @@ def get_install_status(request):
     })
 
 
+class RetryInstallationRequestSerializer(serializers.Serializer):
+    """Request body for retry_installation endpoint."""
+    database_id = serializers.CharField(help_text="Database UUID (required)")
+    extension_name = serializers.CharField(required=False, default='ODataAutoConfig', help_text="Extension name (default: ODataAutoConfig)")
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Retry extension installation',
+    description='Retry extension installation for a specific database. Creates a new installation record and queues the task.',
+    request=RetryInstallationRequestSerializer,
+    responses={
+        200: RetryInstallationResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def retry_installation(request):
@@ -364,6 +498,35 @@ def retry_installation(request):
         })
 
 
+class BatchInstallRequestSerializer(serializers.Serializer):
+    """Request body for batch_install endpoint."""
+    database_ids = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="List of database UUIDs to install extension to"
+    )
+    extension_name = serializers.CharField(
+        required=False,
+        default='ODataAutoConfig',
+        help_text="Extension name (default: ODataAutoConfig)"
+    )
+    extension_path = serializers.CharField(
+        required=False,
+        help_text="Path to extension file (optional)"
+    )
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Batch install extension',
+    description='Batch install extension to multiple databases. Skips databases that already have installation in progress.',
+    request=BatchInstallRequestSerializer,
+    responses={
+        200: BatchInstallResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def batch_install(request):
@@ -539,6 +702,20 @@ def batch_install(request):
     })
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get extension installation progress',
+    description='Get progress of extension installations across databases. Shows aggregated statistics and per-database status.',
+    parameters=[
+        OpenApiParameter(name='database_ids', type=str, required=False, description='Comma-separated list of database UUIDs (optional)'),
+        OpenApiParameter(name='extension_name', type=str, required=False, description='Extension name filter (default: ODataAutoConfig)'),
+    ],
+    responses={
+        200: InstallProgressResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_install_progress(request):

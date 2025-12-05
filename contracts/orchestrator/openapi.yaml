@@ -2770,453 +2770,594 @@ paths:
   /api/v2/clusters/create-cluster/:
     post:
       operationId: v2_clusters_create_cluster_create
-      description: |-
-        POST /api/v2/clusters/create-cluster/
-
-        Create a new cluster.
-
-        Request Body:
-            {
-                "name": "cluster-name",
-                "ras_server": "localhost:1545",
-                "cluster_service_url": "http://localhost:8087",
-                "cluster_user": "admin",  // optional
-                "cluster_pwd": "password",  // optional
-                "description": "Optional description",  // optional
-                "status": "active",  // optional, default: active
-                "metadata": {}  // optional
-            }
-
-        Response (201):
-            {
-                "cluster": {...},
-                "message": "Cluster created successfully"
-            }
-
-        Errors:
-            400 - Missing required fields or validation error
-            409 - Cluster with same ras_server + name already exists
+      description: Create a new cluster. Requires name, ras_server, and cluster_service_url.
+      summary: Create a new cluster
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/delete-cluster/:
     post:
       operationId: v2_clusters_delete_cluster_create
-      description: |-
-        DELETE /api/v2/clusters/delete-cluster/?cluster_id=X
-        POST /api/v2/clusters/delete-cluster/  (cluster_id in body)
-
-        Delete a cluster.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (can be in query or body)
-
-        Request Body (optional):
-            {
-                "cluster_id": "uuid",  // optional if in query
-                "force": false  // optional, default: false
-            }
-
-        Response (200):
-            {
-                "message": "Cluster deleted successfully",
-                "cluster_id": "uuid"
-            }
-
-        Errors:
-            400 - Missing cluster_id
-            404 - Cluster not found
-            409 - Cluster has databases and force=false
+      description: Delete a cluster. Use force=true to delete cluster with existing
+        databases.
+      summary: Delete cluster
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (can also be in request body)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
     delete:
       operationId: v2_clusters_delete_cluster_destroy
-      description: |-
-        DELETE /api/v2/clusters/delete-cluster/?cluster_id=X
-        POST /api/v2/clusters/delete-cluster/  (cluster_id in body)
-
-        Delete a cluster.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (can be in query or body)
-
-        Request Body (optional):
-            {
-                "cluster_id": "uuid",  // optional if in query
-                "force": false  // optional, default: false
-            }
-
-        Response (200):
-            {
-                "message": "Cluster deleted successfully",
-                "cluster_id": "uuid"
-            }
-
-        Errors:
-            400 - Missing cluster_id
-            404 - Cluster not found
-            409 - Cluster has databases and force=false
+      description: Delete a cluster. Use force=true to delete cluster with existing
+        databases.
+      summary: Delete cluster
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (can also be in request body)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
-        '204':
-          description: No response body
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/get-cluster/:
     get:
       operationId: v2_clusters_get_cluster_retrieve
-      description: |-
-        GET /api/v2/clusters/get-cluster/?cluster_id=X
-
-        Get detailed information about a specific cluster.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (required)
-
-        Response:
-            {
-                "cluster": {...},
-                "databases": [...],
-                "statistics": {
-                    "total_databases": 100,
-                    "healthy_databases": 95,
-                    "databases_by_status": {...}
-                }
-            }
+      description: Get detailed information about a specific cluster including databases
+        and statistics.
+      summary: Get cluster details
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/get-cluster-databases/:
     get:
       operationId: v2_clusters_get_cluster_databases_retrieve
-      description: |-
-        GET /api/v2/clusters/get-cluster-databases/?cluster_id=X&status=active
-
-        Get all databases for a specific cluster with optional filtering.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (required)
-            - status: Filter by database status (optional)
-            - health_status: Filter by health check status (optional)
-
-        Response (200):
-            {
-                "cluster_id": "uuid",
-                "cluster_name": "cluster-name",
-                "databases": [...],
-                "count": 100,
-                "filters": {
-                    "status": "active",
-                    "health_status": "ok"
-                }
-            }
-
-        Errors:
-            400 - Missing cluster_id
-            404 - Cluster not found
+      description: Get all databases for a specific cluster with optional filtering
+        by status.
+      summary: Get cluster databases
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID
+        required: true
+      - in: query
+        name: health_status
+        schema:
+          type: string
+        description: Filter by health check status
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by database status
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterDatabasesResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/list-clusters/:
     get:
       operationId: v2_clusters_list_clusters_retrieve
-      description: |-
-        GET /api/v2/clusters/list-clusters/
-
-        List all clusters with database counts.
-
-        Query Parameters:
-            - status: Filter by status (active, inactive, error, maintenance)
-            - ras_server: Filter by RAS server address
-
-        Response:
-            {
-                "clusters": [
-                    {
-                        "id": "uuid",
-                        "name": "cluster-name",
-                        "ras_server": "localhost:1545",
-                        "status": "active",
-                        "databases_count": 100,
-                        "healthy_databases_count": 95
-                    }
-                ],
-                "count": 5
-            }
+      description: List all clusters with database counts. Supports filtering by status
+        and RAS server.
+      summary: List all clusters
+      parameters:
+      - in: query
+        name: ras_server
+        schema:
+          type: string
+        description: Filter by RAS server address
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (active, inactive, error, maintenance)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/clusters/reset-sync-status/:
     post:
       operationId: v2_clusters_reset_sync_status_create
-      description: |-
-        POST /api/v2/clusters/reset-sync-status/?cluster_id=X
-
-        Reset sync status for a stuck cluster (pending -> idle).
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (optional, resets specific cluster)
-
-        Request Body (optional):
-            {
-                "cluster_id": "uuid",  // optional, reset specific cluster
-                "all": false  // optional, reset all stuck clusters
-            }
-
-        Response (200):
-            {
-                "message": "Sync status reset successfully",
-                "reset_count": 1,
-                "clusters": [
-                    {"id": "uuid", "name": "cluster-name", "old_status": "pending"}
-                ]
-            }
-
-        Errors:
-            404 - Cluster not found (when cluster_id specified)
+      description: Reset sync status for stuck clusters (pending -> idle). Can reset
+        specific cluster or all stuck clusters.
+      summary: Reset sync status
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (optional, resets specific cluster)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetSyncStatusResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/sync-cluster/:
     post:
       operationId: v2_clusters_sync_cluster_create
-      description: |-
-        POST /api/v2/clusters/sync-cluster/?cluster_id=X
-
-        Trigger synchronization of a cluster with RAS.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (required, can also be in body)
-
-        Response:
-            {
-                "cluster_id": "uuid",
-                "status": "syncing",
-                "message": "Cluster synchronization started"
-            }
+      description: Trigger synchronization of a cluster with RAS. The sync runs asynchronously
+        via Celery if available.
+      summary: Sync cluster with RAS
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (can also be in request body)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterSyncResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/clusters/update-cluster/:
     post:
       operationId: v2_clusters_update_cluster_create
-      description: |-
-        PUT /api/v2/clusters/update-cluster/?cluster_id=X
-        POST /api/v2/clusters/update-cluster/  (cluster_id in body)
-
-        Update cluster information.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (can be in query or body)
-
-        Request Body:
-            {
-                "cluster_id": "uuid",  // optional if in query
-                "name": "new-name",  // optional
-                "description": "new description",  // optional
-                "status": "maintenance",  // optional
-                "cluster_user": "admin",  // optional
-                "cluster_pwd": "password",  // optional
-                "metadata": {}  // optional
-            }
-
-        Response (200):
-            {
-                "cluster": {...},
-                "message": "Cluster updated successfully"
-            }
-
-        Errors:
-            400 - Missing cluster_id
-            404 - Cluster not found
+      description: Update cluster information. Supports partial updates.
+      summary: Update cluster
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (can also be in request body)
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
     put:
       operationId: v2_clusters_update_cluster_update
-      description: |-
-        PUT /api/v2/clusters/update-cluster/?cluster_id=X
-        POST /api/v2/clusters/update-cluster/  (cluster_id in body)
-
-        Update cluster information.
-
-        Query Parameters:
-            - cluster_id: Cluster UUID (can be in query or body)
-
-        Request Body:
-            {
-                "cluster_id": "uuid",  // optional if in query
-                "name": "new-name",  // optional
-                "description": "new description",  // optional
-                "status": "maintenance",  // optional
-                "cluster_user": "admin",  // optional
-                "cluster_pwd": "password",  // optional
-                "metadata": {}  // optional
-            }
-
-        Response (200):
-            {
-                "cluster": {...},
-                "message": "Cluster updated successfully"
-            }
-
-        Errors:
-            400 - Missing cluster_id
-            404 - Cluster not found
+      description: Update cluster information. Supports partial updates.
+      summary: Update cluster
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Cluster UUID (can also be in request body)
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Cluster'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/databases/bulk-health-check/:
     post:
       operationId: v2_databases_bulk_health_check_create
-      description: |-
-        POST /api/v2/databases/bulk-health-check/
-
-        Perform health check on multiple databases.
-
-        Request Body:
-            {
-                "database_ids": ["id1", "id2", ...],
-                "cluster_id": "optional-cluster-id"
-            }
-
-        Response:
-            {
-                "results": [
-                    {"database_id": "id1", "status": "ok", "response_time_ms": 100},
-                    {"database_id": "id2", "status": "down", "response_time_ms": 5000}
-                ],
-                "summary": {
-                    "total": 10,
-                    "healthy": 8,
-                    "degraded": 1,
-                    "down": 1
-                }
-            }
+      description: Perform health check on multiple databases in parallel. Provide
+        either database_ids or cluster_id. Max 50 databases per request.
+      summary: Bulk health check databases
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkHealthCheckRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkHealthCheckRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkHealthCheckRequest'
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkHealthCheckResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/databases/get-database/:
     get:
       operationId: v2_databases_get_database_retrieve
-      description: |-
-        GET /api/v2/databases/get-database/?database_id=X
-
-        Get detailed information about a specific database.
-
-        Query Parameters:
-            - database_id: Database ID (required)
-
-        Response:
-            {
-                "database": {...},
-                "cluster": {...}
-            }
+      description: Get detailed information about a specific database including cluster
+        info.
+      summary: Get database details
+      parameters:
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database UUID
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
-      description: |-
-        POST /api/v2/databases/health-check/
-
-        Perform health check on a specific database.
-
-        Request Body:
-            {
-                "database_id": "string"
-            }
-
-        Response:
-            {
-                "database_id": "string",
-                "status": "ok|degraded|down",
-                "response_time_ms": 150,
-                "checked_at": "2024-01-01T00:00:00Z"
-            }
+      description: Perform OData health check on a specific database. Checks connectivity
+        and response time.
+      summary: Health check database
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthCheckRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HealthCheckRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HealthCheckRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/databases/list-databases/:
     get:
       operationId: v2_databases_list_databases_retrieve
-      description: |-
-        GET /api/v2/databases/list-databases/
-
-        List all databases with optional filtering.
-
-        Query Parameters:
-            - cluster_id: Filter by cluster UUID
-            - status: Filter by status (active, inactive, error, maintenance)
-            - health_status: Filter by health status (ok, degraded, down, unknown)
-            - search: Search by name or description
-            - limit: Maximum results (default: 100)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "databases": [...],
-                "count": 100,
-                "total": 700
-            }
+      description: List all databases with optional filtering by cluster, status,
+        health status, and search term. Supports pagination.
+      summary: List all databases
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Filter by cluster UUID
+      - in: query
+        name: health_status
+        schema:
+          type: string
+        description: Filter by health status (ok, degraded, down, unknown)
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or description
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (active, inactive, error, maintenance)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/events/pending/:
     get:
       operationId: v2_events_pending_retrieve
@@ -3259,724 +3400,1118 @@ paths:
   /api/v2/extensions/batch-install/:
     post:
       operationId: v2_extensions_batch_install_create
-      description: |-
-        POST /api/v2/extensions/batch-install/
-
-        Batch install extension to multiple databases.
-
-        Request Body:
-            {
-                "database_ids": ["uuid1", "uuid2", ...],
-                "extension_name": "ODataAutoConfig",  // optional
-                "extension_path": "C:\Extensions\ODataAutoConfig.cfe"  // optional
-            }
-
-        Response:
-            {
-                "batch_id": "uuid",
-                "total": 10,
-                "queued": 8,
-                "skipped": 2,
-                "installations": [
-                    {"database_id": "uuid1", "installation_id": "uuid", "status": "pending"},
-                    {"database_id": "uuid2", "status": "skipped", "reason": "already_in_progress"}
-                ]
-            }
+      description: Batch install extension to multiple databases. Skips databases
+        that already have installation in progress.
+      summary: Batch install extension
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchInstallRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BatchInstallRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BatchInstallRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchInstallResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/extensions/get-install-progress/:
     get:
       operationId: v2_extensions_get_install_progress_retrieve
-      description: |-
-        GET /api/v2/extensions/get-install-progress/
-
-        Get progress of extension installations.
-
-        Query Parameters:
-            - database_ids: Comma-separated list of database IDs (optional)
-            - extension_name: Extension name filter (optional, default: ODataAutoConfig)
-
-        Response:
-            {
-                "progress": {
-                    "total": 10,
-                    "pending": 2,
-                    "in_progress": 3,
-                    "completed": 4,
-                    "failed": 1,
-                    "percent_complete": 50.0
-                },
-                "databases": [
-                    {
-                        "database_id": "uuid",
-                        "database_name": "DB1",
-                        "status": "completed",
-                        "updated_at": "2024-01-01T00:00:00Z"
-                    }
-                ]
-            }
+      description: Get progress of extension installations across databases. Shows
+        aggregated statistics and per-database status.
+      summary: Get extension installation progress
+      parameters:
+      - in: query
+        name: database_ids
+        schema:
+          type: string
+        description: Comma-separated list of database UUIDs (optional)
+      - in: query
+        name: extension_name
+        schema:
+          type: string
+        description: 'Extension name filter (default: ODataAutoConfig)'
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallProgressResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/extensions/get-install-status/:
     get:
       operationId: v2_extensions_get_install_status_retrieve
-      description: |-
-        GET /api/v2/extensions/get-install-status/?database_id=X
-
-        Get extension installation status for a specific database.
-
-        Query Parameters:
-            - database_id: Database ID (required)
-            - extension_name: Extension name (default: ODataAutoConfig)
-
-        Response:
-            {
-                "database_id": "string",
-                "database_name": "string",
-                "extension_name": "ODataAutoConfig",
-                "status": "completed|failed|pending|in_progress|none",
-                "installation": {...},  // Latest installation record if exists
-                "history": [...]  // Installation history
-            }
+      description: Get extension installation status for a specific database, including
+        latest installation and history.
+      summary: Get extension installation status
+      parameters:
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database UUID (required)
+        required: true
+      - in: query
+        name: extension_name
+        schema:
+          type: string
+        description: 'Extension name (default: ODataAutoConfig)'
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallStatusResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/extensions/list-extensions/:
     get:
       operationId: v2_extensions_list_extensions_retrieve
-      description: |-
-        GET /api/v2/extensions/list-extensions/
-
-        List all extension installations with optional filtering.
-
-        Query Parameters:
-            - database_id: Filter by database ID
-            - status: Filter by status (pending, in_progress, completed, failed)
-            - extension_name: Filter by extension name
-            - limit: Maximum results (default: 50)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "extensions": [...],
-                "count": 50,
-                "total": 200,
-                "summary": {
-                    "pending": 10,
-                    "in_progress": 5,
-                    "completed": 180,
-                    "failed": 5
-                }
-            }
+      description: List all extension installations with optional filtering by database,
+        status, and extension name.
+      summary: List extension installations
+      parameters:
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Filter by database UUID
+      - in: query
+        name: extension_name
+        schema:
+          type: string
+        description: Filter by extension name
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 50, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (pending, in_progress, completed, failed)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/extensions/retry-installation/:
     post:
       operationId: v2_extensions_retry_installation_create
-      description: |-
-        POST /api/v2/extensions/retry-installation/
-
-        Retry extension installation for a specific database.
-
-        Request Body:
-            {
-                "database_id": "string",
-                "extension_name": "ODataAutoConfig"  // optional
-            }
-
-        Response:
-            {
-                "database_id": "string",
-                "installation_id": "uuid",
-                "status": "pending",
-                "message": "Installation retry scheduled"
-            }
+      description: Retry extension installation for a specific database. Creates a
+        new installation record and queues the task.
+      summary: Retry extension installation
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryInstallationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RetryInstallationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RetryInstallationRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryInstallationResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/operations/cancel-operation/:
     post:
       operationId: v2_operations_cancel_operation_create
-      description: |-
-        POST /api/v2/operations/cancel-operation/
-
-        Cancel a running or pending operation.
-
-        Request Body:
-            {
-                "operation_id": "string"
-            }
-
-        Response:
-            {
-                "operation_id": "string",
-                "cancelled": true,
-                "message": "Operation cancelled successfully"
-            }
+      description: Cancel a running or pending operation. Already completed or cancelled
+        operations cannot be cancelled.
+      summary: Cancel operation
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOperationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancelOperationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancelOperationRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCancelResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/operations/get-operation/:
     get:
       operationId: v2_operations_get_operation_retrieve
-      description: |-
-        GET /api/v2/operations/get-operation/?operation_id=X
-
-        Get detailed information about a specific operation.
-
-        Query Parameters:
-            - operation_id: Operation ID (required)
-            - include_tasks: Include task details (default: true)
-
-        Response:
-            {
-                "operation": {...},
-                "tasks": [...],
-                "progress": {
-                    "total": 100,
-                    "completed": 95,
-                    "failed": 5,
-                    "pending": 0,
-                    "percent": 100
-                }
-            }
+      description: Get detailed information about a specific operation including tasks
+        and progress.
+      summary: Get operation details
+      parameters:
+      - in: query
+        name: include_tasks
+        schema:
+          type: boolean
+        description: 'Include task details (default: true, max 100 tasks)'
+      - in: query
+        name: operation_id
+        schema:
+          type: string
+        description: Operation ID (UUID)
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/operations/list-operations/:
     get:
       operationId: v2_operations_list_operations_retrieve
-      description: |-
-        GET /api/v2/operations/list-operations/
-
-        List all batch operations with optional filtering.
-
-        Query Parameters:
-            - status: Filter by status (pending, queued, processing, completed, failed, cancelled)
-            - operation_type: Filter by type (create, update, delete, query, install_extension)
-            - created_by: Filter by creator username
-            - limit: Maximum results (default: 50)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "operations": [...],
-                "count": 50,
-                "total": 200
-            }
+      description: List all batch operations with optional filtering by status, type,
+        and creator.
+      summary: List batch operations
+      parameters:
+      - in: query
+        name: created_by
+        schema:
+          type: string
+        description: Filter by creator username
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 50, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: operation_type
+        schema:
+          type: string
+        description: Filter by type (create, update, delete, query, install_extension)
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (pending, queued, processing, completed, failed,
+          cancelled)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/service-mesh/get-history/:
     get:
       operationId: v2_service_mesh_get_history_retrieve
-      description: |-
-        GET /api/v2/service-mesh/get-history/
-
-        Get historical metrics for a specific service.
-
-        Query Parameters:
-            - service: str (required) - Service name (e.g., 'api-gateway', 'worker')
-            - minutes: int (optional, default=30) - Period of history in minutes
-
-        Response:
-            {
-                "service": "api-gateway",
-                "display_name": "API Gateway",
-                "minutes": 30,
-                "data_points": [
-                    {
-                        "timestamp": "2024-01-01T00:00:00",
-                        "ops_per_minute": 150.5,
-                        "p95_latency_ms": 45.2,
-                        "error_rate": 0.001
-                    },
-                    ...
-                ]
-            }
+      description: Get historical metrics for a specific service from Prometheus.
+        Returns ops/minute, p95 latency, and error rate over time.
+      summary: Get service metrics history
+      parameters:
+      - in: query
+        name: minutes
+        schema:
+          type: integer
+        description: 'History period in minutes (default: 30, max: 1440)'
+      - in: query
+        name: service
+        schema:
+          type: string
+        description: Service name (e.g., api-gateway, worker, ras-adapter)
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHistoryResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/service-mesh/get-metrics/:
     get:
       operationId: v2_service_mesh_get_metrics_retrieve
-      description: |-
-        GET /api/v2/service-mesh/get-metrics/
-
-        Get service mesh metrics and health status.
-
-        Query Parameters:
-            - service: Filter by service name (optional)
-            - include_prometheus: Include Prometheus metrics (default: false)
-
-        Response:
-            {
-                "status": "healthy|degraded|unhealthy",
-                "services": [
-                    {
-                        "name": "api-gateway",
-                        "type": "backend",
-                        "status": "healthy",
-                        "response_time_ms": 50.5,
-                        "details": {...}
-                    },
-                    ...
-                ],
-                "summary": {
-                    "total": 4,
-                    "healthy": 3,
-                    "degraded": 1,
-                    "unreachable": 0
-                },
-                "timestamp": "2024-01-01T00:00:00Z"
-            }
+      description: Get service mesh metrics and health status for all monitored services
+        including Go services, Celery workers, Redis, and PostgreSQL.
+      summary: Get service mesh metrics
+      parameters:
+      - in: query
+        name: include_prometheus
+        schema:
+          type: boolean
+        description: 'Include raw Prometheus metrics (default: false)'
+      - in: query
+        name: service
+        schema:
+          type: string
+        description: Filter by service name (e.g., api-gateway, worker)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceMetricsResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/system/config/:
+    get:
+      operationId: v2_system_config_retrieve
+      description: Returns system configuration values for frontend defaults.
+      summary: Get system configuration
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemConfig'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/system/health/:
     get:
       operationId: v2_system_health_retrieve
-      description: |-
-        GET /api/v2/system/health/
-
-        Returns comprehensive system health status with parallel service checks.
-
-        Response format matches frontend SystemHealthResponse interface:
-            {
-                "timestamp": "2024-01-01T00:00:00Z",
-                "overall_status": "healthy|degraded|critical",
-                "services": [
-                    {
-                        "name": "API Gateway",
-                        "type": "go-service",
-                        "url": "http://localhost:8180/health",
-                        "status": "online|offline|degraded",
-                        "response_time_ms": 12.5,
-                        "last_check": "2024-01-01T00:00:00Z"
-                    }
-                ],
-                "statistics": {
-                    "total": 4,
-                    "online": 3,
-                    "offline": 1,
-                    "degraded": 0
-                }
-            }
+      description: Returns comprehensive system health status with parallel service
+        checks for all monitored services.
+      summary: Get system health status
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
-      description: |-
-        GET /api/v2/templates/list-templates/
-
-        List all operation templates with optional filtering.
-
-        Query Parameters:
-            - operation_type: Filter by operation type
-            - target_entity: Filter by target entity
-            - is_active: Filter by active status (true/false)
-            - limit: Maximum results (default: 50)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "templates": [...],
-                "count": N
-            }
+      description: List all operation templates with optional filtering by type, target
+        entity, and active status.
+      summary: List operation templates
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+        description: Filter by active status (true/false)
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 50, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: operation_type
+        schema:
+          type: string
+        description: Filter by operation type
+      - in: query
+        name: target_entity
+        schema:
+          type: string
+        description: Filter by target entity
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/workflows/cancel-execution/:
     post:
       operationId: v2_workflows_cancel_execution_create
-      description: |-
-        POST /api/v2/workflows/cancel-execution/
-
-        Cancel a running or pending workflow execution.
-
-        Request Body:
-            {
-                "execution_id": "uuid"
-            }
-
-        Response:
-            {
-                "execution_id": "uuid",
-                "cancelled": true,
-                "status": "cancelled",
-                "message": "Execution cancelled successfully"
-            }
+      description: Cancel a running or pending workflow execution. Only pending or
+        running executions can be cancelled.
+      summary: Cancel execution
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionCancelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecutionCancelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecutionCancelRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionCancelResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/clone-workflow/:
     post:
       operationId: v2_workflows_clone_workflow_create
-      description: |-
-        POST /api/v2/workflows/clone-workflow/
-
-        Clone a workflow template as a new version.
-
-        Request Body:
-            {
-                "workflow_id": "uuid",
-                "new_name": "Optional new name"
-            }
-
-        Response (201):
-            {
-                "workflow": {...},
-                "cloned_from": "uuid",
-                "message": "Workflow cloned successfully"
-            }
+      description: Clone a workflow template. If new_name is provided, creates as
+        new workflow (v1). Otherwise, creates as new version.
+      summary: Clone workflow template
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloneWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CloneWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CloneWorkflowRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowCloneResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/create-workflow/:
     post:
       operationId: v2_workflows_create_workflow_create
-      description: |-
-        POST /api/v2/workflows/create-workflow/
-
-        Create a new workflow template.
-
-        Request Body:
-            {
-                "name": "My Workflow",
-                "description": "Optional description",
-                "workflow_type": "general",
-                "dag_structure": {
-                    "nodes": [...],
-                    "edges": [...]
-                },
-                "is_active": true
-            }
-
-        Response (201):
-            {
-                "workflow": {...},
-                "message": "Workflow created successfully"
-            }
+      description: Create a new workflow template. The DAG structure is auto-validated.
+      summary: Create workflow template
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/workflows/delete-workflow/:
     post:
       operationId: v2_workflows_delete_workflow_create
-      description: |-
-        POST /api/v2/workflows/delete-workflow/
-
-        Delete a workflow template (soft delete by default).
-
-        Request Body:
-            {
-                "workflow_id": "uuid",
-                "force": false
-            }
-
-        Response (200):
-            {
-                "workflow_id": "uuid",
-                "deleted": true,
-                "message": "Workflow deleted successfully"
-            }
+      description: Delete a workflow template (soft delete - deactivates). Use force=true
+        to also cancel running executions.
+      summary: Delete workflow template
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeleteWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeleteWorkflowRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/execute-workflow/:
     post:
       operationId: v2_workflows_execute_workflow_create
-      description: |-
-        POST /api/v2/workflows/execute-workflow/
-
-        Execute a workflow template.
-
-        Request Body:
-            {
-                "workflow_id": "uuid",
-                "input_context": {...},
-                "mode": "async"  // "sync" or "async"
-            }
-
-        Response:
-            {
-                "execution_id": "uuid",
-                "status": "pending|running",
-                "mode": "async",
-                "message": "Workflow execution started"
-            }
+      description: Execute a workflow template. Supports sync (blocking) and async
+        (background via Celery) modes.
+      summary: Execute workflow
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecuteWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecuteWorkflowRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteWorkflowResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/get-execution/:
     get:
       operationId: v2_workflows_get_execution_retrieve
-      description: |-
-        GET /api/v2/workflows/get-execution/?execution_id=X
-
-        Get detailed information about a specific workflow execution.
-
-        Query Parameters:
-            - execution_id: Execution UUID (required)
-
-        Response:
-            {
-                "execution": {...},
-                "steps": [...]
-            }
+      description: Get detailed information about a specific workflow execution including
+        step results.
+      summary: Get execution details
+      parameters:
+      - in: query
+        name: execution_id
+        schema:
+          type: string
+        description: Execution UUID
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/get-execution-steps/:
     get:
       operationId: v2_workflows_get_execution_steps_retrieve
-      description: |-
-        GET /api/v2/workflows/get-execution-steps/?execution_id=X
-
-        Get all step results for a workflow execution.
-
-        Query Parameters:
-            - execution_id: Execution UUID (required)
-            - status: Filter by step status (optional)
-
-        Response:
-            {
-                "steps": [...],
-                "count": 5
-            }
+      description: Get all step results for a workflow execution with optional filtering
+        by step status.
+      summary: Get execution steps
+      parameters:
+      - in: query
+        name: execution_id
+        schema:
+          type: string
+        description: Execution UUID
+        required: true
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by step status (pending, running, completed, failed, skipped)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStepsResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/get-workflow/:
     get:
       operationId: v2_workflows_get_workflow_retrieve
-      description: |-
-        GET /api/v2/workflows/get-workflow/?workflow_id=X
-
-        Get detailed information about a specific workflow template.
-
-        Query Parameters:
-            - workflow_id: Workflow template UUID (required)
-            - include_executions: Include recent executions (default: true)
-
-        Response:
-            {
-                "workflow": {...},
-                "executions": [...],
-                "statistics": {
-                    "total_executions": 100,
-                    "successful": 90,
-                    "failed": 10,
-                    "average_duration": 120.5
-                }
-            }
+      description: Get detailed information about a specific workflow template including
+        statistics and recent executions.
+      summary: Get workflow template details
+      parameters:
+      - in: query
+        name: include_executions
+        schema:
+          type: string
+        description: 'Include recent executions (default: true)'
+      - in: query
+        name: workflow_id
+        schema:
+          type: string
+        description: Workflow template UUID
+        required: true
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/list-executions/:
     get:
       operationId: v2_workflows_list_executions_retrieve
-      description: |-
-        GET /api/v2/workflows/list-executions/
-
-        List workflow executions with optional filtering.
-
-        Query Parameters:
-            - workflow_id: Filter by workflow template UUID (optional)
-            - status: Filter by status (pending, running, completed, failed, cancelled)
-            - limit: Maximum results (default: 50, max: 1000)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "executions": [...],
-                "count": 50,
-                "total": 100
-            }
+      description: List workflow executions with optional filtering by workflow template
+        and status.
+      summary: List workflow executions
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 50, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (pending, running, completed, failed, cancelled)
+      - in: query
+        name: workflow_id
+        schema:
+          type: string
+        description: Filter by workflow template UUID
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/workflows/list-workflows/:
     get:
       operationId: v2_workflows_list_workflows_retrieve
-      description: |-
-        GET /api/v2/workflows/list-workflows/
-
-        List all workflow templates with optional filtering.
-
-        Query Parameters:
-            - workflow_type: Filter by type (general, user_management, database_ops, etc.)
-            - is_active: Filter by active status (true/false)
-            - is_valid: Filter by valid status (true/false)
-            - search: Search by name or description
-            - limit: Maximum results (default: 50)
-            - offset: Pagination offset (default: 0)
-
-        Response:
-            {
-                "workflows": [...],
-                "count": 50,
-                "total": 100
-            }
+      description: List all workflow templates with optional filtering by type, active
+        status, and search.
+      summary: List workflow templates
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: string
+        description: Filter by active status (true/false)
+      - in: query
+        name: is_valid
+        schema:
+          type: string
+        description: Filter by validation status (true/false)
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 50, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or description
+      - in: query
+        name: workflow_type
+        schema:
+          type: string
+        description: Filter by workflow type (general, user_management, database_ops,
+          etc.)
       tags:
       - v2
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/workflows/update-workflow/:
     post:
       operationId: v2_workflows_update_workflow_create
-      description: |-
-        POST /api/v2/workflows/update-workflow/
-
-        Update an existing workflow template.
-
-        Request Body:
-            {
-                "workflow_id": "uuid",
-                "name": "Updated Name",
-                "description": "Updated description",
-                "dag_structure": {...},
-                "is_active": true
-            }
-
-        Response (200):
-            {
-                "workflow": {...},
-                "updated_fields": [...],
-                "message": "Workflow updated successfully"
-            }
+      description: Update an existing workflow template. Supports partial updates.
+        Cannot update if workflow has running executions.
+      summary: Update workflow template
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/validate-workflow/:
     post:
       operationId: v2_workflows_validate_workflow_create
-      description: |-
-        POST /api/v2/workflows/validate-workflow/
-
-        Validate a workflow DAG structure.
-
-        Request Body:
-            {
-                "workflow_id": "uuid"
-            }
-            OR
-            {
-                "dag_structure": {...}
-            }
-
-        Response (200):
-            {
-                "valid": true/false,
-                "errors": [...],
-                "warnings": [...],
-                "metadata": {...}
-            }
+      description: Validate a workflow DAG structure. Can validate by workflow_id
+        or by providing dag_structure directly.
+      summary: Validate workflow DAG
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateWorkflowRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ValidateWorkflowRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ValidateWorkflowRequest'
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowValidateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
 components:
   schemas:
+    BatchInstallItem:
+      type: object
+      description: Single item in batch installation result.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        installation_id:
+          type: string
+          description: Installation UUID (if queued)
+        status:
+          type: string
+          description: 'Status: pending or skipped'
+        reason:
+          type: string
+          description: Skip reason (if skipped)
+        existing_installation_id:
+          type: string
+          description: Existing installation ID (if skipped)
+      required:
+      - database_id
+      - status
+    BatchInstallRequest:
+      type: object
+      description: Request body for batch_install endpoint.
+      properties:
+        database_ids:
+          type: array
+          items:
+            type: string
+          description: List of database UUIDs to install extension to
+        extension_name:
+          type: string
+          default: ODataAutoConfig
+          description: 'Extension name (default: ODataAutoConfig)'
+        extension_path:
+          type: string
+          description: Path to extension file (optional)
+      required:
+      - database_ids
+    BatchInstallResponse:
+      type: object
+      description: Response for batch_install endpoint.
+      properties:
+        batch_id:
+          type: string
+          description: Batch operation UUID
+        total:
+          type: integer
+          description: Total number of databases in request
+        queued:
+          type: integer
+          description: Number of installations queued
+        skipped:
+          type: integer
+          description: Number of databases skipped
+        installations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchInstallItem'
+      required:
+      - batch_id
+      - installations
+      - queued
+      - skipped
+      - total
     BatchOperation:
       type: object
       description: Serializer for BatchOperation model.
@@ -4097,6 +4632,53 @@ components:
         * `completed` - Completed
         * `failed` - Failed
         * `cancelled` - Cancelled
+    BulkHealthCheckRequest:
+      type: object
+      description: Request body for bulk_health_check endpoint.
+      properties:
+        database_ids:
+          type: array
+          items:
+            type: string
+          description: List of database UUIDs to check
+        cluster_id:
+          type: string
+          format: uuid
+          description: Check all databases in this cluster
+    BulkHealthCheckResponse:
+      type: object
+      description: Response for bulk_health_check endpoint.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthCheckResult'
+        summary:
+          $ref: '#/components/schemas/HealthCheckSummary'
+      required:
+      - results
+      - summary
+    CancelOperationRequest:
+      type: object
+      description: Request body for cancel_operation endpoint.
+      properties:
+        operation_id:
+          type: string
+          description: ID of the operation to cancel (UUID)
+      required:
+      - operation_id
+    CloneWorkflowRequest:
+      type: object
+      description: Request for clone_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        new_name:
+          type: string
+          maxLength: 200
+      required:
+      - workflow_id
     Cluster:
       type: object
       description: Serializer для Cluster model.
@@ -4164,6 +4746,169 @@ components:
       - name
       - status_display
       - updated_at
+    ClusterCreateResponse:
+      type: object
+      description: Response for create_cluster endpoint.
+      properties:
+        cluster:
+          $ref: '#/components/schemas/Cluster'
+        message:
+          type: string
+      required:
+      - cluster
+      - message
+    ClusterDatabasesResponse:
+      type: object
+      description: Response for get_cluster_databases endpoint.
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+        cluster_name:
+          type: string
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Database'
+        count:
+          type: integer
+        filters:
+          $ref: '#/components/schemas/ClusterFilters'
+      required:
+      - cluster_id
+      - cluster_name
+      - count
+      - databases
+      - filters
+    ClusterDeleteResponse:
+      type: object
+      description: Response for delete_cluster endpoint.
+      properties:
+        message:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+      required:
+      - cluster_id
+      - message
+    ClusterDetailResponse:
+      type: object
+      description: Response for get_cluster endpoint.
+      properties:
+        cluster:
+          $ref: '#/components/schemas/Cluster'
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Database'
+        statistics:
+          $ref: '#/components/schemas/ClusterStatistics'
+      required:
+      - cluster
+      - databases
+      - statistics
+    ClusterFilters:
+      type: object
+      description: Applied filters.
+      properties:
+        status:
+          type: string
+        health_status:
+          type: string
+    ClusterListResponse:
+      type: object
+      description: Response for list_clusters endpoint.
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cluster'
+        count:
+          type: integer
+          description: Total number of clusters
+      required:
+      - clusters
+      - count
+    ClusterStatistics:
+      type: object
+      description: Statistics for a cluster.
+      properties:
+        total_databases:
+          type: integer
+        healthy_databases:
+          type: integer
+        databases_by_status:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - databases_by_status
+      - healthy_databases
+      - total_databases
+    ClusterSyncResponse:
+      type: object
+      description: Response for sync_cluster endpoint.
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: 'Sync status: syncing, success'
+        task_id:
+          type: string
+          description: Celery task ID (if async)
+        message:
+          type: string
+        databases_found:
+          type: integer
+        created:
+          type: integer
+        updated:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+      - cluster_id
+      - message
+      - status
+    ClusterUpdateResponse:
+      type: object
+      description: Response for update_cluster endpoint.
+      properties:
+        cluster:
+          $ref: '#/components/schemas/Cluster'
+        message:
+          type: string
+      required:
+      - cluster
+      - message
+    CreateWorkflowRequest:
+      type: object
+      description: Request for create_workflow endpoint.
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          default: ''
+        workflow_type:
+          type: string
+          default: general
+        dag_structure:
+          type: object
+          additionalProperties: {}
+          description: DAG structure with nodes and edges
+        is_active:
+          type: boolean
+          default: true
+      required:
+      - dag_structure
+      - name
     CustomTokenObtainPair:
       type: object
       description: |-
@@ -4311,6 +5056,19 @@ components:
       - status_display
       - updated_at
       - username
+    DatabaseDetailResponse:
+      type: object
+      description: Response for get_database endpoint.
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        cluster:
+          allOf:
+          - $ref: '#/components/schemas/Cluster'
+          nullable: true
+          description: Cluster info if database belongs to a cluster
+      required:
+      - database
     DatabaseGroup:
       type: object
       description: Serializer для DatabaseGroup model.
@@ -4353,6 +5111,189 @@ components:
       - id
       - name
       - updated_at
+    DatabaseListResponse:
+      type: object
+      description: Response for list_databases endpoint.
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Database'
+        count:
+          type: integer
+          description: Number of databases in current page
+        total:
+          type: integer
+          description: Total number of databases matching filters
+      required:
+      - count
+      - databases
+      - total
+    DeleteWorkflowRequest:
+      type: object
+      description: Request for delete_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        force:
+          type: boolean
+          default: false
+      required:
+      - workflow_id
+    ErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code (e.g., MISSING_PARAMETER)
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional error details
+      required:
+      - code
+      - message
+    ErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    ExecuteWorkflowRequest:
+      type: object
+      description: Request for execute_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          description: Workflow template UUID
+        input_context:
+          type: object
+          additionalProperties: {}
+          description: Initial context for workflow
+        mode:
+          allOf:
+          - $ref: '#/components/schemas/Mode9a5Enum'
+          default: async
+          description: |-
+            Execution mode: sync (blocking) or async (background)
+
+            * `sync` - sync
+            * `async` - async
+      required:
+      - workflow_id
+    ExecuteWorkflowResponse:
+      type: object
+      description: Response for execute_workflow endpoint.
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        mode:
+          type: string
+        message:
+          type: string
+        celery_task_id:
+          type: string
+        final_result:
+          type: object
+          additionalProperties: {}
+          nullable: true
+        duration:
+          type: number
+          format: double
+          nullable: true
+        error_message:
+          type: string
+      required:
+      - execution_id
+      - message
+      - mode
+      - status
+    ExecutionCancelRequest:
+      type: object
+      description: Request for cancel_execution endpoint.
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+          description: Execution UUID
+      required:
+      - execution_id
+    ExecutionCancelResponse:
+      type: object
+      description: Response for cancel_execution endpoint.
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        cancelled:
+          type: boolean
+        status:
+          type: string
+        message:
+          type: string
+      required:
+      - cancelled
+      - execution_id
+      - message
+      - status
+    ExecutionDetailResponse:
+      type: object
+      description: Response for get_execution endpoint.
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecutionDetail'
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStepResult'
+      required:
+      - execution
+      - steps
+    ExecutionListResponse:
+      type: object
+      description: Response for list_executions endpoint.
+      properties:
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowExecutionList'
+        count:
+          type: integer
+          description: Number of executions in current page
+        total:
+          type: integer
+          description: Total number of executions
+      required:
+      - count
+      - executions
+      - total
+    ExecutionStepsResponse:
+      type: object
+      description: Response for get_execution_steps endpoint.
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStepResult'
+        count:
+          type: integer
+      required:
+      - count
+      - steps
     ExtensionInstallation:
       type: object
       description: Serializer для ExtensionInstallation model.
@@ -4424,6 +5365,277 @@ components:
         * `in_progress` - In Progress
         * `completed` - Completed
         * `failed` - Failed
+    ExtensionListResponse:
+      type: object
+      description: Response for list_extensions endpoint.
+      properties:
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionInstallation'
+        count:
+          type: integer
+          description: Number of extensions returned
+        total:
+          type: integer
+          description: Total number of extensions matching filters
+        summary:
+          $ref: '#/components/schemas/ExtensionSummary'
+      required:
+      - count
+      - extensions
+      - summary
+      - total
+    ExtensionSummary:
+      type: object
+      description: Summary statistics for extensions.
+      properties:
+        pending:
+          type: integer
+          description: Number of pending installations
+        in_progress:
+          type: integer
+          description: Number of installations in progress
+        completed:
+          type: integer
+          description: Number of completed installations
+        failed:
+          type: integer
+          description: Number of failed installations
+      required:
+      - completed
+      - failed
+      - in_progress
+      - pending
+    HealthCheckRequest:
+      type: object
+      description: Request body for health_check endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID to check
+      required:
+      - database_id
+    HealthCheckResponse:
+      type: object
+      description: Response for health_check endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        status:
+          allOf:
+          - $ref: '#/components/schemas/HealthCheckResponseStatusEnum'
+          description: |-
+            Health status: ok, degraded, or down
+
+            * `ok` - ok
+            * `degraded` - degraded
+            * `down` - down
+        response_time_ms:
+          type: number
+          format: double
+          description: Response time in milliseconds
+        checked_at:
+          type: string
+          format: date-time
+          description: Timestamp of the health check
+      required:
+      - checked_at
+      - database_id
+      - response_time_ms
+      - status
+    HealthCheckResponseStatusEnum:
+      enum:
+      - ok
+      - degraded
+      - down
+      type: string
+      description: |-
+        * `ok` - ok
+        * `degraded` - degraded
+        * `down` - down
+    HealthCheckResult:
+      type: object
+      description: Single result in bulk health check.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        status:
+          allOf:
+          - $ref: '#/components/schemas/HealthCheckResultStatusEnum'
+          description: |-
+            Health status
+
+            * `ok` - ok
+            * `degraded` - degraded
+            * `down` - down
+            * `error` - error
+        response_time_ms:
+          type: number
+          format: double
+          description: Response time in milliseconds
+        error:
+          type: string
+          description: Error message if check failed
+      required:
+      - database_id
+      - status
+    HealthCheckResultStatusEnum:
+      enum:
+      - ok
+      - degraded
+      - down
+      - error
+      type: string
+      description: |-
+        * `ok` - ok
+        * `degraded` - degraded
+        * `down` - down
+        * `error` - error
+    HealthCheckSummary:
+      type: object
+      description: Summary of bulk health check results.
+      properties:
+        total:
+          type: integer
+          description: Total databases checked
+        healthy:
+          type: integer
+          description: Number of healthy databases (status=ok)
+        degraded:
+          type: integer
+          description: Number of degraded databases
+        down:
+          type: integer
+          description: Number of down databases
+      required:
+      - degraded
+      - down
+      - healthy
+      - total
+    HistoryDataPoint:
+      type: object
+      description: Single data point in history.
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Data point timestamp
+        ops_per_minute:
+          type: number
+          format: double
+          nullable: true
+          description: Operations per minute
+        p95_latency_ms:
+          type: number
+          format: double
+          nullable: true
+          description: 95th percentile latency in milliseconds
+        error_rate:
+          type: number
+          format: double
+          nullable: true
+          description: Error rate (0.0 to 1.0)
+      required:
+      - timestamp
+    InstallProgressDatabase:
+      type: object
+      description: Database status in installation progress.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        database_name:
+          type: string
+          description: Database name
+        status:
+          type: string
+          description: Installation status
+        error_message:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          nullable: true
+      required:
+      - database_id
+      - database_name
+      - status
+    InstallProgressResponse:
+      type: object
+      description: Response for get_install_progress endpoint.
+      properties:
+        progress:
+          $ref: '#/components/schemas/InstallProgressStats'
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstallProgressDatabase'
+      required:
+      - databases
+      - progress
+    InstallProgressStats:
+      type: object
+      description: Progress statistics for batch installation.
+      properties:
+        total:
+          type: integer
+          description: Total number of installations
+        pending:
+          type: integer
+          description: Number of pending installations
+        in_progress:
+          type: integer
+          description: Number of installations in progress
+        completed:
+          type: integer
+          description: Number of completed installations
+        failed:
+          type: integer
+          description: Number of failed installations
+        percent_complete:
+          type: number
+          format: double
+          description: Percentage of completed installations
+      required:
+      - completed
+      - failed
+      - in_progress
+      - pending
+      - percent_complete
+      - total
+    InstallStatusResponse:
+      type: object
+      description: Response for get_install_status endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        database_name:
+          type: string
+          description: Database name
+        extension_name:
+          type: string
+          description: Extension name
+        status:
+          type: string
+          description: 'Current status: completed, failed, pending, in_progress, none'
+        installation:
+          allOf:
+          - $ref: '#/components/schemas/ExtensionInstallation'
+          nullable: true
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionInstallation'
+      required:
+      - database_id
+      - database_name
+      - extension_name
+      - history
+      - status
     LastCheckStatusEnum:
       enum:
       - ok
@@ -4481,6 +5693,14 @@ components:
         * `count` - count
         * `while` - while
         * `foreach` - foreach
+    Mode9a5Enum:
+      enum:
+      - sync
+      - async
+      type: string
+      description: |-
+        * `sync` - sync
+        * `async` - async
     NodeConfig:
       type: object
       description: Serializer for NodeConfig Pydantic model.
@@ -4507,6 +5727,86 @@ components:
           type: string
           nullable: true
           description: Jinja2 boolean expression for Condition nodes
+    OperationCancelResponse:
+      type: object
+      description: Response for cancel_operation endpoint.
+      properties:
+        operation_id:
+          type: string
+          description: ID of the cancelled operation
+        cancelled:
+          type: boolean
+          description: Whether cancellation was successful
+        message:
+          type: string
+          description: Status message
+      required:
+      - cancelled
+      - message
+      - operation_id
+    OperationDetailResponse:
+      type: object
+      description: Response for get_operation endpoint.
+      properties:
+        operation:
+          $ref: '#/components/schemas/BatchOperation'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+          description: Task details (if include_tasks=true)
+        progress:
+          $ref: '#/components/schemas/OperationProgress'
+      required:
+      - operation
+      - progress
+    OperationListResponse:
+      type: object
+      description: Response for list_operations endpoint.
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchOperation'
+        count:
+          type: integer
+          description: Number of operations in current page
+        total:
+          type: integer
+          description: Total number of operations matching filters
+      required:
+      - count
+      - operations
+      - total
+    OperationProgress:
+      type: object
+      description: Progress information for an operation.
+      properties:
+        total:
+          type: integer
+          description: Total number of tasks
+        completed:
+          type: integer
+          description: Number of completed tasks
+        failed:
+          type: integer
+          description: Number of failed tasks
+        pending:
+          type: integer
+          description: Number of pending/queued tasks
+        processing:
+          type: integer
+          description: Number of processing tasks
+        percent:
+          type: integer
+          description: Completion percentage (0-100)
+      required:
+      - completed
+      - failed
+      - pending
+      - percent
+      - processing
+      - total
     OperationTemplate:
       type: object
       properties:
@@ -4568,6 +5868,16 @@ components:
         * `terminate_sessions` - Terminate Sessions
         * `block_sessions` - Block Sessions
         * `unblock_sessions` - Unblock Sessions
+    OverallStatusEnum:
+      enum:
+      - healthy
+      - degraded
+      - critical
+      type: string
+      description: |-
+        * `healthy` - healthy
+        * `degraded` - degraded
+        * `critical` - critical
     PaginatedBatchOperationList:
       type: object
       properties:
@@ -5126,6 +6436,287 @@ components:
           type: string
           format: date-time
           readOnly: true
+    PrometheusMetric:
+      type: object
+      description: Prometheus metrics for a service.
+      properties:
+        service:
+          type: string
+          description: Service name
+        metrics:
+          type: string
+          description: Raw Prometheus metrics text
+      required:
+      - metrics
+      - service
+    ResetClusterInfo:
+      type: object
+      description: Info about reset cluster.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        old_status:
+          type: string
+      required:
+      - id
+      - name
+      - old_status
+    ResetSyncStatusResponse:
+      type: object
+      description: Response for reset_sync_status endpoint.
+      properties:
+        message:
+          type: string
+        reset_count:
+          type: integer
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResetClusterInfo'
+      required:
+      - clusters
+      - message
+      - reset_count
+    RetryInstallationRequest:
+      type: object
+      description: Request body for retry_installation endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID (required)
+        extension_name:
+          type: string
+          default: ODataAutoConfig
+          description: 'Extension name (default: ODataAutoConfig)'
+      required:
+      - database_id
+    RetryInstallationResponse:
+      type: object
+      description: Response for retry_installation endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+        installation_id:
+          type: string
+          description: New installation UUID
+        status:
+          type: string
+          description: 'Installation status: pending'
+        celery_task_id:
+          type: string
+          description: Celery task ID (if async)
+        message:
+          type: string
+          description: Status message
+      required:
+      - database_id
+      - installation_id
+      - message
+      - status
+    ServiceHealth:
+      type: object
+      description: Health status of a single service.
+      properties:
+        name:
+          type: string
+          description: Service name (e.g., API Gateway, PostgreSQL)
+        type:
+          type: string
+          description: Service type (go-service, django, database, cache, monitoring,
+            tracing)
+        url:
+          type: string
+          description: Health check URL
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ServiceHealthStatusEnum'
+          description: |-
+            Service status
+
+            * `online` - online
+            * `offline` - offline
+            * `degraded` - degraded
+        response_time_ms:
+          type: number
+          format: double
+          nullable: true
+          description: Response time in milliseconds
+        last_check:
+          type: string
+          format: date-time
+          description: Timestamp of last health check
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional details (error info, etc.)
+      required:
+      - last_check
+      - name
+      - status
+      - type
+    ServiceHealthStatusEnum:
+      enum:
+      - online
+      - offline
+      - degraded
+      type: string
+      description: |-
+        * `online` - online
+        * `offline` - offline
+        * `degraded` - degraded
+    ServiceHistoryResponse:
+      type: object
+      description: Response for get_history endpoint.
+      properties:
+        service:
+          type: string
+          description: Service name
+        display_name:
+          type: string
+          description: Human-readable service name
+        minutes:
+          type: integer
+          description: History period in minutes
+        data_points:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryDataPoint'
+          description: Historical data points
+      required:
+      - data_points
+      - display_name
+      - minutes
+      - service
+    ServiceMeshSummary:
+      type: object
+      description: Summary statistics for service mesh.
+      properties:
+        total:
+          type: integer
+          description: Total number of services
+        healthy:
+          type: integer
+          description: Number of healthy services
+        degraded:
+          type: integer
+          description: Number of degraded services
+        unreachable:
+          type: integer
+          description: Number of unreachable services
+        error:
+          type: integer
+          description: Number of services in error state
+      required:
+      - degraded
+      - error
+      - healthy
+      - total
+      - unreachable
+    ServiceMetric:
+      type: object
+      description: Metrics for a single service.
+      properties:
+        name:
+          type: string
+          description: Service name (e.g., api-gateway, worker)
+        type:
+          type: string
+          description: Service type (backend, internal)
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ServiceMetricStatusEnum'
+          description: |-
+            Service health status
+
+            * `healthy` - healthy
+            * `degraded` - degraded
+            * `timeout` - timeout
+            * `unreachable` - unreachable
+            * `error` - error
+            * `unknown` - unknown
+        response_time_ms:
+          type: number
+          format: double
+          nullable: true
+          description: Response time in milliseconds
+        error:
+          type: string
+          nullable: true
+          description: Error message if any
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional service details
+      required:
+      - name
+      - status
+      - type
+    ServiceMetricStatusEnum:
+      enum:
+      - healthy
+      - degraded
+      - timeout
+      - unreachable
+      - error
+      - unknown
+      type: string
+      description: |-
+        * `healthy` - healthy
+        * `degraded` - degraded
+        * `timeout` - timeout
+        * `unreachable` - unreachable
+        * `error` - error
+        * `unknown` - unknown
+    ServiceMetricsResponse:
+      type: object
+      description: Response for get_metrics endpoint.
+      properties:
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ServiceMetricsResponseStatusEnum'
+          description: |-
+            Overall service mesh status
+
+            * `healthy` - healthy
+            * `degraded` - degraded
+            * `unhealthy` - unhealthy
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceMetric'
+          description: List of service metrics
+        summary:
+          allOf:
+          - $ref: '#/components/schemas/ServiceMeshSummary'
+          description: Summary statistics
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of metrics collection
+        prometheus_metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrometheusMetric'
+          description: Raw Prometheus metrics (only if include_prometheus=true)
+      required:
+      - services
+      - status
+      - summary
+      - timestamp
+    ServiceMetricsResponseStatusEnum:
+      enum:
+      - healthy
+      - degraded
+      - unhealthy
+      type: string
+      description: |-
+        * `healthy` - healthy
+        * `degraded` - degraded
+        * `unhealthy` - unhealthy
     Status2a6Enum:
       enum:
       - pending
@@ -5174,6 +6765,71 @@ components:
           default: 10
       required:
       - subworkflow_id
+    SystemConfig:
+      type: object
+      description: System configuration for frontend defaults.
+      properties:
+        ras_default_server:
+          type: string
+          description: Default RAS server address for new clusters (e.g., localhost:1545)
+        ras_adapter_url:
+          type: string
+          description: RAS Adapter service URL (e.g., http://localhost:8188)
+      required:
+      - ras_adapter_url
+      - ras_default_server
+    SystemHealthResponse:
+      type: object
+      description: Response for system_health endpoint.
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Current timestamp
+        overall_status:
+          allOf:
+          - $ref: '#/components/schemas/OverallStatusEnum'
+          description: |-
+            Overall system status
+
+            * `healthy` - healthy
+            * `degraded` - degraded
+            * `critical` - critical
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceHealth'
+          description: List of service health statuses
+        statistics:
+          allOf:
+          - $ref: '#/components/schemas/SystemStatistics'
+          description: Aggregated statistics
+      required:
+      - overall_status
+      - services
+      - statistics
+      - timestamp
+    SystemStatistics:
+      type: object
+      description: Aggregated statistics for all services.
+      properties:
+        total:
+          type: integer
+          description: Total number of services
+        online:
+          type: integer
+          description: Number of online services
+        offline:
+          type: integer
+          description: Number of offline services
+        degraded:
+          type: integer
+          description: Number of degraded services
+      required:
+      - degraded
+      - offline
+      - online
+      - total
     Task:
       type: object
       description: Serializer for Task model.
@@ -5270,6 +6926,21 @@ components:
         * `failed` - Failed
         * `retry` - Retry
         * `cancelled` - Cancelled
+    TemplateListResponse:
+      type: object
+      description: Response for list_templates endpoint.
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTemplate'
+          description: List of operation templates
+        count:
+          type: integer
+          description: Total number of templates (before pagination)
+      required:
+      - count
+      - templates
     TokenRefresh:
       type: object
       properties:
@@ -5303,6 +6974,37 @@ components:
         * `parallel` - parallel
         * `loop` - loop
         * `subworkflow` - subworkflow
+    UpdateWorkflowRequest:
+      type: object
+      description: Request for update_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+        workflow_type:
+          type: string
+        dag_structure:
+          type: object
+          additionalProperties: {}
+        is_active:
+          type: boolean
+      required:
+      - workflow_id
+    ValidateWorkflowRequest:
+      type: object
+      description: Request for validate_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        dag_structure:
+          type: object
+          additionalProperties: {}
     WorkflowCancelResponse:
       type: object
       description: Serializer for workflow cancel response.
@@ -5370,6 +7072,47 @@ components:
           minimum: 0
           default: 0
           description: Workflow-level retry attempts
+    WorkflowCreateResponse:
+      type: object
+      description: Response for create_workflow endpoint.
+      properties:
+        workflow:
+          $ref: '#/components/schemas/WorkflowTemplateDetail'
+        message:
+          type: string
+      required:
+      - message
+      - workflow
+    WorkflowDeleteResponse:
+      type: object
+      description: Response for delete_workflow endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        deleted:
+          type: boolean
+        message:
+          type: string
+      required:
+      - deleted
+      - message
+      - workflow_id
+    WorkflowDetailResponse:
+      type: object
+      description: Response for get_workflow endpoint.
+      properties:
+        workflow:
+          $ref: '#/components/schemas/WorkflowTemplateDetail'
+        statistics:
+          $ref: '#/components/schemas/WorkflowStatistics'
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowExecutionList'
+      required:
+      - statistics
+      - workflow
     WorkflowEdge:
       type: object
       description: Serializer for WorkflowEdge Pydantic model.
@@ -5397,21 +7140,13 @@ components:
           description: Initial context data for the workflow
         mode:
           allOf:
-          - $ref: '#/components/schemas/WorkflowExecuteRequestModeEnum'
+          - $ref: '#/components/schemas/Mode9a5Enum'
           default: async
           description: |-
             Execution mode: 'sync' (blocking) or 'async' (background)
 
             * `sync` - sync
             * `async` - async
-    WorkflowExecuteRequestModeEnum:
-      enum:
-      - sync
-      - async
-      type: string
-      description: |-
-        * `sync` - sync
-        * `async` - async
     WorkflowExecuteResponse:
       type: object
       description: Serializer for workflow execute response.
@@ -5647,6 +7382,24 @@ components:
       - template_version
       - trace_id
       - workflow_template
+    WorkflowListResponse:
+      type: object
+      description: Response for list_workflows endpoint.
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowTemplateList'
+        count:
+          type: integer
+          description: Number of workflows in current page
+        total:
+          type: integer
+          description: Total number of workflows
+      required:
+      - count
+      - total
+      - workflows
     WorkflowNode:
       type: object
       description: Serializer for WorkflowNode Pydantic model.
@@ -5694,6 +7447,31 @@ components:
       - id
       - name
       - type
+    WorkflowStatistics:
+      type: object
+      description: Statistics for a workflow template.
+      properties:
+        total_executions:
+          type: integer
+        successful:
+          type: integer
+        failed:
+          type: integer
+        cancelled:
+          type: integer
+        running:
+          type: integer
+        average_duration:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - average_duration
+      - cancelled
+      - failed
+      - running
+      - successful
+      - total_executions
     WorkflowStatusResponse:
       type: object
       description: Lightweight serializer for polling execution status.
@@ -6011,6 +7789,22 @@ components:
         * `conditional` - Conditional
         * `parallel` - Parallel
         * `complex` - Complex
+    WorkflowUpdateResponse:
+      type: object
+      description: Response for update_workflow endpoint.
+      properties:
+        workflow:
+          $ref: '#/components/schemas/WorkflowTemplateDetail'
+        updated_fields:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+      required:
+      - message
+      - updated_fields
+      - workflow
     WorkflowValidateResponse:
       type: object
       description: Serializer for workflow validate response.

@@ -1,8 +1,12 @@
 import React, { useState } from 'react'
 import { Button, Modal, Form, Input, message } from 'antd'
 import { RocketOutlined } from '@ant-design/icons'
-import { installationApi } from '../../api/adapters/installation'
+import { getV2 } from '../../api/generated'
+import { convertBatchResponseToLegacy } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
+
+// Get generated API functions
+const api = getV2()
 
 interface BatchInstallButtonProps {
   onStarted?: (taskId: string) => void
@@ -18,13 +22,15 @@ export const BatchInstallButton: React.FC<BatchInstallButtonProps> = ({ onStarte
       const values = await form.validateFields()
       setLoading(true)
 
-      const response = await installationApi.batchInstall({
-        database_ids: 'all',
-        extension_config: {
-          name: values.extension_name,
-          path: values.extension_path,
-        },
+      // Call generated API directly
+      const generatedResponse = await api.postExtensionsBatchInstall({
+        database_ids: [], // Empty array means "all" in v2 API
+        extension_name: values.extension_name,
+        extension_path: values.extension_path,
       })
+
+      // Transform to legacy format for backward compatibility
+      const response = convertBatchResponseToLegacy(generatedResponse)
 
       message.success(`Installation started! Task ID: ${response.task_id}`)
       setModalVisible(false)

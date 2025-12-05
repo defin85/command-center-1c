@@ -2,10 +2,24 @@ import React, { useState, useEffect } from 'react'
 import { Table, Tag, Button, Input, Select, Space, message, Modal, Form } from 'antd'
 import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
-import { installationApi } from '../../api/adapters/installation'
+import { getV2 } from '../../api/generated'
+import { convertInstallationsToLegacy } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
+import { customInstance } from '../../api/mutator'
 
 const { Option } = Select
+
+// Get generated API functions
+const api = getV2()
+
+// InstallSingle API response type (not in generated yet)
+interface InstallSingleResponse {
+  task_id: string
+  operation_id: string
+  message: string
+  status: string
+  queued_count?: number
+}
 
 export const InstallationStatusTable: React.FC = () => {
   const [installations, setInstallations] = useState<ExtensionInstallation[]>([])
@@ -19,8 +33,9 @@ export const InstallationStatusTable: React.FC = () => {
   const fetchInstallations = async () => {
     setLoading(true)
     try {
-      const data = await installationApi.getAllInstallations()
-      setInstallations(data)
+      const response = await api.getExtensionsListExtensions()
+      // Transform generated response to legacy format
+      setInstallations(convertInstallationsToLegacy(response.extensions))
     } catch (error) {
       console.error('Failed to fetch installations:', error)
     } finally {
@@ -36,7 +51,7 @@ export const InstallationStatusTable: React.FC = () => {
 
   const handleRetry = async (databaseId: string) => {
     try {
-      await installationApi.retryInstallation(databaseId)
+      await api.postExtensionsRetryInstallation({ database_id: databaseId })
       message.success('Installation retry started')
       fetchInstallations()
     } catch (error) {
@@ -55,9 +70,15 @@ export const InstallationStatusTable: React.FC = () => {
 
     try {
       const values = await form.validateFields()
-      const response = await installationApi.installSingle(String(selectedDatabase.id), {
-        name: values.extension_name,
-        path: values.extension_path,
+      // installSingle endpoint not in generated API yet, use customInstance directly
+      const response = await customInstance<InstallSingleResponse>({
+        url: '/extensions/install-single/',
+        method: 'POST',
+        data: {
+          database_id: selectedDatabase.id,
+          extension_name: values.extension_name,
+          extension_path: values.extension_path,
+        },
       })
       message.success(response.message)
       setModalVisible(false)

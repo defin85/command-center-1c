@@ -2,11 +2,24 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, message } from 'antd'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { databasesApi, Database } from '../../api/adapters/databases'
-import { clustersApi, Cluster } from '../../api/adapters/clusters'
-import { installationApi } from '../../api/adapters/installation'
+import { getV2, Database, Cluster } from '../../api/generated'
+import { customInstance } from '../../api/mutator'
+import { extractInstallationFromStatus } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
 import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
+import type { ExtensionInstallation } from '../../types/installation'
+
+// Get generated API functions
+const api = getV2()
+
+// InstallSingle API response type (not in generated yet)
+interface InstallSingleResponse {
+  task_id: string
+  operation_id: string
+  message: string
+  status: string
+  queued_count?: number
+}
 
 export const Databases = () => {
   const navigate = useNavigate()
@@ -30,7 +43,8 @@ export const Databases = () => {
   useEffect(() => {
     const fetchClusters = async () => {
       try {
-        const data = await clustersApi.list()
+        const response = await api.getClustersListClusters()
+        const data = response.clusters ?? []
         setClusters(data)
 
         // Найти выбранный кластер
@@ -54,10 +68,12 @@ export const Databases = () => {
 
         if (selectedClusterId) {
           // Загрузить базы конкретного кластера
-          data = await clustersApi.getDatabases(selectedClusterId)
+          const response = await api.getClustersGetClusterDatabases({ cluster_id: selectedClusterId })
+          data = response.databases ?? []
         } else {
           // Загрузить все базы
-          data = await databasesApi.list()
+          const response = await api.getDatabasesListDatabases()
+          data = response.databases ?? []
         }
 
         setDatabases(data)
@@ -99,13 +115,19 @@ export const Databases = () => {
       const values = await form.validateFields()
 
       if (!values.extension || !values.extension.name || !values.extension.path) {
-        message.error('Выберите файл расширения');
+        message.error('Vyberite fayl rasshireniya');
         return;
       }
 
-      const response = await installationApi.installSingle(selectedDatabase.id, {
-        name: values.extension.name,
-        path: values.extension.path,
+      // installSingle endpoint not in generated API yet, use customInstance directly
+      const response = await customInstance<InstallSingleResponse>({
+        url: '/extensions/install-single/',
+        method: 'POST',
+        data: {
+          database_id: selectedDatabase.id,
+          extension_name: values.extension.name,
+          extension_path: values.extension.path,
+        },
       })
 
       // Сохранить Operation ID для мониторинга
@@ -145,9 +167,11 @@ export const Databases = () => {
     setSelectedDatabase(null)
     // Обновить список баз данных после завершения
     if (selectedClusterId) {
-      clustersApi.getDatabases(selectedClusterId).then(setDatabases)
+      api.getClustersGetClusterDatabases({ cluster_id: selectedClusterId })
+        .then((response) => setDatabases(response.databases ?? []))
     } else {
-      databasesApi.list().then(setDatabases)
+      api.getDatabasesListDatabases()
+        .then((response) => setDatabases(response.databases ?? []))
     }
   }
 
@@ -281,7 +305,23 @@ export const Databases = () => {
           databaseName={selectedDatabase.name}
           operationId={currentOperationId || undefined}
           onClose={handleProgressModalClose}
-          fetchStatus={installationApi.getDatabaseStatus}
+          fetchStatus={async (databaseId: string): Promise<ExtensionInstallation | null> => {
+            try {
+              const response = await api.getExtensionsGetInstallStatus({ database_id: databaseId })
+              return extractInstallationFromStatus(response)
+            } catch (error: unknown) {
+              // If installation not found, return null
+              if (
+                error &&
+                typeof error === 'object' &&
+                'response' in error &&
+                (error as { response?: { status?: number } }).response?.status === 404
+              ) {
+                return null
+              }
+              throw error
+            }
+          }}
         />
       )}
     </div>
