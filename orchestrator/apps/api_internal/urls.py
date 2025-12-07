@@ -48,6 +48,11 @@ urlpatterns = [
         views.database_credentials,
         name='database-credentials'
     ),
+    path(
+        'databases/health-check-list/',
+        views.DatabasesForHealthCheckView.as_view(),
+        name='databases-health-check-list'
+    ),
 
     # ========================================================================
     # Health Status Updates

@@ -283,30 +283,30 @@ export const Operations = () => {
               </div>
 
               <div>
-                <strong>Description:</strong> {selectedOperation.description}
+                <strong>Description:</strong> {selectedOperation.description || '-'}
               </div>
               <div>
                 <strong>Type:</strong> {getOperationTypeLabel(selectedOperation.operation_type)}
               </div>
               <div>
-                <strong>Target Entity:</strong> {selectedOperation.target_entity}
+                <strong>Target Entity:</strong> {selectedOperation.target_entity || '-'}
               </div>
               <div>
                 <strong>Progress:</strong> <Progress percent={selectedOperation.progress} />
               </div>
               <div>
-                <strong>Statistics:</strong> {selectedOperation.completed_tasks} completed, {selectedOperation.failed_tasks} failed, {selectedOperation.total_tasks} total
+                <strong>Statistics:</strong> {`${selectedOperation.completed_tasks} completed, ${selectedOperation.failed_tasks} failed, ${selectedOperation.total_tasks} total`}
               </div>
 
               {/* Error message from metadata */}
-              {selectedOperation.status === 'failed' && selectedOperation.metadata && (selectedOperation.metadata as Record<string, unknown>).error && (
+              {selectedOperation.status === 'failed' && selectedOperation.metadata && (selectedOperation.metadata as Record<string, unknown>).error ? (
                 <Alert
                   type="error"
                   showIcon
                   message="Operation Failed"
-                  description={(selectedOperation.metadata as Record<string, unknown>).error as string}
+                  description={String((selectedOperation.metadata as Record<string, unknown>).error)}
                 />
-              )}
+              ) : null}
 
               <h3>Tasks</h3>
               <Table

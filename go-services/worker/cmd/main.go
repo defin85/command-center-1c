@@ -19,8 +19,10 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
+	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
+	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
 )
@@ -33,6 +35,36 @@ var (
 )
 
 var showVersion bool
+
+// orchestratorClientWrapper wraps orchestrator.Client to match jobs.DatabaseOrchestratorClient interface
+type orchestratorClientWrapper struct {
+	client *orchestrator.Client
+}
+
+func (w *orchestratorClientWrapper) GetDatabasesForHealthCheck(ctx context.Context) ([]jobs.OrchestratorDatabaseInfo, error) {
+	databases, err := w.client.GetDatabasesForHealthCheck(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]jobs.OrchestratorDatabaseInfo, len(databases))
+	for i, db := range databases {
+		result[i] = jobs.OrchestratorDatabaseInfo{
+			ID:       db.ID,
+			ODataURL: db.ODataURL,
+			Name:     db.Name,
+		}
+	}
+	return result, nil
+}
+
+func (w *orchestratorClientWrapper) SetDatabaseHealthy(ctx context.Context, databaseID string, responseTimeMs int) error {
+	return w.client.SetDatabaseHealthy(ctx, databaseID, responseTimeMs)
+}
+
+func (w *orchestratorClientWrapper) SetDatabaseUnhealthy(ctx context.Context, databaseID string, errorMessage, errorCode string) error {
+	return w.client.SetDatabaseUnhealthy(ctx, databaseID, errorMessage, errorCode)
+}
 
 func init() {
 	// Register version flag
@@ -170,6 +202,9 @@ func main() {
 			"cleanup_history_cron": schedConfig.CleanupHistoryCron,
 			"cleanup_events_cron":  schedConfig.CleanupEventsCron,
 			"batch_health_cron":    schedConfig.BatchHealthCron,
+			"cluster_health_cron":  schedConfig.ClusterHealthCron,
+			"database_health_cron": schedConfig.DatabaseHealthCron,
+			"ras_adapter_url":      schedConfig.RASAdapterURL,
 		}).Info("initializing Go scheduler")
 
 		// Create zap logger for scheduler (scheduler uses zap internally)
@@ -217,6 +252,46 @@ func main() {
 			batchHealthJob := jobs.NewBatchServiceHealthJob(batchClient, zapLog)
 			if err := sched.RegisterJob(schedConfig.BatchHealthCron, batchHealthJob); err != nil {
 				log.WithError(err).Error("failed to register batch_service_health job")
+			}
+
+			// Register cluster health check job
+			rasAdapterClient, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
+				BaseURL: schedConfig.RASAdapterURL,
+			})
+			if err != nil {
+				log.WithError(err).Error("failed to create RAS Adapter client for cluster health")
+			} else {
+				rasClientAdapter := jobs.NewRASClientAdapter(rasAdapterClient)
+				orchHealthClient := jobs.NewHTTPOrchestratorHealthClient(
+					cfg.OrchestratorURL,
+					serviceToken,
+					zapLog,
+				)
+				clusterHealthJob := jobs.NewClusterHealthJob(rasClientAdapter, orchHealthClient, zapLog)
+				if err := sched.RegisterJob(schedConfig.ClusterHealthCron, clusterHealthJob); err != nil {
+					log.WithError(err).Error("failed to register cluster_health job")
+				}
+			}
+
+			// Register database health check job
+			orchestratorClient, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
+				BaseURL: cfg.OrchestratorURL,
+				Token:   serviceToken,
+			})
+			if err != nil {
+				log.WithError(err).Error("failed to create orchestrator client for database health")
+			} else {
+				// Wrap orchestrator.Client to match DatabaseOrchestratorClient interface
+				dbOrchestratorClient := &orchestratorClientWrapper{client: orchestratorClient}
+				dbHealthClient := jobs.NewOrchestratorDatabaseHealthAdapter(dbOrchestratorClient)
+				dbHealthJob := jobs.NewDatabaseHealthJob(jobs.DatabaseHealthJobConfig{
+					Client:    dbHealthClient,
+					Logger:    zapLog,
+					BatchSize: 10,
+				})
+				if err := sched.RegisterJob(schedConfig.DatabaseHealthCron, dbHealthJob); err != nil {
+					log.WithError(err).Error("failed to register database_health job")
+				}
 			}
 
 			// Start scheduler

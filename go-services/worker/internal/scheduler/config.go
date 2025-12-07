@@ -15,6 +15,8 @@ type SchedulerConfig struct {
 	CleanupHistoryCron string // cleanup_old_status_history
 	CleanupEventsCron  string // cleanup_old_replayed_events
 	BatchHealthCron    string // periodic_batch_service_health
+	ClusterHealthCron  string // periodic_cluster_health_check
+	DatabaseHealthCron string // periodic_database_health_check
 
 	// Lock configuration
 	LockTTL         time.Duration // TTL for distributed locks
@@ -27,21 +29,27 @@ type SchedulerConfig struct {
 	// Job-specific settings
 	CleanupHistoryRetentionDays int // Days to keep status history
 	CleanupEventsRetentionDays  int // Days to keep replayed events
+
+	// RAS Adapter configuration
+	RASAdapterURL string // URL for RAS Adapter service
 }
 
 // DefaultConfig returns scheduler configuration with defaults
 func DefaultConfig() *SchedulerConfig {
 	return &SchedulerConfig{
 		Enabled:                     false,
-		CleanupHistoryCron:          "0 3 * * *",   // Daily at 3:00 AM
-		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
-		BatchHealthCron:             "@every 30s", // Every 30 seconds
+		CleanupHistoryCron:          "0 3 * * *",    // Daily at 3:00 AM
+		CleanupEventsCron:           "0 4 * * *",    // Daily at 4:00 AM
+		BatchHealthCron:             "@every 30s",  // Every 30 seconds
+		ClusterHealthCron:           "@every 60s",  // Every 60 seconds
+		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
 		LockTTL:                     5 * time.Minute,
 		LockRetryDelay:              100 * time.Millisecond,
 		LockMaxRetries:              3,
 		OrchestratorURL:             "http://localhost:8200",
 		CleanupHistoryRetentionDays: 30,
 		CleanupEventsRetentionDays:  7,
+		RASAdapterURL:               "http://localhost:8188",
 	}
 }
 
@@ -61,6 +69,12 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := os.Getenv("SCHEDULER_BATCH_HEALTH"); v != "" {
 		cfg.BatchHealthCron = v
+	}
+	if v := os.Getenv("SCHEDULER_CLUSTER_HEALTH"); v != "" {
+		cfg.ClusterHealthCron = v
+	}
+	if v := os.Getenv("SCHEDULER_DATABASE_HEALTH"); v != "" {
+		cfg.DatabaseHealthCron = v
 	}
 
 	// Lock configuration
@@ -85,6 +99,11 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := getIntEnv("CLEANUP_EVENTS_RETENTION_DAYS", 0); v > 0 {
 		cfg.CleanupEventsRetentionDays = v
+	}
+
+	// RAS Adapter URL
+	if v := os.Getenv("RAS_ADAPTER_URL"); v != "" {
+		cfg.RASAdapterURL = v
 	}
 
 	return cfg

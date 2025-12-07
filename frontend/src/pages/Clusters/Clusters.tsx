@@ -30,7 +30,7 @@ export const Clusters = () => {
         try {
             const response = await apiClient.get<SystemConfig>('/api/v2/system/config/')
             setSystemConfig(response.data)
-        } catch (error) {
+        } catch (_error) {
             // Use fallback defaults if config endpoint fails
             console.warn('Failed to load system config, using defaults')
             setSystemConfig({

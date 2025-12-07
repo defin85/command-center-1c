@@ -8,8 +8,9 @@ import (
 
 const (
 	// API paths for database endpoints
-	pathDatabaseCredentials = "/api/internal/databases/%s/credentials"
-	pathDatabaseHealth      = "/api/internal/databases/%s/health"
+	pathDatabaseCredentials     = "/api/internal/databases/%s/credentials"
+	pathDatabaseHealth          = "/api/internal/databases/%s/health"
+	pathDatabasesForHealthCheck = "/api/internal/databases/health-check-list/"
 )
 
 // GetDatabaseCredentials fetches credentials for a database by ID.
@@ -77,4 +78,14 @@ func (c *Client) SetDatabaseHealthWithDetails(ctx context.Context, databaseID st
 		ResponseTimeMs: responseTimeMs,
 		Details:        details,
 	})
+}
+
+// GetDatabasesForHealthCheck returns list of active databases to check.
+func (c *Client) GetDatabasesForHealthCheck(ctx context.Context) ([]DatabaseForHealthCheck, error) {
+	var resp DatabasesForHealthCheckResponse
+	if err := c.get(ctx, pathDatabasesForHealthCheck, &resp); err != nil {
+		return nil, fmt.Errorf("failed to get databases for health check: %w", err)
+	}
+
+	return resp.Databases, nil
 }

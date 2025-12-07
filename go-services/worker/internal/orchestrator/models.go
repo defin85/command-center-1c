@@ -102,6 +102,19 @@ type DatabaseCredentials struct {
 	InfobaseName string `json:"infobase_name,omitempty"`
 }
 
+// DatabaseForHealthCheck represents a database entry for health monitoring.
+type DatabaseForHealthCheck struct {
+	ID       string `json:"id"`
+	ODataURL string `json:"odata_url"`
+	Name     string `json:"name"`
+}
+
+// DatabasesForHealthCheckResponse represents response from databases health check list endpoint.
+type DatabasesForHealthCheckResponse struct {
+	Databases []DatabaseForHealthCheck `json:"databases"`
+	Count     int                      `json:"count"`
+}
+
 // ============================================================================
 // Health Update Schemas
 // ============================================================================

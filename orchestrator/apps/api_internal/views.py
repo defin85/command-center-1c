@@ -8,6 +8,7 @@ All endpoints require X-Internal-Token authentication.
 import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework import status
 
 from .permissions import IsInternalService
@@ -309,7 +310,9 @@ def database_health_update(request, database_id):
     {
         "healthy": true,
         "error_message": "",
-        "last_check_at": "2025-01-01T12:00:00Z"  // optional
+        "last_check_at": "2025-01-01T12:00:00Z",  // optional
+        "response_time_ms": 250,  // optional
+        "error_code": ""  // optional
     }
 
     Response:
@@ -336,13 +339,21 @@ def database_health_update(request, database_id):
     # Use existing mark_health_check method
     database.mark_health_check(
         success=data['healthy'],
-        response_time=None  # Go Worker can extend to pass response_time
+        response_time=data.get('response_time_ms')
     )
 
-    # If error_message provided and not healthy, store it in metadata
-    if not data['healthy'] and data.get('error_message'):
-        database.metadata['last_health_error'] = data['error_message']
-        database.save(update_fields=['metadata', 'updated_at'])
+    # Store additional error metadata if provided
+    if not data['healthy']:
+        metadata_updated = False
+        if data.get('error_message'):
+            database.metadata['last_health_error'] = data['error_message']
+            metadata_updated = True
+        if data.get('error_code'):
+            database.metadata['last_health_error_code'] = data['error_code']
+            metadata_updated = True
+
+        if metadata_updated:
+            database.save(update_fields=['metadata', 'updated_at'])
 
     logger.info(
         f"Database health updated: id={database_id}, healthy={data['healthy']}"
@@ -399,3 +410,47 @@ def cluster_health_update(request, cluster_id):
     )
 
     return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# Database List for Health Checks
+# =============================================================================
+
+class DatabasesForHealthCheckView(APIView):
+    """
+    GET /api/internal/databases/health-check-list
+
+    Get list of databases for periodic health checks.
+    Called by Go Worker to fetch databases that need health monitoring.
+
+    Response:
+    {
+        "databases": [
+            {
+                "id": "db-123",
+                "odata_url": "http://localhost:8080/base/odata/standard.odata",
+                "name": "Production DB"
+            }
+        ],
+        "count": 1
+    }
+    """
+    permission_classes = [IsInternalService]
+
+    def get(self, request):
+        from apps.databases.models import Database
+
+        # Get active databases with OData URL
+        databases = Database.objects.filter(
+            status=Database.STATUS_ACTIVE,
+            odata_url__isnull=False
+        ).exclude(odata_url='').values('id', 'odata_url', 'name')
+
+        database_list = list(databases)
+
+        logger.debug(f"Fetched {len(database_list)} databases for health check")
+
+        return Response({
+            'databases': database_list,
+            'count': len(database_list)
+        }, status=status.HTTP_200_OK)
