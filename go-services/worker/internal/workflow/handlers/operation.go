@@ -1,0 +1,233 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+
+	wfcontext "github.com/commandcenter1c/commandcenter/worker/internal/workflow/context"
+	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/executor"
+	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/models"
+)
+
+// OperationHandler executes operation nodes.
+// Operation nodes render templates and execute operations against 1C databases
+// via OData or RAS backends.
+//
+// Flow:
+//  1. Parse operation config from node
+//  2. Render payload with template engine
+//  3. Execute operation via executor
+//  4. Return result with output data
+type OperationHandler struct {
+	templateEngine TemplateRenderer
+	executor       OperationExecutor
+	logger         *zap.Logger
+}
+
+// NewOperationHandler creates a new operation handler.
+func NewOperationHandler(deps *HandlerDependencies) *OperationHandler {
+	logger := deps.Logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &OperationHandler{
+		templateEngine: deps.TemplateEngine,
+		executor:       deps.OperationExecutor,
+		logger:         logger.Named("operation_handler"),
+	}
+}
+
+// SupportedTypes returns the node types this handler can process.
+func (h *OperationHandler) SupportedTypes() []models.NodeType {
+	return []models.NodeType{models.NodeTypeOperation}
+}
+
+// HandleNode executes an operation node.
+func (h *OperationHandler) HandleNode(
+	ctx context.Context,
+	node *models.Node,
+	execCtx *wfcontext.ExecutionContext,
+) (*executor.NodeResult, error) {
+	startTime := time.Now()
+
+	h.logger.Debug("Executing operation node",
+		zap.String("node_id", node.ID),
+		zap.String("node_name", node.Name),
+		zap.String("template_id", node.TemplateID),
+		zap.String("execution_id", execCtx.ExecutionID()))
+
+	// Parse operation config
+	config, err := parseOperationConfig(node)
+	if err != nil {
+		h.logger.Error("Failed to parse operation config",
+			zap.String("node_id", node.ID),
+			zap.Error(err))
+		return &executor.NodeResult{
+			NodeID:      node.ID,
+			Status:      executor.NodeStatusFailed,
+			Error:       fmt.Errorf("invalid operation config: %w", err),
+			StartedAt:   startTime,
+			CompletedAt: time.Now(),
+			Duration:    time.Since(startTime),
+		}, nil
+	}
+
+	// Render payload with template engine
+	var renderedPayload map[string]interface{}
+	if h.templateEngine != nil && config.Payload != nil {
+		renderCtx := execCtx.ToMap()
+		renderedPayload, err = h.templateEngine.RenderJSON(ctx, config.Payload, renderCtx)
+		if err != nil {
+			h.logger.Error("Template rendering failed",
+				zap.String("node_id", node.ID),
+				zap.Error(err))
+			return &executor.NodeResult{
+				NodeID:      node.ID,
+				Status:      executor.NodeStatusFailed,
+				Error:       fmt.Errorf("template rendering failed: %w", err),
+				StartedAt:   startTime,
+				CompletedAt: time.Now(),
+				Duration:    time.Since(startTime),
+			}, nil
+		}
+	} else {
+		renderedPayload = config.Payload
+	}
+
+	// Check for operation executor
+	if h.executor == nil {
+		h.logger.Warn("No operation executor configured, returning rendered data only",
+			zap.String("node_id", node.ID))
+		return &executor.NodeResult{
+			NodeID: node.ID,
+			Status: executor.NodeStatusCompleted,
+			Output: map[string]interface{}{
+				"rendered_payload":   renderedPayload,
+				"execution_skipped":  true,
+				"reason":             "No operation executor configured",
+				"operation_type":     config.OperationType,
+				"target_entity":      config.TargetEntity,
+			},
+			StartedAt:   startTime,
+			CompletedAt: time.Now(),
+			Duration:    time.Since(startTime),
+		}, nil
+	}
+
+	// Extract target databases from context
+	targetDatabases := extractTargetDatabases(execCtx, node)
+
+	// Build operation request
+	req := &OperationRequest{
+		OperationType:   config.OperationType,
+		TargetEntity:    config.TargetEntity,
+		Payload:         renderedPayload,
+		TemplateID:      config.TemplateID,
+		TargetDatabases: targetDatabases,
+		TimeoutSeconds:  getNodeTimeout(node),
+	}
+
+	h.logger.Debug("Executing operation",
+		zap.String("node_id", node.ID),
+		zap.String("operation_type", config.OperationType),
+		zap.String("target_entity", config.TargetEntity),
+		zap.Int("target_db_count", len(targetDatabases)))
+
+	// Execute operation
+	result, err := h.executor.Execute(ctx, req)
+	if err != nil {
+		h.logger.Error("Operation execution failed",
+			zap.String("node_id", node.ID),
+			zap.Error(err))
+		return &executor.NodeResult{
+			NodeID:      node.ID,
+			Status:      executor.NodeStatusFailed,
+			Error:       err,
+			StartedAt:   startTime,
+			CompletedAt: time.Now(),
+			Duration:    time.Since(startTime),
+		}, nil
+	}
+
+	h.logger.Debug("Operation completed successfully",
+		zap.String("node_id", node.ID),
+		zap.Duration("duration", time.Since(startTime)))
+
+	return &executor.NodeResult{
+		NodeID:      node.ID,
+		Status:      executor.NodeStatusCompleted,
+		Output:      result,
+		StartedAt:   startTime,
+		CompletedAt: time.Now(),
+		Duration:    time.Since(startTime),
+	}, nil
+}
+
+// parseOperationConfig extracts operation configuration from node.
+func parseOperationConfig(node *models.Node) (*models.OperationNodeConfig, error) {
+	config := &models.OperationNodeConfig{
+		TemplateID: node.TemplateID,
+	}
+
+	// If node has explicit config, try to parse it
+	if node.Config != nil {
+		// Try to extract operation-specific fields from NodeConfig
+		// NodeConfig doesn't have these fields directly, so we'll use TemplateID
+	}
+
+	// For operation nodes, TemplateID is typically required
+	if config.TemplateID == "" && config.OperationType == "" {
+		return nil, fmt.Errorf("operation node requires template_id or operation_type")
+	}
+
+	return config, nil
+}
+
+// extractTargetDatabases gets target database IDs from context and node config.
+func extractTargetDatabases(execCtx *wfcontext.ExecutionContext, node *models.Node) []string {
+	// Check context for target_databases
+	if val, ok := execCtx.Get("target_databases"); ok {
+		if dbs, ok := val.([]interface{}); ok {
+			result := make([]string, 0, len(dbs))
+			for _, db := range dbs {
+				if s, ok := db.(string); ok {
+					result = append(result, s)
+				}
+			}
+			if len(result) > 0 {
+				return result
+			}
+		}
+		if dbs, ok := val.([]string); ok {
+			return dbs
+		}
+	}
+
+	// Check for single database_id
+	if val, ok := execCtx.GetString("database_id"); ok {
+		return []string{val}
+	}
+
+	return nil
+}
+
+// getNodeTimeout gets timeout from node config or returns default.
+func getNodeTimeout(node *models.Node) int {
+	if node.Config != nil && node.Config.TimeoutSeconds > 0 {
+		return node.Config.TimeoutSeconds
+	}
+	return 300 // 5 minutes default
+}
+
+// OperationNodeConfigFromJSON parses operation config from JSON.
+func OperationNodeConfigFromJSON(data []byte) (*models.OperationNodeConfig, error) {
+	var config models.OperationNodeConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse operation config: %w", err)
+	}
+	return &config, nil
+}
