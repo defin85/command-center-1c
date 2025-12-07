@@ -17,11 +17,12 @@ type SchedulerConfig struct {
 	BatchHealthCron    string // periodic_batch_service_health
 	ClusterHealthCron  string // periodic_cluster_health_check
 	DatabaseHealthCron string // periodic_database_health_check
+	EventReplayCron    string // replay_failed_events
 
 	// Lock configuration
-	LockTTL         time.Duration // TTL for distributed locks
-	LockRetryDelay  time.Duration // Delay between lock acquisition retries
-	LockMaxRetries  int           // Max retries for lock acquisition
+	LockTTL        time.Duration // TTL for distributed locks
+	LockRetryDelay time.Duration // Delay between lock acquisition retries
+	LockMaxRetries int           // Max retries for lock acquisition
 
 	// Orchestrator Internal API configuration
 	OrchestratorURL string
@@ -29,6 +30,10 @@ type SchedulerConfig struct {
 	// Job-specific settings
 	CleanupHistoryRetentionDays int // Days to keep status history
 	CleanupEventsRetentionDays  int // Days to keep replayed events
+
+	// Event Replay settings
+	EventReplayBatchSize int  // Number of events to replay per batch
+	EventReplayEnabled   bool // Feature flag for event replay job
 
 	// RAS Adapter configuration
 	RASAdapterURL string // URL for RAS Adapter service
@@ -38,17 +43,20 @@ type SchedulerConfig struct {
 func DefaultConfig() *SchedulerConfig {
 	return &SchedulerConfig{
 		Enabled:                     false,
-		CleanupHistoryCron:          "0 3 * * *",    // Daily at 3:00 AM
-		CleanupEventsCron:           "0 4 * * *",    // Daily at 4:00 AM
+		CleanupHistoryCron:          "0 3 * * *",   // Daily at 3:00 AM
+		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
 		BatchHealthCron:             "@every 30s",  // Every 30 seconds
 		ClusterHealthCron:           "@every 60s",  // Every 60 seconds
 		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
+		EventReplayCron:             "@every 60s",  // Every 60 seconds
 		LockTTL:                     5 * time.Minute,
 		LockRetryDelay:              100 * time.Millisecond,
 		LockMaxRetries:              3,
 		OrchestratorURL:             "http://localhost:8200",
 		CleanupHistoryRetentionDays: 30,
 		CleanupEventsRetentionDays:  7,
+		EventReplayBatchSize:        100,
+		EventReplayEnabled:          false, // Disabled by default
 		RASAdapterURL:               "http://localhost:8188",
 	}
 }
@@ -75,6 +83,9 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := os.Getenv("SCHEDULER_DATABASE_HEALTH"); v != "" {
 		cfg.DatabaseHealthCron = v
+	}
+	if v := os.Getenv("SCHEDULER_EVENT_REPLAY"); v != "" {
+		cfg.EventReplayCron = v
 	}
 
 	// Lock configuration
@@ -105,6 +116,12 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	if v := os.Getenv("RAS_ADAPTER_URL"); v != "" {
 		cfg.RASAdapterURL = v
 	}
+
+	// Event Replay settings
+	if v := getIntEnv("EVENT_REPLAY_BATCH_SIZE", 0); v > 0 {
+		cfg.EventReplayBatchSize = v
+	}
+	cfg.EventReplayEnabled = getBoolEnv("ENABLE_GO_EVENT_REPLAY", false)
 
 	return cfg
 }

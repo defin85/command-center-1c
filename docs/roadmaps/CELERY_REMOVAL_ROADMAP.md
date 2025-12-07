@@ -4,7 +4,7 @@
 
 **Дата создания:** 2025-12-07
 **Последнее обновление:** 2025-12-07
-**Статус:** IN PROGRESS (Phase 0-2 ✅ Done)
+**Статус:** IN PROGRESS (Phase 0-3 ✅ Done)
 **Автор:** Claude Opus 4.5 (Architecture Analysis)
 
 ---
@@ -274,13 +274,14 @@ go-services/worker/
 | 2.4 | Батчинг | Worker pool для 700+ баз, parallel processing | ✅ Done |
 | 2.5 | Redis locks | Предотвращение overlap при multiple replicas | ✅ Done |
 
-### Phase 3: Event Replay System
+### Phase 3: Event Replay System ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 3.1 | Миграция replay | `replay_failed_events` → Go |
-| 3.2 | API integration | Fetch FailedEvent via API, update status |
-| 3.3 | Отключение Celery | Для event replay tasks |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 3.1 | Internal API endpoints | `GET /api/internal/failed-events/`, `PATCH /api/internal/failed-events/{id}/` | ✅ Done |
+| 3.2 | API integration | Go HTTP client для FailedEvent, fetch + update status | ✅ Done |
+| 3.3 | EventReplayJob | `replay_failed_events` → Go Scheduler, периодическое выполнение | ✅ Done |
+| 3.4 | CleanupReplayedEventsJob | `cleanup_old_replayed_events` обновлён для корректного удаления | ✅ Done |
 
 ### Phase 4: Template Engine (Go)
 
@@ -476,8 +477,9 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 **Документ создан:** 2025-12-07
 **Последнее обновление:** 2025-12-07
 **Автор:** Claude Opus 4.5
-**Статус:** IN PROGRESS — Phase 0-2 завершены, Phase 3+ в очереди
+**Статус:** IN PROGRESS — Phase 0-3 завершены, Phase 4+ в очереди
 
 **Commits:**
 - `0d8122a` Phase 0+1: Go Scheduler и Internal API
 - `e3afd6c` Phase 2: Health Check Jobs
+- `XXXXX` Phase 3: Event Replay System

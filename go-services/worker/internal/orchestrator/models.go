@@ -207,6 +207,60 @@ type WorkflowResponse struct {
 }
 
 // ============================================================================
+// Failed Events Schemas (Event Replay System)
+// ============================================================================
+
+// FailedEvent represents a failed event awaiting replay.
+type FailedEvent struct {
+	ID                int                    `json:"id"`
+	Channel           string                 `json:"channel"`
+	EventType         string                 `json:"event_type"`
+	CorrelationID     string                 `json:"correlation_id"`
+	Payload           map[string]interface{} `json:"payload"`
+	SourceService     string                 `json:"source_service"`
+	OriginalTimestamp time.Time              `json:"original_timestamp"`
+	Status            string                 `json:"status"` // pending, replayed, failed
+	RetryCount        int                    `json:"retry_count"`
+	MaxRetries        int                    `json:"max_retries"`
+	LastError         string                 `json:"last_error,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
+}
+
+// FailedEventsPendingResponse represents response from pending events endpoint.
+type FailedEventsPendingResponse struct {
+	Events []FailedEvent `json:"events"`
+	Count  int           `json:"count"`
+}
+
+// FailedEventReplayedRequest represents request to mark event as replayed.
+type FailedEventReplayedRequest struct {
+	ReplayedAt *time.Time `json:"replayed_at,omitempty"`
+}
+
+// FailedEventFailedRequest represents request to mark event as failed.
+type FailedEventFailedRequest struct {
+	ErrorMessage   string `json:"error_message"`
+	IncrementRetry *bool  `json:"increment_retry,omitempty"` // defaults to true
+}
+
+// FailedEventFailedResponse represents response from mark failed endpoint.
+type FailedEventFailedResponse struct {
+	Success    bool   `json:"success"`
+	NewStatus  string `json:"new_status"` // pending or failed
+	RetryCount int    `json:"retry_count"`
+}
+
+// FailedEventsCleanupRequest represents request for cleanup endpoint.
+type FailedEventsCleanupRequest struct {
+	RetentionDays int `json:"retention_days,omitempty"` // 1-365, default 7
+}
+
+// FailedEventsCleanupResponse represents response from cleanup endpoint.
+type FailedEventsCleanupResponse struct {
+	DeletedCount int `json:"deleted_count"`
+}
+
+// ============================================================================
 // Common Schemas
 // ============================================================================
 

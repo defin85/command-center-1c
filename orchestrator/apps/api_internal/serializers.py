@@ -87,3 +87,44 @@ class HealthUpdateSerializer(serializers.Serializer):
         required=False, min_value=0, allow_null=True
     )
     error_code = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+# =============================================================================
+# Failed Event Serializers (Event Replay System)
+# =============================================================================
+
+
+class FailedEventSerializer(serializers.Serializer):
+    """Output serializer for FailedEvent (used in pending list)."""
+
+    id = serializers.IntegerField(read_only=True)
+    channel = serializers.CharField()
+    event_type = serializers.CharField()
+    correlation_id = serializers.CharField()
+    payload = serializers.JSONField()
+    source_service = serializers.CharField()
+    original_timestamp = serializers.DateTimeField()
+    status = serializers.CharField()
+    retry_count = serializers.IntegerField()
+    max_retries = serializers.IntegerField()
+    last_error = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
+class FailedEventReplayedSerializer(serializers.Serializer):
+    """Input serializer for marking event as replayed."""
+
+    replayed_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class FailedEventFailedSerializer(serializers.Serializer):
+    """Input serializer for marking event as failed (increment retry)."""
+
+    error_message = serializers.CharField(required=True, max_length=10000)
+    increment_retry = serializers.BooleanField(default=True)
+
+
+class FailedEventsCleanupSerializer(serializers.Serializer):
+    """Input serializer for cleanup of old replayed events."""
+
+    retention_days = serializers.IntegerField(default=7, min_value=1, max_value=365)

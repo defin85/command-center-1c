@@ -239,14 +239,8 @@ func main() {
 				log.WithError(err).Error("failed to register cleanup_status_history job")
 			}
 
-			cleanupEventsJob := jobs.NewCleanupReplayedEventsJob(
-				orchClient,
-				schedConfig.CleanupEventsRetentionDays,
-				zapLog,
-			)
-			if err := sched.RegisterJob(schedConfig.CleanupEventsCron, cleanupEventsJob); err != nil {
-				log.WithError(err).Error("failed to register cleanup_replayed_events job")
-			}
+			// Note: CleanupReplayedEventsJob registration moved after orchestratorClient creation
+			// to use the real EventReplayClient instead of stub HTTPOrchestratorClient
 
 			// Register batch service health check job
 			batchHealthJob := jobs.NewBatchServiceHealthJob(batchClient, zapLog)
@@ -291,6 +285,41 @@ func main() {
 				})
 				if err := sched.RegisterJob(schedConfig.DatabaseHealthCron, dbHealthJob); err != nil {
 					log.WithError(err).Error("failed to register database_health job")
+				}
+
+				// Register cleanup replayed events job (uses real EventReplayClient)
+				cleanupEventsJob := jobs.NewCleanupReplayedEventsJob(
+					orchestratorClient,
+					schedConfig.CleanupEventsRetentionDays,
+					zapLog,
+				)
+				if err := sched.RegisterJob(schedConfig.CleanupEventsCron, cleanupEventsJob); err != nil {
+					log.WithError(err).Error("failed to register cleanup_replayed_events job")
+				} else {
+					log.Info("cleanup replayed events job registered",
+						zap.String("cron", schedConfig.CleanupEventsCron),
+						zap.Int("retention_days", schedConfig.CleanupEventsRetentionDays),
+					)
+				}
+
+				// Register event replay job (if enabled)
+				if schedConfig.EventReplayEnabled {
+					eventReplayJob := jobs.NewEventReplayJob(
+						orchestratorClient,
+						redisClient,
+						zapLog,
+						schedConfig.EventReplayBatchSize,
+					)
+					if err := sched.RegisterJob(schedConfig.EventReplayCron, eventReplayJob); err != nil {
+						log.WithError(err).Error("failed to register event_replay job")
+					} else {
+						log.Info("event replay job registered",
+							zap.String("cron", schedConfig.EventReplayCron),
+							zap.Int("batch_size", schedConfig.EventReplayBatchSize),
+						)
+					}
+				} else {
+					log.Info("event replay job is disabled (set ENABLE_GO_EVENT_REPLAY=true to enable)")
 				}
 			}
 

@@ -67,4 +67,28 @@ urlpatterns = [
         views.cluster_health_update,
         name='cluster-health-update'
     ),
+
+    # ========================================================================
+    # Failed Events (Event Replay System)
+    # ========================================================================
+    path(
+        'failed-events/pending',
+        views.failed_events_pending,
+        name='failed-events-pending'
+    ),
+    path(
+        'failed-events/<int:event_id>/replayed',
+        views.failed_event_replayed,
+        name='failed-event-replayed'
+    ),
+    path(
+        'failed-events/<int:event_id>/failed',
+        views.failed_event_failed,
+        name='failed-event-failed'
+    ),
+    path(
+        'failed-events/cleanup',
+        views.failed_events_cleanup,
+        name='failed-events-cleanup'
+    ),
 ]

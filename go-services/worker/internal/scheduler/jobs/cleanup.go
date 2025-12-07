@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
+
+	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 )
 
 const (
@@ -15,6 +20,56 @@ const (
 	// CleanupReplayedEventsJobName is the unique name for the replayed events cleanup job
 	CleanupReplayedEventsJobName = "cleanup_old_replayed_events"
 )
+
+// CleanupMetrics holds metrics for cleanup jobs
+type CleanupMetrics struct {
+	eventsDeleted   prometheus.Counter
+	cleanupDuration prometheus.Histogram
+	cleanupErrors   prometheus.Counter
+}
+
+// newCleanupMetrics creates and registers cleanup metrics
+func newCleanupMetrics() *CleanupMetrics {
+	return &CleanupMetrics{
+		eventsDeleted: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "cc1c",
+				Subsystem: "cleanup",
+				Name:      "events_deleted_total",
+				Help:      "Total number of old replayed/failed events deleted",
+			},
+		),
+		cleanupDuration: promauto.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: "cc1c",
+				Subsystem: "cleanup",
+				Name:      "duration_seconds",
+				Help:      "Duration of cleanup job execution",
+				Buckets:   []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+			},
+		),
+		cleanupErrors: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "cc1c",
+				Subsystem: "cleanup",
+				Name:      "errors_total",
+				Help:      "Total number of cleanup job errors",
+			},
+		),
+	}
+}
+
+var (
+	cleanupMetrics     *CleanupMetrics
+	cleanupMetricsOnce sync.Once
+)
+
+func getCleanupMetrics() *CleanupMetrics {
+	cleanupMetricsOnce.Do(func() {
+		cleanupMetrics = newCleanupMetrics()
+	})
+	return cleanupMetrics
+}
 
 // OrchestratorClient interface for making calls to Orchestrator Internal API
 // This will be implemented when the actual client is created
@@ -26,7 +81,7 @@ type OrchestratorClient interface {
 }
 
 // HTTPOrchestratorClient is a simple HTTP client for Orchestrator Internal API
-// This is a placeholder implementation until the proper client is created
+// Used for CleanupStatusHistoryJob (stub implementation for now)
 type HTTPOrchestratorClient struct {
 	baseURL    string
 	httpClient *http.Client
@@ -57,14 +112,11 @@ func (c *HTTPOrchestratorClient) CleanupStatusHistory(ctx context.Context, reten
 }
 
 // CleanupReplayedEvents calls the internal API to cleanup old replayed events
-// TODO: Implement when Internal API endpoint is created
+// This method is kept for interface compatibility but CleanupReplayedEventsJob now uses EventReplayClient
 func (c *HTTPOrchestratorClient) CleanupReplayedEvents(ctx context.Context, retentionDays int) error {
-	c.logger.Info("cleanup_replayed_events called (stub)",
+	c.logger.Warn("CleanupReplayedEvents called on HTTPOrchestratorClient - use EventReplayClient instead",
 		zap.Int("retention_days", retentionDays),
 	)
-	// TODO: Implement actual HTTP call when Internal API endpoint exists
-	// Endpoint: POST /internal/cleanup/replayed-events
-	// Body: { "retention_days": retentionDays }
 	return nil
 }
 
@@ -109,19 +161,30 @@ func (j *CleanupStatusHistoryJob) Execute(ctx context.Context) error {
 	return nil
 }
 
-// CleanupReplayedEventsJob cleans up old replayed events
+// CleanupReplayedEventsJob cleans up old replayed/failed events using the real Internal API
 type CleanupReplayedEventsJob struct {
-	client        OrchestratorClient
+	client        orchestrator.EventReplayClient
 	retentionDays int
 	logger        *zap.Logger
+	metrics       *CleanupMetrics
 }
 
 // NewCleanupReplayedEventsJob creates a new cleanup replayed events job
-func NewCleanupReplayedEventsJob(client OrchestratorClient, retentionDays int, logger *zap.Logger) *CleanupReplayedEventsJob {
+// Uses orchestrator.EventReplayClient which calls the real Internal API
+func NewCleanupReplayedEventsJob(client orchestrator.EventReplayClient, retentionDays int, logger *zap.Logger) *CleanupReplayedEventsJob {
+	// Validate retention days (1-365)
+	if retentionDays <= 0 {
+		retentionDays = 7 // default
+	}
+	if retentionDays > 365 {
+		retentionDays = 365
+	}
+
 	return &CleanupReplayedEventsJob{
 		client:        client,
 		retentionDays: retentionDays,
 		logger:        logger.With(zap.String("job", CleanupReplayedEventsJobName)),
+		metrics:       getCleanupMetrics(),
 	}
 }
 
@@ -131,20 +194,36 @@ func (j *CleanupReplayedEventsJob) Name() string {
 }
 
 // Execute runs the cleanup job
+// Calls orchestrator.EventReplayClient.CleanupOldEvents which makes a POST to /api/internal/failed-events/cleanup
 func (j *CleanupReplayedEventsJob) Execute(ctx context.Context) error {
-	j.logger.Info("starting cleanup of old replayed events",
+	j.logger.Info("starting cleanup of old replayed/failed events",
 		zap.Int("retention_days", j.retentionDays),
 	)
 
 	startTime := time.Now()
 
-	if err := j.client.CleanupReplayedEvents(ctx, j.retentionDays); err != nil {
+	// Call the real Internal API via orchestrator client
+	deletedCount, err := j.client.CleanupOldEvents(ctx, j.retentionDays)
+	if err != nil {
+		j.metrics.cleanupErrors.Inc()
+		j.logger.Error("failed to cleanup old events",
+			zap.Error(err),
+			zap.Int("retention_days", j.retentionDays),
+			zap.Duration("duration", time.Since(startTime)),
+		)
 		return fmt.Errorf("failed to cleanup replayed events: %w", err)
 	}
 
-	j.logger.Info("completed cleanup of old replayed events",
-		zap.Duration("duration", time.Since(startTime)),
+	duration := time.Since(startTime)
+
+	// Update metrics
+	j.metrics.eventsDeleted.Add(float64(deletedCount))
+	j.metrics.cleanupDuration.Observe(duration.Seconds())
+
+	j.logger.Info("completed cleanup of old replayed/failed events",
+		zap.Duration("duration", duration),
 		zap.Int("retention_days", j.retentionDays),
+		zap.Int("deleted_count", deletedCount),
 	)
 
 	return nil

@@ -47,6 +47,8 @@ tags:
     description: Шаблоны операций (будущий Template Engine)
   - name: workflows
     description: Workflow определения (будущий Workflow Engine)
+  - name: failed-events
+    description: Event Replay System - управление failed events
 
 paths:
   # ============================================================================
@@ -406,6 +408,160 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # FAILED EVENTS - Event Replay System
+  # ============================================================================
+  /api/internal/failed-events/pending:
+    get:
+      summary: Получение pending failed events для replay
+      description: |
+        Возвращает список событий, которые не удалось опубликовать в Redis
+        и ожидают повторной публикации.
+
+        Go Worker периодически вызывает этот endpoint для получения
+        событий, которые нужно переотправить.
+      operationId: getFailedEventsPending
+      tags:
+        - failed-events
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: batch_size
+          in: query
+          required: false
+          description: Максимальное количество событий (1-1000)
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Список pending событий
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedEventsPendingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/failed-events/{event_id}/replayed:
+    post:
+      summary: Пометить событие как успешно переотправленное
+      description: |
+        Вызывается Go Worker после успешной публикации события в Redis.
+        Устанавливает статус события в "replayed".
+      operationId: markFailedEventReplayed
+      tags:
+        - failed-events
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          description: ID failed event
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedEventReplayedRequest'
+      responses:
+        '200':
+          description: Событие помечено как replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/failed-events/{event_id}/failed:
+    post:
+      summary: Пометить событие как failed (инкремент retry_count)
+      description: |
+        Вызывается Go Worker при неудачной попытке публикации события.
+        Увеличивает retry_count и сохраняет сообщение об ошибке.
+
+        Если retry_count >= max_retries, статус меняется на "failed" (permanently).
+      operationId: markFailedEventFailed
+      tags:
+        - failed-events
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          description: ID failed event
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedEventFailedRequest'
+      responses:
+        '200':
+          description: Событие обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedEventFailedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/failed-events/cleanup:
+    post:
+      summary: Удаление старых replayed/failed событий
+      description: |
+        Удаляет события старше указанного retention периода.
+        Удаляются только события со статусом "replayed" или "failed".
+
+        Рекомендуется вызывать ежедневно для освобождения места.
+      operationId: cleanupFailedEvents
+      tags:
+        - failed-events
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedEventsCleanupRequest'
+      responses:
+        '200':
+          description: Cleanup выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedEventsCleanupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -913,6 +1069,153 @@ components:
           example: "true"
 
     # ============================================================================
+    # FAILED EVENTS SCHEMAS (Event Replay System)
+    # ============================================================================
+    FailedEvent:
+      type: object
+      required:
+        - id
+        - channel
+        - event_type
+        - correlation_id
+        - payload
+        - source_service
+        - original_timestamp
+        - status
+        - retry_count
+        - max_retries
+        - created_at
+      properties:
+        id:
+          type: integer
+          description: ID события
+          example: 123
+        channel:
+          type: string
+          description: Redis канал для публикации
+          example: "cc1c:operations:status"
+        event_type:
+          type: string
+          description: Тип события
+          example: "operation.status.changed"
+        correlation_id:
+          type: string
+          description: Correlation ID для трассировки
+          example: "op-550e8400-e29b-41d4-a716-446655440000"
+        payload:
+          type: object
+          description: Payload события (JSON)
+          additionalProperties: true
+        source_service:
+          type: string
+          description: Сервис-источник события
+          example: "orchestrator"
+        original_timestamp:
+          type: string
+          format: date-time
+          description: Время создания оригинального события
+        status:
+          type: string
+          enum: [pending, replayed, failed]
+          description: |
+            Статус события:
+            - pending: ожидает replay
+            - replayed: успешно переотправлено
+            - failed: превышено max_retries
+        retry_count:
+          type: integer
+          description: Количество попыток replay
+          example: 2
+        max_retries:
+          type: integer
+          description: Максимальное количество попыток
+          example: 5
+        last_error:
+          type: string
+          description: Последняя ошибка при попытке replay
+          example: "Connection refused"
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания записи
+
+    FailedEventsPendingResponse:
+      type: object
+      required:
+        - events
+        - count
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedEvent'
+        count:
+          type: integer
+          description: Количество событий в ответе
+          example: 10
+
+    FailedEventReplayedRequest:
+      type: object
+      properties:
+        replayed_at:
+          type: string
+          format: date-time
+          description: Время успешного replay (по умолчанию - текущее время)
+
+    FailedEventFailedRequest:
+      type: object
+      required:
+        - error_message
+      properties:
+        error_message:
+          type: string
+          description: Сообщение об ошибке
+          example: "Connection refused to Redis"
+        increment_retry:
+          type: boolean
+          description: Увеличить счетчик попыток (по умолчанию true)
+          default: true
+
+    FailedEventFailedResponse:
+      type: object
+      required:
+        - success
+        - new_status
+        - retry_count
+      properties:
+        success:
+          type: boolean
+          example: true
+        new_status:
+          type: string
+          enum: [pending, failed]
+          description: Новый статус события
+        retry_count:
+          type: integer
+          description: Текущее количество попыток
+          example: 3
+
+    FailedEventsCleanupRequest:
+      type: object
+      properties:
+        retention_days:
+          type: integer
+          description: Удалять события старше N дней (1-365)
+          default: 7
+          minimum: 1
+          maximum: 365
+
+    FailedEventsCleanupResponse:
+      type: object
+      required:
+        - deleted_count
+      properties:
+        deleted_count:
+          type: integer
+          description: Количество удаленных событий
+          example: 150
+
+    # ============================================================================
     # COMMON SCHEMAS
     # ============================================================================
     ErrorResponse:
@@ -940,13 +1243,13 @@ components:
       type: object
       required:
         - success
-        - message
       properties:
         success:
           type: boolean
           example: true
         message:
           type: string
+          description: Optional message (views may return only success field)
           example: "Операция выполнена успешно"
 
   responses:
