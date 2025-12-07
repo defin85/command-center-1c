@@ -344,6 +344,7 @@ def sync_cluster_task(cluster_id: str, operation_id: str = None):
     from .models import Cluster
     from .services import ClusterService
     from apps.operations.models import BatchOperation
+    from apps.operations.events import flow_publisher
 
     logger.info(f"Starting sync_cluster_task for cluster_id={cluster_id}, operation_id={operation_id}")
 
@@ -356,11 +357,33 @@ def sync_cluster_task(cluster_id: str, operation_id: str = None):
             operation.started_at = timezone.now()
             operation.save(update_fields=['status', 'started_at'])
             logger.info(f"BatchOperation {operation_id} marked as PROCESSING")
+
+            # Publish flow event: task received by Celery worker
+            flow_publisher.publish_flow(
+                operation_id=operation_id,
+                current_service="celery-worker",
+                status="processing",
+                message="Задача получена Celery worker",
+                operation_type="sync_cluster",
+                operation_name=operation.name,
+                path=["frontend", "api-gateway", "orchestrator", "celery-worker"]
+            )
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation {operation_id} not found, continuing without tracking")
 
     try:
         cluster = Cluster.objects.get(id=cluster_id)
+
+        # Publish flow event: starting sync via RAS adapter
+        flow_publisher.publish_flow(
+            operation_id=operation_id,
+            current_service="ras-adapter",
+            status="processing",
+            message=f"Синхронизация кластера {cluster.name}",
+            operation_type="sync_cluster",
+            operation_name=operation.name if operation else f"Sync {cluster.name}",
+            path=["frontend", "api-gateway", "orchestrator", "celery-worker", "ras-adapter"]
+        )
 
         # Вызываем тот же метод что использует админка
         result = ClusterService.sync_infobases(cluster)
@@ -387,6 +410,18 @@ def sync_cluster_task(cluster_id: str, operation_id: str = None):
             ])
             logger.info(f"BatchOperation {operation_id} marked as COMPLETED")
 
+        # Publish flow event: operation completed
+        flow_publisher.publish_flow(
+            operation_id=operation_id,
+            current_service="orchestrator",
+            status="completed",
+            message=f"Создано: {result['created']}, обновлено: {result['updated']}",
+            operation_type="sync_cluster",
+            operation_name=operation.name if operation else f"Sync {cluster.name}",
+            path=["frontend", "api-gateway", "orchestrator", "celery-worker", "ras-adapter", "orchestrator"],
+            metadata=result
+        )
+
         return {
             'status': 'success',
             'cluster_id': str(cluster_id),
@@ -412,6 +447,17 @@ def sync_cluster_task(cluster_id: str, operation_id: str = None):
             operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata'])
             logger.info(f"BatchOperation {operation_id} marked as FAILED: {error_msg}")
 
+        # Publish flow event: operation failed
+        flow_publisher.publish_flow(
+            operation_id=operation_id,
+            current_service="celery-worker",
+            status="failed",
+            message=error_msg,
+            operation_type="sync_cluster",
+            operation_name=operation.name if operation else "",
+            path=["frontend", "api-gateway", "orchestrator", "celery-worker"]
+        )
+
         return {
             'status': 'error',
             'cluster_id': str(cluster_id),
@@ -430,6 +476,17 @@ def sync_cluster_task(cluster_id: str, operation_id: str = None):
             operation.metadata = {'error': error_msg}
             operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata'])
             logger.info(f"BatchOperation {operation_id} marked as FAILED: {error_msg}")
+
+        # Publish flow event: operation failed
+        flow_publisher.publish_flow(
+            operation_id=operation_id,
+            current_service="celery-worker",
+            status="failed",
+            message=error_msg,
+            operation_type="sync_cluster",
+            operation_name=operation.name if operation else "",
+            path=["frontend", "api-gateway", "orchestrator", "celery-worker"]
+        )
 
         return {
             'status': 'error',

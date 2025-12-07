@@ -18,6 +18,8 @@ import type {
   ServiceConnection,
   ServiceStatus,
   ServiceMeshWSMessage,
+  OperationFlowEvent,
+  OperationFlowStatus,
 } from '../types/serviceMesh'
 
 // Reconnection settings
@@ -41,6 +43,10 @@ export interface UseServiceMeshResult {
   refresh: () => void
   setUpdateInterval: (seconds: number) => void
   disconnect: () => void
+
+  // Operation flow
+  activeOperation: OperationFlowEvent | null
+  operationHistory: OperationFlowEvent[]
 }
 
 /**
@@ -68,6 +74,38 @@ function transformServiceConnection(data: Record<string, unknown>): ServiceConne
   }
 }
 
+function transformOperationFlow(data: Record<string, unknown>): OperationFlowEvent {
+  const flow = data.flow as Record<string, unknown>
+  const operation = data.operation as Record<string, unknown>
+
+  return {
+    version: (data.version || '1.0') as string,
+    type: 'operation_flow_update',
+    operation_id: data.operation_id as string,
+    timestamp: data.timestamp as string,
+    flow: {
+      currentService: (flow.current_service || flow.currentService) as string,
+      path: ((flow.path || []) as Array<Record<string, unknown>>).map((p) => ({
+        service: p.service as string,
+        status: p.status as OperationFlowStatus,
+        timestamp: p.timestamp as string,
+      })),
+      edges: ((flow.edges || []) as Array<Record<string, unknown>>).map((e) => ({
+        from: e.from as string,
+        to: e.to as string,
+        status: e.status as OperationFlowStatus,
+      })),
+    },
+    operation: {
+      type: (operation.type || '') as string,
+      name: (operation.name || '') as string,
+      status: operation.status as 'pending' | 'processing' | 'completed' | 'failed',
+      message: (operation.message || '') as string,
+      metadata: operation.metadata as Record<string, unknown> | undefined,
+    },
+  }
+}
+
 export const useServiceMesh = (): UseServiceMeshResult => {
   // Metrics state
   const [services, setServices] = useState<ServiceMetrics[]>([])
@@ -79,6 +117,10 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0)
+
+  // Operation flow state
+  const [activeOperation, setActiveOperation] = useState<OperationFlowEvent | null>(null)
+  const [operationHistory, setOperationHistory] = useState<OperationFlowEvent[]>([])
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null)
@@ -130,6 +172,20 @@ export const useServiceMesh = (): UseServiceMeshResult => {
           setConnectionError(null)
         }
         break
+
+      case 'operation_flow_update': {
+        const flowEvent = transformOperationFlow(message as unknown as Record<string, unknown>)
+
+        if (flowEvent.operation.status === 'processing') {
+          // Operation in progress - show it
+          setActiveOperation(flowEvent)
+        } else {
+          // Operation completed - remove and add to history
+          setActiveOperation(null)
+          setOperationHistory((prev) => [flowEvent, ...prev].slice(0, 10)) // Last 10
+        }
+        break
+      }
 
       case 'interval_updated':
         // Interval change confirmed
@@ -349,6 +405,10 @@ export const useServiceMesh = (): UseServiceMeshResult => {
     refresh,
     setUpdateInterval,
     disconnect,
+
+    // Operation flow
+    activeOperation,
+    operationHistory,
   }
 }
 

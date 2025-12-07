@@ -95,3 +95,54 @@
 .service-node .react-flow__handle-bottom {
   bottom: -4px;
 }
+
+/* ============================================================================
+   Operation flow animations
+   ============================================================================ */
+
+/* Pulsing animation for active node */
+@keyframes pulse-active {
+  0% {
+    box-shadow: 0 0 10px rgba(24, 144, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(24, 144, 255, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(24, 144, 255, 0.4);
+  }
+}
+
+.service-node--operation-active {
+  animation: pulse-active 1.5s ease-in-out infinite;
+  border: 3px solid #1890ff !important;
+  transform: scale(1.05);
+  z-index: 10;
+}
+
+.service-node--operation-completed {
+  border: 2px solid #52c41a !important;
+  background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%) !important;
+}
+
+/* Error pulsing animation */
+@keyframes pulse-error {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.service-node--operation-failed {
+  animation: pulse-error 0.5s ease-in-out 3;
+  border: 3px solid #ff4d4f !important;
+}
+
+/* Dimmed state for inactive nodes during active operation */
+.service-node--dimmed {
+  opacity: 0.4;
+  filter: grayscale(50%);
+}

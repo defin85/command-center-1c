@@ -29,6 +29,8 @@ import type {
   ServiceMetrics,
   ServiceConnection,
   ServiceLayoutConfig,
+  OperationFlowEvent,
+  OperationFlowStatus,
 } from '../../types/serviceMesh'
 import { DEFAULT_SERVICE_POSITIONS, STATUS_COLORS } from '../../types/serviceMesh'
 import { calculateDagreLayout } from '../../utils/graphLayout'
@@ -45,6 +47,7 @@ interface ServiceFlowDiagramProps {
   selectedService: string | null
   onServiceSelect: (service: string | null) => void
   positions?: ServiceLayoutConfig
+  activeOperation?: OperationFlowEvent | null
 }
 
 /**
@@ -76,12 +79,77 @@ function getEdgeWidth(requestsPerMinute: number): number {
   return 1
 }
 
+/**
+ * Get edge style based on active operation flow
+ */
+function getOperationEdgeStyle(
+  source: string,
+  target: string,
+  activeOperation: OperationFlowEvent | null | undefined
+): { stroke: string; strokeWidth: number; animated: boolean } | null {
+  if (!activeOperation) return null
+
+  const flowEdge = activeOperation.flow.edges.find(
+    (e) => e.from === source && e.to === target
+  )
+
+  if (!flowEdge) {
+    // Edge not in operation path - dim it
+    return {
+      stroke: '#d9d9d9',
+      strokeWidth: 1,
+      animated: false,
+    }
+  }
+
+  switch (flowEdge.status) {
+    case 'active':
+      return {
+        stroke: '#1890ff',
+        strokeWidth: 4,
+        animated: true,
+      }
+    case 'completed':
+      return {
+        stroke: '#52c41a',
+        strokeWidth: 3,
+        animated: false,
+      }
+    case 'failed':
+      return {
+        stroke: '#ff4d4f',
+        strokeWidth: 3,
+        animated: true,
+      }
+    default:
+      return {
+        stroke: '#d9d9d9',
+        strokeWidth: 1,
+        animated: false,
+      }
+  }
+}
+
+/**
+ * Get operation status for a service node
+ */
+function getNodeOperationStatus(
+  serviceName: string,
+  activeOperation: OperationFlowEvent | null | undefined
+): OperationFlowStatus | null {
+  if (!activeOperation) return null
+
+  const pathNode = activeOperation.flow.path.find((p) => p.service === serviceName)
+  return pathNode?.status || null
+}
+
 const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   services,
   connections,
   selectedService,
   onServiceSelect,
   positions = DEFAULT_SERVICE_POSITIONS,
+  activeOperation,
 }) => {
   // Handle service selection
   const handleServiceSelect = useCallback(
@@ -111,6 +179,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   const nodes: Node<ServiceNodeData>[] = useMemo(() => {
     return services.map((service) => {
       const position = calculatedPositions[service.name] || positions[service.name] || { x: 0, y: 0 }
+      const operationStatus = getNodeOperationStatus(service.name, activeOperation)
 
       return {
         id: service.name,
@@ -120,31 +189,36 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           metrics: service,
           onSelect: handleServiceSelect,
           isSelected: selectedService === service.name,
+          operationStatus,
         },
         draggable: true,
       }
     })
-  }, [services, calculatedPositions, positions, selectedService, handleServiceSelect])
+  }, [services, calculatedPositions, positions, selectedService, handleServiceSelect, activeOperation])
 
   // Create edges from connections
   const edges: Edge[] = useMemo(() => {
     return connections.map((conn) => {
-      const edgeColor = getEdgeColor(conn.avgLatencyMs)
-      const edgeWidth = getEdgeWidth(conn.requestsPerMinute)
+      const operationStyle = getOperationEdgeStyle(conn.source, conn.target, activeOperation)
+
+      // If there is an active operation, use its styles
+      const stroke = operationStyle?.stroke || getEdgeColor(conn.avgLatencyMs)
+      const strokeWidth = operationStyle?.strokeWidth || getEdgeWidth(conn.requestsPerMinute)
+      const animated = operationStyle?.animated ?? (conn.requestsPerMinute > 0)
 
       return {
         id: `${conn.source}-${conn.target}`,
         source: conn.source,
         target: conn.target,
         type: 'smoothstep',
-        animated: conn.requestsPerMinute > 0,
+        animated,
         style: {
-          stroke: edgeColor,
-          strokeWidth: edgeWidth,
+          stroke,
+          strokeWidth,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: edgeColor,
+          color: stroke,
           width: 20,
           height: 20,
         },
@@ -158,7 +232,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         },
       }
     })
-  }, [connections])
+  }, [connections, activeOperation])
 
   // Handle click on empty canvas to deselect
   const handlePaneClick = useCallback(() => {

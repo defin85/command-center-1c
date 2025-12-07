@@ -29,6 +29,7 @@ const ServiceMeshTab: React.FC = () => {
     timestamp,
     isConnected,
     connectionError,
+    activeOperation,
   } = useServiceMesh()
 
   // Selected service for detail drawer
@@ -95,6 +96,7 @@ const ServiceMeshTab: React.FC = () => {
         connections={connections}
         selectedService={selectedService}
         onServiceSelect={handleServiceSelect}
+        activeOperation={activeOperation}
       />
 
       {/* Recent Operations Table */}

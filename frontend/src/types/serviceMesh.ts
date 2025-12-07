@@ -109,6 +109,7 @@ export interface OperationsListResponse {
  */
 export type ServiceMeshMessageType =
   | 'metrics_update'
+  | 'operation_flow_update'
   | 'interval_updated'
   | 'error'
   | 'pong'
@@ -126,6 +127,21 @@ export interface ServiceMeshWSMessage {
   interval?: number
   code?: string
   message?: string
+
+  // Operation flow fields (for operation_flow_update)
+  operation_id?: string
+  flow?: {
+    current_service: string
+    path: Array<{ service: string; status: string; timestamp: string }>
+    edges: Array<{ from: string; to: string; status: string }>
+  }
+  operation?: {
+    type: string
+    name: string
+    status: string
+    message: string
+    metadata?: Record<string, unknown>
+  }
 }
 
 /**
@@ -150,12 +166,68 @@ export interface ServiceNodePosition {
 }
 
 /**
+ * Operation flow path node status
+ */
+export type OperationFlowStatus = 'pending' | 'active' | 'completed' | 'failed'
+
+/**
+ * Single node in operation flow path
+ */
+export interface OperationFlowPath {
+  service: string
+  status: OperationFlowStatus
+  timestamp: string
+}
+
+/**
+ * Edge in operation flow (connection between services)
+ */
+export interface OperationFlowEdge {
+  from: string
+  to: string
+  status: OperationFlowStatus
+}
+
+/**
+ * Complete flow data for an operation
+ */
+export interface OperationFlowData {
+  currentService: string
+  path: OperationFlowPath[]
+  edges: OperationFlowEdge[]
+}
+
+/**
+ * Operation details in flow event
+ */
+export interface OperationFlowOperation {
+  type: string
+  name: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  message: string
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * WebSocket message for operation flow update
+ */
+export interface OperationFlowEvent {
+  version: string
+  type: 'operation_flow_update'
+  operation_id: string
+  timestamp: string
+  flow: OperationFlowData
+  operation: OperationFlowOperation
+}
+
+/**
  * Service node data for react-flow
  */
 export interface ServiceNodeData {
   metrics: ServiceMetrics
   onSelect: (service: string) => void
   isSelected: boolean
+  operationStatus?: OperationFlowStatus | null
 }
 
 /**

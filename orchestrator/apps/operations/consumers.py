@@ -3,11 +3,14 @@ Django Channels consumers for Service Mesh monitoring.
 
 Provides WebSocket endpoint for real-time service mesh metrics updates.
 """
+import json
 import logging
 import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+import redis.asyncio as aioredis
+from django.conf import settings
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from apps.operations.services.prometheus_client import (
@@ -42,12 +45,16 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
     # Group name for broadcasting to all connected clients
     GROUP_NAME = "service_mesh_metrics"
 
+    # Redis channel for operation flow events
+    FLOW_CHANNEL = "service_mesh:operation_flow"
+
     # Default update interval in seconds
     DEFAULT_INTERVAL = 2
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._update_task: Optional[asyncio.Task] = None
+        self._flow_task: Optional[asyncio.Task] = None
         self._interval: int = self.DEFAULT_INTERVAL
         self._running: bool = False
 
@@ -75,6 +82,7 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
         # Start periodic updates
         self._running = True
         self._update_task = asyncio.create_task(self._periodic_update())
+        self._flow_task = asyncio.create_task(self._listen_operation_flow())
 
     async def disconnect(self, close_code):
         """Handle WebSocket disconnection."""
@@ -84,6 +92,14 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             self._update_task.cancel()
             try:
                 await self._update_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop operation flow listener
+        if self._flow_task:
+            self._flow_task.cancel()
+            try:
+                await self._flow_task
             except asyncio.CancelledError:
                 pass
 
@@ -154,6 +170,49 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
                 # Continue running despite errors
                 await asyncio.sleep(self._interval)
 
+    async def _listen_operation_flow(self):
+        """Listen to Redis Pub/Sub for operation flow events."""
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+        redis_conn = None
+        pubsub = None
+
+        logger.debug(f"Starting operation flow listener, redis_url={redis_url}")
+
+        try:
+            redis_conn = await aioredis.from_url(redis_url, decode_responses=True)
+            pubsub = redis_conn.pubsub()
+            await pubsub.subscribe(self.FLOW_CHANNEL)
+
+            logger.info(f"Subscribed to Redis channel: {self.FLOW_CHANNEL}")
+
+            async for message in pubsub.listen():
+                if not self._running:
+                    break
+
+                if message['type'] == 'message':
+                    try:
+                        event = json.loads(message['data'])
+                        # Forward event to client
+                        await self.send_json(event)
+                        logger.debug(f"Forwarded flow event: {event.get('operation_id', 'unknown')}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Invalid JSON in flow event: {e}")
+                    except Exception as e:
+                        logger.error(f"Error forwarding flow event: {e}")
+
+        except asyncio.CancelledError:
+            logger.debug("Operation flow listener cancelled")
+        except Exception as e:
+            logger.error(f"Error in operation flow listener: {e}", exc_info=True)
+        finally:
+            try:
+                if pubsub:
+                    await pubsub.unsubscribe(self.FLOW_CHANNEL)
+                if redis_conn:
+                    await redis_conn.close()
+            except Exception:
+                pass
+
     async def _send_metrics(self):
         """Fetch metrics from Prometheus and send to client."""
         try:
@@ -169,7 +228,7 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
                 "type": "metrics_update",
                 "services": [m.to_dict() for m in services_metrics],
                 "connections": [c.to_dict() for c in connections],
-                "overall_health": overall_health,
+                "overallHealth": overall_health,
                 "timestamp": datetime.utcnow().isoformat(),
             })
 
@@ -180,7 +239,7 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
                 "type": "metrics_update",
                 "services": self._get_fallback_services(),
                 "connections": [],
-                "overall_health": "degraded",
+                "overallHealth": "degraded",
                 "timestamp": datetime.utcnow().isoformat(),
                 "error": "Metrics service temporarily unavailable",
             })
@@ -212,7 +271,7 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             "type": "metrics_update",
             "services": event.get("services", []),
             "connections": event.get("connections", []),
-            "overall_health": event.get("overall_health", "degraded"),
+            "overallHealth": event.get("overallHealth", "degraded"),
             "timestamp": event.get("timestamp", datetime.utcnow().isoformat()),
         })
 
@@ -224,7 +283,7 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
 async def broadcast_service_mesh_update(
     services: list,
     connections: list,
-    overall_health: str,
+    overallHealth: str,
 ):
     """
     Broadcast service mesh update to all connected clients.
@@ -244,7 +303,7 @@ async def broadcast_service_mesh_update(
             "type": "metrics_broadcast",
             "services": services,
             "connections": connections,
-            "overall_health": overall_health,
+            "overallHealth": overallHealth,
             "timestamp": datetime.utcnow().isoformat(),
         }
     )
@@ -255,11 +314,11 @@ async def broadcast_service_mesh_update(
 def sync_broadcast_service_mesh_update(
     services: list,
     connections: list,
-    overall_health: str,
+    overallHealth: str,
 ):
     """Synchronous wrapper for broadcast_service_mesh_update."""
     from asgiref.sync import async_to_sync
 
     async_to_sync(broadcast_service_mesh_update)(
-        services, connections, overall_health
+        services, connections, overallHealth
     )

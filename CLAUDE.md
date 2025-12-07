@@ -86,6 +86,11 @@ python manage.py shell
   - Expression evaluation in debug context
   - Breakpoint management
   - См. [DEBUG_WITH_AI.md](docs/DEBUG_WITH_AI.md) для полного руководства
+- `chrome-devtools` - управление браузером для веб-отладки (user scope MCP)
+  - Навигация, клики, ввод текста, скриншоты
+  - Инспекция DOM через snapshots, выполнение JavaScript
+  - Мониторинг сетевых запросов и консоли
+  - **Запуск:** `chrome-debug` (алиас) или `chromium --remote-debugging-port=9222 --no-first-run &`
 
 **Endpoints для проверки:**
 - Frontend: http://localhost:5173

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Tag, Progress, Modal, Typography } from 'antd'
+import { Table, Button, Space, Tag, Progress, Modal, Typography, Alert } from 'antd'
 import { ReloadOutlined, EyeOutlined, StopOutlined, MonitorOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { getV2 } from '../../api/generated'
@@ -297,6 +297,16 @@ export const Operations = () => {
               <div>
                 <strong>Statistics:</strong> {selectedOperation.completed_tasks} completed, {selectedOperation.failed_tasks} failed, {selectedOperation.total_tasks} total
               </div>
+
+              {/* Error message from metadata */}
+              {selectedOperation.status === 'failed' && selectedOperation.metadata && (selectedOperation.metadata as Record<string, unknown>).error && (
+                <Alert
+                  type="error"
+                  showIcon
+                  message="Operation Failed"
+                  description={(selectedOperation.metadata as Record<string, unknown>).error as string}
+                />
+              )}
 
               <h3>Tasks</h3>
               <Table

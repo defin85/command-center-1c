@@ -21,7 +21,7 @@ import {
   DatabaseOutlined,
   CloudServerOutlined,
 } from '@ant-design/icons'
-import type { ServiceStatus, ServiceNodeData } from '../../types/serviceMesh'
+import type { ServiceStatus, ServiceNodeData, OperationFlowStatus } from '../../types/serviceMesh'
 import { STATUS_COLORS, STATUS_TEXT } from '../../types/serviceMesh'
 import './ServiceNode.css'
 
@@ -80,9 +80,26 @@ function getStatusBadge(status: ServiceStatus): 'success' | 'warning' | 'error' 
   }
 }
 
+/**
+ * Get CSS class based on operation status
+ */
+function getOperationClassName(status: OperationFlowStatus | null | undefined): string {
+  switch (status) {
+    case 'active':
+      return 'service-node--operation-active'
+    case 'completed':
+      return 'service-node--operation-completed'
+    case 'failed':
+      return 'service-node--operation-failed'
+    default:
+      return ''
+  }
+}
+
 const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
-  const { metrics, onSelect, isSelected } = data
+  const { metrics, onSelect, isSelected, operationStatus } = data
   const icon = SERVICE_ICONS[metrics.name] || <ApiOutlined />
+  const operationClass = getOperationClassName(operationStatus)
 
   const handleClick = () => {
     onSelect(metrics.name)
@@ -90,7 +107,7 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
 
   return (
     <div
-      className={`service-node ${isSelected ? 'service-node--selected' : ''}`}
+      className={`service-node ${isSelected ? 'service-node--selected' : ''} ${operationClass}`}
       onClick={handleClick}
       style={{
         borderColor: isSelected ? STATUS_COLORS[metrics.status] : undefined,
