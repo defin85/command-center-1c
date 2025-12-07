@@ -3,7 +3,8 @@
 > **Архитектурный план миграции с Celery на Go-based execution engine**
 
 **Дата создания:** 2025-12-07
-**Статус:** DRAFT
+**Последнее обновление:** 2025-12-07
+**Статус:** IN PROGRESS (Phase 0-2 ✅ Done)
 **Автор:** Claude Opus 4.5 (Architecture Analysis)
 
 ---
@@ -226,14 +227,14 @@ go-services/worker/
 
 ## 3. План миграции по этапам
 
-### Phase 0: Подготовка (Prerequisites)
+### Phase 0: Подготовка (Prerequisites) ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 0.1 | Internal API в Django | Endpoints для Go Worker: credentials, templates, workflows, results |
-| 0.2 | OpenAPI контракты | `contracts/orchestrator-internal/openapi.yaml`, генерация Go client |
-| 0.3 | Feature flags | `ENABLE_GO_SCHEDULER`, `ENABLE_GO_TEMPLATE_ENGINE`, `ENABLE_GO_WORKFLOW_ENGINE` |
-| 0.4 | Job History модели | `SchedulerJobRun`, `TaskExecutionLog` в Django |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 0.1 | Internal API в Django | Endpoints для Go Worker: credentials, templates, workflows, results | ✅ Done |
+| 0.2 | OpenAPI контракты | `contracts/orchestrator-internal/openapi.yaml`, генерация Go client | ✅ Done |
+| 0.3 | Feature flags | `ENABLE_GO_SCHEDULER`, `ENABLE_GO_TEMPLATE_ENGINE`, `ENABLE_GO_WORKFLOW_ENGINE` | ✅ Done |
+| 0.4 | Job History модели | `SchedulerJobRun`, `TaskExecutionLog` в Django | ✅ Done |
 
 **Internal API endpoints:**
 - `GET /api/internal/databases/{id}/credentials`
@@ -244,18 +245,18 @@ go-services/worker/
 - `POST /api/internal/scheduler/runs/start`
 - `POST /api/internal/scheduler/runs/{id}/complete`
 
-### Phase 1: Go Scheduler + Monitoring
+### Phase 1: Go Scheduler + Monitoring ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 1.1 | Go Scheduler | `robfig/cron/v3`, конфигурация через YAML/env |
-| 1.2 | Redis distributed locks | SETNX для предотвращения duplicate execution |
-| 1.3 | Prometheus metrics | `scheduler_jobs_total`, `scheduler_job_duration_seconds`, `queue_depth` |
-| 1.4 | Job History integration | Запись в Django через Internal API |
-| 1.5 | Миграция простых jobs | `cleanup_old_status_history`, `cleanup_old_replayed_events`, `periodic_batch_service_health` |
-| 1.6 | Grafana dashboard | Замена Flower: job status, duration, errors |
-| 1.7 | A/B testing | Запустить оба (Celery Beat + Go), сравнить метрики |
-| 1.8 | Отключение Celery Beat | Для мигрированных задач |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 1.1 | Go Scheduler | `robfig/cron/v3`, конфигурация через YAML/env | ✅ Done |
+| 1.2 | Redis distributed locks | SETNX для предотвращения duplicate execution | ✅ Done |
+| 1.3 | Prometheus metrics | `scheduler_jobs_total`, `scheduler_job_duration_seconds`, `queue_depth` | ✅ Done |
+| 1.4 | Job History integration | Запись в Django через Internal API | ✅ Done |
+| 1.5 | Миграция простых jobs | `cleanup_old_status_history`, `cleanup_old_replayed_events`, `periodic_batch_service_health` | ✅ Done |
+| 1.6 | Grafana dashboard | Замена Flower: job status, duration, errors | 🔲 TODO |
+| 1.7 | A/B testing | Запустить оба (Celery Beat + Go), сравнить метрики | 🔲 TODO |
+| 1.8 | Отключение Celery Beat | Для мигрированных задач | 🔲 TODO |
 
 **Мониторинг включает:**
 - **Prometheus metrics** — real-time данные
@@ -263,15 +264,15 @@ go-services/worker/
 - **Django Admin** — история выполнения (SchedulerJobRun, TaskExecutionLog)
 - **Alerting** — SchedulerJobFailed, SchedulerJobMissed, QueueBacklog
 
-### Phase 2: Health Check Jobs
+### Phase 2: Health Check Jobs ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 2.1 | Orchestrator Client | HTTP client для Django API с connection pooling |
-| 2.2 | RAS Adapter Client | HTTP client для RAS Adapter API |
-| 2.3 | Миграция health checks | `periodic_cluster_health_check`, `periodic_database_health_check` |
-| 2.4 | Батчинг | Worker pool для 700+ баз, parallel processing |
-| 2.5 | Redis locks | Предотвращение overlap при multiple replicas |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 2.1 | Orchestrator Client | HTTP client для Django API с connection pooling | ✅ Done |
+| 2.2 | RAS Adapter Client | HTTP client для RAS Adapter API | ✅ Done |
+| 2.3 | Миграция health checks | `periodic_cluster_health_check`, `periodic_database_health_check` | ✅ Done |
+| 2.4 | Батчинг | Worker pool для 700+ баз, parallel processing | ✅ Done |
+| 2.5 | Redis locks | Предотвращение overlap при multiple replicas | ✅ Done |
 
 ### Phase 3: Event Replay System
 
@@ -473,5 +474,10 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 ---
 
 **Документ создан:** 2025-12-07
+**Последнее обновление:** 2025-12-07
 **Автор:** Claude Opus 4.5
-**Статус:** DRAFT — требует review и утверждения
+**Статус:** IN PROGRESS — Phase 0-2 завершены, Phase 3+ в очереди
+
+**Commits:**
+- `0d8122a` Phase 0+1: Go Scheduler и Internal API
+- `e3afd6c` Phase 2: Health Check Jobs
