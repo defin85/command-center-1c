@@ -36,6 +36,9 @@ urlpatterns = [
     # API v2 (action-based routing)
     path('api/v2/', include('apps.api_v2.urls')),
 
+    # Internal API (Go Worker communication)
+    path('api/internal/', include('apps.api_internal.urls')),
+
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

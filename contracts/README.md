@@ -24,6 +24,10 @@ contracts/
 ├── ras-adapter/
 │   ├── openapi.yaml                # OpenAPI 3.0 спецификация
 │   └── .oapi-codegen.yaml          # Конфиг генератора Go
+├── orchestrator/
+│   └── openapi.yaml                # Public API для Frontend/External clients
+├── orchestrator-internal/
+│   └── openapi.yaml                # Internal API для Go Worker <-> Django
 ├── api-gateway/                    # (будущее)
 │   └── openapi.yaml
 ├── worker/                         # (будущее)

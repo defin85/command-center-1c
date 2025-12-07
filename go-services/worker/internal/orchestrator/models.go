@@ -1,0 +1,204 @@
+// Package orchestrator provides HTTP client for communicating with Django Orchestrator Internal API.
+package orchestrator
+
+import "time"
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+// APIError represents a structured error from Orchestrator API.
+type APIError struct {
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	Details   string `json:"details,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// ============================================================================
+// Scheduler Schemas
+// ============================================================================
+
+// SchedulerJobRunStartRequest represents request to start a scheduler job run.
+type SchedulerJobRunStartRequest struct {
+	JobName        string                 `json:"job_name"`
+	WorkerInstance string                 `json:"worker_instance"`
+	JobConfig      map[string]interface{} `json:"job_config,omitempty"`
+}
+
+// SchedulerJobRunCompleteRequest represents request to complete a scheduler job run.
+type SchedulerJobRunCompleteRequest struct {
+	Status         string `json:"status"` // success, failed, skipped
+	DurationMs     int64  `json:"duration_ms,omitempty"`
+	ResultSummary  string `json:"result_summary,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+	ItemsProcessed int    `json:"items_processed,omitempty"`
+	ItemsFailed    int    `json:"items_failed,omitempty"`
+}
+
+// SchedulerJobRunResponse represents response from scheduler job run endpoints.
+type SchedulerJobRunResponse struct {
+	RunID          string     `json:"run_id"`
+	JobName        string     `json:"job_name"`
+	Status         string     `json:"status"` // running, success, failed, skipped
+	WorkerInstance string     `json:"worker_instance,omitempty"`
+	StartedAt      time.Time  `json:"started_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	DurationMs     int64      `json:"duration_ms,omitempty"`
+	ResultSummary  string     `json:"result_summary,omitempty"`
+	ItemsProcessed int        `json:"items_processed,omitempty"`
+	ItemsFailed    int        `json:"items_failed,omitempty"`
+}
+
+// ============================================================================
+// Task Execution Schemas
+// ============================================================================
+
+// TaskExecutionStartRequest represents request to start a task execution.
+type TaskExecutionStartRequest struct {
+	OperationID    string                 `json:"operation_id"`
+	TaskType       string                 `json:"task_type"`
+	TargetID       string                 `json:"target_id"`
+	TargetType     string                 `json:"target_type,omitempty"` // database, cluster, infobase
+	WorkerInstance string                 `json:"worker_instance,omitempty"`
+	Parameters     map[string]interface{} `json:"parameters,omitempty"`
+}
+
+// TaskExecutionCompleteRequest represents request to complete a task execution.
+type TaskExecutionCompleteRequest struct {
+	Status       string                 `json:"status"` // success, failed, skipped
+	DurationMs   int64                  `json:"duration_ms,omitempty"`
+	Result       map[string]interface{} `json:"result,omitempty"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
+	ErrorCode    string                 `json:"error_code,omitempty"`
+	RetryCount   int                    `json:"retry_count,omitempty"`
+}
+
+// TaskExecutionResponse represents response from task execution endpoints.
+type TaskExecutionResponse struct {
+	TaskID      string     `json:"task_id"`
+	OperationID string     `json:"operation_id"`
+	TaskType    string     `json:"task_type"`
+	TargetID    string     `json:"target_id"`
+	TargetType  string     `json:"target_type,omitempty"`
+	Status      string     `json:"status"` // running, success, failed, skipped
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	DurationMs  int64      `json:"duration_ms,omitempty"`
+}
+
+// ============================================================================
+// Database Schemas
+// ============================================================================
+
+// DatabaseCredentials represents credentials for accessing a 1C database via OData.
+type DatabaseCredentials struct {
+	DatabaseID   string `json:"database_id"`
+	ODataURL     string `json:"odata_url"`
+	Username     string `json:"username"`
+	Password     string `json:"password"` // encrypted
+	ClusterID    string `json:"cluster_id,omitempty"`
+	RASServer    string `json:"ras_server,omitempty"`
+	InfobaseName string `json:"infobase_name,omitempty"`
+}
+
+// ============================================================================
+// Health Update Schemas
+// ============================================================================
+
+// HealthUpdateRequest represents request to update health status.
+type HealthUpdateRequest struct {
+	Healthy        bool                   `json:"healthy"`
+	ErrorMessage   string                 `json:"error_message,omitempty"`
+	ErrorCode      string                 `json:"error_code,omitempty"`
+	LastCheckAt    *time.Time             `json:"last_check_at,omitempty"`
+	ResponseTimeMs int                    `json:"response_time_ms,omitempty"`
+	Details        map[string]interface{} `json:"details,omitempty"`
+}
+
+// HealthUpdateResponse represents response from health update endpoints.
+type HealthUpdateResponse struct {
+	Success         bool       `json:"success"`
+	EntityID        string     `json:"entity_id"`
+	EntityType      string     `json:"entity_type,omitempty"` // database, cluster
+	Healthy         bool       `json:"healthy"`
+	PreviousHealthy bool       `json:"previous_healthy,omitempty"`
+	StatusChanged   bool       `json:"status_changed,omitempty"`
+	LastCheckAt     *time.Time `json:"last_check_at,omitempty"`
+}
+
+// ============================================================================
+// Template Schemas (Sprint 2.2)
+// ============================================================================
+
+// TemplateStep represents a single step in a template.
+type TemplateStep struct {
+	StepID     string                 `json:"step_id"`
+	Action     string                 `json:"action"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Condition  string                 `json:"condition,omitempty"`
+	OnError    string                 `json:"on_error,omitempty"` // fail, skip, continue, rollback
+	Retry      *RetryConfig           `json:"retry,omitempty"`
+}
+
+// RetryConfig represents retry configuration for a step.
+type RetryConfig struct {
+	MaxAttempts int `json:"max_attempts"`
+	DelayMs     int `json:"delay_ms"`
+}
+
+// TemplateResponse represents a template definition.
+type TemplateResponse struct {
+	TemplateID       string                 `json:"template_id"`
+	Code             string                 `json:"code"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description,omitempty"`
+	Version          string                 `json:"version"`
+	ParametersSchema map[string]interface{} `json:"parameters_schema,omitempty"`
+	Steps            []TemplateStep         `json:"steps"`
+	RollbackSteps    []TemplateStep         `json:"rollback_steps,omitempty"`
+	TimeoutSeconds   int                    `json:"timeout_seconds,omitempty"`
+}
+
+// ============================================================================
+// Workflow Schemas (Sprint 3.x)
+// ============================================================================
+
+// WorkflowNode represents a node in workflow graph.
+type WorkflowNode struct {
+	NodeID         string `json:"node_id"`
+	Type           string `json:"type"` // start, end, action, condition, parallel, wait
+	TemplateID     string `json:"template_id,omitempty"`
+	Condition      string `json:"condition,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+}
+
+// WorkflowEdge represents an edge in workflow graph.
+type WorkflowEdge struct {
+	FromNode  string `json:"from_node"`
+	ToNode    string `json:"to_node"`
+	Condition string `json:"condition,omitempty"`
+}
+
+// WorkflowResponse represents a workflow definition.
+type WorkflowResponse struct {
+	WorkflowID       string                 `json:"workflow_id"`
+	Code             string                 `json:"code"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description,omitempty"`
+	Version          string                 `json:"version"`
+	ParametersSchema map[string]interface{} `json:"parameters_schema,omitempty"`
+	Nodes            []WorkflowNode         `json:"nodes"`
+	Edges            []WorkflowEdge         `json:"edges,omitempty"`
+	TimeoutSeconds   int                    `json:"timeout_seconds,omitempty"`
+}
+
+// ============================================================================
+// Common Schemas
+// ============================================================================
+
+// SuccessResponse represents a generic success response.
+type SuccessResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}

@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'apps.templates',
     'apps.monitoring',
     'apps.api_v2',  # API v2 with action-based routing
+    'apps.api_internal',  # Internal API for Go Worker
 ]
 
 MIDDLEWARE = [
@@ -352,3 +353,14 @@ MONITORED_SERVICES = [
         'critical': False,
     },
 ]
+
+# ========== Go Worker Feature Flags ==========
+# Используются для постепенной миграции с Celery на Go Worker
+# Каждый флаг позволяет переключать конкретный компонент независимо
+ENABLE_GO_SCHEDULER = env.bool('ENABLE_GO_SCHEDULER', default=False)
+ENABLE_GO_TEMPLATE_ENGINE = env.bool('ENABLE_GO_TEMPLATE_ENGINE', default=False)
+ENABLE_GO_WORKFLOW_ENGINE = env.bool('ENABLE_GO_WORKFLOW_ENGINE', default=False)
+
+# Internal API token для Go Worker
+# КРИТИЧНО: Должен совпадать с INTERNAL_API_TOKEN в Go Worker
+INTERNAL_API_TOKEN = env('INTERNAL_API_TOKEN', default='dev-internal-token-change-in-production')

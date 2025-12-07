@@ -21,6 +21,8 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
+	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
+	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
 )
 
 var (
@@ -158,6 +160,75 @@ func main() {
 
 	log.Info("connected to Redis queue")
 
+	// Initialize and start scheduler (if enabled via feature flag)
+	var sched *scheduler.Scheduler
+	schedConfig := scheduler.LoadConfigFromEnv()
+
+	if schedConfig.Enabled {
+		log.WithFields(map[string]interface{}{
+			"enabled":              schedConfig.Enabled,
+			"cleanup_history_cron": schedConfig.CleanupHistoryCron,
+			"cleanup_events_cron":  schedConfig.CleanupEventsCron,
+			"batch_health_cron":    schedConfig.BatchHealthCron,
+		}).Info("initializing Go scheduler")
+
+		// Create zap logger for scheduler (scheduler uses zap internally)
+		var zapLog *zap.Logger
+		var zapErr error
+		if cfg.LogLevel == "debug" {
+			zapLog, zapErr = zap.NewDevelopment()
+		} else {
+			zapLog, zapErr = zap.NewProduction()
+		}
+		if zapErr != nil {
+			log.WithError(zapErr).Error("failed to create zap logger for scheduler")
+		} else {
+			defer zapLog.Sync()
+
+			// Create scheduler instance
+			sched = scheduler.NewWithConfig(redisClient, schedConfig, cfg.WorkerID, zapLog)
+
+			// Create orchestrator client for cleanup jobs
+			orchClient := jobs.NewHTTPOrchestratorClient(cfg.OrchestratorURL, zapLog)
+
+			// Create batch-service client for health checks
+			batchClient := jobs.NewHTTPBatchServiceClient(cfg.BatchServiceURL, zapLog)
+
+			// Register cleanup jobs
+			cleanupHistoryJob := jobs.NewCleanupStatusHistoryJob(
+				orchClient,
+				schedConfig.CleanupHistoryRetentionDays,
+				zapLog,
+			)
+			if err := sched.RegisterJob(schedConfig.CleanupHistoryCron, cleanupHistoryJob); err != nil {
+				log.WithError(err).Error("failed to register cleanup_status_history job")
+			}
+
+			cleanupEventsJob := jobs.NewCleanupReplayedEventsJob(
+				orchClient,
+				schedConfig.CleanupEventsRetentionDays,
+				zapLog,
+			)
+			if err := sched.RegisterJob(schedConfig.CleanupEventsCron, cleanupEventsJob); err != nil {
+				log.WithError(err).Error("failed to register cleanup_replayed_events job")
+			}
+
+			// Register batch service health check job
+			batchHealthJob := jobs.NewBatchServiceHealthJob(batchClient, zapLog)
+			if err := sched.RegisterJob(schedConfig.BatchHealthCron, batchHealthJob); err != nil {
+				log.WithError(err).Error("failed to register batch_service_health job")
+			}
+
+			// Start scheduler
+			if err := sched.Start(); err != nil {
+				log.WithError(err).Error("failed to start scheduler")
+			} else {
+				log.WithField("registered_jobs", sched.GetRegisteredJobs()).Info("scheduler started successfully")
+			}
+		}
+	} else {
+		log.Info("Go scheduler is disabled (set ENABLE_GO_SCHEDULER=true to enable)")
+	}
 
 	// Start Prometheus metrics and health endpoints
 	go func() {
@@ -207,6 +278,14 @@ func main() {
 
 	<-sigChan
 	log.Info("shutting down worker service")
+
+	// Stop scheduler gracefully (if running)
+	if sched != nil {
+		log.Info("stopping scheduler...")
+		if err := sched.Stop(); err != nil {
+			log.Error("error stopping scheduler", zap.Error(err))
+		}
+	}
 
 	cancel() // Trigger graceful shutdown
 

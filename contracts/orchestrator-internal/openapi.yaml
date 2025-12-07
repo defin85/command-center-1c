@@ -1,0 +1,993 @@
+openapi: 3.0.3
+info:
+  title: Orchestrator Internal API
+  description: |
+    Internal REST API для взаимодействия Go Worker с Django Orchestrator.
+
+    ## Назначение
+
+    Этот API используется исключительно для внутренней коммуникации между сервисами:
+    - Go Worker -> Django Orchestrator (обновление статусов, получение данных)
+    - НЕ предназначен для внешних клиентов
+
+    ## Аутентификация
+
+    Все запросы должны содержать заголовок `X-Internal-Token` с валидным токеном.
+    Токен настраивается через переменную окружения `INTERNAL_API_TOKEN`.
+
+    ## Группы endpoints
+
+    - **Scheduler** - логирование запусков планировщика
+    - **Tasks** - логирование выполнения задач
+    - **Databases** - получение credentials и обновление health status
+    - **Clusters** - обновление health status кластеров
+    - **Templates** - получение шаблонов операций (будущий Template Engine)
+    - **Workflows** - получение workflow (будущий Workflow Engine)
+  version: 1.0.0
+  contact:
+    name: CommandCenter1C Team
+    url: https://github.com/commandcenter1c/commandcenter
+
+servers:
+  - url: http://localhost:8200
+    description: Local development server (Django Orchestrator)
+  - url: http://orchestrator:8200
+    description: Docker environment
+
+tags:
+  - name: scheduler
+    description: Логирование запусков планировщика (Scheduler Job History)
+  - name: tasks
+    description: Логирование выполнения задач (Task Execution Log)
+  - name: databases
+    description: Операции с базами данных (credentials, health)
+  - name: clusters
+    description: Операции с кластерами (health)
+  - name: templates
+    description: Шаблоны операций (будущий Template Engine)
+  - name: workflows
+    description: Workflow определения (будущий Workflow Engine)
+
+paths:
+  # ============================================================================
+  # SCHEDULER - История запусков планировщика
+  # ============================================================================
+  /api/internal/scheduler/runs/start:
+    post:
+      summary: Начало выполнения scheduled job
+      description: |
+        Регистрирует начало выполнения задачи планировщика.
+        Создает запись в истории запусков с статусом "running".
+      operationId: startSchedulerRun
+      tags:
+        - scheduler
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulerJobRunStartRequest'
+      responses:
+        '201':
+          description: Запуск зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerJobRunResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/scheduler/runs/{run_id}/complete:
+    post:
+      summary: Завершение выполнения scheduled job
+      description: |
+        Обновляет запись о запуске планировщика с результатами выполнения.
+        Устанавливает финальный статус (success, failed, skipped).
+      operationId: completeSchedulerRun
+      tags:
+        - scheduler
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: UUID запуска планировщика
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulerJobRunCompleteRequest'
+      responses:
+        '200':
+          description: Запуск успешно завершен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerJobRunResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # TASKS - Логирование выполнения задач
+  # ============================================================================
+  /api/internal/tasks/start:
+    post:
+      summary: Начало выполнения задачи
+      description: |
+        Регистрирует начало выполнения отдельной задачи внутри операции.
+        Создает запись в логе выполнения задач.
+      operationId: startTaskExecution
+      tags:
+        - tasks
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskExecutionStartRequest'
+      responses:
+        '201':
+          description: Задача зарегистрирована
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecutionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/tasks/{task_id}/complete:
+    post:
+      summary: Завершение выполнения задачи
+      description: |
+        Обновляет запись о задаче с результатами выполнения.
+        Устанавливает финальный статус и метрики.
+      operationId: completeTaskExecution
+      tags:
+        - tasks
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: UUID задачи
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskExecutionCompleteRequest'
+      responses:
+        '200':
+          description: Задача успешно завершена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecutionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # DATABASES - Операции с базами данных
+  # ============================================================================
+  /api/internal/databases/{database_id}/credentials:
+    get:
+      summary: Получение credentials базы данных
+      description: |
+        Возвращает учетные данные для доступа к базе 1С через OData.
+        Включает URL, логин, пароль и связанный кластер.
+
+        **ВАЖНО**: Пароль возвращается в зашифрованном виде.
+        Worker должен расшифровать его перед использованием.
+      operationId: getDatabaseCredentials
+      tags:
+        - databases
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: database_id
+          in: path
+          required: true
+          description: UUID базы данных в системе
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Credentials получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseCredentialsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/databases/{database_id}/health:
+    post:
+      summary: Обновление health status базы данных
+      description: |
+        Обновляет статус здоровья базы данных по результатам проверки.
+        Вызывается Worker после выполнения health check через OData.
+      operationId: updateDatabaseHealth
+      tags:
+        - databases
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: database_id
+          in: path
+          required: true
+          description: UUID базы данных в системе
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthUpdateRequest'
+      responses:
+        '200':
+          description: Health status обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # CLUSTERS - Операции с кластерами
+  # ============================================================================
+  /api/internal/clusters/{cluster_id}/health:
+    post:
+      summary: Обновление health status кластера
+      description: |
+        Обновляет статус здоровья кластера 1С по результатам проверки.
+        Вызывается Worker после выполнения health check через RAS.
+      operationId: updateClusterHealth
+      tags:
+        - clusters
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          description: UUID кластера в системе
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthUpdateRequest'
+      responses:
+        '200':
+          description: Health status обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # TEMPLATES - Шаблоны операций (будущий Template Engine)
+  # ============================================================================
+  /api/internal/templates/{template_id}:
+    get:
+      summary: Получение шаблона операции
+      description: |
+        Возвращает определение шаблона для выполнения операции.
+        Шаблон содержит последовательность шагов, параметры и условия.
+
+        **Статус**: Будет реализовано в Sprint 2.2 (Template Engine)
+      operationId: getTemplate
+      tags:
+        - templates
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: UUID или код шаблона
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Шаблон получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Template Engine еще не реализован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # WORKFLOWS - Workflow определения (будущий Workflow Engine)
+  # ============================================================================
+  /api/internal/workflows/{workflow_id}:
+    get:
+      summary: Получение workflow определения
+      description: |
+        Возвращает определение workflow для сложных многошаговых операций.
+        Workflow описывает граф выполнения, ветвления и rollback стратегии.
+
+        **Статус**: Будет реализовано в Sprint 3.x (Workflow Engine)
+      operationId: getWorkflow
+      tags:
+        - workflows
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          description: UUID или код workflow
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workflow получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Workflow Engine еще не реализован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+      description: |
+        Внутренний токен аутентификации для межсервисной коммуникации.
+        Настраивается через переменную окружения INTERNAL_API_TOKEN.
+
+  schemas:
+    # ============================================================================
+    # SCHEDULER SCHEMAS
+    # ============================================================================
+    SchedulerJobRunStartRequest:
+      type: object
+      required:
+        - job_name
+        - worker_instance
+      properties:
+        job_name:
+          type: string
+          description: Имя scheduled job (например, "health_check", "sync_cluster")
+          example: "health_check"
+        worker_instance:
+          type: string
+          description: Идентификатор инстанса worker (hostname:pid)
+          example: "worker-1:12345"
+        job_config:
+          type: object
+          description: Конфигурация запуска (опционально)
+          additionalProperties: true
+
+    SchedulerJobRunCompleteRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [success, failed, skipped]
+          description: |
+            Финальный статус выполнения:
+            - success: задача выполнена успешно
+            - failed: задача завершилась с ошибкой
+            - skipped: задача пропущена (например, нет данных для обработки)
+        duration_ms:
+          type: integer
+          format: int64
+          description: Время выполнения в миллисекундах
+          example: 1523
+        result_summary:
+          type: string
+          description: Краткое описание результата
+          example: "Обработано 150 баз, 2 ошибки"
+        error_message:
+          type: string
+          description: Сообщение об ошибке (для status=failed)
+          example: "Connection timeout to cluster xyz"
+        items_processed:
+          type: integer
+          description: Количество обработанных элементов
+          example: 150
+        items_failed:
+          type: integer
+          description: Количество элементов с ошибками
+          example: 2
+
+    SchedulerJobRunResponse:
+      type: object
+      required:
+        - run_id
+        - job_name
+        - status
+        - started_at
+      properties:
+        run_id:
+          type: string
+          format: uuid
+          description: UUID запуска
+        job_name:
+          type: string
+          description: Имя scheduled job
+        status:
+          type: string
+          enum: [running, success, failed, skipped]
+          description: Текущий статус запуска
+        worker_instance:
+          type: string
+          description: Идентификатор worker
+        started_at:
+          type: string
+          format: date-time
+          description: Время начала выполнения
+        completed_at:
+          type: string
+          format: date-time
+          description: Время завершения (null для running)
+        duration_ms:
+          type: integer
+          format: int64
+          description: Время выполнения в миллисекундах
+        result_summary:
+          type: string
+          description: Краткое описание результата
+        items_processed:
+          type: integer
+          description: Количество обработанных элементов
+        items_failed:
+          type: integer
+          description: Количество элементов с ошибками
+
+    # ============================================================================
+    # TASK EXECUTION SCHEMAS
+    # ============================================================================
+    TaskExecutionStartRequest:
+      type: object
+      required:
+        - operation_id
+        - task_type
+        - target_id
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+          description: UUID родительской операции (BatchOperation)
+        task_type:
+          type: string
+          description: Тип задачи (например, "health_check", "lock_infobase")
+          example: "health_check"
+        target_id:
+          type: string
+          format: uuid
+          description: UUID целевого объекта (database_id или cluster_id)
+        target_type:
+          type: string
+          enum: [database, cluster, infobase]
+          description: Тип целевого объекта
+          default: database
+        worker_instance:
+          type: string
+          description: Идентификатор worker
+        parameters:
+          type: object
+          description: Параметры задачи
+          additionalProperties: true
+
+    TaskExecutionCompleteRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [success, failed, skipped]
+          description: Финальный статус задачи
+        duration_ms:
+          type: integer
+          format: int64
+          description: Время выполнения в миллисекундах
+        result:
+          type: object
+          description: Результат выполнения (структура зависит от task_type)
+          additionalProperties: true
+        error_message:
+          type: string
+          description: Сообщение об ошибке
+        error_code:
+          type: string
+          description: Код ошибки для классификации
+          example: "CONNECTION_TIMEOUT"
+        retry_count:
+          type: integer
+          description: Количество выполненных retry
+          default: 0
+
+    TaskExecutionResponse:
+      type: object
+      required:
+        - task_id
+        - operation_id
+        - task_type
+        - status
+        - started_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          description: UUID задачи
+        operation_id:
+          type: string
+          format: uuid
+          description: UUID родительской операции
+        task_type:
+          type: string
+          description: Тип задачи
+        target_id:
+          type: string
+          format: uuid
+          description: UUID целевого объекта
+        target_type:
+          type: string
+          description: Тип целевого объекта
+        status:
+          type: string
+          enum: [running, success, failed, skipped]
+          description: Текущий статус задачи
+        started_at:
+          type: string
+          format: date-time
+          description: Время начала выполнения
+        completed_at:
+          type: string
+          format: date-time
+          description: Время завершения
+        duration_ms:
+          type: integer
+          format: int64
+          description: Время выполнения в миллисекундах
+
+    # ============================================================================
+    # DATABASE SCHEMAS
+    # ============================================================================
+    DatabaseCredentialsResponse:
+      type: object
+      required:
+        - database_id
+        - odata_url
+        - username
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: UUID базы данных
+        odata_url:
+          type: string
+          format: uri
+          description: URL для OData доступа к базе 1С
+          example: "http://server:8080/base/odata/standard.odata"
+        username:
+          type: string
+          description: Логин для доступа к базе
+          example: "admin"
+        password:
+          type: string
+          description: Пароль (зашифрованный)
+          example: "encrypted:abc123..."
+        cluster_id:
+          type: string
+          format: uuid
+          description: UUID связанного кластера 1С
+        ras_server:
+          type: string
+          description: Адрес RAS сервера кластера
+          example: "localhost:1545"
+        infobase_name:
+          type: string
+          description: Имя информационной базы в кластере
+          example: "enterprise"
+
+    # ============================================================================
+    # HEALTH UPDATE SCHEMAS
+    # ============================================================================
+    HealthUpdateRequest:
+      type: object
+      required:
+        - healthy
+      properties:
+        healthy:
+          type: boolean
+          description: Результат проверки здоровья
+        error_message:
+          type: string
+          description: Сообщение об ошибке (для healthy=false)
+          example: "Connection refused"
+        error_code:
+          type: string
+          description: Код ошибки для классификации
+          example: "ODATA_TIMEOUT"
+        last_check_at:
+          type: string
+          format: date-time
+          description: Время проведения проверки (по умолчанию - текущее время)
+        response_time_ms:
+          type: integer
+          description: Время отклика в миллисекундах
+          example: 250
+        details:
+          type: object
+          description: Дополнительные детали проверки
+          additionalProperties: true
+
+    HealthUpdateResponse:
+      type: object
+      required:
+        - success
+        - entity_id
+        - healthy
+      properties:
+        success:
+          type: boolean
+          description: Успешность обновления
+        entity_id:
+          type: string
+          format: uuid
+          description: UUID обновленной сущности (database или cluster)
+        entity_type:
+          type: string
+          enum: [database, cluster]
+          description: Тип сущности
+        healthy:
+          type: boolean
+          description: Текущий статус здоровья
+        previous_healthy:
+          type: boolean
+          description: Предыдущий статус здоровья
+        status_changed:
+          type: boolean
+          description: Изменился ли статус
+        last_check_at:
+          type: string
+          format: date-time
+          description: Время последней проверки
+
+    # ============================================================================
+    # TEMPLATE SCHEMAS (Sprint 2.2)
+    # ============================================================================
+    TemplateResponse:
+      type: object
+      required:
+        - template_id
+        - code
+        - name
+        - version
+        - steps
+      properties:
+        template_id:
+          type: string
+          format: uuid
+          description: UUID шаблона
+        code:
+          type: string
+          description: Уникальный код шаблона
+          example: "update_extension"
+        name:
+          type: string
+          description: Название шаблона
+          example: "Обновление расширения конфигурации"
+        description:
+          type: string
+          description: Описание шаблона
+        version:
+          type: string
+          description: Версия шаблона
+          example: "1.0.0"
+        parameters_schema:
+          type: object
+          description: JSON Schema для параметров шаблона
+          additionalProperties: true
+        steps:
+          type: array
+          description: Последовательность шагов выполнения
+          items:
+            $ref: '#/components/schemas/TemplateStep'
+        rollback_steps:
+          type: array
+          description: Шаги отката при ошибке
+          items:
+            $ref: '#/components/schemas/TemplateStep'
+        timeout_seconds:
+          type: integer
+          description: Таймаут выполнения шаблона (секунды)
+          default: 300
+
+    TemplateStep:
+      type: object
+      required:
+        - step_id
+        - action
+      properties:
+        step_id:
+          type: string
+          description: Идентификатор шага
+          example: "lock_sessions"
+        action:
+          type: string
+          description: Действие для выполнения
+          example: "block_sessions"
+        parameters:
+          type: object
+          description: Параметры действия
+          additionalProperties: true
+        condition:
+          type: string
+          description: Условие выполнения шага (выражение)
+          example: "params.lock_sessions == true"
+        on_error:
+          type: string
+          enum: [fail, skip, continue, rollback]
+          description: Поведение при ошибке
+          default: fail
+        retry:
+          type: object
+          properties:
+            max_attempts:
+              type: integer
+              default: 3
+            delay_ms:
+              type: integer
+              default: 1000
+
+    # ============================================================================
+    # WORKFLOW SCHEMAS (Sprint 3.x)
+    # ============================================================================
+    WorkflowResponse:
+      type: object
+      required:
+        - workflow_id
+        - code
+        - name
+        - version
+        - nodes
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          description: UUID workflow
+        code:
+          type: string
+          description: Уникальный код workflow
+          example: "database_maintenance"
+        name:
+          type: string
+          description: Название workflow
+          example: "Комплексное обслуживание базы данных"
+        description:
+          type: string
+          description: Описание workflow
+        version:
+          type: string
+          description: Версия workflow
+          example: "1.0.0"
+        parameters_schema:
+          type: object
+          description: JSON Schema для параметров workflow
+          additionalProperties: true
+        nodes:
+          type: array
+          description: Узлы графа выполнения
+          items:
+            $ref: '#/components/schemas/WorkflowNode'
+        edges:
+          type: array
+          description: Связи между узлами
+          items:
+            $ref: '#/components/schemas/WorkflowEdge'
+        timeout_seconds:
+          type: integer
+          description: Общий таймаут workflow (секунды)
+          default: 3600
+
+    WorkflowNode:
+      type: object
+      required:
+        - node_id
+        - type
+      properties:
+        node_id:
+          type: string
+          description: Уникальный идентификатор узла
+          example: "check_sessions"
+        type:
+          type: string
+          enum: [start, end, action, condition, parallel, wait]
+          description: Тип узла
+        template_id:
+          type: string
+          description: UUID шаблона для узла action
+        condition:
+          type: string
+          description: Условие для узла condition
+          example: "result.active_sessions > 0"
+        timeout_seconds:
+          type: integer
+          description: Таймаут узла
+
+    WorkflowEdge:
+      type: object
+      required:
+        - from_node
+        - to_node
+      properties:
+        from_node:
+          type: string
+          description: ID исходного узла
+        to_node:
+          type: string
+          description: ID целевого узла
+        condition:
+          type: string
+          description: Условие перехода (для condition nodes)
+          example: "true"
+
+    # ============================================================================
+    # COMMON SCHEMAS
+    # ============================================================================
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+          description: Описание ошибки
+          example: "Database not found"
+        code:
+          type: string
+          description: Код ошибки
+          example: "NOT_FOUND"
+        details:
+          type: string
+          description: Дополнительные детали
+        request_id:
+          type: string
+          description: ID запроса для отладки
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Операция выполнена успешно"
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос - неверные параметры
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid request body"
+            code: "BAD_REQUEST"
+            details: "Field 'job_name' is required"
+
+    Unauthorized:
+      description: Отсутствует или невалидный токен аутентификации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid or missing authentication token"
+            code: "UNAUTHORIZED"
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Resource not found"
+            code: "NOT_FOUND"
+
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Internal server error"
+            code: "INTERNAL_ERROR"
+            request_id: "req-123abc"
