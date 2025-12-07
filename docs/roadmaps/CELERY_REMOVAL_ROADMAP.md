@@ -4,7 +4,7 @@
 
 **Дата создания:** 2025-12-07
 **Последнее обновление:** 2025-12-07
-**Статус:** IN PROGRESS (Phase 0-4 ✅ Done)
+**Статус:** IN PROGRESS (Phase 0-5 ✅ Done)
 **Автор:** Claude Opus 4.5 (Architecture Analysis)
 
 ---
@@ -294,15 +294,16 @@ go-services/worker/
 | 4.5 | Internal API integration | Fetch templates через `/api/internal/templates/{id}` | ✅ Done |
 | 4.6 | Processor integration | TemplateProcessor для `process_operation_with_template` | ✅ Done |
 
-### Phase 5: Workflow Engine (Go)
+### Phase 5: Workflow Engine (Go) ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 5.1 | DAG Executor | Parse JSON, topological sort, node execution |
-| 5.2 | Node Handlers | ActionHandler, ConditionHandler, LoopHandler, ParallelHandler |
-| 5.3 | State Management | Redis для текущего состояния, PostgreSQL для истории |
-| 5.4 | Checkpoint/Resume | Error recovery, partial execution |
-| 5.5 | Миграция workflow tasks | `execute_workflow_node`, `execute_workflow_async`, `execute_parallel_nodes`, `cancel_workflow_async` |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 5.1 | DAG Models + Validator | JSON serialization, cycle detection, edge validation | ✅ Done |
+| 5.2 | Context + DAG Executor | Immutable ExecutionContext, topological sort, node execution | ✅ Done |
+| 5.3 | Node Handlers | OperationHandler, ConditionHandler, LoopHandler, ParallelHandler, SubworkflowHandler | ✅ Done |
+| 5.4 | State Management | FSM + Redis storage + PostgreSQL history via Internal API | ✅ Done |
+| 5.5 | Checkpoint/Resume | CheckpointManager, ResumableExecutor, error recovery | ✅ Done |
+| 5.6 | Integration + Engine | Main Engine facade combining all components, 88 tests | ✅ Done |
 
 ### Phase 6: Cleanup & Removal
 
@@ -477,10 +478,11 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 **Документ создан:** 2025-12-07
 **Последнее обновление:** 2025-12-07
 **Автор:** Claude Opus 4.5
-**Статус:** IN PROGRESS — Phase 0-4 завершены, Phase 5+ в очереди
+**Статус:** IN PROGRESS — Phase 0-5 завершены, Phase 6 (Cleanup) в очереди
 
 **Commits:**
 - `0d8122a` Phase 0+1: Go Scheduler и Internal API
 - `e3afd6c` Phase 2: Health Check Jobs
-- `b6320f0` Phase 3: Event Replay System
-- `CURRENT` Phase 4: Template Engine (Go)
+- `84e2ed0` Phase 3: Event Replay System
+- `3c1dcb1` Phase 4: Template Engine (pongo2)
+- `840127f` Phase 5: Workflow Engine with DAG execution
