@@ -20,6 +20,7 @@ Requirements:
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -483,9 +484,24 @@ def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def normalize_content(content: str) -> str:
+    """Remove timestamp from content for comparison."""
+    # Matches patterns like "Generated: 2025-12-07 09:50:16" or "> Generated: ..."
+    return re.sub(r"(>?\s*Generated:\s*)\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", r"\1TIMESTAMP", content)
+
+
 def write_file(path: Path, content: str, verbose: bool = False) -> None:
-    """Write content to file."""
+    """Write content to file only if it changed (ignoring timestamp)."""
     ensure_dir(path.parent)
+
+    # Check if file exists and content is the same (ignoring timestamp)
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if normalize_content(existing) == normalize_content(content):
+            if verbose:
+                print(f"  [SKIP] {path.relative_to(PROJECT_ROOT)} (unchanged)")
+            return
+
     path.write_text(content, encoding="utf-8")
     if verbose:
         print(f"  [OK] {path.relative_to(PROJECT_ROOT)}")

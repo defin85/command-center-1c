@@ -5,6 +5,7 @@ Provides action-based endpoints for cluster operations.
 """
 
 import logging
+import uuid
 
 from django.db import IntegrityError
 from django.db.models import Count, Q
@@ -16,6 +17,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.databases.models import Cluster
 from apps.databases.serializers import ClusterSerializer, DatabaseSerializer
+from apps.operations.models import BatchOperation
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,7 @@ class ClusterDeleteResponseSerializer(serializers.Serializer):
 class ClusterSyncResponseSerializer(serializers.Serializer):
     """Response for sync_cluster endpoint."""
     cluster_id = serializers.UUIDField()
+    operation_id = serializers.CharField(required=False, help_text="BatchOperation ID for tracking")
     status = serializers.CharField(help_text="Sync status: syncing, success")
     task_id = serializers.CharField(required=False, help_text="Celery task ID (if async)")
     message = serializers.CharField()
@@ -331,26 +334,63 @@ def sync_cluster(request):
     try:
         from apps.databases.tasks import sync_cluster_task
 
-        # Запускаем задачу синхронизации с передачей cluster_id
-        task = sync_cluster_task.apply_async(args=[str(cluster_id)])
+        # Create BatchOperation for tracking in Service Mesh
+        operation = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name=f"Sync cluster: {cluster.name}",
+            description=f"Synchronizing infobases from RAS for cluster {cluster.name}",
+            operation_type=BatchOperation.TYPE_SYNC_CLUSTER,
+            target_entity=cluster.name,
+            payload={'cluster_id': str(cluster_id)},
+            status=BatchOperation.STATUS_QUEUED,
+            total_tasks=1,
+            created_by=request.user.username if request.user.is_authenticated else 'system',
+        )
+
+        # Запускаем задачу синхронизации с передачей cluster_id и operation_id
+        task = sync_cluster_task.apply_async(args=[str(cluster_id), str(operation.id)])
+
+        # Update operation with celery task id
+        operation.celery_task_id = task.id
+        operation.save(update_fields=['celery_task_id'])
 
         return Response({
             'cluster_id': str(cluster_id),
-            'status': 'syncing',
+            'operation_id': str(operation.id),
             'task_id': task.id,
+            'status': 'syncing',
             'message': 'Cluster synchronization started',
         })
-    except ImportError as e:
-        logger.error(f"Celery task not found: {e}")
+    except (ImportError, Exception) as e:
         # Fallback: выполняем синхронизацию синхронно (как в админке)
-        logger.warning("Celery unavailable - running sync synchronously")
+        logger.warning(f"Celery unavailable ({e}) - running sync synchronously")
+
+        # Обновляем BatchOperation - начало синхронной обработки
+        operation.status = BatchOperation.STATUS_PROCESSING
+        operation.started_at = timezone.now()
+        operation.save(update_fields=['status', 'started_at'])
 
         try:
             from apps.databases.services import ClusterService
             result = ClusterService.sync_infobases(cluster)
 
+            # Обновляем BatchOperation - успех
+            operation.status = BatchOperation.STATUS_COMPLETED
+            operation.completed_tasks = 1
+            operation.progress = 100
+            operation.completed_at = timezone.now()
+            operation.metadata = {
+                'created': result['created'],
+                'updated': result['updated'],
+                'errors': result['errors'],
+                'databases_found': result['created'] + result['updated'],
+                'sync_mode': 'synchronous',
+            }
+            operation.save()
+
             return Response({
                 'cluster_id': str(cluster_id),
+                'operation_id': str(operation.id),
                 'status': 'success',
                 'message': 'Cluster synchronization completed',
                 'databases_found': result['created'] + result['updated'],
@@ -360,36 +400,17 @@ def sync_cluster(request):
             })
         except Exception as sync_error:
             logger.error(f"Sync failed: {sync_error}")
+
+            # Обновляем BatchOperation - ошибка
+            operation.status = BatchOperation.STATUS_FAILED
+            operation.failed_tasks = 1
+            operation.completed_at = timezone.now()
+            operation.metadata = {'error': str(sync_error), 'sync_mode': 'synchronous'}
+            operation.save()
+
             return Response({
                 'success': False,
-                'error': {
-                    'code': 'SYNC_FAILED',
-                    'message': str(sync_error)
-                }
-            }, status=500)
-
-    except Exception as e:
-        logger.error(f"Failed to start cluster sync: {e}")
-        # Fallback: выполняем синхронизацию синхронно
-        logger.warning("Celery error - running sync synchronously")
-
-        try:
-            from apps.databases.services import ClusterService
-            result = ClusterService.sync_infobases(cluster)
-
-            return Response({
-                'cluster_id': str(cluster_id),
-                'status': 'success',
-                'message': 'Cluster synchronization completed',
-                'databases_found': result['created'] + result['updated'],
-                'created': result['created'],
-                'updated': result['updated'],
-                'errors': result['errors'],
-            })
-        except Exception as sync_error:
-            logger.error(f"Sync failed: {sync_error}")
-            return Response({
-                'success': False,
+                'operation_id': str(operation.id),
                 'error': {
                     'code': 'SYNC_FAILED',
                     'message': str(sync_error)
@@ -764,45 +785,46 @@ def reset_sync_status(request):
             }, status=404)
 
         old_status = cluster.last_sync_status
-        if old_status != 'idle':
-            cluster.last_sync_status = 'idle'
-            cluster.last_sync_error = None
+        if old_status != 'pending':
+            cluster.last_sync_status = 'pending'
+            cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_clusters.append({
                 'id': str(cluster.id),
                 'name': cluster.name,
                 'old_status': old_status
             })
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> pending")
 
     elif reset_all:
-        # Reset all non-idle clusters
-        clusters = Cluster.objects.exclude(last_sync_status='idle')
+        # Reset all non-pending clusters
+        clusters = Cluster.objects.exclude(last_sync_status='pending')
         for cluster in clusters:
             old_status = cluster.last_sync_status
-            cluster.last_sync_status = 'idle'
-            cluster.last_sync_error = None
+            cluster.last_sync_status = 'pending'
+            cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_clusters.append({
                 'id': str(cluster.id),
                 'name': cluster.name,
                 'old_status': old_status
             })
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> pending")
 
     else:
-        # Reset only stuck clusters (pending status)
-        stuck_clusters = Cluster.objects.filter(last_sync_status='pending')
+        # Reset stuck clusters (failed or pending for too long) to success
+        stuck_clusters = Cluster.objects.filter(last_sync_status__in=['pending', 'failed'])
         for cluster in stuck_clusters:
-            cluster.last_sync_status = 'idle'
-            cluster.last_sync_error = None
+            old_status = cluster.last_sync_status
+            cluster.last_sync_status = 'success'
+            cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_clusters.append({
                 'id': str(cluster.id),
                 'name': cluster.name,
-                'old_status': 'pending'
+                'old_status': old_status
             })
-            logger.info(f"Reset sync status for cluster {cluster.name}: pending -> idle")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> success")
 
     return Response({
         'message': 'Sync status reset successfully' if reset_clusters else 'No clusters to reset',

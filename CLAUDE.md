@@ -46,6 +46,14 @@
 ./scripts/dev/lint.sh --ts         # Только TypeScript
 ```
 
+**Django shell (для проверки данных):**
+```bash
+cd orchestrator && source venv/bin/activate
+python manage.py shell -c "from apps.operations.models import BatchOperation; print(BatchOperation.objects.count())"
+# Или интерактивно:
+python manage.py shell
+```
+
 **Доступные сервисы:**
 - `orchestrator`, `celery-worker`, `celery-beat` (Python/Django)
 - `api-gateway`, `worker`, `ras-adapter` (Go)

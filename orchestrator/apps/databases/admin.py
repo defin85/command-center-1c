@@ -276,22 +276,22 @@ def reset_sync_status_action(modeladmin, request, queryset):
 
     for cluster in queryset:
         old_status = cluster.last_sync_status
-        if old_status != 'idle':
-            cluster.last_sync_status = 'idle'
-            cluster.last_sync_error = None
+        if old_status != 'pending':
+            cluster.last_sync_status = 'pending'
+            cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_count += 1
 
             modeladmin.message_user(
                 request,
                 format_html(
-                    '🔓 <strong>{}</strong>: {} → idle',
+                    '🔓 <strong>{}</strong>: {} → pending',
                     cluster.name,
                     old_status
                 ),
                 level=messages.SUCCESS
             )
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> idle")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> pending")
         else:
             modeladmin.message_user(
                 request,

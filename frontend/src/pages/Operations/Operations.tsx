@@ -74,7 +74,15 @@ export const Operations = () => {
       update: 'Update',
       delete: 'Delete',
       query: 'Query',
-      install_extension: 'Install Extension'
+      install_extension: 'Install Extension',
+      // RAS operations
+      lock_scheduled_jobs: 'Lock Scheduled Jobs',
+      unlock_scheduled_jobs: 'Unlock Scheduled Jobs',
+      terminate_sessions: 'Terminate Sessions',
+      block_sessions: 'Block Sessions',
+      unblock_sessions: 'Unblock Sessions',
+      // Cluster operations
+      sync_cluster: 'Sync Cluster',
     }
     return labels[type] || type
   }

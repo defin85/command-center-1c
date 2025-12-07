@@ -35,6 +35,9 @@ class BatchOperation(models.Model):
     TYPE_BLOCK_SESSIONS = 'block_sessions'
     TYPE_UNBLOCK_SESSIONS = 'unblock_sessions'
 
+    # Cluster operation types
+    TYPE_SYNC_CLUSTER = 'sync_cluster'
+
     TYPE_CHOICES = [
         # OData operations
         (TYPE_CREATE, 'Create'),
@@ -48,6 +51,8 @@ class BatchOperation(models.Model):
         (TYPE_TERMINATE_SESSIONS, 'Terminate Sessions'),
         (TYPE_BLOCK_SESSIONS, 'Block Sessions'),
         (TYPE_UNBLOCK_SESSIONS, 'Unblock Sessions'),
+        # Cluster operations
+        (TYPE_SYNC_CLUSTER, 'Sync Cluster'),
     ]
 
     # Identity

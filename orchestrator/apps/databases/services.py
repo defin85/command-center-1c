@@ -535,17 +535,11 @@ class ClusterService:
                 f"Please wait for the current sync to complete."
             )
 
-        # Check if already syncing (safety net for crash scenarios)
-        if cluster.last_sync_status == 'pending':
-            raise ValueError(
-                f"Cluster {cluster.name} appears to be stuck in 'pending' state. "
-                f"This may indicate a previous sync process crashed. "
-                f"Please check the sync status or reset it manually."
-            )
-
-        # Mark as pending
-        cluster.last_sync_status = 'pending'
-        cluster.save(update_fields=['last_sync_status'])
+        # Mark as pending (or confirm already pending from view)
+        # Note: select_for_update(nowait=True) above handles concurrent sync protection
+        if cluster.last_sync_status != 'pending':
+            cluster.last_sync_status = 'pending'
+            cluster.save(update_fields=['last_sync_status'])
 
         try:
             # Connect to RAS Adapter

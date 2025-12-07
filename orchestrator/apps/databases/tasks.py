@@ -327,7 +327,7 @@ def periodic_cluster_health_check():
 
 
 @shared_task
-def sync_cluster_task(cluster_id: str):
+def sync_cluster_task(cluster_id: str, operation_id: str = None):
     """
     Синхронизация инфобаз для одного кластера.
     Вызывается из API v2 endpoint /clusters/sync-cluster/.
@@ -336,14 +336,28 @@ def sync_cluster_task(cluster_id: str):
 
     Args:
         cluster_id: UUID кластера для синхронизации
+        operation_id: UUID BatchOperation для отслеживания прогресса (optional)
 
     Returns:
         dict: {status, cluster_id, created, updated, errors} или {status, error}
     """
     from .models import Cluster
     from .services import ClusterService
+    from apps.operations.models import BatchOperation
 
-    logger.info(f"Starting sync_cluster_task for cluster_id={cluster_id}")
+    logger.info(f"Starting sync_cluster_task for cluster_id={cluster_id}, operation_id={operation_id}")
+
+    # Get BatchOperation if provided (for tracking in Service Mesh)
+    operation = None
+    if operation_id:
+        try:
+            operation = BatchOperation.objects.get(id=operation_id)
+            operation.status = BatchOperation.STATUS_PROCESSING
+            operation.started_at = timezone.now()
+            operation.save(update_fields=['status', 'started_at'])
+            logger.info(f"BatchOperation {operation_id} marked as PROCESSING")
+        except BatchOperation.DoesNotExist:
+            logger.warning(f"BatchOperation {operation_id} not found, continuing without tracking")
 
     try:
         cluster = Cluster.objects.get(id=cluster_id)
@@ -356,10 +370,28 @@ def sync_cluster_task(cluster_id: str):
             f"created={result['created']}, updated={result['updated']}, errors={result['errors']}"
         )
 
+        # Update BatchOperation on success
+        if operation:
+            operation.status = BatchOperation.STATUS_COMPLETED
+            operation.completed_tasks = 1
+            operation.progress = 100
+            operation.completed_at = timezone.now()
+            operation.metadata = {
+                'created': result['created'],
+                'updated': result['updated'],
+                'errors': result['errors'],
+                'databases_found': result['created'] + result['updated'],
+            }
+            operation.save(update_fields=[
+                'status', 'completed_tasks', 'progress', 'completed_at', 'metadata'
+            ])
+            logger.info(f"BatchOperation {operation_id} marked as COMPLETED")
+
         return {
             'status': 'success',
             'cluster_id': str(cluster_id),
             'cluster_name': cluster.name,
+            'operation_id': operation_id,
             'created': result['created'],
             'updated': result['updated'],
             'errors': result['errors'],
@@ -368,18 +400,42 @@ def sync_cluster_task(cluster_id: str):
         }
 
     except Cluster.DoesNotExist:
+        error_msg = 'Cluster not found'
         logger.error(f"Cluster not found: {cluster_id}")
+
+        # Update BatchOperation on error
+        if operation:
+            operation.status = BatchOperation.STATUS_FAILED
+            operation.failed_tasks = 1
+            operation.completed_at = timezone.now()
+            operation.metadata = {'error': error_msg}
+            operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata'])
+            logger.info(f"BatchOperation {operation_id} marked as FAILED: {error_msg}")
+
         return {
             'status': 'error',
             'cluster_id': str(cluster_id),
-            'error': 'Cluster not found'
+            'operation_id': operation_id,
+            'error': error_msg
         }
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error syncing cluster {cluster_id}: {e}", exc_info=True)
+
+        # Update BatchOperation on error
+        if operation:
+            operation.status = BatchOperation.STATUS_FAILED
+            operation.failed_tasks = 1
+            operation.completed_at = timezone.now()
+            operation.metadata = {'error': error_msg}
+            operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata'])
+            logger.info(f"BatchOperation {operation_id} marked as FAILED: {error_msg}")
+
         return {
             'status': 'error',
             'cluster_id': str(cluster_id),
-            'error': str(e)
+            'operation_id': operation_id,
+            'error': error_msg
         }
 
 
