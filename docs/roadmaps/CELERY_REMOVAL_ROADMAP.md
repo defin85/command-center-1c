@@ -4,7 +4,7 @@
 
 **Дата создания:** 2025-12-07
 **Последнее обновление:** 2025-12-07
-**Статус:** IN PROGRESS (Phase 0-3 ✅ Done)
+**Статус:** IN PROGRESS (Phase 0-4 ✅ Done)
 **Автор:** Claude Opus 4.5 (Architecture Analysis)
 
 ---
@@ -283,16 +283,16 @@ go-services/worker/
 | 3.3 | EventReplayJob | `replay_failed_events` → Go Scheduler, периодическое выполнение | ✅ Done |
 | 3.4 | CleanupReplayedEventsJob | `cleanup_old_replayed_events` обновлён для корректного удаления | ✅ Done |
 
-### Phase 4: Template Engine (Go)
+### Phase 4: Template Engine (Go) ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 4.1 | pongo2 integration | Jinja2-compatible template engine |
-| 4.2 | Custom filters | `guid1c`, `datetime1c`, `date1c`, `safe_string` |
-| 4.3 | Security sandbox | Prohibited constructs, resource limits |
-| 4.4 | Compatibility tests | Все существующие шаблоны должны работать |
-| 4.5 | Миграция | `process_operation_with_template` → Go |
-| 4.6 | Fallback | HTTP API к Python если pongo2 не справится |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 4.1 | pongo2 integration | Jinja2-compatible template engine с LRU кешем | ✅ Done |
+| 4.2 | Custom filters | `guid1c`, `datetime1c`, `date1c`, `bool1c` | ✅ Done |
+| 4.3 | Preprocessor | `loop.X` → `forloop.X`, custom tests (`is divisibleby`, `is even/odd`) | ✅ Done |
+| 4.4 | Security sandbox | Prohibited constructs + Template Validator | ✅ Done |
+| 4.5 | Internal API integration | Fetch templates через `/api/internal/templates/{id}` | ✅ Done |
+| 4.6 | Processor integration | TemplateProcessor для `process_operation_with_template` | ✅ Done |
 
 ### Phase 5: Workflow Engine (Go)
 
@@ -477,9 +477,10 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 **Документ создан:** 2025-12-07
 **Последнее обновление:** 2025-12-07
 **Автор:** Claude Opus 4.5
-**Статус:** IN PROGRESS — Phase 0-3 завершены, Phase 4+ в очереди
+**Статус:** IN PROGRESS — Phase 0-4 завершены, Phase 5+ в очереди
 
 **Commits:**
 - `0d8122a` Phase 0+1: Go Scheduler и Internal API
 - `e3afd6c` Phase 2: Health Check Jobs
-- `XXXXX` Phase 3: Event Replay System
+- `b6320f0` Phase 3: Event Replay System
+- `CURRENT` Phase 4: Template Engine (Go)

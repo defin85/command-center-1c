@@ -25,6 +25,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
+	"github.com/commandcenter1c/commandcenter/worker/internal/template"
 )
 
 var (
@@ -170,10 +171,63 @@ func main() {
 	}
 	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
 
+	// Create zap logger for components
+	var zapLog *zap.Logger
+	if cfg.LogLevel == "debug" {
+		zapLog, _ = zap.NewDevelopment()
+	} else {
+		zapLog, _ = zap.NewProduction()
+	}
+	defer zapLog.Sync()
+
+	// Initialize template engine (Phase 4.6)
+	var templateEngine *template.EngineWithFallback
+	var templateClient processor.TemplateClient
+
+	if cfg.EnableGoTemplateEngine {
+		log.Info("initializing Go template engine",
+			zap.Duration("render_timeout", cfg.TemplateRenderTimeout),
+		)
+
+		// Create base template engine
+		baseEngine := template.NewEngine(zapLog)
+
+		// Create orchestrator client for template fetching and fallback rendering
+		orchClientForTemplates, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
+			BaseURL: cfg.OrchestratorURL,
+			Token:   serviceToken,
+		})
+		if err != nil {
+			log.Warn("failed to create orchestrator client for templates, template engine disabled",
+				zap.Error(err),
+			)
+		} else {
+			// Create fallback renderer for Python Jinja2 compatibility
+			fallbackRenderer := orchestrator.NewFallbackRenderer(orchClientForTemplates)
+
+			// Create engine with fallback support
+			templateEngine = template.NewEngineWithFallback(baseEngine, fallbackRenderer, zapLog)
+
+			// Create template client adapter
+			templateClient = processor.NewOrchestratorTemplateClient(orchClientForTemplates)
+
+			log.Info("template engine initialized with Python fallback support")
+		}
+	} else {
+		log.Info("Go template engine is disabled (set ENABLE_GO_TEMPLATE_ENGINE=true to enable)")
+	}
+
 	// Initialize task processor with Redis client for event publishing and State Machine
-	taskProcessor := processor.NewTaskProcessor(cfg, credsClient, redisClient)
+	processorOpts := processor.ProcessorOptions{
+		TemplateEngine: templateEngine,
+		TemplateClient: templateClient,
+		Logger:         zapLog,
+	}
+	taskProcessor := processor.NewTaskProcessorWithOptions(cfg, credsClient, redisClient, processorOpts)
 	defer taskProcessor.Close() // Graceful shutdown for event subscriber
-	log.Info("task processor initialized with event publishing and State Machine support")
+	log.Info("task processor initialized with event publishing and State Machine support",
+		zap.Bool("template_engine_enabled", templateEngine != nil),
+	)
 
 	// Log feature flags configuration
 	featureFlags := taskProcessor.GetFeatureFlags()
@@ -207,19 +261,8 @@ func main() {
 			"ras_adapter_url":      schedConfig.RASAdapterURL,
 		}).Info("initializing Go scheduler")
 
-		// Create zap logger for scheduler (scheduler uses zap internally)
-		var zapLog *zap.Logger
-		var zapErr error
-		if cfg.LogLevel == "debug" {
-			zapLog, zapErr = zap.NewDevelopment()
-		} else {
-			zapLog, zapErr = zap.NewProduction()
-		}
-		if zapErr != nil {
-			log.WithError(zapErr).Error("failed to create zap logger for scheduler")
-		} else {
-			defer zapLog.Sync()
-
+		// Reuse zapLog created above for scheduler
+		{
 			// Create scheduler instance
 			sched = scheduler.NewWithConfig(redisClient, schedConfig, cfg.WorkerID, zapLog)
 

@@ -333,9 +333,9 @@ paths:
       summary: Получение шаблона операции
       description: |
         Возвращает определение шаблона для выполнения операции.
-        Шаблон содержит последовательность шагов, параметры и условия.
+        Шаблон содержит template_data для рендеринга.
 
-        **Статус**: Будет реализовано в Sprint 2.2 (Template Engine)
+        **Статус**: Реализовано (Phase 4.5)
       operationId: getTemplate
       tags:
         - templates
@@ -345,7 +345,7 @@ paths:
         - name: template_id
           in: path
           required: true
-          description: UUID или код шаблона
+          description: ID шаблона (например, "create_document")
           schema:
             type: string
       responses:
@@ -354,17 +354,54 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TemplateResponse'
+                $ref: '#/components/schemas/OperationTemplateResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-        '501':
-          description: Template Engine еще не реализован
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/templates/{template_id}/render:
+    post:
+      summary: Рендеринг шаблона через Python Jinja2
+      description: |
+        Fallback endpoint для рендеринга шаблонов.
+        Используется Go Worker, когда pongo2 не может обработать шаблон
+        из-за несовместимости синтаксиса.
+
+        **Статус**: Реализовано (Phase 4.5)
+      operationId: renderTemplate
+      tags:
+        - templates
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: ID шаблона
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRenderRequest'
+      responses:
+        '200':
+          description: Результат рендеринга (success может быть false при ошибке)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/TemplateRenderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -890,7 +927,88 @@ components:
           description: Время последней проверки
 
     # ============================================================================
-    # TEMPLATE SCHEMAS (Sprint 2.2)
+    # OPERATION TEMPLATE SCHEMAS (Phase 4.5 - Internal API)
+    # ============================================================================
+    OperationTemplateResponse:
+      type: object
+      required:
+        - id
+        - name
+        - operation_type
+        - target_entity
+        - template_data
+        - version
+        - is_active
+      properties:
+        id:
+          type: string
+          description: ID шаблона
+          example: "create_order"
+        name:
+          type: string
+          description: Название шаблона
+          example: "Создание заказа клиента"
+        operation_type:
+          type: string
+          description: Тип операции
+          example: "create"
+        target_entity:
+          type: string
+          description: Целевая сущность в 1С
+          example: "Document.ЗаказКлиента"
+        template_data:
+          type: object
+          description: JSON с шаблонами для рендеринга
+          additionalProperties: true
+          example:
+            Номер: "{{ order_number }}"
+            Контрагент_Key: "{{ counterparty_guid }}"
+        version:
+          type: integer
+          description: Версия шаблона
+          example: 1
+        is_active:
+          type: boolean
+          description: Активен ли шаблон
+          example: true
+
+    TemplateRenderRequest:
+      type: object
+      required:
+        - context
+      properties:
+        context:
+          type: object
+          description: Контекст для рендеринга шаблона
+          additionalProperties: true
+          example:
+            order_number: "12345"
+            counterparty_guid: "550e8400-e29b-41d4-a716-446655440000"
+
+    TemplateRenderResponse:
+      type: object
+      required:
+        - rendered
+        - success
+      properties:
+        rendered:
+          type: object
+          description: Результат рендеринга
+          additionalProperties: true
+          example:
+            Номер: "12345"
+            Контрагент_Key: "550e8400-e29b-41d4-a716-446655440000"
+        success:
+          type: boolean
+          description: Успешность рендеринга
+          example: true
+        error:
+          type: string
+          description: Сообщение об ошибке (если success=false)
+          example: ""
+
+    # ============================================================================
+    # TEMPLATE SCHEMAS (Sprint 2.2 - legacy, kept for compatibility)
     # ============================================================================
     TemplateResponse:
       type: object

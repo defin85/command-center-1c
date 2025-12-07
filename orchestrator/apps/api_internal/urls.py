@@ -91,4 +91,18 @@ urlpatterns = [
         views.failed_events_cleanup,
         name='failed-events-cleanup'
     ),
+
+    # ========================================================================
+    # Templates (for Go Worker Template Engine)
+    # ========================================================================
+    path(
+        'templates/<str:template_id>',
+        views.get_template,
+        name='template-get'
+    ),
+    path(
+        'templates/<str:template_id>/render',
+        views.render_template,
+        name='template-render'
+    ),
 ]

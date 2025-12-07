@@ -74,6 +74,10 @@ type Config struct {
 
 	// CORS configuration
 	CORSAllowedOrigins []string
+
+	// Template Engine configuration
+	EnableGoTemplateEngine bool
+	TemplateRenderTimeout  time.Duration
 }
 
 // LoadFromEnv loads configuration from environment variables
@@ -145,6 +149,10 @@ func LoadFromEnv() *Config {
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 		}),
+
+		// Template Engine - defaults to disabled (Python fallback only)
+		EnableGoTemplateEngine: getBoolEnv("ENABLE_GO_TEMPLATE_ENGINE", false),
+		TemplateRenderTimeout:  getDurationEnv("TEMPLATE_RENDER_TIMEOUT", 5*time.Second),
 	}
 }
 

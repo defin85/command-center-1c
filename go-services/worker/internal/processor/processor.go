@@ -18,8 +18,26 @@ import (
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
+	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
+	"github.com/commandcenter1c/commandcenter/worker/internal/template"
 )
+
+// TemplateClient is an interface for fetching templates from Orchestrator
+type TemplateClient interface {
+	GetTemplate(ctx context.Context, templateID string) (*TemplateData, error)
+}
+
+// TemplateData represents template data from Orchestrator
+type TemplateData struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	OperationType string                 `json:"operation_type"`
+	TargetEntity  string                 `json:"target_entity"`
+	TemplateData  map[string]interface{} `json:"template_data"`
+	Version       int                    `json:"version"`
+	IsActive      bool                   `json:"is_active"`
+}
 
 // TaskProcessor handles task processing logic
 type TaskProcessor struct {
@@ -35,14 +53,31 @@ type TaskProcessor struct {
 	// State Machine dependencies (Sprint 2.1)
 	redisClient     *redis.Client             // Redis client for State Machine persistence
 	eventSubscriber *sharedEvents.Subscriber  // Subscriber for events from ras-adapter/batch-service
+
+	// Template Engine (Phase 4.6)
+	templateEngine *template.EngineWithFallback // Go template engine with Python fallback
+	templateClient TemplateClient               // Client for fetching templates from Orchestrator
+	logger         *zap.Logger                  // Structured logger for template operations
 }
 
 // DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
 // Can be overridden via WORKER_CONSUMER_GROUP environment variable
 const DefaultConsumerGroupWorker = "worker-state-machine"
 
+// ProcessorOptions contains optional dependencies for TaskProcessor
+type ProcessorOptions struct {
+	TemplateEngine *template.EngineWithFallback
+	TemplateClient TemplateClient
+	Logger         *zap.Logger
+}
+
 // NewTaskProcessor creates a new task processor
 func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redisClient *redis.Client) *TaskProcessor {
+	return NewTaskProcessorWithOptions(cfg, credsClient, redisClient, ProcessorOptions{})
+}
+
+// NewTaskProcessorWithOptions creates a new task processor with optional dependencies
+func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fetcher, redisClient *redis.Client, opts ProcessorOptions) *TaskProcessor {
 	log := logger.GetLogger()
 
 	// Load feature flags from environment
@@ -54,6 +89,12 @@ func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redis
 		consumerGroup = DefaultConsumerGroupWorker
 	}
 
+	// Get or create logger
+	zapLogger := opts.Logger
+	if zapLogger == nil {
+		zapLogger, _ = zap.NewProduction()
+	}
+
 	processor := &TaskProcessor{
 		config:         cfg,
 		credsClient:    credsClient,
@@ -62,6 +103,9 @@ func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redis
 		featureFlags:   featureFlags,
 		eventPublisher: events.NewEventPublisher(redisClient),
 		redisClient:    redisClient,
+		templateEngine: opts.TemplateEngine,
+		templateClient: opts.TemplateClient,
+		logger:         zapLogger,
 	}
 
 	// Initialize dual-mode processor
@@ -82,6 +126,16 @@ func NewTaskProcessor(cfg *config.Config, credsClient credentials.Fetcher, redis
 		log.Info("event subscriber initialized",
 			zap.String("consumer_group", consumerGroup),
 		)
+	}
+
+	// Log template engine status
+	if processor.templateEngine != nil {
+		log.Info("template engine initialized",
+			zap.Bool("go_engine_enabled", cfg.EnableGoTemplateEngine),
+			zap.Bool("has_fallback", processor.templateEngine.HasFallback()),
+		)
+	} else {
+		log.Info("template engine not configured, template rendering disabled")
 	}
 
 	return processor
@@ -219,6 +273,31 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		result.ErrorCode = "CREDENTIALS_ERROR"
 		result.Duration = time.Since(start).Seconds()
 		return result
+	}
+
+	// Render template if template_id is present
+	if msg.Metadata.TemplateID != "" {
+		renderedPayload, err := p.renderTemplatePayload(ctx, msg, databaseID, creds)
+		if err != nil {
+			result.Success = false
+			result.Error = fmt.Sprintf("template rendering failed: %v", err)
+			result.ErrorCode = "TEMPLATE_ERROR"
+			result.Duration = time.Since(start).Seconds()
+
+			// Publish FAILED event
+			if pubErr := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); pubErr != nil {
+				log.Error("failed to publish FAILED event", zap.Error(pubErr))
+			}
+
+			return result
+		}
+
+		// Replace payload with rendered version
+		msg.Payload.Data = renderedPayload
+		log.Debug("template rendered successfully",
+			zap.String("template_id", msg.Metadata.TemplateID),
+			zap.String("database_id", databaseID),
+		)
 	}
 
 	// Execute operation via OData
@@ -406,6 +485,171 @@ func categorizeODataError(err error) string {
 		return odataErr.Code
 	}
 	return "UNKNOWN_ERROR"
+}
+
+// --- Template Rendering (Phase 4.6) ---
+
+// renderTemplatePayload renders template payload using Go template engine with Python fallback.
+// Returns the rendered payload data ready for OData operation.
+func (p *TaskProcessor) renderTemplatePayload(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials) (map[string]interface{}, error) {
+	templateID := msg.Metadata.TemplateID
+	start := time.Now()
+
+	// Check if template engine is available
+	if p.templateEngine == nil {
+		metrics.RecordTemplateFallback("disabled")
+		return nil, fmt.Errorf("template engine not configured")
+	}
+
+	// Check if template client is available
+	if p.templateClient == nil {
+		metrics.RecordTemplateFallback("disabled")
+		return nil, fmt.Errorf("template client not configured")
+	}
+
+	// Fetch template from Orchestrator
+	tmpl, err := p.templateClient.GetTemplate(ctx, templateID)
+	if err != nil {
+		metrics.RecordTemplateRenderError("go", time.Since(start).Seconds(), "network")
+		return nil, fmt.Errorf("failed to fetch template %s: %w", templateID, err)
+	}
+
+	// Build template context
+	templateContext := p.buildTemplateContext(msg, databaseID, creds)
+
+	// Render template with fallback support
+	renderCtx := ctx
+	if p.config.TemplateRenderTimeout > 0 {
+		var cancel context.CancelFunc
+		renderCtx, cancel = context.WithTimeout(ctx, p.config.TemplateRenderTimeout)
+		defer cancel()
+	}
+
+	rendered, err := p.templateEngine.RenderWithFallback(renderCtx, templateID, tmpl.TemplateData, templateContext)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		// Categorize error for metrics
+		errorType := categorizeTemplateError(err)
+		metrics.RecordTemplateRenderError("go", duration, errorType)
+
+		p.logger.Error("template rendering failed",
+			zap.String("template_id", templateID),
+			zap.String("database_id", databaseID),
+			zap.String("error_type", errorType),
+			zap.Error(err),
+		)
+
+		return nil, err
+	}
+
+	// Record success metrics
+	metrics.RecordTemplateRenderSuccess("go", duration)
+
+	p.logger.Info("template rendered",
+		zap.String("template_id", templateID),
+		zap.String("database_id", databaseID),
+		zap.Float64("duration_seconds", duration),
+	)
+
+	return rendered, nil
+}
+
+// buildTemplateContext constructs the context for template rendering.
+// Includes system variables, operation metadata, and database info.
+func (p *TaskProcessor) buildTemplateContext(msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials) map[string]interface{} {
+	builder := template.NewContextBuilder().
+		WithSystemVars().
+		WithOperationID(msg.OperationID).
+		WithTemplateID(msg.Metadata.TemplateID)
+
+	// Add database context
+	dbContext := map[string]interface{}{
+		"id":        databaseID,
+		"odata_url": creds.ODataURL,
+	}
+	builder.WithDatabase(dbContext)
+
+	// Add operation-specific data
+	builder.With("operation_type", msg.OperationType)
+	builder.With("entity", msg.Entity)
+
+	// Add user-provided payload data (may contain values to merge with template)
+	if msg.Payload.Data != nil {
+		builder.WithData(msg.Payload.Data)
+	}
+
+	// Add filters as context variables
+	if msg.Payload.Filters != nil {
+		builder.With("filters", msg.Payload.Filters)
+	}
+
+	// Add options as context variables
+	if msg.Payload.Options != nil {
+		builder.With("options", msg.Payload.Options)
+	}
+
+	return builder.Build()
+}
+
+// categorizeTemplateError categorizes template error for metrics
+func categorizeTemplateError(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+
+	errStr := err.Error()
+
+	switch {
+	case err == context.DeadlineExceeded:
+		return "timeout"
+	case err == context.Canceled:
+		return "timeout"
+	case containsAny(errStr, "validation", "invalid", "not allowed"):
+		return "validation"
+	case containsAny(errStr, "compile", "syntax", "parse"):
+		return "compilation"
+	case containsAny(errStr, "execute", "render"):
+		return "execution"
+	case containsAny(errStr, "network", "connection", "timeout", "refused"):
+		return "network"
+	default:
+		return "execution"
+	}
+}
+
+// containsAny checks if s contains any of the substrings
+func containsAny(s string, substrs ...string) bool {
+	sLower := stringToLower(s)
+	for _, sub := range substrs {
+		if stringContains(sLower, stringToLower(sub)) {
+			return true
+		}
+	}
+	return false
+}
+
+// stringToLower is a helper to avoid importing strings package
+func stringToLower(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		result[i] = c
+	}
+	return string(result)
+}
+
+// stringContains is a helper to avoid importing strings package
+func stringContains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // GetFeatureFlags returns current feature flags configuration

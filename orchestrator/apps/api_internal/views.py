@@ -24,6 +24,9 @@ from .serializers import (
     FailedEventReplayedSerializer,
     FailedEventFailedSerializer,
     FailedEventsCleanupSerializer,
+    TemplateSerializer,
+    TemplateRenderRequestSerializer,
+    TemplateRenderResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -676,3 +679,168 @@ def failed_events_cleanup(request):
     )
 
     return Response({'deleted_count': total_deleted}, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# Template Endpoints (for Go Worker Template Engine)
+# =============================================================================
+
+@api_view(['GET'])
+@permission_classes([IsInternalService])
+def get_template(request, template_id):
+    """
+    GET /api/internal/templates/{id}
+
+    Get template data for Go Worker.
+    Returns template definition including template_data for rendering.
+
+    Response:
+    {
+        "id": "create_document",
+        "name": "Create Document Template",
+        "operation_type": "create",
+        "target_entity": "Document.ЗаказКлиента",
+        "template_data": {...},
+        "version": 1,
+        "is_active": true
+    }
+    """
+    from apps.templates.models import OperationTemplate
+
+    try:
+        template = OperationTemplate.objects.get(id=template_id)
+    except OperationTemplate.DoesNotExist:
+        return Response(
+            {'error': f'Template {template_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Check if template is active
+    if not template.is_active:
+        logger.warning(f"Template {template_id} is inactive")
+
+    serializer = TemplateSerializer({
+        'id': template.id,
+        'name': template.name,
+        'operation_type': template.operation_type,
+        'target_entity': template.target_entity,
+        'template_data': template.template_data,
+        'version': 1,  # TODO: Add version field to model if needed
+        'is_active': template.is_active,
+    })
+
+    logger.debug(f"Template fetched: {template_id}")
+
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsInternalService])
+def render_template(request, template_id):
+    """
+    POST /api/internal/templates/{id}/render
+
+    Render template using Python Jinja2 (fallback for Go pongo2).
+    Called by Go Worker when pongo2 encounters incompatible syntax.
+
+    Request body:
+    {
+        "context": {
+            "order_number": "12345",
+            "items": [{"name": "Item1", "qty": 10}]
+        }
+    }
+
+    Response:
+    {
+        "rendered": {...},
+        "success": true,
+        "error": ""
+    }
+    """
+    from apps.templates.models import OperationTemplate
+    from jinja2 import BaseLoader, TemplateSyntaxError
+    from jinja2.sandbox import SandboxedEnvironment
+
+    # Validate request
+    req_serializer = TemplateRenderRequestSerializer(data=request.data)
+    if not req_serializer.is_valid():
+        return Response(req_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    context = req_serializer.validated_data['context']
+
+    # Get template
+    try:
+        template = OperationTemplate.objects.get(id=template_id)
+    except OperationTemplate.DoesNotExist:
+        return Response(
+            {'error': f'Template {template_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Render template_data recursively
+    try:
+        rendered = _render_template_data(template.template_data, context)
+
+        response_data = {
+            'rendered': rendered,
+            'success': True,
+            'error': '',
+        }
+
+        logger.debug(f"Template rendered: {template_id}")
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except TemplateSyntaxError as e:
+        logger.error(f"Template syntax error in {template_id}: {e}")
+        return Response({
+            'rendered': {},
+            'success': False,
+            'error': f'Template syntax error: {str(e)}',
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Template render error in {template_id}: {e}")
+        return Response({
+            'rendered': {},
+            'success': False,
+            'error': f'Render error: {str(e)}',
+        }, status=status.HTTP_200_OK)
+
+
+def _render_template_data(data, context):
+    """
+    Recursively render Jinja2 templates in data structure.
+
+    Supports:
+    - Strings with {{ }} expressions
+    - Nested dicts and lists
+    - Non-template values (int, float, bool, None) are passed through
+
+    Security:
+    - Uses SandboxedEnvironment to prevent code injection
+    - Blocks access to dangerous attributes and methods
+    """
+    from jinja2 import BaseLoader
+    from jinja2.sandbox import SandboxedEnvironment
+
+    # Create sandboxed Jinja2 environment for security
+    env = SandboxedEnvironment(loader=BaseLoader())
+
+    if isinstance(data, str):
+        # Check if string contains template expressions
+        if '{{' in data or '{%' in data:
+            template = env.from_string(data)
+            return template.render(context)
+        return data
+
+    elif isinstance(data, dict):
+        return {key: _render_template_data(value, context) for key, value in data.items()}
+
+    elif isinstance(data, list):
+        return [_render_template_data(item, context) for item in data]
+
+    else:
+        # Return non-template values as-is
+        return data

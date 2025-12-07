@@ -128,3 +128,36 @@ class FailedEventsCleanupSerializer(serializers.Serializer):
     """Input serializer for cleanup of old replayed events."""
 
     retention_days = serializers.IntegerField(default=7, min_value=1, max_value=365)
+
+
+# =============================================================================
+# Template Serializers (for Go Worker Template Engine)
+# =============================================================================
+
+
+class TemplateSerializer(serializers.Serializer):
+    """Output serializer for OperationTemplate data."""
+
+    id = serializers.CharField()
+    name = serializers.CharField()
+    operation_type = serializers.CharField()
+    target_entity = serializers.CharField()
+    template_data = serializers.JSONField()
+    version = serializers.IntegerField(default=1)
+    is_active = serializers.BooleanField()
+
+
+class TemplateRenderRequestSerializer(serializers.Serializer):
+    """Input serializer for template rendering request."""
+
+    context = serializers.JSONField(
+        help_text="Context data for template rendering"
+    )
+
+
+class TemplateRenderResponseSerializer(serializers.Serializer):
+    """Output serializer for template rendering response."""
+
+    rendered = serializers.JSONField()
+    success = serializers.BooleanField()
+    error = serializers.CharField(required=False, allow_blank=True, default="")
