@@ -126,7 +126,8 @@ SERVICE_TOPOLOGY = [
 
     # Level 3 → 4: Services → Infrastructure
     ('batch-service', 'postgresql'),
-    ('ras-adapter', 'orchestrator'),  # RAS reports back to Orchestrator
+
+    # Results flow: Worker → Redis Pub/Sub → Orchestrator (implicit via redis connection)
 ]
 
 

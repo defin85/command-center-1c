@@ -381,5 +381,5 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'worker->ras-adapter': 'http',
   'worker->batch-service': 'http',
   'batch-service->postgresql': 'database',
-  'ras-adapter->orchestrator': 'http',
+  // Results: Worker → Redis Pub/Sub → Orchestrator (implicit via redis)
 }
