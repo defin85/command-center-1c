@@ -182,9 +182,12 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		Results:     []models.DatabaseResultV2{},
 	}
 
-	// Special handling for execute_workflow (not per-database)
+	// Special handling for meta-operations (not per-database)
 	if msg.OperationType == "execute_workflow" {
 		return p.processWorkflow(ctx, msg)
+	}
+	if msg.OperationType == "sync_cluster" {
+		return p.processSyncCluster(ctx, msg)
 	}
 
 	// Process each target database

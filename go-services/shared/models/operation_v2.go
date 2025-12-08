@@ -75,6 +75,18 @@ type ResultSummary struct {
 
 // ========== Validation ==========
 
+// Operation types that don't require target_databases
+// These are meta-operations that operate on clusters, not individual databases
+var metaOperationTypes = map[string]bool{
+	"sync_cluster": true,
+	// Future: "health_check_cluster", "backup_cluster", etc.
+}
+
+// IsMetaOperation checks if operation type is a meta-operation
+func IsMetaOperation(opType string) bool {
+	return metaOperationTypes[opType]
+}
+
 // Validate validates the OperationMessage
 func (om *OperationMessage) Validate() error {
 	if om.Version != "2.0" {
@@ -89,7 +101,8 @@ func (om *OperationMessage) Validate() error {
 		return fmt.Errorf("operation_type is required")
 	}
 
-	if len(om.TargetDatabases) == 0 {
+	// Meta-operations (sync_cluster, etc.) don't require target_databases
+	if !IsMetaOperation(om.OperationType) && len(om.TargetDatabases) == 0 {
 		return fmt.Errorf("target_databases cannot be empty")
 	}
 

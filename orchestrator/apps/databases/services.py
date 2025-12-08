@@ -915,3 +915,121 @@ class ClusterService:
         host = default_host or 'localhost'
 
         return f"http://{host}/{base_name}/odata/standard.odata/"
+
+    @staticmethod
+    def import_infobases_from_dict(
+        cluster: Cluster,
+        infobases: List[Dict[str, Any]]
+    ) -> Tuple[int, int, int]:
+        """
+        Import infobases into Database model from dict format (Worker response).
+
+        This method is used by EventSubscriber to import infobases received
+        from Go Worker in cluster-synced event.
+
+        Args:
+            cluster: Cluster instance
+            infobases: List of infobase dictionaries from Worker with format:
+                {
+                    'uuid': 'infobase-uuid',
+                    'name': 'TestBase',
+                    'dbms': 'PostgreSQL',
+                    'db_server': 'localhost',
+                    'db_name': 'testbase',
+                    'locale': 'ru_RU',
+                    'sessions_deny': False,
+                    'scheduled_jobs_deny': False,
+                    'denied_from': '2025-01-01T00:00:00Z',  # optional
+                    'denied_to': '2025-01-02T00:00:00Z',    # optional
+                    'denied_message': 'Maintenance'          # optional
+                }
+
+        Returns:
+            (created_count, updated_count, error_count)
+        """
+        logger.info(f"Importing {len(infobases)} infobases for cluster {cluster.name}")
+
+        created_count = 0
+        updated_count = 0
+        error_count = 0
+
+        for ib in infobases:
+            try:
+                ib_uuid = ib.get('uuid')
+                ib_name = ib.get('name')
+
+                if not ib_uuid or not ib_name:
+                    logger.warning(f"Skipping infobase with missing uuid or name: {ib}")
+                    error_count += 1
+                    continue
+
+                # Parse host from db_server
+                db_server = ib.get('db_server', '')
+                host = ClusterService._parse_host(db_server)
+
+                # Build OData URL
+                odata_url = ClusterService._build_odata_url(ib, default_host=host)
+
+                # Prepare metadata
+                metadata = {
+                    'dbms': ib.get('dbms', ''),
+                    'db_server': db_server,
+                    'db_name': ib.get('db_name', ''),
+                    'locale': ib.get('locale', ''),
+                    'sessions_deny': ib.get('sessions_deny', False),
+                    'scheduled_jobs_deny': ib.get('scheduled_jobs_deny', False),
+                    'imported_from_cluster': True,
+                    'import_timestamp': timezone.now().isoformat(),
+                    'ras_server': cluster.ras_server,
+                    'cluster_id': str(cluster.id),
+                    'cluster_name': cluster.name,
+                    'api_version': 'worker',
+                }
+
+                # Add denied_from/denied_to if set
+                if ib.get('denied_from'):
+                    metadata['denied_from'] = ib['denied_from']
+                if ib.get('denied_to'):
+                    metadata['denied_to'] = ib['denied_to']
+                if ib.get('denied_message'):
+                    metadata['denied_message'] = ib['denied_message']
+
+                # Create or update Database
+                database, created = Database.objects.update_or_create(
+                    id=ib_uuid,
+                    defaults={
+                        'name': ib_name,
+                        'description': '',
+                        'host': host or 'localhost',
+                        'port': 80,
+                        'base_name': ib_name,
+                        'odata_url': odata_url,
+                        'username': '',
+                        'password': '',
+                        'cluster': cluster,
+                        'status': Database.STATUS_INACTIVE,
+                        'metadata': metadata,
+                    }
+                )
+
+                if created:
+                    created_count += 1
+                    logger.info(f"Created database: {ib_name} (id={ib_uuid})")
+                else:
+                    updated_count += 1
+                    logger.debug(f"Updated database: {ib_name} (id={ib_uuid})")
+
+            except Exception as e:
+                error_count += 1
+                logger.error(
+                    f"Failed to import infobase {ib.get('name', 'unknown')}: "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True
+                )
+
+        logger.info(
+            f"Import completed: created={created_count}, updated={updated_count}, "
+            f"errors={error_count}"
+        )
+
+        return created_count, updated_count, error_count

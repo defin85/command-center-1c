@@ -317,8 +317,59 @@ class OperationsService:
 
         Returns:
             EnqueueResult with operation_id
+
+        Note:
+            Payload includes full cluster data for Go Worker:
+            - ras_server: RAS server address (host:port)
+            - ras_cluster_uuid: UUID of cluster in RAS (may be empty)
+            - cluster_service_url: URL of RAS Adapter
+            - cluster_name: Cluster name
+            - cluster_user, cluster_pwd: Credentials (optional)
         """
+        from apps.databases.models import Cluster
+
         op_id = operation_id or str(uuid.uuid4())
+
+        # Get cluster from DB
+        try:
+            cluster = Cluster.objects.get(id=cluster_id)
+        except Cluster.DoesNotExist:
+            logger.error(f"Cluster not found: {cluster_id}")
+            return EnqueueResult(
+                success=False,
+                operation_id=op_id,
+                status="error",
+                error=f"Cluster {cluster_id} not found"
+            )
+
+        # Idempotency check - prevent concurrent sync for same cluster
+        sync_lock_key = f"sync_cluster:{cluster_id}"
+        lock_acquired = redis_client.acquire_lock(
+            task_id=sync_lock_key,
+            ttl_seconds=300  # 5 minutes - sync should complete within this time
+        )
+
+        if not lock_acquired:
+            logger.warning(
+                f"Cluster {cluster_id} sync already in progress (duplicate submission)"
+            )
+            return EnqueueResult(
+                success=False,
+                operation_id=op_id,
+                status="duplicate",
+                error=f"Cluster {cluster.name} sync already in progress"
+            )
+
+        # Build payload with full cluster data for Worker
+        cluster_data = {
+            "cluster_id": str(cluster.id),
+            "cluster_name": cluster.name,
+            "ras_server": cluster.ras_server,
+            "ras_cluster_uuid": str(cluster.ras_cluster_uuid) if cluster.ras_cluster_uuid else "",
+            "cluster_service_url": cluster.cluster_service_url,
+            "cluster_user": cluster.cluster_user or "",
+            "cluster_pwd": cluster.cluster_pwd or "",
+        }
 
         message = {
             "version": cls.VERSION,
@@ -328,7 +379,7 @@ class OperationsService:
             "entity": "Cluster",
             "target_databases": [],  # Sync discovers databases
             "payload": {
-                "data": {"cluster_id": cluster_id},
+                "data": cluster_data,
                 "filters": {},
                 "options": {}
             },
@@ -348,6 +399,12 @@ class OperationsService:
         }
 
         try:
+            # Acquire task lock for Worker (separate from idempotency lock)
+            redis_client.acquire_lock(
+                task_id=op_id,
+                ttl_seconds=3600  # 1 hour
+            )
+
             redis_client.enqueue_operation(message)
 
             event_publisher.publish(
@@ -360,14 +417,22 @@ class OperationsService:
 
             logger.info(
                 f"Cluster sync operation {op_id} enqueued",
-                extra={"operation_id": op_id, "cluster_id": cluster_id}
+                extra={
+                    "operation_id": op_id,
+                    "cluster_id": cluster_id,
+                    "cluster_name": cluster.name,
+                    "ras_server": cluster.ras_server
+                }
             )
 
             return EnqueueResult(
                 success=True,
                 operation_id=op_id,
                 status="queued",
-                metadata={"cluster_id": cluster_id}
+                metadata={
+                    "cluster_id": cluster_id,
+                    "cluster_name": cluster.name
+                }
             )
 
         except Exception as exc:

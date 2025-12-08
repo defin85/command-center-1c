@@ -62,6 +62,7 @@ class EventSubscriber:
             'events:cluster-service:infobase:locked': '>',
             'events:cluster-service:infobase:unlocked': '>',
             'events:cluster-service:sessions:closed': '>',
+            'events:worker:cluster-synced': '>',
         }
 
         # Setup signal handlers for graceful shutdown
@@ -205,6 +206,9 @@ class EventSubscriber:
         elif 'sessions:closed' in stream:
             self.handle_sessions_closed(payload, correlation_id)
 
+        elif 'cluster-synced' in stream:
+            self.handle_cluster_synced(payload, correlation_id)
+
         else:
             logger.warning(f"Unknown stream: {stream}")
 
@@ -342,6 +346,130 @@ class EventSubscriber:
         )
 
         # TODO: Log to monitoring/audit system when implemented
+
+    def handle_cluster_synced(self, payload: Dict[str, Any], correlation_id: str):
+        """
+        Handle cluster-synced event from Go Worker.
+
+        This event is published when Worker completes sync_cluster operation.
+        Handler imports discovered infobases into Database model.
+
+        Payload example:
+            {
+                'operation_id': 'uuid',
+                'cluster_id': 'uuid',
+                'ras_cluster_uuid': 'uuid',  # May be resolved during sync
+                'infobases': [
+                    {
+                        'uuid': 'infobase-uuid',
+                        'name': 'TestBase',
+                        'dbms': 'PostgreSQL',
+                        'db_server': 'localhost',
+                        'db_name': 'testbase',
+                        'locale': 'ru_RU',
+                        'sessions_deny': False,
+                        'scheduled_jobs_deny': False
+                    },
+                    ...
+                ],
+                'success': True,
+                'error': null
+            }
+        """
+        from apps.databases.models import Cluster
+        from apps.databases.services import ClusterService
+        from apps.operations.models import BatchOperation
+
+        from .redis_client import redis_client
+
+        operation_id = payload.get('operation_id')
+        cluster_id = payload.get('cluster_id')
+        ras_cluster_uuid = payload.get('ras_cluster_uuid')
+        infobases = payload.get('infobases', [])
+        success = payload.get('success', False)
+        error = payload.get('error')
+
+        logger.info(
+            f"Cluster synced event: cluster_id={cluster_id}, "
+            f"operation_id={operation_id}, success={success}, "
+            f"infobases_count={len(infobases)}, correlation_id={correlation_id}"
+        )
+
+        try:
+            with transaction.atomic():
+                # 1. Get Cluster from DB
+                try:
+                    cluster = Cluster.objects.select_for_update().get(id=cluster_id)
+                except Cluster.DoesNotExist:
+                    logger.error(f"Cluster not found: {cluster_id}")
+                    return
+
+                if success:
+                    # 2. Update ras_cluster_uuid if it was resolved during sync
+                    if ras_cluster_uuid and not cluster.ras_cluster_uuid:
+                        cluster.ras_cluster_uuid = ras_cluster_uuid
+                        cluster.save(update_fields=['ras_cluster_uuid', 'updated_at'])
+                        logger.info(
+                            f"Updated ras_cluster_uuid for cluster {cluster.name}: "
+                            f"{ras_cluster_uuid}"
+                        )
+
+                    # 3. Import infobases into Database model
+                    if infobases:
+                        created, updated, errors = ClusterService.import_infobases_from_dict(
+                            cluster=cluster,
+                            infobases=infobases
+                        )
+                        logger.info(
+                            f"Imported infobases for cluster {cluster.name}: "
+                            f"created={created}, updated={updated}, errors={errors}"
+                        )
+
+                    # 4. Mark cluster sync as successful
+                    cluster.mark_sync(success=True)
+
+                else:
+                    # Mark cluster sync as failed
+                    error_msg = error or "Unknown error from Worker"
+                    cluster.mark_sync(success=False, error_message=error_msg)
+                    logger.error(
+                        f"Cluster sync failed: cluster={cluster.name}, error={error_msg}"
+                    )
+
+                # 5. Update BatchOperation status if exists
+                if operation_id:
+                    try:
+                        batch_op = BatchOperation.objects.get(id=operation_id)
+                        if success:
+                            batch_op.status = BatchOperation.STATUS_COMPLETED
+                            batch_op.metadata['sync_result'] = {
+                                'infobases_count': len(infobases),
+                                'ras_cluster_uuid': ras_cluster_uuid,
+                            }
+                        else:
+                            batch_op.status = BatchOperation.STATUS_FAILED
+                            batch_op.metadata['error'] = error
+                        batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        logger.info(
+                            f"Updated BatchOperation {operation_id} status: {batch_op.status}"
+                        )
+                    except BatchOperation.DoesNotExist:
+                        logger.debug(
+                            f"BatchOperation not found: {operation_id} "
+                            f"(may be direct sync without BatchOperation)"
+                        )
+
+        except Exception as e:
+            logger.error(
+                f"Error handling cluster-synced event: {e}",
+                exc_info=True
+            )
+        finally:
+            # Always release the sync lock to allow new sync operations
+            if cluster_id:
+                sync_lock_key = f"sync_cluster:{cluster_id}"
+                redis_client.release_lock(sync_lock_key)
+                logger.debug(f"Released sync lock for cluster {cluster_id}")
 
     def _update_task_status_from_correlation_id(
         self,
