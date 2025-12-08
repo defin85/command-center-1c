@@ -380,6 +380,6 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'redis->worker': 'queue',
   'worker->ras-adapter': 'http',
   'worker->batch-service': 'http',
-  'batch-service->postgresql': 'database',
+  // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL
   // Results: Worker → Redis Pub/Sub → Orchestrator (implicit via redis)
 }

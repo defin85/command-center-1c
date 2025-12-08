@@ -124,9 +124,7 @@ SERVICE_TOPOLOGY = [
     ('worker', 'ras-adapter'),
     ('worker', 'batch-service'),
 
-    # Level 3 → 4: Services → Infrastructure
-    ('batch-service', 'postgresql'),
-
+    # Note: batch-service uses filesystem for backups, 1cv8.exe for 1C, no direct PostgreSQL
     # Results flow: Worker → Redis Pub/Sub → Orchestrator (implicit via redis connection)
 ]
 
