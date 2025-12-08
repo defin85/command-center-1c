@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { getV2, Cluster } from '../../api/generated'
+import { getV2 } from '../../api/generated'
+import type { Cluster } from '../../api/generated/model/cluster'
 import { apiClient } from '../../api/client'
 
 const { TextArea } = Input

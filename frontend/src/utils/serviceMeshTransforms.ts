@@ -9,12 +9,10 @@
  * @module utils/serviceMeshTransforms
  */
 
-import type {
-  ServiceHistoryResponse,
-  HistoryDataPoint as GeneratedHistoryDataPoint,
-  OperationListResponse,
-  BatchOperation,
-} from '../api/generated'
+import type { ServiceHistoryResponse } from '../api/generated/model/serviceHistoryResponse'
+import type { HistoryDataPoint as GeneratedHistoryDataPoint } from '../api/generated/model/historyDataPoint'
+import type { OperationListResponse } from '../api/generated/model/operationListResponse'
+import type { BatchOperation } from '../api/generated/model/batchOperation'
 import type {
   HistoricalMetricsResponse,
   HistoricalDataPoint,
