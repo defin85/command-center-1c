@@ -47,7 +47,7 @@ class Task(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
 
     # Execution Tracking
-    celery_task_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    task_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     worker_id = models.CharField(max_length=255, blank=True, help_text="Worker that processed this task")
 
     # Result
@@ -76,7 +76,7 @@ class Task(models.Model):
             models.Index(fields=['batch_operation', 'status']),
             models.Index(fields=['database', 'status']),
             models.Index(fields=['status', 'next_retry_at']),
-            models.Index(fields=['celery_task_id']),
+            models.Index(fields=['task_id']),
             models.Index(fields=['created_at']),
         ]
         verbose_name = 'Task'

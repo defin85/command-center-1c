@@ -101,7 +101,7 @@ class BatchOperation(models.Model):
     retry_tasks = models.IntegerField(default=0, help_text="Number of tasks in retry")
 
     # Execution Tracking
-    celery_task_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    task_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -119,7 +119,7 @@ class BatchOperation(models.Model):
         indexes = [
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['operation_type', 'status']),
-            models.Index(fields=['celery_task_id']),
+            models.Index(fields=['task_id']),
         ]
         verbose_name = 'Batch Operation'
         verbose_name_plural = 'Batch Operations'

@@ -55,7 +55,7 @@ export interface UIBatchOperation {
   failed_tasks: number
   payload: unknown
   config: unknown
-  celery_task_id: string | null
+  task_id: string | null
   started_at: string | null
   completed_at: string | null
   duration_seconds: number | null
@@ -137,7 +137,7 @@ export function transformBatchOperation(op: GeneratedBatchOperation): UIBatchOpe
     failed_tasks: op.failed_tasks,
     payload: op.payload,
     config: op.config,
-    celery_task_id: op.celery_task_id ?? null,
+    task_id: op.task_id ?? null,
     started_at: op.started_at ?? null,
     completed_at: op.completed_at ?? null,
     duration_seconds: parseNumericField(op.duration_seconds),

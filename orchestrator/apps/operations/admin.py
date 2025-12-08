@@ -31,7 +31,7 @@ class TaskAdmin(admin.ModelAdmin):
     search_fields = ['id', 'batch_operation__name', 'database__name']
     readonly_fields = [
         'id',
-        'celery_task_id',
+        'task_id',
         'worker_id',
         'started_at',
         'completed_at',

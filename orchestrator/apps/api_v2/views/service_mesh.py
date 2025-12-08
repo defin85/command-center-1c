@@ -195,7 +195,7 @@ def fetch_service_health(service: dict, timeout: float = 2.0) -> dict:
 @extend_schema(
     tags=['v2'],
     summary='Get service mesh metrics',
-    description='Get service mesh metrics and health status for all monitored services including Go services, Celery workers, Redis, and PostgreSQL.',
+    description='Get service mesh metrics and health status for all monitored services including Go services, Redis, and PostgreSQL.',
     parameters=[
         OpenApiParameter(name='service', type=str, required=False, description='Filter by service name (e.g., api-gateway, worker)'),
         OpenApiParameter(name='include_prometheus', type=bool, required=False, description='Include raw Prometheus metrics (default: false)'),
@@ -276,42 +276,10 @@ def get_metrics(request):
                     'error': str(e),
                 })
 
-    # Add Django/Celery internal metrics
+    # Add internal infrastructure metrics
     internal_services = []
 
-    # Check Celery workers
-    try:
-        from celery import current_app
-        inspect = current_app.control.inspect(timeout=1.0)
-        active = inspect.active()
-        if active:
-            worker_count = len(active)
-            total_tasks = sum(len(tasks) for tasks in active.values())
-            internal_services.append({
-                'name': 'celery-workers',
-                'type': 'internal',
-                'status': 'healthy',
-                'details': {
-                    'worker_count': worker_count,
-                    'active_tasks': total_tasks,
-                },
-            })
-        else:
-            internal_services.append({
-                'name': 'celery-workers',
-                'type': 'internal',
-                'status': 'unreachable',
-                'error': 'No workers available',
-            })
-    except Exception as e:
-        internal_services.append({
-            'name': 'celery-workers',
-            'type': 'internal',
-            'status': 'error',
-            'error': str(e),
-        })
-
-    # Check Redis (Celery broker)
+    # Check Redis
     try:
         from django_redis import get_redis_connection
         redis_conn = get_redis_connection("default")

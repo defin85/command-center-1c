@@ -207,52 +207,37 @@ class ODataBackend(AbstractOperationBackend):
                 }
             )
 
-            # 2. Enqueue to Worker via Go Worker (or Celery fallback)
+            # 2. Enqueue to Go Worker
             from apps.operations.services import OperationsService
 
-            if OperationsService.is_celery_enabled():
-                # Legacy Celery path
-                from apps.operations.tasks import enqueue_operation
-                celery_result = enqueue_operation.delay(operation.id)
-                task_id = celery_result.id
+            enqueue_result = OperationsService.enqueue_operation(str(operation.id))
+            task_id = enqueue_result.operation_id if enqueue_result.success else None
+
+            if enqueue_result.success:
                 logger.info(
-                    f"Operation {operation.id} enqueued to Celery",
+                    f"Operation {operation.id} enqueued to Go Worker",
                     extra={
                         'operation_id': operation.id,
-                        'celery_task_id': task_id
+                        'status': enqueue_result.status
                     }
                 )
             else:
-                # New Go Worker path
-                enqueue_result = OperationsService.enqueue_operation(str(operation.id))
-                task_id = enqueue_result.operation_id if enqueue_result.success else None
-
-                if enqueue_result.success:
-                    logger.info(
-                        f"Operation {operation.id} enqueued to Go Worker",
-                        extra={
-                            'operation_id': operation.id,
-                            'status': enqueue_result.status
-                        }
-                    )
-                else:
-                    logger.warning(
-                        f"Go Worker enqueue failed: {enqueue_result.error}, falling back to sync"
-                    )
-                    # No fallback to Celery - operation stays in queue for retry
-                    task_id = None
+                logger.warning(
+                    f"Go Worker enqueue failed: {enqueue_result.error}, falling back to sync"
+                )
+                task_id = None
 
             # 3. SYNC vs ASYNC execution
             if mode == NodeExecutionMode.ASYNC:
                 return self._return_async(
                     operation=operation,
-                    celery_task_id=task_id,
+                    task_id=task_id,
                     start_time=start_time
                 )
             else:
                 return self._return_sync(
                     operation=operation,
-                    celery_task_id=task_id,
+                    task_id=task_id,
                     context=context,
                     start_time=start_time
                 )
@@ -286,7 +271,7 @@ class ODataBackend(AbstractOperationBackend):
     def _return_async(
         self,
         operation: BatchOperation,
-        celery_task_id: str,
+        task_id: str,
         start_time: float
     ) -> NodeExecutionResult:
         """Return async result immediately after enqueueing."""
@@ -296,7 +281,7 @@ class ODataBackend(AbstractOperationBackend):
             f"ASYNC operation {operation.id} queued successfully",
             extra={
                 'operation_id': operation.id,
-                'celery_task_id': celery_task_id,
+                'task_id': task_id,
                 'duration_seconds': duration
             }
         )
@@ -306,7 +291,7 @@ class ODataBackend(AbstractOperationBackend):
             output={
                 'operation_id': operation.id,
                 'status': 'queued',
-                'celery_task_id': celery_task_id,
+                'task_id': task_id,
                 'total_tasks': operation.total_tasks,
                 'backend': 'odata'
             },
@@ -314,13 +299,13 @@ class ODataBackend(AbstractOperationBackend):
             mode=NodeExecutionMode.ASYNC,
             duration_seconds=duration,
             operation_id=operation.id,
-            task_id=celery_task_id
+            task_id=task_id
         )
 
     def _return_sync(
         self,
         operation: BatchOperation,
-        celery_task_id: str,
+        task_id: str,
         context: Dict[str, Any],
         start_time: float
     ) -> NodeExecutionResult:
@@ -364,7 +349,7 @@ class ODataBackend(AbstractOperationBackend):
             mode=NodeExecutionMode.SYNC,
             duration_seconds=duration,
             operation_id=operation.id,
-            task_id=celery_task_id
+            task_id=task_id
         )
 
     def supports_operation_type(self, operation_type: str) -> bool:

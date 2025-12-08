@@ -78,7 +78,7 @@ class TestServiceMeshGetHistory:
     @pytest.mark.django_db
     def test_get_history_with_valid_service(self, authenticated_client):
         """Test historical metrics with valid service."""
-        with patch('apps.api_v2.views.service_mesh.get_prometheus_client') as mock_client:
+        with patch('apps.operations.services.prometheus_client.get_prometheus_client') as mock_client:
             # Mock Prometheus client to return empty data
             mock_instance = MagicMock()
             mock_instance.get_historical_metrics.return_value = []
@@ -106,7 +106,7 @@ class TestServiceMeshGetHistory:
     @pytest.mark.django_db
     def test_get_history_with_custom_minutes(self, authenticated_client):
         """Test historical metrics with custom time range."""
-        with patch('apps.api_v2.views.service_mesh.get_prometheus_client') as mock_client:
+        with patch('apps.operations.services.prometheus_client.get_prometheus_client') as mock_client:
             mock_instance = MagicMock()
             mock_instance.get_historical_metrics.return_value = []
             mock_client.return_value = mock_instance

@@ -136,7 +136,7 @@ class ExecuteWorkflowResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     mode = serializers.CharField()
     message = serializers.CharField()
-    celery_task_id = serializers.CharField(required=False)
+    task_id = serializers.CharField(required=False)
     final_result = serializers.DictField(required=False, allow_null=True)
     duration = serializers.FloatField(required=False, allow_null=True)
     error_message = serializers.CharField(required=False)
@@ -557,7 +557,7 @@ def execute_workflow(request):
                             'workflow_id': str(workflow_id),
                             'executed_by': request.user.username if request.user else 'anonymous',
                             'mode': 'async_celery',
-                            'celery_task_id': task.id,
+                            'task_id': task.id,
                         }
                     )
 
@@ -565,7 +565,7 @@ def execute_workflow(request):
                         'execution_id': str(execution.id),
                         'status': 'pending',
                         'mode': 'async',
-                        'celery_task_id': task.id,
+                        'task_id': task.id,
                         'message': 'Workflow execution started (Celery)',
                     })
                 except Exception as e:

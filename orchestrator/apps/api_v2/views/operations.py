@@ -349,13 +349,8 @@ def cancel_operation(request):
         status__in=[Task.STATUS_PENDING, Task.STATUS_QUEUED]
     ).update(status=Task.STATUS_CANCELLED)
 
-    # Revoke Celery task if exists
-    if operation.celery_task_id:
-        try:
-            from celery import current_app
-            current_app.control.revoke(operation.celery_task_id, terminate=True)
-        except Exception as e:
-            logger.warning(f"Failed to revoke Celery task: {e}")
+    # Note: Go Worker handles task cancellation via Redis events
+    # No need to revoke tasks here - operation status change triggers cancellation
 
     # Audit logging
     logger.info(

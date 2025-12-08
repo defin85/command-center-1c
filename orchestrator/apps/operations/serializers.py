@@ -33,7 +33,7 @@ class BatchOperationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'operation_type', 'target_entity',
             'status', 'progress', 'total_tasks', 'completed_tasks', 'failed_tasks',
-            'payload', 'config', 'celery_task_id',
+            'payload', 'config', 'task_id',
             'started_at', 'completed_at', 'duration_seconds', 'success_rate',
             'created_by', 'metadata', 'created_at', 'updated_at',
             'database_names', 'tasks'

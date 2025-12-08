@@ -13,7 +13,7 @@
  *      /     |      \
  * [Orch] [Worker] [RAS]
  */
-import React, { useMemo, useCallback } from 'react'
+import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -23,6 +23,8 @@ import ReactFlow, {
   MarkerType,
   ConnectionLineType,
 } from 'reactflow'
+import { Button } from 'antd'
+import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
 import 'reactflow/dist/style.css'
 import ServiceNode, { type ServiceNodeData } from './ServiceNode'
 import type {
@@ -151,6 +153,30 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   positions = DEFAULT_SERVICE_POSITIONS,
   activeOperation,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Handle fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // Toggle fullscreen
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen()
+    } else {
+      document.exitFullscreen()
+    }
+  }, [])
+
   // Handle service selection
   const handleServiceSelect = useCallback(
     (service: string) => {
@@ -240,7 +266,10 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   }, [onServiceSelect])
 
   return (
-    <div className="service-flow-diagram">
+    <div
+      ref={containerRef}
+      className={`service-flow-diagram ${isFullscreen ? 'service-flow-diagram--fullscreen' : ''}`}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -263,6 +292,16 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           position="bottom-right"
         />
       </ReactFlow>
+
+      {/* Fullscreen button */}
+      <div className="service-flow-diagram__fullscreen-button">
+        <Button
+          icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+          size="large"
+        />
+      </div>
 
       {/* Legend */}
       <div className="service-flow-diagram__legend">

@@ -4,6 +4,440 @@ info:
   version: 1.0.0
   description: API для управления операциями в 700+ базах 1С
 paths:
+  /api/internal/clusters/{cluster_id}/health:
+    post:
+      operationId: internal_clusters_health_create
+      description: |-
+        POST /api/internal/clusters/{id}/health
+
+        Update cluster health status.
+        Called by Go Worker after health check execution.
+
+        Request body:
+        {
+            "healthy": true,
+            "error_message": "",
+            "last_check_at": "2025-01-01T12:00:00Z"  // optional
+        }
+
+        Response:
+        {
+            "status": "ok"
+        }
+      parameters:
+      - in: path
+        name: cluster_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/databases/{database_id}/credentials:
+    get:
+      operationId: internal_databases_credentials_retrieve
+      description: |-
+        GET /api/internal/databases/{id}/credentials
+
+        Get database credentials for OData access.
+        Called by Go Worker to fetch credentials for batch operations.
+
+        Response:
+        {
+            "odata_url": "http://localhost:8080/base/odata/standard.odata",
+            "username": "admin",
+            "password": "secret",
+            "cluster_id": "550e8400-e29b-41d4-a716-446655440000"
+        }
+      parameters:
+      - in: path
+        name: database_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/databases/{database_id}/health:
+    post:
+      operationId: internal_databases_health_create
+      description: |-
+        POST /api/internal/databases/{id}/health
+
+        Update database health status.
+        Called by Go Worker after health check execution.
+
+        Request body:
+        {
+            "healthy": true,
+            "error_message": "",
+            "last_check_at": "2025-01-01T12:00:00Z",  // optional
+            "response_time_ms": 250,  // optional
+            "error_code": ""  // optional
+        }
+
+        Response:
+        {
+            "status": "ok"
+        }
+      parameters:
+      - in: path
+        name: database_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/databases/health-check-list/:
+    get:
+      operationId: internal_databases_health_check_list_retrieve
+      description: |-
+        GET /api/internal/databases/health-check-list
+
+        Get list of databases for periodic health checks.
+        Called by Go Worker to fetch databases that need health monitoring.
+
+        Response:
+        {
+            "databases": [
+                {
+                    "id": "db-123",
+                    "odata_url": "http://localhost:8080/base/odata/standard.odata",
+                    "name": "Production DB"
+                }
+            ],
+            "count": 1
+        }
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/failed-events/{event_id}/failed:
+    post:
+      operationId: internal_failed_events_failed_create
+      description: |-
+        POST /api/internal/failed-events/{id}/failed
+
+        Mark event as failed (increment retry count).
+        Called by Go Worker when replay attempt fails.
+
+        Request body:
+        {
+            "error_message": "Connection refused",
+            "increment_retry": true  // default: true
+        }
+
+        Response:
+        {
+            "success": true,
+            "new_status": "pending",
+            "retry_count": 3
+        }
+      parameters:
+      - in: path
+        name: event_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/failed-events/{event_id}/replayed:
+    post:
+      operationId: internal_failed_events_replayed_create
+      description: |-
+        POST /api/internal/failed-events/{id}/replayed
+
+        Mark event as successfully replayed.
+        Called by Go Worker after successfully publishing event to Redis.
+
+        Request body:
+        {
+            "replayed_at": "2025-01-01T12:00:00Z"  // optional, defaults to now
+        }
+
+        Response:
+        {
+            "success": true
+        }
+      parameters:
+      - in: path
+        name: event_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/failed-events/cleanup:
+    post:
+      operationId: internal_failed_events_cleanup_create
+      description: |-
+        POST /api/internal/failed-events/cleanup
+
+        Delete old replayed events.
+        Called by Go Worker periodically to clean up storage.
+
+        Request body:
+        {
+            "retention_days": 7  // default: 7, events older than this will be deleted
+        }
+
+        Response:
+        {
+            "deleted_count": 150
+        }
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/failed-events/pending:
+    get:
+      operationId: internal_failed_events_pending_retrieve
+      description: |-
+        GET /api/internal/failed-events/pending
+
+        Get pending failed events for replay.
+        Called by Go Worker to fetch events that need to be replayed to Redis.
+
+        Query params:
+            batch_size: int (default: 100, max: 1000)
+
+        Response:
+        {
+            "events": [...],
+            "count": 10
+        }
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/scheduler/runs/{run_id}/complete:
+    post:
+      operationId: internal_scheduler_runs_complete_create
+      description: |-
+        POST /api/internal/scheduler/runs/{id}/complete
+
+        Complete a scheduler job run.
+        Called by Go Worker when a scheduled job finishes execution.
+
+        Request body:
+        {
+            "status": "success",
+            "duration_ms": 1234,
+            "result_summary": "Processed 10 items",
+            "error_message": "",
+            "items_processed": 10,
+            "items_failed": 0
+        }
+
+        Response:
+        {
+            "status": "ok"
+        }
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/scheduler/runs/start:
+    post:
+      operationId: internal_scheduler_runs_start_create
+      description: |-
+        POST /api/internal/scheduler/runs/start
+
+        Start a new scheduler job run.
+        Called by Go Worker when a scheduled job begins execution.
+
+        Request body:
+        {
+            "job_name": "health_check_databases",
+            "worker_instance": "worker-1"
+        }
+
+        Response:
+        {
+            "id": 123
+        }
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/tasks/{log_id}/complete:
+    post:
+      operationId: internal_tasks_complete_create
+      description: |-
+        POST /api/internal/tasks/{id}/complete
+
+        Log task execution completion.
+        Called by Go Worker when a task finishes processing.
+
+        Request body:
+        {
+            "status": "success",
+            "duration_ms": 1234,
+            "result_summary": "OK",
+            "error_message": "",
+            "error_type": "",
+            "retry_count": 0
+        }
+
+        Response:
+        {
+            "status": "ok"
+        }
+      parameters:
+      - in: path
+        name: log_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/tasks/start:
+    post:
+      operationId: internal_tasks_start_create
+      description: |-
+        POST /api/internal/tasks/start
+
+        Log task execution start.
+        Called by Go Worker when a task begins processing.
+
+        Request body:
+        {
+            "task_id": "task-123",
+            "task_type": "health_check",
+            "queue_name": "default",
+            "worker_instance": "worker-1",
+            "operation_id": "op-456"  // optional
+        }
+
+        Response:
+        {
+            "id": 123
+        }
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/templates/{template_id}:
+    get:
+      operationId: internal_templates_retrieve
+      description: |-
+        GET /api/internal/templates/{id}
+
+        Get template data for Go Worker.
+        Returns template definition including template_data for rendering.
+
+        Response:
+        {
+            "id": "create_document",
+            "name": "Create Document Template",
+            "operation_type": "create",
+            "target_entity": "Document.ЗаказКлиента",
+            "template_data": {...},
+            "version": 1,
+            "is_active": true
+        }
+      parameters:
+      - in: path
+        name: template_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/internal/templates/{template_id}/render:
+    post:
+      operationId: internal_templates_render_create
+      description: |-
+        POST /api/internal/templates/{id}/render
+
+        Render template using Python Jinja2 (fallback for Go pongo2).
+        Called by Go Worker when pongo2 encounters incompatible syntax.
+
+        Request body:
+        {
+            "context": {
+                "order_number": "12345",
+                "items": [{"name": "Item1", "qty": 10}]
+            }
+        }
+
+        Response:
+        {
+            "rendered": {...},
+            "success": true,
+            "error": ""
+        }
+      parameters:
+      - in: path
+        name: template_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - internal
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/token/:
     post:
       operationId: token_create
@@ -1345,6 +1779,7 @@ paths:
           - install_extension
           - lock_scheduled_jobs
           - query
+          - sync_cluster
           - terminate_sessions
           - unblock_sessions
           - unlock_scheduled_jobs
@@ -1360,6 +1795,7 @@ paths:
           * `terminate_sessions` - Terminate Sessions
           * `block_sessions` - Block Sessions
           * `unblock_sessions` - Unblock Sessions
+          * `sync_cluster` - Sync Cluster
       - name: page
         required: false
         in: query
@@ -3780,7 +4216,7 @@ paths:
     get:
       operationId: v2_service_mesh_get_metrics_retrieve
       description: Get service mesh metrics and health status for all monitored services
-        including Go services, Celery workers, Redis, and PostgreSQL.
+        including Go services, Redis, and PostgreSQL.
       summary: Get service mesh metrics
       parameters:
       - in: query
@@ -4558,7 +4994,7 @@ components:
           type: object
           additionalProperties: {}
           description: Execution configuration (timeout, retries, etc.)
-        celery_task_id:
+        task_id:
           type: string
           nullable: true
           maxLength: 255
@@ -4853,12 +5289,15 @@ components:
         cluster_id:
           type: string
           format: uuid
+        operation_id:
+          type: string
+          description: BatchOperation ID for tracking
         status:
           type: string
           description: 'Sync status: syncing, success'
         task_id:
           type: string
-          description: Celery task ID (if async)
+          description: Task ID (if async)
         message:
           type: string
         databases_found:
@@ -5205,7 +5644,7 @@ components:
           type: string
         message:
           type: string
-        celery_task_id:
+        task_id:
           type: string
         final_result:
           type: object
@@ -5856,6 +6295,7 @@ components:
       - terminate_sessions
       - block_sessions
       - unblock_sessions
+      - sync_cluster
       type: string
       description: |-
         * `create` - Create
@@ -5868,6 +6308,7 @@ components:
         * `terminate_sessions` - Terminate Sessions
         * `block_sessions` - Block Sessions
         * `unblock_sessions` - Unblock Sessions
+        * `sync_cluster` - Sync Cluster
     OverallStatusEnum:
       enum:
       - healthy
@@ -6106,7 +6547,7 @@ components:
           type: object
           additionalProperties: {}
           description: Execution configuration (timeout, retries, etc.)
-        celery_task_id:
+        task_id:
           type: string
           nullable: true
           maxLength: 255
@@ -6506,9 +6947,9 @@ components:
         status:
           type: string
           description: 'Installation status: pending'
-        celery_task_id:
+        task_id:
           type: string
-          description: Celery task ID (if async)
+          description: Task ID (if async)
         message:
           type: string
           description: Status message

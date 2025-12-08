@@ -486,7 +486,7 @@ class TestOperationHandlerTargetDatabases:
 
             # Mock enqueue_operation (now in backends.odata)
             with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_enqueue.delay.return_value = MagicMock(id="celery_task_id")
+                mock_enqueue.delay.return_value = MagicMock(id="test_task_id")
 
                 # Use ASYNC mode to test BatchOperation creation without waiting
                 result = handler.execute(

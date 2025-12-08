@@ -101,7 +101,7 @@ class RetryInstallationResponseSerializer(serializers.Serializer):
     database_id = serializers.CharField(help_text="Database UUID")
     installation_id = serializers.CharField(help_text="New installation UUID")
     status = serializers.CharField(help_text="Installation status: pending")
-    celery_task_id = serializers.CharField(required=False, help_text="Celery task ID (if async)")
+    task_id = serializers.CharField(required=False, help_text="Task ID (if async)")
     message = serializers.CharField(help_text="Status message")
 
 # Configuration
@@ -449,7 +449,7 @@ def retry_installation(request):
                     'extension_name': extension_name,
                     'retry_count': retry_count,
                     'requested_by': request.user.username if request.user else 'anonymous',
-                    'celery_task_id': task.id,
+                    'task_id': task.id,
                 }
             )
 
@@ -457,7 +457,7 @@ def retry_installation(request):
                 'database_id': database_id,
                 'installation_id': str(installation.id),
                 'status': 'pending',
-                'celery_task_id': task.id,
+                'task_id': task.id,
                 'message': 'Installation retry scheduled (Celery)',
             })
         except Exception as e:
@@ -714,7 +714,7 @@ def batch_install(request):
                         'queued': queued_count,
                         'skipped': skipped_count,
                         'requested_by': request.user.username if request.user else 'anonymous',
-                        'celery_task_id': task.id,
+                        'task_id': task.id,
                     }
                 )
             except Exception as e:

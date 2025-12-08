@@ -106,10 +106,13 @@ class TestODataBackendExecution:
             mock_operation.total_tasks = 2
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-123'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-123",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -152,10 +155,13 @@ class TestODataBackendExecution:
             mock_operation.total_tasks = 1
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-456'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-456",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -194,10 +200,13 @@ class TestODataBackendExecution:
             mock_operation.total_tasks = 5
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-async'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-async",
+                    status="queued",
+                    error=None
+                )
 
                 result = backend.execute(
                     template=create_operation_template,
@@ -213,7 +222,7 @@ class TestODataBackendExecution:
         assert result.mode == NodeExecutionMode.ASYNC
         assert result.output['status'] == 'queued'
         assert result.output['operation_id'] == mock_operation.id
-        assert result.output['celery_task_id'] == 'task-async'
+        assert result.output['task_id'] == 'task-async'
         assert result.output['total_tasks'] == 5
 
     @pytest.mark.django_db
@@ -233,10 +242,13 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-123'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-123",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     # Simulate timeout
@@ -255,7 +267,7 @@ class TestODataBackendExecution:
                     )
 
         assert result.success is False
-        assert 'timeout' in result.error.lower()
+        assert 'timed out' in result.error.lower()
         assert result.operation_id == mock_operation.id
 
     @pytest.mark.django_db
@@ -298,8 +310,8 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_enqueue.delay.side_effect = Exception("Celery error")
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.side_effect = Exception("Queue error")
 
                 result = backend.execute(
                     template=create_operation_template,
@@ -328,10 +340,13 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-123'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-123",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -379,10 +394,13 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-del'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-del",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -428,10 +446,13 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-query'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-query",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -478,10 +499,13 @@ class TestODataBackendExecution:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-ext'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-ext",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {
@@ -532,10 +556,13 @@ class TestODataBackendIntegration:
             mock_operation.id = str(uuid4())
             mock_factory.create.return_value = mock_operation
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-123'
-                mock_enqueue.delay.return_value = mock_celery_result
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.return_value = MagicMock(
+                    success=True,
+                    operation_id="task-123",
+                    status="queued",
+                    error=None
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
                     mock_waiter.wait.return_value = {

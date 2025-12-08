@@ -83,7 +83,7 @@ class ClusterSyncResponseSerializer(serializers.Serializer):
     cluster_id = serializers.UUIDField()
     operation_id = serializers.CharField(required=False, help_text="BatchOperation ID for tracking")
     status = serializers.CharField(help_text="Sync status: syncing, success")
-    task_id = serializers.CharField(required=False, help_text="Celery task ID (if async)")
+    task_id = serializers.CharField(required=False, help_text="Task ID (if async)")
     message = serializers.CharField()
     databases_found = serializers.IntegerField(required=False)
     created = serializers.IntegerField(required=False)
@@ -353,15 +353,15 @@ def sync_cluster(request):
             from apps.databases.tasks import sync_cluster_task
             task = sync_cluster_task.apply_async(args=[str(cluster_id), str(operation.id)])
 
-            operation.celery_task_id = task.id
-            operation.save(update_fields=['celery_task_id'])
+            operation.task_id = task.id
+            operation.save(update_fields=['task_id'])
 
             logger.info(
                 "Cluster sync started via Celery",
                 extra={
                     'cluster_id': str(cluster_id),
                     'operation_id': str(operation.id),
-                    'celery_task_id': task.id,
+                    'task_id': task.id,
                 }
             )
 

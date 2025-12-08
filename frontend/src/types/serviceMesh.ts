@@ -241,21 +241,23 @@ export interface ServiceLayoutConfig {
  * Default service positions for the flow diagram
  */
 export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
-  // Level 0: Client
+  // Level 0: Client (top center)
   frontend: { x: 400, y: 50 },
+
   // Level 1: Entry Point
   'api-gateway': { x: 400, y: 150 },
-  // Level 2: Core Services
-  orchestrator: { x: 150, y: 300 },
-  worker: { x: 400, y: 300 },
-  'ras-adapter': { x: 650, y: 300 },
-  // Level 3: Workers
-  'celery-beat': { x: 50, y: 450 },
-  'celery-worker': { x: 250, y: 450 },
-  'batch-service': { x: 550, y: 450 },
-  // Level 4: Infrastructure
-  postgresql: { x: 250, y: 600 },
-  redis: { x: 550, y: 600 },
+
+  // Level 2: Orchestrator (center - main hub)
+  orchestrator: { x: 400, y: 280 },
+
+  // Level 3: Infrastructure + Worker (horizontal)
+  postgresql: { x: 200, y: 410 },
+  redis: { x: 400, y: 410 },
+  worker: { x: 600, y: 410 },
+
+  // Level 4: Worker children (bottom)
+  'ras-adapter': { x: 500, y: 540 },
+  'batch-service': { x: 700, y: 540 },
 }
 
 /**
@@ -301,18 +303,6 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'RAS Adapter',
     icon: 'api',
     description: '1C cluster management',
-  },
-  'celery-worker': {
-    name: 'celery-worker',
-    displayName: 'Celery Worker',
-    icon: 'sync',
-    description: 'Async task processing',
-  },
-  'celery-beat': {
-    name: 'celery-beat',
-    displayName: 'Celery Beat',
-    icon: 'clock-circle',
-    description: 'Scheduled tasks',
   },
   'batch-service': {
     name: 'batch-service',

@@ -88,16 +88,6 @@ SERVICE_CONFIG = {
         'job_patterns': ['frontend', 'react'],
         'namespace': 'frontend',
     },
-    'celery-worker': {
-        'display_name': 'Celery Worker',
-        'job_patterns': ['celery_worker', 'celery-worker', 'celery'],
-        'namespace': 'celery',
-    },
-    'celery-beat': {
-        'display_name': 'Celery Beat',
-        'job_patterns': ['celery_beat', 'celery-beat'],
-        'namespace': 'celery',
-    },
     'batch-service': {
         'display_name': 'Batch Service',
         'job_patterns': ['batch_service', 'batch-service', 'batchservice'],
@@ -120,24 +110,23 @@ SERVICE_TOPOLOGY = [
     # Level 0 → 1: Client → Gateway
     ('frontend', 'api-gateway'),
 
-    # Level 1 → 2: Gateway → Core
+    # Level 1 → 2: Gateway → Orchestrator (ALL requests go through Orchestrator)
     ('api-gateway', 'orchestrator'),
-    ('api-gateway', 'worker'),
-    ('api-gateway', 'ras-adapter'),
 
-    # Level 2 → 3: Core → Workers
-    ('orchestrator', 'celery-worker'),
-    ('orchestrator', 'celery-beat'),
-    ('worker', 'batch-service'),
-    ('worker', 'ras-adapter'),
-
-    # Level 2/3 → 4: Services → Infrastructure
+    # Level 2: Orchestrator → Infrastructure
     ('orchestrator', 'postgresql'),
     ('orchestrator', 'redis'),
-    ('celery-worker', 'redis'),
-    ('celery-beat', 'redis'),
-    ('worker', 'redis'),
-    ('batch-service', 'postgresql'),  # Extension install status storage
+
+    # Level 2 → 3: Worker gets tasks from Redis
+    ('redis', 'worker'),  # Worker pulls from Redis queue
+
+    # Level 3: Worker → External services
+    ('worker', 'ras-adapter'),
+    ('worker', 'batch-service'),
+
+    # Level 3 → 4: Services → Infrastructure
+    ('batch-service', 'postgresql'),
+    ('ras-adapter', 'orchestrator'),  # RAS reports back to Orchestrator
 ]
 
 
