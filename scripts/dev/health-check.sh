@@ -55,6 +55,7 @@ check_process() {
 }
 
 check_process "orchestrator"
+check_process "event-subscriber"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"

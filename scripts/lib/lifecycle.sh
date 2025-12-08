@@ -54,6 +54,7 @@ CC1C_LIB_LIFECYCLE_LOADED=true
 # Категории сервисов: python, go, frontend, external
 declare -gA SERVICE_CATEGORIES=(
     ["orchestrator"]="python"
+    ["event-subscriber"]="python"
     ["api-gateway"]="go"
     ["worker"]="go"
     ["ras-adapter"]="go"
@@ -65,6 +66,7 @@ declare -gA SERVICE_CATEGORIES=(
 # Порядок запуска (сначала backend, потом frontend)
 declare -ga SERVICE_START_ORDER=(
     orchestrator
+    event-subscriber
     api-gateway
     worker
     ras-adapter
@@ -79,6 +81,7 @@ declare -ga SERVICE_STOP_ORDER=(
     ras-adapter
     worker
     api-gateway
+    event-subscriber
     orchestrator
 )
 
@@ -94,6 +97,7 @@ declare -gA SERVICE_PORTS=(
 # Таймаут остановки для сервисов (секунды)
 declare -gA SERVICE_STOP_TIMEOUT=(
     ["orchestrator"]=15
+    ["event-subscriber"]=10
     ["api-gateway"]=10
     ["worker"]=15
     ["ras-adapter"]=10
@@ -273,6 +277,10 @@ _start_python_service() {
         orchestrator)
             local port="${ORCHESTRATOR_PORT:-8200}"
             nohup daphne -b 0.0.0.0 -p "$port" config.asgi:application > "$log_file" 2>&1 &
+            LAST_SERVICE_PID=$!
+            ;;
+        event-subscriber)
+            nohup python manage.py run_event_subscriber > "$log_file" 2>&1 &
             LAST_SERVICE_PID=$!
             ;;
         *)

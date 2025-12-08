@@ -246,6 +246,7 @@ def system_health(request):
         })
 
     # Check Redis (direct connection)
+    redis_client = None
     try:
         import redis
         start = time.time()
@@ -264,6 +265,50 @@ def system_health(request):
         results.append({
             'name': 'Redis',
             'type': 'cache',
+            'status': 'offline',
+            'response_time_ms': None,
+            'last_check': timezone.now().isoformat(),
+            'details': {'error': str(e)},
+        })
+
+    # Check Event Subscriber (via Redis consumer group)
+    try:
+        start = time.time()
+        if redis_client is None:
+            import redis
+            redis_client = redis.Redis(host='localhost', port=6379, socket_timeout=2)
+        # Check if orchestrator-group consumer exists on any stream
+        stream = 'events:worker:cluster-synced'
+        groups = redis_client.xinfo_groups(stream)
+        response_time = (time.time() - start) * 1000
+        orchestrator_group = next(
+            (g for g in groups if g.get('name', b'').decode('utf-8') == 'orchestrator-group'),
+            None
+        )
+        if orchestrator_group:
+            consumers = orchestrator_group.get('consumers', 0)
+            results.append({
+                'name': 'Event Subscriber',
+                'type': 'django',
+                'status': 'online' if consumers > 0 else 'degraded',
+                'response_time_ms': round(response_time, 2),
+                'last_check': timezone.now().isoformat(),
+                'details': {'consumers': consumers, 'stream': stream},
+            })
+        else:
+            results.append({
+                'name': 'Event Subscriber',
+                'type': 'django',
+                'status': 'offline',
+                'response_time_ms': None,
+                'last_check': timezone.now().isoformat(),
+                'details': {'error': 'consumer_group_not_found'},
+            })
+    except Exception as e:
+        logger.warning(f"Event Subscriber health check failed: {e}")
+        results.append({
+            'name': 'Event Subscriber',
+            'type': 'django',
             'status': 'offline',
             'response_time_ms': None,
             'last_check': timezone.now().isoformat(),

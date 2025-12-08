@@ -103,6 +103,11 @@ SERVICE_CONFIG = {
         'job_patterns': ['redis', 'redis_exporter'],
         'namespace': 'redis',  # redis_exporter uses redis_* prefix
     },
+    'event-subscriber': {
+        'display_name': 'Event Subscriber',
+        'job_patterns': ['event_subscriber', 'event-subscriber', 'eventsubscriber'],
+        'namespace': 'orchestrator',  # Part of Django orchestrator
+    },
 }
 
 # Service mesh topology (connections between services)
@@ -120,12 +125,16 @@ SERVICE_TOPOLOGY = [
     # Level 2 → 3: Worker gets tasks from Redis
     ('redis', 'worker'),  # Worker pulls from Redis queue
 
+    # Level 2.5: Event Subscriber listens to Redis Streams
+    ('redis', 'event-subscriber'),  # Event Subscriber consumes Redis Streams
+    ('event-subscriber', 'postgresql'),  # Event Subscriber writes to DB
+
     # Level 3: Worker → External services
     ('worker', 'ras-adapter'),
     ('worker', 'batch-service'),
 
     # Note: batch-service uses filesystem for backups, 1cv8.exe for 1C, no direct PostgreSQL
-    # Results flow: Worker → Redis Pub/Sub → Orchestrator (implicit via redis connection)
+    # Results flow: Worker → Redis Pub/Sub → Event Subscriber → PostgreSQL
 ]
 
 

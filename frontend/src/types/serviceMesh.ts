@@ -252,6 +252,9 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   // Level 2: Orchestrator (center - main hub)
   orchestrator: { x: 400, y: 280 },
 
+  // Level 2.5: Event Subscriber (next to orchestrator - both listen to Redis)
+  'event-subscriber': { x: 600, y: 280 },
+
   // Level 3: Infrastructure + Worker (horizontal)
   postgresql: { x: 200, y: 410 },
   redis: { x: 400, y: 410 },
@@ -324,6 +327,12 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     icon: 'cloud-server',
     description: 'Queue and cache (port 6379)',
   },
+  'event-subscriber': {
+    name: 'event-subscriber',
+    displayName: 'Event Subscriber',
+    icon: 'notification',
+    description: 'Redis Streams event processor',
+  },
 }
 
 /**
@@ -378,8 +387,10 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'orchestrator->postgresql': 'database',
   'orchestrator->redis': 'queue',
   'redis->worker': 'queue',
+  'redis->event-subscriber': 'pubsub',
+  'event-subscriber->postgresql': 'database',
   'worker->ras-adapter': 'http',
   'worker->batch-service': 'http',
   // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL
-  // Results: Worker → Redis Pub/Sub → Orchestrator (implicit via redis)
+  // Results: Worker → Redis Pub/Sub → Event Subscriber → PostgreSQL
 }

@@ -62,14 +62,6 @@ python manage.py shell
 
 ## 🛠️ ДОСТУПНЫЕ ИНСТРУМЕНТЫ
 
-**Skills (используй через Skill tool):**
-- `cc1c-devops` - управление сервисами, логи, health checks
-- `cc1c-navigator` - навигация по monorepo
-- `cc1c-odata-integration` - работа с OData batch операциями
-- `cc1c-service-builder` - создание Go/Django/React компонентов
-- `cc1c-sprint-guide` - отслеживание прогресса в roadmap
-- `cc1c-test-runner` - запуск и отладка тестов
-
 **Slash Commands (используй через SlashCommand tool):**
 - `/dev-start` - запустить все сервисы
 - `/check-health` - проверить статус всех сервисов
@@ -131,6 +123,59 @@ python manage.py shell
 6. **Тесты обязательны** → coverage > 70%
 7. **Используй ./scripts/dev/*.sh** для локальной разработки
 8. **OpenAPI Contract-First** → изменения API начинаются с обновления спецификации
+
+---
+
+## 🐚 ПРАВИЛА РАБОТЫ С SHELL (для AI агентов)
+
+**Окружение:** WSL + Arch Linux (минималистичная установка)
+
+### НЕ ДОСТУПНЫ по умолчанию:
+- `jq` — используй Python для парсинга JSON
+- `yq` — используй Python для YAML
+- `bat`, `fd`, `exa` — базовые `cat`, `find`, `ls`
+
+### Best Practices:
+
+1. **Проверяй HTTP ответы перед парсингом:**
+   ```python
+   # ❌ ПЛОХО - падает если не JSON
+   r.json()
+
+   # ✅ ХОРОШО
+   if r.status_code == 200:
+       data = r.json()
+   else:
+       print(f"Error: {r.status_code} - {r.text[:200]}")
+   ```
+
+2. **Используй Python вместо jq/curl pipelines:**
+   ```python
+   # ❌ ПЛОХО - jq не установлен
+   curl ... | jq '.field'
+
+   # ✅ ХОРОШО
+   import requests
+   r = requests.get(url)
+   print(r.json().get('field'))
+   ```
+
+3. **Для Django операций — используй manage.py shell:**
+   ```bash
+   cd orchestrator && source venv/bin/activate
+   python manage.py shell -c "from apps.databases.models import Database; print(Database.objects.count())"
+   ```
+
+4. **Проверяй наличие утилит:**
+   ```bash
+   command -v jq &>/dev/null && jq ... || python -c "..."
+   ```
+
+5. **Для Redis проверок — используй redis-cli или Python:**
+   ```bash
+   redis-cli XINFO GROUPS events:worker:cluster-synced
+   # или через Python redis библиотеку
+   ```
 
 ---
 
@@ -356,11 +401,6 @@ cd go-services/api-gateway && go test ./...
 cd frontend && npm test
 ```
 
-**Через Skill:**
-```
-Используй Skill: cc1c-test-runner
-```
-
 ---
 
 ## 🐛 TROUBLESHOOTING
@@ -385,11 +425,6 @@ cd frontend && npm test
    - Native: проверь `systemctl status prometheus grafana`
 
 **Полный troubleshooting:** [LOCAL_DEVELOPMENT_GUIDE.md](docs/LOCAL_DEVELOPMENT_GUIDE.md#troubleshooting)
-
-**Используй Skill для диагностики:**
-```
-Skill: cc1c-devops → автоматическая диагностика и починка
-```
 
 ---
 
@@ -442,8 +477,14 @@ Skill: cc1c-devops → автоматическая диагностика и п
 
 ---
 
-**Версия:** 3.3
+**Версия:** 3.4
 **Последнее обновление:** 2025-12-08
+
+**Изменения v3.4:**
+- Добавлена секция "ПРАВИЛА РАБОТЫ С SHELL" для AI агентов
+- Документированы недоступные утилиты (jq, yq, bat, fd, exa)
+- Best practices для HTTP запросов и JSON парсинга
+- Удалены упоминания Skills (не используются в проекте)
 
 **Изменения v3.3:**
 - Celery полностью удален из проекта (Phase 6 complete)
@@ -467,5 +508,4 @@ Skill: cc1c-devops → автоматическая диагностика и п
 - Радикальное сокращение: 12.5k → ~4.5k токенов (65% reduction)
 - Убран избыточный Troubleshooting → заменен ссылкой на docs/
 - Детальные описания сервисов → краткая таблица
-- Добавлен явный список Skills для использования через Skill tool
 - Сохранена вся критичная информация для AI агентов

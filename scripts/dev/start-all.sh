@@ -435,9 +435,21 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 4: API Gateway (Go)
+# Шаг 4: Event Subscriber (Redis Streams consumer)
 ##############################################################################
-echo -e "${BLUE}[4/9] Запуск API Gateway (port 8180)...${NC}"
+echo -e "${BLUE}[4/10] Запуск Event Subscriber...${NC}"
+
+if ! start_service "event-subscriber"; then
+    log_error "Не удалось запустить event-subscriber"
+    cat "$LOGS_DIR/event-subscriber.log"
+    exit 1
+fi
+echo ""
+
+##############################################################################
+# Шаг 5: API Gateway (Go)
+##############################################################################
+echo -e "${BLUE}[5/10] Запуск API Gateway (port 8180)...${NC}"
 
 if ! start_service "api-gateway"; then
     log_error "Не удалось запустить api-gateway"
@@ -447,9 +459,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 5: Go Worker
+# Шаг 6: Go Worker
 ##############################################################################
-echo -e "${BLUE}[5/9] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[6/10] Запуск Go Worker...${NC}"
 
 if ! start_service "worker"; then
     log_error "Не удалось запустить worker"
@@ -458,9 +470,9 @@ if ! start_service "worker"; then
 fi
 echo ""
 
-# Шаг 6: RAS (1C Remote Administration Server)
+# Шаг 7: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[6/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+echo -e "${BLUE}[7/10] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
 # Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
@@ -543,9 +555,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 7: RAS Adapter (Go)
+# Шаг 8: RAS Adapter (Go)
 ##############################################################################
-echo -e "${BLUE}[7/9] Запуск RAS Adapter (port 8188)...${NC}"
+echo -e "${BLUE}[8/10] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
@@ -583,9 +595,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 8: Batch Service (Go)
+# Шаг 9: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[8/9] Запуск Batch Service (port 8187)...${NC}"
+echo -e "${BLUE}[9/10] Запуск Batch Service (port 8187)...${NC}"
 
 if ! start_service "batch-service"; then
     log_error "Не удалось запустить batch-service"
@@ -594,9 +606,9 @@ if ! start_service "batch-service"; then
 fi
 echo ""
 
-# Шаг 9: Frontend (React)
+# Шаг 10: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[9/9] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[10/10] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 

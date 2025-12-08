@@ -296,10 +296,10 @@ func (p *TaskProcessor) publishSyncClusterResult(ctx context.Context, result Syn
 	_, err = p.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
 		Values: map[string]interface{}{
-			"operation_id": result.OperationID,
-			"cluster_id":   result.ClusterID,
-			"data":         string(data),
-			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+			"event_type":     "cluster.synced",
+			"correlation_id": result.OperationID,
+			"payload":        string(data),
+			"timestamp":      time.Now().UTC().Format(time.RFC3339),
 		},
 	}).Result()
 
