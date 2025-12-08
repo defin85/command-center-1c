@@ -93,7 +93,7 @@ function getOperationClassName(status: OperationFlowStatus | null | undefined): 
 }
 
 const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
-  const { metrics, onSelect, isSelected, operationStatus } = data
+  const { metrics, onSelect, isSelected, operationStatus, onMouseEnter, onMouseLeave } = data
   const icon = SERVICE_ICONS[metrics.name] || <ApiOutlined />
   const operationClass = getOperationClassName(operationStatus)
 
@@ -105,6 +105,8 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
     <div
       className={`service-node ${isSelected ? 'service-node--selected' : ''} ${operationClass}`}
       onClick={handleClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{
         borderColor: isSelected ? STATUS_COLORS[metrics.status] : undefined,
       }}

@@ -228,6 +228,8 @@ export interface ServiceNodeData {
   onSelect: (service: string) => void
   isSelected: boolean
   operationStatus?: OperationFlowStatus | null
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }
 
 /**
@@ -340,4 +342,44 @@ export const STATUS_TEXT: Record<ServiceStatus, string> = {
   healthy: 'Healthy',
   degraded: 'Degraded',
   critical: 'Critical',
+}
+
+/**
+ * Connection type between services
+ */
+export type ConnectionType = 'http' | 'queue' | 'database' | 'pubsub'
+
+/**
+ * Color mapping for connection types
+ */
+export const CONNECTION_TYPE_COLORS: Record<ConnectionType, string> = {
+  http: '#1890ff',      // Blue - REST API
+  queue: '#722ed1',     // Purple - queues (Redis queue)
+  database: '#13c2c2',  // Cyan - DB connections
+  pubsub: '#eb2f96',    // Magenta - Redis Pub/Sub
+}
+
+/**
+ * Human-readable labels for connection types
+ */
+export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
+  http: 'HTTP/REST',
+  queue: 'Queue',
+  database: 'Database',
+  pubsub: 'Pub/Sub',
+}
+
+/**
+ * Mapping of service connections to their types
+ */
+export const CONNECTION_TYPES: Record<string, ConnectionType> = {
+  'frontend->api-gateway': 'http',
+  'api-gateway->orchestrator': 'http',
+  'orchestrator->postgresql': 'database',
+  'orchestrator->redis': 'queue',
+  'redis->worker': 'queue',
+  'worker->ras-adapter': 'http',
+  'worker->batch-service': 'http',
+  'batch-service->postgresql': 'database',
+  'ras-adapter->orchestrator': 'http',
 }

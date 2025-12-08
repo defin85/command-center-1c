@@ -13,7 +13,7 @@
  *      /     |      \
  * [Orch] [Worker] [RAS]
  */
-import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react'
+import React, { useCallback, useRef, useState, useEffect } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -22,6 +22,8 @@ import ReactFlow, {
   type NodeTypes,
   MarkerType,
   ConnectionLineType,
+  useNodesState,
+  useEdgesState,
 } from 'reactflow'
 import { Button } from 'antd'
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
@@ -33,8 +35,15 @@ import type {
   ServiceLayoutConfig,
   OperationFlowEvent,
   OperationFlowStatus,
+  ConnectionType,
 } from '../../types/serviceMesh'
-import { DEFAULT_SERVICE_POSITIONS, STATUS_COLORS } from '../../types/serviceMesh'
+import {
+  DEFAULT_SERVICE_POSITIONS,
+  STATUS_COLORS,
+  CONNECTION_TYPE_COLORS,
+  CONNECTION_TYPE_LABELS,
+  CONNECTION_TYPES,
+} from '../../types/serviceMesh'
 import { calculateDagreLayout } from '../../utils/graphLayout'
 import './ServiceFlowDiagram.css'
 
@@ -53,16 +62,25 @@ interface ServiceFlowDiagramProps {
 }
 
 /**
- * Get edge color based on latency
+ * Get connection type for a source-target pair
  */
-function getEdgeColor(avgLatencyMs: number): string {
+function getConnectionType(source: string, target: string): ConnectionType {
+  const key = `${source}->${target}`
+  return CONNECTION_TYPES[key] || 'http'
+}
+
+/**
+ * Get edge color based on latency and connection type
+ */
+function getEdgeColor(source: string, target: string, avgLatencyMs: number): string {
   if (avgLatencyMs > 1000) {
     return STATUS_COLORS.critical
   }
   if (avgLatencyMs > 500) {
     return STATUS_COLORS.degraded
   }
-  return '#1890ff'
+  const connType = getConnectionType(source, target)
+  return CONNECTION_TYPE_COLORS[connType]
 }
 
 /**
@@ -155,6 +173,15 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+  const isInitialLoadRef = useRef(true)
+
+  // React Flow state management
+  const [nodes, setNodes, onNodesChange] = useNodesState<ServiceNodeData>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+
+  // Store current node positions to preserve drag positions
+  const nodePositionsRef = useRef<Record<string, { x: number; y: number }>>({})
 
   // Handle fullscreen changes
   useEffect(() => {
@@ -189,22 +216,43 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     [selectedService, onServiceSelect]
   )
 
-  // Calculate positions using dagre (memoized)
-  const calculatedPositions = useMemo(() => {
-    if (services.length === 0) {
-      return positions // fallback to default
-    }
-    return calculateDagreLayout(services, connections, {
-      direction: 'TB',
-      rankSep: 120,
-      nodeSep: 100,
-    })
-  }, [services, connections])  // positions is fallback only, doesn't affect calculation
+  // Hover handlers for nodes
+  const handleNodeMouseEnter = useCallback((serviceName: string) => {
+    setHoveredNode(serviceName)
+  }, [])
 
-  // Create nodes from services
-  const nodes: Node<ServiceNodeData>[] = useMemo(() => {
-    return services.map((service) => {
-      const position = calculatedPositions[service.name] || positions[service.name] || { x: 0, y: 0 }
+  const handleNodeMouseLeave = useCallback(() => {
+    setHoveredNode(null)
+  }, [])
+
+  // Custom onNodesChange handler to track dragged positions
+  const handleNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      // Update positions ref when nodes are dragged
+      changes.forEach((change) => {
+        if (change.type === 'position' && change.position && change.id) {
+          nodePositionsRef.current[change.id] = change.position
+        }
+      })
+      onNodesChange(changes)
+    },
+    [onNodesChange]
+  )
+
+  // Update nodes when services, selections, or hover state change
+  useEffect(() => {
+    if (services.length === 0) return
+
+    const calculatedPositions = calculateDagreLayout(services, connections, {
+      direction: 'TB',
+      rankSep: 150,
+      nodeSep: 120,
+    })
+
+    const newNodes: Node<ServiceNodeData>[] = services.map((service) => {
+      // Keep existing positions if nodes were dragged, otherwise use calculated
+      const draggedPosition = nodePositionsRef.current[service.name]
+      const position = draggedPosition || calculatedPositions[service.name] || positions[service.name] || { x: 0, y: 0 }
       const operationStatus = getNodeOperationStatus(service.name, activeOperation)
 
       return {
@@ -216,21 +264,36 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           onSelect: handleServiceSelect,
           isSelected: selectedService === service.name,
           operationStatus,
+          onMouseEnter: () => handleNodeMouseEnter(service.name),
+          onMouseLeave: handleNodeMouseLeave,
         },
         draggable: true,
       }
     })
-  }, [services, calculatedPositions, positions, selectedService, handleServiceSelect, activeOperation])
 
-  // Create edges from connections
-  const edges: Edge[] = useMemo(() => {
-    return connections.map((conn) => {
+    setNodes(newNodes)
+
+    // Mark initial load as complete after first render
+    if (isInitialLoadRef.current && services.length > 0) {
+      isInitialLoadRef.current = false
+    }
+  }, [services, connections, selectedService, activeOperation, handleServiceSelect, handleNodeMouseEnter, handleNodeMouseLeave, positions, setNodes])
+
+  // Update edges when connections, hover state, or active operation change
+  useEffect(() => {
+    const newEdges: Edge[] = connections.map((conn) => {
       const operationStyle = getOperationEdgeStyle(conn.source, conn.target, activeOperation)
 
       // If there is an active operation, use its styles
-      const stroke = operationStyle?.stroke || getEdgeColor(conn.avgLatencyMs)
+      const stroke = operationStyle?.stroke || getEdgeColor(conn.source, conn.target, conn.avgLatencyMs)
       const strokeWidth = operationStyle?.strokeWidth || getEdgeWidth(conn.requestsPerMinute)
       const animated = operationStyle?.animated ?? (conn.requestsPerMinute > 0)
+
+      // Calculate opacity based on hovered node
+      const isConnectedToHovered = hoveredNode
+        ? conn.source === hoveredNode || conn.target === hoveredNode
+        : true
+      const opacity = hoveredNode ? (isConnectedToHovered ? 1 : 0.15) : 1
 
       return {
         id: `${conn.source}-${conn.target}`,
@@ -241,6 +304,8 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         style: {
           stroke,
           strokeWidth,
+          opacity,
+          transition: 'opacity 0.2s ease',
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
@@ -252,13 +317,18 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         labelStyle: {
           fontSize: 10,
           fill: '#8c8c8c',
+          opacity,
+          transition: 'opacity 0.2s ease',
         },
         labelBgStyle: {
           fill: '#fff',
+          opacity,
         },
       }
     })
-  }, [connections, activeOperation])
+
+    setEdges(newEdges)
+  }, [connections, activeOperation, hoveredNode, setEdges])
 
   // Handle click on empty canvas to deselect
   const handlePaneClick = useCallback(() => {
@@ -274,9 +344,11 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
         onPaneClick={handlePaneClick}
         connectionLineType={ConnectionLineType.SmoothStep}
-        fitView
+        fitView={isInitialLoadRef.current}
         fitViewOptions={{
           padding: 0.2,
           minZoom: 0.5,
@@ -303,9 +375,9 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         />
       </div>
 
-      {/* Legend */}
+      {/* Status Legend */}
       <div className="service-flow-diagram__legend">
-        <div className="service-flow-diagram__legend-title">Legend</div>
+        <div className="service-flow-diagram__legend-title">Status</div>
         <div className="service-flow-diagram__legend-item">
           <span
             className="service-flow-diagram__legend-dot"
@@ -327,6 +399,22 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           />
           <span>Critical</span>
         </div>
+      </div>
+
+      {/* Connection Types Legend */}
+      <div className="service-flow-diagram__connection-legend">
+        <div className="service-flow-diagram__legend-title">Connections</div>
+        {(Object.entries(CONNECTION_TYPE_COLORS) as [ConnectionType, string][]).map(
+          ([type, color]) => (
+            <div key={type} className="service-flow-diagram__legend-item">
+              <span
+                className="service-flow-diagram__legend-line"
+                style={{ background: color }}
+              />
+              <span>{CONNECTION_TYPE_LABELS[type]}</span>
+            </div>
+          )
+        )}
       </div>
     </div>
   )

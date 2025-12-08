@@ -24,8 +24,8 @@ const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
   direction: 'TB',
   nodeWidth: 180,
   nodeHeight: 100,
-  rankSep: 100,
-  nodeSep: 80,
+  rankSep: 150,
+  nodeSep: 120,
 }
 
 /**
