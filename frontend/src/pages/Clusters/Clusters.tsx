@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
-import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons'
+import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { getV2 } from '../../api/generated'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { apiClient } from '../../api/client'
+import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
 
 const { TextArea } = Input
 
@@ -25,6 +26,7 @@ export const Clusters = () => {
     const [modalVisible, setModalVisible] = useState(false)
     const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
     const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null)
+    const [discoverModalVisible, setDiscoverModalVisible] = useState(false)
     const [form] = Form.useForm()
 
     const fetchSystemConfig = async () => {
@@ -221,9 +223,17 @@ export const Clusters = () => {
         <div>
             <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
                 <h1>Clusters</h1>
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-                    Add Cluster
-                </Button>
+                <Space>
+                    <Button
+                        icon={<SearchOutlined />}
+                        onClick={() => setDiscoverModalVisible(true)}
+                    >
+                        Discover Clusters
+                    </Button>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+                        Add Cluster
+                    </Button>
+                </Space>
             </Space>
 
             <Table
@@ -292,6 +302,15 @@ export const Clusters = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            <DiscoverClustersModal
+                visible={discoverModalVisible}
+                onClose={() => setDiscoverModalVisible(false)}
+                onSuccess={() => {
+                    // Refresh cluster list after discovery completes
+                    setTimeout(() => fetchClusters(), 2000)
+                }}
+            />
         </div>
     )
 }

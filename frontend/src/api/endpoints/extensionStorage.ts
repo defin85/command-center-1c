@@ -5,7 +5,7 @@
 import { apiClient } from '../client';
 
 export interface ExtensionFile {
-    name: string;
+    filename: string;
     size: number;
     modified_at: string;
     path: string;
@@ -20,7 +20,7 @@ export interface ExtensionStorageResponse {
  * Get list of extension files in storage
  */
 export const listExtensions = async (): Promise<ExtensionFile[]> => {
-    const response = await apiClient.get<ExtensionStorageResponse>('/api/v1/extensions/storage/');
+    const response = await apiClient.get<ExtensionStorageResponse>('/api/v2/extensions/list-storage/');
     return response.data.extensions;
 };
 
@@ -38,7 +38,7 @@ export const uploadExtension = async (
     }
 
     const response = await apiClient.post<{ message: string; file: ExtensionFile }>(
-        '/api/v1/extensions/upload/',
+        '/api/v2/extensions/upload-extension/',
         formData
     );
     return response.data;
@@ -49,7 +49,7 @@ export const uploadExtension = async (
  */
 export const deleteExtension = async (filename: string): Promise<{ message: string }> => {
     const response = await apiClient.delete<{ message: string }>(
-        `/api/v1/extensions/storage/${filename}/`
+        `/api/v2/extensions/delete-extension/?filename=${encodeURIComponent(filename)}`
     );
     return response.data;
 };

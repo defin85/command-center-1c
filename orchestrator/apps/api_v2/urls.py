@@ -48,6 +48,7 @@ urlpatterns = [
     path('clusters/delete-cluster/', clusters.delete_cluster, name='delete-cluster'),
     path('clusters/get-cluster-databases/', clusters.get_cluster_databases, name='get-cluster-databases'),
     path('clusters/reset-sync-status/', clusters.reset_sync_status, name='reset-sync-status'),
+    path('clusters/discover-clusters/', clusters.discover_clusters, name='discover-clusters'),
 
     # ========================================================================
     # Operations
@@ -82,6 +83,10 @@ urlpatterns = [
     path('extensions/retry-installation/', extensions.retry_installation, name='retry-installation'),
     path('extensions/batch-install/', extensions.batch_install, name='batch-install'),
     path('extensions/get-install-progress/', extensions.get_install_progress, name='get-install-progress'),
+    # Extension Storage (migrated from v1)
+    path('extensions/list-storage/', extensions.list_extension_storage, name='list-extension-storage'),
+    path('extensions/upload-extension/', extensions.upload_extension, name='upload-extension'),
+    path('extensions/delete-extension/', extensions.delete_extension_storage, name='delete-extension-storage'),
 
     # ========================================================================
     # Templates

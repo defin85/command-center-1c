@@ -521,1248 +521,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenVerify'
           description: ''
-  /api/v1/clusters/:
-    get:
-      operationId: v1_clusters_list
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      parameters:
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - active
-          - error
-          - inactive
-          - maintenance
-        description: |-
-          * `active` - Active
-          * `inactive` - Inactive
-          * `error` - Error
-          * `maintenance` - Maintenance
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedClusterList'
-          description: ''
-    post:
-      operationId: v1_clusters_create
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Cluster'
-          description: ''
-  /api/v1/clusters/{id}/:
-    get:
-      operationId: v1_clusters_retrieve
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Cluster'
-          description: ''
-    put:
-      operationId: v1_clusters_update
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Cluster'
-          description: ''
-    patch:
-      operationId: v1_clusters_partial_update
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedCluster'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedCluster'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedCluster'
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Cluster'
-          description: ''
-    delete:
-      operationId: v1_clusters_destroy
-      description: |-
-        ViewSet для управления кластерами 1С.
-
-        Endpoints:
-        - GET /api/v1/clusters/ - список кластеров
-        - POST /api/v1/clusters/ - создать кластер
-        - GET /api/v1/clusters/{id}/ - получить кластер
-        - PUT/PATCH /api/v1/clusters/{id}/ - обновить кластер
-        - DELETE /api/v1/clusters/{id}/ - удалить кластер
-        - POST /api/v1/clusters/{id}/sync/ - синхронизировать с RAS
-        - GET /api/v1/clusters/{id}/databases/ - базы конкретного кластера
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/clusters/{id}/databases/:
-    get:
-      operationId: v1_clusters_databases_retrieve
-      description: Возвращает список баз данных в конкретном кластере
-      summary: Получить базы кластера
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedDatabaseList'
-          description: Список баз
-  /api/v1/clusters/{id}/sync/:
-    post:
-      operationId: v1_clusters_sync_create
-      description: Синхронизирует список баз данных из RAS через cluster-service
-      summary: Синхронизация баз из RAS
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-          description: Cluster UUID (auto-generated or from 1C)
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Cluster'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  message:
-                    type: string
-                  databases_found:
-                    type: integer
-          description: Синхронизация запущена
-        '404':
-          description: Кластер не найден
-  /api/v1/databases/:
-    get:
-      operationId: v1_databases_list
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      parameters:
-      - in: query
-        name: last_check_status
-        schema:
-          type: string
-          enum:
-          - degraded
-          - down
-          - ok
-          - unknown
-        description: |-
-          * `ok` - OK
-          * `degraded` - Degraded
-          * `down` - Down
-          * `unknown` - Unknown
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - active
-          - error
-          - inactive
-          - maintenance
-        description: |-
-          * `active` - Active
-          * `inactive` - Inactive
-          * `error` - Error
-          * `maintenance` - Maintenance
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedDatabaseList'
-          description: ''
-    post:
-      operationId: v1_databases_create
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Database'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Database'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Database'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-  /api/v1/databases/{id}/:
-    get:
-      operationId: v1_databases_retrieve
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-    put:
-      operationId: v1_databases_update
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Database'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Database'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Database'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-    patch:
-      operationId: v1_databases_partial_update
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabase'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabase'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabase'
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-    delete:
-      operationId: v1_databases_destroy
-      description: |-
-        ViewSet для управления базами данных 1С.
-
-        Endpoints:
-        - GET /api/v1/databases/ - список баз
-        - POST /api/v1/databases/ - создать базу
-        - GET /api/v1/databases/{id}/ - получить базу
-        - PUT/PATCH /api/v1/databases/{id}/ - обновить базу
-        - DELETE /api/v1/databases/{id}/ - удалить базу
-        - POST /api/v1/databases/{id}/health-check/ - проверить здоровье
-        - POST /api/v1/databases/bulk-health-check/ - проверить все базы
-        - POST /api/v1/databases/{id}/install-extension/ - установить расширение
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/databases/{id}/cluster-info/:
-    get:
-      operationId: v1_databases_cluster_info_retrieve
-      description: |-
-        GET /api/v1/databases/{id}/cluster-info/
-
-        Returns cluster_id and infobase_id для RAS workflow operations.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-  /api/v1/databases/{id}/credentials/:
-    get:
-      operationId: v1_databases_credentials_retrieve
-      description: Возвращает OData URL и credentials для базы данных
-      summary: Получить credentials для базы (для Go Worker)
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  database_id:
-                    type: string
-                  odata_url:
-                    type: string
-                  username:
-                    type: string
-                  password:
-                    type: string
-          description: Credentials returned
-        '404':
-          description: Database not found
-  /api/v1/databases/{id}/extension-installation-status/:
-    patch:
-      operationId: v1_databases_extension_installation_status_partial_update
-      description: Endpoint для Go Worker чтобы обновлять статус установки расширения
-      summary: Обновить статус установки расширения (для Go Worker)
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum:
-                  - pending
-                  - in_progress
-                  - completed
-                  - failed
-                  description: Новый статус установки
-                error_message:
-                  type: string
-                  description: Сообщение об ошибке (если status=failed)
-                progress_percent:
-                  type: integer
-                  description: Процент выполнения (0-100)
-              required:
-              - status
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: Status updated successfully
-        '404':
-          description: No pending installation found
-  /api/v1/databases/{id}/extension-status/:
-    get:
-      operationId: v1_databases_extension_status_retrieve
-      description: Возвращает статус установки расширения для данной базы
-      summary: Получить статус установки расширения
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionInstallation'
-          description: Extension status
-        '404':
-          description: Installation not found
-  /api/v1/databases/{id}/health-check/:
-    post:
-      operationId: v1_databases_health_check_create
-      description: Проверяет доступность и работоспособность базы 1С через OData
-      summary: Health check для одной базы
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Database'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Database'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Database'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  database_id:
-                    type: string
-                  database_name:
-                    type: string
-                  healthy:
-                    type: boolean
-                  response_time:
-                    type: number
-                  error:
-                    type: string
-                    nullable: true
-                  status_code:
-                    type: integer
-                    nullable: true
-          description: Health check выполнен
-        '404':
-          description: База не найдена
-  /api/v1/databases/{id}/install-extension/:
-    post:
-      operationId: v1_databases_install_extension_create
-      description: Запускает задачу установки расширения на выбранную базу данных
-      summary: Установить расширение на базу
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                extension_config:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    path:
-                      type: string
-                  required:
-                  - name
-                  - path
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  task_id:
-                    type: string
-                  message:
-                    type: string
-          description: Installation task created
-        '400':
-          description: Invalid extension config
-        '404':
-          description: Database not found
-  /api/v1/databases/{id}/retry-installation/:
-    post:
-      operationId: v1_databases_retry_installation_create
-      description: |-
-        Повторить установку расширения.
-
-        POST /api/v1/databases/{id}/retry-installation/
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this 1C Database.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Database'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Database'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Database'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Database'
-          description: ''
-  /api/v1/databases/batch-install-extension/:
-    post:
-      operationId: v1_databases_batch_install_extension_create
-      description: Запуск массовой установки расширения на группу баз
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v1/databases/bulk-health-check/:
-    post:
-      operationId: v1_databases_bulk_health_check_create
-      description: Асинхронная проверка всех баз или отфильтрованного набора баз через
-        Celery
-      summary: Bulk health check для всех баз (async)
-      parameters:
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: Фильтр по статусу (active, inactive, error, maintenance)
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Database'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/Database'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Database'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '202':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  task_id:
-                    type: string
-                  status:
-                    type: string
-                  total_databases:
-                    type: integer
-          description: Health check задача создана
-  /api/v1/databases/installation-progress/{task_id}/:
-    get:
-      operationId: v1_databases_installation_progress_retrieve
-      description: Real-time прогресс установки
-      parameters:
-      - in: path
-        name: task_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/v1/extensions/installation/callback/:
-    post:
-      operationId: v1_extensions_installation_callback_create
-      description: |-
-        Callback от batch-service после завершения установки расширения.
-
-        Payload:
-        {
-            "database_id": "db_uuid",
-            "extension_name": "ODataAutoConfig",
-            "status": "completed",  # completed | failed
-            "duration_seconds": 45.5,
-            "error_message": null
-        }
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v1/extensions/storage/:
-    get:
-      operationId: v1_extensions_storage_retrieve
-      description: |-
-        Получить список файлов расширений в хранилище.
-
-        GET /api/v1/extensions/storage/
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/v1/extensions/storage/{filename}/:
-    delete:
-      operationId: v1_extensions_storage_destroy
-      description: |-
-        Удалить файл расширения из хранилища.
-
-        DELETE /api/v1/extensions/storage/{filename}/
-      parameters:
-      - in: path
-        name: filename
-        schema:
-          type: string
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/extensions/upload/:
-    post:
-      operationId: v1_extensions_upload_create
-      description: |-
-        Загрузить файл расширения в хранилище.
-
-        POST /api/v1/extensions/upload/
-
-        Form data:
-            file: .cfe file
-            filename: optional custom filename
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/v1/groups/:
-    get:
-      operationId: v1_groups_list
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      parameters:
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedDatabaseGroupList'
-          description: ''
-    post:
-      operationId: v1_groups_create
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseGroup'
-          description: ''
-  /api/v1/groups/{id}/:
-    get:
-      operationId: v1_groups_retrieve
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Database Group.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseGroup'
-          description: ''
-    put:
-      operationId: v1_groups_update
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Database Group.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseGroup'
-          description: ''
-    patch:
-      operationId: v1_groups_partial_update
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Database Group.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabaseGroup'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabaseGroup'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedDatabaseGroup'
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseGroup'
-          description: ''
-    delete:
-      operationId: v1_groups_destroy
-      description: |-
-        ViewSet для управления группами баз данных.
-
-        Endpoints:
-        - GET /api/v1/groups/ - список групп
-        - POST /api/v1/groups/ - создать группу
-        - GET /api/v1/groups/{id}/ - получить группу
-        - PUT/PATCH /api/v1/groups/{id}/ - обновить группу
-        - DELETE /api/v1/groups/{id}/ - удалить группу
-        - POST /api/v1/groups/{id}/health_check/ - проверить все базы в группе
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Database Group.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/groups/{id}/health-check/:
-    post:
-      operationId: v1_groups_health_check_create
-      description: Проверяет все базы данных в указанной группе
-      summary: Health check для всех баз в группе
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Database Group.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DatabaseGroup'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  group_name:
-                    type: string
-                  total:
-                    type: integer
-                  healthy:
-                    type: integer
-                  unhealthy:
-                    type: integer
-                  results:
-                    type: array
-                    items:
-                      type: object
-          description: Health check выполнен для всех баз в группе
-        '404':
-          description: Группа не найдена
   /api/v1/operations/:
     get:
       operationId: v1_operations_list
@@ -1776,6 +534,7 @@ paths:
           - block_sessions
           - create
           - delete
+          - discover_clusters
           - install_extension
           - lock_scheduled_jobs
           - query
@@ -1796,6 +555,7 @@ paths:
           * `block_sessions` - Block Sessions
           * `unblock_sessions` - Unblock Sessions
           * `sync_cluster` - Sync Cluster
+          * `discover_clusters` - Discover Clusters
       - name: page
         required: false
         in: query
@@ -2258,922 +1018,6 @@ paths:
                   total:
                     type: integer
           description: List of recent operations
-  /api/v1/system/health/:
-    get:
-      operationId: v1_system_health_retrieve
-      description: |-
-        Get system health status for all monitored services.
-
-        Returns cached status if available (TTL 10 seconds),
-        otherwise performs fresh health check.
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v1/templates/:
-    get:
-      operationId: v1_templates_list
-      parameters:
-      - in: query
-        name: is_active
-        schema:
-          type: boolean
-      - in: query
-        name: operation_type
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedOperationTemplateList'
-          description: ''
-    post:
-      operationId: v1_templates_create
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-  /api/v1/templates/{id}/:
-    get:
-      operationId: v1_templates_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-    put:
-      operationId: v1_templates_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-    patch:
-      operationId: v1_templates_partial_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedOperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedOperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedOperationTemplate'
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-    delete:
-      operationId: v1_templates_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/templates/{id}/render/:
-    post:
-      operationId: v1_templates_render_create
-      description: |-
-        Render template with provided context.
-
-        POST /api/v1/templates/{id}/render/
-        {
-            "context": {
-                "user_name": "Alice",
-                "database_name": "db001",
-                "is_active": true
-            },
-            "validate": true  # Optional, default: true
-        }
-
-        Returns rendered template result.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-  /api/v1/templates/{id}/validate/:
-    post:
-      operationId: v1_templates_validate_create
-      description: |-
-        Validate template schema and security.
-
-        POST /api/v1/templates/{id}/validate/
-
-        Returns:
-            {"valid": true} or {"valid": false, "errors": [...]}
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this operation template.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-  /api/v1/templates/validate_data/:
-    post:
-      operationId: v1_templates_validate_data_create
-      description: |-
-        Validate template_data only (without saving to DB).
-
-        POST /api/v1/templates/validate_data/
-        {
-            "template_data": {"Name": "{{user_name}}"}
-        }
-
-        Returns:
-            {"valid": true, "errors": []}
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplate'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplate'
-          description: ''
-  /api/v1/templates/workflow/executions/:
-    get:
-      operationId: v1_templates_workflow_executions_list
-      description: Returns paginated list of workflow executions.
-      summary: List workflow executions
-      parameters:
-      - in: query
-        name: completed_at_after
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions completed after this datetime (ISO 8601)
-      - in: query
-        name: completed_at_before
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions completed before this datetime (ISO 8601)
-      - in: query
-        name: has_error
-        schema:
-          type: boolean
-        description: Filter executions with/without errors
-      - in: query
-        name: is_running
-        schema:
-          type: boolean
-        description: Filter currently running executions
-      - in: query
-        name: is_terminal
-        schema:
-          type: boolean
-        description: Filter executions in terminal state (completed/failed/cancelled)
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      - in: query
-        name: started_at_after
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions started after this datetime (ISO 8601)
-      - in: query
-        name: started_at_before
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions started before this datetime (ISO 8601)
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: 'Filter by status (comma-separated for multiple: pending,running)'
-      - in: query
-        name: template_name
-        schema:
-          type: string
-        description: Filter by template name (case-insensitive substring)
-      - in: query
-        name: trace_id
-        schema:
-          type: string
-        description: Filter by OpenTelemetry trace ID
-      - in: query
-        name: workflow_template
-        schema:
-          type: string
-          format: uuid
-        description: Filter by workflow template UUID
-      tags:
-      - Workflow Executions
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedWorkflowExecutionListList'
-          description: ''
-  /api/v1/templates/workflow/executions/{id}/:
-    get:
-      operationId: v1_templates_workflow_executions_retrieve
-      description: Returns full execution details including step results.
-      summary: Get workflow execution details
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow execution.
-        required: true
-      tags:
-      - Workflow Executions
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowExecutionDetail'
-          description: ''
-  /api/v1/templates/workflow/executions/{id}/cancel/:
-    post:
-      operationId: v1_templates_workflow_executions_cancel_create
-      description: "\n        Cancels a running or pending workflow execution.\n\n\
-        \        Only executions in 'pending' or 'running' state can be cancelled.\n\
-        \        "
-      summary: Cancel workflow execution
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow execution.
-        required: true
-      tags:
-      - Workflow Executions
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowCancelResponse'
-          description: ''
-        '400':
-          description: Execution cannot be cancelled
-  /api/v1/templates/workflow/executions/{id}/status/:
-    get:
-      operationId: v1_templates_workflow_executions_status_retrieve
-      description: "\n        Returns lightweight status for polling.\n\n        Optimized\
-        \ for frequent polling - returns minimal data.\n        Use retrieve endpoint\
-        \ for full details.\n        "
-      summary: Get execution status (lightweight)
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow execution.
-        required: true
-      tags:
-      - Workflow Executions
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowStatusResponse'
-          description: ''
-  /api/v1/templates/workflow/executions/{id}/steps/:
-    get:
-      operationId: v1_templates_workflow_executions_steps_list
-      description: Returns all step results for the execution.
-      summary: Get execution step results
-      parameters:
-      - in: query
-        name: completed_at_after
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions completed after this datetime (ISO 8601)
-      - in: query
-        name: completed_at_before
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions completed before this datetime (ISO 8601)
-      - in: query
-        name: has_error
-        schema:
-          type: boolean
-        description: Filter executions with/without errors
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow execution.
-        required: true
-      - in: query
-        name: is_running
-        schema:
-          type: boolean
-        description: Filter currently running executions
-      - in: query
-        name: is_terminal
-        schema:
-          type: boolean
-        description: Filter executions in terminal state (completed/failed/cancelled)
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      - in: query
-        name: started_at_after
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions started after this datetime (ISO 8601)
-      - in: query
-        name: started_at_before
-        schema:
-          type: string
-          format: date-time
-        description: Filter executions started before this datetime (ISO 8601)
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: 'Filter by status (comma-separated for multiple: pending,running)'
-      - in: query
-        name: template_name
-        schema:
-          type: string
-        description: Filter by template name (case-insensitive substring)
-      - in: query
-        name: trace_id
-        schema:
-          type: string
-        description: Filter by OpenTelemetry trace ID
-      - in: query
-        name: workflow_template
-        schema:
-          type: string
-          format: uuid
-        description: Filter by workflow template UUID
-      tags:
-      - Workflow Executions
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedWorkflowStepResultList'
-          description: ''
-  /api/v1/templates/workflow/workflows/:
-    get:
-      operationId: v1_templates_workflow_workflows_list
-      description: Returns paginated list of workflow templates without DAG structure.
-      summary: List workflow templates
-      parameters:
-      - in: query
-        name: created_at_after
-        schema:
-          type: string
-          format: date-time
-        description: Filter templates created after this datetime (ISO 8601)
-      - in: query
-        name: created_at_before
-        schema:
-          type: string
-          format: date-time
-        description: Filter templates created before this datetime (ISO 8601)
-      - in: query
-        name: created_by
-        schema:
-          type: integer
-        description: Filter by creator user ID
-      - in: query
-        name: has_parent
-        schema:
-          type: boolean
-        description: Filter templates that have/dont have parent version
-      - in: query
-        name: is_active
-        schema:
-          type: boolean
-        description: Filter by active status
-      - in: query
-        name: is_valid
-        schema:
-          type: boolean
-        description: Filter by validation status
-      - in: query
-        name: name_contains
-        schema:
-          type: string
-        description: Filter by name (case-insensitive substring)
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      - in: query
-        name: version_number
-        schema:
-          type: integer
-        description: Filter by version number
-      - in: query
-        name: workflow_type
-        schema:
-          type: string
-        description: Filter by workflow type (exact match)
-      tags:
-      - Workflows
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedWorkflowTemplateListList'
-          description: ''
-    post:
-      operationId: v1_templates_workflow_workflows_create
-      description: Creates a new workflow template with DAG structure.
-      summary: Create workflow template
-      tags:
-      - Workflows
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-        required: true
-      security:
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowTemplateDetail'
-          description: ''
-  /api/v1/templates/workflow/workflows/{id}/:
-    get:
-      operationId: v1_templates_workflow_workflows_retrieve
-      description: Returns full workflow template including DAG structure and config.
-      summary: Get workflow template details
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowTemplateDetail'
-          description: ''
-    put:
-      operationId: v1_templates_workflow_workflows_update
-      description: Updates workflow template. Resets is_valid if DAG changes.
-      summary: Update workflow template
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/WorkflowTemplateDetail'
-        required: true
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowTemplateDetail'
-          description: ''
-    patch:
-      operationId: v1_templates_workflow_workflows_partial_update
-      description: Partially updates workflow template fields.
-      summary: Partial update workflow template
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedWorkflowTemplateDetail'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedWorkflowTemplateDetail'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedWorkflowTemplateDetail'
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowTemplateDetail'
-          description: ''
-    delete:
-      operationId: v1_templates_workflow_workflows_destroy
-      description: Deletes workflow template. Protected if has executions.
-      summary: Delete workflow template
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      security:
-      - cookieAuth: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/templates/workflow/workflows/{id}/clone/:
-    post:
-      operationId: v1_templates_workflow_workflows_clone_create
-      description: "\n        Creates a new version of the workflow template.\n\n\
-        \        The new template:\n        - Has incremented version_number\n   \
-        \     - References original as parent_version\n        - Copies DAG structure\
-        \ and config\n        - Is set as active\n        "
-      summary: Clone workflow template as new version
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowCloneRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/WorkflowCloneRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/WorkflowCloneRequest'
-      security:
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowCloneResponse'
-          description: ''
-  /api/v1/templates/workflow/workflows/{id}/execute/:
-    post:
-      operationId: v1_templates_workflow_workflows_execute_create
-      description: "\n        Executes the workflow template.\n\n        Modes:\n\
-        \        - sync: Blocking execution, returns result when complete\n      \
-        \  - async: Background execution, returns execution_id immediately\n\n   \
-        \     Rate limited to 30 requests per minute.\n        "
-      summary: Execute workflow template
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowExecuteRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/WorkflowExecuteRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/WorkflowExecuteRequest'
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowExecuteResponse'
-          description: ''
-        '202':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowExecuteResponse'
-          description: ''
-        '400':
-          description: Validation error or template not valid
-        '429':
-          description: Rate limit exceeded
-  /api/v1/templates/workflow/workflows/{id}/validate/:
-    post:
-      operationId: v1_templates_workflow_workflows_validate_create
-      description: "\n        Validates the workflow template DAG structure.\n\n \
-        \       Checks:\n        - Pydantic schema validation\n        - Node IDs\
-        \ are unique\n        - Edge references valid nodes\n        - No cycles (Kahn's\
-        \ algorithm)\n        - Proper topology (start/end nodes exist)\n        "
-      summary: Validate workflow template
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        description: A UUID string identifying this workflow template.
-        required: true
-      tags:
-      - Workflows
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowValidateResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowValidateResponse'
-          description: ''
   /api/v2/audit/log-compensation/:
     post:
       operationId: v2_audit_log_compensation_create
@@ -3325,6 +1169,43 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
         '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/clusters/discover-clusters/:
+    post:
+      operationId: v2_clusters_discover_clusters_create
+      description: Trigger cluster discovery on a RAS server. Creates or updates Cluster
+        records for all found clusters.
+      summary: Discover clusters on RAS server
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverClustersResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
           content:
             application/json:
               schema:
@@ -3876,6 +1757,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/extensions/delete-extension/:
+    delete:
+      operationId: v2_extensions_delete_extension_destroy
+      description: Delete an extension file from storage.
+      summary: Delete extension file
+      parameters:
+      - in: query
+        name: filename
+        schema:
+          type: string
+        description: Extension filename to delete
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: File deleted successfully
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/extensions/get-install-progress/:
     get:
       operationId: v2_extensions_get_install_progress_retrieve
@@ -4000,6 +1920,30 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/extensions/list-storage/:
+    get:
+      operationId: v2_extensions_list_storage_retrieve
+      description: Get list of extension files (.cfe) available in storage for installation.
+      summary: List extensions in storage
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionStorageListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/extensions/retry-installation/:
     post:
       operationId: v2_extensions_retry_installation_create
@@ -4038,6 +1982,36 @@ paths:
         '401':
           description: Unauthorized
         '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/extensions/upload-extension/:
+    post:
+      operationId: v2_extensions_upload_extension_create
+      description: Upload a .cfe extension file to storage for later installation.
+      summary: Upload extension file
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadExtensionResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '500':
           content:
             application/json:
               schema:
@@ -5508,48 +3482,6 @@ components:
           description: Cluster info if database belongs to a cluster
       required:
       - database
-    DatabaseGroup:
-      type: object
-      description: Serializer для DatabaseGroup model.
-      properties:
-        id:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-        databases:
-          type: array
-          items:
-            $ref: '#/components/schemas/Database'
-          readOnly: true
-        database_count:
-          type: integer
-          readOnly: true
-        healthy_count:
-          type: integer
-          readOnly: true
-        metadata:
-          type: object
-          additionalProperties: {}
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - created_at
-      - database_count
-      - databases
-      - healthy_count
-      - id
-      - name
-      - updated_at
     DatabaseListResponse:
       type: object
       description: Response for list_databases endpoint.
@@ -5580,6 +3512,22 @@ components:
           default: false
       required:
       - workflow_id
+    DiscoverClustersResponse:
+      type: object
+      description: Response for discover_clusters endpoint.
+      properties:
+        operation_id:
+          type: string
+          description: BatchOperation ID for tracking
+        status:
+          type: string
+          description: 'Status: discovering, error'
+        message:
+          type: string
+      required:
+      - message
+      - operation_id
+      - status
     ErrorDetail:
       type: object
       description: Error detail structure.
@@ -5622,7 +3570,7 @@ components:
           description: Initial context for workflow
         mode:
           allOf:
-          - $ref: '#/components/schemas/Mode9a5Enum'
+          - $ref: '#/components/schemas/ExecuteWorkflowRequestModeEnum'
           default: async
           description: |-
             Execution mode: sync (blocking) or async (background)
@@ -5631,6 +3579,14 @@ components:
             * `async` - async
       required:
       - workflow_id
+    ExecuteWorkflowRequestModeEnum:
+      enum:
+      - sync
+      - async
+      type: string
+      description: |-
+        * `sync` - sync
+        * `async` - async
     ExecuteWorkflowResponse:
       type: object
       description: Response for execute_workflow endpoint.
@@ -5825,6 +3781,37 @@ components:
       - extensions
       - summary
       - total
+    ExtensionStorageItem:
+      type: object
+      description: Single extension file in storage.
+      properties:
+        filename:
+          type: string
+          description: File name
+        size:
+          type: integer
+          description: File size in bytes
+        modified_at:
+          type: string
+          description: Last modified timestamp (ISO format)
+      required:
+      - filename
+      - modified_at
+      - size
+    ExtensionStorageListResponse:
+      type: object
+      description: Response for list_extension_storage endpoint.
+      properties:
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionStorageItem'
+        count:
+          type: integer
+          description: Number of extensions in storage
+      required:
+      - count
+      - extensions
     ExtensionSummary:
       type: object
       description: Summary statistics for extensions.
@@ -6132,14 +4119,6 @@ components:
         * `count` - count
         * `while` - while
         * `foreach` - foreach
-    Mode9a5Enum:
-      enum:
-      - sync
-      - async
-      type: string
-      description: |-
-        * `sync` - sync
-        * `async` - async
     NodeConfig:
       type: object
       description: Serializer for NodeConfig Pydantic model.
@@ -6248,10 +4227,11 @@ components:
       - total
     OperationTemplate:
       type: object
+      description: Serializer for OperationTemplate model.
       properties:
         id:
           type: string
-          readOnly: true
+          maxLength: 64
         name:
           type: string
           maxLength: 255
@@ -6296,6 +4276,7 @@ components:
       - block_sessions
       - unblock_sessions
       - sync_cluster
+      - discover_clusters
       type: string
       description: |-
         * `create` - Create
@@ -6309,6 +4290,7 @@ components:
         * `block_sessions` - Block Sessions
         * `unblock_sessions` - Unblock Sessions
         * `sync_cluster` - Sync Cluster
+        * `discover_clusters` - Discover Clusters
     OverallStatusEnum:
       enum:
       - healthy
@@ -6339,146 +4321,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BatchOperation'
-    PaginatedClusterList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/Cluster'
-    PaginatedDatabaseGroupList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/DatabaseGroup'
-    PaginatedDatabaseList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/Database'
-    PaginatedOperationTemplateList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationTemplate'
-    PaginatedWorkflowExecutionListList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowExecutionList'
-    PaginatedWorkflowStepResultList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowStepResult'
-    PaginatedWorkflowTemplateListList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowTemplateList'
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.
@@ -6588,294 +4430,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Task'
-          readOnly: true
-    PatchedCluster:
-      type: object
-      description: Serializer для Cluster model.
-      properties:
-        id:
-          type: string
-          format: uuid
-          readOnly: true
-          description: Cluster UUID (auto-generated or from 1C)
-        name:
-          type: string
-          description: Cluster name from 1C
-          maxLength: 255
-        description:
-          type: string
-          description: Optional description
-        ras_server:
-          type: string
-          description: RAS server address (host:port)
-          maxLength: 255
-        cluster_service_url:
-          type: string
-          format: uri
-          description: URL of installation-service managing this cluster
-          maxLength: 512
-        cluster_user:
-          type: string
-          description: Cluster admin username (if required)
-          maxLength: 255
-        cluster_pwd:
-          type: string
-          writeOnly: true
-        status:
-          $ref: '#/components/schemas/StatusD4eEnum'
-        status_display:
-          type: string
-          readOnly: true
-        last_sync:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-          description: Last sync timestamp
-        metadata:
-          type: object
-          additionalProperties: {}
-          description: Additional cluster metadata
-        databases_count:
-          type: integer
-          readOnly: true
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-    PatchedDatabase:
-      type: object
-      description: Serializer для Database model.
-      properties:
-        id:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-        host:
-          type: string
-          maxLength: 255
-        port:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-        base_name:
-          type: string
-          description: Infobase name from 1C cluster
-          maxLength: 255
-        odata_url:
-          type: string
-          format: uri
-          maxLength: 512
-        username:
-          type: string
-          maxLength: 255
-        password:
-          type: string
-          writeOnly: true
-        server_address:
-          type: string
-          description: 'Адрес сервера 1С (например: localhost, srv1c, 192.168.1.100)'
-          maxLength: 255
-        server_port:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-          description: Порт сервера 1С (обычно 1540 или 1541)
-        infobase_name:
-          type: string
-          description: Имя информационной базы на сервере 1С (если отличается от name)
-          maxLength: 255
-        status:
-          $ref: '#/components/schemas/StatusD4eEnum'
-        status_display:
-          type: string
-          readOnly: true
-        version:
-          type: string
-          maxLength: 50
-        last_check:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        last_check_status:
-          allOf:
-          - $ref: '#/components/schemas/LastCheckStatusEnum'
-          readOnly: true
-        consecutive_failures:
-          type: integer
-          readOnly: true
-        avg_response_time:
-          type: number
-          format: double
-          readOnly: true
-          nullable: true
-          description: Average response time in milliseconds
-        max_connections:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-          description: Maximum concurrent connections
-        connection_timeout:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-          description: Connection timeout in seconds
-        health_check_enabled:
-          type: boolean
-        is_healthy:
-          type: boolean
-          readOnly: true
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-    PatchedDatabaseGroup:
-      type: object
-      description: Serializer для DatabaseGroup model.
-      properties:
-        id:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-        databases:
-          type: array
-          items:
-            $ref: '#/components/schemas/Database'
-          readOnly: true
-        database_count:
-          type: integer
-          readOnly: true
-        healthy_count:
-          type: integer
-          readOnly: true
-        metadata:
-          type: object
-          additionalProperties: {}
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-    PatchedOperationTemplate:
-      type: object
-      properties:
-        id:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-        operation_type:
-          type: string
-          maxLength: 32
-        target_entity:
-          type: string
-          maxLength: 255
-        template_data:
-          type: object
-          additionalProperties: {}
-        is_active:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-    PatchedWorkflowTemplateDetail:
-      type: object
-      description: |-
-        Full serializer for WorkflowTemplate detail view.
-
-        Includes dag_structure and config.
-      properties:
-        id:
-          type: string
-          format: uuid
-          readOnly: true
-        name:
-          type: string
-          description: Workflow template name
-          maxLength: 200
-        description:
-          type: string
-          description: Workflow description
-        workflow_type:
-          allOf:
-          - $ref: '#/components/schemas/WorkflowTypeEnum'
-          description: |-
-            Workflow type: sequential, conditional, parallel, complex
-
-            * `sequential` - Sequential
-            * `conditional` - Conditional
-            * `parallel` - Parallel
-            * `complex` - Complex
-        dag_structure:
-          $ref: '#/components/schemas/DAGStructure'
-        config:
-          $ref: '#/components/schemas/WorkflowConfig'
-        is_valid:
-          type: boolean
-          readOnly: true
-          description: DAG structure is valid (cycles checked)
-        is_active:
-          type: boolean
-          description: Template is active and can be executed
-        version_number:
-          type: integer
-          readOnly: true
-          description: Version number (auto-incremented)
-        parent_version:
-          type: string
-          format: uuid
-          nullable: true
-          description: Parent template if this is a new version
-        parent_version_name:
-          type: string
-          readOnly: true
-          nullable: true
-        created_by:
-          type: integer
-          nullable: true
-        created_by_username:
-          type: string
-          readOnly: true
-          nullable: true
-        execution_count:
-          type: integer
-          description: Return number of executions for this template.
-          readOnly: true
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
           readOnly: true
     PrometheusMetric:
       type: object
@@ -7436,6 +4990,20 @@ components:
           type: boolean
       required:
       - workflow_id
+    UploadExtensionResponse:
+      type: object
+      description: Response for upload_extension endpoint.
+      properties:
+        message:
+          type: string
+          description: Status message
+        file:
+          allOf:
+          - $ref: '#/components/schemas/ExtensionStorageItem'
+          description: Uploaded file details
+      required:
+      - file
+      - message
     ValidateWorkflowRequest:
       type: object
       description: Request for validate_workflow endpoint.
@@ -7446,57 +5014,37 @@ components:
         dag_structure:
           type: object
           additionalProperties: {}
-    WorkflowCancelResponse:
+    ValidationIssue:
       type: object
-      description: Serializer for workflow cancel response.
+      description: Validation issue detail.
       properties:
-        execution_id:
+        code:
           type: string
-          format: uuid
-          description: Execution instance ID
-        cancelled:
-          type: boolean
-          description: Whether cancellation succeeded
-        status:
-          type: string
-          description: Current execution status
         message:
           type: string
-          description: Additional information
-      required:
-      - cancelled
-      - execution_id
-      - status
-    WorkflowCloneRequest:
-      type: object
-      description: Serializer for workflow clone request.
-      properties:
-        name:
+        node_id:
           type: string
-          description: New name for cloned template (optional)
-          maxLength: 200
+          nullable: true
+        severity:
+          type: string
+      required:
+      - code
+      - message
     WorkflowCloneResponse:
       type: object
-      description: Serializer for workflow clone response.
+      description: Response for clone_workflow endpoint.
       properties:
-        id:
+        workflow:
+          $ref: '#/components/schemas/WorkflowTemplateDetail'
+        cloned_from:
           type: string
           format: uuid
-          description: New template ID
-        name:
-          type: string
-          description: Template name
-        version_number:
-          type: integer
-          description: Version number
         message:
           type: string
-          description: Success message
       required:
-      - id
+      - cloned_from
       - message
-      - name
-      - version_number
+      - workflow
     WorkflowConfig:
       type: object
       description: Serializer for WorkflowConfig Pydantic model.
@@ -7571,57 +5119,6 @@ components:
       required:
       - from_node
       - to_node
-    WorkflowExecuteRequest:
-      type: object
-      description: Serializer for workflow execute request.
-      properties:
-        input_context:
-          type: object
-          additionalProperties: {}
-          description: Initial context data for the workflow
-        mode:
-          allOf:
-          - $ref: '#/components/schemas/Mode9a5Enum'
-          default: async
-          description: |-
-            Execution mode: 'sync' (blocking) or 'async' (background)
-
-            * `sync` - sync
-            * `async` - async
-    WorkflowExecuteResponse:
-      type: object
-      description: Serializer for workflow execute response.
-      properties:
-        execution_id:
-          type: string
-          format: uuid
-          description: Execution instance ID
-        status:
-          type: string
-          description: Current execution status
-        mode:
-          type: string
-          description: Execution mode used
-        message:
-          type: string
-          description: Additional information
-        final_result:
-          type: object
-          additionalProperties: {}
-          nullable: true
-          description: Final result (sync mode only)
-        duration:
-          type: number
-          format: double
-          nullable: true
-          description: Execution duration in seconds (sync mode only)
-        error_message:
-          type: string
-          description: Error message if failed
-      required:
-      - execution_id
-      - mode
-      - status
     WorkflowExecutionDetail:
       type: object
       description: |-
@@ -7913,59 +5410,6 @@ components:
       - running
       - successful
       - total_executions
-    WorkflowStatusResponse:
-      type: object
-      description: Lightweight serializer for polling execution status.
-      properties:
-        execution_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-        progress_percent:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
-        current_node_id:
-          type: string
-        completed_nodes:
-          type: array
-          items:
-            type: string
-        failed_nodes:
-          type: array
-          items:
-            type: string
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        duration:
-          type: number
-          format: double
-          nullable: true
-        final_result:
-          type: object
-          additionalProperties: {}
-          nullable: true
-        error_message:
-          type: string
-        error_node_id:
-          type: string
-      required:
-      - completed_at
-      - completed_nodes
-      - current_node_id
-      - duration
-      - execution_id
-      - failed_nodes
-      - progress_percent
-      - started_at
-      - status
     WorkflowStepResult:
       type: object
       description: Serializer for WorkflowStepResult model.
@@ -8248,25 +5692,25 @@ components:
       - workflow
     WorkflowValidateResponse:
       type: object
-      description: Serializer for workflow validate response.
+      description: Response for validate_workflow endpoint.
       properties:
         valid:
           type: boolean
-          description: Whether template is valid
         errors:
           type: array
           items:
-            type: string
-          description: Validation error messages
+            $ref: '#/components/schemas/ValidationIssue'
         warnings:
           type: array
           items:
-            type: string
-          description: Validation warning messages
+            $ref: '#/components/schemas/ValidationIssue'
         metadata:
           type: object
           additionalProperties: {}
-          description: Additional validation metadata
+        topological_order:
+          type: array
+          items:
+            type: string
       required:
       - valid
   securitySchemes:

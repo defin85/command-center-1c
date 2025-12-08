@@ -91,6 +91,13 @@ class ClusterSyncResponseSerializer(serializers.Serializer):
     errors = serializers.ListField(child=serializers.CharField(), required=False)
 
 
+class DiscoverClustersResponseSerializer(serializers.Serializer):
+    """Response for discover_clusters endpoint."""
+    operation_id = serializers.CharField(help_text="BatchOperation ID for tracking")
+    status = serializers.CharField(help_text="Status: discovering, error")
+    message = serializers.CharField()
+
+
 class ClusterFiltersSerializer(serializers.Serializer):
     """Applied filters."""
     status = serializers.CharField(required=False)
@@ -347,61 +354,32 @@ def sync_cluster(request):
         created_by=request.user.username if request.user.is_authenticated else 'system',
     )
 
-    if OperationsService.is_celery_enabled():
-        # Legacy Celery path
-        try:
-            from apps.databases.tasks import sync_cluster_task
-            task = sync_cluster_task.apply_async(args=[str(cluster_id), str(operation.id)])
+    try:
+        result = OperationsService.enqueue_cluster_sync(
+            cluster_id=str(cluster_id),
+            operation_id=str(operation.id),
+            created_by=request.user.username if request.user.is_authenticated else 'system'
+        )
 
-            operation.task_id = task.id
-            operation.save(update_fields=['task_id'])
-
+        if result.success:
             logger.info(
-                "Cluster sync started via Celery",
+                "Cluster sync started via Go Worker",
                 extra={
                     'cluster_id': str(cluster_id),
-                    'operation_id': str(operation.id),
-                    'task_id': task.id,
+                    'operation_id': result.operation_id,
                 }
             )
 
             return Response({
                 'cluster_id': str(cluster_id),
-                'operation_id': str(operation.id),
-                'task_id': task.id,
+                'operation_id': result.operation_id,
                 'status': 'syncing',
-                'message': 'Cluster synchronization started (Celery)',
+                'message': 'Cluster synchronization started',
             })
-        except Exception as e:
-            logger.warning(f"Celery unavailable for cluster sync: {e}")
-    else:
-        # New Go Worker path
-        try:
-            result = OperationsService.enqueue_cluster_sync(
-                cluster_id=str(cluster_id),
-                operation_id=str(operation.id),
-                created_by=request.user.username if request.user.is_authenticated else 'system'
-            )
-
-            if result.success:
-                logger.info(
-                    "Cluster sync started via Go Worker",
-                    extra={
-                        'cluster_id': str(cluster_id),
-                        'operation_id': result.operation_id,
-                    }
-                )
-
-                return Response({
-                    'cluster_id': str(cluster_id),
-                    'operation_id': result.operation_id,
-                    'status': 'syncing',
-                    'message': 'Cluster synchronization started (Go Worker)',
-                })
-            else:
-                logger.warning(f"Go Worker enqueue failed: {result.error}")
-        except Exception as e:
-            logger.warning(f"Go Worker unavailable for cluster sync: {e}")
+        else:
+            logger.warning(f"Go Worker enqueue failed: {result.error}")
+    except Exception as e:
+        logger.warning(f"Go Worker unavailable for cluster sync: {e}")
 
     # Fallback: synchronous execution
     logger.warning("Async workers unavailable - running sync synchronously")
@@ -967,3 +945,126 @@ def get_cluster_databases(request):
         'count': len(serializer.data),
         'filters': filters_applied
     })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Discover clusters on RAS server',
+    description='Trigger cluster discovery on a RAS server. Creates or updates Cluster records for all found clusters.',
+    request=None,
+    responses={
+        200: DiscoverClustersResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        409: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def discover_clusters(request):
+    """
+    POST /api/v2/clusters/discover-clusters/
+
+    Trigger cluster discovery on a RAS server.
+
+    Request Body:
+        {
+            "ras_server": "localhost:1545",
+            "cluster_user": "admin",  // optional
+            "cluster_pwd": "password"  // optional
+        }
+
+    Response (200):
+        {
+            "operation_id": "uuid",
+            "status": "discovering",
+            "message": "Cluster discovery started"
+        }
+
+    Errors:
+        400 - Missing ras_server
+        409 - Discovery already in progress
+        500 - Failed to enqueue operation
+    """
+    # Get ras_server from body
+    ras_server = request.data.get('ras_server')
+
+    if not ras_server:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ras_server is required'
+            }
+        }, status=400)
+
+    # Optional credentials
+    cluster_user = request.data.get('cluster_user', '')
+    cluster_pwd = request.data.get('cluster_pwd', '')
+
+    # Create BatchOperation for tracking
+    operation = BatchOperation.objects.create(
+        id=str(uuid.uuid4()),
+        name=f"Discover clusters: {ras_server}",
+        description=f"Discovering clusters on RAS server {ras_server}",
+        operation_type=BatchOperation.TYPE_DISCOVER_CLUSTERS,
+        target_entity=ras_server,
+        payload={
+            'ras_server': ras_server,
+            'cluster_user': cluster_user,
+        },
+        status=BatchOperation.STATUS_QUEUED,
+        total_tasks=1,
+        created_by=request.user.username if request.user.is_authenticated else 'system',
+    )
+
+    # Enqueue to Go Worker
+    from apps.operations.services import OperationsService
+
+    result = OperationsService.enqueue_discover_clusters(
+        ras_server=ras_server,
+        operation_id=str(operation.id),
+        cluster_user=cluster_user,
+        cluster_pwd=cluster_pwd,
+        created_by=request.user.username if request.user.is_authenticated else 'system'
+    )
+
+    if result.success:
+        logger.info(
+            "Cluster discovery started",
+            extra={
+                'ras_server': ras_server,
+                'operation_id': result.operation_id,
+            }
+        )
+
+        return Response({
+            'operation_id': result.operation_id,
+            'status': 'discovering',
+            'message': 'Cluster discovery started',
+        })
+
+    else:
+        # Update BatchOperation status on failure
+        operation.status = BatchOperation.STATUS_FAILED
+        operation.metadata = {'error': result.error}
+        operation.save(update_fields=['status', 'metadata', 'updated_at'])
+
+        # Check if duplicate
+        if result.status == 'duplicate':
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'DISCOVERY_IN_PROGRESS',
+                    'message': result.error
+                }
+            }, status=409)
+
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'ENQUEUE_FAILED',
+                'message': result.error
+            }
+        }, status=500)

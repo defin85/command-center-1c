@@ -27,11 +27,10 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
 
-    # API v1
-    path('api/v1/', include('apps.databases.urls')),
+    # API v1 (DEPRECATED - Sunset: 2026-03-01)
+    # Only operations endpoint remains for SSE stream support
+    # All other v1 endpoints migrated to v2
     path('api/v1/operations/', include('apps.operations.urls')),
-    path('api/v1/templates/', include('apps.templates.urls')),
-    path('api/v1/system/', include('apps.monitoring.urls')),
 
     # API v2 (action-based routing)
     path('api/v2/', include('apps.api_v2.urls')),

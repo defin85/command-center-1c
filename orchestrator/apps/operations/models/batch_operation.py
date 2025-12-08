@@ -39,6 +39,7 @@ class BatchOperation(models.Model):
 
     # Cluster operation types
     TYPE_SYNC_CLUSTER = 'sync_cluster'
+    TYPE_DISCOVER_CLUSTERS = 'discover_clusters'
 
     TYPE_CHOICES = [
         # OData operations
@@ -55,6 +56,7 @@ class BatchOperation(models.Model):
         (TYPE_UNBLOCK_SESSIONS, 'Unblock Sessions'),
         # Cluster operations
         (TYPE_SYNC_CLUSTER, 'Sync Cluster'),
+        (TYPE_DISCOVER_CLUSTERS, 'Discover Clusters'),
     ]
 
     # Identity

@@ -423,7 +423,7 @@ def retry_installation(request):
             retry_count=retry_count,
         )
 
-    # Trigger async installation via Go Worker (or Celery fallback)
+    # Trigger async installation via Go Worker
     from apps.operations.services import OperationsService
 
     extension_config = {
@@ -432,24 +432,23 @@ def retry_installation(request):
         'extension_id': str(installation.id),
     }
 
-    if OperationsService.is_celery_enabled():
-        # Legacy Celery path
-        try:
-            from apps.databases.tasks import queue_extension_installation
-            task = queue_extension_installation.delay(
-                [str(database_id)],
-                {'name': extension_name, 'path': f'{EXTENSION_BASE_PATH}/{extension_name}.cfe'}
-            )
+    try:
+        result = OperationsService.enqueue_extension_install(
+            database_ids=[str(database_id)],
+            extension_config=extension_config,
+            created_by=request.user.username if request.user else 'anonymous'
+        )
 
+        if result.success:
             logger.info(
-                "Extension installation retry scheduled via Celery",
+                "Extension installation retry scheduled via Go Worker",
                 extra={
                     'installation_id': str(installation.id),
                     'database_id': database_id,
                     'extension_name': extension_name,
                     'retry_count': retry_count,
                     'requested_by': request.user.username if request.user else 'anonymous',
-                    'task_id': task.id,
+                    'operation_id': result.operation_id,
                 }
             )
 
@@ -457,44 +456,13 @@ def retry_installation(request):
                 'database_id': database_id,
                 'installation_id': str(installation.id),
                 'status': 'pending',
-                'task_id': task.id,
-                'message': 'Installation retry scheduled (Celery)',
+                'operation_id': result.operation_id,
+                'message': 'Installation retry scheduled',
             })
-        except Exception as e:
-            logger.warning(f"Celery unavailable: {e}")
-    else:
-        # New Go Worker path
-        try:
-            result = OperationsService.enqueue_extension_install(
-                database_ids=[str(database_id)],
-                extension_config=extension_config,
-                created_by=request.user.username if request.user else 'anonymous'
-            )
-
-            if result.success:
-                logger.info(
-                    "Extension installation retry scheduled via Go Worker",
-                    extra={
-                        'installation_id': str(installation.id),
-                        'database_id': database_id,
-                        'extension_name': extension_name,
-                        'retry_count': retry_count,
-                        'requested_by': request.user.username if request.user else 'anonymous',
-                        'operation_id': result.operation_id,
-                    }
-                )
-
-                return Response({
-                    'database_id': database_id,
-                    'installation_id': str(installation.id),
-                    'status': 'pending',
-                    'operation_id': result.operation_id,
-                    'message': 'Installation retry scheduled (Go Worker)',
-                })
-            else:
-                logger.warning(f"Go Worker enqueue failed: {result.error}")
-        except Exception as e:
-            logger.warning(f"Go Worker unavailable: {e}")
+        else:
+            logger.warning(f"Go Worker enqueue failed: {result.error}")
+    except Exception as e:
+        logger.warning(f"Go Worker unavailable: {e}")
 
     # Fallback response
     logger.info(
@@ -683,7 +651,7 @@ def batch_install(request):
             })
             queued_count += 1
 
-    # Trigger async batch installation via Go Worker (or Celery fallback)
+    # Trigger async batch installation via Go Worker
     queued_db_ids = [
         inst['database_id'] for inst in installations
         if inst['status'] == 'pending'
@@ -697,53 +665,29 @@ def batch_install(request):
             'path': extension_path,
         }
 
-        if OperationsService.is_celery_enabled():
-            # Legacy Celery path
-            try:
-                from apps.databases.tasks import queue_extension_installation
-                task = queue_extension_installation.delay(
-                    queued_db_ids,
-                    {'name': extension_name, 'path': extension_path}
-                )
+        try:
+            result = OperationsService.enqueue_extension_install(
+                database_ids=queued_db_ids,
+                extension_config=extension_config,
+                created_by=request.user.username if request.user else 'anonymous'
+            )
 
+            if result.success:
                 logger.info(
-                    "Batch extension installation scheduled via Celery",
+                    "Batch extension installation scheduled via Go Worker",
                     extra={
                         'batch_id': batch_id,
                         'total': len(database_ids),
                         'queued': queued_count,
                         'skipped': skipped_count,
                         'requested_by': request.user.username if request.user else 'anonymous',
-                        'task_id': task.id,
+                        'operation_id': result.operation_id,
                     }
                 )
-            except Exception as e:
-                logger.warning(f"Celery unavailable for batch install: {e}")
-        else:
-            # New Go Worker path
-            try:
-                result = OperationsService.enqueue_extension_install(
-                    database_ids=queued_db_ids,
-                    extension_config=extension_config,
-                    created_by=request.user.username if request.user else 'anonymous'
-                )
-
-                if result.success:
-                    logger.info(
-                        "Batch extension installation scheduled via Go Worker",
-                        extra={
-                            'batch_id': batch_id,
-                            'total': len(database_ids),
-                            'queued': queued_count,
-                            'skipped': skipped_count,
-                            'requested_by': request.user.username if request.user else 'anonymous',
-                            'operation_id': result.operation_id,
-                        }
-                    )
-                else:
-                    logger.warning(f"Go Worker enqueue failed for batch install: {result.error}")
-            except Exception as e:
-                logger.warning(f"Go Worker unavailable for batch install: {e}")
+            else:
+                logger.warning(f"Go Worker enqueue failed for batch install: {result.error}")
+        except Exception as e:
+            logger.warning(f"Go Worker unavailable for batch install: {e}")
 
     return Response({
         'batch_id': batch_id,
@@ -883,3 +827,260 @@ def get_install_progress(request):
         },
         'databases': databases,
     })
+
+
+# =============================================================================
+# Extension Storage Endpoints (v2 migration from v1)
+# =============================================================================
+
+class ExtensionStorageItemSerializer(serializers.Serializer):
+    """Single extension file in storage."""
+    filename = serializers.CharField(help_text="File name")
+    size = serializers.IntegerField(help_text="File size in bytes")
+    modified_at = serializers.CharField(help_text="Last modified timestamp (ISO format)")
+
+
+class ExtensionStorageListResponseSerializer(serializers.Serializer):
+    """Response for list_extension_storage endpoint."""
+    extensions = ExtensionStorageItemSerializer(many=True)
+    count = serializers.IntegerField(help_text="Number of extensions in storage")
+
+
+class UploadExtensionResponseSerializer(serializers.Serializer):
+    """Response for upload_extension endpoint."""
+    message = serializers.CharField(help_text="Status message")
+    file = ExtensionStorageItemSerializer(help_text="Uploaded file details")
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='List extensions in storage',
+    description='Get list of extension files (.cfe) available in storage for installation.',
+    responses={
+        200: ExtensionStorageListResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        500: ErrorResponseSerializer,
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_extension_storage(request):
+    """
+    GET /api/v2/extensions/list-storage/
+
+    List all extension files in storage.
+
+    Response:
+        {
+            "extensions": [
+                {
+                    "filename": "ODataAutoConfig.cfe",
+                    "size": 12345,
+                    "modified_at": "2024-01-01T00:00:00"
+                }
+            ],
+            "count": 1
+        }
+    """
+    from apps.databases.services import ExtensionStorageService
+    from datetime import datetime
+
+    try:
+        extensions = ExtensionStorageService.list_extensions()
+
+        # Format timestamps to ISO format
+        for ext in extensions:
+            ext['modified_at'] = datetime.fromtimestamp(ext['modified_at']).isoformat()
+
+        return Response({
+            'extensions': extensions,
+            'count': len(extensions)
+        })
+    except Exception as e:
+        logger.error(f"Failed to list extension storage: {e}")
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'STORAGE_ERROR',
+                'message': str(e)
+            }
+        }, status=500)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Upload extension file',
+    description='Upload a .cfe extension file to storage for later installation.',
+    responses={
+        201: UploadExtensionResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        500: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_extension(request):
+    """
+    POST /api/v2/extensions/upload-extension/
+
+    Upload extension file to storage.
+
+    Form data:
+        file: .cfe file (required)
+        filename: custom filename (optional)
+
+    Response:
+        {
+            "message": "File uploaded successfully",
+            "file": {
+                "filename": "ODataAutoConfig.cfe",
+                "size": 12345,
+                "modified_at": "2024-01-01T00:00:00"
+            }
+        }
+    """
+    from apps.databases.services import ExtensionStorageService
+
+    try:
+        if 'file' not in request.FILES:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'MISSING_FILE',
+                    'message': 'No file provided'
+                }
+            }, status=400)
+
+        file = request.FILES['file']
+        filename = request.data.get('filename', None)
+
+        # Validate extension
+        if not file.name.lower().endswith('.cfe'):
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'INVALID_FILE_TYPE',
+                    'message': 'File must have .cfe extension'
+                }
+            }, status=400)
+
+        # Check file size (max 100MB)
+        if file.size > 100 * 1024 * 1024:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'FILE_TOO_LARGE',
+                    'message': 'File too large (max 100MB)'
+                }
+            }, status=400)
+
+        # Save file
+        result = ExtensionStorageService.save_extension(file, filename)
+
+        logger.info(
+            f"Extension uploaded: {result.get('filename')}",
+            extra={
+                'filename': result.get('filename'),
+                'size': result.get('size'),
+                'uploaded_by': request.user.username if request.user else 'anonymous',
+            }
+        )
+
+        return Response({
+            'message': 'File uploaded successfully',
+            'file': result
+        }, status=201)
+
+    except ValueError as e:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': str(e)
+            }
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Failed to upload extension: {e}")
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'UPLOAD_ERROR',
+                'message': str(e)
+            }
+        }, status=500)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Delete extension file',
+    description='Delete an extension file from storage.',
+    parameters=[
+        OpenApiParameter(name='filename', type=str, required=True, description='Extension filename to delete'),
+    ],
+    responses={
+        200: OpenApiResponse(description='File deleted successfully'),
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_extension_storage(request):
+    """
+    DELETE /api/v2/extensions/delete-extension/?filename=X
+
+    Delete extension file from storage.
+
+    Query Parameters:
+        filename: Extension filename to delete (required)
+
+    Response:
+        {
+            "message": "File deleted successfully"
+        }
+    """
+    from apps.databases.services import ExtensionStorageService
+
+    filename = request.query_params.get('filename')
+
+    if not filename:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'filename is required'
+            }
+        }, status=400)
+
+    try:
+        deleted = ExtensionStorageService.delete_extension(filename)
+
+        if deleted:
+            logger.info(
+                f"Extension deleted: {filename}",
+                extra={
+                    'filename': filename,
+                    'deleted_by': request.user.username if request.user else 'anonymous',
+                }
+            )
+            return Response({'message': 'File deleted successfully'})
+        else:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'FILE_NOT_FOUND',
+                    'message': 'File not found'
+                }
+            }, status=404)
+    except Exception as e:
+        logger.error(f"Failed to delete extension {filename}: {e}")
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'DELETE_ERROR',
+                'message': str(e)
+            }
+        }, status=500)

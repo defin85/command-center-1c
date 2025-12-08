@@ -63,6 +63,7 @@ class EventSubscriber:
             'events:cluster-service:infobase:unlocked': '>',
             'events:cluster-service:sessions:closed': '>',
             'events:worker:cluster-synced': '>',
+            'events:worker:clusters-discovered': '>',
         }
 
         # Setup signal handlers for graceful shutdown
@@ -208,6 +209,9 @@ class EventSubscriber:
 
         elif 'cluster-synced' in stream:
             self.handle_cluster_synced(payload, correlation_id)
+
+        elif 'clusters-discovered' in stream:
+            self.handle_clusters_discovered(payload, correlation_id)
 
         else:
             logger.warning(f"Unknown stream: {stream}")
@@ -470,6 +474,129 @@ class EventSubscriber:
                 sync_lock_key = f"sync_cluster:{cluster_id}"
                 redis_client.release_lock(sync_lock_key)
                 logger.debug(f"Released sync lock for cluster {cluster_id}")
+
+    def handle_clusters_discovered(self, payload: Dict[str, Any], correlation_id: str):
+        """
+        Handle clusters-discovered event from Go Worker.
+
+        Creates or updates Cluster records in DB for all discovered clusters.
+
+        Payload example:
+            {
+                'operation_id': 'uuid',
+                'ras_server': 'localhost:1545',
+                'clusters': [
+                    {
+                        'uuid': 'cluster-uuid',
+                        'name': 'Cluster Name',
+                        'host': 'server1',
+                        'port': 1541,
+                        'expiration_timeout': 0,
+                        'lifetime_limit': 0,
+                        'max_memory_size': 0,
+                        'max_memory_time_limit': 0,
+                        'security_level': 0,
+                        'session_fault_tolerance_level': 0,
+                        'load_balancing_mode': 0,
+                        'errors_count_threshold': 0,
+                        'kill_problem_processes': False
+                    },
+                    ...
+                ],
+                'success': True,
+                'error': null
+            }
+        """
+        from apps.databases.models import Cluster
+        from apps.operations.models import BatchOperation
+        from .redis_client import redis_client
+
+        operation_id = payload.get('operation_id')
+        ras_server = payload.get('ras_server')
+        clusters_data = payload.get('clusters', [])
+        success = payload.get('success', False)
+        error = payload.get('error')
+
+        logger.info(
+            f"Clusters discovered event: ras_server={ras_server}, "
+            f"operation_id={operation_id}, success={success}, "
+            f"clusters_count={len(clusters_data)}, correlation_id={correlation_id}"
+        )
+
+        created = 0
+        updated = 0
+
+        try:
+            with transaction.atomic():
+                if success and clusters_data:
+                    for cluster_data in clusters_data:
+                        cluster_uuid = cluster_data.get('uuid')
+                        cluster_name = cluster_data.get('name', 'Unknown')
+
+                        # Try to find existing cluster by ras_cluster_uuid
+                        # cluster_service_url points to RAS Adapter
+                        from django.conf import settings
+                        adapter_url = getattr(
+                            settings, 'RAS_ADAPTER_URL', 'http://localhost:8188'
+                        )
+                        cluster, is_new = Cluster.objects.update_or_create(
+                            ras_cluster_uuid=cluster_uuid,
+                            defaults={
+                                'name': cluster_name,
+                                'ras_server': ras_server,
+                                'cluster_service_url': adapter_url,
+                                'status': 'active',
+                                'metadata': cluster_data,
+                            }
+                        )
+
+                        if is_new:
+                            created += 1
+                            logger.info(
+                                f"Created new cluster: {cluster_name} "
+                                f"(uuid={cluster_uuid}, ras_server={ras_server})"
+                            )
+                        else:
+                            updated += 1
+                            logger.info(
+                                f"Updated cluster: {cluster_name} "
+                                f"(uuid={cluster_uuid}, ras_server={ras_server})"
+                            )
+
+                # Update BatchOperation status if exists
+                if operation_id:
+                    try:
+                        batch_op = BatchOperation.objects.get(id=operation_id)
+                        if success:
+                            batch_op.status = BatchOperation.STATUS_COMPLETED
+                            batch_op.metadata['discovery_result'] = {
+                                'clusters_found': len(clusters_data),
+                                'created': created,
+                                'updated': updated,
+                            }
+                        else:
+                            batch_op.status = BatchOperation.STATUS_FAILED
+                            batch_op.metadata['error'] = error
+                        batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        logger.info(
+                            f"Updated BatchOperation {operation_id} status: {batch_op.status}"
+                        )
+                    except BatchOperation.DoesNotExist:
+                        logger.debug(
+                            f"BatchOperation not found: {operation_id}"
+                        )
+
+        except Exception as e:
+            logger.error(
+                f"Error handling clusters-discovered event: {e}",
+                exc_info=True
+            )
+        finally:
+            # Always release the discovery lock to allow new discovery operations
+            if ras_server:
+                discover_lock_key = f"discover_clusters:{ras_server}"
+                redis_client.release_lock(discover_lock_key)
+                logger.debug(f"Released discover lock for ras_server {ras_server}")
 
     def _update_task_status_from_correlation_id(
         self,

@@ -189,6 +189,9 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	if msg.OperationType == "sync_cluster" {
 		return p.processSyncCluster(ctx, msg)
 	}
+	if msg.OperationType == "discover_clusters" {
+		return p.processDiscoverClusters(ctx, msg)
+	}
 
 	// Process each target database
 	totalDatabases := len(msg.TargetDatabases)

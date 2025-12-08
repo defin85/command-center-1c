@@ -63,7 +63,7 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
             // Автоматически выбрать загруженный файл
             if (onChange) {
                 onChange({
-                    name: result.file.name.replace('.cfe', ''),
+                    name: result.file.filename.replace('.cfe', ''),
                     path: result.file.path,
                 });
             }
@@ -79,7 +79,7 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
         const selected = extensions.find((ext) => ext.path === selectedPath);
         if (selected && onChange) {
             onChange({
-                name: selected.name.replace('.cfe', ''),
+                name: selected.filename.replace('.cfe', ''),
                 path: selected.path,
             });
         }
@@ -123,10 +123,10 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
                             <Select.Option
                                 key={ext.path}
                                 value={ext.path}
-                                label={ext.name}
+                                label={ext.filename}
                             >
                                 <div style={{ padding: '4px 0' }}>
-                                    <div style={{ fontWeight: 500 }}>{ext.name}</div>
+                                    <div style={{ fontWeight: 500 }}>{ext.filename}</div>
                                     <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                                         {formatFileSize(ext.size)} • {formatDate(ext.modified_at)}
                                     </div>
