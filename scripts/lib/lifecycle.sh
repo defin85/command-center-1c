@@ -54,9 +54,6 @@ CC1C_LIB_LIFECYCLE_LOADED=true
 # Категории сервисов: python, go, frontend, external
 declare -gA SERVICE_CATEGORIES=(
     ["orchestrator"]="python"
-    ["celery-worker"]="python"
-    ["celery-beat"]="python"
-    ["flower"]="python"
     ["api-gateway"]="go"
     ["worker"]="go"
     ["ras-adapter"]="go"
@@ -68,9 +65,6 @@ declare -gA SERVICE_CATEGORIES=(
 # Порядок запуска (сначала backend, потом frontend)
 declare -ga SERVICE_START_ORDER=(
     orchestrator
-    celery-worker
-    celery-beat
-    flower
     api-gateway
     worker
     ras-adapter
@@ -85,9 +79,6 @@ declare -ga SERVICE_STOP_ORDER=(
     ras-adapter
     worker
     api-gateway
-    flower
-    celery-beat
-    celery-worker
     orchestrator
 )
 
@@ -97,16 +88,12 @@ declare -gA SERVICE_PORTS=(
     ["api-gateway"]="${API_GATEWAY_PORT:-8180}"
     ["ras-adapter"]="${RAS_ADAPTER_PORT:-8188}"
     ["batch-service"]="${BATCH_SERVICE_PORT:-8187}"
-    ["flower"]="${FLOWER_PORT:-5555}"
     ["frontend"]="${FRONTEND_PORT:-5173}"
 )
 
 # Таймаут остановки для сервисов (секунды)
 declare -gA SERVICE_STOP_TIMEOUT=(
     ["orchestrator"]=15
-    ["celery-worker"]=30  # Workers могут долго завершать задачи
-    ["celery-beat"]=10
-    ["flower"]=10
     ["api-gateway"]=10
     ["worker"]=15
     ["ras-adapter"]=10
@@ -286,24 +273,6 @@ _start_python_service() {
         orchestrator)
             local port="${ORCHESTRATOR_PORT:-8200}"
             nohup daphne -b 0.0.0.0 -p "$port" config.asgi:application > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
-            ;;
-        celery-worker)
-            # gevent pool для async I/O
-            nohup celery -A config worker -P gevent --concurrency=100 --loglevel=info > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
-            ;;
-        celery-beat)
-            # Очистка старых schedule файлов
-            rm -f celerybeat-schedule celerybeat-schedule.db
-            nohup celery -A config beat --loglevel=info > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
-            ;;
-        flower)
-            local port="${FLOWER_PORT:-5555}"
-            # Формируем broker URL из REDIS_HOST/REDIS_PORT (согласованно с Django)
-            local broker_url="redis://${REDIS_HOST:-localhost}:${REDIS_PORT:-6379}/0"
-            nohup celery -A config flower --port="$port" --broker="$broker_url" > "$log_file" 2>&1 &
             LAST_SERVICE_PID=$!
             ;;
         *)

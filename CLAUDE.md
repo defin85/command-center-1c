@@ -6,9 +6,9 @@
 
 ## 🚨 КРИТИЧНО
 
-**Дата обновления:** 2025-12-05
-**Текущая фаза:** Phase 1, Week 2.5-3 (Core Functionality)
-**Статус:** 🔄 Sprint 2.1-2.2 В ПРОЦЕССЕ (~25% готово) - Task Queue & Worker Integration
+**Дата обновления:** 2025-12-08
+**Текущая фаза:** Phase 2 - Extended Functionality
+**Статус:** ✅ Celery Removal COMPLETE - Go Worker единственный execution engine
 **Режим разработки:** Native WSL (USE_DOCKER=false в .env.local)
 **Roadmap:** Balanced Approach (14-16 недель) - [docs/ROADMAP.md](docs/ROADMAP.md)
 
@@ -16,9 +16,8 @@
 - Frontend → API Gateway (8180) `/api/v2/*`
 - v1 endpoints deprecated (Sunset: 2026-03-01)
 
-**Завершено:** Sprint 1.1-1.4 (Infrastructure, Models, OData, RAS Integration) ✅
-**В работе:** Sprint 2.1 (Celery ↔ Worker) 🟡 30%, Sprint 2.2 (Template Engine) 🟡 20%
-**Критичные GAPs:** Orchestrator → Worker integration, Template Engine, Real Operation Execution
+**Завершено:** Phase 1 (Infrastructure, Models, OData, RAS, Celery Removal) ✅
+**Архитектура:** Django Orchestrator (API + Business Logic) → Redis Queue → Go Worker (Unified Engine)
 
 ---
 
@@ -55,7 +54,7 @@ python manage.py shell
 ```
 
 **Доступные сервисы:**
-- `orchestrator`, `celery-worker`, `celery-beat` (Python/Django)
+- `orchestrator` (Python/Django)
 - `api-gateway`, `worker`, `ras-adapter` (Go)
 - `frontend` (React)
 
@@ -99,7 +98,6 @@ python manage.py shell
 - Orchestrator API: http://localhost:8200/api/docs (Swagger)
 - ras-adapter: http://localhost:8188/health
 - batch-service: http://localhost:8187/health
-- Flower (Celery UI): http://localhost:5555
 
 **Мониторинг (порты зависят от режима):**
 
@@ -210,18 +208,18 @@ User → Frontend (React:5173)
   ↓
 API Gateway (Go:8180) → Orchestrator (Django:8200) → PostgreSQL:5432
                           ↓
-                        Redis:6379 → Celery
+                        Redis:6379 (Queue + Pub/Sub)
                           ↓
-                    Go Worker Pool (x2) → OData → 1C Bases
+                    Go Worker (Unified Engine) → OData → 1C Bases
                           ↓
                     ras-adapter (Go:8188) → RAS (1545)
 ```
 
 **Поток данных:**
 ```
-User → Frontend → API Gateway → Orchestrator → Celery → Redis
-→ Worker → Redis Pub/Sub → RAS Adapter → RAS → 1C
-→ Results → WebSocket → User
+User → Frontend → API Gateway → Orchestrator → Redis Queue
+→ Go Worker → OData/RAS → 1C
+→ Results → Redis Pub/Sub → WebSocket → User
 ```
 
 ### Структура monorepo
@@ -260,11 +258,10 @@ command-center-1c/
 | Компонент | Язык | Фреймворк | Порт |
 |-----------|------|-----------|------|
 | **API Gateway** | Go 1.21+ | Gin | 8180 |
-| **Workers** | Go 1.21+ | stdlib + goroutines | - |
+| **Worker** | Go 1.21+ | stdlib + goroutines (Unified Engine) | - |
 | **ras-adapter** | Go 1.21+ | khorevaa/ras-client | 8188 |
 | **batch-service** | Go 1.21+ | stdlib | 8187 |
 | **Orchestrator** | Python 3.11+ | Django 4.2+ DRF | 8200 |
-| **Task Queue** | Python 3.11+ | Celery 5.3+ | - |
 | **Frontend** | TypeScript | React 18.2 + Ant Design | 5173 |
 
 **Data:** PostgreSQL 15 (5432), Redis 7 (6379), ClickHouse (8123, 9000)
@@ -445,8 +442,14 @@ Skill: cc1c-devops → автоматическая диагностика и п
 
 ---
 
-**Версия:** 3.2
-**Последнее обновление:** 2025-12-05
+**Версия:** 3.3
+**Последнее обновление:** 2025-12-08
+
+**Изменения v3.3:**
+- Celery полностью удален из проекта (Phase 6 complete)
+- Go Worker теперь единственный execution engine
+- Обновлена архитектурная диаграмма
+- Убраны celery-worker, celery-beat, Flower из документации
 
 **Изменения v3.2:**
 - Добавлен `./scripts/dev/lint.sh` для проверки качества кода

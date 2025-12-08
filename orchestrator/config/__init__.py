@@ -1,5 +1,4 @@
-# This will make sure the Celery app is always imported when
-# Django starts so that shared_task will use this app.
-from .celery import app as celery_app
+# Celery removed - Go Worker handles all task execution
+# See docs/roadmaps/CELERY_REMOVAL_ROADMAP.md for details
 
-__all__ = ('celery_app',)
+__all__ = ()

@@ -1,0 +1,69 @@
+package orchestrator
+
+import (
+	"context"
+	"fmt"
+)
+
+// WorkflowExecutionData represents workflow execution data from Orchestrator.
+type WorkflowExecutionData struct {
+	ID               string                 `json:"id"`
+	WorkflowTemplate WorkflowTemplateData   `json:"workflow_template"`
+	InputContext     map[string]interface{} `json:"input_context"`
+	Status           string                 `json:"status"`
+	CurrentNodeID    string                 `json:"current_node_id"`
+	CompletedNodes   []string               `json:"completed_nodes"`
+	FailedNodes      []string               `json:"failed_nodes"`
+}
+
+// WorkflowTemplateData represents workflow template data from Orchestrator.
+type WorkflowTemplateData struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description"`
+	WorkflowType  string                 `json:"workflow_type"`
+	DAGStructure  map[string]interface{} `json:"dag_structure"`
+	Config        map[string]interface{} `json:"config"`
+	IsValid       bool                   `json:"is_valid"`
+	IsActive      bool                   `json:"is_active"`
+	VersionNumber int                    `json:"version_number"`
+}
+
+// GetWorkflowExecution fetches workflow execution by ID from Orchestrator.
+// Returns the execution data including DAG structure for workflow execution.
+func (c *Client) GetWorkflowExecution(ctx context.Context, executionID string) (*WorkflowExecutionData, error) {
+	path := fmt.Sprintf("/api/internal/workflow-executions/%s/", executionID)
+
+	var execution WorkflowExecutionData
+	if err := c.get(ctx, path, &execution); err != nil {
+		return nil, fmt.Errorf("failed to get workflow execution %s: %w", executionID, err)
+	}
+
+	return &execution, nil
+}
+
+// GetWorkflowTemplate fetches workflow template by ID from Orchestrator.
+func (c *Client) GetWorkflowTemplate(ctx context.Context, templateID string) (*WorkflowTemplateData, error) {
+	path := fmt.Sprintf("/api/internal/workflow-templates/%s/", templateID)
+
+	var template WorkflowTemplateData
+	if err := c.get(ctx, path, &template); err != nil {
+		return nil, fmt.Errorf("failed to get workflow template %s: %w", templateID, err)
+	}
+
+	return &template, nil
+}
+
+// UpdateWorkflowExecutionStatus updates execution status in Orchestrator.
+func (c *Client) UpdateWorkflowExecutionStatus(ctx context.Context, executionID string, status string, errorMessage string) error {
+	path := fmt.Sprintf("/api/internal/workflow-executions/%s/status/", executionID)
+
+	payload := map[string]interface{}{
+		"status": status,
+	}
+	if errorMessage != "" {
+		payload["error_message"] = errorMessage
+	}
+
+	return c.post(ctx, path, payload, nil)
+}

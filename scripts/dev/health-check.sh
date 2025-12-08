@@ -55,9 +55,6 @@ check_process() {
 }
 
 check_process "orchestrator"
-check_process "celery-worker"
-check_process "celery-beat"
-check_process "flower"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"
@@ -273,11 +270,11 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Подсчитать количество работающих сервисов
-TOTAL=10
+TOTAL=7
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "celery-worker" "celery-beat" "flower" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
+SERVICES=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

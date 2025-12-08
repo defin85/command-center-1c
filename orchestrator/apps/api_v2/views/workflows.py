@@ -541,56 +541,86 @@ def execute_workflow(request):
                     'message': 'Workflow execution failed',
                 }, status=500)
         else:
-            # Execute asynchronously via Celery
-            try:
-                from apps.templates.workflow.tasks import execute_workflow_task
-                task = execute_workflow_task.delay(str(execution.id))
+            # Execute asynchronously via Go Worker (or Celery fallback)
+            from apps.operations.services import OperationsService
 
-                # Audit logging
-                logger.info(
-                    "Workflow execution started asynchronously",
-                    extra={
+            if OperationsService.is_celery_enabled():
+                # Legacy Celery path (feature flag enabled)
+                try:
+                    from apps.templates.tasks import execute_existing_workflow
+                    task = execute_existing_workflow.delay(str(execution.id))
+
+                    logger.info(
+                        "Workflow execution started via Celery (legacy mode)",
+                        extra={
+                            'execution_id': str(execution.id),
+                            'workflow_id': str(workflow_id),
+                            'executed_by': request.user.username if request.user else 'anonymous',
+                            'mode': 'async_celery',
+                            'celery_task_id': task.id,
+                        }
+                    )
+
+                    return Response({
                         'execution_id': str(execution.id),
-                        'workflow_id': str(workflow_id),
-                        'executed_by': request.user.username if request.user else 'anonymous',
+                        'status': 'pending',
                         'mode': 'async',
                         'celery_task_id': task.id,
-                    }
-                )
+                        'message': 'Workflow execution started (Celery)',
+                    })
+                except Exception as e:
+                    logger.warning(f"Celery unavailable, falling back to sync: {e}")
+            else:
+                # New Go Worker path
+                try:
+                    result = OperationsService.enqueue_workflow_execution(str(execution.id))
 
-                return Response({
+                    if result.success:
+                        logger.info(
+                            "Workflow execution started via Go Worker",
+                            extra={
+                                'execution_id': str(execution.id),
+                                'workflow_id': str(workflow_id),
+                                'executed_by': request.user.username if request.user else 'anonymous',
+                                'mode': 'async_go_worker',
+                                'operation_id': result.operation_id,
+                            }
+                        )
+
+                        return Response({
+                            'execution_id': str(execution.id),
+                            'status': 'pending',
+                            'mode': 'async',
+                            'operation_id': result.operation_id,
+                            'message': 'Workflow execution started (Go Worker)',
+                        })
+                    else:
+                        logger.warning(f"Go Worker enqueue failed: {result.error}, falling back to sync")
+                except Exception as e:
+                    logger.warning(f"Go Worker unavailable, falling back to sync: {e}")
+
+            # Fallback to sync execution
+            from apps.templates.workflow.engine import WorkflowEngine
+            engine = WorkflowEngine()
+            engine.execute(execution)
+
+            logger.info(
+                "Workflow executed synchronously (fallback)",
+                extra={
                     'execution_id': str(execution.id),
-                    'status': 'pending',
-                    'mode': 'async',
-                    'celery_task_id': task.id,
-                    'message': 'Workflow execution started',
-                })
-            except Exception as e:
-                logger.warning(f"Celery unavailable, falling back to sync: {e}")
-                logger.warning("Workflow executed synchronously due to Celery unavailability")
-                # Fallback to sync execution
-                from apps.templates.workflow.engine import WorkflowEngine
-                engine = WorkflowEngine()
-                engine.execute(execution)
-
-                # Audit logging for fallback
-                logger.info(
-                    "Workflow executed synchronously (Celery fallback)",
-                    extra={
-                        'execution_id': str(execution.id),
-                        'workflow_id': str(workflow_id),
-                        'executed_by': request.user.username if request.user else 'anonymous',
-                        'mode': 'sync_fallback',
-                        'status': execution.status,
-                    }
-                )
-
-                return Response({
-                    'execution_id': str(execution.id),
+                    'workflow_id': str(workflow_id),
+                    'executed_by': request.user.username if request.user else 'anonymous',
+                    'mode': 'sync_fallback',
                     'status': execution.status,
-                    'mode': 'sync',
-                    'message': 'Workflow executed synchronously (Celery unavailable)',
-                })
+                }
+            )
+
+            return Response({
+                'execution_id': str(execution.id),
+                'status': execution.status,
+                'mode': 'sync',
+                'message': 'Workflow executed synchronously (async worker unavailable)',
+            })
 
     except ValueError as e:
         return Response({

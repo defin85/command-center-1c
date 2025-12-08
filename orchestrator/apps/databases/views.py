@@ -101,17 +101,37 @@ def batch_install_extension(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Импортируем Celery task здесь чтобы избежать циклических импортов
-    from .tasks import queue_extension_installation
+    # Use Go Worker or Celery fallback
+    from apps.operations.services import OperationsService
 
-    # Запустить Celery task
-    task = queue_extension_installation.delay(database_ids, extension_config)
+    if OperationsService.is_celery_enabled():
+        # Legacy Celery path
+        from .tasks import queue_extension_installation
+        task = queue_extension_installation.delay(database_ids, extension_config)
+        return Response({
+            "task_id": str(task.id),
+            "total_databases": len(database_ids),
+            "status": "queued"
+        }, status=status.HTTP_201_CREATED)
+    else:
+        # New Go Worker path
+        result = OperationsService.enqueue_extension_install(
+            database_ids=[str(db_id) for db_id in database_ids],
+            extension_config=extension_config,
+            created_by=request.user.username if request.user and request.user.is_authenticated else 'system'
+        )
 
-    return Response({
-        "task_id": str(task.id),
-        "total_databases": len(database_ids),
-        "status": "queued"
-    }, status=status.HTTP_201_CREATED)
+        if result.success:
+            return Response({
+                "operation_id": result.operation_id,
+                "total_databases": len(database_ids),
+                "status": "queued"
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "error": result.error,
+                "status": "error"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -437,15 +457,38 @@ class DatabaseViewSet(viewsets.ModelViewSet):
 
         POST /api/v1/databases/bulk-health-check/?status=active
         """
-        from .tasks import check_databases_health
+        from apps.operations.services import OperationsService
+
         queryset = self.filter_queryset(self.get_queryset())
         database_ids = list(queryset.values_list('id', flat=True))
-        task = check_databases_health.delay(database_ids)
-        return Response({
-            'task_id': str(task.id),
-            'status': 'scheduled',
-            'total_databases': len(database_ids)
-        }, status=status.HTTP_202_ACCEPTED)
+
+        if OperationsService.is_celery_enabled():
+            # Legacy Celery path
+            from .tasks import check_databases_health
+            task = check_databases_health.delay(database_ids)
+            return Response({
+                'task_id': str(task.id),
+                'status': 'scheduled',
+                'total_databases': len(database_ids)
+            }, status=status.HTTP_202_ACCEPTED)
+        else:
+            # New Go Worker path
+            result = OperationsService.enqueue_health_check(
+                database_ids=[str(db_id) for db_id in database_ids],
+                created_by=request.user.username if request.user and request.user.is_authenticated else 'system'
+            )
+
+            if result.success:
+                return Response({
+                    'operation_id': result.operation_id,
+                    'status': 'scheduled',
+                    'total_databases': len(database_ids)
+                }, status=status.HTTP_202_ACCEPTED)
+            else:
+                return Response({
+                    'error': result.error,
+                    'status': 'error'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @extend_schema(
         summary="Установить расширение на базу",
@@ -485,7 +528,7 @@ class DatabaseViewSet(viewsets.ModelViewSet):
     def install_extension(self, request, pk=None):
         """
         Установить расширение на одну базу.
-        
+
         POST /api/v1/databases/{id}/install-extension/
         """
         database = self.get_object()
@@ -498,22 +541,43 @@ class DatabaseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Импортируем Celery task
-        from .tasks import queue_extension_installation
+        from apps.operations.services import OperationsService
 
-        task = queue_extension_installation.delay([str(pk)], extension_config)
+        if OperationsService.is_celery_enabled():
+            # Legacy Celery path
+            from .tasks import queue_extension_installation
+            task = queue_extension_installation.delay([str(pk)], extension_config)
 
-        # Получить результат task чтобы извлечь operation_id
-        # Task возвращает: {"status": "queued", "operation_id": "...", "queued_count": 1, "total_requested": 1}
-        result = task.get(timeout=10)  # Ждём максимум 10 секунд
+            # Получить результат task чтобы извлечь operation_id
+            result = task.get(timeout=10)  # Ждём максимум 10 секунд
 
-        return Response({
-            "status": "queued",
-            "task_id": str(task.id),
-            "operation_id": result.get("operation_id"),  # NEW: Return operation_id for workflow tracking
-            "message": f"Installation started for {database.name}",
-            "queued_count": result.get("queued_count", 1)
-        }, status=status.HTTP_201_CREATED)
+            return Response({
+                "status": "queued",
+                "task_id": str(task.id),
+                "operation_id": result.get("operation_id"),
+                "message": f"Installation started for {database.name} (Celery)",
+                "queued_count": result.get("queued_count", 1)
+            }, status=status.HTTP_201_CREATED)
+        else:
+            # New Go Worker path
+            result = OperationsService.enqueue_extension_install(
+                database_ids=[str(pk)],
+                extension_config=extension_config,
+                created_by=request.user.username if request.user and request.user.is_authenticated else 'system'
+            )
+
+            if result.success:
+                return Response({
+                    "status": "queued",
+                    "operation_id": result.operation_id,
+                    "message": f"Installation started for {database.name} (Go Worker)",
+                    "queued_count": 1
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    "error": result.error,
+                    "status": "error"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @extend_schema(
         summary="Получить статус установки расширения",
@@ -684,7 +748,7 @@ class DatabaseViewSet(viewsets.ModelViewSet):
     def retry_installation(self, request, pk=None):
         """
         Повторить установку расширения.
-        
+
         POST /api/v1/databases/{id}/retry-installation/
         """
         try:
@@ -693,16 +757,33 @@ class DatabaseViewSet(viewsets.ModelViewSet):
                 status='failed'
             ).latest('created_at')
 
-            from .tasks import queue_extension_installation
-
             extension_config = {
                 'name': installation.extension_name,
                 'path': installation.extension_path
             }
 
-            task = queue_extension_installation.delay([str(pk)], extension_config)
+            from apps.operations.services import OperationsService
 
-            return Response({"task_id": str(task.id)})
+            if OperationsService.is_celery_enabled():
+                # Legacy Celery path
+                from .tasks import queue_extension_installation
+                task = queue_extension_installation.delay([str(pk)], extension_config)
+                return Response({"task_id": str(task.id)})
+            else:
+                # New Go Worker path
+                result = OperationsService.enqueue_extension_install(
+                    database_ids=[str(pk)],
+                    extension_config=extension_config,
+                    created_by=request.user.username if request.user and request.user.is_authenticated else 'system'
+                )
+
+                if result.success:
+                    return Response({"operation_id": result.operation_id})
+                else:
+                    return Response(
+                        {"error": result.error},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
 
         except ExtensionInstallation.DoesNotExist:
             return Response(

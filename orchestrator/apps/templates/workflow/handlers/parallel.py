@@ -1,15 +1,13 @@
 """
 ParallelHandler for Workflow Engine.
 
-Executes multiple workflow nodes in parallel using Celery groups.
+Executes multiple workflow nodes in parallel using ThreadPoolExecutor.
 """
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Any, Dict, List
-
-from celery import group
-from celery.result import GroupResult
 
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
@@ -24,21 +22,21 @@ class ParallelHandler(BaseNodeHandler):
 
     Flow:
         1. Get parallel_config from node (parallel_nodes, wait_for, timeout_seconds)
-        2. Create Celery group with execute_workflow_node tasks for each parallel node
-        3. Execute group based on wait_for mode:
+        2. Execute nodes in parallel using ThreadPoolExecutor
+        3. Execute based on wait_for mode:
            - "all": Wait for all tasks to complete
-           - "any": Wait for any task to complete, cancel others
-           - "N": Wait for N tasks to complete, cancel others
+           - "any": Wait for any task to complete
+           - "N": Wait for N tasks to complete
         4. Handle timeout with partial results
         5. Return NodeExecutionResult with aggregated outputs
 
-    Current Implementation (Week 8):
-        - Uses placeholder execute_workflow_node task (Week 9)
+    Current Implementation:
+        - Uses ThreadPoolExecutor for parallel execution (replaces Celery groups)
         - SYNC mode only (wait for results before returning)
-
-    Integration:
-        - apps.templates.tasks.execute_workflow_node: Celery task (placeholder in Week 8)
     """
+
+    # Default max workers for parallel execution
+    DEFAULT_MAX_WORKERS = 10
 
     def execute(
         self,
@@ -48,7 +46,7 @@ class ParallelHandler(BaseNodeHandler):
         mode: NodeExecutionMode = NodeExecutionMode.SYNC
     ) -> NodeExecutionResult:
         """
-        Execute parallel node by launching Celery group.
+        Execute parallel node using ThreadPoolExecutor.
 
         Args:
             node: WorkflowNode with parallel_config
@@ -88,29 +86,18 @@ class ParallelHandler(BaseNodeHandler):
                 }
             )
 
-            # 2. Import Celery task (placeholder in Week 8)
-            try:
-                from apps.templates.tasks import execute_workflow_node
-            except ImportError:
-                raise NotImplementedError(
-                    "execute_workflow_node task not implemented yet (Week 9)"
-                )
-
-            # 3. Create Celery group
-            tasks = [
-                execute_workflow_node.s(str(execution.id), node_id, context)
-                for node_id in parallel_nodes
-            ]
-            job = group(tasks)
-
-            # 4. Execute group based on wait_for mode
+            # 2. Execute nodes in parallel using ThreadPoolExecutor
             result_data = self._execute_parallel(
-                job, wait_for, timeout_seconds, parallel_nodes
+                execution=execution,
+                parallel_nodes=parallel_nodes,
+                context=context,
+                wait_for=wait_for,
+                timeout_seconds=timeout_seconds
             )
 
             duration = time.time() - start_time
 
-            # 5. Return success result
+            # 3. Return success result
             result = NodeExecutionResult(
                 success=True,
                 output=result_data,
@@ -130,21 +117,6 @@ class ParallelHandler(BaseNodeHandler):
                 }
             )
 
-            return result
-
-        except NotImplementedError as exc:
-            # Expected error for Week 8 (Celery task not implemented yet)
-            error_msg = f"Parallel execution not available: {str(exc)}"
-            logger.warning(error_msg, extra={'node_id': node.id})
-
-            result = NodeExecutionResult(
-                success=False,
-                output=None,
-                error=error_msg,
-                mode=NodeExecutionMode.SYNC,
-                duration_seconds=time.time() - start_time
-            )
-            self._update_step_result(step_result, result)
             return result
 
         except Exception as exc:
@@ -167,40 +139,55 @@ class ParallelHandler(BaseNodeHandler):
 
     def _execute_parallel(
         self,
-        job: group,
+        execution: WorkflowExecution,
+        parallel_nodes: List[str],
+        context: Dict[str, Any],
         wait_for: str,
-        timeout_seconds: int,
-        node_ids: List[str]
+        timeout_seconds: int
     ) -> Dict[str, Any]:
         """
-        Execute Celery group based on wait_for mode.
+        Execute nodes in parallel using ThreadPoolExecutor.
 
         Args:
-            job: Celery group
+            execution: WorkflowExecution instance
+            parallel_nodes: List of node IDs to execute in parallel
+            context: Execution context
             wait_for: Wait mode ("all", "any", or "N")
             timeout_seconds: Timeout in seconds
-            node_ids: List of parallel node IDs
 
         Returns:
             Dict with completed/failed/partial results
         """
-        group_result: GroupResult = job.apply_async()
+        max_workers = min(len(parallel_nodes), self.DEFAULT_MAX_WORKERS)
 
-        if wait_for == "all":
-            return self._wait_for_all(group_result, timeout_seconds, node_ids)
-        elif wait_for == "any":
-            return self._wait_for_any(group_result, timeout_seconds, node_ids)
-        else:
-            # wait_for is a number "N"
-            try:
-                count = int(wait_for)
-                return self._wait_for_count(group_result, timeout_seconds, count, node_ids)
-            except ValueError:
-                raise ValueError(f"Invalid wait_for value: {wait_for}")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_node: Dict[Future, str] = {}
+            for node_id in parallel_nodes:
+                future = executor.submit(
+                    self._execute_node_sync,
+                    str(execution.id),
+                    node_id,
+                    context.copy()  # Copy context for each node
+                )
+                future_to_node[future] = node_id
+
+            # Execute based on wait_for mode
+            if wait_for == "all":
+                return self._wait_for_all(future_to_node, timeout_seconds, parallel_nodes)
+            elif wait_for == "any":
+                return self._wait_for_any(future_to_node, timeout_seconds, parallel_nodes)
+            else:
+                # wait_for is a number "N"
+                try:
+                    count = int(wait_for)
+                    return self._wait_for_count(future_to_node, timeout_seconds, count, parallel_nodes)
+                except ValueError:
+                    raise ValueError(f"Invalid wait_for value: {wait_for}")
 
     def _wait_for_all(
         self,
-        group_result: GroupResult,
+        future_to_node: Dict[Future, str],
         timeout_seconds: int,
         node_ids: List[str]
     ) -> Dict[str, Any]:
@@ -208,46 +195,56 @@ class ParallelHandler(BaseNodeHandler):
         Wait for all tasks to complete.
 
         Args:
-            group_result: Celery GroupResult
+            future_to_node: Dict mapping futures to node IDs
             timeout_seconds: Timeout in seconds
             node_ids: List of parallel node IDs
 
         Returns:
             Dict with all results
         """
-        try:
-            results = group_result.get(timeout=timeout_seconds)
-            return {
-                'mode': 'all',
-                'completed': [
-                    {'node_id': node_ids[i], 'result': results[i]}
-                    for i in range(len(results))
-                ],
-                'failed': [],
-                'timed_out': False
-            }
-        except Exception as exc:
-            logger.warning(f"Timeout waiting for all tasks: {exc}")
-            # Return partial results
-            completed = []
-            failed = []
-            for i, async_result in enumerate(group_result.results):
-                if async_result.ready():
-                    if async_result.successful():
-                        completed.append({'node_id': node_ids[i], 'result': async_result.result})
-                    else:
-                        failed.append({'node_id': node_ids[i], 'error': str(async_result.info)})
+        completed = []
+        failed = []
+        timed_out = False
 
-            return {
-                'mode': 'all',
-                'completed': completed,
-                'failed': failed,
-                'timed_out': True
-            }
+        try:
+            for future in as_completed(future_to_node.keys(), timeout=timeout_seconds):
+                node_id = future_to_node[future]
+                try:
+                    result = future.result()
+                    if result.get('success', False):
+                        completed.append({'node_id': node_id, 'result': result})
+                    else:
+                        failed.append({'node_id': node_id, 'error': result.get('error', 'Unknown error')})
+                except Exception as exc:
+                    failed.append({'node_id': node_id, 'error': str(exc)})
+
+        except TimeoutError:
+            logger.warning(f"Timeout waiting for all parallel tasks")
+            timed_out = True
+            # Check which futures completed
+            for future, node_id in future_to_node.items():
+                if future.done():
+                    try:
+                        result = future.result(timeout=0)
+                        if result.get('success', False):
+                            completed.append({'node_id': node_id, 'result': result})
+                        else:
+                            failed.append({'node_id': node_id, 'error': result.get('error', 'Unknown error')})
+                    except Exception as exc:
+                        failed.append({'node_id': node_id, 'error': str(exc)})
+                else:
+                    future.cancel()
+
+        return {
+            'mode': 'all',
+            'completed': completed,
+            'failed': failed,
+            'timed_out': timed_out
+        }
 
     def _wait_for_any(
         self,
-        group_result: GroupResult,
+        future_to_node: Dict[Future, str],
         timeout_seconds: int,
         node_ids: List[str]
     ) -> Dict[str, Any]:
@@ -255,30 +252,44 @@ class ParallelHandler(BaseNodeHandler):
         Wait for any task to complete, then cancel others.
 
         Args:
-            group_result: Celery GroupResult
+            future_to_node: Dict mapping futures to node IDs
             timeout_seconds: Timeout in seconds
             node_ids: List of parallel node IDs
 
         Returns:
             Dict with first completed result
         """
-        start_time = time.time()
-        while time.time() - start_time < timeout_seconds:
-            for i, async_result in enumerate(group_result.results):
-                if async_result.ready() and async_result.successful():
-                    # Cancel remaining tasks
-                    self._cancel_tasks(group_result, exclude_index=i)
+        try:
+            # Wait for first completed future
+            for future in as_completed(future_to_node.keys(), timeout=timeout_seconds):
+                node_id = future_to_node[future]
+                try:
+                    result = future.result()
+                    if result.get('success', False):
+                        # Cancel remaining futures
+                        cancelled = []
+                        for other_future, other_node_id in future_to_node.items():
+                            if other_future != future and not other_future.done():
+                                other_future.cancel()
+                                cancelled.append(other_node_id)
 
-                    return {
-                        'mode': 'any',
-                        'completed': [{'node_id': node_ids[i], 'result': async_result.result}],
-                        'cancelled': [node_ids[j] for j in range(len(node_ids)) if j != i],
-                        'timed_out': False
-                    }
-            time.sleep(0.1)  # Poll every 100ms
+                        return {
+                            'mode': 'any',
+                            'completed': [{'node_id': node_id, 'result': result}],
+                            'cancelled': cancelled,
+                            'timed_out': False
+                        }
+                except Exception:
+                    continue  # Try next completed future
 
-        # Timeout - cancel all tasks
-        self._cancel_tasks(group_result)
+        except TimeoutError:
+            pass
+
+        # Timeout or all failed - cancel remaining
+        for future in future_to_node.keys():
+            if not future.done():
+                future.cancel()
+
         return {
             'mode': 'any',
             'completed': [],
@@ -288,7 +299,7 @@ class ParallelHandler(BaseNodeHandler):
 
     def _wait_for_count(
         self,
-        group_result: GroupResult,
+        future_to_node: Dict[Future, str],
         timeout_seconds: int,
         count: int,
         node_ids: List[str]
@@ -297,7 +308,7 @@ class ParallelHandler(BaseNodeHandler):
         Wait for N tasks to complete, then cancel others.
 
         Args:
-            group_result: Celery GroupResult
+            future_to_node: Dict mapping futures to node IDs
             timeout_seconds: Timeout in seconds
             count: Number of tasks to wait for
             node_ids: List of parallel node IDs
@@ -308,68 +319,169 @@ class ParallelHandler(BaseNodeHandler):
         if count > len(node_ids):
             raise ValueError(f"wait_for count ({count}) exceeds parallel_nodes count ({len(node_ids)})")
 
-        start_time = time.time()
-        completed_indices = []
+        completed = []
+        completed_node_ids = set()
 
-        while time.time() - start_time < timeout_seconds:
-            for i, async_result in enumerate(group_result.results):
-                if i not in completed_indices and async_result.ready() and async_result.successful():
-                    completed_indices.append(i)
+        try:
+            for future in as_completed(future_to_node.keys(), timeout=timeout_seconds):
+                node_id = future_to_node[future]
+                try:
+                    result = future.result()
+                    if result.get('success', False):
+                        completed.append({'node_id': node_id, 'result': result})
+                        completed_node_ids.add(node_id)
 
-                    if len(completed_indices) >= count:
-                        # Cancel remaining tasks
-                        self._cancel_tasks(group_result, exclude_indices=completed_indices)
+                        if len(completed) >= count:
+                            # Cancel remaining futures
+                            cancelled = []
+                            for other_future, other_node_id in future_to_node.items():
+                                if other_node_id not in completed_node_ids and not other_future.done():
+                                    other_future.cancel()
+                                    cancelled.append(other_node_id)
 
-                        return {
-                            'mode': f'count_{count}',
-                            'completed': [
-                                {'node_id': node_ids[i], 'result': group_result.results[i].result}
-                                for i in completed_indices
-                            ],
-                            'cancelled': [
-                                node_ids[j] for j in range(len(node_ids)) if j not in completed_indices
-                            ],
-                            'timed_out': False
-                        }
-            time.sleep(0.1)  # Poll every 100ms
+                            return {
+                                'mode': f'count_{count}',
+                                'completed': completed,
+                                'cancelled': cancelled,
+                                'timed_out': False
+                            }
+                except Exception:
+                    continue
 
-        # Timeout - cancel all tasks
-        self._cancel_tasks(group_result)
+        except TimeoutError:
+            pass
+
+        # Timeout - cancel remaining
+        cancelled = []
+        for future, node_id in future_to_node.items():
+            if node_id not in completed_node_ids:
+                if not future.done():
+                    future.cancel()
+                cancelled.append(node_id)
+
         return {
             'mode': f'count_{count}',
-            'completed': [
-                {'node_id': node_ids[i], 'result': group_result.results[i].result}
-                for i in completed_indices
-            ],
-            'cancelled': [
-                node_ids[j] for j in range(len(node_ids)) if j not in completed_indices
-            ],
+            'completed': completed,
+            'cancelled': cancelled,
             'timed_out': True
         }
 
-    def _cancel_tasks(
+    def _execute_node_sync(
         self,
-        group_result: GroupResult,
-        exclude_index: int = None,
-        exclude_indices: List[int] = None
-    ) -> None:
+        execution_id: str,
+        node_id: str,
+        context_snapshot: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Cancel tasks in GroupResult.
+        Execute single workflow node synchronously.
+
+        This is a sync replacement for the Celery execute_workflow_node task.
+        Used by parallel execution to execute child nodes.
 
         Args:
-            group_result: Celery GroupResult
-            exclude_index: Single index to exclude from cancellation
-            exclude_indices: Multiple indices to exclude from cancellation
-        """
-        exclude_set = set()
-        if exclude_index is not None:
-            exclude_set.add(exclude_index)
-        if exclude_indices:
-            exclude_set.update(exclude_indices)
+            execution_id: WorkflowExecution UUID (as string)
+            node_id: Node ID to execute
+            context_snapshot: Execution context snapshot (dict)
 
-        for i, async_result in enumerate(group_result.results):
-            if i not in exclude_set:
-                try:
-                    async_result.revoke(terminate=True)
-                except Exception as exc:
-                    logger.warning(f"Failed to cancel task {i}: {exc}")
+        Returns:
+            dict: Node execution result with output/error
+        """
+        from apps.templates.workflow.context import ContextManager
+        from apps.templates.workflow.handlers import NodeExecutionMode, NodeHandlerFactory
+        from apps.templates.workflow.models import (
+            DAGStructure,
+            WorkflowExecution,
+        )
+
+        start_time = time.time()
+
+        try:
+            # Get execution instance
+            execution = WorkflowExecution.objects.select_related(
+                'workflow_template'
+            ).get(id=execution_id)
+
+            # Check execution is still running
+            if execution.status != WorkflowExecution.STATUS_RUNNING:
+                logger.warning(
+                    f"Execution {execution_id} is not running (status: {execution.status})",
+                    extra={'execution_id': execution_id, 'node_id': node_id}
+                )
+                return {
+                    'success': False,
+                    'node_id': node_id,
+                    'output': None,
+                    'error': f'Execution is not running (status: {execution.status})',
+                    'duration_seconds': 0
+                }
+
+            # Get DAG structure
+            dag = execution.workflow_template.dag_structure
+            if not isinstance(dag, DAGStructure):
+                dag = DAGStructure(**dag)
+
+            # Find node in DAG
+            node = None
+            for n in dag.nodes:
+                if n.id == node_id:
+                    node = n
+                    break
+
+            if not node:
+                raise ValueError(f"Node {node_id} not found in DAG")
+
+            # Create context manager
+            context = ContextManager(context_snapshot)
+
+            # Get handler
+            handler = NodeHandlerFactory.get_handler(node.type)
+
+            # Execute node
+            result = handler.execute(
+                node=node,
+                context=context.to_dict(),
+                execution=execution,
+                mode=NodeExecutionMode.SYNC
+            )
+
+            duration = time.time() - start_time
+
+            logger.info(
+                f"Parallel sync execution: node {node_id} completed (success={result.success})",
+                extra={
+                    'execution_id': execution_id,
+                    'node_id': node_id,
+                    'success': result.success,
+                    'duration_seconds': duration
+                }
+            )
+
+            return {
+                'success': result.success,
+                'node_id': node_id,
+                'output': result.output,
+                'error': result.error,
+                'duration_seconds': duration
+            }
+
+        except WorkflowExecution.DoesNotExist:
+            error_msg = f"Execution {execution_id} not found"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'node_id': node_id,
+                'output': None,
+                'error': error_msg,
+                'duration_seconds': time.time() - start_time
+            }
+
+        except Exception as exc:
+            error_msg = f"Failed to execute node {node_id}: {str(exc)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'node_id': node_id,
+                'output': None,
+                'error': error_msg,
+                'duration_seconds': time.time() - start_time
+            }

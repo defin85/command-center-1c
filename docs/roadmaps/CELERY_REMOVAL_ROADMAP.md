@@ -3,8 +3,8 @@
 > **Архитектурный план миграции с Celery на Go-based execution engine**
 
 **Дата создания:** 2025-12-07
-**Последнее обновление:** 2025-12-07
-**Статус:** IN PROGRESS (Phase 0-5 ✅ Done)
+**Последнее обновление:** 2025-12-08
+**Статус:** ✅ COMPLETE (All Phases Done)
 **Автор:** Claude Opus 4.5 (Architecture Analysis)
 
 ---
@@ -254,9 +254,9 @@ go-services/worker/
 | 1.3 | Prometheus metrics | `scheduler_jobs_total`, `scheduler_job_duration_seconds`, `queue_depth` | ✅ Done |
 | 1.4 | Job History integration | Запись в Django через Internal API | ✅ Done |
 | 1.5 | Миграция простых jobs | `cleanup_old_status_history`, `cleanup_old_replayed_events`, `periodic_batch_service_health` | ✅ Done |
-| 1.6 | Grafana dashboard | Замена Flower: job status, duration, errors | 🔲 TODO |
-| 1.7 | A/B testing | Запустить оба (Celery Beat + Go), сравнить метрики | 🔲 TODO |
-| 1.8 | Отключение Celery Beat | Для мигрированных задач | 🔲 TODO |
+| 1.6 | Grafana dashboard | Замена Flower: `go-scheduler.json` с 6 rows, 20+ panels | ✅ Done |
+| 1.7 | ~~A/B testing~~ | ~~Не актуально — Celery полностью удалён~~ | ⏭️ Skipped |
+| 1.8 | ~~Отключение Celery Beat~~ | ~~Выполнено в Phase 6~~ | ✅ Done |
 
 **Мониторинг включает:**
 - **Prometheus metrics** — real-time данные
@@ -305,14 +305,14 @@ go-services/worker/
 | 5.5 | Checkpoint/Resume | CheckpointManager, ResumableExecutor, error recovery | ✅ Done |
 | 5.6 | Integration + Engine | Main Engine facade combining all components, 88 tests | ✅ Done |
 
-### Phase 6: Cleanup & Removal
+### Phase 6: Cleanup & Removal ✅ DONE
 
-| # | Задача | Описание |
-|---|--------|----------|
-| 6.1 | Удалить Celery dependencies | `requirements.txt`: celery, kombu, billiard, flower |
-| 6.2 | Удалить Celery код | `config/celery.py`, `apps/*/tasks.py` |
-| 6.3 | Обновить инфраструктуру | docker-compose, scripts/dev/*.sh, k8s manifests |
-| 6.4 | Обновить документацию | CLAUDE.md, ROADMAP.md, LOCAL_DEVELOPMENT_GUIDE.md |
+| # | Задача | Описание | Статус |
+|---|--------|----------|--------|
+| 6.1 | Удалить Celery dependencies | `requirements.txt`: celery, kombu, billiard, flower | ✅ Done |
+| 6.2 | Удалить Celery код | `config/celery.py`, `apps/*/tasks.py` | ✅ Done |
+| 6.3 | Обновить инфраструктуру | docker-compose, scripts/dev/*.sh, k8s manifests | ✅ Done |
+| 6.4 | Обновить документацию | CLAUDE.md, ROADMAP.md, LOCAL_DEVELOPMENT_GUIDE.md | ✅ Done |
 
 ---
 
@@ -476,9 +476,9 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 ---
 
 **Документ создан:** 2025-12-07
-**Последнее обновление:** 2025-12-07
+**Последнее обновление:** 2025-12-08
 **Автор:** Claude Opus 4.5
-**Статус:** IN PROGRESS — Phase 0-5 завершены, Phase 6 (Cleanup) в очереди
+**Статус:** ✅ COMPLETE — Все фазы завершены, Celery полностью удален
 
 **Commits:**
 - `0d8122a` Phase 0+1: Go Scheduler и Internal API
@@ -486,3 +486,15 @@ Phase 6: Cleanup & Removal      ░░░░░░░░░░░░░░░░
 - `84e2ed0` Phase 3: Event Replay System
 - `3c1dcb1` Phase 4: Template Engine (pongo2)
 - `840127f` Phase 5: Workflow Engine with DAG execution
+- `b13bc25` Phase 6: Celery Removal - Final Cleanup
+- Phase 1.6: Grafana dashboard (`go-scheduler.json`)
+
+**Grafana Dashboard:** `infrastructure/monitoring/grafana/dashboards/go-scheduler.json`
+- Overview: Scheduler status, active jobs, success rate
+- Job Execution: Jobs/min by status, duration heatmap
+- Health Checks: Database/Cluster check rates
+- Event Replay: Replayed vs failed events
+- Cleanup: Events deleted, cleanup duration
+- Locks: Acquisition success rate, hold duration
+
+**Дата завершения:** 2025-12-08

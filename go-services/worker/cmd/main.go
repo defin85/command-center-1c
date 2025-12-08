@@ -217,16 +217,34 @@ func main() {
 		log.Info("Go template engine is disabled (set ENABLE_GO_TEMPLATE_ENGINE=true to enable)")
 	}
 
+	// Initialize workflow client for execute_workflow operations
+	var workflowClient processor.WorkflowClient
+	orchClientForWorkflows, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
+		BaseURL: cfg.OrchestratorURL,
+		Token:   serviceToken,
+	})
+	if err != nil {
+		log.Warn("failed to create orchestrator client for workflows, execute_workflow disabled",
+			zap.Error(err),
+		)
+	} else {
+		workflowClient = processor.NewOrchestratorWorkflowClient(orchClientForWorkflows)
+		log.Info("workflow client initialized for execute_workflow operations")
+	}
+
 	// Initialize task processor with Redis client for event publishing and State Machine
 	processorOpts := processor.ProcessorOptions{
-		TemplateEngine: templateEngine,
-		TemplateClient: templateClient,
-		Logger:         zapLog,
+		TemplateEngine:  templateEngine,
+		TemplateClient:  templateClient,
+		WorkflowClient:  workflowClient,
+		OrchestratorURL: cfg.OrchestratorURL,
+		Logger:          zapLog,
 	}
 	taskProcessor := processor.NewTaskProcessorWithOptions(cfg, credsClient, redisClient, processorOpts)
 	defer taskProcessor.Close() // Graceful shutdown for event subscriber
 	log.Info("task processor initialized with event publishing and State Machine support",
 		zap.Bool("template_engine_enabled", templateEngine != nil),
+		zap.Bool("workflow_enabled", workflowClient != nil),
 	)
 
 	// Log feature flags configuration

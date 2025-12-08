@@ -29,7 +29,7 @@ echo ""
 ##############################################################################
 
 # Остановка всех сервисов по SERVICE_STOP_ORDER
-# (frontend, batch-service, ras-adapter, worker, api-gateway, flower, celery-beat, celery-worker, orchestrator)
+# (frontend, batch-service, ras-adapter, worker, api-gateway, orchestrator)
 stop_services
 
 ##############################################################################

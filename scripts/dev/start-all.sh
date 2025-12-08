@@ -6,7 +6,7 @@
 # Запускает все сервисы проекта локально на хост-машине
 # - Docker: PostgreSQL, Redis, ClickHouse
 # - 1C Platform: RAS (Remote Administration Server)
-# - Python: Django Orchestrator, Celery Worker, Celery Beat
+# - Python: Django Orchestrator
 # - Go: API Gateway, Worker, RAS Adapter, Batch Service
 # - Frontend: React dev server
 ##############################################################################
@@ -435,111 +435,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 4: Celery Worker
+# Шаг 4: API Gateway (Go)
 ##############################################################################
-echo -e "${BLUE}[4/12] Запуск Celery Worker...${NC}"
-
-cd "$PROJECT_ROOT/orchestrator"
-
-# Активировать виртуальное окружение
-if [ -d "venv" ]; then
-    activate_venv "$(pwd)/venv"
-fi
-
-# NOTE: Using gevent pool for async I/O operations (Windows compatible)
-# - prefork causes ACCESS_VIOLATION on Windows (spawn process issues)
-# - gevent provides lightweight concurrency via green threads (cooperative)
-# - Ideal for I/O-bound tasks: DB queries, Redis operations, HTTP calls
-# - Concurrency 100 = up to 100 concurrent greenlets (minimal memory overhead)
-# - Using -P instead of --pool (short form required by Celery 5.x)
-nohup celery -A config worker -P gevent --concurrency=100 --loglevel=info > "$LOGS_DIR/celery-worker.log" 2>&1 &
-CELERY_WORKER_PID=$!
-echo $CELERY_WORKER_PID > "$PIDS_DIR/celery-worker.pid"
-
-sleep 3
-if kill -0 $CELERY_WORKER_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ Celery Worker запущен (PID: $CELERY_WORKER_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить Celery Worker${NC}"
-    cat "$LOGS_DIR/celery-worker.log"
-    exit 1
-fi
-echo ""
-
-##############################################################################
-# Шаг 5: Celery Beat
-##############################################################################
-echo -e "${BLUE}[5/12] Запуск Celery Beat...${NC}"
-
-cd "$PROJECT_ROOT/orchestrator"
-
-# Активировать виртуальное окружение
-if [ -d "venv" ]; then
-    activate_venv "$(pwd)/venv"
-fi
-
-# Удалить старый celerybeat-schedule файл
-rm -f celerybeat-schedule celerybeat-schedule.db
-
-nohup celery -A config beat --loglevel=info > "$LOGS_DIR/celery-beat.log" 2>&1 &
-CELERY_BEAT_PID=$!
-echo $CELERY_BEAT_PID > "$PIDS_DIR/celery-beat.pid"
-
-sleep 2
-if kill -0 $CELERY_BEAT_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ Celery Beat запущен (PID: $CELERY_BEAT_PID)${NC}"
-else
-    echo -e "${RED}✗ Не удалось запустить Celery Beat${NC}"
-    cat "$LOGS_DIR/celery-beat.log"
-    exit 1
-fi
-echo ""
-
-##############################################################################
-# Шаг 5.5: Flower (Celery Web UI) - опционально
-##############################################################################
-FLOWER_ENABLED="${FLOWER_ENABLED:-true}"
-FLOWER_PORT="${FLOWER_PORT:-5555}"
-
-if [ "$FLOWER_ENABLED" = "true" ]; then
-    echo -e "${BLUE}[5.5/12] Запуск Flower (Celery UI, port $FLOWER_PORT)...${NC}"
-
-    cd "$PROJECT_ROOT/orchestrator"
-
-    # Остановить предыдущий процесс если есть
-    if [ -f "$PIDS_DIR/flower.pid" ]; then
-        OLD_PID=$(cat "$PIDS_DIR/flower.pid")
-        if kill -0 $OLD_PID 2>/dev/null; then
-            kill $OLD_PID 2>/dev/null
-            sleep 1
-        fi
-        rm -f "$PIDS_DIR/flower.pid"
-    fi
-
-    # Формируем broker URL из REDIS_HOST/REDIS_PORT (согласованно с Django)
-    BROKER_URL="redis://${REDIS_HOST:-localhost}:${REDIS_PORT:-6379}/0"
-    nohup celery -A config flower --port=$FLOWER_PORT --broker="$BROKER_URL" > "$LOGS_DIR/flower.log" 2>&1 &
-    FLOWER_PID=$!
-    echo $FLOWER_PID > "$PIDS_DIR/flower.pid"
-
-    sleep 2
-    if kill -0 $FLOWER_PID 2>/dev/null; then
-        echo -e "${GREEN}✓ Flower запущен (PID: $FLOWER_PID, http://localhost:$FLOWER_PORT)${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Не удалось запустить Flower (не критично)${NC}"
-        # Не выходим - Flower опционален
-    fi
-    echo ""
-else
-    echo -e "${YELLOW}[5.5/12] Flower отключен (FLOWER_ENABLED=false)${NC}"
-    echo ""
-fi
-
-##############################################################################
-##############################################################################
-# Шаг 6: API Gateway (Go)
-##############################################################################
-echo -e "${BLUE}[6/12] Запуск API Gateway (port 8180)...${NC}"
+echo -e "${BLUE}[4/9] Запуск API Gateway (port 8180)...${NC}"
 
 if ! start_service "api-gateway"; then
     log_error "Не удалось запустить api-gateway"
@@ -549,9 +447,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 7: Go Worker
+# Шаг 5: Go Worker
 ##############################################################################
-echo -e "${BLUE}[7/12] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[5/9] Запуск Go Worker...${NC}"
 
 if ! start_service "worker"; then
     log_error "Не удалось запустить worker"
@@ -560,9 +458,9 @@ if ! start_service "worker"; then
 fi
 echo ""
 
-# Шаг 8: RAS (1C Remote Administration Server)
+# Шаг 6: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[8/12] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+echo -e "${BLUE}[6/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
 # Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
@@ -645,9 +543,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 9: RAS Adapter (Go) - NEW Week 4!
+# Шаг 7: RAS Adapter (Go)
 ##############################################################################
-echo -e "${BLUE}[9/11] Запуск RAS Adapter (port 8188)...${NC}"
+echo -e "${BLUE}[7/9] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
@@ -685,9 +583,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 10: Batch Service (Go)
+# Шаг 8: Batch Service (Go)
 ##############################################################################
-echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
+echo -e "${BLUE}[8/9] Запуск Batch Service (port 8187)...${NC}"
 
 if ! start_service "batch-service"; then
     log_error "Не удалось запустить batch-service"
@@ -696,9 +594,9 @@ if ! start_service "batch-service"; then
 fi
 echo ""
 
-# Шаг 11: Frontend (React)
+# Шаг 9: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[11/11] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[9/9] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -765,13 +663,6 @@ echo -e "  Worker:           ${GREEN}http://localhost:${WORKER_PORT:-9091}/healt
 echo -e "  Batch Service:    ${GREEN}http://localhost:${BATCH_SERVICE_PORT:-8187}/health${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
-
-# Flower - проверяем PID
-if [ -f "$PIDS_DIR/flower.pid" ] && kill -0 "$(cat "$PIDS_DIR/flower.pid")" 2>/dev/null; then
-    echo -e "  Flower (Celery):  ${GREEN}http://localhost:${FLOWER_PORT:-5555}${NC}"
-else
-    echo -e "  Flower (Celery):  ${YELLOW}не запущен${NC}"
-fi
 
 # Prometheus - проверяем реальный health endpoint
 PROM_PORT="${PROMETHEUS_PORT:-9090}"

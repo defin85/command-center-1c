@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
-    'django_celery_beat',  # Database-backed periodic tasks
+    # django_celery_beat removed - Go Scheduler handles periodic tasks
     'channels',  # Django Channels for WebSocket support
     'django_json_widget',  # JSON Editor widget for Admin
 
@@ -202,15 +202,9 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
 }
 
-# Celery Configuration
-CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = TIME_ZONE
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+# Celery Configuration - REMOVED
+# Go Worker handles all task execution via Redis queue (cc1c:operations:v1)
+# See docs/roadmaps/CELERY_REMOVAL_ROADMAP.md
 
 # Redis
 REDIS_HOST = env('REDIS_HOST', default='localhost')
@@ -360,6 +354,10 @@ MONITORED_SERVICES = [
 ENABLE_GO_SCHEDULER = env.bool('ENABLE_GO_SCHEDULER', default=False)
 ENABLE_GO_TEMPLATE_ENGINE = env.bool('ENABLE_GO_TEMPLATE_ENGINE', default=False)
 ENABLE_GO_WORKFLOW_ENGINE = env.bool('ENABLE_GO_WORKFLOW_ENGINE', default=False)
+
+# Celery removed - this flag kept for backward compatibility during transition
+# Always False now - all operations go through Go Worker via Redis queue
+CELERY_ENABLED = env.bool('CELERY_ENABLED', default=False)
 
 # Internal API token для Go Worker
 # КРИТИЧНО: Должен совпадать с INTERNAL_API_TOKEN в Go Worker

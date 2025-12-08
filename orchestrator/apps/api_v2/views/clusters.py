@@ -331,92 +331,132 @@ def sync_cluster(request):
             }
         }, status=404)
 
-    # Trigger async sync via Celery task
-    try:
-        from apps.databases.tasks import sync_cluster_task
+    # Trigger async sync via Go Worker (or Celery fallback)
+    from apps.operations.services import OperationsService
 
-        # Create BatchOperation for tracking in Service Mesh
-        operation = BatchOperation.objects.create(
-            id=str(uuid.uuid4()),
-            name=f"Sync cluster: {cluster.name}",
-            description=f"Synchronizing infobases from RAS for cluster {cluster.name}",
-            operation_type=BatchOperation.TYPE_SYNC_CLUSTER,
-            target_entity=cluster.name,
-            payload={'cluster_id': str(cluster_id)},
-            status=BatchOperation.STATUS_QUEUED,
-            total_tasks=1,
-            created_by=request.user.username if request.user.is_authenticated else 'system',
-        )
+    # Create BatchOperation for tracking in Service Mesh
+    operation = BatchOperation.objects.create(
+        id=str(uuid.uuid4()),
+        name=f"Sync cluster: {cluster.name}",
+        description=f"Synchronizing infobases from RAS for cluster {cluster.name}",
+        operation_type=BatchOperation.TYPE_SYNC_CLUSTER,
+        target_entity=cluster.name,
+        payload={'cluster_id': str(cluster_id)},
+        status=BatchOperation.STATUS_QUEUED,
+        total_tasks=1,
+        created_by=request.user.username if request.user.is_authenticated else 'system',
+    )
 
-        # Запускаем задачу синхронизации с передачей cluster_id и operation_id
-        task = sync_cluster_task.apply_async(args=[str(cluster_id), str(operation.id)])
-
-        # Update operation with celery task id
-        operation.celery_task_id = task.id
-        operation.save(update_fields=['celery_task_id'])
-
-        return Response({
-            'cluster_id': str(cluster_id),
-            'operation_id': str(operation.id),
-            'task_id': task.id,
-            'status': 'syncing',
-            'message': 'Cluster synchronization started',
-        })
-    except (ImportError, Exception) as e:
-        # Fallback: выполняем синхронизацию синхронно (как в админке)
-        logger.warning(f"Celery unavailable ({e}) - running sync synchronously")
-
-        # Обновляем BatchOperation - начало синхронной обработки
-        operation.status = BatchOperation.STATUS_PROCESSING
-        operation.started_at = timezone.now()
-        operation.save(update_fields=['status', 'started_at'])
-
+    if OperationsService.is_celery_enabled():
+        # Legacy Celery path
         try:
-            from apps.databases.services import ClusterService
-            result = ClusterService.sync_infobases(cluster)
+            from apps.databases.tasks import sync_cluster_task
+            task = sync_cluster_task.apply_async(args=[str(cluster_id), str(operation.id)])
 
-            # Обновляем BatchOperation - успех
-            operation.status = BatchOperation.STATUS_COMPLETED
-            operation.completed_tasks = 1
-            operation.progress = 100
-            operation.completed_at = timezone.now()
-            operation.metadata = {
-                'created': result['created'],
-                'updated': result['updated'],
-                'errors': result['errors'],
-                'databases_found': result['created'] + result['updated'],
-                'sync_mode': 'synchronous',
-            }
-            operation.save()
+            operation.celery_task_id = task.id
+            operation.save(update_fields=['celery_task_id'])
+
+            logger.info(
+                "Cluster sync started via Celery",
+                extra={
+                    'cluster_id': str(cluster_id),
+                    'operation_id': str(operation.id),
+                    'celery_task_id': task.id,
+                }
+            )
 
             return Response({
                 'cluster_id': str(cluster_id),
                 'operation_id': str(operation.id),
-                'status': 'success',
-                'message': 'Cluster synchronization completed',
-                'databases_found': result['created'] + result['updated'],
-                'created': result['created'],
-                'updated': result['updated'],
-                'errors': result['errors'],
+                'task_id': task.id,
+                'status': 'syncing',
+                'message': 'Cluster synchronization started (Celery)',
             })
-        except Exception as sync_error:
-            logger.error(f"Sync failed: {sync_error}")
+        except Exception as e:
+            logger.warning(f"Celery unavailable for cluster sync: {e}")
+    else:
+        # New Go Worker path
+        try:
+            result = OperationsService.enqueue_cluster_sync(
+                cluster_id=str(cluster_id),
+                operation_id=str(operation.id),
+                created_by=request.user.username if request.user.is_authenticated else 'system'
+            )
 
-            # Обновляем BatchOperation - ошибка
-            operation.status = BatchOperation.STATUS_FAILED
-            operation.failed_tasks = 1
-            operation.completed_at = timezone.now()
-            operation.metadata = {'error': str(sync_error), 'sync_mode': 'synchronous'}
-            operation.save()
+            if result.success:
+                logger.info(
+                    "Cluster sync started via Go Worker",
+                    extra={
+                        'cluster_id': str(cluster_id),
+                        'operation_id': result.operation_id,
+                    }
+                )
 
-            return Response({
-                'success': False,
-                'operation_id': str(operation.id),
-                'error': {
-                    'code': 'SYNC_FAILED',
-                    'message': str(sync_error)
-                }
-            }, status=500)
+                return Response({
+                    'cluster_id': str(cluster_id),
+                    'operation_id': result.operation_id,
+                    'status': 'syncing',
+                    'message': 'Cluster synchronization started (Go Worker)',
+                })
+            else:
+                logger.warning(f"Go Worker enqueue failed: {result.error}")
+        except Exception as e:
+            logger.warning(f"Go Worker unavailable for cluster sync: {e}")
+
+    # Fallback: synchronous execution
+    logger.warning("Async workers unavailable - running sync synchronously")
+
+    # Обновляем BatchOperation - начало синхронной обработки
+    operation.status = BatchOperation.STATUS_PROCESSING
+    operation.started_at = timezone.now()
+    operation.save(update_fields=['status', 'started_at'])
+
+    try:
+        from apps.databases.services import ClusterService
+        result = ClusterService.sync_infobases(cluster)
+
+        # Обновляем BatchOperation - успех
+        operation.status = BatchOperation.STATUS_COMPLETED
+        operation.completed_tasks = 1
+        operation.progress = 100
+        operation.completed_at = timezone.now()
+        operation.metadata = {
+            'created': result['created'],
+            'updated': result['updated'],
+            'errors': result['errors'],
+            'databases_found': result['created'] + result['updated'],
+            'sync_mode': 'synchronous',
+        }
+        operation.save()
+
+        return Response({
+            'cluster_id': str(cluster_id),
+            'operation_id': str(operation.id),
+            'status': 'success',
+            'message': 'Cluster synchronization completed',
+            'databases_found': result['created'] + result['updated'],
+            'created': result['created'],
+            'updated': result['updated'],
+            'errors': result['errors'],
+        })
+    except Exception as sync_error:
+        logger.error(f"Sync failed: {sync_error}")
+
+        # Обновляем BatchOperation - ошибка
+        operation.status = BatchOperation.STATUS_FAILED
+        operation.failed_tasks = 1
+        operation.completed_at = timezone.now()
+        operation.metadata = {'error': str(sync_error), 'sync_mode': 'synchronous'}
+        operation.save()
+
+        return Response({
+            'success': False,
+            'operation_id': str(operation.id),
+            'error': {
+                'code': 'SYNC_FAILED',
+                'message': str(sync_error)
+            }
+        }, status=500)
 
 
 @extend_schema(

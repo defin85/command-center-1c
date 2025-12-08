@@ -58,6 +58,9 @@ type TaskProcessor struct {
 	templateEngine *template.EngineWithFallback // Go template engine with Python fallback
 	templateClient TemplateClient               // Client for fetching templates from Orchestrator
 	logger         *zap.Logger                  // Structured logger for template operations
+
+	// Workflow Engine (Phase 5)
+	workflowHandler *WorkflowHandler // Handler for execute_workflow operations
 }
 
 // DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
@@ -66,9 +69,11 @@ const DefaultConsumerGroupWorker = "worker-state-machine"
 
 // ProcessorOptions contains optional dependencies for TaskProcessor
 type ProcessorOptions struct {
-	TemplateEngine *template.EngineWithFallback
-	TemplateClient TemplateClient
-	Logger         *zap.Logger
+	TemplateEngine   *template.EngineWithFallback
+	TemplateClient   TemplateClient
+	WorkflowClient   WorkflowClient // Client for workflow operations (optional)
+	OrchestratorURL  string         // Orchestrator URL for workflow engine (optional)
+	Logger           *zap.Logger
 }
 
 // NewTaskProcessor creates a new task processor
@@ -138,6 +143,31 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		log.Info("template engine not configured, template rendering disabled")
 	}
 
+	// Initialize workflow handler if workflow client is provided
+	if opts.WorkflowClient != nil {
+		orchestratorURL := opts.OrchestratorURL
+		if orchestratorURL == "" {
+			orchestratorURL = cfg.OrchestratorURL
+		}
+
+		workflowHandler, err := NewWorkflowHandler(
+			opts.WorkflowClient,
+			redisClient,
+			orchestratorURL,
+			zapLogger,
+		)
+		if err != nil {
+			log.Error("failed to create workflow handler, execute_workflow disabled",
+				zap.Error(err),
+			)
+		} else {
+			processor.workflowHandler = workflowHandler
+			log.Info("workflow handler initialized for execute_workflow operations")
+		}
+	} else {
+		log.Info("workflow client not configured, execute_workflow disabled")
+	}
+
 	return processor
 }
 
@@ -150,6 +180,11 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		WorkerID:    p.workerID,
 		Timestamp:   time.Now(),
 		Results:     []models.DatabaseResultV2{},
+	}
+
+	// Special handling for execute_workflow (not per-database)
+	if msg.OperationType == "execute_workflow" {
+		return p.processWorkflow(ctx, msg)
 	}
 
 	// Process each target database
@@ -700,6 +735,14 @@ func (p *TaskProcessor) Close() error {
 	log := logger.GetLogger()
 	log.Info("closing TaskProcessor")
 
+	// Close workflow handler if initialized
+	if p.workflowHandler != nil {
+		if err := p.workflowHandler.Close(); err != nil {
+			log.Error("failed to close workflow handler", zap.Error(err))
+		}
+		log.Info("workflow handler closed")
+	}
+
 	// Close event subscriber if initialized
 	if p.eventSubscriber != nil {
 		if err := p.eventSubscriber.Close(); err != nil {
@@ -710,4 +753,81 @@ func (p *TaskProcessor) Close() error {
 	}
 
 	return nil
+}
+
+// processWorkflow handles execute_workflow operation type.
+// This is a workflow-level operation that doesn't iterate over databases.
+func (p *TaskProcessor) processWorkflow(ctx context.Context, msg *models.OperationMessage) *models.OperationResultV2 {
+	log := logger.GetLogger()
+	start := time.Now()
+
+	result := &models.OperationResultV2{
+		OperationID: msg.OperationID,
+		WorkerID:    p.workerID,
+		Timestamp:   time.Now(),
+		Results:     []models.DatabaseResultV2{},
+	}
+
+	// Check if workflow handler is available
+	if p.workflowHandler == nil {
+		log.Error("workflow handler not initialized, cannot execute workflow",
+			zap.String("operation_id", msg.OperationID),
+		)
+		result.Status = "failed"
+		result.Results = append(result.Results, models.DatabaseResultV2{
+			DatabaseID: "workflow",
+			Success:    false,
+			Error:      "workflow handler not configured",
+			ErrorCode:  "WORKFLOW_DISABLED",
+			Duration:   time.Since(start).Seconds(),
+		})
+		result.Summary = models.ResultSummary{
+			Total:       1,
+			Succeeded:   0,
+			Failed:      1,
+			AvgDuration: time.Since(start).Seconds(),
+		}
+		return result
+	}
+
+	// Publish PROCESSING event
+	if err := p.eventPublisher.PublishProcessing(ctx, msg.OperationID, "workflow", p.workerID); err != nil {
+		log.Error("failed to publish PROCESSING event", zap.Error(err))
+	}
+
+	// Execute workflow
+	dbResult := p.workflowHandler.ExecuteWorkflow(ctx, msg)
+	dbResult.DatabaseID = "workflow"
+	result.Results = append(result.Results, dbResult)
+
+	// Calculate summary
+	if dbResult.Success {
+		result.Status = "completed"
+		result.Summary = models.ResultSummary{
+			Total:       1,
+			Succeeded:   1,
+			Failed:      0,
+			AvgDuration: dbResult.Duration,
+		}
+
+		// Publish SUCCESS event
+		if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+			log.Error("failed to publish SUCCESS event", zap.Error(err))
+		}
+	} else {
+		result.Status = "failed"
+		result.Summary = models.ResultSummary{
+			Total:       1,
+			Succeeded:   0,
+			Failed:      1,
+			AvgDuration: dbResult.Duration,
+		}
+
+		// Publish FAILED event
+		if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, dbResult.Error); err != nil {
+			log.Error("failed to publish FAILED event", zap.Error(err))
+		}
+	}
+
+	return result
 }

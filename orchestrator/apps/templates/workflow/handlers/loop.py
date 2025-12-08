@@ -113,15 +113,7 @@ class LoopHandler(BaseNodeHandler):
                 }
             )
 
-            # 2. Import Celery task (placeholder in Week 8)
-            try:
-                from apps.templates.tasks import execute_workflow_node
-            except ImportError:
-                raise NotImplementedError(
-                    "execute_workflow_node task not implemented yet (Week 9)"
-                )
-
-            # 3. Execute loop based on mode
+            # 2. Execute loop based on mode (sync execution)
             if loop_mode == "count":
                 result_data = self._execute_count_loop(
                     loop_config, loop_node_id, context, execution, max_iterations
@@ -159,21 +151,6 @@ class LoopHandler(BaseNodeHandler):
                 }
             )
 
-            return result
-
-        except NotImplementedError as exc:
-            # Expected error for Week 8 (Celery task not implemented yet)
-            error_msg = f"Loop execution not available: {str(exc)}"
-            logger.warning(error_msg, extra={'node_id': node.id})
-
-            result = NodeExecutionResult(
-                success=False,
-                output=None,
-                error=error_msg,
-                mode=NodeExecutionMode.SYNC,
-                duration_seconds=time.time() - start_time
-            )
-            self._update_step_result(step_result, result)
             return result
 
         except Exception as exc:
@@ -230,9 +207,8 @@ class LoopHandler(BaseNodeHandler):
                 'last': i == count - 1,
             }
 
-            # Execute loop node (placeholder - will use Celery in Week 9)
-            from apps.templates.tasks import execute_workflow_node
-            result = execute_workflow_node(str(execution.id), loop_node_id, loop_context)
+            # Execute loop node synchronously
+            result = self._execute_node_sync(str(execution.id), loop_node_id, loop_context)
             results.append({'iteration': i, 'result': result})
 
         return {
@@ -289,9 +265,8 @@ class LoopHandler(BaseNodeHandler):
             if not should_continue:
                 break
 
-            # Execute loop node (placeholder - will use Celery in Week 9)
-            from apps.templates.tasks import execute_workflow_node
-            result = execute_workflow_node(str(execution.id), loop_node_id, loop_context)
+            # Execute loop node synchronously
+            result = self._execute_node_sync(str(execution.id), loop_node_id, loop_context)
             results.append({'iteration': iteration, 'result': result})
 
             # Update context with result for next iteration
@@ -349,9 +324,8 @@ class LoopHandler(BaseNodeHandler):
             }
             loop_context['item'] = item
 
-            # Execute loop node (placeholder - will use Celery in Week 9)
-            from apps.templates.tasks import execute_workflow_node
-            result = execute_workflow_node(str(execution.id), loop_node_id, loop_context)
+            # Execute loop node synchronously
+            result = self._execute_node_sync(str(execution.id), loop_node_id, loop_context)
             results.append({'iteration': i, 'item': item, 'result': result})
 
         return {
@@ -423,3 +397,124 @@ class LoopHandler(BaseNodeHandler):
         # Collections (list, dict, etc.)
         # Empty -> False, non-empty -> True
         return bool(value)
+
+    def _execute_node_sync(
+        self,
+        execution_id: str,
+        node_id: str,
+        context_snapshot: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute single workflow node synchronously.
+
+        This is a sync replacement for the Celery execute_workflow_node task.
+        Used by loop iterations to execute child nodes.
+
+        Args:
+            execution_id: WorkflowExecution UUID (as string)
+            node_id: Node ID to execute
+            context_snapshot: Execution context snapshot (dict)
+
+        Returns:
+            dict: Node execution result with output/error
+        """
+        import time
+        from apps.templates.workflow.context import ContextManager
+        from apps.templates.workflow.handlers import NodeExecutionMode, NodeHandlerFactory
+        from apps.templates.workflow.models import (
+            DAGStructure,
+            WorkflowExecution,
+        )
+
+        start_time = time.time()
+
+        try:
+            # Get execution instance
+            execution = WorkflowExecution.objects.select_related(
+                'workflow_template'
+            ).get(id=execution_id)
+
+            # Check execution is still running
+            if execution.status != WorkflowExecution.STATUS_RUNNING:
+                logger.warning(
+                    f"Execution {execution_id} is not running (status: {execution.status})",
+                    extra={'execution_id': execution_id, 'node_id': node_id}
+                )
+                return {
+                    'success': False,
+                    'node_id': node_id,
+                    'output': None,
+                    'error': f'Execution is not running (status: {execution.status})',
+                    'duration_seconds': 0
+                }
+
+            # Get DAG structure
+            dag = execution.workflow_template.dag_structure
+            if not isinstance(dag, DAGStructure):
+                dag = DAGStructure(**dag)
+
+            # Find node in DAG
+            node = None
+            for n in dag.nodes:
+                if n.id == node_id:
+                    node = n
+                    break
+
+            if not node:
+                raise ValueError(f"Node {node_id} not found in DAG")
+
+            # Create context manager
+            context = ContextManager(context_snapshot)
+
+            # Get handler
+            handler = NodeHandlerFactory.get_handler(node.type)
+
+            # Execute node
+            result = handler.execute(
+                node=node,
+                context=context.to_dict(),
+                execution=execution,
+                mode=NodeExecutionMode.SYNC
+            )
+
+            duration = time.time() - start_time
+
+            logger.info(
+                f"Loop sync execution: node {node_id} completed (success={result.success})",
+                extra={
+                    'execution_id': execution_id,
+                    'node_id': node_id,
+                    'success': result.success,
+                    'duration_seconds': duration
+                }
+            )
+
+            return {
+                'success': result.success,
+                'node_id': node_id,
+                'output': result.output,
+                'error': result.error,
+                'duration_seconds': duration
+            }
+
+        except WorkflowExecution.DoesNotExist:
+            error_msg = f"Execution {execution_id} not found"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'node_id': node_id,
+                'output': None,
+                'error': error_msg,
+                'duration_seconds': time.time() - start_time
+            }
+
+        except Exception as exc:
+            error_msg = f"Failed to execute node {node_id}: {str(exc)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'node_id': node_id,
+                'output': None,
+                'error': error_msg,
+                'duration_seconds': time.time() - start_time
+            }

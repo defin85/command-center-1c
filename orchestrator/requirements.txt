@@ -4,11 +4,8 @@ djangorestframework==3.14.0
 django-filter==23.5
 drf-spectacular==0.26.5  # OpenAPI/Swagger documentation
 
-# Celery и Redis
-celery==5.3.4
+# Redis (Celery removed - Go Worker handles task execution)
 redis==5.0.1
-django-celery-beat==2.5.0  # Database-backed periodic tasks
-flower==2.0.1  # Celery web monitoring UI
 
 # HTTP и OData client
 requests==2.31.0
@@ -51,7 +48,7 @@ opentelemetry-exporter-otlp>=1.27.0
 
 # OpenTelemetry Auto-instrumentation
 opentelemetry-instrumentation-django>=0.48b0
-opentelemetry-instrumentation-celery>=0.48b0
+# opentelemetry-instrumentation-celery removed - Celery removed
 opentelemetry-instrumentation-redis>=0.48b0
 opentelemetry-instrumentation-requests>=0.48b0
 opentelemetry-instrumentation-psycopg2>=0.48b0

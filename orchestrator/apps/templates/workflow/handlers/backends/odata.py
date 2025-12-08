@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Set
 
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation
-from apps.operations.tasks import enqueue_operation
 from apps.operations.waiter import OperationTimeoutError, ResultWaiter
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
@@ -208,28 +207,52 @@ class ODataBackend(AbstractOperationBackend):
                 }
             )
 
-            # 2. Enqueue to Worker via Celery
-            celery_result = enqueue_operation.delay(operation.id)
+            # 2. Enqueue to Worker via Go Worker (or Celery fallback)
+            from apps.operations.services import OperationsService
 
-            logger.info(
-                f"Operation {operation.id} enqueued to Celery",
-                extra={
-                    'operation_id': operation.id,
-                    'celery_task_id': celery_result.id
-                }
-            )
+            if OperationsService.is_celery_enabled():
+                # Legacy Celery path
+                from apps.operations.tasks import enqueue_operation
+                celery_result = enqueue_operation.delay(operation.id)
+                task_id = celery_result.id
+                logger.info(
+                    f"Operation {operation.id} enqueued to Celery",
+                    extra={
+                        'operation_id': operation.id,
+                        'celery_task_id': task_id
+                    }
+                )
+            else:
+                # New Go Worker path
+                enqueue_result = OperationsService.enqueue_operation(str(operation.id))
+                task_id = enqueue_result.operation_id if enqueue_result.success else None
+
+                if enqueue_result.success:
+                    logger.info(
+                        f"Operation {operation.id} enqueued to Go Worker",
+                        extra={
+                            'operation_id': operation.id,
+                            'status': enqueue_result.status
+                        }
+                    )
+                else:
+                    logger.warning(
+                        f"Go Worker enqueue failed: {enqueue_result.error}, falling back to sync"
+                    )
+                    # No fallback to Celery - operation stays in queue for retry
+                    task_id = None
 
             # 3. SYNC vs ASYNC execution
             if mode == NodeExecutionMode.ASYNC:
                 return self._return_async(
                     operation=operation,
-                    celery_task_id=celery_result.id,
+                    celery_task_id=task_id,
                     start_time=start_time
                 )
             else:
                 return self._return_sync(
                     operation=operation,
-                    celery_task_id=celery_result.id,
+                    celery_task_id=task_id,
                     context=context,
                     start_time=start_time
                 )

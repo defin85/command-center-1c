@@ -24,7 +24,7 @@ class OperationEventPublisher:
     def __init__(self):
         """Инициализация Redis клиента."""
         self.redis_client = redis.from_url(
-            settings.CELERY_BROKER_URL,
+            f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
             decode_responses=True
         )
 
@@ -79,7 +79,7 @@ class OperationFlowPublisher:
     def __init__(self):
         """Инициализация Redis клиента."""
         self.redis_client = redis.from_url(
-            settings.CELERY_BROKER_URL,
+            f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
             decode_responses=True
         )
         self.logger = __import__('logging').getLogger(__name__)

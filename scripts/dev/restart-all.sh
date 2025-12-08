@@ -83,8 +83,8 @@ show_help() {
     echo "  $0 --verbose                 # Детальный вывод"
     echo ""
     echo "Available services:"
-    echo "  orchestrator, celery-worker, celery-beat, api-gateway,"
-    echo "  worker, ras-adapter, batch-service, frontend"
+    echo "  orchestrator, api-gateway, worker,"
+    echo "  ras-adapter, batch-service, frontend"
     echo ""
 }
 

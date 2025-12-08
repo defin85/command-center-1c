@@ -27,12 +27,10 @@ if [ -z "$1" ]; then
     echo ""
     echo -e "${BLUE}Available services:${NC}"
     echo -e "  orchestrator      - Django Orchestrator"
-    echo -e "  celery-worker     - Celery Worker"
-    echo -e "  celery-beat       - Celery Beat"
     echo -e "  api-gateway       - Go API Gateway"
     echo -e "  worker            - Go Worker"
     echo -e "  ras               - 1C RAS Server"
-    echo -e "  ras-adapter       - RAS Adapter (Week 4+)"
+    echo -e "  ras-adapter       - RAS Adapter"
     echo -e "  batch-service     - Go Batch Service"
     echo -e "  frontend          - React Frontend"
     echo -e "  all               - Все сервисы вместе"
@@ -103,7 +101,7 @@ view_all_logs() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    local services=("orchestrator" "celery-worker" "celery-beat" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
+    local services=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
 
     for service in "${services[@]}"; do
         local log_file="$LOGS_DIR/${service}.log"
@@ -131,7 +129,7 @@ case "$SERVICE_NAME" in
         view_all_logs
         ;;
 
-    orchestrator|celery-worker|celery-beat|api-gateway|worker|ras|ras-adapter|batch-service|frontend)
+    orchestrator|api-gateway|worker|ras|ras-adapter|batch-service|frontend)
         view_log "$SERVICE_NAME"
         ;;
 
@@ -152,8 +150,8 @@ case "$SERVICE_NAME" in
         echo -e "${RED}✗ Неизвестный сервис: ${SERVICE_NAME}${NC}"
         echo ""
         echo -e "${BLUE}Available services:${NC}"
-        echo -e "  orchestrator, celery-worker, celery-beat, api-gateway,"
-        echo -e "  worker, ras, ras-adapter, batch-service, frontend, all"
+        echo -e "  orchestrator, api-gateway, worker, ras,"
+        echo -e "  ras-adapter, batch-service, frontend, all"
         echo -e "${BLUE}Docker services:${NC}"
         echo -e "  prometheus, grafana, jaeger"
         echo ""

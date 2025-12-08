@@ -423,79 +423,97 @@ def retry_installation(request):
             retry_count=retry_count,
         )
 
-    # Trigger async installation via Celery
-    try:
-        from apps.databases.tasks import queue_extension_installation
-        # Use existing queue_extension_installation task
-        task = queue_extension_installation.delay(
-            [str(database_id)],
-            {'name': extension_name, 'path': f'{EXTENSION_BASE_PATH}/{extension_name}.cfe'}
-        )
+    # Trigger async installation via Go Worker (or Celery fallback)
+    from apps.operations.services import OperationsService
 
-        # Audit logging
-        logger.info(
-            "Extension installation retry scheduled",
-            extra={
-                'installation_id': str(installation.id),
+    extension_config = {
+        'name': extension_name,
+        'path': f'{EXTENSION_BASE_PATH}/{extension_name}.cfe',
+        'extension_id': str(installation.id),
+    }
+
+    if OperationsService.is_celery_enabled():
+        # Legacy Celery path
+        try:
+            from apps.databases.tasks import queue_extension_installation
+            task = queue_extension_installation.delay(
+                [str(database_id)],
+                {'name': extension_name, 'path': f'{EXTENSION_BASE_PATH}/{extension_name}.cfe'}
+            )
+
+            logger.info(
+                "Extension installation retry scheduled via Celery",
+                extra={
+                    'installation_id': str(installation.id),
+                    'database_id': database_id,
+                    'extension_name': extension_name,
+                    'retry_count': retry_count,
+                    'requested_by': request.user.username if request.user else 'anonymous',
+                    'celery_task_id': task.id,
+                }
+            )
+
+            return Response({
                 'database_id': database_id,
-                'extension_name': extension_name,
-                'retry_count': retry_count,
-                'requested_by': request.user.username if request.user else 'anonymous',
+                'installation_id': str(installation.id),
+                'status': 'pending',
                 'celery_task_id': task.id,
-            }
-        )
+                'message': 'Installation retry scheduled (Celery)',
+            })
+        except Exception as e:
+            logger.warning(f"Celery unavailable: {e}")
+    else:
+        # New Go Worker path
+        try:
+            result = OperationsService.enqueue_extension_install(
+                database_ids=[str(database_id)],
+                extension_config=extension_config,
+                created_by=request.user.username if request.user else 'anonymous'
+            )
 
-        return Response({
-            'database_id': database_id,
+            if result.success:
+                logger.info(
+                    "Extension installation retry scheduled via Go Worker",
+                    extra={
+                        'installation_id': str(installation.id),
+                        'database_id': database_id,
+                        'extension_name': extension_name,
+                        'retry_count': retry_count,
+                        'requested_by': request.user.username if request.user else 'anonymous',
+                        'operation_id': result.operation_id,
+                    }
+                )
+
+                return Response({
+                    'database_id': database_id,
+                    'installation_id': str(installation.id),
+                    'status': 'pending',
+                    'operation_id': result.operation_id,
+                    'message': 'Installation retry scheduled (Go Worker)',
+                })
+            else:
+                logger.warning(f"Go Worker enqueue failed: {result.error}")
+        except Exception as e:
+            logger.warning(f"Go Worker unavailable: {e}")
+
+    # Fallback response
+    logger.info(
+        "Extension installation queued (async worker unavailable)",
+        extra={
             'installation_id': str(installation.id),
-            'status': 'pending',
-            'celery_task_id': task.id,
-            'message': 'Installation retry scheduled',
-        })
-    except ImportError as e:
-        logger.error(f"Celery task not found: {e}")
-        logger.warning("Extension installation task unavailable - using fallback")
-
-        # Audit logging for fallback
-        logger.info(
-            "Extension installation queued (Celery unavailable)",
-            extra={
-                'installation_id': str(installation.id),
-                'database_id': database_id,
-                'extension_name': extension_name,
-                'retry_count': retry_count,
-                'requested_by': request.user.username if request.user else 'anonymous',
-            }
-        )
-
-        return Response({
             'database_id': database_id,
-            'installation_id': str(installation.id),
-            'status': 'pending',
-            'message': 'Installation queued (async worker unavailable)',
-        })
-    except Exception as e:
-        logger.warning(f"Celery unavailable for extension install: {e}")
-        logger.warning("Extension installation will be processed by background worker")
+            'extension_name': extension_name,
+            'retry_count': retry_count,
+            'requested_by': request.user.username if request.user else 'anonymous',
+        }
+    )
 
-        # Audit logging for fallback
-        logger.info(
-            "Extension installation queued (Celery unavailable)",
-            extra={
-                'installation_id': str(installation.id),
-                'database_id': database_id,
-                'extension_name': extension_name,
-                'retry_count': retry_count,
-                'requested_by': request.user.username if request.user else 'anonymous',
-            }
-        )
-
-        return Response({
-            'database_id': database_id,
-            'installation_id': str(installation.id),
-            'status': 'pending',
-            'message': 'Installation queued (async worker unavailable)',
-        })
+    return Response({
+        'database_id': database_id,
+        'installation_id': str(installation.id),
+        'status': 'pending',
+        'message': 'Installation queued (async worker unavailable)',
+    })
 
 
 class BatchInstallRequestSerializer(serializers.Serializer):
@@ -665,33 +683,67 @@ def batch_install(request):
             })
             queued_count += 1
 
-    # Trigger async batch installation via Celery
+    # Trigger async batch installation via Go Worker (or Celery fallback)
     queued_db_ids = [
         inst['database_id'] for inst in installations
         if inst['status'] == 'pending'
     ]
 
     if queued_db_ids:
-        try:
-            from apps.databases.tasks import queue_extension_installation
-            task = queue_extension_installation.delay(
-                queued_db_ids,
-                {'name': extension_name, 'path': extension_path}
-            )
+        from apps.operations.services import OperationsService
 
-            logger.info(
-                "Batch extension installation scheduled",
-                extra={
-                    'batch_id': batch_id,
-                    'total': len(database_ids),
-                    'queued': queued_count,
-                    'skipped': skipped_count,
-                    'requested_by': request.user.username if request.user else 'anonymous',
-                    'celery_task_id': task.id,
-                }
-            )
-        except Exception as e:
-            logger.warning(f"Celery unavailable for batch install: {e}")
+        extension_config = {
+            'name': extension_name,
+            'path': extension_path,
+        }
+
+        if OperationsService.is_celery_enabled():
+            # Legacy Celery path
+            try:
+                from apps.databases.tasks import queue_extension_installation
+                task = queue_extension_installation.delay(
+                    queued_db_ids,
+                    {'name': extension_name, 'path': extension_path}
+                )
+
+                logger.info(
+                    "Batch extension installation scheduled via Celery",
+                    extra={
+                        'batch_id': batch_id,
+                        'total': len(database_ids),
+                        'queued': queued_count,
+                        'skipped': skipped_count,
+                        'requested_by': request.user.username if request.user else 'anonymous',
+                        'celery_task_id': task.id,
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Celery unavailable for batch install: {e}")
+        else:
+            # New Go Worker path
+            try:
+                result = OperationsService.enqueue_extension_install(
+                    database_ids=queued_db_ids,
+                    extension_config=extension_config,
+                    created_by=request.user.username if request.user else 'anonymous'
+                )
+
+                if result.success:
+                    logger.info(
+                        "Batch extension installation scheduled via Go Worker",
+                        extra={
+                            'batch_id': batch_id,
+                            'total': len(database_ids),
+                            'queued': queued_count,
+                            'skipped': skipped_count,
+                            'requested_by': request.user.username if request.user else 'anonymous',
+                            'operation_id': result.operation_id,
+                        }
+                    )
+                else:
+                    logger.warning(f"Go Worker enqueue failed for batch install: {result.error}")
+            except Exception as e:
+                logger.warning(f"Go Worker unavailable for batch install: {e}")
 
     return Response({
         'batch_id': batch_id,
