@@ -23,6 +23,9 @@ const (
 
 	// maxConcurrentRASOperations limits parallel RAS API calls to prevent overload
 	maxConcurrentRASOperations = 20
+
+	// maxBatchOperationTimeout limits total time for batch RAS operation
+	maxBatchOperationTimeout = 5 * time.Minute
 )
 
 // IsRASOperation checks if operation type is a RAS operation
@@ -89,18 +92,12 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 	}).Info("Processing RAS operation")
 
 	if len(msg.TargetDatabases) == 0 {
-		return &models.OperationResultV2{
-			OperationID: msg.OperationID,
-			Status:      "failed",
-			WorkerID:    "",
-			Timestamp:   time.Now(),
-			Results:     []models.DatabaseResultV2{},
-			Summary: models.ResultSummary{
-				Total:  0,
-				Failed: 0,
-			},
-		}
+		return h.emptyResult(msg.OperationID)
 	}
+
+	// Create cancellable context with timeout for entire batch
+	batchCtx, batchCancel := context.WithTimeout(ctx, maxBatchOperationTimeout)
+	defer batchCancel()
 
 	// Extract block sessions config if applicable
 	var blockConfig *BlockSessionsConfig
@@ -121,22 +118,9 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 		go func(idx int, dbID string) {
 			defer wg.Done()
 
-			// Acquire semaphore slot
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				mu.Lock()
-				results[idx] = RASOperationResult{
-					DatabaseID: dbID,
-					Success:    false,
-					Error:      "context cancelled while waiting for semaphore",
-				}
-				mu.Unlock()
-				return
-			}
-
-			result := h.processSingleDatabase(ctx, msg.OperationType, dbID, blockConfig)
+			result := h.processDatabaseWithCancellation(
+				batchCtx, sem, msg.OperationType, dbID, blockConfig,
+			)
 
 			mu.Lock()
 			results[idx] = result
@@ -144,10 +128,92 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 		}(i, databaseID)
 	}
 
-	wg.Wait()
+	// Wait with timeout protection (prevents hanging on stuck goroutines)
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines completed normally
+	case <-batchCtx.Done():
+		log.WithFields(map[string]interface{}{
+			"operation_id": msg.OperationID,
+			"reason":       batchCtx.Err(),
+		}).Warn("Batch operation context cancelled, some results may be incomplete")
+	}
 
 	// Calculate summary and convert results
 	return h.buildResult(msg.OperationID, results)
+}
+
+// processDatabaseWithCancellation handles single database with proper cancellation checks
+func (h *RASHandler) processDatabaseWithCancellation(
+	ctx context.Context,
+	sem chan struct{},
+	opType, databaseID string,
+	blockConfig *BlockSessionsConfig,
+) RASOperationResult {
+	log := logger.GetLogger()
+	start := time.Now()
+
+	// Check cancellation BEFORE acquiring semaphore
+	if err := ctx.Err(); err != nil {
+		return RASOperationResult{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("cancelled before start: %v", err),
+			Duration:   time.Since(start).Seconds(),
+		}
+	}
+
+	// Acquire semaphore with cancellation support
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return RASOperationResult{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("cancelled while waiting for semaphore: %v", ctx.Err()),
+			Duration:   time.Since(start).Seconds(),
+		}
+	}
+
+	// Check cancellation AFTER acquiring semaphore (CRITICAL FIX for race condition)
+	if err := ctx.Err(); err != nil {
+		log.WithFields(map[string]interface{}{
+			"database_id": databaseID,
+			"operation":   opType,
+		}).Debug("Context cancelled after semaphore acquisition, skipping RAS call")
+
+		return RASOperationResult{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("cancelled after semaphore: %v", err),
+			Duration:   time.Since(start).Seconds(),
+		}
+	}
+
+	// Execute the actual operation
+	return h.processSingleDatabase(ctx, opType, databaseID, blockConfig)
+}
+
+// emptyResult creates result for empty target list
+func (h *RASHandler) emptyResult(operationID string) *models.OperationResultV2 {
+	return &models.OperationResultV2{
+		OperationID: operationID,
+		Status:      "failed",
+		WorkerID:    "",
+		Timestamp:   time.Now(),
+		Results:     []models.DatabaseResultV2{},
+		Summary: models.ResultSummary{
+			Total:  0,
+			Failed: 0,
+		},
+	}
 }
 
 // processSingleDatabase executes RAS operation for a single database
@@ -159,11 +225,24 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 		DatabaseID: databaseID,
 	}
 
+	// Check context before expensive operations
+	if err := ctx.Err(); err != nil {
+		result.Success = false
+		result.Error = fmt.Sprintf("context cancelled: %v", err)
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
+
 	// Resolve cluster info (cluster_id, infobase_id) from database_id
 	clusterInfo, err := h.clusterResolver.Resolve(ctx, databaseID)
 	if err != nil {
 		result.Success = false
-		result.Error = fmt.Sprintf("failed to resolve cluster info: %v", err)
+		// Differentiate cancellation errors
+		if ctx.Err() != nil {
+			result.Error = fmt.Sprintf("cancelled during cluster resolution: %v", ctx.Err())
+		} else {
+			result.Error = fmt.Sprintf("failed to resolve cluster info: %v", err)
+		}
 		result.Duration = time.Since(start).Seconds()
 
 		log.WithFields(map[string]interface{}{
@@ -178,6 +257,14 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 	result.InfobaseID = clusterInfo.InfobaseID
 	// Note: ClusterInfo doesn't have DatabaseName, using databaseID
 	result.DatabaseName = databaseID
+
+	// Final cancellation check before RAS call
+	if err := ctx.Err(); err != nil {
+		result.Success = false
+		result.Error = fmt.Sprintf("cancelled before RAS call: %v", err)
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
 
 	// Execute the operation
 	switch opType {
@@ -200,7 +287,12 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 
 	if err != nil {
 		result.Success = false
-		result.Error = err.Error()
+		// Differentiate cancellation errors
+		if ctx.Err() != nil {
+			result.Error = fmt.Sprintf("cancelled during RAS operation: %v", ctx.Err())
+		} else {
+			result.Error = err.Error()
+		}
 
 		log.WithFields(map[string]interface{}{
 			"database_id":    databaseID,

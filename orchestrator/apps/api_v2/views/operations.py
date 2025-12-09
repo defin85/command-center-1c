@@ -6,6 +6,7 @@ Provides action-based endpoints for batch operations management.
 
 import json
 import logging
+import secrets
 
 import redis as redis_module
 from django.conf import settings
@@ -27,6 +28,12 @@ from apps.operations.services import OperationsService
 from apps.databases.permissions import CanExecuteOperation
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# SSE Ticket Constants
+# =============================================================================
+SSE_TICKET_TTL = 30  # seconds
+SSE_TICKET_PREFIX = "sse_ticket:"
 
 
 # =============================================================================
@@ -120,6 +127,22 @@ class ExecuteOperationThrottle(UserRateThrottle):
     """Rate limit: 30 operations per minute per user."""
     rate = '30/min'
     scope = 'execute_operation'
+
+
+# =============================================================================
+# SSE Ticket Serializers
+# =============================================================================
+
+class SSETicketRequestSerializer(serializers.Serializer):
+    """Request body for get_stream_ticket endpoint."""
+    operation_id = serializers.CharField(help_text="Operation ID to subscribe to")
+
+
+class SSETicketResponseSerializer(serializers.Serializer):
+    """Response for get_stream_ticket endpoint."""
+    ticket = serializers.CharField(help_text="Short-lived ticket for SSE connection")
+    expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
+    stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
 
 
 @extend_schema(
@@ -533,14 +556,140 @@ def execute_operation(request):
 # SSE Streaming
 # =============================================================================
 
+
+def _get_redis_connection():
+    """Get Redis connection for SSE tickets."""
+    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    return redis_module.from_url(redis_url, decode_responses=True)
+
+
+def _validate_sse_ticket(ticket: str) -> tuple:
+    """
+    Validate and consume SSE ticket.
+
+    Returns:
+        (ticket_data, error_message) - ticket_data is None if validation failed
+    """
+    redis_conn = _get_redis_connection()
+
+    try:
+        ticket_key = f"{SSE_TICKET_PREFIX}{ticket}"
+
+        # Atomic get-and-delete to prevent reuse
+        pipe = redis_conn.pipeline()
+        pipe.get(ticket_key)
+        pipe.delete(ticket_key)
+        results = pipe.execute()
+
+        ticket_data_raw = results[0]
+
+        if not ticket_data_raw:
+            return None, "Invalid or expired ticket"
+
+        return json.loads(ticket_data_raw), None
+
+    finally:
+        redis_conn.close()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get SSE stream ticket',
+    description='''
+    Obtain a short-lived, single-use ticket for SSE stream authentication.
+
+    The ticket is valid for 30 seconds and can only be used once.
+    This allows secure SSE connections without exposing JWT tokens in URLs.
+    ''',
+    request=SSETicketRequestSerializer,
+    responses={
+        200: SSETicketResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_stream_ticket(request):
+    """
+    POST /api/v2/operations/stream-ticket/
+
+    Get a short-lived ticket for SSE stream authentication.
+
+    Request Body:
+        {"operation_id": "uuid"}
+
+    Response:
+        {
+            "ticket": "random_string",
+            "expires_in": 30,
+            "stream_url": "/api/v2/operations/stream/?ticket=..."
+        }
+    """
+    serializer = SSETicketRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    operation_id = serializer.validated_data['operation_id']
+
+    # Verify operation exists and user has permission
+    operation = BatchOperation.objects.filter(id=operation_id).first()
+    if not operation:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'OPERATION_NOT_FOUND',
+                'message': 'Operation not found'
+            }
+        }, status=404)
+
+    # Authorization check: user must own the operation or be superuser
+    if operation.created_by != request.user.username and not request.user.is_superuser:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'FORBIDDEN',
+                'message': 'You do not have permission to subscribe to this operation'
+            }
+        }, status=403)
+
+    # Generate secure random ticket
+    ticket = secrets.token_urlsafe(32)
+
+    # Store ticket in Redis with metadata
+    redis_conn = _get_redis_connection()
+
+    try:
+        ticket_data = {
+            'user_id': request.user.id,
+            'username': request.user.username,
+            'operation_id': operation_id,
+            'created_at': timezone.now().isoformat(),
+        }
+
+        redis_conn.setex(
+            f"{SSE_TICKET_PREFIX}{ticket}",
+            SSE_TICKET_TTL,
+            json.dumps(ticket_data)
+        )
+    finally:
+        redis_conn.close()
+
+    return Response({
+        'ticket': ticket,
+        'expires_in': SSE_TICKET_TTL,
+        'stream_url': f'/api/v2/operations/stream/?ticket={ticket}'
+    })
+
+
 @extend_schema(
     tags=['v2'],
     summary='Stream operation events (SSE)',
     description='''
     Real-time Server-Sent Events (SSE) stream for operation progress updates.
 
-    **Authentication:** Token must be passed via query parameter because EventSource
-    does not support custom headers.
+    **Authentication:** Use ticket from /stream-ticket/ endpoint (preferred) or
+    legacy token via query parameter.
 
     **Event format:**
     ```
@@ -551,16 +700,22 @@ def execute_operation(request):
     ''',
     parameters=[
         OpenApiParameter(
-            name='operation_id',
+            name='ticket',
             type=str,
-            required=True,
-            description='Operation ID (UUID) to stream events for'
+            required=False,
+            description='Short-lived SSE ticket from /stream-ticket/ (preferred)'
         ),
         OpenApiParameter(
             name='token',
             type=str,
-            required=True,
-            description='JWT access token for authentication'
+            required=False,
+            description='JWT access token (deprecated, use ticket instead)'
+        ),
+        OpenApiParameter(
+            name='operation_id',
+            type=str,
+            required=False,
+            description='Operation ID (only needed with token auth, not with ticket)'
         ),
     ],
     responses={
@@ -571,61 +726,80 @@ def execute_operation(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([AllowAny])  # Auth via token query param (EventSource limitation)
+@permission_classes([AllowAny])  # Auth via ticket or token query param
 def operation_stream(request):
     """
-    GET /api/v2/operations/stream/?operation_id=xxx&token=xxx
+    GET /api/v2/operations/stream/?ticket=xxx
+    GET /api/v2/operations/stream/?operation_id=xxx&token=xxx (deprecated)
 
     SSE endpoint for real-time operation updates.
 
-    NOTE: EventSource does not support custom headers, so token is passed via query parameter.
-
-    Client connects via EventSource and receives events in real-time:
-    - PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING -> VERIFYING -> SUCCESS/FAILED
-
-    Event format:
-        data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
+    Prefer ticket-based auth via /stream-ticket/ endpoint for security.
     """
-    operation_id = request.query_params.get('operation_id')
+    ticket = request.query_params.get('ticket')
     token = request.query_params.get('token')
+    operation_id = request.query_params.get('operation_id')
 
-    # Validate required parameters
-    if not operation_id:
+    # Validate: need either ticket or (token + operation_id)
+    if not ticket and not token:
         return JsonResponse({
             'success': False,
             'error': {
                 'code': 'MISSING_PARAMETER',
-                'message': 'operation_id is required'
-            }
-        }, status=400)
-
-    if not token:
-        return JsonResponse({
-            'success': False,
-            'error': {
-                'code': 'MISSING_PARAMETER',
-                'message': 'token is required'
+                'message': 'ticket is required (use /stream-ticket/ to obtain)'
             }
         }, status=401)
 
-    # Manual JWT authentication (EventSource limitation)
-    try:
-        jwt_auth = JWTAuthentication()
-        validated_token = jwt_auth.get_validated_token(token)
-        user = jwt_auth.get_user(validated_token)
-        if not user:
-            raise AuthenticationFailed('User not found')
-    except Exception as e:
-        logger.error(f"SSE authentication failed: {e}")
-        return JsonResponse({
-            'success': False,
-            'error': {
-                'code': 'INVALID_TOKEN',
-                'message': 'Invalid or expired token'
-            }
-        }, status=401)
+    # Prefer ticket-based auth (secure)
+    if ticket:
+        ticket_data, error = _validate_sse_ticket(ticket)
+        if error:
+            return JsonResponse({
+                'success': False,
+                'error': {
+                    'code': 'INVALID_TICKET',
+                    'message': error
+                }
+            }, status=401)
 
-    logger.info(f"SSE stream requested for operation {operation_id} by user {user.username}")
+        operation_id = ticket_data['operation_id']
+        username = ticket_data['username']
+
+    else:
+        # Legacy token auth (deprecated - log warning)
+        logger.warning(
+            "SSE stream using deprecated token auth. "
+            "Please migrate to ticket-based auth via /stream-ticket/"
+        )
+
+        if not operation_id:
+            return JsonResponse({
+                'success': False,
+                'error': {
+                    'code': 'MISSING_PARAMETER',
+                    'message': 'operation_id is required with token auth'
+                }
+            }, status=400)
+
+        # Manual JWT authentication
+        try:
+            jwt_auth = JWTAuthentication()
+            validated_token = jwt_auth.get_validated_token(token)
+            user = jwt_auth.get_user(validated_token)
+            if not user:
+                raise AuthenticationFailed('User not found')
+            username = user.username
+        except Exception as e:
+            logger.error(f"SSE authentication failed: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': {
+                    'code': 'INVALID_TOKEN',
+                    'message': 'Invalid or expired token'
+                }
+            }, status=401)
+
+    logger.info(f"SSE stream started for operation {operation_id} by user {username}")
 
     def event_generator():
         """Generator for SSE events."""

@@ -1050,47 +1050,116 @@ class PermissionService:
     4. No permission -> Deny (None)
 
     Final level = max(database_level, cluster_level)
+
+    OPTIMIZED: Uses batch loading to avoid N+1 queries.
     """
+
+    @classmethod
+    def _get_user_permission_maps(
+        cls,
+        user,
+        database_ids: List[str] = None,
+        cluster_ids: List[str] = None
+    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+        """
+        Load all permissions for user in batch.
+
+        Returns:
+            (database_permissions, cluster_permissions) - dicts mapping ID to level
+        """
+        from .models import ClusterPermission, DatabasePermission
+
+        db_permissions: Dict[str, int] = {}
+        cluster_permissions: Dict[str, int] = {}
+
+        # Load database permissions in one query
+        if database_ids:
+            db_perms = DatabasePermission.objects.filter(
+                user=user,
+                database_id__in=database_ids
+            ).values_list('database_id', 'level')
+
+            db_permissions = {str(db_id): level for db_id, level in db_perms}
+
+        # Load cluster permissions in one query
+        if cluster_ids:
+            cluster_perms = ClusterPermission.objects.filter(
+                user=user,
+                cluster_id__in=cluster_ids
+            ).values_list('cluster_id', 'level')
+
+            cluster_permissions = {str(c_id): level for c_id, level in cluster_perms}
+
+        return db_permissions, cluster_permissions
+
+    @classmethod
+    def get_user_levels_for_databases_bulk(
+        cls,
+        user,
+        databases: List[Database]
+    ) -> Dict[str, Optional[int]]:
+        """
+        Get permission levels for multiple databases in batch (2-3 queries total).
+
+        Args:
+            user: User instance
+            databases: List of Database instances (must have cluster_id loaded)
+
+        Returns:
+            Dict mapping database_id (str) to permission level (int or None)
+        """
+        from .models import PermissionLevel
+
+        if user.is_superuser:
+            return {str(db.id): PermissionLevel.ADMIN for db in databases}
+
+        # Collect IDs
+        database_ids = [str(db.id) for db in databases]
+        cluster_ids = list({
+            str(db.cluster_id) for db in databases
+            if db.cluster_id is not None
+        })
+
+        # Batch load permissions (2 queries)
+        db_perms, cluster_perms = cls._get_user_permission_maps(
+            user, database_ids, cluster_ids
+        )
+
+        # Calculate effective levels
+        result: Dict[str, Optional[int]] = {}
+        for db in databases:
+            db_id = str(db.id)
+            levels = []
+
+            # Direct database permission
+            if db_id in db_perms:
+                levels.append(db_perms[db_id])
+
+            # Inherited cluster permission
+            if db.cluster_id:
+                cluster_id = str(db.cluster_id)
+                if cluster_id in cluster_perms:
+                    levels.append(cluster_perms[cluster_id])
+
+            result[db_id] = max(levels) if levels else None
+
+        return result
 
     @classmethod
     def get_user_level_for_database(
         cls,
         user,
         database: Database
-    ) -> 'Optional[int]':
+    ) -> Optional[int]:
         """
         Get effective permission level for user on database.
 
         Returns:
             Permission level (int) or None if no access
         """
-        from .models import ClusterPermission, DatabasePermission, PermissionLevel
-
-        if user.is_superuser:
-            return PermissionLevel.ADMIN
-
-        levels = []
-
-        # Check direct database permission
-        db_perm = DatabasePermission.objects.filter(
-            user=user,
-            database=database
-        ).values_list('level', flat=True).first()
-
-        if db_perm is not None:
-            levels.append(db_perm)
-
-        # Check cluster permission (if database belongs to cluster)
-        if database.cluster_id:
-            cluster_perm = ClusterPermission.objects.filter(
-                user=user,
-                cluster_id=database.cluster_id
-            ).values_list('level', flat=True).first()
-
-            if cluster_perm is not None:
-                levels.append(cluster_perm)
-
-        return max(levels) if levels else None
+        # For single database, use bulk method with list of one
+        levels = cls.get_user_levels_for_databases_bulk(user, [database])
+        return levels.get(str(database.id))
 
     @classmethod
     def get_user_level_for_cluster(
@@ -1167,7 +1236,7 @@ class PermissionService:
         required_level: int
     ) -> Tuple[bool, List[str]]:
         """
-        Check permission for multiple databases.
+        Check permission for multiple databases (OPTIMIZED - O(3) queries).
 
         Returns:
             (all_allowed: bool, denied_ids: List[str])
@@ -1175,18 +1244,27 @@ class PermissionService:
         if user.is_superuser:
             return True, []
 
-        denied = []
-
-        databases = Database.objects.filter(
+        # Fetch databases with cluster info (1 query)
+        databases = list(Database.objects.filter(
             id__in=database_ids
-        ).select_related('cluster')
+        ).select_related('cluster').only('id', 'cluster_id'))
+
+        # Batch check permissions (2 queries)
+        levels = cls.get_user_levels_for_databases_bulk(user, databases)
+
+        # Find denied
+        denied = []
+        found_ids = set()
 
         for db in databases:
-            if not cls.has_permission(user, db, required_level):
-                denied.append(str(db.id))
+            db_id = str(db.id)
+            found_ids.add(db_id)
+
+            level = levels.get(db_id)
+            if level is None or level < required_level:
+                denied.append(db_id)
 
         # Check for missing/invalid database IDs
-        found_ids = {str(db.id) for db in databases}
         for db_id in database_ids:
             if str(db_id) not in found_ids:
                 denied.append(str(db_id))
