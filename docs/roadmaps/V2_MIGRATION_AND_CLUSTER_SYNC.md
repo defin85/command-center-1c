@@ -1,7 +1,8 @@
 # Roadmap: V2 Migration и Синхронизация кластеров
 
 > **Дата создания:** 2025-12-08
-> **Статус:** Draft
+> **Обновлено:** 2025-12-09
+> **Статус:** ✅ COMPLETED
 > **Приоритет:** High
 
 ---
@@ -310,6 +311,8 @@ Week 2:
 - [x] Создать v2 endpoints для extensions
 - [x] Мигрировать Frontend на v2
 - [x] Удалить v1 routes из Django
+- [x] SSE endpoint мигрирован на v2 (`/api/v2/operations/stream/`)
+- [x] API Gateway SSE proxy (`go-services/api-gateway/internal/handlers/sse_proxy.go`)
 - [ ] Тестирование всех страниц
 
 ### Задача 2: Discover Clusters
@@ -317,6 +320,21 @@ Week 2:
 - [x] Go Worker: discover_clusters.go
 - [x] Django: endpoint + event handler
 - [x] Event Subscriber: новый stream handler
-- [x] Frontend: DiscoverClustersModal
+- [x] Frontend: DiscoverClustersModal (`frontend/src/components/clusters/DiscoverClustersModal.tsx`)
 - [ ] Интеграционные тесты
 - [ ] E2E тесты
+
+---
+
+## Выполненные изменения (2025-12-09)
+
+### SSE Migration v1 → v2
+
+| Файл | Изменение |
+|------|-----------|
+| `orchestrator/apps/api_v2/views/operations.py` | Добавлен `operation_stream` view |
+| `orchestrator/apps/api_v2/urls.py` | Route `operations/stream/` |
+| `go-services/api-gateway/internal/handlers/sse_proxy.go` | **NEW** SSE proxy handler |
+| `go-services/api-gateway/internal/routes/router.go` | Регистрация SSE route |
+| `frontend/src/hooks/useOperationStream.ts` | URL изменен на v2 |
+| `orchestrator/config/urls.py` | Удален `api/v1/operations/` include |

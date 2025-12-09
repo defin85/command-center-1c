@@ -4,13 +4,19 @@ Operation endpoints for API v2.
 Provides action-based endpoints for batch operations management.
 """
 
+import json
 import logging
 
+import redis as redis_module
+from django.conf import settings
+from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.exceptions import AuthenticationFailed
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.operations.models import BatchOperation, Task
@@ -368,3 +374,166 @@ def cancel_operation(request):
         'cancelled': True,
         'message': 'Operation cancelled successfully',
     })
+
+
+# =============================================================================
+# SSE Streaming
+# =============================================================================
+
+@extend_schema(
+    tags=['v2'],
+    summary='Stream operation events (SSE)',
+    description='''
+    Real-time Server-Sent Events (SSE) stream for operation progress updates.
+
+    **Authentication:** Token must be passed via query parameter because EventSource
+    does not support custom headers.
+
+    **Event format:**
+    ```
+    data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
+    ```
+
+    **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING -> VERIFYING -> SUCCESS/FAILED
+    ''',
+    parameters=[
+        OpenApiParameter(
+            name='operation_id',
+            type=str,
+            required=True,
+            description='Operation ID (UUID) to stream events for'
+        ),
+        OpenApiParameter(
+            name='token',
+            type=str,
+            required=True,
+            description='JWT access token for authentication'
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description='SSE stream (text/event-stream)'),
+        400: ErrorResponseSerializer,
+        401: ErrorResponseSerializer,
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Auth via token query param (EventSource limitation)
+def operation_stream(request):
+    """
+    GET /api/v2/operations/stream/?operation_id=xxx&token=xxx
+
+    SSE endpoint for real-time operation updates.
+
+    NOTE: EventSource does not support custom headers, so token is passed via query parameter.
+
+    Client connects via EventSource and receives events in real-time:
+    - PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING -> VERIFYING -> SUCCESS/FAILED
+
+    Event format:
+        data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
+    """
+    operation_id = request.query_params.get('operation_id')
+    token = request.query_params.get('token')
+
+    # Validate required parameters
+    if not operation_id:
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'operation_id is required'
+            }
+        }, status=400)
+
+    if not token:
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'token is required'
+            }
+        }, status=401)
+
+    # Manual JWT authentication (EventSource limitation)
+    try:
+        jwt_auth = JWTAuthentication()
+        validated_token = jwt_auth.get_validated_token(token)
+        user = jwt_auth.get_user(validated_token)
+        if not user:
+            raise AuthenticationFailed('User not found')
+    except Exception as e:
+        logger.error(f"SSE authentication failed: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'INVALID_TOKEN',
+                'message': 'Invalid or expired token'
+            }
+        }, status=401)
+
+    logger.info(f"SSE stream requested for operation {operation_id} by user {user.username}")
+
+    def event_generator():
+        """Generator for SSE events."""
+        logger.info(f"event_generator: Starting for operation {operation_id}")
+
+        # Connect to Redis PubSub
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+        redis_conn = redis_module.from_url(redis_url, decode_responses=True)
+        pubsub = redis_conn.pubsub()
+        channel = f"operation:{operation_id}:events"
+        pubsub.subscribe(channel)
+        logger.info(f"event_generator: Subscribed to channel {channel}")
+
+        # Send initial state
+        try:
+            operation = BatchOperation.objects.get(id=operation_id)
+            logger.info(f"event_generator: Found operation with status {operation.status}")
+            initial_event = {
+                "version": "1.0",
+                "operation_id": str(operation_id),
+                "timestamp": timezone.now().isoformat(),
+                "state": operation.status.upper(),
+                "microservice": "orchestrator",
+                "message": f"Operation status: {operation.status}",
+                "metadata": {
+                    "operation_type": operation.operation_type,
+                    "created_at": operation.created_at.isoformat()
+                }
+            }
+            logger.info("event_generator: Sending initial event")
+            yield f"data: {json.dumps(initial_event)}\n\n"
+            logger.info("event_generator: Initial event sent")
+        except BatchOperation.DoesNotExist:
+            error_event = {
+                "error": "Operation not found",
+                "operation_id": str(operation_id)
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+            pubsub.unsubscribe()
+            pubsub.close()
+            redis_conn.close()
+            return
+
+        # Listen for events from Redis PubSub
+        try:
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    # Forward event to client
+                    yield f"data: {message['data']}\n\n"
+        except GeneratorExit:
+            # Client disconnected
+            logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
+        finally:
+            pubsub.unsubscribe()
+            pubsub.close()
+            redis_conn.close()
+
+    response = StreamingHttpResponse(
+        event_generator(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+    return response

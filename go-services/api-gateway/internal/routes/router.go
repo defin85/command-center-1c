@@ -61,6 +61,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	router.GET("/ws/service-mesh/", handlers.WebSocketServiceMeshProxy)
 
 	// API v2 routes (v1 removed after migration - 2025-11-27)
+	// SSE routes (e.g., /operations/stream/) handled via sseRoutes map in orchestrator_routes.go
 	setupV2Routes(router, cfg)
 
 	return router

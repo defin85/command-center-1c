@@ -34,6 +34,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/operations/cancel-operation/", OperationID: "v2_operations_cancel_operation_create"},
 	{Method: "GET", Path: "/operations/get-operation/", OperationID: "v2_operations_get_operation_retrieve"},
 	{Method: "GET", Path: "/operations/list-operations/", OperationID: "v2_operations_list_operations_retrieve"},
+	{Method: "GET", Path: "/operations/stream/", OperationID: "v2_operations_stream_retrieve"},
 	{Method: "GET", Path: "/service-mesh/get-history/", OperationID: "v2_service_mesh_get_history_retrieve"},
 	{Method: "GET", Path: "/service-mesh/get-metrics/", OperationID: "v2_service_mesh_get_metrics_retrieve"},
 	{Method: "GET", Path: "/system/config/", OperationID: "v2_system_config_retrieve"},

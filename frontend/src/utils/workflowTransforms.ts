@@ -280,13 +280,13 @@ export function convertExecutionToLegacy(detail: WorkflowExecutionDetail): Legac
  * Convert WorkflowValidateResponse to legacy ValidationResult format.
  */
 export function convertValidationToLegacy(response: WorkflowValidateResponse): LegacyValidationResult {
-  const errors = (response.errors ?? []).map(msg => ({
+  const errors: LegacyValidationResult['errors'] = (response.errors ?? []).map(msg => ({
     severity: 'error' as const,
-    message: msg,
+    message: typeof msg === 'string' ? msg : msg.message,
   }))
-  const warnings = (response.warnings ?? []).map(msg => ({
+  const warnings: LegacyValidationResult['warnings'] = (response.warnings ?? []).map(msg => ({
     severity: 'warning' as const,
-    message: msg,
+    message: typeof msg === 'string' ? msg : msg.message,
   }))
 
   return {

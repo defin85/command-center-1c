@@ -41,7 +41,8 @@ export const useOperationStream = (
       }
 
       // EventSource doesn't support custom headers, so we pass token via query parameter
-      const url = `/api/v1/operations/${operationId}/stream?token=${token}`
+      // v2 endpoint uses query params for both operation_id and token
+      const url = `/api/v2/operations/stream/?operation_id=${operationId}&token=${token}`
       eventSource = new EventSource(url)
 
       eventSource.onopen = () => {

@@ -112,7 +112,7 @@ const WorkflowList = () => {
         new_name: `${name} (Copy)`
       })
       message.success('Workflow cloned')
-      navigate(`/workflows/${cloned.id}`)
+      navigate(`/workflows/${cloned.workflow.id}`)
     } catch (_error) {
       message.error('Failed to clone workflow')
     }

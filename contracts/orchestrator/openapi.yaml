@@ -521,503 +521,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenVerify'
           description: ''
-  /api/v1/operations/:
-    get:
-      operationId: v1_operations_list
-      description: ViewSet for managing batch operations.
-      parameters:
-      - in: query
-        name: operation_type
-        schema:
-          type: string
-          enum:
-          - block_sessions
-          - create
-          - delete
-          - discover_clusters
-          - install_extension
-          - lock_scheduled_jobs
-          - query
-          - sync_cluster
-          - terminate_sessions
-          - unblock_sessions
-          - unlock_scheduled_jobs
-          - update
-        description: |-
-          * `create` - Create
-          * `update` - Update
-          * `delete` - Delete
-          * `query` - Query
-          * `install_extension` - Install Extension
-          * `lock_scheduled_jobs` - Lock Scheduled Jobs
-          * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
-          * `terminate_sessions` - Terminate Sessions
-          * `block_sessions` - Block Sessions
-          * `unblock_sessions` - Unblock Sessions
-          * `sync_cluster` - Sync Cluster
-          * `discover_clusters` - Discover Clusters
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - cancelled
-          - completed
-          - failed
-          - pending
-          - processing
-          - queued
-        description: |-
-          * `pending` - Pending
-          * `queued` - Queued
-          * `processing` - Processing
-          * `completed` - Completed
-          * `failed` - Failed
-          * `cancelled` - Cancelled
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedBatchOperationList'
-          description: ''
-    post:
-      operationId: v1_operations_create
-      description: ViewSet for managing batch operations.
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchOperation'
-          description: ''
-  /api/v1/operations/{operation_id}/callback:
-    post:
-      operationId: v1_operations_callback_create
-      description: |-
-        Callback endpoint для Go Worker.
-
-        POST /api/v1/operations/{operation_id}/callback
-
-        Payload (OperationResult):
-        {
-            "operation_id": "uuid",
-            "status": "completed|failed|timeout",
-            "results": [
-                {
-                    "database_id": "uuid",
-                    "success": true,
-                    "data": {...},
-                    "error": null,
-                    "duration_seconds": 2.5
-                }
-            ],
-            "summary": {
-                "total": 10,
-                "succeeded": 8,
-                "failed": 2
-            },
-            "worker_id": "worker-1"
-        }
-      parameters:
-      - in: path
-        name: operation_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v1/operations/{operation_id}/stream:
-    get:
-      operationId: v1_operations_stream_retrieve
-      description: |-
-        SSE endpoint для real-time updates операции.
-
-        GET /api/v1/operations/{operation_id}/stream?token={jwt_token}
-
-        NOTE: EventSource не поддерживает custom headers, поэтому токен передается через query parameter.
-
-        Клиент подключается через EventSource и получает события в real-time:
-        - PENDING → QUEUED → PROCESSING → UPLOADING → INSTALLING → VERIFYING → SUCCESS/FAILED
-
-        Event format:
-        data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
-      parameters:
-      - in: path
-        name: operation_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/v1/operations/{id}/:
-    get:
-      operationId: v1_operations_retrieve
-      description: ViewSet for managing batch operations.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Batch Operation.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchOperation'
-          description: ''
-    put:
-      operationId: v1_operations_update
-      description: ViewSet for managing batch operations.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Batch Operation.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchOperation'
-          description: ''
-    patch:
-      operationId: v1_operations_partial_update
-      description: ViewSet for managing batch operations.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Batch Operation.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedBatchOperation'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedBatchOperation'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedBatchOperation'
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchOperation'
-          description: ''
-    delete:
-      operationId: v1_operations_destroy
-      description: ViewSet for managing batch operations.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Batch Operation.
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '204':
-          description: No response body
-  /api/v1/operations/{id}/cancel/:
-    post:
-      operationId: v1_operations_cancel_create
-      description: Cancel a batch operation.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Batch Operation.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/BatchOperation'
-        required: true
-      security:
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchOperation'
-          description: ''
-  /api/v1/operations/service-mesh/history/{service}/:
-    get:
-      operationId: v1_operations_service_mesh_history_retrieve
-      description: Returns time-series metrics for charts (ops/min, latency, error
-        rate)
-      summary: Get historical metrics for a service
-      parameters:
-      - in: query
-        name: minutes
-        schema:
-          type: integer
-          default: 30
-        description: 'Number of minutes of history (default: 30)'
-      - in: path
-        name: service
-        schema:
-          type: string
-        description: Service name (e.g., api-gateway, worker)
-        required: true
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  service:
-                    type: string
-                  minutes:
-                    type: integer
-                  data_points:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        timestamp:
-                          type: string
-                          format: date-time
-                        ops_per_minute:
-                          type: number
-                        p95_latency_ms:
-                          type: number
-                        error_rate:
-                          type: number
-          description: Historical metrics data points
-        '400':
-          description: Invalid service name
-        '500':
-          description: Prometheus unavailable
-  /api/v1/operations/service-mesh/metrics/:
-    get:
-      operationId: v1_operations_service_mesh_metrics_retrieve
-      description: Returns real-time metrics for all services including ops/min, latency,
-        error rate
-      summary: Get current service mesh metrics
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  services:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        display_name:
-                          type: string
-                        status:
-                          type: string
-                          enum:
-                          - healthy
-                          - degraded
-                          - critical
-                        ops_per_minute:
-                          type: number
-                        active_operations:
-                          type: integer
-                        p95_latency_ms:
-                          type: number
-                        error_rate:
-                          type: number
-                        last_updated:
-                          type: string
-                          format: date-time
-                  connections:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        source:
-                          type: string
-                        target:
-                          type: string
-                        requests_per_minute:
-                          type: number
-                        avg_latency_ms:
-                          type: number
-                  overall_health:
-                    type: string
-                    enum:
-                    - healthy
-                    - degraded
-                    - critical
-                  timestamp:
-                    type: string
-                    format: date-time
-          description: Service mesh metrics
-        '500':
-          description: Prometheus unavailable
-  /api/v1/operations/service-mesh/operations/:
-    get:
-      operationId: v1_operations_service_mesh_operations_retrieve
-      description: Returns recent batch operations with optional service filter
-      summary: Get recent operations
-      parameters:
-      - in: query
-        name: limit
-        schema:
-          type: integer
-          default: 50
-        description: 'Maximum number of operations to return (default: 50)'
-      - in: query
-        name: service
-        schema:
-          type: string
-        description: Filter by service name
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: Filter by operation status
-      tags:
-      - v1
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  operations:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        name:
-                          type: string
-                        operation_type:
-                          type: string
-                        status:
-                          type: string
-                        service:
-                          type: string
-                        duration_seconds:
-                          type: number
-                        created_at:
-                          type: string
-                          format: date-time
-                        completed_at:
-                          type: string
-                          format: date-time
-                        total_tasks:
-                          type: integer
-                        completed_tasks:
-                          type: integer
-                        failed_tasks:
-                          type: integer
-                  total:
-                    type: integer
-          description: List of recent operations
   /api/v2/audit/log-compensation/:
     post:
       operationId: v2_audit_log_compensation_create
@@ -2149,6 +1652,56 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/stream/:
+    get:
+      operationId: v2_operations_stream_retrieve
+      description: "\n    Real-time Server-Sent Events (SSE) stream for operation\
+        \ progress updates.\n\n    **Authentication:** Token must be passed via query\
+        \ parameter because EventSource\n    does not support custom headers.\n\n\
+        \    **Event format:**\n    ```\n    data: {\"state\": \"PROCESSING\", \"\
+        microservice\": \"worker\", \"message\": \"...\", \"timestamp\": \"...\"}\n\
+        \    ```\n\n    **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING\
+        \ -> INSTALLING -> VERIFYING -> SUCCESS/FAILED\n    "
+      summary: Stream operation events (SSE)
+      parameters:
+      - in: query
+        name: operation_id
+        schema:
+          type: string
+        description: Operation ID (UUID) to stream events for
+        required: true
+      - in: query
+        name: token
+        schema:
+          type: string
+        description: JWT access token for authentication
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/service-mesh/get-history/:
     get:
       operationId: v2_service_mesh_get_history_retrieve
@@ -4301,26 +3854,6 @@ components:
         * `healthy` - healthy
         * `degraded` - degraded
         * `critical` - critical
-    PaginatedBatchOperationList:
-      type: object
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/BatchOperation'
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.
@@ -4343,94 +3876,6 @@ components:
           default: 300
       required:
       - parallel_nodes
-    PatchedBatchOperation:
-      type: object
-      description: Serializer for BatchOperation model.
-      properties:
-        id:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-        operation_type:
-          $ref: '#/components/schemas/OperationTypeEnum'
-        target_entity:
-          type: string
-          description: 1C entity name (e.g., Справочник_Пользователи)
-          maxLength: 255
-        status:
-          allOf:
-          - $ref: '#/components/schemas/BatchOperationStatusEnum'
-          readOnly: true
-        progress:
-          type: integer
-          readOnly: true
-          description: Progress percentage (0-100)
-        total_tasks:
-          type: integer
-          readOnly: true
-          description: Total number of tasks
-        completed_tasks:
-          type: integer
-          readOnly: true
-          description: Number of completed tasks
-        failed_tasks:
-          type: integer
-          readOnly: true
-          description: Number of failed tasks
-        payload:
-          type: object
-          additionalProperties: {}
-          description: Operation payload/parameters
-        config:
-          type: object
-          additionalProperties: {}
-          description: Execution configuration (timeout, retries, etc.)
-        task_id:
-          type: string
-          nullable: true
-          maxLength: 255
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        duration_seconds:
-          type: string
-          readOnly: true
-        success_rate:
-          type: string
-          readOnly: true
-        created_by:
-          type: string
-          description: User who created operation
-          maxLength: 255
-        metadata:
-          type: object
-          additionalProperties: {}
-          description: Additional metadata
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-        database_names:
-          type: string
-          readOnly: true
-        tasks:
-          type: array
-          items:
-            $ref: '#/components/schemas/Task'
-          readOnly: true
     PrometheusMetric:
       type: object
       description: Prometheus metrics for a service.
