@@ -3,9 +3,10 @@
 > Унификация UI компонентов и единая система запуска операций CommandCenter1C
 
 **Дата создания:** 2025-12-09
-**Статус:** Draft
+**Статус:** In Progress (Phase 2 Complete)
 **Приоритет:** Medium
 **Оценка:** 4-5 недель
+**Прогресс:** Phase 1-2 завершены (2025-12-09)
 
 ---
 
@@ -24,39 +25,39 @@
 
 ## Проблемы текущего состояния
 
-### 1. Несогласованность форм
+### 1. ~~Несогласованность форм~~ ✅ FIXED (Phase 1)
 
 | Форма | RAS Server | Cluster Service URL |
 |-------|------------|---------------------|
 | Add New Cluster | ✅ | ✅ |
-| Discover Clusters | ✅ | ❌ |
+| Discover Clusters | ✅ | ✅ |
 
-### 2. Дублирование страниц операций
+### 2. ~~Дублирование страниц операций~~ ✅ FIXED (Phase 2)
 
 ```
-/operations           - Список batch-операций (polling 5 сек)
-/operation-monitor    - Real-time мониторинг через SSE
-/installation-monitor - Polling прогресса установки (2 сек)
-/service-mesh         - RecentOperationsTable (дублирует /operations)
+/operations           - Unified Operations Center (табы: List + Live Monitor)
+/operation-monitor    - ✅ Редирект на /operations?tab=monitor
+/installation-monitor - ✅ Редирект на /operations?tab=list
+/service-mesh         - ✅ Использует unified navigation
 ```
 
-### 3. Выявленные баги
+### 3. ~~Выявленные баги~~ ✅ FIXED (Phase 1-2)
 
-- **URL parameter inconsistency:** `/service-mesh` использует `?id=` вместо `?operation=`
-- **Dashboard пустой:** нет real-time метрик и виджетов
-- **Polling vs SSE:** `/installation-monitor` использует polling вместо SSE
+- ~~**URL parameter inconsistency:** `/service-mesh` использует `?id=` вместо `?operation=`~~ ✅ Fixed
+- **Dashboard пустой:** нет real-time метрик и виджетов (Phase 6)
+- ~~**Polling vs SSE:** `/installation-monitor` использует polling вместо SSE~~ ✅ Fixed (unified в /operations)
 
-### 4. Разрозненные точки запуска операций
+### 4. ~~Разрозненные точки запуска операций~~ ✅ FIXED (Phase 2)
 
 | Место | Операция | Статус |
 |-------|----------|--------|
+| `/operations` | **New Operation Wizard** | ✅ Единая точка входа |
 | `/databases` | Install Extension | Кнопка на каждой строке |
-| `/installation-monitor` | Batch Install OData | Отдельная страница |
 | `/clusters` | Sync Cluster | Кнопка на строке |
 | `/clusters` | Discover Clusters | Отдельная модалка |
 | `/workflows` | Execute Workflow | Отдельная страница |
 
-**Нет единой точки запуска всех типов операций.**
+**✅ Создан New Operation Wizard - единая точка запуска всех типов операций.**
 
 ---
 
@@ -497,40 +498,60 @@ Dashboard
 
 ## Структура файлов после унификации
 
+### ✅ Реализовано (Phase 2)
+
 ```
 frontend/src/
 ├── pages/
-│   ├── Dashboard/              # Улучшенный с виджетами
-│   ├── Clusters/               # Без изменений
-│   ├── Databases/              # + Context Menu + Bulk Actions
-│   │   ├── Databases.tsx
+│   ├── Operations/                          # ✅ Unified Operations Center
+│   │   ├── index.tsx                        # Re-exports
+│   │   ├── OperationsPage.tsx               # Tabs: List + Live Monitor
+│   │   ├── types.ts                         # UIBatchOperation, UITask
+│   │   ├── utils.ts                         # getStatusColor, getOperationTypeLabel
 │   │   └── components/
-│   │       └── DatabaseActionsMenu.tsx  # NEW
-│   ├── Operations/             # Unified Operations Center
-│   │   ├── OperationsPage.tsx  # Tabs: List + Live Monitor
-│   │   ├── components/
-│   │   │   ├── OperationsTable.tsx
-│   │   │   ├── OperationDetails.tsx
-│   │   │   ├── LiveMonitor.tsx
-│   │   │   └── NewOperationWizard.tsx  # NEW (4-step wizard)
-│   │   └── hooks/
-│   │       └── useOperationStream.ts
-│   ├── Workflows/              # + input_schema support
-│   └── ServiceMesh/            # Использует общий OperationsTable
+│   │       ├── OperationsTable.tsx          # ✅ Переиспользуемая таблица
+│   │       ├── OperationDetailsModal.tsx    # ✅ Модалка деталей
+│   │       ├── LiveMonitorTab.tsx           # ✅ SSE real-time monitoring
+│   │       └── NewOperationWizard/          # ✅ 4-step wizard
+│   │           ├── index.tsx                # Wizard с Steps
+│   │           ├── types.ts                 # OperationType, OperationConfig
+│   │           ├── SelectTypeStep.tsx       # Step 1: выбор типа
+│   │           ├── SelectTargetStep.tsx     # Step 2: выбор БД
+│   │           ├── ConfigureStep.tsx        # Step 3: параметры
+│   │           └── ReviewStep.tsx           # Step 4: подтверждение
+│   ├── InstallationMonitor/                 # 🔲 Удалить в Phase 3
+│   └── OperationMonitor/                    # 🔲 Удалить в Phase 3
+│
+├── hooks/
+│   └── useOperationStream.ts                # ✅ SSE хук (улучшен: memory leak fix)
+│
+├── utils/
+│   └── formatters.ts                        # ✅ NEW: formatFileSize
 │
 ├── components/
-│   ├── clusters/
-│   │   └── DiscoverClustersModal.tsx  # + cluster_service_url
-│   ├── operations/             # Shared operation components
-│   │   ├── OperationsTable.tsx
-│   │   ├── OperationStatusBadge.tsx
-│   │   └── DynamicForm.tsx     # NEW - JSON Schema based form
-│   └── layout/
-│       └── MainLayout.tsx      # 7 menu items
+│   ├── layout/
+│   │   └── MainLayout.tsx                   # ✅ 7 menu items
+│   └── service-mesh/
+│       ├── RecentOperationsTable.tsx        # ✅ Использует shared utils
+│       └── ServiceMeshTab.tsx               # ✅ Unified navigation
 │
-└── api/
-    └── transforms/
-        └── operationTransforms.ts  # Единый трансформер
+└── App.tsx                                  # ✅ Редиректы deprecated routes
+```
+
+### 🔲 Планируется (Phase 3-6)
+
+```
+frontend/src/
+├── pages/
+│   ├── Dashboard/              # Phase 6: + виджеты
+│   ├── Databases/              # Phase 4: + Context Menu + Bulk Actions
+│   │   └── components/
+│   │       └── DatabaseActionsMenu.tsx
+│   └── Workflows/              # Phase 5: + input_schema support
+│
+└── components/
+    └── operations/
+        └── DynamicForm.tsx     # Phase 5: JSON Schema based form
 ```
 
 ---
@@ -681,6 +702,14 @@ class Workflow(models.Model):
   - Меню сокращено с 9 до 7 пунктов
   - Добавлены редиректы /installation-monitor → /operations, /operation-monitor → /operations
   - Обновлён ServiceMeshTab для использования unified Operations
+- Bug fixes после code review:
+  - Fixed memory leak в useOperationStream (сброс state при смене operationId)
+  - Добавлен MAX_EVENTS=1000 лимит для предотвращения переполнения памяти
+  - Добавлен AbortController для предотвращения race conditions при polling
+  - Fixed preselection race condition с useRef
+  - Добавлен Alert UI для отображения ошибок загрузки
+  - Вынесен formatFileSize в shared utils/formatters.ts
+- Commit: `0b2e3cd feat(frontend): Unified Operations Center - Phase 2 complete`
 
 **v2.1 (2025-12-09):**
 - ✅ Phase 1 выполнена:
