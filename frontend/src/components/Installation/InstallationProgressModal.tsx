@@ -192,7 +192,7 @@ export const InstallationProgressModal: React.FC<InstallationProgressModalProps>
                             type="primary"
                             icon={<MonitorOutlined />}
                             onClick={() => {
-                                navigate(`/operation-monitor?operation=${operationId}`)
+                                navigate(`/operations?tab=monitor&operation=${operationId}`)
                                 onClose()
                             }}
                         >
