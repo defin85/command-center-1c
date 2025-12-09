@@ -54,7 +54,7 @@ const ServiceMeshTab: React.FC = () => {
   // Handle operation click
   const handleOperationClick = useCallback((operationId: string) => {
     // Navigate to operation details
-    navigate(`/operation-monitor?id=${operationId}`)
+    navigate(`/operation-monitor?operation=${operationId}`)
   }, [navigate])
 
   // Show loading state if no services yet

@@ -568,6 +568,7 @@ class OperationsService:
     def enqueue_discover_clusters(
         cls,
         ras_server: str,
+        cluster_service_url: str = "",
         operation_id: Optional[str] = None,
         cluster_user: str = "",
         cluster_pwd: str = "",
@@ -580,6 +581,7 @@ class OperationsService:
 
         Args:
             ras_server: RAS server address (host:port)
+            cluster_service_url: RAS Adapter service URL (for future use)
             operation_id: Optional existing operation ID
             cluster_user: Cluster admin username (optional)
             cluster_pwd: Cluster admin password (optional)
@@ -611,6 +613,7 @@ class OperationsService:
         # Build payload for Worker
         discover_data = {
             "ras_server": ras_server,
+            "cluster_service_url": cluster_service_url,  # For future Worker use
             "cluster_user": cluster_user,
             "cluster_pwd": cluster_pwd,
         }

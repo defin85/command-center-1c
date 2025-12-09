@@ -971,6 +971,7 @@ def discover_clusters(request):
     Request Body:
         {
             "ras_server": "localhost:1545",
+            "cluster_service_url": "http://localhost:8188",  // optional, for future use
             "cluster_user": "admin",  // optional
             "cluster_pwd": "password"  // optional
         }
@@ -999,7 +1000,8 @@ def discover_clusters(request):
             }
         }, status=400)
 
-    # Optional credentials
+    # Optional fields
+    cluster_service_url = request.data.get('cluster_service_url', '')  # For future Worker use
     cluster_user = request.data.get('cluster_user', '')
     cluster_pwd = request.data.get('cluster_pwd', '')
 
@@ -1012,6 +1014,7 @@ def discover_clusters(request):
         target_entity=ras_server,
         payload={
             'ras_server': ras_server,
+            'cluster_service_url': cluster_service_url,
             'cluster_user': cluster_user,
         },
         status=BatchOperation.STATUS_QUEUED,
@@ -1024,6 +1027,7 @@ def discover_clusters(request):
 
     result = OperationsService.enqueue_discover_clusters(
         ras_server=ras_server,
+        cluster_service_url=cluster_service_url,
         operation_id=str(operation.id),
         cluster_user=cluster_user,
         cluster_pwd=cluster_pwd,
