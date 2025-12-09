@@ -25,7 +25,14 @@ export const useOperationStream = (
   const [error, setError] = useState<string | null>(null)
   const [isConnected, setIsConnected] = useState<boolean>(false)
 
+  const MAX_EVENTS = 1000
+
   useEffect(() => {
+    // Reset state when operationId changes
+    setEvents([])
+    setCurrentState('PENDING')
+    setError(null)
+
     if (!operationId) {
       return
     }
@@ -62,7 +69,12 @@ export const useOperationStream = (
             return
           }
 
-          setEvents((prev) => [...prev, data])
+          setEvents((prev) => {
+            const updated = [...prev, data]
+            return updated.length > MAX_EVENTS
+              ? updated.slice(-MAX_EVENTS)
+              : updated
+          })
           setCurrentState(data.state)
           setError(null)
         } catch (err) {

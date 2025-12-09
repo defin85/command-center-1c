@@ -51,10 +51,9 @@ const ServiceMeshTab: React.FC = () => {
     setSelectedService(null)
   }, [])
 
-  // Handle operation click
+  // Handle operation click - navigate to unified Operations page with monitor tab
   const handleOperationClick = useCallback((operationId: string) => {
-    // Navigate to operation details
-    navigate(`/operation-monitor?operation=${operationId}`)
+    navigate(`/operations?tab=monitor&operation=${operationId}`)
   }, [navigate])
 
   // Show loading state if no services yet

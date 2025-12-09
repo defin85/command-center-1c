@@ -1,0 +1,243 @@
+/**
+ * Types for NewOperationWizard component.
+ * Defines operation types, wizard state, and component props.
+ */
+
+import type { Database } from '../../../../api/generated/model/database'
+
+/**
+ * Available operation types categorized by their execution method
+ */
+export type OperationType =
+  // RAS Operations - executed via RAS adapter
+  | 'lock_scheduled_jobs'
+  | 'unlock_scheduled_jobs'
+  | 'block_sessions'
+  | 'unblock_sessions'
+  | 'terminate_sessions'
+  // OData Operations - executed via OData protocol
+  | 'install_extension'
+  | 'query'
+  // System Operations - internal system operations
+  | 'sync_cluster'
+  | 'health_check'
+
+/**
+ * Operation category for grouping in UI
+ */
+export type OperationCategory = 'ras' | 'odata' | 'system'
+
+/**
+ * Configuration for operation type display in UI
+ */
+export interface OperationTypeConfig {
+  type: OperationType
+  label: string
+  description: string
+  icon: string
+  category: OperationCategory
+  /** Whether this operation requires additional configuration in Step 3 */
+  requiresConfig: boolean
+}
+
+/**
+ * All available operation types with their display configuration
+ */
+export const OPERATION_TYPES: OperationTypeConfig[] = [
+  // RAS Operations
+  {
+    type: 'lock_scheduled_jobs',
+    label: 'Lock Scheduled Jobs',
+    description: 'Prevent scheduled jobs from running',
+    icon: 'LockOutlined',
+    category: 'ras',
+    requiresConfig: false,
+  },
+  {
+    type: 'unlock_scheduled_jobs',
+    label: 'Unlock Scheduled Jobs',
+    description: 'Allow scheduled jobs to run',
+    icon: 'UnlockOutlined',
+    category: 'ras',
+    requiresConfig: false,
+  },
+  {
+    type: 'block_sessions',
+    label: 'Block Sessions',
+    description: 'Block new user connections',
+    icon: 'StopOutlined',
+    category: 'ras',
+    requiresConfig: true,
+  },
+  {
+    type: 'unblock_sessions',
+    label: 'Unblock Sessions',
+    description: 'Allow new user connections',
+    icon: 'CheckCircleOutlined',
+    category: 'ras',
+    requiresConfig: false,
+  },
+  {
+    type: 'terminate_sessions',
+    label: 'Terminate Sessions',
+    description: 'Disconnect active user sessions',
+    icon: 'CloseCircleOutlined',
+    category: 'ras',
+    requiresConfig: true,
+  },
+  // OData Operations
+  {
+    type: 'install_extension',
+    label: 'Install Extension',
+    description: 'Install .cfe extension to databases',
+    icon: 'RocketOutlined',
+    category: 'odata',
+    requiresConfig: true,
+  },
+  {
+    type: 'query',
+    label: 'Execute Query',
+    description: 'Run OData query on databases',
+    icon: 'SearchOutlined',
+    category: 'odata',
+    requiresConfig: true,
+  },
+  // System Operations
+  {
+    type: 'sync_cluster',
+    label: 'Sync Cluster',
+    description: 'Synchronize cluster data with RAS',
+    icon: 'SyncOutlined',
+    category: 'system',
+    requiresConfig: false,
+  },
+  {
+    type: 'health_check',
+    label: 'Health Check',
+    description: 'Check database connectivity',
+    icon: 'HeartOutlined',
+    category: 'system',
+    requiresConfig: false,
+  },
+]
+
+/**
+ * Category configuration for UI grouping
+ */
+export const OPERATION_CATEGORIES: Record<OperationCategory, { label: string; order: number }> = {
+  ras: { label: 'RAS Operations', order: 1 },
+  odata: { label: 'OData Operations', order: 2 },
+  system: { label: 'System Operations', order: 3 },
+}
+
+/**
+ * Data submitted when wizard completes
+ */
+export interface NewOperationData {
+  operationType: OperationType
+  databaseIds: string[]
+  config: OperationConfig
+}
+
+/**
+ * Internal wizard state
+ */
+export interface WizardState {
+  currentStep: number
+  operationType: OperationType | null
+  selectedDatabases: string[]
+  config: OperationConfig
+}
+
+/**
+ * Props for NewOperationWizard main component
+ */
+export interface NewOperationWizardProps {
+  visible: boolean
+  onClose: () => void
+  onSubmit: (data: NewOperationData) => Promise<void>
+  /** Pre-selected database IDs (e.g., from context menu) */
+  preselectedDatabases?: string[]
+}
+
+/**
+ * Props for SelectTypeStep component
+ */
+export interface SelectTypeStepProps {
+  selectedType: OperationType | null
+  onSelect: (type: OperationType) => void
+}
+
+/**
+ * Props for SelectTargetStep component
+ */
+export interface SelectTargetStepProps {
+  selectedDatabases: string[]
+  onSelectionChange: (ids: string[]) => void
+  preselectedDatabases?: string[]
+}
+
+/**
+ * Operation-specific configuration fields
+ */
+export interface OperationConfig {
+  // RAS - block_sessions
+  message?: string
+  permission_code?: string
+  // RAS - terminate_sessions
+  filter_by_app?: string
+  exclude_admin?: boolean
+  // OData - install_extension
+  extension_file?: File
+  safe_mode?: boolean
+  // OData - query
+  entity?: string
+  filter?: string
+  select?: string
+  top?: number
+}
+
+/**
+ * Required fields by operation type
+ */
+export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof OperationConfig)[]>> = {
+  install_extension: ['extension_file'],
+  query: ['entity'],
+  block_sessions: ['message'],
+}
+
+/**
+ * Props for ConfigureStep component
+ */
+export interface ConfigureStepProps {
+  operationType: OperationType | null
+  config: OperationConfig
+  onConfigChange: (config: OperationConfig) => void
+}
+
+/**
+ * Props for ReviewStep component
+ */
+export interface ReviewStepProps {
+  operationType: OperationType | null
+  selectedDatabases: string[]
+  config: OperationConfig
+  databases: Database[]
+}
+
+/**
+ * Extended database type with cluster info for table display
+ */
+export interface DatabaseWithCluster extends Database {
+  clusterName?: string
+  clusterId?: string
+}
+
+/**
+ * Filter state for database selection table
+ */
+export interface DatabaseFilters {
+  search: string
+  clusterId: string | null
+  status: string | null
+}

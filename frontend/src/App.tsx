@@ -4,12 +4,10 @@ import { ConfigProvider, App as AntApp } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Dashboard } from './pages/Dashboard/Dashboard'
-import { Operations } from './pages/Operations/Operations'
+import { Operations } from './pages/Operations'
 import { Databases } from './pages/Databases/Databases'
 import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
-import { InstallationMonitorPage } from './pages/InstallationMonitor/InstallationMonitorPage'
-import { OperationMonitor } from './pages/OperationMonitor'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
 import { ServiceMeshPage } from './pages/ServiceMesh'
 import { Login } from './pages/Login/Login'
@@ -117,20 +115,9 @@ function App() {
               </MainLayout>
             </ProtectedRoute>
           } />
-          <Route path="/installation-monitor" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <InstallationMonitorPage />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/operation-monitor" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <OperationMonitor />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
+          {/* Legacy routes - redirect to unified Operations page */}
+          <Route path="/installation-monitor" element={<Navigate to="/operations?tab=list" replace />} />
+          <Route path="/operation-monitor" element={<Navigate to="/operations?tab=monitor" replace />} />
           <Route path="/system-status" element={
             <ProtectedRoute>
               <MainLayout>

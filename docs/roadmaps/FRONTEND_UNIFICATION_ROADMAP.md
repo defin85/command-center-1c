@@ -563,14 +563,14 @@ Sidebar (7 пунктов вместо 9):
 
 ## Timeline
 
-| Phase | Название | Оценка | Зависимости |
-|-------|----------|--------|-------------|
-| 1 | Quick Fixes | 1-2 дня | - |
-| 2 | Unified Operations Center | 1 неделя | Phase 1 |
-| 3 | Удаление дублей | 3-5 дней | Phase 2 |
-| 4 | Context Menu Actions | 1 неделя | Phase 2 |
-| 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 |
-| 6 | Dashboard Improvements | 1 неделя | Phase 2 |
+| Phase | Название | Оценка | Зависимости | Статус |
+|-------|----------|--------|-------------|--------|
+| 1 | Quick Fixes | 1-2 дня | - | ✅ DONE |
+| 2 | Unified Operations Center | 1 неделя | Phase 1 | ✅ DONE |
+| 3 | Удаление дублей | 3-5 дней | Phase 2 | 🔲 TODO |
+| 4 | Context Menu Actions | 1 неделя | Phase 2 | 🔲 TODO |
+| 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | 🔲 TODO |
+| 6 | Dashboard Improvements | 1 неделя | Phase 2 | 🔲 TODO |
 
 **Total:** 4-6 недель (Phase 6 опционально)
 
@@ -578,19 +578,21 @@ Sidebar (7 пунктов вместо 9):
 
 ## Критерии готовности
 
-### Phase 1
-- [ ] Discover Clusters имеет поле Cluster Service URL
-- [ ] URL parameter fix в RecentOperationsTable
+### Phase 1 ✅ DONE (2025-12-09)
+- [x] Discover Clusters имеет поле Cluster Service URL
+- [x] URL parameter fix в RecentOperationsTable (`?id` → `?operation`)
 
-### Phase 2
-- [ ] Operations Center с табами List + Live Monitor
-- [ ] New Operation Wizard (4 steps)
-- [ ] Поддержка всех типов операций
+### Phase 2 ✅ DONE (2025-12-09)
+- [x] Operations Center с табами List + Live Monitor
+- [x] New Operation Wizard (4 steps)
+- [x] Поддержка всех типов операций (RAS, OData, System)
+- [x] Меню: 7 пунктов (убраны Installation Monitor, Operation Monitor)
+- [x] Редиректы со старых URL на unified /operations
 
 ### Phase 3
-- [ ] `/installation-monitor` удалён
-- [ ] `/operation-monitor` удалён (встроен)
-- [ ] Меню: 7 пунктов
+- [ ] `/pages/InstallationMonitor/` удалён
+- [ ] `/pages/OperationMonitor/` удалён
+- [ ] Удаление неиспользуемых transforms
 
 ### Phase 4
 - [ ] Context menu на каждой БД
@@ -664,11 +666,27 @@ class Workflow(models.Model):
 
 ---
 
-**Версия:** 2.0
+**Версия:** 3.0
 **Автор:** AI Assistant
 **Последнее обновление:** 2025-12-09
 
 ### Changelog
+
+**v3.0 (2025-12-09):**
+- ✅ Phase 2 выполнена полностью:
+  - Создан OperationsPage с табами (All Operations + Live Monitor)
+  - Создан NewOperationWizard с 4 шагами (SelectType, SelectTarget, Configure, Review)
+  - Интегрирован SSE мониторинг через useOperationStream хук
+  - Рефакторинг структуры: вынесены OperationsTable, OperationDetailsModal, utils
+  - Меню сокращено с 9 до 7 пунктов
+  - Добавлены редиректы /installation-monitor → /operations, /operation-monitor → /operations
+  - Обновлён ServiceMeshTab для использования unified Operations
+
+**v2.1 (2025-12-09):**
+- ✅ Phase 1 выполнена:
+  - Добавлено поле Cluster Service URL в DiscoverClustersModal
+  - Исправлен URL parameter в ServiceMeshTab (`?id` → `?operation`)
+- Обновлён timeline с колонкой статуса
 
 **v2.0 (2025-12-09):**
 - Добавлена архитектура Unified Operations Center

@@ -5,6 +5,8 @@
  * - Operation ID, Service, Status, Duration
  * - Filtering by service when selected in diagram
  * - Click to view operation details
+ *
+ * Uses shared utilities from Operations page for consistency.
  */
 import React, { useState, useEffect } from 'react'
 import { Table, Tag, Tooltip, Button, Empty } from 'antd'
@@ -13,6 +15,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { ServiceOperation } from '../../types/serviceMesh'
 import { getV2 } from '../../api/generated'
 import { transformOperationListResponse } from '../../utils/serviceMeshTransforms'
+import { getStatusColor } from '../../pages/Operations'
 import './RecentOperationsTable.css'
 
 const api = getV2()
@@ -20,27 +23,6 @@ const api = getV2()
 interface RecentOperationsTableProps {
   selectedService: string | null
   onOperationClick?: (operationId: string) => void
-}
-
-/**
- * Get status tag color
- */
-function getStatusColor(status: string): string {
-  switch (status.toLowerCase()) {
-    case 'completed':
-      return 'success'
-    case 'processing':
-    case 'queued':
-      return 'processing'
-    case 'pending':
-      return 'default'
-    case 'failed':
-      return 'error'
-    case 'cancelled':
-      return 'warning'
-    default:
-      return 'default'
-  }
 }
 
 /**
