@@ -133,3 +133,24 @@ type TerminateSessionsResponse struct {
 	FailedCount     int      `json:"failed_count"`
 	FailedSessions  []string `json:"failed_sessions,omitempty"`
 }
+
+// ============================================================================
+// Session Blocking Schemas (Phase 4 - Context Menu Actions)
+// ============================================================================
+
+// BlockSessionsRequest contains parameters for blocking user sessions.
+type BlockSessionsRequest struct {
+	DeniedFrom     string `json:"denied_from,omitempty"`     // ISO datetime
+	DeniedTo       string `json:"denied_to,omitempty"`       // ISO datetime
+	DeniedMessage  string `json:"denied_message,omitempty"`  // Message shown to users
+	PermissionCode string `json:"permission_code,omitempty"` // Code to allow access
+	Parameter      string `json:"parameter,omitempty"`       // Additional parameter
+	DBUser         string `json:"db_user,omitempty"`
+	DBPassword     string `json:"db_password,omitempty"`
+}
+
+// UnblockSessionsRequest contains parameters for unblocking user sessions.
+type UnblockSessionsRequest struct {
+	DBUser     string `json:"db_user,omitempty"`
+	DBPassword string `json:"db_password,omitempty"`
+}

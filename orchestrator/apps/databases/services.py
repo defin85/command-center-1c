@@ -1,7 +1,7 @@
 """Business logic for databases."""
 
 import logging
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from django.db import transaction, OperationalError
 from django.utils import timezone
 
@@ -1033,3 +1033,162 @@ class ClusterService:
         )
 
         return created_count, updated_count, error_count
+
+
+# =============================================================================
+# Permission Service for RBAC
+# =============================================================================
+
+class PermissionService:
+    """
+    Centralized permission checking for databases and clusters.
+
+    Resolution order:
+    1. Superuser -> Full access (ADMIN level)
+    2. DatabasePermission (direct) -> Use if exists
+    3. ClusterPermission (inherited) -> Use if database has cluster
+    4. No permission -> Deny (None)
+
+    Final level = max(database_level, cluster_level)
+    """
+
+    @classmethod
+    def get_user_level_for_database(
+        cls,
+        user,
+        database: Database
+    ) -> 'Optional[int]':
+        """
+        Get effective permission level for user on database.
+
+        Returns:
+            Permission level (int) or None if no access
+        """
+        from .models import ClusterPermission, DatabasePermission, PermissionLevel
+
+        if user.is_superuser:
+            return PermissionLevel.ADMIN
+
+        levels = []
+
+        # Check direct database permission
+        db_perm = DatabasePermission.objects.filter(
+            user=user,
+            database=database
+        ).values_list('level', flat=True).first()
+
+        if db_perm is not None:
+            levels.append(db_perm)
+
+        # Check cluster permission (if database belongs to cluster)
+        if database.cluster_id:
+            cluster_perm = ClusterPermission.objects.filter(
+                user=user,
+                cluster_id=database.cluster_id
+            ).values_list('level', flat=True).first()
+
+            if cluster_perm is not None:
+                levels.append(cluster_perm)
+
+        return max(levels) if levels else None
+
+    @classmethod
+    def get_user_level_for_cluster(
+        cls,
+        user,
+        cluster: Cluster
+    ) -> 'Optional[int]':
+        """Get permission level for user on cluster."""
+        from .models import ClusterPermission, PermissionLevel
+
+        if user.is_superuser:
+            return PermissionLevel.ADMIN
+
+        return ClusterPermission.objects.filter(
+            user=user,
+            cluster=cluster
+        ).values_list('level', flat=True).first()
+
+    @classmethod
+    def has_permission(
+        cls,
+        user,
+        database: Database,
+        required_level: int
+    ) -> bool:
+        """Check if user has required level on database."""
+        user_level = cls.get_user_level_for_database(user, database)
+        return user_level is not None and user_level >= required_level
+
+    @classmethod
+    def filter_accessible_databases(
+        cls,
+        user,
+        queryset,
+        min_level: int = None
+    ):
+        """
+        Filter queryset to only databases user can access.
+
+        Usage:
+            qs = Database.objects.all()
+            qs = PermissionService.filter_accessible_databases(user, qs)
+        """
+        from django.db.models import Q
+        from .models import ClusterPermission, DatabasePermission, PermissionLevel
+
+        if min_level is None:
+            min_level = PermissionLevel.VIEW
+
+        if user.is_superuser:
+            return queryset
+
+        # Get database IDs with direct permission
+        db_ids = DatabasePermission.objects.filter(
+            user=user,
+            level__gte=min_level
+        ).values_list('database_id', flat=True)
+
+        # Get cluster IDs with permission
+        cluster_ids = ClusterPermission.objects.filter(
+            user=user,
+            level__gte=min_level
+        ).values_list('cluster_id', flat=True)
+
+        return queryset.filter(
+            Q(id__in=db_ids) | Q(cluster_id__in=cluster_ids)
+        )
+
+    @classmethod
+    def check_bulk_permission(
+        cls,
+        user,
+        database_ids: List[str],
+        required_level: int
+    ) -> Tuple[bool, List[str]]:
+        """
+        Check permission for multiple databases.
+
+        Returns:
+            (all_allowed: bool, denied_ids: List[str])
+        """
+        if user.is_superuser:
+            return True, []
+
+        denied = []
+
+        databases = Database.objects.filter(
+            id__in=database_ids
+        ).select_related('cluster')
+
+        for db in databases:
+            if not cls.has_permission(user, db, required_level):
+                denied.append(str(db.id))
+
+        # Check for missing/invalid database IDs
+        found_ids = {str(db.id) for db in databases}
+        for db_id in database_ids:
+            if str(db_id) not in found_ids:
+                denied.append(str(db_id))
+
+        return len(denied) == 0, denied

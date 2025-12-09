@@ -9,7 +9,10 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.conf import settings
 from django.db.models import Count, Q
-from .models import Cluster, Database, DatabaseGroup, ExtensionInstallation, BatchService, StatusHistory
+from .models import (
+    Cluster, Database, DatabaseGroup, ExtensionInstallation, BatchService, StatusHistory,
+    ClusterPermission, DatabasePermission
+)
 from .services import DatabaseService, ClusterService
 from .clients import BatchServiceClient, RasAdapterClient, RasAdapterError
 from .clients.generated.ras_adapter_api_client.types import UNSET
@@ -1122,6 +1125,38 @@ class BatchServiceAdmin(admin.ModelAdmin):
             obj.get_last_health_status_display()
         )
     health_status_badge.short_description = 'Health'
+
+
+@admin.register(ClusterPermission)
+class ClusterPermissionAdmin(admin.ModelAdmin):
+    """Admin для ClusterPermission model (RBAC)."""
+
+    list_display = ['user', 'cluster', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'cluster']
+    search_fields = ['user__username', 'cluster__name']
+    autocomplete_fields = ['user', 'cluster']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(DatabasePermission)
+class DatabasePermissionAdmin(admin.ModelAdmin):
+    """Admin для DatabasePermission model (RBAC)."""
+
+    list_display = ['user', 'database', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'database__cluster']
+    search_fields = ['user__username', 'database__name']
+    autocomplete_fields = ['user', 'database']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(StatusHistory)

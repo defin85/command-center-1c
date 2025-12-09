@@ -797,3 +797,112 @@ class StatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.content_type} {self.object_id}: {self.old_status} → {self.new_status}"
+
+
+# =============================================================================
+# RBAC Models for Database Access Control
+# =============================================================================
+
+class PermissionLevel(models.IntegerChoices):
+    """
+    Hierarchical permission levels. Higher includes all lower.
+
+    - VIEW (10): Read-only access
+    - OPERATE (20): Execute operations (lock/unlock/block/terminate)
+    - MANAGE (30): Edit settings, install extensions
+    - ADMIN (40): Full control including delete
+    """
+    VIEW = 10, 'View'
+    OPERATE = 20, 'Operate'
+    MANAGE = 30, 'Manage'
+    ADMIN = 40, 'Admin'
+
+
+class ClusterPermission(models.Model):
+    """
+    User permission for an entire cluster.
+    Grants access to all databases within the cluster.
+    """
+    from django.conf import settings as django_settings
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='cluster_permissions'
+    )
+    cluster = models.ForeignKey(
+        'Cluster',
+        on_delete=models.CASCADE,
+        related_name='user_permissions'
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW
+    )
+
+    # Audit fields
+    granted_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'databases_cluster_permissions'
+        unique_together = ['user', 'cluster']
+        indexes = [
+            models.Index(fields=['user', 'cluster'], name='cp_user_cluster_idx'),
+            models.Index(fields=['cluster', 'level'], name='cp_cluster_level_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.cluster.name} ({self.get_level_display()})"
+
+
+class DatabasePermission(models.Model):
+    """
+    User permission for a specific database.
+    Takes precedence over cluster-level permission (max of both).
+    """
+    from django.conf import settings as django_settings
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='database_permissions'
+    )
+    database = models.ForeignKey(
+        'Database',
+        on_delete=models.CASCADE,
+        related_name='user_permissions'
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW
+    )
+
+    # Audit fields
+    granted_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'databases_database_permissions'
+        unique_together = ['user', 'database']
+        indexes = [
+            models.Index(fields=['user', 'database'], name='dp_user_db_idx'),
+            models.Index(fields=['database', 'level'], name='dp_db_level_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.database.name} ({self.get_level_display()})"

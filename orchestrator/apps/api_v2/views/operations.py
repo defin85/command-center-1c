@@ -12,7 +12,9 @@ from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import status as http_status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -21,6 +23,8 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
+from apps.operations.services import OperationsService
+from apps.databases.permissions import CanExecuteOperation
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +75,51 @@ class OperationCancelResponseSerializer(serializers.Serializer):
     operation_id = serializers.CharField(help_text="ID of the cancelled operation")
     cancelled = serializers.BooleanField(help_text="Whether cancellation was successful")
     message = serializers.CharField(help_text="Status message")
+
+
+# =============================================================================
+# Execute Operation Serializers
+# =============================================================================
+
+class ExecuteOperationRequestSerializer(serializers.Serializer):
+    """Request body for execute_operation endpoint."""
+    RAS_OPERATION_TYPES = [
+        ('lock_scheduled_jobs', 'Lock Scheduled Jobs'),
+        ('unlock_scheduled_jobs', 'Unlock Scheduled Jobs'),
+        ('block_sessions', 'Block Sessions'),
+        ('unblock_sessions', 'Unblock Sessions'),
+        ('terminate_sessions', 'Terminate Sessions'),
+    ]
+
+    operation_type = serializers.ChoiceField(
+        choices=RAS_OPERATION_TYPES,
+        help_text="Type of RAS operation to execute"
+    )
+    database_ids = serializers.ListField(
+        child=serializers.UUIDField(format='hex_verbose'),
+        min_length=1,
+        max_length=500,
+        help_text="List of database UUIDs"
+    )
+    config = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text="Operation-specific configuration (e.g., message for block_sessions)"
+    )
+
+
+class ExecuteOperationResponseSerializer(serializers.Serializer):
+    """Response for execute_operation endpoint."""
+    operation_id = serializers.CharField(help_text="ID of the created operation")
+    status = serializers.CharField(help_text="Operation status (queued)")
+    total_tasks = serializers.IntegerField(help_text="Number of tasks created")
+    message = serializers.CharField(help_text="Status message")
+
+
+class ExecuteOperationThrottle(UserRateThrottle):
+    """Rate limit: 30 operations per minute per user."""
+    rate = '30/min'
+    scope = 'execute_operation'
 
 
 @extend_schema(
@@ -374,6 +423,110 @@ def cancel_operation(request):
         'cancelled': True,
         'message': 'Operation cancelled successfully',
     })
+
+
+# =============================================================================
+# Execute RAS Operation
+# =============================================================================
+
+@extend_schema(
+    tags=['v2'],
+    summary='Execute RAS operation',
+    description='''
+    Queue a RAS operation for execution on selected databases.
+
+    **Supported operation types:**
+    - `lock_scheduled_jobs` - Lock scheduled jobs on databases
+    - `unlock_scheduled_jobs` - Unlock scheduled jobs on databases
+    - `block_sessions` - Block new sessions (with optional message)
+    - `unblock_sessions` - Unblock sessions
+    - `terminate_sessions` - Terminate all active sessions
+
+    **Config options for block_sessions:**
+    - `message` - Message displayed to users
+    - `permission_code` - Code allowing entry despite block
+    ''',
+    request=ExecuteOperationRequestSerializer,
+    responses={
+        202: ExecuteOperationResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanExecuteOperation])
+@throttle_classes([ExecuteOperationThrottle])
+def execute_operation(request):
+    """
+    POST /api/v2/operations/execute/
+
+    Queue a RAS operation (lock/unlock/block/terminate) for multiple databases.
+
+    Request Body:
+        {
+            "operation_type": "lock_scheduled_jobs",
+            "database_ids": ["uuid1", "uuid2"],
+            "config": {}  // optional
+        }
+
+    Response (202 Accepted):
+        {
+            "operation_id": "uuid",
+            "status": "queued",
+            "total_tasks": 2,
+            "message": "lock_scheduled_jobs queued for 2 database(s)"
+        }
+    """
+    serializer = ExecuteOperationRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    operation_type = serializer.validated_data['operation_type']
+    database_ids = serializer.validated_data['database_ids']
+    config = serializer.validated_data.get('config', {})
+
+    try:
+        batch_operation = OperationsService.enqueue_ras_operation(
+            operation_type=operation_type,
+            database_ids=database_ids,
+            config=config,
+            user=request.user,
+        )
+
+        logger.info(
+            f"RAS operation {operation_type} queued",
+            extra={
+                'operation_id': str(batch_operation.id),
+                'operation_type': operation_type,
+                'database_count': len(database_ids),
+                'created_by': request.user.username if request.user else 'anonymous',
+            }
+        )
+
+        return Response({
+            'operation_id': str(batch_operation.id),
+            'status': batch_operation.status,
+            'total_tasks': batch_operation.total_tasks,
+            'message': f'{operation_type} queued for {len(database_ids)} database(s)',
+        }, status=http_status.HTTP_202_ACCEPTED)
+
+    except ValueError as e:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': str(e)
+            }
+        }, status=400)
+
+    except Exception as e:
+        logger.error(f"Error executing RAS operation: {e}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'INTERNAL_ERROR',
+                'message': 'Failed to queue operation'
+            }
+        }, status=500)
 
 
 # =============================================================================

@@ -380,3 +380,76 @@ func (c *Client) TerminateSessions(ctx context.Context, server, clusterID string
 	}
 	return &resp, nil
 }
+
+// ============================================================================
+// Session Blocking API (Phase 4 - Context Menu Actions)
+// ============================================================================
+
+// BlockSessions blocks new user sessions for an infobase.
+// This prevents new connections during maintenance windows.
+func (c *Client) BlockSessions(ctx context.Context, clusterID, infobaseID string, req *BlockSessionsRequest) (*SuccessResponse, error) {
+	path := fmt.Sprintf("/api/v2/block-sessions?cluster_id=%s&infobase_id=%s",
+		url.QueryEscape(clusterID), url.QueryEscape(infobaseID))
+
+	var resp SuccessResponse
+	if err := c.post(ctx, path, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// UnblockSessions unblocks user sessions for an infobase.
+// This allows new connections after maintenance windows.
+func (c *Client) UnblockSessions(ctx context.Context, clusterID, infobaseID string, req *UnblockSessionsRequest) (*SuccessResponse, error) {
+	path := fmt.Sprintf("/api/v2/unblock-sessions?cluster_id=%s&infobase_id=%s",
+		url.QueryEscape(clusterID), url.QueryEscape(infobaseID))
+
+	var resp SuccessResponse
+	if err := c.post(ctx, path, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// TerminateAllSessions terminates all sessions for an infobase.
+// This is used for maintenance operations.
+func (c *Client) TerminateAllSessions(ctx context.Context, clusterID, infobaseID string) (*TerminateSessionsResponse, error) {
+	path := fmt.Sprintf("/api/v2/terminate-sessions?cluster_id=%s&infobase_id=%s",
+		url.QueryEscape(clusterID), url.QueryEscape(infobaseID))
+
+	// Empty body terminates ALL sessions
+	var resp TerminateSessionsResponse
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ============================================================================
+// Simplified Infobase Lock/Unlock API (without server parameter)
+// These methods use cluster_id and infobase_id only, for use in worker operations.
+// ============================================================================
+
+// LockScheduledJobs locks scheduled jobs for an infobase (sets ScheduledJobsDeny = true).
+func (c *Client) LockScheduledJobs(ctx context.Context, clusterID, infobaseID string, req *LockInfobaseRequest) (*SuccessResponse, error) {
+	path := fmt.Sprintf("/api/v2/lock-infobase?cluster_id=%s&infobase_id=%s",
+		url.QueryEscape(clusterID), url.QueryEscape(infobaseID))
+
+	var resp SuccessResponse
+	if err := c.post(ctx, path, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// UnlockScheduledJobs unlocks scheduled jobs for an infobase (sets ScheduledJobsDeny = false).
+func (c *Client) UnlockScheduledJobs(ctx context.Context, clusterID, infobaseID string, req *UnlockInfobaseRequest) (*SuccessResponse, error) {
+	path := fmt.Sprintf("/api/v2/unlock-infobase?cluster_id=%s&infobase_id=%s",
+		url.QueryEscape(clusterID), url.QueryEscape(infobaseID))
+
+	var resp SuccessResponse
+	if err := c.post(ctx, path, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

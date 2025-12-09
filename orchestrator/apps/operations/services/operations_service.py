@@ -42,6 +42,65 @@ class OperationsService:
     QUEUE_KEY = "cc1c:operations:v1"
     VERSION = "2.0"
 
+    # Conflicting operation types - cannot run concurrently on same databases
+    CONFLICTING_OPERATIONS = {
+        'lock_scheduled_jobs': ['unlock_scheduled_jobs', 'lock_scheduled_jobs'],
+        'unlock_scheduled_jobs': ['lock_scheduled_jobs', 'unlock_scheduled_jobs'],
+        'block_sessions': ['unblock_sessions', 'block_sessions'],
+        'unblock_sessions': ['block_sessions', 'unblock_sessions'],
+        'terminate_sessions': ['terminate_sessions'],
+    }
+
+    @classmethod
+    def check_conflicting_operations(
+        cls,
+        database_ids: list,
+        operation_type: str,
+        max_pending_age_minutes: int = 10
+    ) -> tuple[bool, str]:
+        """
+        Check for active/pending operations on the same databases.
+
+        Args:
+            database_ids: List of database UUIDs
+            operation_type: Type of operation to execute
+            max_pending_age_minutes: Ignore pending ops older than this (stuck operations)
+
+        Returns:
+            (has_conflict: bool, error_message: str)
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+
+        conflicting_types = cls.CONFLICTING_OPERATIONS.get(
+            operation_type,
+            [operation_type]
+        )
+
+        # Calculate cutoff time for "stuck" operations
+        cutoff_time = timezone.now() - timedelta(minutes=max_pending_age_minutes)
+
+        # Find active operations on same databases with conflicting types
+        active_ops = BatchOperation.objects.filter(
+            status__in=[
+                BatchOperation.STATUS_PENDING,
+                BatchOperation.STATUS_QUEUED,
+                BatchOperation.STATUS_PROCESSING,
+            ],
+            operation_type__in=conflicting_types,
+            target_databases__id__in=database_ids,
+            created_at__gte=cutoff_time,  # Ignore old stuck operations
+        ).distinct().first()
+
+        if active_ops:
+            return (
+                True,
+                f"Conflicting operation '{active_ops.operation_type}' "
+                f"(id: {active_ops.id}) is already in progress"
+            )
+
+        return (False, "")
+
     @classmethod
     def is_celery_enabled(cls) -> bool:
         """Check if Celery fallback is enabled."""
@@ -698,3 +757,167 @@ class OperationsService:
     def get_queue_depth(cls) -> int:
         """Get current operations queue depth."""
         return redis_client.get_queue_depth(cls.QUEUE_KEY)
+
+    @classmethod
+    def enqueue_ras_operation(
+        cls,
+        operation_type: str,
+        database_ids: list,
+        config: dict,
+        user,
+    ) -> "BatchOperation":
+        """
+        Create BatchOperation for RAS operation and enqueue to Redis.
+
+        Args:
+            operation_type: lock_scheduled_jobs, unlock_scheduled_jobs,
+                           block_sessions, unblock_sessions, terminate_sessions
+            database_ids: List of database UUIDs
+            config: Operation-specific config (message, permission_code for block_sessions)
+            user: User who initiated the operation
+
+        Returns:
+            BatchOperation instance
+
+        Raises:
+            ValueError: If no valid databases found
+        """
+        from apps.databases.models import Database
+        from apps.operations.models import Task
+
+        # Check for conflicting operations
+        has_conflict, error_msg = cls.check_conflicting_operations(
+            database_ids,
+            operation_type
+        )
+        if has_conflict:
+            raise ValueError(error_msg)
+
+        # Get databases with cluster data
+        databases = list(Database.objects.filter(
+            id__in=database_ids
+        ).select_related('cluster'))
+
+        if not databases:
+            raise ValueError("No valid databases found for the provided IDs")
+
+        # Generate operation ID
+        operation_id = str(uuid.uuid4())
+
+        # Create BatchOperation
+        batch_operation = BatchOperation.objects.create(
+            id=operation_id,
+            name=f"{operation_type} - {len(databases)} databases",
+            operation_type=operation_type,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PENDING,
+            payload={"data": config, "filters": {}, "options": {}},
+            config={
+                "batch_size": 1,
+                "timeout_seconds": 60,
+                "retry_count": 3,
+                "priority": "normal",
+            },
+            total_tasks=len(databases),
+            created_by=user.username if user else "system",
+        )
+        batch_operation.target_databases.set(databases)
+
+        # Create Tasks for each database
+        tasks = [
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ]
+        Task.objects.bulk_create(tasks)
+
+        # Build Message Protocol v2.0 message
+        target_databases_data = []
+        for db in databases:
+            db_data = {
+                "id": str(db.id),
+                "name": db.name,
+                "cluster_id": str(db.cluster_id) if db.cluster_id else "",
+            }
+            # Add RAS-specific IDs if available
+            if hasattr(db, 'ras_cluster_id') and db.ras_cluster_id:
+                db_data["ras_cluster_id"] = str(db.ras_cluster_id)
+            if hasattr(db, 'ras_infobase_id') and db.ras_infobase_id:
+                db_data["ras_infobase_id"] = str(db.ras_infobase_id)
+            else:
+                db_data["ras_infobase_id"] = str(db.id)
+            target_databases_data.append(db_data)
+
+        message = {
+            "version": cls.VERSION,
+            "operation_id": operation_id,
+            "batch_id": None,
+            "operation_type": operation_type,
+            "entity": "Infobase",
+            "target_databases": target_databases_data,
+            "payload": {
+                "data": config,
+                "filters": {},
+                "options": {}
+            },
+            "execution_config": {
+                "batch_size": 1,
+                "timeout_seconds": 60,
+                "retry_count": 3,
+                "priority": "normal",
+                "idempotency_key": operation_id
+            },
+            "metadata": {
+                "created_by": user.username if user else "system",
+                "created_at": timezone.now().isoformat(),
+                "template_id": None,
+                "tags": ["ras", operation_type]
+            }
+        }
+
+        try:
+            # Acquire idempotency lock
+            redis_client.acquire_lock(
+                task_id=operation_id,
+                ttl_seconds=3600  # 1 hour
+            )
+
+            # Enqueue to Redis
+            redis_client.enqueue_operation(message)
+
+            # Publish QUEUED event
+            event_publisher.publish(
+                operation_id=operation_id,
+                state='QUEUED',
+                microservice='orchestrator',
+                queue=cls.QUEUE_KEY,
+                target_databases_count=len(databases)
+            )
+
+            # Update status to QUEUED
+            batch_operation.status = BatchOperation.STATUS_QUEUED
+            batch_operation.save(update_fields=['status', 'updated_at'])
+
+            logger.info(
+                f"RAS operation {operation_id} enqueued",
+                extra={
+                    "operation_id": operation_id,
+                    "operation_type": operation_type,
+                    "database_count": len(databases)
+                }
+            )
+
+            return batch_operation
+
+        except Exception as exc:
+            logger.error(f"Error enqueueing RAS operation: {exc}", exc_info=True)
+            # Release lock on error
+            redis_client.release_lock(operation_id)
+            # Mark operation as failed
+            batch_operation.status = BatchOperation.STATUS_FAILED
+            batch_operation.save(update_fields=['status', 'updated_at'])
+            raise

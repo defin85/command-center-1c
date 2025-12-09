@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, message } from 'antd'
+import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getV2 } from '../../api/generated'
@@ -10,6 +11,10 @@ import { extractInstallationFromStatus } from '../../utils/installationTransform
 import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
 import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
 import type { ExtensionInstallation } from '../../types/installation'
+import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
+import { useDatabaseActions } from '../../hooks/useDatabaseActions'
+import type { DatabaseActionKey } from '../../components/actions'
+import type { RASOperationType } from '../../api/operations'
 
 // Get generated API functions
 const api = getV2()
@@ -40,6 +45,20 @@ export const Databases = () => {
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null)
   const [currentOperationId, setCurrentOperationId] = useState<string | null>(null)
   const [form] = Form.useForm()
+
+  // Row selection state
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [selectedDatabases, setSelectedDatabases] = useState<Database[]>([])
+
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean
+    operation: string
+    databases: Array<{ id: string; name: string }>
+  }>({ visible: false, operation: '', databases: [] })
+
+  // Hook for RAS operations
+  const { execute: executeAction, loading: actionLoading } = useDatabaseActions()
 
   // Загрузка кластеров
   useEffect(() => {
@@ -177,6 +196,76 @@ export const Databases = () => {
     }
   }
 
+  // Row selection configuration
+  const rowSelection: TableRowSelection<Database> = {
+    selectedRowKeys,
+    onChange: (keys, rows) => {
+      setSelectedRowKeys(keys)
+      setSelectedDatabases(rows)
+    },
+    getCheckboxProps: (record) => ({
+      disabled: record.status === 'maintenance',
+    }),
+  }
+
+  // Handler for single database action (context menu)
+  const handleSingleAction = useCallback((action: DatabaseActionKey, database: Database) => {
+    if (action === 'more') {
+      // Open Operations Wizard with preselected database
+      navigate(`/operations?wizard=true&databases=${database.id}`)
+      return
+    }
+
+    if (action === 'health_check') {
+      // Health check has separate flow - show confirm for single DB
+      setConfirmModal({
+        visible: true,
+        operation: action,
+        databases: [{ id: database.id, name: database.name }],
+      })
+      return
+    }
+
+    // Show confirm modal for other actions
+    setConfirmModal({
+      visible: true,
+      operation: action,
+      databases: [{ id: database.id, name: database.name }],
+    })
+  }, [navigate])
+
+  // Handler for bulk action
+  const handleBulkAction = useCallback((action: string) => {
+    setConfirmModal({
+      visible: true,
+      operation: action,
+      databases: selectedDatabases.map((db) => ({ id: db.id, name: db.name })),
+    })
+  }, [selectedDatabases])
+
+  // Confirm operation handler
+  const handleConfirmOperation = useCallback(async (config?: { message?: string }) => {
+    const operationType = confirmModal.operation as RASOperationType
+    const databases = confirmModal.databases
+
+    const operationId = await executeAction(operationType, databases, config)
+
+    setConfirmModal({ visible: false, operation: '', databases: [] })
+    setSelectedRowKeys([])
+    setSelectedDatabases([])
+
+    if (operationId) {
+      // Navigate to Operations Center to track the operation
+      navigate(`/operations?operation=${operationId}`)
+    }
+  }, [confirmModal, executeAction, navigate])
+
+  // Clear selection handler
+  const handleClearSelection = useCallback(() => {
+    setSelectedRowKeys([])
+    setSelectedDatabases([])
+  }, [])
+
   const columns = [
     {
       title: 'Name',
@@ -207,7 +296,7 @@ export const Databases = () => {
         { text: 'Active', value: 'active' },
         { text: 'Inactive', value: 'inactive' },
       ],
-      onFilter: (value: any, record: Database) => record.status === value,
+      onFilter: (value: boolean | React.Key, record: Database) => record.status === value,
     },
     {
       title: 'Last Check',
@@ -216,19 +305,27 @@ export const Databases = () => {
       render: (date: string) => (date ? new Date(date).toLocaleString() : 'Never'),
     },
     {
-      title: 'Action',
-      key: 'action',
-      width: 150,
-      render: (_: any, record: Database) => (
-        <Button
-          size="small"
-          type="primary"
-          icon={<RocketOutlined />}
-          onClick={() => handleInstallExtension(record)}
-          disabled={record.status !== 'active'}
-        >
-          Install Extension
-        </Button>
+      title: 'Actions',
+      key: 'actions',
+      width: 180,
+      render: (_: unknown, record: Database) => (
+        <Space size="small">
+          <Button
+            size="small"
+            type="primary"
+            icon={<RocketOutlined />}
+            onClick={() => handleInstallExtension(record)}
+            disabled={record.status !== 'active'}
+          >
+            Install
+          </Button>
+          <DatabaseActionsMenu
+            databaseId={record.id}
+            databaseStatus={record.status}
+            onAction={(action) => handleSingleAction(action, record)}
+            disabled={record.status !== 'active'}
+          />
+        </Space>
       ),
     },
   ]
@@ -273,7 +370,15 @@ export const Databases = () => {
         </Button>
       </Space>
 
+      <BulkActionsToolbar
+        selectedCount={selectedRowKeys.length}
+        onAction={handleBulkAction}
+        onClearSelection={handleClearSelection}
+        loading={actionLoading}
+      />
+
       <Table
+        rowSelection={rowSelection}
         columns={columns}
         dataSource={databases}
         loading={loading}
@@ -326,6 +431,16 @@ export const Databases = () => {
           }}
         />
       )}
+
+      {/* Operation Confirm Modal for RAS actions */}
+      <OperationConfirmModal
+        visible={confirmModal.visible}
+        operation={confirmModal.operation}
+        databases={confirmModal.databases}
+        onConfirm={handleConfirmOperation}
+        onCancel={() => setConfirmModal({ visible: false, operation: '', databases: [] })}
+        loading={actionLoading}
+      />
     </div>
   )
 }

@@ -589,7 +589,7 @@ Sidebar (7 пунктов вместо 9):
 | 1 | Quick Fixes | 1-2 дня | - | ✅ DONE |
 | 2 | Unified Operations Center | 1 неделя | Phase 1 | ✅ DONE |
 | 3 | Удаление дублей | 3-5 дней | Phase 2 | ✅ DONE |
-| 4 | Context Menu Actions | 1 неделя | Phase 2 | 🔲 TODO |
+| 4 | Context Menu Actions | 1 неделя | Phase 2 | ✅ DONE |
 | 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | 🔲 TODO |
 | 6 | Dashboard Improvements | 1 неделя | Phase 2 | 🔲 TODO |
 
@@ -617,10 +617,13 @@ Sidebar (7 пунктов вместо 9):
 - [x] Обновлён редирект в InstallationProgressModal → /operations?tab=monitor
 - Note: `installationTransforms.ts` и `/components/Installation/` оставлены (используются в Databases)
 
-### Phase 4
-- [ ] Context menu на каждой БД
-- [ ] Bulk actions для выбранных БД
-- [ ] Context menu на кластерах
+### Phase 4 ✅ DONE (2025-12-09)
+- [x] Context menu на каждой БД (DatabaseActionsMenu)
+- [x] Bulk actions для выбранных БД (BulkActionsToolbar)
+- [x] Confirm modal перед операциями (OperationConfirmModal)
+- [x] Backend: `POST /api/v2/operations/execute/` endpoint
+- [x] Backend: Go Worker RAS handler с параллельной обработкой
+- [ ] Context menu на кластерах (отложено на Phase 5)
 
 ### Phase 5
 - [ ] Workflow input_schema поддержка
@@ -689,11 +692,40 @@ class Workflow(models.Model):
 
 ---
 
-**Версия:** 3.0
+**Версия:** 4.0
 **Автор:** AI Assistant
 **Последнее обновление:** 2025-12-09
 
 ### Changelog
+
+**v4.0 (2025-12-09):**
+- ✅ Phase 4 выполнена полностью:
+  - **Frontend:**
+    - DatabaseActionsMenu — context menu с операциями (lock/unlock/block/terminate)
+    - BulkActionsToolbar — bulk actions для выбранных БД
+    - OperationConfirmModal — confirm dialog с формой для block_sessions
+    - useDatabaseActions hook — выполнение операций через API
+    - Row selection (checkboxes) в таблице Databases
+    - Вынесены константы в `constants.ts` (RAS_OPERATIONS)
+  - **Backend Orchestrator:**
+    - `POST /api/v2/operations/execute/` — универсальный endpoint
+    - RBAC: модели ClusterPermission, DatabasePermission
+    - PermissionService + CanExecuteOperation permission class
+    - UUID validation, rate limiting (30/min), conflict check
+  - **Backend Go Worker:**
+    - RAS Handler с параллельной обработкой
+    - Semaphore для ограничения (20 concurrent operations)
+    - HTTP клиент для RAS Adapter
+- Code Review fixes:
+  - Critical #1: RBAC для проверки прав на БД
+  - Critical #2: UUID validation в сериализаторе
+  - High #3: Rate limiting (ExecuteOperationThrottle)
+  - High #4: Проверка конфликтующих операций
+  - High #5: Semaphore в Go Worker
+  - Medium #8: health_check убран из RAS операций
+  - Medium #9: Form reset при закрытии модалки
+  - Low #10-13: Константы, типизация
+- См. детальный план: [PHASE4_CONTEXT_MENU_PLAN.md](./PHASE4_CONTEXT_MENU_PLAN.md)
 
 **v3.1 (2025-12-09):**
 - ✅ Phase 3 выполнена:

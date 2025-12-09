@@ -55,6 +55,7 @@ urlpatterns = [
     # ========================================================================
     path('operations/list-operations/', operations.list_operations, name='list-operations'),
     path('operations/get-operation/', operations.get_operation, name='get-operation'),
+    path('operations/execute/', operations.execute_operation, name='execute-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream/', operations.operation_stream, name='operation-stream'),
 
