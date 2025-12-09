@@ -78,7 +78,8 @@ type ResultSummary struct {
 // Operation types that don't require target_databases
 // These are meta-operations that operate on clusters, not individual databases
 var metaOperationTypes = map[string]bool{
-	"sync_cluster": true,
+	"sync_cluster":      true,
+	"discover_clusters": true,
 	// Future: "health_check_cluster", "backup_cluster", etc.
 }
 
