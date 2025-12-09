@@ -3,10 +3,10 @@
 > Унификация UI компонентов и единая система запуска операций CommandCenter1C
 
 **Дата создания:** 2025-12-09
-**Статус:** In Progress (Phase 2 Complete)
+**Статус:** In Progress (Phase 3 Complete)
 **Приоритет:** Medium
 **Оценка:** 4-5 недель
-**Прогресс:** Phase 1-2 завершены (2025-12-09)
+**Прогресс:** Phase 1-3 завершены (2025-12-09)
 
 ---
 
@@ -519,8 +519,8 @@ frontend/src/
 │   │           ├── SelectTargetStep.tsx     # Step 2: выбор БД
 │   │           ├── ConfigureStep.tsx        # Step 3: параметры
 │   │           └── ReviewStep.tsx           # Step 4: подтверждение
-│   ├── InstallationMonitor/                 # 🔲 Удалить в Phase 3
-│   └── OperationMonitor/                    # 🔲 Удалить в Phase 3
+│   ├── InstallationMonitor/                 # ✅ УДАЛЕНО (Phase 3)
+│   └── OperationMonitor/                    # ✅ УДАЛЕНО (Phase 3)
 │
 ├── hooks/
 │   └── useOperationStream.ts                # ✅ SSE хук (улучшен: memory leak fix)
@@ -588,7 +588,7 @@ Sidebar (7 пунктов вместо 9):
 |-------|----------|--------|-------------|--------|
 | 1 | Quick Fixes | 1-2 дня | - | ✅ DONE |
 | 2 | Unified Operations Center | 1 неделя | Phase 1 | ✅ DONE |
-| 3 | Удаление дублей | 3-5 дней | Phase 2 | 🔲 TODO |
+| 3 | Удаление дублей | 3-5 дней | Phase 2 | ✅ DONE |
 | 4 | Context Menu Actions | 1 неделя | Phase 2 | 🔲 TODO |
 | 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | 🔲 TODO |
 | 6 | Dashboard Improvements | 1 неделя | Phase 2 | 🔲 TODO |
@@ -610,10 +610,12 @@ Sidebar (7 пунктов вместо 9):
 - [x] Меню: 7 пунктов (убраны Installation Monitor, Operation Monitor)
 - [x] Редиректы со старых URL на unified /operations
 
-### Phase 3
-- [ ] `/pages/InstallationMonitor/` удалён
-- [ ] `/pages/OperationMonitor/` удалён
-- [ ] Удаление неиспользуемых transforms
+### Phase 3 ✅ DONE (2025-12-09)
+- [x] `/pages/InstallationMonitor/` удалён
+- [x] `/pages/OperationMonitor/` удалён
+- [x] `/hooks/useInstallationProgress.ts` удалён
+- [x] Обновлён редирект в InstallationProgressModal → /operations?tab=monitor
+- Note: `installationTransforms.ts` и `/components/Installation/` оставлены (используются в Databases)
 
 ### Phase 4
 - [ ] Context menu на каждой БД
@@ -692,6 +694,14 @@ class Workflow(models.Model):
 **Последнее обновление:** 2025-12-09
 
 ### Changelog
+
+**v3.1 (2025-12-09):**
+- ✅ Phase 3 выполнена:
+  - Удалены deprecated страницы: InstallationMonitor, OperationMonitor
+  - Удалён неиспользуемый хук useInstallationProgress.ts
+  - Обновлён редирект в InstallationProgressModal
+  - Сохранены активные компоненты Installation (используются в Databases)
+- Commit: `a80f249 refactor(frontend): Phase 3 - Remove deprecated pages`
 
 **v3.0 (2025-12-09):**
 - ✅ Phase 2 выполнена полностью:
