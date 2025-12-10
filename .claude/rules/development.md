@@ -60,4 +60,15 @@ command-center-1c/
 - `mcp-dap-server` - Go debugging via Delve (SSE transport)
 - `chrome-devtools` - Browser control for web debugging
 
+### Chrome DevTools Setup
+
+**Перед использованием chrome-devtools MCP** нужно запустить Chromium с remote debugging:
+
+```bash
+chromium --remote-debugging-port=9222 --no-first-run &
+```
+
+> **Важно:** Chromium установлен нативно в WSL (`/usr/sbin/chromium`), НЕ использовать Windows Chrome.
+> **Для AI:** Использовать полную команду, НЕ алиас `chrome-debug` (алиасы недоступны в non-interactive shell).
+
 See `docs/DEBUG_WITH_AI.md` for full guide.

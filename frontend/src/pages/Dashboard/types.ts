@@ -4,10 +4,8 @@
  * Types for statistics, cluster health, and dashboard state management.
  */
 
-import type { UIBatchOperation } from '../../utils/operationTransforms'
-
-// Re-export for convenience
-export type { UIBatchOperation }
+import type { BatchOperationStatusEnum } from '../../api/generated/model/batchOperationStatusEnum'
+import type { BatchOperationOperationTypeEnum } from '../../api/generated/model/batchOperationOperationTypeEnum'
 
 /**
  * Statistics for operations
@@ -58,6 +56,21 @@ export interface ClusterStats {
 }
 
 /**
+ * Lightweight operation type for Dashboard display.
+ * Contains only fields needed for RecentOperations and FailedOperations widgets.
+ */
+export interface DashboardOperation {
+  id: string
+  name: string
+  operation_type: BatchOperationOperationTypeEnum
+  status: BatchOperationStatusEnum
+  progress: number
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+
+/**
  * Complete dashboard state
  */
 export interface DashboardStats {
@@ -68,9 +81,9 @@ export interface DashboardStats {
   /** Per-cluster statistics */
   clusters: ClusterStats[]
   /** Recent operations (last 10) */
-  recentOperations: UIBatchOperation[]
+  recentOperations: DashboardOperation[]
   /** Failed operations requiring attention */
-  failedOperations: UIBatchOperation[]
+  failedOperations: DashboardOperation[]
   /** Loading state */
   loading: boolean
   /** Error message if any */

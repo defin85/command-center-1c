@@ -9,7 +9,7 @@ import { WarningOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
-import type { UIBatchOperation } from '../types'
+import type { DashboardOperation } from '../types'
 import { getOperationTypeLabel } from '../../Operations/utils'
 
 // Enable relative time plugin
@@ -19,7 +19,7 @@ const { Text } = Typography
 
 export interface FailedOperationsAlertProps {
   /** Failed operations to display */
-  operations: UIBatchOperation[]
+  operations: DashboardOperation[]
   /** Maximum number of operations to display (default: 5) */
   maxDisplay?: number
 }
@@ -70,26 +70,21 @@ export const FailedOperationsAlert = ({
             <List
               size="small"
               dataSource={displayOperations}
-              renderItem={(operation) => {
-                const errorTask = operation.tasks.find(t => t.error_message)
-                return (
-                  <List.Item>
-                    <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                      <Space>
-                        <Text strong>{getOperationTypeLabel(operation.operation_type)}</Text>
-                        <Text type="secondary">
-                          {dayjs(operation.created_at).fromNow()}
-                        </Text>
-                      </Space>
-                      {errorTask?.error_message && (
-                        <Text type="danger" style={{ fontSize: 12 }}>
-                          {truncateText(errorTask.error_message, 50)}
-                        </Text>
-                      )}
+              renderItem={(operation) => (
+                <List.Item>
+                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                    <Space>
+                      <Text strong>{getOperationTypeLabel(operation.operation_type)}</Text>
+                      <Text type="secondary">
+                        {dayjs(operation.created_at).fromNow()}
+                      </Text>
                     </Space>
-                  </List.Item>
-                )
-              }}
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {truncateText(operation.name, 50)}
+                    </Text>
+                  </Space>
+                </List.Item>
+              )}
             />
             {hasMore && (
               <Text type="secondary" style={{ fontSize: 12 }}>

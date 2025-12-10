@@ -36,6 +36,7 @@ export const getOperationTypeLabel = (type: string): string => {
     unblock_sessions: 'Unblock Sessions',
     // Cluster operations
     sync_cluster: 'Sync Cluster',
+    discover_clusters: 'Discover Clusters',
   }
   return labels[type] || type
 }

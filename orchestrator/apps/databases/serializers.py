@@ -36,6 +36,7 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'max_connections',
             'connection_timeout',
             'health_check_enabled',
+            'cluster_id',
             'is_healthy',
             'created_at',
             'updated_at'

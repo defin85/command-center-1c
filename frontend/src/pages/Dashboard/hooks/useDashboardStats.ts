@@ -11,12 +11,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiClient } from '../../../api/client'
+import type { BatchOperation } from '../../../api/generated/model/batchOperation'
+import type { Database } from '../../../api/generated/model/database'
+import type { Cluster } from '../../../api/generated/model/cluster'
+
+import {
+  OPERATION_RUNNING_STATUSES,
+  OPERATION_COMPLETED_STATUS,
+  OPERATION_FAILED_STATUS,
+  DATABASE_LOCKED_STATUS,
+  DATABASE_MAINTENANCE_STATUS,
+  DATABASE_UNHEALTHY_STATUSES,
+  CLUSTER_CRITICAL_STATUSES,
+} from '../constants'
+
 import type {
   DashboardStats,
   OperationsStats,
   DatabasesStats,
   ClusterStats,
-  UIBatchOperation,
+  DashboardOperation,
 } from '../types'
 import {
   EMPTY_DASHBOARD_STATS,
@@ -24,37 +38,22 @@ import {
   EMPTY_DATABASES_STATS,
 } from '../types'
 
-// API response types (from generated API)
-interface OperationListResponse {
-  operations?: Array<{
-    id?: string
-    operation_type?: string
-    status?: string
-    progress?: number
-    created_at?: string
-    updated_at?: string
-    completed_at?: string | null
-  }>
+// API response types for v2 action-based API
+interface OperationsResponse {
+  operations?: BatchOperation[]
+  count?: number
   total?: number
 }
 
-interface DatabaseListResponse {
-  databases?: Array<{
-    id?: string
-    name?: string
-    cluster_id?: string
-    status?: string
-  }>
+interface DatabasesResponse {
+  databases?: Database[]
+  count?: number
   total?: number
 }
 
-interface ClusterListResponse {
-  clusters?: Array<{
-    id?: string
-    name?: string
-    status?: string
-  }>
-  total?: number
+interface ClustersResponse {
+  clusters?: Cluster[]
+  count?: number
 }
 
 /**
@@ -77,10 +76,8 @@ function getTodayStart(): string {
 /**
  * Calculate operations statistics from API response
  */
-function calculateOperationsStats(
-  operations: OperationListResponse['operations']
-): OperationsStats {
-  if (!operations || operations.length === 0) {
+function calculateOperationsStats(operations: BatchOperation[]): OperationsStats {
+  if (operations.length === 0) {
     return EMPTY_OPERATIONS_STATS
   }
 
@@ -91,18 +88,17 @@ function calculateOperationsStats(
   let todayCount = 0
 
   for (const op of operations) {
-    const status = op.status?.toLowerCase()
+    const status = op.status
 
-    if (status === 'running' || status === 'pending' || status === 'processing') {
+    if ((OPERATION_RUNNING_STATUSES as readonly string[]).includes(status)) {
       running++
-    } else if (status === 'completed') {
+    } else if (status === OPERATION_COMPLETED_STATUS) {
       completed++
-    } else if (status === 'failed') {
+    } else if (status === OPERATION_FAILED_STATUS) {
       failed++
     }
 
-    // Count today's operations
-    if (op.created_at && op.created_at >= todayStart) {
+    if (op.created_at >= todayStart) {
       todayCount++
     }
   }
@@ -111,23 +107,14 @@ function calculateOperationsStats(
   const finishedCount = completed + failed
   const successRate = finishedCount > 0 ? Math.round((completed / finishedCount) * 100) : 0
 
-  return {
-    total,
-    running,
-    completed,
-    failed,
-    successRate,
-    todayCount,
-  }
+  return { total, running, completed, failed, successRate, todayCount }
 }
 
 /**
  * Calculate database statistics from API response
  */
-function calculateDatabasesStats(
-  databases: DatabaseListResponse['databases']
-): DatabasesStats {
-  if (!databases || databases.length === 0) {
+function calculateDatabasesStats(databases: Database[]): DatabasesStats {
+  if (databases.length === 0) {
     return EMPTY_DATABASES_STATS
   }
 
@@ -136,63 +123,55 @@ function calculateDatabasesStats(
   let maintenance = 0
 
   for (const db of databases) {
-    const status = db.status?.toLowerCase()
+    // Cast to string for comparison since API may return statuses not in StatusD4eEnum
+    const status = db.status as string | undefined
 
-    if (status === 'locked') {
+    if (status === DATABASE_LOCKED_STATUS) {
       locked++
-    } else if (status === 'maintenance') {
+    } else if (status === DATABASE_MAINTENANCE_STATUS) {
       maintenance++
     } else {
-      // active or any other status
       active++
     }
   }
 
-  return {
-    total: databases.length,
-    active,
-    locked,
-    maintenance,
-  }
+  return { total: databases.length, active, locked, maintenance }
 }
 
 /**
  * Calculate cluster statistics from databases and clusters
  */
 function calculateClusterStats(
-  clusters: ClusterListResponse['clusters'],
-  databases: DatabaseListResponse['databases']
+  clusters: Cluster[],
+  databases: Database[]
 ): ClusterStats[] {
-  if (!clusters || clusters.length === 0) {
+  if (clusters.length === 0) {
     return []
   }
 
   // Group databases by cluster_id
   const dbsByCluster = new Map<string, { total: number; healthy: number }>()
 
-  if (databases) {
-    for (const db of databases) {
-      const clusterId = db.cluster_id
-      if (!clusterId) continue
+  for (const db of databases) {
+    const clusterId = db.cluster_id
+    if (!clusterId) continue
 
-      const current = dbsByCluster.get(clusterId) || { total: 0, healthy: 0 }
-      current.total++
+    const current = dbsByCluster.get(clusterId) || { total: 0, healthy: 0 }
+    current.total++
 
-      // Consider non-locked, non-maintenance databases as healthy
-      const status = db.status?.toLowerCase()
-      if (status !== 'locked' && status !== 'maintenance') {
-        current.healthy++
-      }
-
-      dbsByCluster.set(clusterId, current)
+    const isUnhealthy = (DATABASE_UNHEALTHY_STATUSES as readonly string[]).includes(
+      db.status ?? ''
+    )
+    if (!isUnhealthy) {
+      current.healthy++
     }
+
+    dbsByCluster.set(clusterId, current)
   }
 
   return clusters.map((cluster) => {
-    const id = cluster.id || ''
-    const stats = dbsByCluster.get(id) || { total: 0, healthy: 0 }
+    const stats = dbsByCluster.get(cluster.id) || { total: 0, healthy: 0 }
 
-    // Determine cluster health status
     let status: ClusterStats['status'] = 'healthy'
     if (stats.total > 0) {
       const healthyRatio = stats.healthy / stats.total
@@ -203,20 +182,37 @@ function calculateClusterStats(
       }
     }
 
-    // Check cluster API status
-    const clusterStatus = cluster.status?.toLowerCase()
-    if (clusterStatus === 'error' || clusterStatus === 'inactive') {
+    const isCritical = (CLUSTER_CRITICAL_STATUSES as readonly string[]).includes(
+      cluster.status ?? ''
+    )
+    if (isCritical) {
       status = 'critical'
     }
 
     return {
-      id,
+      id: cluster.id,
       name: cluster.name || 'Unknown Cluster',
       totalDatabases: stats.total,
       healthyDatabases: stats.healthy,
       status,
     }
   })
+}
+
+/**
+ * Transform BatchOperation to lightweight DashboardOperation
+ */
+function toDashboardOperation(op: BatchOperation): DashboardOperation {
+  return {
+    id: op.id,
+    name: op.name,
+    operation_type: op.operation_type,
+    status: op.status,
+    progress: op.progress,
+    created_at: op.created_at,
+    updated_at: op.updated_at,
+    completed_at: op.completed_at ?? null,
+  }
 }
 
 /**
@@ -247,16 +243,16 @@ export function useDashboardStats(refreshInterval = 30000): UseDashboardStatsRes
     }
 
     try {
-      // Parallel API requests
+      // Parallel API requests (v2 action-based API)
       const [operationsRes, databasesRes, clustersRes] = await Promise.all([
-        apiClient.get<OperationListResponse>('/api/v1/operations/', {
+        apiClient.get<OperationsResponse>('/api/v2/operations/list-operations/', {
           signal: abortController.signal,
           params: { limit: 100 },
         }),
-        apiClient.get<DatabaseListResponse>('/api/v1/databases/', {
+        apiClient.get<DatabasesResponse>('/api/v2/databases/list-databases/', {
           signal: abortController.signal,
         }),
-        apiClient.get<ClusterListResponse>('/api/v1/databases/clusters/', {
+        apiClient.get<ClustersResponse>('/api/v2/clusters/list-clusters/', {
           signal: abortController.signal,
         }),
       ])
@@ -273,63 +269,13 @@ export function useDashboardStats(refreshInterval = 30000): UseDashboardStatsRes
       const databasesStats = calculateDatabasesStats(databases)
       const clusterStats = calculateClusterStats(clusters, databases)
 
-      // Transform operations for UI (create UIBatchOperation directly)
-      const recentOperations: UIBatchOperation[] = operations
-        .slice(0, 10)
-        .map((op) => ({
-          id: op.id || '',
-          name: op.operation_type || '',
-          description: '',
-          operation_type: (op.operation_type || 'query') as UIBatchOperation['operation_type'],
-          target_entity: '',
-          status: (op.status || 'pending') as UIBatchOperation['status'],
-          progress: op.progress || 0,
-          total_tasks: 0,
-          completed_tasks: 0,
-          failed_tasks: 0,
-          payload: null,
-          config: null,
-          task_id: null,
-          started_at: null,
-          completed_at: op.completed_at || null,
-          duration_seconds: null,
-          success_rate: null,
-          created_by: '',
-          metadata: null,
-          created_at: op.created_at || '',
-          updated_at: op.updated_at || '',
-          database_names: [],
-          tasks: [],
-        }))
+      // Transform operations for UI
+      const recentOperations = operations.slice(0, 10).map(toDashboardOperation)
 
-      const failedOperations: UIBatchOperation[] = operations
-        .filter((op) => op.status?.toLowerCase() === 'failed')
+      const failedOperations = operations
+        .filter((op) => op.status === OPERATION_FAILED_STATUS)
         .slice(0, 10)
-        .map((op) => ({
-          id: op.id || '',
-          name: op.operation_type || '',
-          description: '',
-          operation_type: (op.operation_type || 'query') as UIBatchOperation['operation_type'],
-          target_entity: '',
-          status: 'failed' as const,
-          progress: op.progress || 0,
-          total_tasks: 0,
-          completed_tasks: 0,
-          failed_tasks: 0,
-          payload: null,
-          config: null,
-          task_id: null,
-          started_at: null,
-          completed_at: op.completed_at || null,
-          duration_seconds: null,
-          success_rate: null,
-          created_by: '',
-          metadata: null,
-          created_at: op.created_at || '',
-          updated_at: op.updated_at || '',
-          database_names: [],
-          tasks: [],
-        }))
+        .map(toDashboardOperation)
 
       setStats({
         operations: operationsStats,

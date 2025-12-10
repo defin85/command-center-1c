@@ -3304,6 +3304,11 @@ components:
         is_healthy:
           type: boolean
           readOnly: true
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID кластера, к которому принадлежит база
         created_at:
           type: string
           format: date-time
