@@ -318,6 +318,15 @@ class WorkflowType(models.TextChoices):
     COMPLEX = "complex", "Complex"
 
 
+class WorkflowCategory(models.TextChoices):
+    """Category choices for WorkflowTemplate (Operations Center)."""
+
+    RAS = "ras", "RAS Operations"
+    ODATA = "odata", "OData Operations"
+    SYSTEM = "system", "System Operations"
+    CUSTOM = "custom", "Custom Operations"
+
+
 class WorkflowTemplate(models.Model):
     """
     Workflow template with DAG structure.
@@ -375,6 +384,29 @@ class WorkflowTemplate(models.Model):
     )
     version_number = models.PositiveIntegerField(
         default=1, help_text="Version number (auto-incremented)"
+    )
+
+    # Operations Center fields (Phase 5.1)
+    input_schema = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="JSON Schema for dynamic form generation in Operations Center"
+    )
+    is_template = models.BooleanField(
+        default=False,
+        help_text="Template available for Operations Center (quick actions)"
+    )
+    icon = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        help_text="Ant Design icon name (e.g., 'PlayCircleOutlined')"
+    )
+    category = models.CharField(
+        max_length=50,
+        choices=WorkflowCategory.choices,
+        default=WorkflowCategory.CUSTOM,
+        help_text="Category for grouping in Operations Center"
     )
 
     class Meta:

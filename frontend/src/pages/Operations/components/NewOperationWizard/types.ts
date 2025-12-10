@@ -24,8 +24,9 @@ export type OperationType =
 
 /**
  * Operation category for grouping in UI
+ * 'custom' is used for user-defined workflow templates
  */
-export type OperationCategory = 'ras' | 'odata' | 'system'
+export type OperationCategory = 'ras' | 'odata' | 'system' | 'custom'
 
 /**
  * Configuration for operation type display in UI
@@ -128,15 +129,21 @@ export const OPERATION_CATEGORIES: Record<OperationCategory, { label: string; or
   ras: { label: 'RAS Operations', order: 1 },
   odata: { label: 'OData Operations', order: 2 },
   system: { label: 'System Operations', order: 3 },
+  custom: { label: 'Custom Templates', order: 4 },
 }
 
 /**
  * Data submitted when wizard completes
  */
 export interface NewOperationData {
-  operationType: OperationType
+  /** Operation type for built-in operations, null for custom templates */
+  operationType: OperationType | null
   databaseIds: string[]
   config: OperationConfig
+  /** Template ID if using a custom workflow template */
+  templateId?: string
+  /** Uploaded file IDs for file fields in custom templates */
+  uploadedFiles?: Record<string, string>
 }
 
 /**
@@ -145,8 +152,12 @@ export interface NewOperationData {
 export interface WizardState {
   currentStep: number
   operationType: OperationType | null
+  /** Selected custom template ID (null for built-in operations) */
+  selectedTemplateId: string | null
   selectedDatabases: string[]
   config: OperationConfig
+  /** Uploaded file IDs for file fields in custom templates */
+  uploadedFiles: Record<string, string>
 }
 
 /**
@@ -165,7 +176,11 @@ export interface NewOperationWizardProps {
  */
 export interface SelectTypeStepProps {
   selectedType: OperationType | null
+  /** Selected custom template ID (null for built-in operations) */
+  selectedTemplateId: string | null
   onSelect: (type: OperationType) => void
+  /** Callback when a custom template is selected */
+  onSelectTemplate: (templateId: string | null) => void
 }
 
 /**
@@ -195,6 +210,17 @@ export interface OperationConfig {
   filter?: string
   select?: string
   top?: number
+  // Allow custom fields for workflow templates
+  [key: string]: unknown
+}
+
+/**
+ * Validation error from DynamicForm
+ */
+export interface DynamicFormValidationError {
+  field: string
+  message: string
+  code: string
 }
 
 /**
@@ -211,8 +237,18 @@ export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof Operat
  */
 export interface ConfigureStepProps {
   operationType: OperationType | null
+  /** Template ID if using a custom workflow template */
+  templateId: string | null
   config: OperationConfig
   onConfigChange: (config: OperationConfig) => void
+  /** Uploaded file IDs for file fields in custom templates */
+  uploadedFiles?: Record<string, string>
+  /** Callback when a file is uploaded in DynamicForm */
+  onFileUpload?: (fieldName: string, fileId: string) => void
+  /** Callback when a file is removed in DynamicForm */
+  onFileRemove?: (fieldName: string) => void
+  /** Callback when DynamicForm validation errors change */
+  onValidationErrorsChange?: (errors: DynamicFormValidationError[]) => void
 }
 
 /**

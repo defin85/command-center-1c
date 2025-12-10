@@ -5,6 +5,7 @@ Pytest fixtures for workflow tests.
 
 import pytest
 from django.contrib.auth.models import User
+from rest_framework.test import APIClient
 from apps.templates.workflow.models import WorkflowTemplate
 
 
@@ -19,7 +20,7 @@ def admin_user(db):
     """Create admin user for tests."""
     # Cleanup: delete existing user if present
     User.objects.filter(username='testadmin').delete()
-    
+
     return User.objects.create_user(
         username='testadmin',
         email='test@test.com',
@@ -27,6 +28,19 @@ def admin_user(db):
         is_staff=True,
         is_superuser=True
     )
+
+
+@pytest.fixture
+def api_client():
+    """Create DRF API client."""
+    return APIClient()
+
+
+@pytest.fixture
+def authenticated_client(api_client, admin_user):
+    """Create authenticated API client."""
+    api_client.force_authenticate(user=admin_user)
+    return api_client
 
 
 @pytest.fixture

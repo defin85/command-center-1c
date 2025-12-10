@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'apps.databases',
     'apps.templates',
     'apps.monitoring',
+    'apps.files',  # File storage (Phase 5.1)
     'apps.api_v2',  # API v2 with action-based routing
     'apps.api_internal',  # Internal API for Go Worker
 ]
@@ -321,6 +322,19 @@ STATUS_HISTORY_RETENTION_DAYS = 90
 
 # ========== Extension Storage Configuration ==========
 EXTENSION_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'extensions'
+
+# ========== File Upload Configuration (Phase 5.1) ==========
+# Base directory for uploaded files
+UPLOAD_ROOT = env('UPLOAD_ROOT', default=str(BASE_DIR.parent / 'storage' / 'uploads'))
+
+# Maximum file upload size (100 MB)
+FILE_UPLOAD_MAX_SIZE = int(env('FILE_UPLOAD_MAX_SIZE', default=str(100 * 1024 * 1024)))
+
+# Default file expiration (24 hours)
+FILE_UPLOAD_EXPIRY_HOURS = int(env('FILE_UPLOAD_EXPIRY_HOURS', default='24'))
+
+# Maximum allowed expiry hours (7 days = 168 hours)
+FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='168'))
 
 # ========== System Monitoring Configuration ==========
 # Ports outside Windows reserved range (8013-8112)

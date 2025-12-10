@@ -1,6 +1,7 @@
 /**
  * NewOperationWizard - Main wizard component for creating operations
  * Orchestrates 4-step wizard flow with validation.
+ * Supports both built-in operations and custom workflow templates.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
@@ -17,6 +18,7 @@ import type {
   OperationType,
   NewOperationData,
   OperationConfig,
+  DynamicFormValidationError,
 } from './types'
 import { REQUIRED_CONFIG_FIELDS } from './types'
 
@@ -39,13 +41,16 @@ const STEPS = [
 const getInitialState = (preselectedDatabases?: string[]): WizardState => ({
   currentStep: 0,
   operationType: null,
+  selectedTemplateId: null,
   selectedDatabases: preselectedDatabases || [],
   config: {},
+  uploadedFiles: {},
 })
 
 /**
  * NewOperationWizard component
- * Modal-based 4-step wizard for creating batch operations
+ * Modal-based 4-step wizard for creating batch operations.
+ * Supports both built-in operations and custom workflow templates.
  */
 export const NewOperationWizard = ({
   visible,
@@ -59,34 +64,54 @@ export const NewOperationWizard = ({
   )
   const [submitting, setSubmitting] = useState(false)
   const [databases, setDatabases] = useState<Database[]>([])
+  const [templateValidationErrors, setTemplateValidationErrors] = useState<DynamicFormValidationError[]>([])
 
   // Reset state when modal opens
   useEffect(() => {
     if (visible) {
       setState(getInitialState(preselectedDatabases))
+      setTemplateValidationErrors([])
     }
   }, [visible, preselectedDatabases])
 
-  // Load databases for review step
+  // Load databases for review step with cleanup for memory leak prevention
   useEffect(() => {
+    let cancelled = false
+
     if (state.currentStep === 3 && state.selectedDatabases.length > 0) {
       const fetchDatabases = async () => {
         try {
           const response = await api.getDatabasesListDatabases()
+          if (cancelled) return
           const allDatabases = response.databases ?? []
           const selectedSet = new Set(state.selectedDatabases)
           setDatabases(allDatabases.filter((db) => selectedSet.has(db.id)))
         } catch (error) {
+          if (cancelled) return
           console.error('Failed to load databases:', error)
         }
       }
       fetchDatabases()
     }
+
+    return () => { cancelled = true }
   }, [state.currentStep, state.selectedDatabases])
 
-  // Validate configuration based on operation type
+  // Validate configuration based on operation type or custom template
   const validateConfig = useCallback(
-    (operationType: OperationType | null, config: OperationConfig): boolean => {
+    (
+      operationType: OperationType | null,
+      templateId: string | null,
+      config: OperationConfig,
+      validationErrors: DynamicFormValidationError[]
+    ): boolean => {
+      // Custom templates - check DynamicForm validation errors
+      if (templateId !== null) {
+        // Valid if no validation errors from DynamicForm
+        return validationErrors.length === 0
+      }
+
+      // Built-in operations
       if (!operationType) return false
 
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]
@@ -107,22 +132,47 @@ export const NewOperationWizard = ({
   // Validation for each step
   const canProceed = useMemo(() => {
     switch (state.currentStep) {
-      case 0: // Type selection
-        return state.operationType !== null
+      case 0: // Type selection - need either operation type OR template
+        return state.operationType !== null || state.selectedTemplateId !== null
       case 1: // Database selection
         return state.selectedDatabases.length > 0
       case 2: // Configuration
-        return validateConfig(state.operationType, state.config)
+        return validateConfig(state.operationType, state.selectedTemplateId, state.config, templateValidationErrors)
       case 3: // Review
         return true
       default:
         return false
     }
-  }, [state.currentStep, state.operationType, state.selectedDatabases.length, state.config, validateConfig])
+  }, [
+    state.currentStep,
+    state.operationType,
+    state.selectedTemplateId,
+    state.selectedDatabases.length,
+    state.config,
+    templateValidationErrors,
+    validateConfig,
+  ])
 
   // Handlers
   const handleTypeSelect = useCallback((type: OperationType) => {
-    setState((prev) => ({ ...prev, operationType: type }))
+    setState((prev) => ({
+      ...prev,
+      operationType: type,
+      selectedTemplateId: null, // Clear template when selecting built-in operation
+      config: {}, // Reset config when changing type
+      uploadedFiles: {},
+    }))
+  }, [])
+
+  const handleTemplateSelect = useCallback((templateId: string | null) => {
+    setState((prev) => ({
+      ...prev,
+      selectedTemplateId: templateId,
+      operationType: null, // Clear operation type when selecting template
+      config: {}, // Reset config when changing template
+      uploadedFiles: {},
+    }))
+    setTemplateValidationErrors([]) // Reset validation errors when changing template
   }, [])
 
   const handleDatabasesChange = useCallback((ids: string[]) => {
@@ -133,11 +183,36 @@ export const NewOperationWizard = ({
     setState((prev) => ({ ...prev, config }))
   }, [])
 
+  const handleValidationErrorsChange = useCallback((errors: DynamicFormValidationError[]) => {
+    setTemplateValidationErrors(errors)
+  }, [])
+
+  const handleFileUpload = useCallback((fieldName: string, fileId: string) => {
+    setState((prev) => ({
+      ...prev,
+      uploadedFiles: {
+        ...prev.uploadedFiles,
+        [fieldName]: fileId,
+      },
+    }))
+  }, [])
+
+  const handleFileRemove = useCallback((fieldName: string) => {
+    setState((prev) => {
+      const newUploadedFiles = { ...prev.uploadedFiles }
+      delete newUploadedFiles[fieldName]
+      return {
+        ...prev,
+        uploadedFiles: newUploadedFiles,
+      }
+    })
+  }, [])
+
   const handleNext = useCallback(() => {
     if (!canProceed) {
       // Show validation message
       if (state.currentStep === 0) {
-        message.warning('Please select an operation type')
+        message.warning('Please select an operation type or custom template')
       } else if (state.currentStep === 1) {
         message.warning('Please select at least one database')
       } else if (state.currentStep === 2) {
@@ -160,8 +235,9 @@ export const NewOperationWizard = ({
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!state.operationType) {
-      message.error('Operation type is required')
+    // Validate: need either operation type or template
+    if (!state.operationType && !state.selectedTemplateId) {
+      message.error('Operation type or template is required')
       return
     }
 
@@ -170,10 +246,21 @@ export const NewOperationWizard = ({
       return
     }
 
+    // Build submission data
     const data: NewOperationData = {
       operationType: state.operationType,
       databaseIds: state.selectedDatabases,
       config: state.config,
+    }
+
+    // Add template info if using custom template
+    if (state.selectedTemplateId) {
+      data.templateId = state.selectedTemplateId
+    }
+
+    // Add uploaded files if any
+    if (Object.keys(state.uploadedFiles).length > 0) {
+      data.uploadedFiles = state.uploadedFiles
     }
 
     setSubmitting(true)
@@ -187,7 +274,15 @@ export const NewOperationWizard = ({
     } finally {
       setSubmitting(false)
     }
-  }, [state.operationType, state.selectedDatabases, state.config, onSubmit, onClose])
+  }, [
+    state.operationType,
+    state.selectedTemplateId,
+    state.selectedDatabases,
+    state.config,
+    state.uploadedFiles,
+    onSubmit,
+    onClose,
+  ])
 
   const handleClose = useCallback(() => {
     if (submitting) return
@@ -201,7 +296,9 @@ export const NewOperationWizard = ({
         return (
           <SelectTypeStep
             selectedType={state.operationType}
+            selectedTemplateId={state.selectedTemplateId}
             onSelect={handleTypeSelect}
+            onSelectTemplate={handleTemplateSelect}
           />
         )
       case 1:
@@ -216,8 +313,13 @@ export const NewOperationWizard = ({
         return (
           <ConfigureStep
             operationType={state.operationType}
+            templateId={state.selectedTemplateId}
             config={state.config}
             onConfigChange={handleConfigChange}
+            uploadedFiles={state.uploadedFiles}
+            onFileUpload={handleFileUpload}
+            onFileRemove={handleFileRemove}
+            onValidationErrorsChange={handleValidationErrorsChange}
           />
         )
       case 3:
@@ -236,6 +338,11 @@ export const NewOperationWizard = ({
 
   // Check if we're on the last step
   const isLastStep = state.currentStep === STEPS.length - 1
+
+  // Determine submit button text based on type
+  const submitButtonText = state.selectedTemplateId
+    ? 'Execute Template'
+    : 'Execute Operation'
 
   return (
     <Modal
@@ -261,7 +368,7 @@ export const NewOperationWizard = ({
                 loading={submitting}
                 disabled={!canProceed}
               >
-                Execute Operation
+                {submitButtonText}
               </Button>
             ) : (
               <Button type="primary" onClick={handleNext} disabled={!canProceed}>

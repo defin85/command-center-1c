@@ -15,6 +15,7 @@ from . import (
     audit,
     events,
     templates,
+    files,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     'audit',
     'events',
     'templates',
+    'files',
 ]

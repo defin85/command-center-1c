@@ -18,6 +18,7 @@ from .views import (
     audit,
     events,
     templates,
+    files,
 )
 
 app_name = 'api_v2'
@@ -78,6 +79,10 @@ urlpatterns = [
     path('workflows/cancel-execution/', workflows.cancel_execution, name='cancel-execution'),
     path('workflows/get-execution-steps/', workflows.get_execution_steps, name='get-execution-steps'),
 
+    # Workflow Templates for Operations Center (Phase 5.1)
+    path('workflows/list-templates/', workflows.list_templates, name='list-workflow-templates'),
+    path('workflows/get-template-schema/', workflows.get_template_schema, name='get-template-schema'),
+
     # ========================================================================
     # Extensions
     # ========================================================================
@@ -112,4 +117,11 @@ urlpatterns = [
     # ========================================================================
     path('events/store-failed/', events.store_failed_event, name='store-failed-event'),
     path('events/pending/', events.get_pending_events, name='get-pending-events'),
+
+    # ========================================================================
+    # Files (Phase 5.1)
+    # ========================================================================
+    path('files/upload/', files.upload_file, name='upload-file'),
+    path('files/download/<uuid:file_id>/', files.download_file, name='download-file'),
+    path('files/delete/<uuid:file_id>/', files.delete_file, name='delete-file'),
 ]

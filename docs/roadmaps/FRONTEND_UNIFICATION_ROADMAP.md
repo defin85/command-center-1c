@@ -590,7 +590,7 @@ Sidebar (7 пунктов вместо 9):
 | 2 | Unified Operations Center | 1 неделя | Phase 1 | ✅ DONE |
 | 3 | Удаление дублей | 3-5 дней | Phase 2 | ✅ DONE |
 | 4 | Context Menu Actions | 1 неделя | Phase 2 | ✅ DONE |
-| 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | 🔲 TODO |
+| 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | ✅ DONE |
 | 6 | Dashboard Improvements | 1 неделя | Phase 2 | 🔲 TODO |
 
 **Total:** 4-6 недель (Phase 6 опционально)
@@ -625,10 +625,13 @@ Sidebar (7 пунктов вместо 9):
 - [x] Backend: Go Worker RAS handler с параллельной обработкой
 - [ ] Context menu на кластерах (отложено на Phase 5)
 
-### Phase 5
-- [ ] Workflow input_schema поддержка
-- [ ] DynamicForm компонент
-- [ ] File upload для данных
+### Phase 5 ✅ DONE (2025-12-10)
+- [x] Workflow input_schema поддержка (WorkflowTemplate model)
+- [x] DynamicForm компонент (JSON Schema based)
+- [x] File upload для данных (files app + API)
+- [x] useWorkflowTemplates, useTemplateSchema hooks
+- [x] Integration с NewOperationWizard
+- [x] 104 frontend тестов + 153 backend тестов
 
 ### Phase 6
 - [ ] Dashboard виджеты
@@ -648,38 +651,38 @@ Sidebar (7 пунктов вместо 9):
 
 ---
 
-## Backend изменения (требуются)
+## Backend изменения ✅ DONE (Phase 5)
 
 ### Новые endpoints
 
-```
-POST /api/v2/operations/create/
-  - Универсальный endpoint для создания любых операций
-  - Принимает operation_type + target + payload
+| Endpoint | Метод | Описание | Статус |
+|----------|-------|----------|--------|
+| `/api/v2/files/upload/` | POST | Загрузка файлов для операций | ✅ |
+| `/api/v2/files/download/<id>/` | GET | Скачивание файла | ✅ |
+| `/api/v2/files/delete/<id>/` | DELETE | Удаление файла | ✅ |
+| `/api/v2/workflows/list-templates/` | GET | Список шаблонов для Operations Center | ✅ |
+| `/api/v2/workflows/get-template-schema/` | GET | JSON Schema шаблона | ✅ |
 
-POST /api/v2/files/upload/
-  - Загрузка файлов для операций
-  - Возвращает file_url для передачи в payload
-
-GET /api/v2/operations/types/
-  - Список доступных типов операций
-  - Включает схему параметров для каждого типа
-```
-
-### Изменения в Workflow model
+### Изменения в WorkflowTemplate model ✅
 
 ```python
-class Workflow(models.Model):
-    # Existing fields...
+# orchestrator/apps/templates/workflow/models.py
+class WorkflowTemplate(models.Model):
+    # ... existing fields ...
+    input_schema = models.JSONField(null=True, blank=True)  # ✅ Added
+    is_template = models.BooleanField(default=False)        # ✅ Added
+    icon = models.CharField(max_length=50, blank=True)      # ✅ Added
+    category = models.CharField(max_length=50, default='custom')  # ✅ Added
+```
 
-    # NEW: Schema for user input
-    input_schema = models.JSONField(
-        null=True, blank=True,
-        help_text="JSON Schema for user input parameters"
-    )
+### Новый Django app: files ✅
 
-    # NEW: Mark as template for Operations Center
-    is_template = models.BooleanField(default=False)
+```
+orchestrator/apps/files/
+├── models.py       # UploadedFile model
+├── services.py     # FileStorageService
+├── admin.py        # Django Admin
+└── management/commands/cleanup_expired_files.py
 ```
 
 ---
@@ -692,11 +695,33 @@ class Workflow(models.Model):
 
 ---
 
-**Версия:** 4.0
+**Версия:** 5.0
 **Автор:** AI Assistant
-**Последнее обновление:** 2025-12-09
+**Последнее обновление:** 2025-12-10
 
 ### Changelog
+
+**v5.0 (2025-12-10):**
+- ✅ Phase 5 выполнена полностью:
+  - **Backend (Django):**
+    - WorkflowTemplate: +input_schema, +is_template, +icon, +category
+    - Django app `files`: UploadedFile model, FileStorageService
+    - API: upload/download/delete files, list-templates, get-template-schema
+    - Rate limiting (20 uploads/hour), IDOR protection, path traversal prevention
+    - 153 backend тестов (files app + templates API)
+  - **Frontend (React):**
+    - DynamicForm компонент (JSON Schema based)
+    - Renderers: Text, Number, Boolean, Date, Select, File
+    - Hooks: useSchemaValidation (Ajv), useConditionalFields, useFieldOrder
+    - useWorkflowTemplates, useTemplateSchema hooks
+    - Integration с NewOperationWizard (SelectTypeStep, ConfigureStep)
+    - Files API client
+    - 104 frontend тестов
+  - **Code Review fixes:**
+    - Memory leak prevention (AbortController)
+    - Race condition fixes (cancelled flags)
+    - Accessibility improvements (aria-labels)
+    - Type safety improvements
 
 **v4.0 (2025-12-09):**
 - ✅ Phase 4 выполнена полностью:

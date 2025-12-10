@@ -10,12 +10,19 @@
     "build": "tsc && vite build",
     "prebuild": "npm run generate:api",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
     "@ant-design/pro-components": "^2.6.43",
     "@types/dagre": "^0.7.53",
+    "@types/json-schema": "^7.0.15",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "antd": "^5.12.0",
     "axios": "^1.6.2",
     "dagre": "^0.8.5",
@@ -29,18 +36,24 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
     "@typescript-eslint/parser": "^6.14.0",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/ui": "^4.0.15",
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
     "globals": "^16.5.0",
+    "jsdom": "^27.3.0",
     "orval": "^7.13.2",
     "typescript": "^5.2.2",
     "typescript-eslint": "^8.48.0",
-    "vite": "^5.0.8"
+    "vite": "^5.0.8",
+    "vitest": "^4.0.15"
   }
 }

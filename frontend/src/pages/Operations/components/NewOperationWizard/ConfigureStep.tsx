@@ -1,6 +1,7 @@
 /**
  * ConfigureStep - Step 3 of NewOperationWizard
  * Dynamic configuration form based on operation type.
+ * Supports both built-in operation forms and DynamicForm for custom templates.
  */
 
 import { useCallback, useMemo } from 'react'
@@ -15,16 +16,21 @@ import {
   Card,
   Alert,
   Space,
+  Spin,
 } from 'antd'
 import {
   InboxOutlined,
   CheckCircleOutlined,
   SettingOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons'
 import type { UploadFile, UploadProps } from 'antd'
-import type { ConfigureStepProps, OperationType, OperationConfig } from './types'
+import type { ConfigureStepProps, OperationType, OperationConfig, DynamicFormValidationError } from './types'
 import { OPERATION_TYPES } from './types'
+import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { formatFileSize } from '../../../../utils/formatters'
+import { DynamicForm } from '../../../../components/DynamicForm'
+import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -207,7 +213,7 @@ const QueryForm = ({
     <Form.Item
       label="OData Entity"
       required
-      help="Name of the OData entity to query (e.g., 'Catalog_Контрагенты', 'Document_РасходныйОрдер')"
+      help="Name of the OData entity to query (e.g., 'Catalog_Kontragenty', 'Document_RaskhodnyiOrder')"
     >
       <Input
         placeholder="Entity name"
@@ -218,7 +224,7 @@ const QueryForm = ({
 
     <Form.Item
       label="Filter (optional)"
-      help={'OData filter expression (e.g., "НеИспользовать eq false")'}
+      help={'OData filter expression (e.g., "NeIspolzovat eq false")'}
     >
       <TextArea
         rows={2}
@@ -273,18 +279,102 @@ const NoConfigRequired = ({ operationLabel }: { operationLabel: string }) => (
 )
 
 /**
+ * Custom template configuration using DynamicForm
+ */
+const CustomTemplateForm = ({
+  templateId,
+  config,
+  onConfigChange,
+  uploadedFiles,
+  onFileUpload,
+  onFileRemove,
+  onValidationErrorsChange,
+}: {
+  templateId: string
+  config: OperationConfig
+  onConfigChange: (config: OperationConfig) => void
+  uploadedFiles?: Record<string, string>
+  onFileUpload?: (fieldName: string, fileId: string) => void
+  onFileRemove?: (fieldName: string) => void
+  onValidationErrorsChange?: (errors: DynamicFormValidationError[]) => void
+}) => {
+  // Fetch schema for this template
+  const { schema, workflowName, loading, error } = useTemplateSchema(templateId)
+
+  // Loading state
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+        <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />} />
+        <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
+          Loading template configuration...
+        </Text>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Alert
+        message="Failed to load template configuration"
+        description={error}
+        type="error"
+        showIcon
+      />
+    )
+  }
+
+  // No schema means no configuration needed
+  if (!schema) {
+    return <NoConfigRequired operationLabel={workflowName || 'Custom Template'} />
+  }
+
+  // Handle DynamicForm value change - cast to OperationConfig
+  const handleValuesChange = (values: Record<string, unknown>) => {
+    onConfigChange(values as OperationConfig)
+  }
+
+  // Handle validation errors from DynamicForm
+  const handleValidationError = (errors: ValidationError[]) => {
+    onValidationErrorsChange?.(errors as DynamicFormValidationError[])
+  }
+
+  // Render DynamicForm with the schema
+  return (
+    <DynamicForm
+      schema={schema}
+      values={config as Record<string, unknown>}
+      onChange={handleValuesChange}
+      onValidationError={handleValidationError}
+      uploadedFiles={uploadedFiles}
+      onFileUpload={onFileUpload}
+      onFileRemove={onFileRemove}
+      layout="vertical"
+    />
+  )
+}
+
+/**
  * ConfigureStep component
- * Renders operation-specific configuration form
+ * Renders operation-specific configuration form.
+ * For built-in operations, uses legacy forms.
+ * For custom templates, uses DynamicForm with JSON Schema.
  */
 export const ConfigureStep = ({
   operationType,
+  templateId,
   config,
   onConfigChange,
+  uploadedFiles,
+  onFileUpload,
+  onFileRemove,
+  onValidationErrorsChange,
 }: ConfigureStepProps) => {
-  // Find operation config
+  // Find operation config for built-in operations
   const operationConfig = OPERATION_TYPES.find((op) => op.type === operationType)
 
-  // Handler for partial config updates
+  // Handler for partial config updates (for legacy forms)
   const handleChange = useCallback(
     (updates: Partial<OperationConfig>) => {
       onConfigChange({ ...config, ...updates })
@@ -292,11 +382,39 @@ export const ConfigureStep = ({
     [config, onConfigChange]
   )
 
+  // Check if this is a custom template
+  const isCustomTemplate = templateId !== null
+
   // Check if this operation requires configuration
   const requiresConfig = operationType && !NO_CONFIG_OPERATIONS.includes(operationType)
 
-  // Render appropriate form based on operation type
+  // Determine title and description
+  const title = isCustomTemplate
+    ? 'Configure Custom Template'
+    : `Configure: ${operationConfig?.label || operationType || 'Operation'}`
+
+  const description = isCustomTemplate
+    ? 'Fill in the required fields for this template'
+    : operationConfig?.description
+
+  // Render appropriate form based on operation type or template
   const renderForm = () => {
+    // Custom template - use DynamicForm
+    if (isCustomTemplate && templateId) {
+      return (
+        <CustomTemplateForm
+          templateId={templateId}
+          config={config}
+          onConfigChange={onConfigChange}
+          uploadedFiles={uploadedFiles}
+          onFileUpload={onFileUpload}
+          onFileRemove={onFileRemove}
+          onValidationErrorsChange={onValidationErrorsChange}
+        />
+      )
+    }
+
+    // No operation type selected
     if (!operationType) {
       return (
         <Alert
@@ -308,10 +426,12 @@ export const ConfigureStep = ({
       )
     }
 
+    // Built-in operation without configuration
     if (!requiresConfig) {
       return <NoConfigRequired operationLabel={operationConfig?.label || operationType} />
     }
 
+    // Built-in operation with legacy form
     switch (operationType) {
       case 'block_sessions':
         return <BlockSessionsForm config={config} onChange={handleChange} />
@@ -338,12 +458,14 @@ export const ConfigureStep = ({
       <Title level={4} style={{ marginBottom: 8 }}>
         <Space>
           <SettingOutlined />
-          Configure: {operationConfig?.label || operationType}
+          {title}
         </Space>
       </Title>
-      <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
-        {operationConfig?.description}
-      </Text>
+      {description && (
+        <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
+          {description}
+        </Text>
+      )}
 
       {renderForm()}
     </div>
