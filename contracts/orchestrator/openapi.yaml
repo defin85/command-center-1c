@@ -1520,6 +1520,125 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/files/delete/{file_id}/:
+    delete:
+      operationId: v2_files_delete_destroy
+      description: Delete a previously uploaded file.
+      summary: Delete file
+      parameters:
+      - in: path
+        name: file_id
+        schema:
+          type: string
+        description: File UUID
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/files/download/{file_id}/:
+    get:
+      operationId: v2_files_download_retrieve
+      description: Download a previously uploaded file.
+      summary: Download file
+      parameters:
+      - in: path
+        name: file_id
+        schema:
+          type: string
+        description: File UUID
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: File content
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/files/upload/:
+    post:
+      operationId: v2_files_upload_create
+      description: Upload a file for use in operations. Supports operation_input,
+        extension, and export purposes.
+      summary: Upload file
+      parameters:
+      - in: query
+        name: expiry_hours
+        schema:
+          type: integer
+        description: 'Custom expiration hours (default: 24)'
+      - in: query
+        name: purpose
+        schema:
+          type: string
+        description: 'File purpose: operation_input, extension, export'
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/operations/cancel-operation/:
     post:
       operationId: v2_operations_cancel_operation_create
@@ -1563,6 +1682,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/operations/execute/:
+    post:
+      operationId: v2_operations_execute_create
+      description: "\n    Queue a RAS operation for execution on selected databases.\n\
+        \n    **Supported operation types:**\n    - `lock_scheduled_jobs` - Lock scheduled\
+        \ jobs on databases\n    - `unlock_scheduled_jobs` - Unlock scheduled jobs\
+        \ on databases\n    - `block_sessions` - Block new sessions (with optional\
+        \ message)\n    - `unblock_sessions` - Unblock sessions\n    - `terminate_sessions`\
+        \ - Terminate all active sessions\n\n    **Config options for block_sessions:**\n\
+        \    - `message` - Message displayed to users\n    - `permission_code` - Code\
+        \ allowing entry despite block\n    "
+      summary: Execute RAS operation
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteOperationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecuteOperationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecuteOperationRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteOperationResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/get-operation/:
     get:
       operationId: v2_operations_get_operation_retrieve
@@ -1656,26 +1818,29 @@ paths:
     get:
       operationId: v2_operations_stream_retrieve
       description: "\n    Real-time Server-Sent Events (SSE) stream for operation\
-        \ progress updates.\n\n    **Authentication:** Token must be passed via query\
-        \ parameter because EventSource\n    does not support custom headers.\n\n\
-        \    **Event format:**\n    ```\n    data: {\"state\": \"PROCESSING\", \"\
-        microservice\": \"worker\", \"message\": \"...\", \"timestamp\": \"...\"}\n\
-        \    ```\n\n    **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING\
-        \ -> INSTALLING -> VERIFYING -> SUCCESS/FAILED\n    "
+        \ progress updates.\n\n    **Authentication:** Use ticket from /stream-ticket/\
+        \ endpoint (preferred) or\n    legacy token via query parameter.\n\n    **Event\
+        \ format:**\n    ```\n    data: {\"state\": \"PROCESSING\", \"microservice\"\
+        : \"worker\", \"message\": \"...\", \"timestamp\": \"...\"}\n    ```\n\n \
+        \   **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING\
+        \ -> VERIFYING -> SUCCESS/FAILED\n    "
       summary: Stream operation events (SSE)
       parameters:
       - in: query
         name: operation_id
         schema:
           type: string
-        description: Operation ID (UUID) to stream events for
-        required: true
+        description: Operation ID (only needed with token auth, not with ticket)
+      - in: query
+        name: ticket
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /stream-ticket/ (preferred)
       - in: query
         name: token
         schema:
           type: string
-        description: JWT access token for authentication
-        required: true
+        description: JWT access token (deprecated, use ticket instead)
       tags:
       - v2
       security:
@@ -1696,6 +1861,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/operations/stream-ticket/:
+    post:
+      operationId: v2_operations_stream_ticket_create
+      description: "\n    Obtain a short-lived, single-use ticket for SSE stream authentication.\n\
+        \n    The ticket is valid for 30 seconds and can only be used once.\n    This\
+        \ allows secure SSE connections without exposing JWT tokens in URLs.\n    "
+      summary: Get SSE stream ticket
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSETicketRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SSETicketRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SSETicketRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSETicketResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
         '404':
           content:
             application/json:
@@ -2176,6 +2385,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/workflows/get-template-schema/:
+    get:
+      operationId: v2_workflows_get_template_schema_retrieve
+      description: Get the input schema for a specific workflow template (for dynamic
+        form generation).
+      summary: Get workflow template schema
+      parameters:
+      - in: query
+        name: workflow_id
+        schema:
+          type: string
+        description: Workflow template UUID
+        required: true
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateSchemaResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/workflows/get-workflow/:
     get:
       operationId: v2_workflows_get_workflow_retrieve
@@ -2262,6 +2509,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/workflows/list-templates/:
+    get:
+      operationId: v2_workflows_list_templates_retrieve
+      description: List all active workflow templates available for Operations Center
+        (is_template=true, is_active=true).
+      summary: List workflow templates for Operations Center
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+        description: Filter by category (ras, odata, system, custom)
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or description
+      tags:
+      - v2
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -2488,7 +2765,7 @@ components:
         description:
           type: string
         operation_type:
-          $ref: '#/components/schemas/OperationTypeEnum'
+          $ref: '#/components/schemas/BatchOperationOperationTypeEnum'
         target_entity:
           type: string
           description: 1C entity name (e.g., Справочник_Пользователи)
@@ -2579,6 +2856,34 @@ components:
       - tasks
       - total_tasks
       - updated_at
+    BatchOperationOperationTypeEnum:
+      enum:
+      - create
+      - update
+      - delete
+      - query
+      - install_extension
+      - lock_scheduled_jobs
+      - unlock_scheduled_jobs
+      - terminate_sessions
+      - block_sessions
+      - unblock_sessions
+      - sync_cluster
+      - discover_clusters
+      type: string
+      description: |-
+        * `create` - Create
+        * `update` - Update
+        * `delete` - Delete
+        * `query` - Query
+        * `install_extension` - Install Extension
+        * `lock_scheduled_jobs` - Lock Scheduled Jobs
+        * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+        * `terminate_sessions` - Terminate Sessions
+        * `block_sessions` - Block Sessions
+        * `unblock_sessions` - Unblock Sessions
+        * `sync_cluster` - Sync Cluster
+        * `discover_clusters` - Discover Clusters
     BatchOperationStatusEnum:
       enum:
       - pending
@@ -3109,6 +3414,71 @@ components:
           $ref: '#/components/schemas/ErrorDetail'
       required:
       - error
+    ExecuteOperationRequest:
+      type: object
+      description: Request body for execute_operation endpoint.
+      properties:
+        operation_type:
+          allOf:
+          - $ref: '#/components/schemas/ExecuteOperationRequestOperationTypeEnum'
+          description: |-
+            Type of RAS operation to execute
+
+            * `lock_scheduled_jobs` - Lock Scheduled Jobs
+            * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+            * `block_sessions` - Block Sessions
+            * `unblock_sessions` - Unblock Sessions
+            * `terminate_sessions` - Terminate Sessions
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of database UUIDs
+          maxItems: 500
+          minItems: 1
+        config:
+          type: object
+          additionalProperties: {}
+          description: Operation-specific configuration (e.g., message for block_sessions)
+      required:
+      - database_ids
+      - operation_type
+    ExecuteOperationRequestOperationTypeEnum:
+      enum:
+      - lock_scheduled_jobs
+      - unlock_scheduled_jobs
+      - block_sessions
+      - unblock_sessions
+      - terminate_sessions
+      type: string
+      description: |-
+        * `lock_scheduled_jobs` - Lock Scheduled Jobs
+        * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+        * `block_sessions` - Block Sessions
+        * `unblock_sessions` - Unblock Sessions
+        * `terminate_sessions` - Terminate Sessions
+    ExecuteOperationResponse:
+      type: object
+      description: Response for execute_operation endpoint.
+      properties:
+        operation_id:
+          type: string
+          description: ID of the created operation
+        status:
+          type: string
+          description: Operation status (queued)
+        total_tasks:
+          type: integer
+          description: Number of tasks created
+        message:
+          type: string
+          description: Status message
+      required:
+      - message
+      - operation_id
+      - status
+      - total_tasks
     ExecuteWorkflowRequest:
       type: object
       description: Request for execute_workflow endpoint.
@@ -3386,6 +3756,32 @@ components:
       - failed
       - in_progress
       - pending
+    FileDeleteResponse:
+      type: object
+      description: Response for file delete endpoint.
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        deleted:
+          type: boolean
+        message:
+          type: string
+      required:
+      - deleted
+      - file_id
+      - message
+    FileUploadResponse:
+      type: object
+      description: Response for file upload endpoint.
+      properties:
+        file:
+          $ref: '#/components/schemas/UploadedFile'
+        message:
+          type: string
+      required:
+      - file
+      - message
     HealthCheckRequest:
       type: object
       description: Request body for health_check endpoint.
@@ -3816,34 +4212,6 @@ components:
       - operation_type
       - target_entity
       - updated_at
-    OperationTypeEnum:
-      enum:
-      - create
-      - update
-      - delete
-      - query
-      - install_extension
-      - lock_scheduled_jobs
-      - unlock_scheduled_jobs
-      - terminate_sessions
-      - block_sessions
-      - unblock_sessions
-      - sync_cluster
-      - discover_clusters
-      type: string
-      description: |-
-        * `create` - Create
-        * `update` - Update
-        * `delete` - Delete
-        * `query` - Query
-        * `install_extension` - Install Extension
-        * `lock_scheduled_jobs` - Lock Scheduled Jobs
-        * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
-        * `terminate_sessions` - Terminate Sessions
-        * `block_sessions` - Block Sessions
-        * `unblock_sessions` - Unblock Sessions
-        * `sync_cluster` - Sync Cluster
-        * `discover_clusters` - Discover Clusters
     OverallStatusEnum:
       enum:
       - healthy
@@ -3957,6 +4325,32 @@ components:
       - installation_id
       - message
       - status
+    SSETicketRequest:
+      type: object
+      description: Request body for get_stream_ticket endpoint.
+      properties:
+        operation_id:
+          type: string
+          description: Operation ID to subscribe to
+      required:
+      - operation_id
+    SSETicketResponse:
+      type: object
+      description: Response for get_stream_ticket endpoint.
+      properties:
+        ticket:
+          type: string
+          description: Short-lived ticket for SSE connection
+        expires_in:
+          type: integer
+          description: Seconds until ticket expires
+        stream_url:
+          type: string
+          description: SSE endpoint URL to connect to
+      required:
+      - expires_in
+      - stream_url
+      - ticket
     ServiceHealth:
       type: object
       description: Health status of a single service.
@@ -4381,6 +4775,32 @@ components:
       required:
       - count
       - templates
+    TemplateSchemaResponse:
+      type: object
+      description: Response for get_template_schema endpoint.
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        icon:
+          type: string
+        input_schema:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - category
+      - description
+      - icon
+      - input_schema
+      - name
+      - workflow_id
     TokenRefresh:
       type: object
       properties:
@@ -4449,6 +4869,47 @@ components:
       required:
       - file
       - message
+    UploadedFile:
+      type: object
+      description: Serializer for UploadedFile response.
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        original_filename:
+          type: string
+        size:
+          type: integer
+        size_human:
+          type: string
+        mime_type:
+          type: string
+        purpose:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        is_processed:
+          type: boolean
+        checksum:
+          type: string
+      required:
+      - checksum
+      - created_at
+      - expires_at
+      - filename
+      - id
+      - is_processed
+      - mime_type
+      - original_filename
+      - purpose
+      - size
+      - size_human
     ValidateWorkflowRequest:
       type: object
       description: Request for validate_workflow endpoint.
