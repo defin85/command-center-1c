@@ -1,40 +1,194 @@
-import { Card, Row, Col, Statistic } from 'antd';
-import { ThunderboltOutlined, DatabaseOutlined, CheckCircleOutlined } from '@ant-design/icons';
+/**
+ * Dashboard - Main overview page for CommandCenter1C
+ *
+ * Displays:
+ * - Quick action buttons (New Operation, View All, System Status)
+ * - KPI statistics cards (Operations, Databases, Success Rate)
+ * - System health card with real-time updates (WebSocket)
+ * - Recent operations table
+ * - Failed operations alert
+ * - Clusters overview
+ */
+import React, { useState, useCallback } from 'react'
+import { Row, Col, Alert, Typography, Space, Divider } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 
-export const Dashboard = () => {
+// Dashboard components
+import {
+  StatisticsCards,
+  QuickActionsBar,
+  FailedOperationsAlert,
+  ClusterOverview,
+} from './components'
+import { useDashboardStats } from './hooks'
+
+// Reusable components from service-mesh
+import SystemHealthCard from '../../components/service-mesh/SystemHealthCard'
+import RecentOperationsTable from '../../components/service-mesh/RecentOperationsTable'
+
+// Hooks
+import { useServiceMesh } from '../../hooks/useServiceMesh'
+
+// Operations components
+import { NewOperationWizard } from '../Operations/components/NewOperationWizard'
+import type { NewOperationData } from '../Operations/components/NewOperationWizard/types'
+
+const { Title, Text } = Typography
+
+export const Dashboard: React.FC = () => {
+  const navigate = useNavigate()
+
+  // Dashboard statistics with polling
+  const {
+    operations,
+    databases,
+    clusters,
+    failedOperations,
+    loading,
+    error,
+    lastUpdated,
+    refresh,
+  } = useDashboardStats(30000) // 30 second refresh
+
+  // Real-time service mesh data via WebSocket
+  const {
+    services,
+    overallHealth,
+    timestamp: meshTimestamp,
+    isConnected,
+    connectionError: meshError,
+  } = useServiceMesh()
+
+  // New Operation Wizard state
+  const [wizardVisible, setWizardVisible] = useState(false)
+
+  const handleNewOperation = useCallback(() => {
+    setWizardVisible(true)
+  }, [])
+
+  const handleWizardClose = useCallback(() => {
+    setWizardVisible(false)
+  }, [])
+
+  const handleWizardSubmit = useCallback(async (_data: NewOperationData) => {
+    setWizardVisible(false)
+    // Refresh stats after creating operation
+    refresh()
+  }, [refresh])
+
+  const handleOperationClick = useCallback((operationId: string) => {
+    navigate(`/operations?operation=${operationId}&tab=monitor`)
+  }, [navigate])
+
+  // Error state
+  if (error && !loading) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Alert
+          message="Error loading dashboard"
+          description={error}
+          type="error"
+          showIcon
+          action={
+            <Space>
+              <ReloadOutlined onClick={refresh} style={{ cursor: 'pointer' }} />
+            </Space>
+          }
+        />
+      </div>
+    )
+  }
+
   return (
-    <div>
-      <h1>Dashboard</h1>
-      <Row gutter={16}>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="Total Operations"
-              value={0}
-              prefix={<ThunderboltOutlined />}
-            />
-          </Card>
+    <div style={{ padding: 24 }}>
+      {/* Header */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+        <Col>
+          <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
+          {lastUpdated && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Last updated: {lastUpdated.toLocaleTimeString('ru-RU')}
+            </Text>
+          )}
         </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="Active Databases"
-              value={0}
-              prefix={<DatabaseOutlined />}
+        <Col>
+          <Space>
+            <ReloadOutlined
+              onClick={loading ? undefined : refresh}
+              spin={loading}
+              style={{
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: 18,
+                opacity: loading ? 0.5 : 1,
+              }}
+              aria-label="Refresh dashboard"
+              role="button"
+              tabIndex={loading ? -1 : 0}
             />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="Success Rate"
-              value={0}
-              suffix="%"
-              prefix={<CheckCircleOutlined />}
-            />
-          </Card>
+          </Space>
         </Col>
       </Row>
+
+      {/* Quick Actions */}
+      <QuickActionsBar onNewOperation={handleNewOperation} />
+
+      <Divider style={{ margin: '16px 0' }} />
+
+      {/* Statistics Cards */}
+      <StatisticsCards
+        operations={operations}
+        databases={databases}
+        loading={loading}
+      />
+
+      {/* System Health Card (Real-time via WebSocket) */}
+      <Row style={{ marginTop: 24 }}>
+        <Col span={24}>
+          <SystemHealthCard
+            services={services}
+            overallHealth={overallHealth}
+            timestamp={meshTimestamp}
+            isConnected={isConnected}
+            connectionError={meshError}
+          />
+        </Col>
+      </Row>
+
+      {/* Recent Operations + Failed Operations Alert */}
+      <Row gutter={24} style={{ marginTop: 24 }}>
+        <Col xs={24} lg={16}>
+          <RecentOperationsTable
+            selectedService={null}
+            onOperationClick={handleOperationClick}
+          />
+        </Col>
+        <Col xs={24} lg={8}>
+          <FailedOperationsAlert
+            operations={failedOperations}
+            maxDisplay={5}
+          />
+        </Col>
+      </Row>
+
+      {/* Clusters Overview */}
+      <Row style={{ marginTop: 24 }}>
+        <Col span={24}>
+          <ClusterOverview
+            clusters={clusters}
+            loading={loading}
+          />
+        </Col>
+      </Row>
+
+      {/* New Operation Wizard Modal */}
+      <NewOperationWizard
+        visible={wizardVisible}
+        onClose={handleWizardClose}
+        onSubmit={handleWizardSubmit}
+      />
     </div>
-  );
-};
+  )
+}
+
+export default Dashboard

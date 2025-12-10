@@ -591,9 +591,9 @@ Sidebar (7 пунктов вместо 9):
 | 3 | Удаление дублей | 3-5 дней | Phase 2 | ✅ DONE |
 | 4 | Context Menu Actions | 1 неделя | Phase 2 | ✅ DONE |
 | 5 | Custom Operations & Templates | 1-2 недели | Phase 2, 4 | ✅ DONE |
-| 6 | Dashboard Improvements | 1 неделя | Phase 2 | 🔲 TODO |
+| 6 | Dashboard Improvements | 1 неделя | Phase 2 | ✅ DONE |
 
-**Total:** 4-6 недель (Phase 6 опционально)
+**Total:** 4-6 недель — **ВСЕ ФАЗЫ ЗАВЕРШЕНЫ**
 
 ---
 
@@ -633,9 +633,13 @@ Sidebar (7 пунктов вместо 9):
 - [x] Integration с NewOperationWizard
 - [x] 104 frontend тестов + 153 backend тестов
 
-### Phase 6
-- [ ] Dashboard виджеты
-- [ ] Real-time updates через SSE
+### Phase 6 ✅ DONE (2025-12-10)
+- [x] Dashboard виджеты (StatisticsCards, QuickActionsBar, FailedOperationsAlert, ClusterOverview)
+- [x] Real-time updates через WebSocket (SystemHealthCard из service-mesh)
+- [x] useDashboardStats hook с polling 30s
+- [x] Интеграция с NewOperationWizard
+- [x] Переиспользование RecentOperationsTable из service-mesh
+- [x] TypeScript + ESLint проверки пройдены
 
 ---
 
@@ -695,11 +699,29 @@ orchestrator/apps/files/
 
 ---
 
-**Версия:** 5.0
+**Версия:** 6.0
 **Автор:** AI Assistant
 **Последнее обновление:** 2025-12-10
 
 ### Changelog
+
+**v6.0 (2025-12-10):**
+- ✅ Phase 6 выполнена полностью:
+  - **Dashboard Components:**
+    - `types.ts` - типы DashboardStats, OperationsStats, DatabasesStats, ClusterStats
+    - `useDashboardStats.ts` - hook агрегации статистики с polling 30s
+    - `StatisticsCards.tsx` - 3 KPI карточки (Operations, Databases, Success Rate)
+    - `QuickActionsBar.tsx` - кнопки быстрых действий
+    - `FailedOperationsAlert.tsx` - alert с failed операциями
+    - `ClusterOverview.tsx` - сводка по кластерам
+  - **Интеграция:**
+    - Переиспользование SystemHealthCard (WebSocket real-time)
+    - Переиспользование RecentOperationsTable
+    - Интеграция с NewOperationWizard
+  - **Качество:**
+    - TypeScript + ESLint проверки пройдены
+    - AbortController для предотвращения memory leaks
+- 🎉 **FRONTEND UNIFICATION ROADMAP ЗАВЕРШЁН** (все 6 фаз)
 
 **v5.0 (2025-12-10):**
 - ✅ Phase 5 выполнена полностью:
