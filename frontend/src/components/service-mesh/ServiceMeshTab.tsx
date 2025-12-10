@@ -7,10 +7,11 @@
  * - ServiceDetailDrawer (right drawer)
  * - RecentOperationsTable (bottom)
  */
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, Spin } from 'antd'
 import useServiceMesh from '../../hooks/useServiceMesh'
+import { useResponsiveDirection } from '../../hooks/useResponsiveDirection'
 import SystemHealthCard from './SystemHealthCard'
 import ServiceFlowDiagram from './ServiceFlowDiagram'
 import ServiceDetailDrawer from './ServiceDetailDrawer'
@@ -20,6 +21,9 @@ import './ServiceMeshTab.css'
 
 const ServiceMeshTab: React.FC = () => {
   const navigate = useNavigate()
+
+  // Ref for diagram container (used by useResponsiveDirection)
+  const diagramContainerRef = useRef<HTMLDivElement>(null)
 
   // WebSocket hook for real-time metrics
   const {
@@ -31,6 +35,9 @@ const ServiceMeshTab: React.FC = () => {
     connectionError,
     activeOperation,
   } = useServiceMesh()
+
+  // Responsive layout direction
+  const { mode: directionMode, direction, setMode: setDirectionMode } = useResponsiveDirection(diagramContainerRef)
 
   // Selected service for detail drawer
   const [selectedService, setSelectedService] = useState<string | null>(null)
@@ -90,13 +97,18 @@ const ServiceMeshTab: React.FC = () => {
       />
 
       {/* Service Flow Diagram */}
-      <ServiceFlowDiagram
-        services={services}
-        connections={connections}
-        selectedService={selectedService}
-        onServiceSelect={handleServiceSelect}
-        activeOperation={activeOperation}
-      />
+      <div ref={diagramContainerRef} className="service-mesh-tab__diagram-container">
+        <ServiceFlowDiagram
+          services={services}
+          connections={connections}
+          selectedService={selectedService}
+          onServiceSelect={handleServiceSelect}
+          activeOperation={activeOperation}
+          directionMode={directionMode}
+          direction={direction}
+          onDirectionModeChange={setDirectionMode}
+        />
+      </div>
 
       {/* Recent Operations Table */}
       <RecentOperationsTable

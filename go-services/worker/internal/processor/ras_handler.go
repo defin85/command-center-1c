@@ -10,6 +10,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
@@ -42,10 +43,12 @@ func IsRASOperation(opType string) bool {
 type RASHandler struct {
 	client          *rasadapter.Client
 	clusterResolver ClusterInfoResolver
+	eventPublisher  *events.EventPublisher
+	workerID        string
 }
 
 // NewRASHandler creates a new RAS operations handler
-func NewRASHandler(rasAdapterURL string, clusterResolver ClusterInfoResolver) (*RASHandler, error) {
+func NewRASHandler(rasAdapterURL string, clusterResolver ClusterInfoResolver, eventPublisher *events.EventPublisher, workerID string) (*RASHandler, error) {
 	client, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
 		BaseURL:     rasAdapterURL,
 		Timeout:     30 * time.Second,
@@ -59,6 +62,8 @@ func NewRASHandler(rasAdapterURL string, clusterResolver ClusterInfoResolver) (*
 	return &RASHandler{
 		client:          client,
 		clusterResolver: clusterResolver,
+		eventPublisher:  eventPublisher,
+		workerID:        workerID,
 	}, nil
 }
 
@@ -91,6 +96,16 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 		"target_count":   len(msg.TargetDatabases),
 	}).Info("Processing RAS operation")
 
+	// Publish PROCESSING event
+	if h.eventPublisher != nil {
+		if err := h.eventPublisher.PublishProcessing(ctx, msg.OperationID, "ras", h.workerID); err != nil {
+			log.WithFields(map[string]interface{}{
+				"operation_id": msg.OperationID,
+				"error":        err,
+			}).Error("failed to publish PROCESSING event")
+		}
+	}
+
 	if len(msg.TargetDatabases) == 0 {
 		return h.emptyResult(msg.OperationID)
 	}
@@ -113,19 +128,19 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 	// Semaphore to limit concurrent RAS operations
 	sem := make(chan struct{}, maxConcurrentRASOperations)
 
-	for i, databaseID := range msg.TargetDatabases {
+	for i, dbTarget := range msg.TargetDatabases {
 		wg.Add(1)
-		go func(idx int, dbID string) {
+		go func(idx int, target models.TargetDatabase) {
 			defer wg.Done()
 
 			result := h.processDatabaseWithCancellation(
-				batchCtx, sem, msg.OperationType, dbID, blockConfig,
+				batchCtx, sem, msg.OperationType, target, blockConfig,
 			)
 
 			mu.Lock()
 			results[idx] = result
 			mu.Unlock()
-		}(i, databaseID)
+		}(i, dbTarget)
 	}
 
 	// Wait with timeout protection (prevents hanging on stuck goroutines)
@@ -146,14 +161,37 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 	}
 
 	// Calculate summary and convert results
-	return h.buildResult(msg.OperationID, results)
+	result := h.buildResult(msg.OperationID, results)
+
+	// Publish SUCCESS/FAILED event based on result
+	if h.eventPublisher != nil {
+		if result.Summary.Failed == 0 {
+			if err := h.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+				log.WithFields(map[string]interface{}{
+					"operation_id": msg.OperationID,
+					"error":        err,
+				}).Error("failed to publish SUCCESS event")
+			}
+		} else {
+			errorMsg := fmt.Sprintf("RAS operation failed for %d/%d databases", result.Summary.Failed, result.Summary.Total)
+			if err := h.eventPublisher.PublishFailed(ctx, msg.OperationID, errorMsg); err != nil {
+				log.WithFields(map[string]interface{}{
+					"operation_id": msg.OperationID,
+					"error":        err,
+				}).Error("failed to publish FAILED event")
+			}
+		}
+	}
+
+	return result
 }
 
 // processDatabaseWithCancellation handles single database with proper cancellation checks
 func (h *RASHandler) processDatabaseWithCancellation(
 	ctx context.Context,
 	sem chan struct{},
-	opType, databaseID string,
+	opType string,
+	dbTarget models.TargetDatabase,
 	blockConfig *BlockSessionsConfig,
 ) RASOperationResult {
 	log := logger.GetLogger()
@@ -162,7 +200,7 @@ func (h *RASHandler) processDatabaseWithCancellation(
 	// Check cancellation BEFORE acquiring semaphore
 	if err := ctx.Err(); err != nil {
 		return RASOperationResult{
-			DatabaseID: databaseID,
+			DatabaseID: dbTarget.ID,
 			Success:    false,
 			Error:      fmt.Sprintf("cancelled before start: %v", err),
 			Duration:   time.Since(start).Seconds(),
@@ -175,7 +213,7 @@ func (h *RASHandler) processDatabaseWithCancellation(
 		defer func() { <-sem }()
 	case <-ctx.Done():
 		return RASOperationResult{
-			DatabaseID: databaseID,
+			DatabaseID: dbTarget.ID,
 			Success:    false,
 			Error:      fmt.Sprintf("cancelled while waiting for semaphore: %v", ctx.Err()),
 			Duration:   time.Since(start).Seconds(),
@@ -185,12 +223,12 @@ func (h *RASHandler) processDatabaseWithCancellation(
 	// Check cancellation AFTER acquiring semaphore (CRITICAL FIX for race condition)
 	if err := ctx.Err(); err != nil {
 		log.WithFields(map[string]interface{}{
-			"database_id": databaseID,
+			"database_id": dbTarget.ID,
 			"operation":   opType,
 		}).Debug("Context cancelled after semaphore acquisition, skipping RAS call")
 
 		return RASOperationResult{
-			DatabaseID: databaseID,
+			DatabaseID: dbTarget.ID,
 			Success:    false,
 			Error:      fmt.Sprintf("cancelled after semaphore: %v", err),
 			Duration:   time.Since(start).Seconds(),
@@ -198,7 +236,7 @@ func (h *RASHandler) processDatabaseWithCancellation(
 	}
 
 	// Execute the actual operation
-	return h.processSingleDatabase(ctx, opType, databaseID, blockConfig)
+	return h.processSingleDatabase(ctx, opType, dbTarget, blockConfig)
 }
 
 // emptyResult creates result for empty target list
@@ -217,12 +255,13 @@ func (h *RASHandler) emptyResult(operationID string) *models.OperationResultV2 {
 }
 
 // processSingleDatabase executes RAS operation for a single database
-func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, databaseID string, blockConfig *BlockSessionsConfig) RASOperationResult {
+func (h *RASHandler) processSingleDatabase(ctx context.Context, opType string, dbTarget models.TargetDatabase, blockConfig *BlockSessionsConfig) RASOperationResult {
 	log := logger.GetLogger()
 	start := time.Now()
 
 	result := RASOperationResult{
-		DatabaseID: databaseID,
+		DatabaseID:   dbTarget.ID,
+		DatabaseName: dbTarget.Name,
 	}
 
 	// Check context before expensive operations
@@ -233,30 +272,49 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 		return result
 	}
 
-	// Resolve cluster info (cluster_id, infobase_id) from database_id
-	clusterInfo, err := h.clusterResolver.Resolve(ctx, databaseID)
-	if err != nil {
-		result.Success = false
-		// Differentiate cancellation errors
-		if ctx.Err() != nil {
-			result.Error = fmt.Sprintf("cancelled during cluster resolution: %v", ctx.Err())
-		} else {
-			result.Error = fmt.Sprintf("failed to resolve cluster info: %v", err)
-		}
-		result.Duration = time.Since(start).Seconds()
+	var clusterID, infobaseID string
+
+	// Use ClusterID/RASInfobaseID from TargetDatabase if provided, otherwise resolve
+	if dbTarget.ClusterID != "" && dbTarget.RASInfobaseID != "" {
+		clusterID = dbTarget.ClusterID
+		infobaseID = dbTarget.RASInfobaseID
 
 		log.WithFields(map[string]interface{}{
-			"database_id": databaseID,
-			"error":       err,
-		}).Error("Failed to resolve cluster info for RAS operation")
+			"database_id": dbTarget.ID,
+			"cluster_id":  clusterID,
+			"infobase_id": infobaseID,
+		}).Debug("Using pre-resolved cluster info from TargetDatabase")
+	} else {
+		// Resolve cluster info (cluster_id, infobase_id) from database_id
+		clusterInfo, err := h.clusterResolver.Resolve(ctx, dbTarget.ID)
+		if err != nil {
+			result.Success = false
+			// Differentiate cancellation errors
+			if ctx.Err() != nil {
+				result.Error = fmt.Sprintf("cancelled during cluster resolution: %v", ctx.Err())
+			} else {
+				result.Error = fmt.Sprintf("failed to resolve cluster info: %v", err)
+			}
+			result.Duration = time.Since(start).Seconds()
 
-		return result
+			log.WithFields(map[string]interface{}{
+				"database_id": dbTarget.ID,
+				"error":       err,
+			}).Error("Failed to resolve cluster info for RAS operation")
+
+			return result
+		}
+
+		clusterID = clusterInfo.ClusterID
+		infobaseID = clusterInfo.InfobaseID
 	}
 
-	result.ClusterID = clusterInfo.ClusterID
-	result.InfobaseID = clusterInfo.InfobaseID
-	// Note: ClusterInfo doesn't have DatabaseName, using databaseID
-	result.DatabaseName = databaseID
+	result.ClusterID = clusterID
+	result.InfobaseID = infobaseID
+	// Use database name from target if available, otherwise use ID
+	if result.DatabaseName == "" {
+		result.DatabaseName = dbTarget.ID
+	}
 
 	// Final cancellation check before RAS call
 	if err := ctx.Err(); err != nil {
@@ -267,18 +325,19 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 	}
 
 	// Execute the operation
+	var err error
 	switch opType {
 	case OpLockScheduledJobs:
-		_, err = h.client.LockScheduledJobs(ctx, clusterInfo.ClusterID, clusterInfo.InfobaseID, nil)
+		_, err = h.client.LockScheduledJobs(ctx, clusterID, infobaseID, nil)
 	case OpUnlockScheduledJobs:
-		_, err = h.client.UnlockScheduledJobs(ctx, clusterInfo.ClusterID, clusterInfo.InfobaseID, nil)
+		_, err = h.client.UnlockScheduledJobs(ctx, clusterID, infobaseID, nil)
 	case OpBlockSessions:
 		req := h.buildBlockSessionsRequest(blockConfig)
-		_, err = h.client.BlockSessions(ctx, clusterInfo.ClusterID, clusterInfo.InfobaseID, req)
+		_, err = h.client.BlockSessions(ctx, clusterID, infobaseID, req)
 	case OpUnblockSessions:
-		_, err = h.client.UnblockSessions(ctx, clusterInfo.ClusterID, clusterInfo.InfobaseID, nil)
+		_, err = h.client.UnblockSessions(ctx, clusterID, infobaseID, nil)
 	case OpTerminateSessions:
-		_, err = h.client.TerminateAllSessions(ctx, clusterInfo.ClusterID, clusterInfo.InfobaseID)
+		_, err = h.client.TerminateAllSessions(ctx, clusterID, infobaseID)
 	default:
 		err = fmt.Errorf("unknown RAS operation type: %s", opType)
 	}
@@ -295,9 +354,9 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 		}
 
 		log.WithFields(map[string]interface{}{
-			"database_id":    databaseID,
-			"cluster_id":     clusterInfo.ClusterID,
-			"infobase_id":    clusterInfo.InfobaseID,
+			"database_id":    dbTarget.ID,
+			"cluster_id":     clusterID,
+			"infobase_id":    infobaseID,
 			"operation_type": opType,
 			"error":          err,
 			"duration":       result.Duration,
@@ -306,9 +365,9 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType, database
 		result.Success = true
 
 		log.WithFields(map[string]interface{}{
-			"database_id":    databaseID,
-			"cluster_id":     clusterInfo.ClusterID,
-			"infobase_id":    clusterInfo.InfobaseID,
+			"database_id":    dbTarget.ID,
+			"cluster_id":     clusterID,
+			"infobase_id":    infobaseID,
 			"operation_type": opType,
 			"duration":       result.Duration,
 		}).Info("RAS operation succeeded")

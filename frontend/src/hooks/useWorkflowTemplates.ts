@@ -40,11 +40,8 @@ export interface WorkflowTemplate {
  * API response structure for list-templates
  */
 interface ListTemplatesResponse {
-  success: boolean
-  data: {
-    templates: WorkflowTemplate[]
-    count: number
-  }
+  templates: WorkflowTemplate[]
+  count: number
 }
 
 /**
@@ -101,8 +98,8 @@ export function useWorkflowTemplates(
 
       const response = await apiClient.get<ListTemplatesResponse>(url)
 
-      if (response.data.success) {
-        setTemplates(response.data.data.templates)
+      if (response.data.templates) {
+        setTemplates(response.data.templates)
       } else {
         setError('Failed to load templates')
         setTemplates([])
@@ -149,8 +146,8 @@ export function useWorkflowTemplates(
 
         if (cancelled) return
 
-        if (response.data.success) {
-          setTemplates(response.data.data.templates)
+        if (response.data.templates) {
+          setTemplates(response.data.templates)
         } else {
           setError('Failed to load templates')
           setTemplates([])

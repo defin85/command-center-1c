@@ -25,7 +25,7 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
 } from 'reactflow'
-import { Button } from 'antd'
+import { Button, Segmented } from 'antd'
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
 import 'reactflow/dist/style.css'
 import ServiceNode, { type ServiceNodeData } from './ServiceNode'
@@ -36,6 +36,8 @@ import type {
   OperationFlowEvent,
   OperationFlowStatus,
   ConnectionType,
+  LayoutDirection,
+  DirectionMode,
 } from '../../types/serviceMesh'
 import {
   DEFAULT_SERVICE_POSITIONS,
@@ -59,6 +61,12 @@ interface ServiceFlowDiagramProps {
   onServiceSelect: (service: string | null) => void
   positions?: ServiceLayoutConfig
   activeOperation?: OperationFlowEvent | null
+  /** Current direction mode (TB, LR, or auto) */
+  directionMode: DirectionMode
+  /** Calculated layout direction */
+  direction: LayoutDirection
+  /** Callback when user changes direction mode */
+  onDirectionModeChange: (mode: DirectionMode) => void
 }
 
 /**
@@ -170,6 +178,9 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   onServiceSelect,
   positions = DEFAULT_SERVICE_POSITIONS,
   activeOperation,
+  directionMode,
+  direction,
+  onDirectionModeChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -182,6 +193,16 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
 
   // Store current node positions to preserve drag positions
   const nodePositionsRef = useRef<Record<string, { x: number; y: number }>>({})
+  // Track previous direction to detect changes
+  const prevDirectionRef = useRef<LayoutDirection>(direction)
+
+  // Reset saved positions when direction changes
+  useEffect(() => {
+    if (prevDirectionRef.current !== direction) {
+      nodePositionsRef.current = {}
+      prevDirectionRef.current = direction
+    }
+  }, [direction])
 
   // Handle fullscreen changes
   useEffect(() => {
@@ -244,7 +265,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     if (services.length === 0) return
 
     const calculatedPositions = calculateDagreLayout(services, connections, {
-      direction: 'TB',
+      direction,
       rankSep: 150,
       nodeSep: 120,
     })
@@ -266,6 +287,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           operationStatus,
           onMouseEnter: () => handleNodeMouseEnter(service.name),
           onMouseLeave: handleNodeMouseLeave,
+          direction,
         },
         draggable: true,
       }
@@ -277,7 +299,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     if (isInitialLoadRef.current && services.length > 0) {
       isInitialLoadRef.current = false
     }
-  }, [services, connections, selectedService, activeOperation, handleServiceSelect, handleNodeMouseEnter, handleNodeMouseLeave, positions, setNodes])
+  }, [services, connections, selectedService, activeOperation, handleServiceSelect, handleNodeMouseEnter, handleNodeMouseLeave, positions, setNodes, direction])
 
   // Update edges when connections, hover state, or active operation change
   useEffect(() => {
@@ -365,13 +387,23 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         />
       </ReactFlow>
 
-      {/* Fullscreen button */}
-      <div className="service-flow-diagram__fullscreen-button">
+      {/* Controls: direction switcher and fullscreen button */}
+      <div className="service-flow-diagram__controls">
+        <Segmented
+          value={directionMode}
+          onChange={(value) => onDirectionModeChange(value as DirectionMode)}
+          options={[
+            { label: 'TB', value: 'TB', title: 'Top to Bottom (vertical)' },
+            { label: 'LR', value: 'LR', title: 'Left to Right (horizontal)' },
+            { label: 'Auto', value: 'auto', title: 'Auto-detect based on screen size' },
+          ]}
+          size="small"
+        />
         <Button
           icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
-          size="large"
+          size="small"
         />
       </div>
 

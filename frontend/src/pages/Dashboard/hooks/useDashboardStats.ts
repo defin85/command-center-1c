@@ -1,19 +1,15 @@
 /**
- * Hook for fetching and managing dashboard statistics.
+ * Hook for dashboard statistics.
  *
- * Features:
- * - Auto-refresh every 30 seconds (configurable)
- * - Parallel API requests via Promise.all
- * - AbortController for cleanup on unmount
- * - Error handling without crashing
- * - Loading state management
+ * Transforms raw API data into dashboard statistics using React Query
+ * for data fetching and caching.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import { apiClient } from '../../../api/client'
 import type { BatchOperation } from '../../../api/generated/model/batchOperation'
 import type { Database } from '../../../api/generated/model/database'
 import type { Cluster } from '../../../api/generated/model/cluster'
+import { useDashboardQuery } from '../../../api/queries/dashboard'
 
 import {
   OPERATION_RUNNING_STATUSES,
@@ -38,31 +34,9 @@ import {
   EMPTY_DATABASES_STATS,
 } from '../types'
 
-// API response types for v2 action-based API
-interface OperationsResponse {
-  operations?: BatchOperation[]
-  count?: number
-  total?: number
-}
-
-interface DatabasesResponse {
-  databases?: Database[]
-  count?: number
-  total?: number
-}
-
-interface ClustersResponse {
-  clusters?: Cluster[]
-  count?: number
-}
-
-/**
- * Hook return type
- */
-export interface UseDashboardStatsResult extends DashboardStats {
-  /** Manually trigger refresh */
-  refresh: () => void
-}
+// =============================================================================
+// Helper Functions
+// =============================================================================
 
 /**
  * Get start of today in ISO format
@@ -215,130 +189,80 @@ function toDashboardOperation(op: BatchOperation): DashboardOperation {
   }
 }
 
+// =============================================================================
+// Hook Types
+// =============================================================================
+
 /**
- * Hook for dashboard statistics with auto-refresh
+ * Hook return type
+ */
+export interface UseDashboardStatsResult extends DashboardStats {
+  /** Manually trigger refresh */
+  refresh: () => void
+}
+
+// =============================================================================
+// Main Hook
+// =============================================================================
+
+/**
+ * Hook for dashboard statistics with auto-refresh.
+ *
+ * Uses React Query for data fetching with:
+ * - Auto-refetch every 30 seconds (configurable)
+ * - Caching and background updates
+ * - Automatic AbortController handling
  *
  * @param refreshInterval - Refresh interval in milliseconds (default: 30000)
  */
 export function useDashboardStats(refreshInterval = 30000): UseDashboardStatsResult {
-  const [stats, setStats] = useState<DashboardStats>(EMPTY_DASHBOARD_STATS)
+  const { data, isLoading, error, dataUpdatedAt, refetch } = useDashboardQuery({
+    refetchInterval: refreshInterval,
+  })
 
-  // Track if this is the first load
-  const isFirstLoadRef = useRef(true)
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const isMountedRef = useRef(false)
-
-  const fetchData = useCallback(async () => {
-    // Create new AbortController first to avoid race condition
-    const abortController = new AbortController()
-
-    // Cancel previous request atomically
-    const previousController = abortControllerRef.current
-    abortControllerRef.current = abortController
-    previousController?.abort()
-
-    // Set loading only on first load
-    if (isFirstLoadRef.current) {
-      setStats((prev) => ({ ...prev, loading: true, error: null }))
-    }
-
-    try {
-      // Parallel API requests (v2 action-based API)
-      const [operationsRes, databasesRes, clustersRes] = await Promise.all([
-        apiClient.get<OperationsResponse>('/api/v2/operations/list-operations/', {
-          signal: abortController.signal,
-          params: { limit: 100 },
-        }),
-        apiClient.get<DatabasesResponse>('/api/v2/databases/list-databases/', {
-          signal: abortController.signal,
-        }),
-        apiClient.get<ClustersResponse>('/api/v2/clusters/list-clusters/', {
-          signal: abortController.signal,
-        }),
-      ])
-
-      // Check if still mounted
-      if (!isMountedRef.current) return
-
-      const operations = operationsRes.data.operations || []
-      const databases = databasesRes.data.databases || []
-      const clusters = clustersRes.data.clusters || []
-
-      // Calculate statistics
-      const operationsStats = calculateOperationsStats(operations)
-      const databasesStats = calculateDatabasesStats(databases)
-      const clusterStats = calculateClusterStats(clusters, databases)
-
-      // Transform operations for UI
-      const recentOperations = operations.slice(0, 10).map(toDashboardOperation)
-
-      const failedOperations = operations
-        .filter((op) => op.status === OPERATION_FAILED_STATUS)
-        .slice(0, 10)
-        .map(toDashboardOperation)
-
-      setStats({
-        operations: operationsStats,
-        databases: databasesStats,
-        clusters: clusterStats,
-        recentOperations,
-        failedOperations,
-        loading: false,
-        error: null,
-        lastUpdated: new Date(),
-      })
-
-      isFirstLoadRef.current = false
-    } catch (error) {
-      // Ignore abort/cancel errors (both native AbortError and axios CanceledError)
-      if (
-        error instanceof Error &&
-        (error.name === 'AbortError' || error.name === 'CanceledError')
-      ) {
-        return
-      }
-
-      // Check if still mounted
-      if (!isMountedRef.current) return
-
-      console.error('Dashboard fetch error:', error)
-
-      setStats((prev) => ({
-        ...prev,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Failed to load dashboard data',
-      }))
-
-      isFirstLoadRef.current = false
-    }
-  }, [])
-
-  // Manual refresh
+  // Manual refresh callback
   const refresh = useCallback(() => {
-    fetchData()
-  }, [fetchData])
+    refetch()
+  }, [refetch])
 
-  // Setup polling and cleanup
-  useEffect(() => {
-    isMountedRef.current = true
-
-    // Initial fetch
-    fetchData()
-
-    // Setup polling
-    const intervalId = setInterval(fetchData, refreshInterval)
-
-    // Cleanup
-    return () => {
-      isMountedRef.current = false
-
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
+  // Calculate statistics from raw data
+  const stats = useMemo((): DashboardStats => {
+    // No data yet - return empty stats with loading state
+    if (!data) {
+      return {
+        ...EMPTY_DASHBOARD_STATS,
+        loading: isLoading,
+        error: error ? (error as Error).message : null,
       }
-
-      clearInterval(intervalId)
     }
-  }, [fetchData, refreshInterval])
+
+    const { operations, databases, clusters } = data
+
+    // Calculate statistics
+    const operationsStats = calculateOperationsStats(operations)
+    const databasesStats = calculateDatabasesStats(databases)
+    const clusterStats = calculateClusterStats(clusters, databases)
+
+    // Transform operations for UI
+    const recentOperations = operations.slice(0, 10).map(toDashboardOperation)
+
+    const failedOperations = operations
+      .filter((op) => op.status === OPERATION_FAILED_STATUS)
+      .slice(0, 10)
+      .map(toDashboardOperation)
+
+    return {
+      operations: operationsStats,
+      databases: databasesStats,
+      clusters: clusterStats,
+      recentOperations,
+      failedOperations,
+      // Show loading only on initial load (not on refetch)
+      loading: isLoading && !data,
+      error: error ? (error as Error).message : null,
+      lastUpdated: dataUpdatedAt ? new Date(dataUpdatedAt) : null,
+    }
+  }, [data, isLoading, error, dataUpdatedAt])
 
   return {
     ...stats,

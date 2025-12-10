@@ -224,7 +224,12 @@ class OperationsService:
         Returns:
             EnqueueResult with generated operation_id
         """
+        from apps.databases.models import Database
+
         operation_id = str(uuid.uuid4())
+
+        # Load database objects for unified format
+        databases = Database.objects.filter(id__in=database_ids)
 
         message = {
             "version": cls.VERSION,
@@ -232,7 +237,9 @@ class OperationsService:
             "batch_id": None,
             "operation_type": "install_extension",
             "entity": "Extension",
-            "target_databases": database_ids,
+            "target_databases": [
+                cls._build_target_database_data(db) for db in databases
+            ],
             "payload": {
                 "data": extension_config,
                 "filters": {},
@@ -256,19 +263,21 @@ class OperationsService:
         try:
             redis_client.enqueue_operation(message)
 
+            database_count = databases.count()
+
             event_publisher.publish(
                 operation_id=operation_id,
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=len(database_ids)
+                target_databases_count=database_count
             )
 
             logger.info(
                 f"Extension install operation {operation_id} enqueued",
                 extra={
                     "operation_id": operation_id,
-                    "database_count": len(database_ids),
+                    "database_count": database_count,
                     "extension_id": extension_config.get("extension_id")
                 }
             )
@@ -277,7 +286,7 @@ class OperationsService:
                 success=True,
                 operation_id=operation_id,
                 status="queued",
-                metadata={"database_count": len(database_ids)}
+                metadata={"database_count": database_count}
             )
 
         except Exception as exc:
@@ -503,6 +512,28 @@ class OperationsService:
                 error=str(exc)
             )
 
+    @staticmethod
+    def _build_target_database_data(db) -> dict[str, str]:
+        """
+        Build target database data for operation message.
+
+        Args:
+            db: Database model instance
+
+        Returns:
+            dict with id, name, cluster_id, ras_infobase_id
+        """
+        return {
+            "id": str(db.id),
+            "name": db.name,
+            "cluster_id": str(db.cluster_id) if db.cluster_id else "",
+            "ras_infobase_id": (
+                str(db.ras_infobase_id)
+                if hasattr(db, 'ras_infobase_id') and db.ras_infobase_id
+                else str(db.id)
+            )
+        }
+
     @classmethod
     def _build_message(cls, operation: BatchOperation) -> dict[str, Any]:
         """
@@ -521,7 +552,8 @@ class OperationsService:
             "operation_type": operation.operation_type,
             "entity": operation.target_entity,
             "target_databases": [
-                str(db.id) for db in operation.target_databases.all()
+                cls._build_target_database_data(db)
+                for db in operation.target_databases.all()
             ],
             "payload": {
                 "data": operation.payload.get("data", {}),
@@ -559,7 +591,12 @@ class OperationsService:
         Returns:
             EnqueueResult with generated operation_id
         """
+        from apps.databases.models import Database
+
         operation_id = str(uuid.uuid4())
+
+        # Load database objects for unified format
+        databases = Database.objects.filter(id__in=database_ids)
 
         message = {
             "version": cls.VERSION,
@@ -567,7 +604,9 @@ class OperationsService:
             "batch_id": None,
             "operation_type": "health_check",
             "entity": "Database",
-            "target_databases": database_ids,
+            "target_databases": [
+                cls._build_target_database_data(db) for db in databases
+            ],
             "payload": {
                 "data": {},
                 "filters": {},
@@ -591,19 +630,21 @@ class OperationsService:
         try:
             redis_client.enqueue_operation(message)
 
+            database_count = databases.count()
+
             event_publisher.publish(
                 operation_id=operation_id,
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=len(database_ids)
+                target_databases_count=database_count
             )
 
             logger.info(
                 f"Health check operation {operation_id} enqueued",
                 extra={
                     "operation_id": operation_id,
-                    "database_count": len(database_ids)
+                    "database_count": database_count
                 }
             )
 
@@ -611,7 +652,7 @@ class OperationsService:
                 success=True,
                 operation_id=operation_id,
                 status="queued",
-                metadata={"database_count": len(database_ids)}
+                metadata={"database_count": database_count}
             )
 
         except Exception as exc:
@@ -836,29 +877,15 @@ class OperationsService:
         Task.objects.bulk_create(tasks)
 
         # Build Message Protocol v2.0 message
-        target_databases_data = []
-        for db in databases:
-            db_data = {
-                "id": str(db.id),
-                "name": db.name,
-                "cluster_id": str(db.cluster_id) if db.cluster_id else "",
-            }
-            # Add RAS-specific IDs if available
-            if hasattr(db, 'ras_cluster_id') and db.ras_cluster_id:
-                db_data["ras_cluster_id"] = str(db.ras_cluster_id)
-            if hasattr(db, 'ras_infobase_id') and db.ras_infobase_id:
-                db_data["ras_infobase_id"] = str(db.ras_infobase_id)
-            else:
-                db_data["ras_infobase_id"] = str(db.id)
-            target_databases_data.append(db_data)
-
         message = {
             "version": cls.VERSION,
             "operation_id": operation_id,
             "batch_id": None,
             "operation_type": operation_type,
             "entity": "Infobase",
-            "target_databases": target_databases_data,
+            "target_databases": [
+                cls._build_target_database_data(db) for db in databases
+            ],
             "payload": {
                 "data": config,
                 "filters": {},

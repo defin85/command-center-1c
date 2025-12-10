@@ -287,8 +287,8 @@ def validate_workflows(modeladmin, request, queryset):
 @admin.register(WorkflowTemplate)
 class WorkflowTemplateAdmin(admin.ModelAdmin):
     form = WorkflowTemplateAdminForm
-    list_display = ['name', 'workflow_type', 'is_valid', 'is_active', 'version_number', 'created_at']
-    list_filter = ['workflow_type', 'is_valid', 'is_active', 'created_at']
+    list_display = ['name', 'workflow_type', 'is_valid', 'is_active', 'is_template', 'version_number', 'created_at']
+    list_filter = ['workflow_type', 'is_valid', 'is_active', 'is_template', 'created_at']
     search_fields = ['name', 'description']
     readonly_fields = ['id', 'is_valid', 'created_at', 'updated_at']
     actions = [validate_workflows]
@@ -314,6 +314,10 @@ class WorkflowTemplateAdmin(admin.ModelAdmin):
         }),
         ('Статус', {
             'fields': ('is_active', 'version_number', 'parent_version')
+        }),
+        ('Operations Center', {
+            'fields': ('is_template', 'icon', 'input_schema'),
+            'description': 'Настройки для отображения в Operations Center (New Operation Wizard)'
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),

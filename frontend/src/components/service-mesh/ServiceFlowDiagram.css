@@ -35,21 +35,29 @@
   stroke-linecap: round;
 }
 
-/* Fullscreen button */
-.service-flow-diagram__fullscreen-button {
+/* Controls (direction switcher + fullscreen button) */
+.service-flow-diagram__controls {
   position: absolute;
-  bottom: 12px;
-  right: 80px;
+  top: 12px;
+  right: 12px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-.service-flow-diagram__fullscreen-button .ant-btn {
+.service-flow-diagram__controls .ant-segmented {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.service-flow-diagram__controls .ant-btn {
   background: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border: 1px solid #d9d9d9;
 }
 
-.service-flow-diagram__fullscreen-button .ant-btn:hover {
+.service-flow-diagram__controls .ant-btn:hover {
   background: #f5f5f5;
   border-color: #40a9ff;
   color: #40a9ff;

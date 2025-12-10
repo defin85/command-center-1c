@@ -21,6 +21,10 @@ from apps.operations.services.prometheus_client import (
 logger = logging.getLogger(__name__)
 
 
+# Group name for dashboard invalidation broadcasts
+DASHBOARD_GROUP = "dashboard_updates"
+
+
 class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
     """
     WebSocket consumer for real-time service mesh metrics.
@@ -73,6 +77,12 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             self.channel_name
         )
 
+        # Join the dashboard updates group for invalidation broadcasts
+        await self.channel_layer.group_add(
+            DASHBOARD_GROUP,
+            self.channel_name
+        )
+
         await self.accept()
         logger.info(f"Service mesh WebSocket connected: user={user}, channel={self.channel_name}")
 
@@ -103,9 +113,13 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             except asyncio.CancelledError:
                 pass
 
-        # Leave the group
+        # Leave the groups
         await self.channel_layer.group_discard(
             self.GROUP_NAME,
+            self.channel_name
+        )
+        await self.channel_layer.group_discard(
+            DASHBOARD_GROUP,
             self.channel_name
         )
 
@@ -273,6 +287,19 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             "connections": event.get("connections", []),
             "overallHealth": event.get("overallHealth", "degraded"),
             "timestamp": event.get("timestamp", datetime.utcnow().isoformat()),
+        })
+
+    async def dashboard_invalidate(self, event: Dict[str, Any]):
+        """
+        Handler for dashboard invalidation broadcasts (called via channel layer).
+
+        Notifies connected clients that cached data should be refreshed.
+        """
+        await self.send_json({
+            "type": "dashboard_invalidate",
+            "scope": event.get("scope", "all"),
+            "timestamp": event.get("timestamp"),
+            "entity_id": event.get("entity_id"),
         })
 
 

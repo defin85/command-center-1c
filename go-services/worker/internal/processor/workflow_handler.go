@@ -132,7 +132,10 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 
 	// Add operation metadata to input vars
 	inputVars["operation_id"] = msg.OperationID
+	// Pass TargetDatabases as objects ([]models.TargetDatabase)
 	inputVars["target_databases"] = msg.TargetDatabases
+	// Also pass IDs for backward compatibility
+	inputVars["target_database_ids"] = msg.GetTargetDatabaseIDs()
 
 	// Execute workflow synchronously
 	result, err := h.engine.ExecuteWorkflowSync(ctx, dagJSON, inputVars)

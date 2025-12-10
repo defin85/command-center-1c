@@ -20,12 +20,22 @@ import type {
   ServiceMeshWSMessage,
   OperationFlowEvent,
   OperationFlowStatus,
+  InvalidationScope,
 } from '../types/serviceMesh'
 
 // Reconnection settings
 const RECONNECT_INITIAL_DELAY = 1000 // 1 second
 const RECONNECT_MAX_DELAY = 30000 // 30 seconds
 const RECONNECT_MAX_ATTEMPTS = 10
+
+/**
+ * Last invalidation event data
+ */
+export interface InvalidationEvent {
+  scope: InvalidationScope
+  timestamp: string
+  entityId?: string
+}
 
 export interface UseServiceMeshResult {
   // Metrics data
@@ -47,6 +57,9 @@ export interface UseServiceMeshResult {
   // Operation flow
   activeOperation: OperationFlowEvent | null
   operationHistory: OperationFlowEvent[]
+
+  // Cache invalidation
+  lastInvalidation: InvalidationEvent | null
 }
 
 /**
@@ -122,6 +135,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   const [activeOperation, setActiveOperation] = useState<OperationFlowEvent | null>(null)
   const [operationHistory, setOperationHistory] = useState<OperationFlowEvent[]>([])
 
+  // Cache invalidation state
+  const [lastInvalidation, setLastInvalidation] = useState<InvalidationEvent | null>(null)
+
   // Refs
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -190,6 +206,15 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       case 'interval_updated':
         // Interval change confirmed
         console.log('Update interval changed to:', message.interval, 'seconds')
+        break
+
+      case 'dashboard_invalidate':
+        // Dashboard cache invalidation event
+        setLastInvalidation({
+          scope: message.scope || 'all',
+          timestamp: message.timestamp || new Date().toISOString(),
+          entityId: message.entity_id,
+        })
         break
 
       case 'error':
@@ -409,6 +434,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
     // Operation flow
     activeOperation,
     operationHistory,
+
+    // Cache invalidation
+    lastInvalidation,
   }
 }
 

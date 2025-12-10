@@ -44,17 +44,17 @@ print_section() {
 
 print_ok() {
     echo -e "  ${GREEN}${ICON_OK}${NC} $1"
-    ((PASSED++))
+    ((PASSED++)) || true
 }
 
 print_fail() {
     echo -e "  ${RED}${ICON_FAIL}${NC} $1"
-    ((FAILED++))
+    ((FAILED++)) || true
 }
 
 print_warn() {
     echo -e "  ${YELLOW}${ICON_WARN}${NC} $1"
-    ((WARNINGS++))
+    ((WARNINGS++)) || true
 }
 
 print_info() {
@@ -204,15 +204,32 @@ check_windows_connectivity() {
 check_ras_connectivity() {
     print_section "4. RAS сервер (1С)"
 
-    local ras_host="${RAS_SERVER_HOST:-}"
-    local ras_port="${RAS_SERVER_PORT:-1545}"
+    # Загружаем .env.local если есть
+    local env_file="${PROJECT_ROOT:-.}/.env.local"
+    if [[ -f "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source <(grep -E '^(RAS_SERVER|RAS_SERVER_ADDR|RAS_PORT)=' "$env_file" 2>/dev/null) || true
+    fi
+
+    # Парсим RAS_SERVER или RAS_SERVER_ADDR (формат: host:port)
+    local ras_host=""
+    local ras_port="${RAS_PORT:-1545}"
+
+    if [[ -n "${RAS_SERVER:-}" ]]; then
+        ras_host=$(echo "$RAS_SERVER" | cut -d':' -f1)
+        ras_port=$(echo "$RAS_SERVER" | cut -d':' -f2)
+    elif [[ -n "${RAS_SERVER_ADDR:-}" ]]; then
+        ras_host=$(echo "$RAS_SERVER_ADDR" | cut -d':' -f1)
+        ras_port=$(echo "$RAS_SERVER_ADDR" | cut -d':' -f2)
+    fi
+
     local windows_host=$(grep nameserver /etc/resolv.conf 2>/dev/null | head -1 | awk '{print $2}')
 
     # Определяем хост для проверки
     if [[ -z "$ras_host" ]]; then
-        print_info "RAS_SERVER_HOST не задан, проверяем варианты..."
+        print_info "RAS_SERVER не задан в .env.local, проверяем варианты..."
     else
-        print_info "RAS_SERVER_HOST=$ras_host"
+        print_info "RAS_SERVER=$ras_host:$ras_port (из .env.local)"
     fi
 
     # Проверка localhost (mirrored mode)
@@ -386,13 +403,11 @@ print_recommendations() {
     if $ras_via_localhost; then
         echo -e "  ${GREEN}RAS доступен через localhost${NC}"
         echo -e "  Рекомендуемая конфигурация .env.local:"
-        echo -e "    ${BOLD}RAS_SERVER_HOST=localhost${NC}"
-        echo -e "    ${BOLD}RAS_SERVER_PORT=1545${NC}"
+        echo -e "    ${BOLD}RAS_SERVER=localhost:1545${NC}"
     elif $ras_via_windows; then
         echo -e "  ${YELLOW}RAS доступен только через Windows IP${NC}"
         echo -e "  Рекомендуемая конфигурация .env.local:"
-        echo -e "    ${BOLD}RAS_SERVER_HOST=$windows_host${NC}"
-        echo -e "    ${BOLD}RAS_SERVER_PORT=1545${NC}"
+        echo -e "    ${BOLD}RAS_SERVER=$windows_host:1545${NC}"
         echo ""
         if ! $is_mirrored; then
             echo -e "  ${YELLOW}Рекомендация:${NC} включите mirrored mode в .wslconfig:"

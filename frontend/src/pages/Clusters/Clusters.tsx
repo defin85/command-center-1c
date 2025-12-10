@@ -1,64 +1,39 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { getV2 } from '../../api/generated'
 import type { Cluster } from '../../api/generated/model/cluster'
-import { apiClient } from '../../api/client'
 import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
+import {
+    useClusters,
+    useSystemConfig,
+    useCreateCluster,
+    useUpdateCluster,
+    useDeleteCluster,
+    useSyncCluster,
+} from '../../api/queries/clusters'
 
 const { TextArea } = Input
-
-// Initialize API client
-const api = getV2()
-
-// System config interface
-interface SystemConfig {
-    ras_default_server: string
-    ras_adapter_url: string
-}
 
 export const Clusters = () => {
     const navigate = useNavigate()
     const { message } = App.useApp()
-    const [clusters, setClusters] = useState<Cluster[]>([])
-    const [loading, setLoading] = useState(false)
+
+    // UI state
     const [modalVisible, setModalVisible] = useState(false)
     const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
-    const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null)
     const [discoverModalVisible, setDiscoverModalVisible] = useState(false)
     const [form] = Form.useForm()
 
-    const fetchSystemConfig = async () => {
-        try {
-            const response = await apiClient.get<SystemConfig>('/api/v2/system/config/')
-            setSystemConfig(response.data)
-        } catch (_error) {
-            // Use fallback defaults if config endpoint fails
-            console.warn('Failed to load system config, using defaults')
-            setSystemConfig({
-                ras_default_server: 'localhost:1545',
-                ras_adapter_url: 'http://localhost:8188',
-            })
-        }
-    }
+    // React Query hooks
+    const { data: clusters = [], isLoading } = useClusters()
+    const { data: systemConfig } = useSystemConfig()
 
-    const fetchClusters = async () => {
-        try {
-            setLoading(true)
-            const response = await api.getClustersListClusters()
-            setClusters(response.clusters ?? [])
-        } catch (error: any) {
-            message.error('Failed to load clusters: ' + error.message)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        fetchSystemConfig()
-        fetchClusters()
-    }, [])
+    // Mutations
+    const createCluster = useCreateCluster()
+    const updateCluster = useUpdateCluster()
+    const deleteCluster = useDeleteCluster()
+    const syncCluster = useSyncCluster()
 
     const handleCreate = () => {
         setEditingCluster(null)
@@ -77,33 +52,35 @@ export const Clusters = () => {
         setModalVisible(true)
     }
 
-    const handleDelete = async (id: string) => {
-        try {
-            await api.delClustersDeleteCluster({ cluster_id: id })
-            message.success('Cluster deleted successfully')
-            fetchClusters()
-        } catch (error: any) {
-            message.error('Failed to delete cluster: ' + error.message)
-        }
+    const handleDelete = (id: string) => {
+        deleteCluster.mutate(id, {
+            onSuccess: () => {
+                message.success('Cluster deleted successfully')
+            },
+            onError: (error: Error) => {
+                message.error('Failed to delete cluster: ' + error.message)
+            },
+        })
     }
 
-    const handleSync = async (id: string, name: string) => {
-        try {
-            message.loading({ content: `Syncing ${name}...`, key: 'sync' })
-            const result = await api.postClustersSyncCluster({ cluster_id: id })
-            // databases_found may be undefined if sync is async (Celery task)
-            const dbInfo = result.databases_found !== undefined
-                ? `. Found ${result.databases_found} databases.`
-                : ''
-            message.success({
-                content: `${result.message}${dbInfo}`,
-                key: 'sync',
-            })
-            // Refresh cluster list after short delay to allow async sync to complete
-            setTimeout(() => fetchClusters(), 1000)
-        } catch (error: any) {
-            message.error({ content: 'Sync failed: ' + error.message, key: 'sync' })
-        }
+    const handleSync = (id: string, name: string) => {
+        message.loading({ content: `Syncing ${name}...`, key: 'sync' })
+
+        syncCluster.mutate(id, {
+            onSuccess: (result) => {
+                // databases_found may be undefined if sync is async
+                const dbInfo = result.databases_found !== undefined
+                    ? `. Found ${result.databases_found} databases.`
+                    : ''
+                message.success({
+                    content: `${result.message}${dbInfo}`,
+                    key: 'sync',
+                })
+            },
+            onError: (error: Error) => {
+                message.error({ content: 'Sync failed: ' + error.message, key: 'sync' })
+            },
+        })
     }
 
     const handleViewDatabases = (clusterId: string) => {
@@ -115,18 +92,33 @@ export const Clusters = () => {
             const values = await form.validateFields()
 
             if (editingCluster) {
-                await api.putClustersUpdateCluster(values, { cluster_id: editingCluster.id })
-                message.success('Cluster updated successfully')
+                updateCluster.mutate(
+                    { id: editingCluster.id, data: values },
+                    {
+                        onSuccess: () => {
+                            message.success('Cluster updated successfully')
+                            setModalVisible(false)
+                            form.resetFields()
+                        },
+                        onError: (error: Error) => {
+                            message.error('Operation failed: ' + error.message)
+                        },
+                    }
+                )
             } else {
-                await api.postClustersCreateCluster(values)
-                message.success('Cluster created successfully')
+                createCluster.mutate(values, {
+                    onSuccess: () => {
+                        message.success('Cluster created successfully')
+                        setModalVisible(false)
+                        form.resetFields()
+                    },
+                    onError: (error: Error) => {
+                        message.error('Operation failed: ' + error.message)
+                    },
+                })
             }
-
-            setModalVisible(false)
-            form.resetFields()
-            fetchClusters()
-        } catch (error: any) {
-            message.error('Operation failed: ' + error.message)
+        } catch {
+            // Form validation failed - errors shown automatically
         }
     }
 
@@ -195,9 +187,10 @@ export const Clusters = () => {
                     </Button>
                     <Button
                         size="small"
-                        icon={<SyncOutlined />}
+                        icon={<SyncOutlined spin={syncCluster.isPending} />}
                         onClick={() => handleSync(record.id, record.name)}
                         title="Sync with RAS"
+                        disabled={syncCluster.isPending}
                     />
                     <Button
                         size="small"
@@ -212,7 +205,13 @@ export const Clusters = () => {
                         okText="Yes"
                         cancelText="No"
                     >
-                        <Button size="small" danger icon={<DeleteOutlined />} title="Delete" />
+                        <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            title="Delete"
+                            loading={deleteCluster.isPending}
+                        />
                     </Popconfirm>
                 </Space>
             ),
@@ -239,7 +238,7 @@ export const Clusters = () => {
             <Table
                 columns={columns}
                 dataSource={clusters}
-                loading={loading}
+                loading={isLoading}
                 rowKey="id"
                 pagination={{ pageSize: 20 }}
             />
@@ -254,6 +253,7 @@ export const Clusters = () => {
                 }}
                 width={600}
                 okText={editingCluster ? 'Update' : 'Create'}
+                confirmLoading={createCluster.isPending || updateCluster.isPending}
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
@@ -306,10 +306,6 @@ export const Clusters = () => {
             <DiscoverClustersModal
                 visible={discoverModalVisible}
                 onClose={() => setDiscoverModalVisible(false)}
-                onSuccess={() => {
-                    // Refresh cluster list after discovery completes
-                    setTimeout(() => fetchClusters(), 2000)
-                }}
             />
         </div>
     )

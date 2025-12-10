@@ -12,6 +12,7 @@ import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflo
 import { ServiceMeshPage } from './pages/ServiceMesh'
 import { Login } from './pages/Login/Login'
 import { API_ERROR_EVENT } from './api/client'
+import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -72,6 +73,9 @@ function GlobalApiErrorHandler() {
 }
 
 function App() {
+  // Enable real-time cache invalidation via WebSocket
+  useRealtimeInvalidation()
+
   return (
     <ErrorBoundary>
       <ConfigProvider theme={{

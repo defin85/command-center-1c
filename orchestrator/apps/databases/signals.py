@@ -1,13 +1,20 @@
-"""Django signals for automatic status history logging."""
+"""Django signals for automatic status history logging and dashboard invalidation."""
 
 import logging
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
 from .models import Cluster, Database, BatchService, StatusHistory
 
 logger = logging.getLogger(__name__)
+
+
+# Import broadcast function from operations signals (lazy import to avoid circular)
+def _broadcast_dashboard_invalidate(scope: str, entity_id: str = None):
+    """Lazy wrapper to avoid circular imports."""
+    from apps.operations.signals import broadcast_dashboard_invalidate
+    broadcast_dashboard_invalidate(scope, entity_id)
 
 
 @receiver(pre_save, sender=Cluster)
@@ -101,3 +108,31 @@ def log_batch_service_status_change(sender, instance, **kwargs):
 
     except BatchService.DoesNotExist:
         pass
+
+
+# ============================================================================
+# Dashboard invalidation signals
+# ============================================================================
+
+@receiver(post_save, sender=Cluster)
+def on_cluster_saved(sender, instance, created, **kwargs):
+    """Broadcast invalidation when Cluster is created or updated."""
+    _broadcast_dashboard_invalidate("clusters", instance.id)
+
+
+@receiver(post_delete, sender=Cluster)
+def on_cluster_deleted(sender, instance, **kwargs):
+    """Broadcast invalidation when Cluster is deleted."""
+    _broadcast_dashboard_invalidate("clusters", instance.id)
+
+
+@receiver(post_save, sender=Database)
+def on_database_saved(sender, instance, created, **kwargs):
+    """Broadcast invalidation when Database is created or updated."""
+    _broadcast_dashboard_invalidate("databases", instance.id)
+
+
+@receiver(post_delete, sender=Database)
+def on_database_deleted(sender, instance, **kwargs):
+    """Broadcast invalidation when Database is deleted."""
+    _broadcast_dashboard_invalidate("databases", instance.id)

@@ -17,6 +17,10 @@
   margin-bottom: 16px;
 }
 
+.service-mesh-tab__diagram-container {
+  width: 100%;
+}
+
 /* Ensure proper spacing between sections */
 .service-mesh-tab > * {
   margin-bottom: 16px;

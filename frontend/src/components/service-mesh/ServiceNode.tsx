@@ -93,9 +93,13 @@ function getOperationClassName(status: OperationFlowStatus | null | undefined): 
 }
 
 const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
-  const { metrics, onSelect, isSelected, operationStatus, onMouseEnter, onMouseLeave } = data
+  const { metrics, onSelect, isSelected, operationStatus, onMouseEnter, onMouseLeave, direction } = data
   const icon = SERVICE_ICONS[metrics.name] || <ApiOutlined />
   const operationClass = getOperationClassName(operationStatus)
+
+  // Dynamic handle positions based on layout direction
+  const targetPosition = direction === 'LR' ? Position.Left : Position.Top
+  const sourcePosition = direction === 'LR' ? Position.Right : Position.Bottom
 
   const handleClick = () => {
     onSelect(metrics.name)
@@ -111,10 +115,10 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
         borderColor: isSelected ? STATUS_COLORS[metrics.status] : undefined,
       }}
     >
-      {/* Input handle for connections from above */}
+      {/* Input handle - position depends on layout direction */}
       <Handle
         type="target"
-        position={Position.Top}
+        position={targetPosition}
         className="service-node__handle"
       />
 
@@ -160,10 +164,10 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
         </div>
       )}
 
-      {/* Output handle for connections to below */}
+      {/* Output handle - position depends on layout direction */}
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={sourcePosition}
         className="service-node__handle"
       />
     </div>

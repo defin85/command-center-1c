@@ -8,19 +8,36 @@ import (
 
 // ========== Message Protocol v2.0 Structs ==========
 
+// TargetDatabase represents a target database for operation
+type TargetDatabase struct {
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	ClusterID     string `json:"cluster_id,omitempty"`
+	RASInfobaseID string `json:"ras_infobase_id,omitempty"`
+}
+
 // OperationMessage v2.0 - Full protocol specification
 type OperationMessage struct {
-	Version      string           `json:"version"`
-	OperationID  string           `json:"operation_id"`
-	BatchID      string           `json:"batch_id,omitempty"`
-	OperationType string          `json:"operation_type"`
-	Entity       string           `json:"entity"`
+	Version       string           `json:"version"`
+	OperationID   string           `json:"operation_id"`
+	BatchID       string           `json:"batch_id,omitempty"`
+	OperationType string           `json:"operation_type"`
+	Entity        string           `json:"entity"`
 
-	TargetDatabases []string `json:"target_databases"`
+	TargetDatabases []TargetDatabase `json:"target_databases"`
 
-	Payload      OperationPayload `json:"payload"`
-	ExecConfig   ExecutionConfig  `json:"execution_config"`
-	Metadata     MessageMetadata  `json:"metadata"`
+	Payload    OperationPayload `json:"payload"`
+	ExecConfig ExecutionConfig  `json:"execution_config"`
+	Metadata   MessageMetadata  `json:"metadata"`
+}
+
+// GetTargetDatabaseIDs returns slice of database IDs
+func (om *OperationMessage) GetTargetDatabaseIDs() []string {
+	ids := make([]string, len(om.TargetDatabases))
+	for i, db := range om.TargetDatabases {
+		ids[i] = db.ID
+	}
+	return ids
 }
 
 type OperationPayload struct {
@@ -105,6 +122,13 @@ func (om *OperationMessage) Validate() error {
 	// Meta-operations (sync_cluster, etc.) don't require target_databases
 	if !IsMetaOperation(om.OperationType) && len(om.TargetDatabases) == 0 {
 		return fmt.Errorf("target_databases cannot be empty")
+	}
+
+	// Validate each target has ID
+	for i, db := range om.TargetDatabases {
+		if db.ID == "" {
+			return fmt.Errorf("target_databases[%d].id cannot be empty", i)
+		}
 	}
 
 	return nil

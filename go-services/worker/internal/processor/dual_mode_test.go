@@ -159,7 +159,7 @@ func createTestOperationMessage(extensionName, extensionPath, databaseID string)
 		OperationID:   "op-test-123",
 		OperationType: "install_extension",
 		Entity:        "extension",
-		TargetDatabases: []string{databaseID},
+		TargetDatabases: []models.TargetDatabase{{ID: databaseID}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
 				"extension_name": extensionName,

@@ -19,7 +19,7 @@ func TestOperationMessage_Validate(t *testing.T) {
 				Version:         "2.0",
 				OperationID:     "test-123",
 				OperationType:   "create",
-				TargetDatabases: []string{"db-1"},
+				TargetDatabases: []TargetDatabase{{ID: "db-1"}},
 			},
 			wantErr: false,
 		},
@@ -37,7 +37,7 @@ func TestOperationMessage_Validate(t *testing.T) {
 				Version:         "1.0",
 				OperationID:     "test-123",
 				OperationType:   "create",
-				TargetDatabases: []string{"db-1"},
+				TargetDatabases: []TargetDatabase{{ID: "db-1"}},
 			},
 			wantErr: true,
 		},
@@ -46,7 +46,7 @@ func TestOperationMessage_Validate(t *testing.T) {
 			msg: OperationMessage{
 				Version:         "2.0",
 				OperationID:     "test-123",
-				TargetDatabases: []string{"db-1"},
+				TargetDatabases: []TargetDatabase{{ID: "db-1"}},
 			},
 			wantErr: true,
 		},
@@ -56,7 +56,17 @@ func TestOperationMessage_Validate(t *testing.T) {
 				Version:         "2.0",
 				OperationID:     "test-123",
 				OperationType:   "create",
-				TargetDatabases: []string{},
+				TargetDatabases: []TargetDatabase{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "target_database with empty id",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "create",
+				TargetDatabases: []TargetDatabase{{ID: ""}},
 			},
 			wantErr: true,
 		},
@@ -72,13 +82,37 @@ func TestOperationMessage_Validate(t *testing.T) {
 	}
 }
 
+func TestOperationMessage_GetTargetDatabaseIDs(t *testing.T) {
+	msg := OperationMessage{
+		Version:       "2.0",
+		OperationID:   "test-123",
+		OperationType: "create",
+		TargetDatabases: []TargetDatabase{
+			{ID: "db-1", Name: "Database 1"},
+			{ID: "db-2", Name: "Database 2", ClusterID: "cluster-1"},
+			{ID: "db-3"},
+		},
+	}
+
+	ids := msg.GetTargetDatabaseIDs()
+	if len(ids) != 3 {
+		t.Errorf("expected 3 IDs, got %d", len(ids))
+	}
+	if ids[0] != "db-1" || ids[1] != "db-2" || ids[2] != "db-3" {
+		t.Errorf("unexpected IDs: %v", ids)
+	}
+}
+
 func TestOperationMessage_JSONSerialization(t *testing.T) {
 	msg := OperationMessage{
-		Version:         "2.0",
-		OperationID:     "test-123",
-		OperationType:   "create",
-		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-1", "db-2"},
+		Version:       "2.0",
+		OperationID:   "test-123",
+		OperationType: "create",
+		Entity:        "Catalog_Users",
+		TargetDatabases: []TargetDatabase{
+			{ID: "db-1", Name: "Database 1"},
+			{ID: "db-2", Name: "Database 2", ClusterID: "cluster-1", RASInfobaseID: "infobase-1"},
+		},
 		Payload: OperationPayload{
 			Data: map[string]interface{}{
 				"Name": "Test User",

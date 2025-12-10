@@ -23,6 +23,21 @@
 export type ServiceStatus = 'healthy' | 'degraded' | 'critical'
 
 /**
+ * Direction of the diagram layout (for dagre)
+ * - TB: Top to Bottom (vertical)
+ * - LR: Left to Right (horizontal)
+ */
+export type LayoutDirection = 'TB' | 'LR'
+
+/**
+ * Direction mode for the diagram
+ * - TB: Always vertical
+ * - LR: Always horizontal
+ * - auto: Automatically choose based on container aspect ratio
+ */
+export type DirectionMode = 'TB' | 'LR' | 'auto'
+
+/**
  * Metrics for a single service in the mesh
  */
 export interface ServiceMetrics {
@@ -111,8 +126,14 @@ export type ServiceMeshMessageType =
   | 'metrics_update'
   | 'operation_flow_update'
   | 'interval_updated'
+  | 'dashboard_invalidate'
   | 'error'
   | 'pong'
+
+/**
+ * Scope for dashboard cache invalidation
+ */
+export type InvalidationScope = 'operations' | 'databases' | 'clusters' | 'all'
 
 /**
  * WebSocket message from server
@@ -127,6 +148,10 @@ export interface ServiceMeshWSMessage {
   interval?: number
   code?: string
   message?: string
+
+  // Dashboard invalidation fields (for dashboard_invalidate)
+  scope?: InvalidationScope
+  entity_id?: string
 
   // Operation flow fields (for operation_flow_update)
   operation_id?: string
@@ -230,6 +255,8 @@ export interface ServiceNodeData {
   operationStatus?: OperationFlowStatus | null
   onMouseEnter?: () => void
   onMouseLeave?: () => void
+  /** Layout direction for handle positioning */
+  direction?: LayoutDirection
 }
 
 /**

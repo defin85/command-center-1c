@@ -1,14 +1,15 @@
 /**
  * Main Operations page with tabs.
  * Orchestrates OperationsTable, LiveMonitorTab, and NewOperationWizard components.
+ *
+ * Uses React Query for data fetching with automatic polling.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Tabs, Button, Space, Alert } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
-import { getV2 } from '../../api/generated'
-import { transformBatchOperation } from '../../utils/operationTransforms'
+import { useOperations, useCancelOperation } from '../../api/queries/operations'
 import { OperationsTable } from './components/OperationsTable'
 import { OperationDetailsModal } from './components/OperationDetailsModal'
 import { LiveMonitorTab } from './components/LiveMonitorTab'
@@ -16,89 +17,49 @@ import { NewOperationWizard } from './components/NewOperationWizard'
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation, OperationsTabKey } from './types'
 
-// Initialize generated API
-const api = getV2()
-
 /**
  * OperationsPage - Main page with tabs for operations list and live monitor
  */
 export const OperationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // State
-  const [operations, setOperations] = useState<UIBatchOperation[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // UI State (not data-related)
   const [selectedOperation, setSelectedOperation] = useState<UIBatchOperation | null>(null)
   const [detailsVisible, setDetailsVisible] = useState(false)
   const [wizardVisible, setWizardVisible] = useState(false)
-
-  // AbortController ref for cancelling in-flight requests
-  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Get active tab from URL or default to 'list'
   const activeTab = (searchParams.get('tab') as OperationsTabKey) || 'list'
   const operationId = searchParams.get('operation') || undefined
 
-  // Fetch operations from API with abort support
-  const fetchOperations = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setLoading(true)
-      setError(null)
-      const response = await api.getOperationsListOperations()
-      if (!signal?.aborted) {
-        setOperations(response.operations.map(transformBatchOperation))
-      }
-    } catch (err) {
-      if (!signal?.aborted) {
-        console.error('Failed to load operations:', err)
-        setError('Failed to load operations. Please try again.')
-      }
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false)
-      }
-    }
-  }, [])
+  // React Query: operations list with 5s polling
+  const {
+    data: operations = [],
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useOperations({ refetchInterval: 5000 })
 
-  // Auto-refresh polling with abort support
-  useEffect(() => {
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
+  // React Query: cancel mutation
+  const cancelMutation = useCancelOperation()
 
-    fetchOperations(abortController.signal)
-
-    // Auto-refresh every 5 seconds
-    const interval = setInterval(() => {
-      fetchOperations(abortController.signal)
-    }, 5000)
-
-    return () => {
-      abortController.abort()
-      clearInterval(interval)
-    }
-  }, [fetchOperations])
+  // Derive error message from query error
+  const error = queryError
+    ? 'Failed to load operations. Please try again.'
+    : null
 
   // Manual refresh handler
   const handleRefresh = useCallback(() => {
-    // Cancel any in-flight request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    const newController = new AbortController()
-    abortControllerRef.current = newController
-    fetchOperations(newController.signal)
-  }, [fetchOperations])
+    refetch()
+  }, [refetch])
 
   // Handle cancel operation
-  const handleCancel = async (id: string) => {
-    try {
-      await api.postOperationsCancelOperation({ operation_id: id })
-      handleRefresh()
-    } catch (err) {
-      console.error('Failed to cancel operation:', err)
-    }
-  }
+  const handleCancel = useCallback(
+    (id: string) => {
+      cancelMutation.mutate(id)
+    },
+    [cancelMutation]
+  )
 
   // Show operation details modal
   const handleViewDetails = (operation: UIBatchOperation) => {
@@ -123,17 +84,20 @@ export const OperationsPage = () => {
   }
 
   // Handle new operation wizard submit
-  const handleWizardSubmit = useCallback(async (data: NewOperationData) => {
-    // TODO: Implement actual API call to create operation
-    // For now, just log and close
-    console.log('Creating operation:', data)
+  const handleWizardSubmit = useCallback(
+    async (data: NewOperationData) => {
+      // TODO: Implement actual API call to create operation
+      // For now, just log and close
+      console.log('Creating operation:', data)
 
-    // Placeholder: In future phases, this will call the appropriate API
-    // based on data.operationType (e.g., batch lock, batch health check, etc.)
+      // Placeholder: In future phases, this will call the appropriate API
+      // based on data.operationType (e.g., batch lock, batch health check, etc.)
 
-    // Refresh operations list after creation
-    handleRefresh()
-  }, [handleRefresh])
+      // Refresh operations list after creation
+      handleRefresh()
+    },
+    [handleRefresh]
+  )
 
   // Tab items configuration
   const tabItems = [
@@ -186,7 +150,6 @@ export const OperationsPage = () => {
           message={error}
           type="error"
           closable
-          onClose={() => setError(null)}
           style={{ marginBottom: 16 }}
         />
       )}

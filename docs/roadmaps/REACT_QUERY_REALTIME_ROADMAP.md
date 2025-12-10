@@ -3,9 +3,11 @@
 > Интеграция React Query для кэширования с WebSocket для real-time обновлений
 
 **Дата создания:** 2025-12-10
-**Статус:** Planned
+**Дата завершения:** 2025-12-10
+**Статус:** ✅ Completed
 **Приоритет:** Medium
 **Оценка:** 1-2 недели
+**Фактически:** ~4-5 часов
 **Зависимости:** useServiceMesh (уже реализован)
 
 ---
@@ -194,11 +196,11 @@ export const queryKeys = {
 
 ### Критерии завершения Phase 1
 
-- [ ] React Query установлен
-- [ ] QueryClientProvider настроен в main.tsx
-- [ ] DevTools доступны в development
-- [ ] Query keys factory создан
-- [ ] Базовые типы определены
+- [x] React Query установлен
+- [x] QueryClientProvider настроен в main.tsx
+- [x] DevTools доступны в development
+- [x] Query keys factory создан
+- [x] Базовые типы определены
 
 ---
 
@@ -290,11 +292,11 @@ export function useDashboardStats(): DashboardStats & { refresh: () => void } {
 
 ### Критерии завершения Phase 2
 
-- [ ] useDashboardQuery создан
-- [ ] useDashboardStats рефакторен на React Query
-- [ ] Dashboard работает без регрессий
-- [ ] Навигация туда-обратно использует кэш (проверить Network tab)
-- [ ] DevTools показывают кэшированные данные
+- [x] useDashboardQuery создан
+- [x] useDashboardStats рефакторен на React Query
+- [x] Dashboard работает без регрессий
+- [x] Навигация туда-обратно использует кэш (проверить Network tab)
+- [x] DevTools показывают кэшированные данные
 
 ---
 
@@ -433,11 +435,11 @@ function App() {
 
 ### Критерии завершения Phase 3
 
-- [ ] WebSocket consumer расширен для dashboard_invalidate
-- [ ] Django signals отправляют broadcast при изменениях
-- [ ] useRealtimeInvalidation создан
-- [ ] При изменении операции Dashboard обновляется автоматически
-- [ ] Тест: создать операцию → Dashboard обновился без refresh
+- [x] WebSocket consumer расширен для dashboard_invalidate
+- [x] Django signals отправляют broadcast при изменениях
+- [x] useRealtimeInvalidation создан
+- [x] При изменении операции Dashboard обновляется автоматически
+- [x] Тест: создать операцию → Dashboard обновился без refresh
 
 ---
 
@@ -500,11 +502,11 @@ export function useClusters() {
 
 ### Критерии завершения Phase 4
 
-- [ ] Databases page использует React Query
-- [ ] Operations page использует React Query
-- [ ] Clusters page использует React Query
-- [ ] Все страницы работают с кэшированием
-- [ ] WebSocket invalidation работает для всех страниц
+- [x] Databases page использует React Query
+- [x] Operations page использует React Query
+- [x] Clusters page использует React Query
+- [x] Все страницы работают с кэшированием
+- [x] WebSocket invalidation работает для всех страниц
 
 ---
 
@@ -556,9 +558,7 @@ export function useDeleteOperation() {
 
 ### Критерии завершения Phase 5
 
-- [ ] Optimistic updates для delete операций
-- [ ] Optimistic updates для create операций
-- [ ] Rollback при ошибках работает корректно
+- [~] Пропущено — не требуется для данного проекта (RAS операции долгие, CRUD редкий)
 
 ---
 

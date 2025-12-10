@@ -183,16 +183,17 @@ export const SelectTypeStep = ({
       {/* Loading state for custom templates */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <Spin tip="Loading custom templates..." />
+          <Spin />
+          <div style={{ marginTop: 8, color: '#595959' }}>Loading custom templates...</div>
         </div>
       )}
 
-      {/* Error state for custom templates (non-blocking) */}
-      {error && (
+      {/* Error state for custom templates - only show for real errors, not 404/empty */}
+      {error && !error.includes('404') && !error.includes('Not Found') && (
         <Alert
           message="Could not load custom templates"
-          description="Built-in operations are still available. Custom templates may appear after refresh."
-          type="warning"
+          description="Built-in operations are still available."
+          type="info"
           showIcon
           style={{ marginBottom: 24 }}
           closable

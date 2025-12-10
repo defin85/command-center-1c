@@ -1,56 +1,24 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { Modal, Form, Input, App } from 'antd'
-import { apiClient } from '../../api/client'
+import { useSystemConfig, useDiscoverClusters, type DiscoverClustersRequest } from '../../api/queries/clusters'
 
 interface DiscoverClustersModalProps {
     visible: boolean
     onClose: () => void
-    onSuccess: () => void
-}
-
-interface SystemConfig {
-    ras_default_server: string
-    ras_adapter_url: string
-}
-
-interface DiscoverForm {
-    ras_server: string
-    cluster_service_url: string
-    cluster_user?: string
-    cluster_pwd?: string
-}
-
-interface DiscoverResponse {
-    operation_id: string
-    message?: string
 }
 
 export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
     visible,
     onClose,
-    onSuccess,
 }) => {
     const { message } = App.useApp()
-    const [form] = Form.useForm<DiscoverForm>()
-    const [loading, setLoading] = useState(false)
-    const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null)
+    const [form] = Form.useForm<DiscoverClustersRequest>()
 
-    useEffect(() => {
-        const fetchSystemConfig = async () => {
-            try {
-                const response = await apiClient.get<SystemConfig>('/api/v2/system/config/')
-                setSystemConfig(response.data)
-            } catch (_error) {
-                // Use fallback defaults if config endpoint fails
-                setSystemConfig({
-                    ras_default_server: 'localhost:1545',
-                    ras_adapter_url: 'http://localhost:8188',
-                })
-            }
-        }
-        fetchSystemConfig()
-    }, [])
+    // React Query hooks
+    const { data: systemConfig } = useSystemConfig()
+    const discoverClusters = useDiscoverClusters()
 
+    // Set default values when modal opens
     useEffect(() => {
         if (visible && systemConfig) {
             form.setFieldsValue({
@@ -63,24 +31,23 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
     const handleDiscover = async () => {
         try {
             const values = await form.validateFields()
-            setLoading(true)
 
-            const response = await apiClient.post<DiscoverResponse>(
-                '/api/v2/clusters/discover-clusters/',
-                values
-            )
-            message.success(`Discovery started. Operation ID: ${response.data.operation_id}`)
-            form.resetFields()
-            onSuccess()
-            onClose()
-        } catch (error: any) {
-            const errorMessage =
-                error.response?.data?.error?.message ||
-                error.response?.data?.message ||
-                error.message
-            message.error('Discovery failed: ' + errorMessage)
-        } finally {
-            setLoading(false)
+            discoverClusters.mutate(values, {
+                onSuccess: (response) => {
+                    message.success(`Discovery started. Operation ID: ${response.operation_id}`)
+                    form.resetFields()
+                    onClose()
+                },
+                onError: (error: any) => {
+                    const errorMessage =
+                        error.response?.data?.error?.message ||
+                        error.response?.data?.message ||
+                        error.message
+                    message.error('Discovery failed: ' + errorMessage)
+                },
+            })
+        } catch {
+            // Form validation failed - errors shown automatically
         }
     }
 
@@ -95,7 +62,7 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
             open={visible}
             onOk={handleDiscover}
             onCancel={handleCancel}
-            confirmLoading={loading}
+            confirmLoading={discoverClusters.isPending}
             okText="Discover"
             cancelText="Cancel"
         >

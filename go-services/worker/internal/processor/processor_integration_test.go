@@ -137,7 +137,7 @@ func TestProcessor_Integration_CreateOperation(t *testing.T) {
 		OperationID:     "test-op-001",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
 				"Name":  "John Doe",
@@ -201,7 +201,7 @@ func TestProcessor_Integration_UpdateOperation(t *testing.T) {
 		OperationID:     "test-op-002",
 		OperationType:   "update",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Filters: map[string]interface{}{
 				"entity_id": "guid'test-guid-12345'",
@@ -248,7 +248,7 @@ func TestProcessor_Integration_DeleteOperation(t *testing.T) {
 		OperationID:     "test-op-003",
 		OperationType:   "delete",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Filters: map[string]interface{}{
 				"entity_id": "guid'test-guid-12345'",
@@ -292,7 +292,7 @@ func TestProcessor_Integration_QueryOperation(t *testing.T) {
 		OperationID:     "test-op-004",
 		OperationType:   "query",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Options: map[string]interface{}{
 				"filter": "Name eq 'John'",
@@ -346,7 +346,7 @@ func TestProcessor_Integration_AuthError(t *testing.T) {
 		OperationID:     "test-op-005",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
 				"Name": "Test",
@@ -399,7 +399,7 @@ func TestProcessor_Integration_MultipleTargets(t *testing.T) {
 		OperationID:     "test-op-006",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001", "db-002", "db-003"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}, {ID: "db-002"}, {ID: "db-003"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
 				"Name": "Test User",
@@ -455,7 +455,7 @@ func TestProcessor_Integration_ClientCaching(t *testing.T) {
 		OperationID:     "test-op-007",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{"Name": "User 1"},
 		},
@@ -475,7 +475,7 @@ func TestProcessor_Integration_ClientCaching(t *testing.T) {
 		OperationID:     "test-op-008",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{"Name": "User 2"},
 		},
@@ -522,7 +522,7 @@ func TestProcessor_Integration_Timeout(t *testing.T) {
 		OperationID:     "test-op-009",
 		OperationType:   "create",
 		Entity:          "Catalog_Users",
-		TargetDatabases: []string{"db-001"},
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{"Name": "Test"},
 		},

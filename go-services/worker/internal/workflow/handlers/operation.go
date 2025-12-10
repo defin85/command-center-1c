@@ -188,12 +188,22 @@ func parseOperationConfig(node *models.Node) (*models.OperationNodeConfig, error
 }
 
 // extractTargetDatabases gets target database IDs from context and node config.
+// Handles both new format ([]models.TargetDatabase) and JSON-deserialized format ([]interface{}).
 func extractTargetDatabases(execCtx *wfcontext.ExecutionContext, node *models.Node) []string {
 	// Check context for target_databases
 	if val, ok := execCtx.Get("target_databases"); ok {
+		// Handle []interface{} from JSON deserialization
 		if dbs, ok := val.([]interface{}); ok {
 			result := make([]string, 0, len(dbs))
 			for _, db := range dbs {
+				// Try to extract ID from map (JSON object format)
+				if m, ok := db.(map[string]interface{}); ok {
+					if id, ok := m["id"].(string); ok && id != "" {
+						result = append(result, id)
+						continue
+					}
+				}
+				// Fallback: try direct string (old format)
 				if s, ok := db.(string); ok {
 					result = append(result, s)
 				}
@@ -202,8 +212,27 @@ func extractTargetDatabases(execCtx *wfcontext.ExecutionContext, node *models.No
 				return result
 			}
 		}
+		// Handle []string (backward compatibility)
 		if dbs, ok := val.([]string); ok {
 			return dbs
+		}
+	}
+
+	// Check for target_database_ids (helper field from workflow_handler)
+	if val, ok := execCtx.Get("target_database_ids"); ok {
+		if ids, ok := val.([]string); ok {
+			return ids
+		}
+		if ids, ok := val.([]interface{}); ok {
+			result := make([]string, 0, len(ids))
+			for _, id := range ids {
+				if s, ok := id.(string); ok {
+					result = append(result, s)
+				}
+			}
+			if len(result) > 0 {
+				return result
+			}
 		}
 	}
 

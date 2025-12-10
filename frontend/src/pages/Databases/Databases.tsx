@@ -1,45 +1,35 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, message } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { getV2 } from '../../api/generated'
-import type { Cluster } from '../../api/generated/model/cluster'
 import type { Database } from '../../api/generated/model/database'
-import { customInstance } from '../../api/mutator'
 import { extractInstallationFromStatus } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
 import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
 import type { ExtensionInstallation } from '../../types/installation'
 import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
-import { useDatabaseActions } from '../../hooks/useDatabaseActions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
+import { queryKeys } from '../../api/queries'
+import { useDatabases, useExecuteRasOperation, useInstallExtension } from '../../api/queries/databases'
+import { useClusters } from '../../api/queries/clusters'
 
-// Get generated API functions
+// Get generated API functions (for fetchStatus in InstallationProgressModal)
 const api = getV2()
-
-// InstallSingle API response type (not in generated yet)
-interface InstallSingleResponse {
-  task_id: string
-  operation_id: string
-  message: string
-  status: string
-  queued_count?: number
-}
 
 export const Databases = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const clusterIdFromUrl = searchParams.get('cluster')
 
-  const [databases, setDatabases] = useState<Database[]>([])
-  const [clusters, setClusters] = useState<Cluster[]>([])
-  const [loading, setLoading] = useState(false)
+  // UI State
   const [selectedClusterId, setSelectedClusterId] = useState<string | undefined>(
     clusterIdFromUrl || undefined
   )
-  const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [progressModalVisible, setProgressModalVisible] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null)
@@ -57,66 +47,26 @@ export const Databases = () => {
     databases: Array<{ id: string; name: string }>
   }>({ visible: false, operation: '', databases: [] })
 
-  // Hook for RAS operations
-  const { execute: executeAction, loading: actionLoading } = useDatabaseActions()
+  // React Query hooks
+  const { data: clusters = [], isLoading: clustersLoading } = useClusters()
+  const { data: databases = [], isLoading: databasesLoading } = useDatabases({
+    filters: selectedClusterId ? { cluster_id: selectedClusterId } : undefined,
+  })
 
-  // Загрузка кластеров
-  useEffect(() => {
-    const fetchClusters = async () => {
-      try {
-        const response = await api.getClustersListClusters()
-        const data = response.clusters ?? []
-        setClusters(data)
+  // Mutations
+  const executeRasOperation = useExecuteRasOperation()
+  const installExtension = useInstallExtension()
 
-        // Найти выбранный кластер
-        if (clusterIdFromUrl) {
-          const cluster = data.find((c) => c.id === clusterIdFromUrl)
-          setSelectedCluster(cluster || null)
-        }
-      } catch (error) {
-        console.error('Failed to load clusters:', error)
-      }
-    }
-    fetchClusters()
-  }, [clusterIdFromUrl])
-
-  // Загрузка баз данных
-  useEffect(() => {
-    const fetchDatabases = async () => {
-      try {
-        setLoading(true)
-        let data: Database[]
-
-        if (selectedClusterId) {
-          // Загрузить базы конкретного кластера
-          const response = await api.getClustersGetClusterDatabases({ cluster_id: selectedClusterId })
-          data = response.databases ?? []
-        } else {
-          // Загрузить все базы
-          const response = await api.getDatabasesListDatabases()
-          data = response.databases ?? []
-        }
-
-        setDatabases(data)
-      } catch (error) {
-        console.error('Failed to load databases:', error)
-        setDatabases([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchDatabases()
-  }, [selectedClusterId])
+  // Derived state: selected cluster object
+  const selectedCluster = useMemo(() => {
+    if (!selectedClusterId || !clusters.length) return null
+    return clusters.find((c) => c.id === selectedClusterId) || null
+  }, [selectedClusterId, clusters])
 
   const handleClusterChange = (value: string | undefined) => {
     setSelectedClusterId(value)
 
-    // Найти выбранный кластер (defensive: handle undefined clusters)
-    const cluster = value ? (clusters ?? []).find((c) => c.id === value) : null
-    setSelectedCluster(cluster ?? null)
-
-    // Обновить URL
+    // Update URL
     if (value) {
       navigate(`/databases?cluster=${value}`, { replace: true })
     } else {
@@ -136,64 +86,57 @@ export const Databases = () => {
       const values = await form.validateFields()
 
       if (!values.extension || !values.extension.name || !values.extension.path) {
-        message.error('Vyberite fayl rasshireniya');
-        return;
+        message.error('Vyberite fayl rasshireniya')
+        return
       }
 
-      // installSingle endpoint not in generated API yet, use customInstance directly
-      const response = await customInstance<InstallSingleResponse>({
-        url: '/extensions/install-single/',
-        method: 'POST',
-        data: {
-          database_id: selectedDatabase.id,
-          extension_name: values.extension.name,
-          extension_path: values.extension.path,
+      installExtension.mutate(
+        {
+          databaseId: selectedDatabase.id,
+          extensionName: values.extension.name,
+          extensionPath: values.extension.path,
         },
-      })
+        {
+          onSuccess: (response) => {
+            // Save Operation ID for monitoring
+            if (response.operation_id) {
+              setCurrentOperationId(response.operation_id)
+            }
 
-      // Сохранить Operation ID для мониторинга
-      if (response.operation_id) {
-        setCurrentOperationId(response.operation_id)
-      }
+            // Close file selection modal
+            setModalVisible(false)
+            form.resetFields()
 
-      // Закрыть модалку выбора файла
-      setModalVisible(false)
-      form.resetFields()
+            // Open progress modal
+            setProgressModalVisible(true)
 
-      // Открыть модалку прогресса
-      setProgressModalVisible(true)
-
-      // Показать сообщение с Operation ID
-      message.success({
-        content: (
-          <div>
-            <div>{response.message}</div>
-            {response.operation_id && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#666' }}>
-                Operation ID: {response.operation_id}
-              </div>
-            )}
-          </div>
-        ),
-        duration: 5,
-      })
+            // Show message with Operation ID
+            message.success({
+              content: (
+                <div>
+                  <div>{response.message}</div>
+                  {response.operation_id && (
+                    <div style={{ fontSize: '12px', marginTop: '4px', color: '#666' }}>
+                      Operation ID: {response.operation_id}
+                    </div>
+                  )}
+                </div>
+              ),
+              duration: 5,
+            })
+          },
+        }
+      )
     } catch (error) {
-      console.error('Failed to start installation:', error)
-      message.error('Failed to start installation')
+      console.error('Failed to validate form:', error)
     }
   }
 
   const handleProgressModalClose = () => {
     setProgressModalVisible(false)
     setSelectedDatabase(null)
-    // Обновить список баз данных после завершения
-    if (selectedClusterId) {
-      api.getClustersGetClusterDatabases({ cluster_id: selectedClusterId })
-        .then((response) => setDatabases(response.databases ?? []))
-    } else {
-      api.getDatabasesListDatabases()
-        .then((response) => setDatabases(response.databases ?? []))
-    }
+    // Invalidate databases query to refresh data
+    queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
   }
 
   // Row selection configuration
@@ -246,19 +189,28 @@ export const Databases = () => {
   // Confirm operation handler
   const handleConfirmOperation = useCallback(async (config?: { message?: string }) => {
     const operationType = confirmModal.operation as RASOperationType
-    const databases = confirmModal.databases
+    const dbs = confirmModal.databases
 
-    const operationId = await executeAction(operationType, databases, config)
+    executeRasOperation.mutate(
+      {
+        operationType,
+        databaseIds: dbs.map((db) => db.id),
+        config,
+      },
+      {
+        onSuccess: (data) => {
+          setConfirmModal({ visible: false, operation: '', databases: [] })
+          setSelectedRowKeys([])
+          setSelectedDatabases([])
 
-    setConfirmModal({ visible: false, operation: '', databases: [] })
-    setSelectedRowKeys([])
-    setSelectedDatabases([])
-
-    if (operationId) {
-      // Navigate to Operations Center to track the operation
-      navigate(`/operations?operation=${operationId}`)
-    }
-  }, [confirmModal, executeAction, navigate])
+          if (data.operation_id) {
+            // Navigate to Operations Center to track the operation
+            navigate(`/operations?operation=${data.operation_id}`)
+          }
+        },
+      }
+    )
+  }, [confirmModal, executeRasOperation, navigate])
 
   // Clear selection handler
   const handleClearSelection = useCallback(() => {
@@ -356,9 +308,9 @@ export const Databases = () => {
             allowClear
             value={selectedClusterId}
             onChange={handleClusterChange}
-            loading={!clusters || clusters.length === 0}
+            loading={clustersLoading}
           >
-            {(clusters ?? []).map((cluster) => (
+            {clusters.map((cluster) => (
               <Select.Option key={cluster.id} value={cluster.id}>
                 {cluster.name} ({cluster.databases_count ?? 0} databases)
               </Select.Option>
@@ -374,14 +326,14 @@ export const Databases = () => {
         selectedCount={selectedRowKeys.length}
         onAction={handleBulkAction}
         onClearSelection={handleClearSelection}
-        loading={actionLoading}
+        loading={executeRasOperation.isPending}
       />
 
       <Table
         rowSelection={rowSelection}
         columns={columns}
         dataSource={databases}
-        loading={loading}
+        loading={databasesLoading}
         rowKey="id"
         pagination={{ pageSize: 50 }}
       />
@@ -393,6 +345,7 @@ export const Databases = () => {
         onCancel={() => setModalVisible(false)}
         okText="Install"
         width={700}
+        confirmLoading={installExtension.isPending}
       >
         <Form form={form} layout="vertical">
           <Form.Item
@@ -439,9 +392,8 @@ export const Databases = () => {
         databases={confirmModal.databases}
         onConfirm={handleConfirmOperation}
         onCancel={() => setConfirmModal({ visible: false, operation: '', databases: [] })}
-        loading={actionLoading}
+        loading={executeRasOperation.isPending}
       />
     </div>
   )
 }
-

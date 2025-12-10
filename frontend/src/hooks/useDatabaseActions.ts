@@ -1,3 +1,19 @@
+/**
+ * @deprecated Use useExecuteRasOperation from api/queries/databases.ts instead.
+ * This hook will be removed in future versions.
+ *
+ * Migration guide:
+ * ```tsx
+ * // Before:
+ * const { execute, loading } = useDatabaseActions()
+ * await execute('block_sessions', databases, config)
+ *
+ * // After:
+ * import { useExecuteRasOperation } from '../api/queries/databases'
+ * const { mutate, isPending } = useExecuteRasOperation()
+ * mutate({ operationType: 'block_sessions', databaseIds: databases.map(d => d.id), config })
+ * ```
+ */
 import { useState, useCallback } from 'react';
 import { message } from 'antd';
 import { executeOperation, type RASOperationType, type ExecuteOperationRequest } from '../api/operations';

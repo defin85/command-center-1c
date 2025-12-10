@@ -186,7 +186,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 	resolverCfg.OrchestratorURL = cfg.OrchestratorURL
 
 	clusterResolver := NewOrchestratorClusterResolver(resolverCfg)
-	rasHandler, err := NewRASHandler(rasAdapterURL, clusterResolver)
+	rasHandler, err := NewRASHandler(rasAdapterURL, clusterResolver, processor.eventPublisher, cfg.WorkerID)
 	if err != nil {
 		log.Error("failed to create RAS handler, RAS operations disabled",
 			zap.Error(err),
@@ -262,10 +262,10 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	failed := 0
 	totalDuration := 0.0
 
-	for i, databaseID := range msg.TargetDatabases {
-		log.Infof("processing database %s, progress: %d%%", databaseID, (i+1)*100/totalDatabases)
+	for i, dbTarget := range msg.TargetDatabases {
+		log.Infof("processing database %s, progress: %d%%", dbTarget.ID, (i+1)*100/totalDatabases)
 
-		dbResult := p.processSingleDatabase(ctx, msg, databaseID)
+		dbResult := p.processSingleDatabase(ctx, msg, dbTarget.ID)
 		result.Results = append(result.Results, dbResult)
 
 		if dbResult.Success {
