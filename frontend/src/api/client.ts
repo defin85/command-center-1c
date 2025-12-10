@@ -176,6 +176,12 @@ apiClient.interceptors.response.use(
     }
 
     // Handle other errors - dispatch to global error handler
+
+    // Skip canceled/aborted requests (component unmount, navigation, etc.)
+    if (error.name === 'CanceledError' || error.name === 'AbortError') {
+      return Promise.reject(error)
+    }
+
     const status = error.response?.status
     const errorData = error.response?.data as { error?: string; message?: string; detail?: string } | undefined
 
