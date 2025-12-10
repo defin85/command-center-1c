@@ -378,7 +378,7 @@ export const NewOperationWizard = ({
           </Space>
         </Space>
       }
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!submitting}
     >
       {/* Steps indicator */}

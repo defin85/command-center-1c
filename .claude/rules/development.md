@@ -58,17 +58,59 @@ command-center-1c/
 ## MCP Servers
 
 - `mcp-dap-server` - Go debugging via Delve (SSE transport)
-- `chrome-devtools` - Browser control for web debugging
+- `chrome-devtools` - Browser control for web debugging (альтернатива chrome-debug.py)
 
 ### Chrome DevTools Setup
 
-**Перед использованием chrome-devtools MCP** нужно запустить Chromium с remote debugging:
+**Перед отладкой frontend** нужно запустить Chromium с remote debugging:
 
 ```bash
-chromium --remote-debugging-port=9222 --no-first-run &
+chromium --remote-debugging-port=9222 --no-first-run http://localhost:5173 &
 ```
 
 > **Важно:** Chromium установлен нативно в WSL (`/usr/sbin/chromium`), НЕ использовать Windows Chrome.
-> **Для AI:** Использовать полную команду, НЕ алиас `chrome-debug` (алиасы недоступны в non-interactive shell).
+
+### Отладка Frontend (ПРИОРИТЕТНЫЙ СПОСОБ)
+
+**Использовать `scripts/dev/chrome-debug.py`** — работает напрямую через CDP, не требует MCP:
+
+```bash
+# Проверить console ошибки (перезагружает страницу, ждёт 3 сек)
+./scripts/dev/chrome-debug.py console -e
+
+# Все console сообщения
+./scripts/dev/chrome-debug.py console
+
+# Скриншот
+./scripts/dev/chrome-debug.py screenshot
+
+# Выполнить JS
+./scripts/dev/chrome-debug.py eval "document.title"
+
+# Перезагрузить страницу
+./scripts/dev/chrome-debug.py reload --hard
+
+# Список страниц
+./scripts/dev/chrome-debug.py pages
+
+# Network запросы (только API)
+./scripts/dev/chrome-debug.py network -a
+```
+
+**Преимущества над MCP:**
+- Не требует `/mcp` переподключения
+- Автоматически перезагружает страницу
+- Работает в CI/CD
+- Фильтрует ошибки из коробки
+
+### Альтернатива: chrome-devtools MCP
+
+Если нужен интерактивный контроль браузера (клики, ввод текста):
+
+1. Переподключить MCP: `/mcp`
+2. Перезагрузить страницу: `navigate_page(type="reload")`
+3. Получить ошибки: `list_console_messages(types=["error"])`
+
+> **Ограничение:** MCP и chrome-debug.py не могут работать одновременно (CDP поддерживает только одно WebSocket соединение к странице).
 
 See `docs/DEBUG_WITH_AI.md` for full guide.

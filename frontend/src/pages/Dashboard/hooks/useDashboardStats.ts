@@ -290,8 +290,11 @@ export function useDashboardStats(refreshInterval = 30000): UseDashboardStatsRes
 
       isFirstLoadRef.current = false
     } catch (error) {
-      // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      // Ignore abort/cancel errors (both native AbortError and axios CanceledError)
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'CanceledError')
+      ) {
         return
       }
 
