@@ -85,6 +85,8 @@ class EventSubscriber:
             'events:cluster-service:sessions:closed': '>',
             'events:worker:cluster-synced': '>',
             'events:worker:clusters-discovered': '>',
+            'events:worker:completed': '>',
+            'events:worker:failed': '>',
         }
 
         # Setup signal handlers for graceful shutdown
@@ -435,6 +437,8 @@ class EventSubscriber:
                 'payload': '{"database_id": "db-123", ...}'  # JSON string
             }
         """
+        # Close stale DB connections in worker threads
+        close_old_connections()
         # Extract envelope fields
         event_type = data.get('event_type', 'unknown')
         correlation_id = data.get('correlation_id', 'unknown')
@@ -478,6 +482,12 @@ class EventSubscriber:
 
         elif 'clusters-discovered' in stream:
             self.handle_clusters_discovered(payload, correlation_id)
+
+        elif 'worker:completed' in stream:
+            self.handle_worker_completed(data, correlation_id)
+
+        elif 'worker:failed' in stream:
+            self.handle_worker_failed(data, correlation_id)
 
         else:
             logger.warning(f"Unknown stream: {stream}")
@@ -863,6 +873,129 @@ class EventSubscriber:
                 discover_lock_key = f"discover_clusters:{ras_server}"
                 redis_client.release_lock(discover_lock_key)
                 logger.debug(f"Released discover lock for ras_server {ras_server}")
+
+    def handle_worker_completed(self, data: Dict[str, Any], correlation_id: str):
+        """
+        Handle operation completed event from Worker via Streams.
+
+        Data format (nested envelope):
+            {
+                'data': '{"version": "1.0", "payload": {...}, ...}'  # JSON string
+            }
+        """
+        from apps.operations.models import BatchOperation
+
+        # Parse nested envelope if data contains 'data' field
+        envelope_str = data.get('data', '')
+        envelope = {}
+        if envelope_str:
+            try:
+                envelope = json.loads(envelope_str)
+                payload_str = envelope.get('payload', '{}')
+                if isinstance(payload_str, str):
+                    payload = json.loads(payload_str)
+                else:
+                    payload = payload_str
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid envelope JSON: {e}")
+                return
+        else:
+            payload = data
+
+        operation_id = payload.get('operation_id')
+        if not operation_id:
+            # Try from envelope metadata
+            metadata = envelope.get('metadata', {}) if envelope_str else {}
+            operation_id = metadata.get('operation_id')
+
+        if not operation_id:
+            logger.warning(f"No operation_id in worker:completed event: {data}")
+            return
+
+        logger.info(f"Worker completed event: operation_id={operation_id}")
+
+        try:
+            close_old_connections()
+            batch_op = BatchOperation.objects.get(id=operation_id)
+
+            # Extract summary from payload
+            summary = payload.get('summary', {})
+            results = payload.get('results', [])
+
+            batch_op.status = BatchOperation.STATUS_COMPLETED
+            batch_op.progress = 100
+            if not batch_op.completed_at:
+                from django.utils import timezone
+                batch_op.completed_at = timezone.now()
+
+            batch_op.metadata['worker_result'] = {
+                'summary': summary,
+                'results_count': len(results),
+            }
+            batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+
+            logger.info(f"Updated BatchOperation {operation_id} to COMPLETED via Stream")
+
+        except BatchOperation.DoesNotExist:
+            logger.warning(f"BatchOperation not found: {operation_id}")
+        except Exception as e:
+            logger.error(f"Error handling worker:completed: {e}", exc_info=True)
+
+    def handle_worker_failed(self, data: Dict[str, Any], correlation_id: str):
+        """
+        Handle operation failed event from Worker via Streams.
+        """
+        from apps.operations.models import BatchOperation
+
+        # Parse nested envelope
+        envelope_str = data.get('data', '')
+        envelope = {}
+        if envelope_str:
+            try:
+                envelope = json.loads(envelope_str)
+                payload_str = envelope.get('payload', '{}')
+                if isinstance(payload_str, str):
+                    payload = json.loads(payload_str)
+                else:
+                    payload = payload_str
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid envelope JSON: {e}")
+                return
+        else:
+            payload = data
+
+        operation_id = payload.get('operation_id')
+        error_msg = payload.get('error', 'Unknown error')
+
+        if not operation_id:
+            metadata = envelope.get('metadata', {}) if envelope_str else {}
+            operation_id = metadata.get('operation_id')
+
+        if not operation_id:
+            logger.warning(f"No operation_id in worker:failed event: {data}")
+            return
+
+        logger.info(f"Worker failed event: operation_id={operation_id}, error={error_msg}")
+
+        try:
+            close_old_connections()
+            batch_op = BatchOperation.objects.get(id=operation_id)
+
+            batch_op.status = BatchOperation.STATUS_FAILED
+            batch_op.progress = 100
+            if not batch_op.completed_at:
+                from django.utils import timezone
+                batch_op.completed_at = timezone.now()
+
+            batch_op.metadata['error'] = error_msg
+            batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+
+            logger.info(f"Updated BatchOperation {operation_id} to FAILED via Stream")
+
+        except BatchOperation.DoesNotExist:
+            logger.warning(f"BatchOperation not found: {operation_id}")
+        except Exception as e:
+            logger.error(f"Error handling worker:failed: {e}", exc_info=True)
 
     def _update_task_status_from_correlation_id(
         self,

@@ -261,12 +261,11 @@ func main() {
 		zap.Int("max_concurrent_events", featureFlags["max_concurrent_events"].(int)),
 	)
 
-	// Initialize queue consumer with shared Redis client
+	// Initialize queue consumer (Redis Streams based)
 	consumer, err := queue.NewConsumer(cfg, taskProcessor, redisClient)
 	if err != nil {
 		log.Fatal("failed to initialize consumer", zap.Error(err))
 	}
-	defer consumer.Close()
 
 	log.Info("connected to Redis queue")
 
@@ -411,16 +410,20 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Update queue depth
-				queueDepth := consumer.GetQueueDepth(ctx)
-				appMetrics.QueueDepth.Set(float64(queueDepth))
+				// Update stream depth (Redis Streams based consumer)
+				streamDepth := consumer.GetStreamDepth(ctx)
+				appMetrics.QueueDepth.Set(float64(streamDepth))
 
 				// Update active workers (simplified: always 1 for this worker instance)
 				appMetrics.ActiveWorkers.Set(1)
 
+				// Update pending count for monitoring
+				pendingCount := consumer.GetPendingCount(ctx)
+
 				log.Debug("cc1c metrics updated",
-					zap.Int64("queue_depth", queueDepth),
 					zap.Int("active_workers", 1),
+					zap.Int64("stream_depth", streamDepth),
+					zap.Int64("pending_count", pendingCount),
 				)
 			}
 		}
@@ -459,7 +462,7 @@ func main() {
 			log.Error("metrics endpoint failed", zap.Error(err))
 		}
 	}()
-	// Start consumer (blocking)
+	// Start consumer (Redis Streams)
 	go func() {
 		if err := consumer.Start(ctx); err != nil && err != context.Canceled {
 			log.Error("consumer error", zap.Error(err))

@@ -9,6 +9,10 @@ from typing import Optional, Dict, Any
 class RedisClient:
     """Wrapper для Redis операций."""
 
+    # Stream constants (Phase 0 migration)
+    STREAM_COMMANDS = "commands:worker:operations"
+    STREAM_MAX_LEN = 10000  # Limit stream size
+
     def __init__(self):
         self.client = redis.Redis(
             host=settings.REDIS_HOST,
@@ -19,9 +23,49 @@ class RedisClient:
 
     # ========== Queue Operations ==========
 
+    def _create_envelope(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Create envelope for Redis Streams (compatible with Go shared/events)."""
+        import uuid
+        from datetime import datetime
+
+        return {
+            "version": "1.0",
+            "message_id": str(uuid.uuid4()),
+            "correlation_id": message.get("operation_id", str(uuid.uuid4())),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "event_type": "operation.created",
+            "service_name": "orchestrator",
+            "payload": json.dumps(message),
+            "metadata": json.dumps({})
+        }
+
+    def enqueue_operation_stream(self, message: Dict[str, Any]) -> Optional[str]:
+        """
+        Push message to operations stream (Redis Streams).
+
+        Args:
+            message: Operation message (v2.0 schema)
+
+        Returns:
+            Stream message ID or None on error
+        """
+        try:
+            envelope = self._create_envelope(message)
+            # XADD with data field containing JSON envelope
+            msg_id = self.client.xadd(
+                self.STREAM_COMMANDS,
+                {"data": json.dumps(envelope)},
+                maxlen=self.STREAM_MAX_LEN
+            )
+            return msg_id
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Stream write failed: {e}")
+            return None
+
     def enqueue_operation(self, message: Dict[str, Any]) -> bool:
         """
-        Push message to operations queue.
+        Push message to operations stream (Redis Streams).
 
         Args:
             message: Operation message (v2.0 schema)
@@ -29,26 +73,8 @@ class RedisClient:
         Returns:
             True if success
         """
-        queue = settings.REDIS_QUEUE_OPERATIONS
-        self.client.lpush(queue, json.dumps(message))
-        return True
-
-    def dequeue_result(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
-        """
-        Pop result from results queue (blocking).
-
-        Args:
-            timeout: Timeout in seconds
-
-        Returns:
-            Result dict or None
-        """
-        queue = settings.REDIS_QUEUE_RESULTS
-        result = self.client.brpop(queue, timeout=timeout)
-
-        if result:
-            return json.loads(result[1])
-        return None
+        msg_id = self.enqueue_operation_stream(message)
+        return msg_id is not None
 
     def enqueue_dlq(self, message: Dict[str, Any]) -> bool:
         """Push failed message to DLQ."""
@@ -56,9 +82,17 @@ class RedisClient:
         self.client.lpush(queue, json.dumps(message))
         return True
 
-    def get_queue_depth(self, queue_name: str) -> int:
-        """Get queue length."""
-        return self.client.llen(queue_name)
+    def get_queue_depth(self, queue_name: str = None) -> int:
+        """Get stream length (operations queue)."""
+        # Use Stream instead of LIST
+        return self.get_stream_depth(self.STREAM_COMMANDS)
+
+    def get_stream_depth(self, stream_name: str) -> int:
+        """Get Redis Stream length."""
+        try:
+            return self.client.xlen(stream_name)
+        except Exception:
+            return 0
 
     # ========== Idempotency Locks ==========
 
