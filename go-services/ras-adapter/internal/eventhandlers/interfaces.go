@@ -21,6 +21,19 @@ type InfobaseManager interface {
 	UnlockInfobase(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error
 }
 
+// SessionBlocker defines the interface for session blocking operations (deny new connections)
+// This interface allows for easier testing with mocks
+type SessionBlocker interface {
+	BlockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string,
+		deniedFrom, deniedTo time.Time, message, permissionCode, parameter string) error
+}
+
+// SessionUnblocker defines the interface for session unblocking operations (allow new connections)
+// This interface allows for easier testing with mocks
+type SessionUnblocker interface {
+	UnblockSessions(ctx context.Context, clusterID, infobaseID, dbUser, dbPwd string) error
+}
+
 // EventPublisher defines the interface for publishing events
 // This interface allows for easier testing with mocks
 type EventPublisher interface {

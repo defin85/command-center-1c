@@ -105,6 +105,8 @@ func main() {
 	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, logger)
 	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, logger)
 	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, logger)
+	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, logger)
+	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, logger)
 
 	// Subscribe to Redis channels (only if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
@@ -133,10 +135,27 @@ func main() {
 			logger.Fatal("failed to subscribe to unlock command channel", zap.Error(err))
 		}
 
+		// Subscribe to block/unblock commands (session blocking)
+		if err := subscriber.Subscribe(
+			eventhandlers.BlockCommandChannel,
+			blockHandler.HandleBlockCommand,
+		); err != nil {
+			logger.Fatal("failed to subscribe to block command channel", zap.Error(err))
+		}
+
+		if err := subscriber.Subscribe(
+			eventhandlers.UnblockCommandChannel,
+			unblockHandler.HandleUnblockCommand,
+		); err != nil {
+			logger.Fatal("failed to subscribe to unblock command channel", zap.Error(err))
+		}
+
 		logger.Info("subscribed to event channels",
 			zap.String("terminate_channel", eventhandlers.TerminateCommandChannel),
 			zap.String("lock_channel", eventhandlers.LockCommandChannel),
-			zap.String("unlock_channel", eventhandlers.UnlockCommandChannel))
+			zap.String("unlock_channel", eventhandlers.UnlockCommandChannel),
+			zap.String("block_channel", eventhandlers.BlockCommandChannel),
+			zap.String("unblock_channel", eventhandlers.UnblockCommandChannel))
 
 		// Start subscriber router in background
 		go func() {

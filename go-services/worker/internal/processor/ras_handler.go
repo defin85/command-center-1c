@@ -10,6 +10,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/shared/ras"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
@@ -40,14 +41,17 @@ func IsRASOperation(opType string) bool {
 }
 
 // RASHandler processes RAS operations (lock, unlock, block, terminate)
+// Supports dual-mode: HTTP (default) or Streams transport via feature flag.
 type RASHandler struct {
-	client          *rasadapter.Client
+	httpClient      *rasadapter.Client       // HTTP client (default transport)
+	streamClient    *rasadapter.StreamClient // Streams client (optional)
+	useStreams      bool                     // feature flag: true = use Streams, false = use HTTP
 	clusterResolver ClusterInfoResolver
 	eventPublisher  *events.EventPublisher
 	workerID        string
 }
 
-// NewRASHandler creates a new RAS operations handler
+// NewRASHandler creates a new RAS operations handler using HTTP transport (default).
 func NewRASHandler(rasAdapterURL string, clusterResolver ClusterInfoResolver, eventPublisher *events.EventPublisher, workerID string) (*RASHandler, error) {
 	client, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
 		BaseURL:     rasAdapterURL,
@@ -59,12 +63,58 @@ func NewRASHandler(rasAdapterURL string, clusterResolver ClusterInfoResolver, ev
 		return nil, fmt.Errorf("failed to create RAS adapter client: %w", err)
 	}
 
+	logger.GetLogger().WithFields(map[string]interface{}{
+		"transport":        "http",
+		"ras_adapter_url":  rasAdapterURL,
+	}).Info("RASHandler initialized with HTTP transport")
+
 	return &RASHandler{
-		client:          client,
+		httpClient:      client,
+		streamClient:    nil,
+		useStreams:      false,
 		clusterResolver: clusterResolver,
 		eventPublisher:  eventPublisher,
 		workerID:        workerID,
 	}, nil
+}
+
+// NewRASHandlerWithStreams creates a new RAS operations handler with dual-mode support.
+// If useStreams is true and streamClient is not nil, Streams transport will be used.
+// Otherwise, falls back to HTTP transport.
+func NewRASHandlerWithStreams(
+	httpClient *rasadapter.Client,
+	streamClient *rasadapter.StreamClient,
+	useStreams bool,
+	clusterResolver ClusterInfoResolver,
+	eventPublisher *events.EventPublisher,
+	workerID string,
+) *RASHandler {
+	// Validate: can't use streams without streamClient
+	effectiveUseStreams := useStreams && streamClient != nil
+
+	log := logger.GetLogger()
+	if useStreams && streamClient == nil {
+		log.Warn("useStreams=true but streamClient is nil, falling back to HTTP transport")
+	}
+
+	transport := "http"
+	if effectiveUseStreams {
+		transport = "streams"
+	}
+
+	log.WithFields(map[string]interface{}{
+		"transport":   transport,
+		"use_streams": effectiveUseStreams,
+	}).Info("RASHandler initialized with dual-mode support")
+
+	return &RASHandler{
+		httpClient:      httpClient,
+		streamClient:    streamClient,
+		useStreams:      effectiveUseStreams,
+		clusterResolver: clusterResolver,
+		eventPublisher:  eventPublisher,
+		workerID:        workerID,
+	}
 }
 
 // RASOperationResult holds the result for a single database RAS operation
@@ -134,7 +184,7 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 			defer wg.Done()
 
 			result := h.processDatabaseWithCancellation(
-				batchCtx, sem, msg.OperationType, target, blockConfig,
+				batchCtx, sem, msg.OperationID, msg.OperationType, target, blockConfig,
 			)
 
 			mu.Lock()
@@ -190,6 +240,7 @@ func (h *RASHandler) Process(ctx context.Context, msg *models.OperationMessage) 
 func (h *RASHandler) processDatabaseWithCancellation(
 	ctx context.Context,
 	sem chan struct{},
+	operationID string,
 	opType string,
 	dbTarget models.TargetDatabase,
 	blockConfig *BlockSessionsConfig,
@@ -236,7 +287,7 @@ func (h *RASHandler) processDatabaseWithCancellation(
 	}
 
 	// Execute the actual operation
-	return h.processSingleDatabase(ctx, opType, dbTarget, blockConfig)
+	return h.processSingleDatabase(ctx, operationID, opType, dbTarget, blockConfig)
 }
 
 // emptyResult creates result for empty target list
@@ -255,7 +306,7 @@ func (h *RASHandler) emptyResult(operationID string) *models.OperationResultV2 {
 }
 
 // processSingleDatabase executes RAS operation for a single database
-func (h *RASHandler) processSingleDatabase(ctx context.Context, opType string, dbTarget models.TargetDatabase, blockConfig *BlockSessionsConfig) RASOperationResult {
+func (h *RASHandler) processSingleDatabase(ctx context.Context, operationID, opType string, dbTarget models.TargetDatabase, blockConfig *BlockSessionsConfig) RASOperationResult {
 	log := logger.GetLogger()
 	start := time.Now()
 
@@ -324,22 +375,12 @@ func (h *RASHandler) processSingleDatabase(ctx context.Context, opType string, d
 		return result
 	}
 
-	// Execute the operation
+	// Execute the operation using appropriate transport
 	var err error
-	switch opType {
-	case OpLockScheduledJobs:
-		_, err = h.client.LockScheduledJobs(ctx, clusterID, infobaseID, nil)
-	case OpUnlockScheduledJobs:
-		_, err = h.client.UnlockScheduledJobs(ctx, clusterID, infobaseID, nil)
-	case OpBlockSessions:
-		req := h.buildBlockSessionsRequest(blockConfig)
-		_, err = h.client.BlockSessions(ctx, clusterID, infobaseID, req)
-	case OpUnblockSessions:
-		_, err = h.client.UnblockSessions(ctx, clusterID, infobaseID, nil)
-	case OpTerminateSessions:
-		_, err = h.client.TerminateAllSessions(ctx, clusterID, infobaseID)
-	default:
-		err = fmt.Errorf("unknown RAS operation type: %s", opType)
+	if h.useStreams && h.streamClient != nil {
+		err = h.executeViaStreams(ctx, operationID, opType, dbTarget.ID, clusterID, infobaseID, blockConfig)
+	} else {
+		err = h.executeViaHTTP(ctx, opType, clusterID, infobaseID, blockConfig)
 	}
 
 	result.Duration = time.Since(start).Seconds()
@@ -414,6 +455,80 @@ func (h *RASHandler) buildBlockSessionsRequest(config *BlockSessionsConfig) *ras
 	}
 }
 
+// executeViaHTTP executes RAS operation using HTTP transport.
+func (h *RASHandler) executeViaHTTP(ctx context.Context, opType, clusterID, infobaseID string, blockConfig *BlockSessionsConfig) error {
+	switch opType {
+	case OpLockScheduledJobs:
+		_, err := h.httpClient.LockScheduledJobs(ctx, clusterID, infobaseID, nil)
+		return err
+	case OpUnlockScheduledJobs:
+		_, err := h.httpClient.UnlockScheduledJobs(ctx, clusterID, infobaseID, nil)
+		return err
+	case OpBlockSessions:
+		req := h.buildBlockSessionsRequest(blockConfig)
+		_, err := h.httpClient.BlockSessions(ctx, clusterID, infobaseID, req)
+		return err
+	case OpUnblockSessions:
+		_, err := h.httpClient.UnblockSessions(ctx, clusterID, infobaseID, nil)
+		return err
+	case OpTerminateSessions:
+		_, err := h.httpClient.TerminateAllSessions(ctx, clusterID, infobaseID)
+		return err
+	default:
+		return fmt.Errorf("unknown RAS operation type: %s", opType)
+	}
+}
+
+// executeViaStreams executes RAS operation using Redis Streams transport.
+func (h *RASHandler) executeViaStreams(ctx context.Context, operationID, opType, databaseID, clusterID, infobaseID string, blockConfig *BlockSessionsConfig) error {
+	// Build RAS command
+	cmd := &ras.RASCommand{
+		OperationID: operationID,
+		DatabaseID:  databaseID,
+		ClusterID:   clusterID,
+		InfobaseID:  infobaseID,
+	}
+
+	// Add block options if applicable
+	if opType == OpBlockSessions && blockConfig != nil {
+		cmd.Options = map[string]interface{}{
+			"message":         blockConfig.Message,
+			"permission_code": blockConfig.PermissionCode,
+			"denied_from":     blockConfig.DeniedFrom,
+			"denied_to":       blockConfig.DeniedTo,
+		}
+	}
+
+	var result *ras.RASResult
+	var err error
+
+	switch opType {
+	case OpLockScheduledJobs:
+		result, err = h.streamClient.LockScheduledJobs(ctx, cmd)
+	case OpUnlockScheduledJobs:
+		result, err = h.streamClient.UnlockScheduledJobs(ctx, cmd)
+	case OpBlockSessions:
+		result, err = h.streamClient.BlockSessions(ctx, cmd)
+	case OpUnblockSessions:
+		result, err = h.streamClient.UnblockSessions(ctx, cmd)
+	case OpTerminateSessions:
+		result, err = h.streamClient.TerminateSessions(ctx, cmd)
+	default:
+		return fmt.Errorf("unknown RAS operation type: %s", opType)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Check result success
+	if result != nil && !result.Success {
+		return fmt.Errorf("RAS command failed: %s", result.Error)
+	}
+
+	return nil
+}
+
 // buildResult converts RAS operation results to OperationResultV2
 func (h *RASHandler) buildResult(operationID string, results []RASOperationResult) *models.OperationResultV2 {
 	succeeded := 0
@@ -468,14 +583,30 @@ func (h *RASHandler) buildResult(operationID string, results []RASOperationResul
 	}
 }
 
-// GetClient returns the underlying RAS adapter client for advanced operations
+// GetClient returns the underlying HTTP RAS adapter client for advanced operations.
+// Deprecated: Use GetHTTPClient() for clarity.
 func (h *RASHandler) GetClient() *rasadapter.Client {
-	return h.client
+	return h.httpClient
 }
 
-// HealthCheck verifies connectivity to RAS Adapter
+// GetHTTPClient returns the HTTP client.
+func (h *RASHandler) GetHTTPClient() *rasadapter.Client {
+	return h.httpClient
+}
+
+// GetStreamClient returns the Streams client (may be nil if not configured).
+func (h *RASHandler) GetStreamClient() *rasadapter.StreamClient {
+	return h.streamClient
+}
+
+// UseStreams returns true if the handler is configured to use Streams transport.
+func (h *RASHandler) UseStreams() bool {
+	return h.useStreams
+}
+
+// HealthCheck verifies connectivity to RAS Adapter via HTTP.
 func (h *RASHandler) HealthCheck(ctx context.Context) error {
-	_, err := h.client.Health(ctx)
+	_, err := h.httpClient.Health(ctx)
 	if err != nil {
 		return fmt.Errorf("RAS adapter health check failed: %w", err)
 	}
