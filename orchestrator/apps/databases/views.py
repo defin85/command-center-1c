@@ -731,16 +731,22 @@ class DatabaseViewSet(viewsets.ModelViewSet):
         """
         GET /api/v1/databases/{id}/cluster-info/
 
-        Returns cluster_id and infobase_id для RAS workflow operations.
+        Returns cluster_id (RAS UUID) and infobase_id для RAS operations.
         """
         database = self.get_object()
 
-        # Использовать ras_infobase_id если задано, иначе primary key
+        # cluster_id: use cluster.ras_cluster_uuid (actual RAS cluster UUID)
+        # NOT database.ras_cluster_id or database.cluster_id (Django FK)
+        cluster_id = None
+        if database.cluster and database.cluster.ras_cluster_uuid:
+            cluster_id = str(database.cluster.ras_cluster_uuid)
+
+        # infobase_id: use ras_infobase_id if set, otherwise database.id as fallback
         infobase_id = str(database.ras_infobase_id) if database.ras_infobase_id else str(database.id)
 
         return Response({
             "database_id": str(database.id),
-            "cluster_id": str(database.ras_cluster_id) if database.ras_cluster_id else None,
+            "cluster_id": cluster_id,
             "infobase_id": infobase_id,
         })
 

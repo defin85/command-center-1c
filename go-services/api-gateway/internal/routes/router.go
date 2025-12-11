@@ -9,6 +9,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
+	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -25,7 +26,7 @@ func serviceUnavailableHandler(serviceName string) gin.HandlerFunc {
 }
 
 // SetupRouter configures and returns the Gin router
-func SetupRouter(cfg *config.Config) *gin.Engine {
+func SetupRouter(cfg *config.Config, m *metrics.Metrics) *gin.Engine {
 	router := gin.New()
 
 	// Отключаем автоматические редиректы trailing slash
@@ -36,6 +37,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 
 	// Global middleware
 	router.Use(gin.Recovery())
+	if m != nil {
+		router.Use(middleware.MetricsMiddleware(m))
+	}
 	router.Use(middleware.LoggerMiddleware())
 	router.Use(middleware.CORSMiddleware(&middleware.CORSConfig{
 		AllowedOrigins: cfg.CORSAllowedOrigins,

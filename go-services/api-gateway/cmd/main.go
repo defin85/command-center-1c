@@ -8,6 +8,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/api-gateway/internal/routes"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
+	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -61,8 +62,15 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// Initialize metrics
+	var m *metrics.Metrics
+	if cfg.MetricsEnabled {
+		m = metrics.NewMetrics("cc1c")
+		log.Info("metrics initialized", zap.String("namespace", "cc1c"))
+	}
+
 	// Setup router
-	router := routes.SetupRouter(cfg)
+	router := routes.SetupRouter(cfg, m)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)

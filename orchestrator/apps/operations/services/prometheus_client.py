@@ -72,6 +72,7 @@ SERVICE_CONFIG = {
         'display_name': 'Worker',
         'job_patterns': ['worker', 'go_worker'],
         'namespace': 'cc1c',
+        'metrics_type': 'tasks',  # Use tasks_processed_total instead of requests_total
     },
     'ras-adapter': {
         'display_name': 'RAS Adapter',
@@ -280,14 +281,23 @@ class PrometheusClient:
         display_name = config.get('display_name', service.title())
         namespace = config.get('namespace', 'cc1c')
         job_patterns = config.get('job_patterns', [service])
+        metrics_type = config.get('metrics_type', 'requests')  # 'requests' or 'tasks'
 
         # Build job filter for PromQL
         job_filter = '|'.join(job_patterns)
 
-        # Queries for different metrics
-        ops_query = f'sum(rate({namespace}_requests_total{{job=~"{job_filter}"}}[5m])) * 60'
-        latency_query = f'histogram_quantile(0.95, sum(rate({namespace}_request_duration_seconds_bucket{{job=~"{job_filter}"}}[5m])) by (le)) * 1000'
-        error_query = f'sum(rate({namespace}_requests_total{{job=~"{job_filter}",status=~"5.."}}[5m])) / sum(rate({namespace}_requests_total{{job=~"{job_filter}"}}[5m]))'
+        # Queries depend on metrics type (HTTP requests vs task processing)
+        if metrics_type == 'tasks':
+            # Worker uses tasks_processed_total and task_duration_seconds
+            ops_query = f'sum(rate({namespace}_tasks_processed_total{{job=~"{job_filter}"}}[5m])) * 60'
+            latency_query = f'histogram_quantile(0.95, sum(rate({namespace}_task_duration_seconds_bucket{{job=~"{job_filter}"}}[5m])) by (le)) * 1000'
+            error_query = f'sum(rate({namespace}_tasks_processed_total{{job=~"{job_filter}",status="failed"}}[5m])) / sum(rate({namespace}_tasks_processed_total{{job=~"{job_filter}"}}[5m]))'
+        else:
+            # Default: HTTP request metrics
+            ops_query = f'sum(rate({namespace}_requests_total{{job=~"{job_filter}"}}[5m])) * 60'
+            latency_query = f'histogram_quantile(0.95, sum(rate({namespace}_request_duration_seconds_bucket{{job=~"{job_filter}"}}[5m])) by (le)) * 1000'
+            error_query = f'sum(rate({namespace}_requests_total{{job=~"{job_filter}",status=~"5.."}}[5m])) / sum(rate({namespace}_requests_total{{job=~"{job_filter}"}}[5m]))'
+
         active_query = f'{namespace}_active_workers{{job=~"{job_filter}"}}'
 
         # Execute queries in parallel

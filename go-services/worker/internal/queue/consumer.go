@@ -158,6 +158,17 @@ func (c *Consumer) sendHeartbeat(ctx context.Context) {
 	c.redis.Set(ctx, key, data, 30*time.Second) // TTL 30 seconds
 }
 
+// GetQueueDepth returns the current depth of the operations queue
+func (c *Consumer) GetQueueDepth(ctx context.Context) int64 {
+	depth, err := c.redis.LLen(ctx, c.queueName).Result()
+	if err != nil {
+		log := logger.GetLogger()
+		log.Errorf("failed to get queue depth: %v", err)
+		return 0
+	}
+	return depth
+}
+
 // Close closes the Redis connection
 func (c *Consumer) Close() error {
 	return c.redis.Close()

@@ -17,6 +17,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
+	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
@@ -99,6 +100,10 @@ func main() {
 		zap.String("commit", Commit),
 		zap.String("worker_id", cfg.WorkerID),
 	)
+
+	// Initialize cc1c metrics
+	appMetrics := metrics.NewMetrics("cc1c")
+	log.Info("cc1c metrics initialized")
 
 	// Debug: Show JWT configuration (first 10 chars of secret for security)
 	jwtSecretPreview := cfg.JWTSecret
@@ -239,6 +244,7 @@ func main() {
 		WorkflowClient:  workflowClient,
 		OrchestratorURL: cfg.OrchestratorURL,
 		Logger:          zapLog,
+		Metrics:         appMetrics,
 	}
 	taskProcessor := processor.NewTaskProcessorWithOptions(cfg, credsClient, redisClient, processorOpts)
 	defer taskProcessor.Close() // Graceful shutdown for event subscriber
@@ -394,6 +400,31 @@ func main() {
 	} else {
 		log.Info("Go scheduler is disabled (set ENABLE_GO_SCHEDULER=true to enable)")
 	}
+
+	// Start cc1c metrics updater goroutine
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Update queue depth
+				queueDepth := consumer.GetQueueDepth(ctx)
+				appMetrics.QueueDepth.Set(float64(queueDepth))
+
+				// Update active workers (simplified: always 1 for this worker instance)
+				appMetrics.ActiveWorkers.Set(1)
+
+				log.Debug("cc1c metrics updated",
+					zap.Int64("queue_depth", queueDepth),
+					zap.Int("active_workers", 1),
+				)
+			}
+		}
+	}()
 
 	// Start Prometheus metrics and health endpoints
 	go func() {

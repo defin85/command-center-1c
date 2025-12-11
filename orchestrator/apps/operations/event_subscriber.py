@@ -370,6 +370,7 @@ class EventSubscriber:
 
             elif state == 'FAILED':
                 batch_op.status = BatchOperation.STATUS_FAILED
+                batch_op.progress = 100  # Operation is complete (even if failed)
                 if not batch_op.completed_at:
                     from django.utils import timezone
                     batch_op.completed_at = timezone.now()
@@ -379,7 +380,7 @@ class EventSubscriber:
                 if metadata:
                     batch_op.metadata['error_details'] = metadata
 
-                update_fields = ['status', 'completed_at', 'metadata', 'updated_at']
+                update_fields = ['status', 'progress', 'completed_at', 'metadata', 'updated_at']
 
             else:
                 logger.warning(f"Unknown state '{state}' for operation {operation_id}")
@@ -387,6 +388,27 @@ class EventSubscriber:
 
             batch_op.save(update_fields=update_fields)
             logger.info(f"Updated BatchOperation {operation_id} status to {batch_op.status}")
+
+            # Update related Tasks to match operation status
+            if state in ('SUCCESS', 'FAILED'):
+                from apps.operations.models import Task
+                from django.utils import timezone
+
+                task_status = Task.STATUS_COMPLETED if state == 'SUCCESS' else Task.STATUS_FAILED
+                now = timezone.now()
+
+                # Update all pending/processing tasks for this operation
+                updated_count = batch_op.tasks.filter(
+                    status__in=[Task.STATUS_PENDING, Task.STATUS_QUEUED, Task.STATUS_PROCESSING]
+                ).update(
+                    status=task_status,
+                    completed_at=now,
+                    error_message=message if state == 'FAILED' else '',
+                    updated_at=now
+                )
+
+                if updated_count > 0:
+                    logger.info(f"Updated {updated_count} tasks for operation {operation_id} to {task_status}")
 
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")

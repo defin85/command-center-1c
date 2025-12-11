@@ -14,6 +14,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
+	sharedMetrics "github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
@@ -64,6 +65,9 @@ type TaskProcessor struct {
 
 	// RAS Operations Handler (Phase 4 - Context Menu Actions)
 	rasHandler *RASHandler // Handler for RAS operations (lock, unlock, block, terminate)
+
+	// Prometheus metrics for Service Mesh monitoring
+	appMetrics *sharedMetrics.Metrics
 }
 
 // DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
@@ -74,9 +78,10 @@ const DefaultConsumerGroupWorker = "worker-state-machine"
 type ProcessorOptions struct {
 	TemplateEngine   *template.EngineWithFallback
 	TemplateClient   TemplateClient
-	WorkflowClient   WorkflowClient // Client for workflow operations (optional)
-	OrchestratorURL  string         // Orchestrator URL for workflow engine (optional)
+	WorkflowClient   WorkflowClient            // Client for workflow operations (optional)
+	OrchestratorURL  string                    // Orchestrator URL for workflow engine (optional)
 	Logger           *zap.Logger
+	Metrics          *sharedMetrics.Metrics    // Prometheus metrics for Service Mesh monitoring (optional)
 }
 
 // NewTaskProcessor creates a new task processor
@@ -114,6 +119,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		templateEngine: opts.TemplateEngine,
 		templateClient: opts.TemplateClient,
 		logger:         zapLogger,
+		appMetrics:     opts.Metrics,
 	}
 
 	// Initialize dual-mode processor
@@ -204,6 +210,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 // Process processes an operation message
 func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessage) *models.OperationResultV2 {
 	log := logger.GetLogger()
+	taskStart := time.Now()
 
 	result := &models.OperationResultV2{
 		OperationID: msg.OperationID,
@@ -214,13 +221,19 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 
 	// Special handling for meta-operations (not per-database)
 	if msg.OperationType == "execute_workflow" {
-		return p.processWorkflow(ctx, msg)
+		workflowResult := p.processWorkflow(ctx, msg)
+		p.recordTaskMetrics(msg.OperationType, workflowResult.Status, time.Since(taskStart).Seconds())
+		return workflowResult
 	}
 	if msg.OperationType == "sync_cluster" {
-		return p.processSyncCluster(ctx, msg)
+		syncResult := p.processSyncCluster(ctx, msg)
+		p.recordTaskMetrics(msg.OperationType, syncResult.Status, time.Since(taskStart).Seconds())
+		return syncResult
 	}
 	if msg.OperationType == "discover_clusters" {
-		return p.processDiscoverClusters(ctx, msg)
+		discoverResult := p.processDiscoverClusters(ctx, msg)
+		p.recordTaskMetrics(msg.OperationType, discoverResult.Status, time.Since(taskStart).Seconds())
+		return discoverResult
 	}
 
 	// RAS operations handler (Phase 4 - Context Menu Actions)
@@ -242,6 +255,7 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 				Total:  1,
 				Failed: 1,
 			}
+			p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
 			return result
 		}
 
@@ -253,6 +267,7 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 
 		rasResult := p.rasHandler.Process(ctx, msg)
 		rasResult.WorkerID = p.workerID
+		p.recordTaskMetrics(msg.OperationType, rasResult.Status, time.Since(taskStart).Seconds())
 		return rasResult
 	}
 
@@ -299,7 +314,26 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		result.Status = "timeout"
 	}
 
+	// Record metrics for Service Mesh monitoring
+	p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
+
 	return result
+}
+
+// recordTaskMetrics records task processing metrics if metrics are configured
+func (p *TaskProcessor) recordTaskMetrics(taskType, status string, duration float64) {
+	if p.appMetrics == nil {
+		return
+	}
+
+	// Map result status to metric status
+	metricStatus := "success"
+	if status == "failed" || status == "timeout" {
+		metricStatus = "failed"
+	}
+
+	p.appMetrics.TasksProcessed.WithLabelValues(taskType, metricStatus).Inc()
+	p.appMetrics.TaskDuration.WithLabelValues(taskType).Observe(duration)
 }
 
 // getODataClient retrieves or creates OData client for database
