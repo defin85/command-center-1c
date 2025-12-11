@@ -398,14 +398,14 @@ go-services/worker/cmd/main.go                        # Consumer Group setup
 - [x] 0.6: Обновить формат сообщения (добавить correlation_id) ✅ `redis_client.py:_create_envelope()`
 - [x] 0.7: **Results queue:** Заменить `LPUSH results` на `XADD events:worker:*` ✅ `stream_consumer.go:publishCompletedResult()/publishFailedResult()`
 - [x] 0.8: **Results queue:** Django подписка на `events:worker:*` вместо `BRPOP` ✅ `event_subscriber.py`
-- [ ] 0.9: Integration tests
+- [ ] 0.9: Integration tests ⏸️ **ОТЛОЖЕНО** — реализуем после Фазы 2 и ручной проверки работоспособности
 - [x] 0.10: Мониторинг: pending messages, consumer lag ✅ `stream_consumer.go:GetStreamDepth()/GetPendingCount()`
 
 **Критерии завершения:**
 - [x] Worker читает из Stream вместо LIST
 - [x] Acknowledge после успешной обработки
 - [x] Retry зависших сообщений работает
-- [ ] Zero message loss при restart Worker (требуются интеграционные тесты)
+- [ ] Zero message loss при restart Worker (ручная проверка, затем интеграционные тесты)
 
 ---
 
