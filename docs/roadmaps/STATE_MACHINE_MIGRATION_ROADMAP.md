@@ -1,10 +1,17 @@
 # Roadmap: Унификация транспорта и Saga Orchestration
 
-> **Статус:** Draft v2.4
-> **Версия:** 2.4
+> **Статус:** In Progress v2.5
+> **Версия:** 2.5
 > **Создан:** 2025-12-10
 > **Обновлён:** 2025-12-11
 > **Автор:** Claude Code
+>
+> **Changelog v2.5:** Phase 0 реализован (commit 4bc7539):
+> - Django → Worker: LPUSH → XADD (redis_client.py)
+> - Worker consume: BRPOP → XREADGROUP (stream_consumer.go)
+> - Results: LPUSH → XADD events:worker:completed/failed
+> - Django subscribe: events:worker:* via XREADGROUP
+> - Удалён legacy код: consumer.go, redis.go, pool/
 >
 > **Changelog v2.4:** Верификация против исходного кода:
 > - Фаза 0: добавлена миграция results queue (consumer.go:132 LPUSH → XADD)
@@ -383,22 +390,22 @@ go-services/worker/cmd/main.go                        # Consumer Group setup
 ```
 
 **Subtasks:**
-- [ ] 0.1: Создать consumer group `worker-group` при старте Worker
-- [ ] 0.2: Заменить `BRPOP` на `XREADGROUP` в consumer.go
-- [ ] 0.3: Добавить `XACK` после успешной обработки
-- [ ] 0.4: Реализовать retry через `XPENDING` + `XCLAIM`
-- [ ] 0.5: Заменить `LPUSH` на `XADD` в Django redis_client.py
-- [ ] 0.6: Обновить формат сообщения (добавить correlation_id)
-- [ ] 0.7: **Results queue:** Заменить `LPUSH results` на `XADD events:worker:*` (consumer.go:132)
-- [ ] 0.8: **Results queue:** Django подписка на `events:worker:*` вместо `BRPOP`
+- [x] 0.1: Создать consumer group `worker-group` при старте Worker ✅ `stream_consumer.go:EnsureConsumerGroup()`
+- [x] 0.2: Заменить `BRPOP` на `XREADGROUP` в consumer.go ✅ `stream_consumer.go:Start()`
+- [x] 0.3: Добавить `XACK` после успешной обработки ✅ `stream_consumer.go:ackMessage()`
+- [x] 0.4: Реализовать retry через `XPENDING` + `XCLAIM` ✅ `stream_consumer.go:claimStalledMessages()`
+- [x] 0.5: Заменить `LPUSH` на `XADD` в Django redis_client.py ✅ `redis_client.py:enqueue_operation_stream()`
+- [x] 0.6: Обновить формат сообщения (добавить correlation_id) ✅ `redis_client.py:_create_envelope()`
+- [x] 0.7: **Results queue:** Заменить `LPUSH results` на `XADD events:worker:*` ✅ `stream_consumer.go:publishCompletedResult()/publishFailedResult()`
+- [x] 0.8: **Results queue:** Django подписка на `events:worker:*` вместо `BRPOP` ✅ `event_subscriber.py`
 - [ ] 0.9: Integration tests
-- [ ] 0.10: Мониторинг: pending messages, consumer lag
+- [x] 0.10: Мониторинг: pending messages, consumer lag ✅ `stream_consumer.go:GetStreamDepth()/GetPendingCount()`
 
 **Критерии завершения:**
-- [ ] Worker читает из Stream вместо LIST
-- [ ] Acknowledge после успешной обработки
-- [ ] Retry зависших сообщений работает
-- [ ] Zero message loss при restart Worker
+- [x] Worker читает из Stream вместо LIST
+- [x] Acknowledge после успешной обработки
+- [x] Retry зависших сообщений работает
+- [ ] Zero message loss при restart Worker (требуются интеграционные тесты)
 
 ---
 
