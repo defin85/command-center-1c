@@ -1,10 +1,25 @@
 # Roadmap: Унификация транспорта и Saga Orchestration
 
-> **Статус:** In Progress v2.6
-> **Версия:** 2.6
+> **Статус:** In Progress v2.7
+> **Версия:** 2.7
 > **Создан:** 2025-12-10
 > **Обновлён:** 2025-12-11
 > **Автор:** Claude Code
+>
+> ### Текущий прогресс
+>
+> | Фаза | Статус | Прогресс | Commits |
+> |------|--------|----------|---------|
+> | **Phase 0** | ✅ Done | 9/10 задач | `4bc7539`, `b57e88d` |
+> | **Phase 1** | 🔄 In Progress | 6/8 задач | `23e7b75`, `2be71be` |
+> | **Phase 1.5** | ⏳ Pending | 0/11 задач | - |
+> | **Phase 1.6** | ⏳ Pending | 0/11 задач | - |
+> | **Phase 2** | ⏳ Pending | 0/12 задач | - |
+> | **Phase 3** | ⏳ Pending | 0/8 задач | - |
+>
+> **Следующий шаг:** Добавить lock/unlock/terminate handlers в ras-adapter (Phase 1)
+>
+> **Changelog v2.7:** Добавлена таблица прогресса
 >
 > **Changelog v2.6:** Phase 1 реализован (commit 23e7b75):
 > - shared/ras: types.go, channels.go с тестами
