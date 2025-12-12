@@ -7,8 +7,8 @@ import (
 
 const (
 	// API paths for scheduler endpoints
-	pathSchedulerRunStart    = "/api/internal/scheduler/runs/start"
-	pathSchedulerRunComplete = "/api/internal/scheduler/runs/%s/complete"
+	pathSchedulerRunStart    = "/api/v2/internal/start-scheduler-run"
+	pathSchedulerRunComplete = "/api/v2/internal/complete-scheduler-run"
 )
 
 // SchedulerRunStart registers the start of a scheduled job execution.
@@ -30,8 +30,7 @@ func (c *Client) SchedulerRunStartWithConfig(ctx context.Context, jobName, worke
 	if err := c.post(ctx, pathSchedulerRunStart, req, &resp); err != nil {
 		return "", fmt.Errorf("failed to start scheduler run: %w", err)
 	}
-
-	return resp.RunID, nil
+	return fmt.Sprintf("%d", resp.RunID), nil
 }
 
 // SchedulerRunComplete marks a scheduler job run as completed with results.
@@ -46,7 +45,7 @@ func (c *Client) SchedulerRunComplete(ctx context.Context, runID string, req *Sc
 		return fmt.Errorf("status is required")
 	}
 
-	path := fmt.Sprintf(pathSchedulerRunComplete, runID)
+	path := fmt.Sprintf("%s?run_id=%s", pathSchedulerRunComplete, runID)
 
 	var resp SchedulerJobRunResponse
 	if err := c.post(ctx, path, req, &resp); err != nil {

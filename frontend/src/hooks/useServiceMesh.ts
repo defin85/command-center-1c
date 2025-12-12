@@ -27,6 +27,8 @@ import type {
 const RECONNECT_INITIAL_DELAY = 1000 // 1 second
 const RECONNECT_MAX_DELAY = 30000 // 30 seconds
 const RECONNECT_MAX_ATTEMPTS = 10
+const PING_INTERVAL = 30000 // 30 seconds
+const CONNECT_DELAY = 50 // ms, delay for StrictMode double-mount
 
 /**
  * Last invalidation event data
@@ -258,8 +260,8 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       }
 
       ws.onerror = (event) => {
-        // Skip error logging if unmounted (StrictMode cleanup)
-        if (!isMountedRef.current) return
+        // Skip error logging if unmounted or intentionally closed (StrictMode cleanup)
+        if (!isMountedRef.current || isIntentionalCloseRef.current) return
 
         console.error('Service mesh WebSocket error:', event)
         setConnectionError('WebSocket connection error')
@@ -347,7 +349,7 @@ export const useServiceMesh = (): UseServiceMeshResult => {
         console.log('Service mesh WebSocket connecting to:', url)
         createWebSocket(url)
       }
-    }, 0)
+    }, CONNECT_DELAY)
   }, [getWebSocketUrl, createWebSocket])
 
   // Request immediate refresh
@@ -407,7 +409,7 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ action: 'ping' }))
       }
-    }, 30000) // Every 30 seconds
+    }, PING_INTERVAL)
 
     return () => {
       clearInterval(pingInterval)

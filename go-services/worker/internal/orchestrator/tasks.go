@@ -7,8 +7,8 @@ import (
 
 const (
 	// API paths for task execution endpoints
-	pathTaskStart    = "/api/internal/tasks/start"
-	pathTaskComplete = "/api/internal/tasks/%s/complete"
+	pathTaskStart    = "/api/v2/internal/start-task"
+	pathTaskComplete = "/api/v2/internal/complete-task"
 )
 
 // TaskStart registers the start of a task execution.
@@ -31,8 +31,7 @@ func (c *Client) TaskStart(ctx context.Context, req *TaskExecutionStartRequest) 
 	if err := c.post(ctx, pathTaskStart, req, &resp); err != nil {
 		return "", fmt.Errorf("failed to start task: %w", err)
 	}
-
-	return resp.TaskID, nil
+	return fmt.Sprintf("%d", resp.TaskID), nil
 }
 
 // TaskComplete marks a task execution as completed with results.
@@ -47,7 +46,7 @@ func (c *Client) TaskComplete(ctx context.Context, taskID string, req *TaskExecu
 		return fmt.Errorf("status is required")
 	}
 
-	path := fmt.Sprintf(pathTaskComplete, taskID)
+	path := fmt.Sprintf("%s?task_id=%s", pathTaskComplete, taskID)
 
 	var resp TaskExecutionResponse
 	if err := c.post(ctx, path, req, &resp); err != nil {

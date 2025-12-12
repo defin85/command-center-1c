@@ -87,6 +87,7 @@ class EventSubscriber:
             'events:worker:clusters-discovered': '>',
             'events:worker:completed': '>',
             'events:worker:failed': '>',
+            'commands:worker:dlq': '>',  # Dead Letter Queue (Error Feedback Phase 1)
         }
 
         # Setup signal handlers for graceful shutdown
@@ -488,6 +489,9 @@ class EventSubscriber:
 
         elif 'worker:failed' in stream:
             self.handle_worker_failed(data, correlation_id)
+
+        elif 'worker:dlq' in stream:
+            self.handle_dlq_message(data, correlation_id)
 
         else:
             logger.warning(f"Unknown stream: {stream}")
@@ -1071,6 +1075,114 @@ class EventSubscriber:
 
         except Exception as e:
             logger.error(f"Error updating task from correlation_id {correlation_id}: {e}", exc_info=True)
+
+    def handle_dlq_message(self, data: Dict[str, Any], correlation_id: str):
+        """
+        Handle Dead Letter Queue message from Go Worker.
+
+        DLQ messages are created when:
+        1. Envelope parsing fails but fallback IDs are available
+        2. Error publishing to failed stream fails
+
+        DLQ message structure:
+            {
+                'original_message_id': 'redis-msg-id',
+                'correlation_id': 'uuid',
+                'operation_id': 'uuid',
+                'event_type': 'operation.created',
+                'error_code': 'ENVELOPE_PARSE_ERROR',
+                'error_message': 'failed to parse envelope: ...',
+                'worker_id': 'worker-1',
+                'failed_at': '2025-12-12T10:30:00Z'
+            }
+        """
+        from apps.operations.models import BatchOperation
+
+        # DLQ messages come directly as fields (not nested envelope)
+        original_message_id = data.get('original_message_id', 'unknown')
+        operation_id = data.get('operation_id', '')
+        error_code = data.get('error_code', 'UNKNOWN')
+        error_message = data.get('error_message', 'Unknown error')
+        worker_id = data.get('worker_id', '')
+        failed_at = data.get('failed_at', '')
+
+        logger.error(
+            f"DLQ message received: operation_id={operation_id}, "
+            f"error_code={error_code}, error={error_message}, "
+            f"worker_id={worker_id}, original_msg_id={original_message_id}, "
+            f"failed_at={failed_at}, correlation_id={correlation_id}"
+        )
+
+        # Try to update BatchOperation if operation_id is known
+        if operation_id:
+            try:
+                close_old_connections()
+
+                # FIX #7 + #9: Use select_for_update() with atomic transaction
+                # and deduplication check INSIDE transaction to prevent race condition
+                terminal_states = [
+                    BatchOperation.STATUS_COMPLETED,
+                    BatchOperation.STATUS_FAILED,
+                    BatchOperation.STATUS_CANCELLED
+                ]
+                dlq_dedup_key = f"dlq:processed:{operation_id}"
+
+                with transaction.atomic():
+                    # FIX #9 (MINOR #1): Check deduplication INSIDE transaction
+                    # to prevent race condition where two threads pass sismember simultaneously
+                    if self.redis_client.client.sismember(dlq_dedup_key, original_message_id):
+                        logger.debug(
+                            f"DLQ message already processed: operation_id={operation_id}, "
+                            f"original_msg_id={original_message_id}"
+                        )
+                        return
+
+                    batch_op = BatchOperation.objects.select_for_update().get(id=operation_id)
+
+                    # Only update if not already in terminal state
+                    if batch_op.status not in terminal_states:
+                        from django.utils import timezone
+                        batch_op.status = BatchOperation.STATUS_FAILED
+                        batch_op.progress = 100
+                        batch_op.completed_at = timezone.now()
+                        batch_op.metadata['dlq_error'] = {
+                            'error_code': error_code,
+                            'error_message': error_message,
+                            'worker_id': worker_id,
+                            'original_message_id': original_message_id,
+                            'failed_at': failed_at,
+                        }
+                        batch_op.save(update_fields=[
+                            'status', 'progress', 'completed_at', 'metadata', 'updated_at'
+                        ])
+                        logger.info(
+                            f"Updated BatchOperation {operation_id} to FAILED from DLQ"
+                        )
+                    else:
+                        logger.debug(
+                            f"BatchOperation {operation_id} already in terminal state: "
+                            f"{batch_op.status}, skipping DLQ update"
+                        )
+
+                    # Mark as processed INSIDE transaction (FIX #9 MINOR #1)
+                    # This ensures atomicity with the deduplication check
+                    self.redis_client.client.sadd(dlq_dedup_key, original_message_id)
+                    self.redis_client.client.expire(dlq_dedup_key, 86400)  # 24h TTL
+
+            except BatchOperation.DoesNotExist:
+                logger.warning(
+                    f"BatchOperation not found for DLQ message: {operation_id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error updating BatchOperation from DLQ: {e}",
+                    exc_info=True
+                )
+        else:
+            logger.warning(
+                f"DLQ message without operation_id, cannot update BatchOperation: "
+                f"original_msg_id={original_message_id}, error_code={error_code}"
+            )
 
     def shutdown(self, signum, frame):
         """

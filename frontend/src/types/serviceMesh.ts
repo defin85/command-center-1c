@@ -288,8 +288,10 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   worker: { x: 600, y: 410 },
 
   // Level 4: Worker children (bottom)
-  'ras-adapter': { x: 500, y: 540 },
-  'batch-service': { x: 700, y: 540 },
+  'ras-adapter': { x: 200, y: 540 },
+  'odata-adapter': { x: 400, y: 540 },
+  'designer-agent': { x: 600, y: 540 },
+  'batch-service': { x: 800, y: 540 },
 }
 
 /**
@@ -360,6 +362,18 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     icon: 'notification',
     description: 'Redis Streams event processor',
   },
+  'odata-adapter': {
+    name: 'odata-adapter',
+    displayName: 'OData Adapter',
+    icon: 'database',
+    description: 'OData CRUD operations',
+  },
+  'designer-agent': {
+    name: 'designer-agent',
+    displayName: 'Designer Agent',
+    icon: 'tool',
+    description: '1C Designer Agent (SSH)',
+  },
 }
 
 /**
@@ -383,7 +397,7 @@ export const STATUS_TEXT: Record<ServiceStatus, string> = {
 /**
  * Connection type between services
  */
-export type ConnectionType = 'http' | 'queue' | 'database' | 'pubsub'
+export type ConnectionType = 'http' | 'queue' | 'database' | 'pubsub' | 'streams'
 
 /**
  * Color mapping for connection types
@@ -393,6 +407,7 @@ export const CONNECTION_TYPE_COLORS: Record<ConnectionType, string> = {
   queue: '#722ed1',     // Purple - queues (Redis queue)
   database: '#13c2c2',  // Cyan - DB connections
   pubsub: '#eb2f96',    // Magenta - Redis Pub/Sub
+  streams: '#52c41a',   // Green - Redis Streams
 }
 
 /**
@@ -403,6 +418,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   queue: 'Queue',
   database: 'Database',
   pubsub: 'Pub/Sub',
+  streams: 'Redis Streams',
 }
 
 /**
@@ -416,8 +432,14 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'redis->worker': 'queue',
   'redis->event-subscriber': 'pubsub',
   'event-subscriber->postgresql': 'database',
-  'worker->ras-adapter': 'http',
-  'worker->batch-service': 'http',
+  'worker->ras-adapter': 'streams',
+  'worker->odata-adapter': 'streams',
+  'worker->designer-agent': 'streams',
+  'worker->batch-service': 'streams',
+  'ras-adapter->redis': 'streams',
+  'odata-adapter->redis': 'streams',
+  'designer-agent->redis': 'streams',
+  'batch-service->redis': 'streams',
   // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL
   // Results: Worker → Redis Pub/Sub → Event Subscriber → PostgreSQL
 }

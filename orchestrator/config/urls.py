@@ -31,8 +31,8 @@ urlpatterns = [
     # v1 endpoints fully removed - SSE migrated to /api/v2/operations/stream/
     path('api/v2/', include('apps.api_v2.urls')),
 
-    # Internal API (Go Worker communication)
-    path('api/internal/', include('apps.api_internal.urls')),
+    # Internal API v2 (Go Worker communication)
+    path('api/v2/internal/', include('apps.api_internal.urls')),
 
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

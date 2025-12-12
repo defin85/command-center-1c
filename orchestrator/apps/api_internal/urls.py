@@ -1,8 +1,10 @@
 """
-URL configuration for Internal API.
+URL configuration for Internal API v2.
 
+Action-based API style consistent with public API v2.
 All endpoints require X-Internal-Token authentication.
-Prefix: /api/internal/
+
+Prefix: /api/v2/internal/
 """
 
 from django.urls import path
@@ -16,93 +18,93 @@ urlpatterns = [
     # Scheduler Job History
     # ========================================================================
     path(
-        'scheduler/runs/start',
-        views.scheduler_run_start,
-        name='scheduler-run-start'
+        'start-scheduler-run',
+        views.start_scheduler_run,
+        name='start-scheduler-run'
     ),
     path(
-        'scheduler/runs/<int:run_id>/complete',
-        views.scheduler_run_complete,
-        name='scheduler-run-complete'
+        'complete-scheduler-run',
+        views.complete_scheduler_run,
+        name='complete-scheduler-run'
     ),
 
     # ========================================================================
     # Task Execution Log
     # ========================================================================
     path(
-        'tasks/start',
-        views.task_start,
-        name='task-start'
+        'start-task',
+        views.start_task,
+        name='start-task'
     ),
     path(
-        'tasks/<int:log_id>/complete',
-        views.task_complete,
-        name='task-complete'
-    ),
-
-    # ========================================================================
-    # Database Credentials (for OData)
-    # ========================================================================
-    path(
-        'databases/<str:database_id>/credentials',
-        views.database_credentials,
-        name='database-credentials'
-    ),
-    path(
-        'databases/health-check-list/',
-        views.DatabasesForHealthCheckView.as_view(),
-        name='databases-health-check-list'
+        'complete-task',
+        views.complete_task,
+        name='complete-task'
     ),
 
     # ========================================================================
-    # Health Status Updates
+    # Database Operations
     # ========================================================================
     path(
-        'databases/<str:database_id>/health',
-        views.database_health_update,
-        name='database-health-update'
+        'get-database-credentials',
+        views.get_database_credentials,
+        name='get-database-credentials'
     ),
     path(
-        'clusters/<uuid:cluster_id>/health',
-        views.cluster_health_update,
-        name='cluster-health-update'
+        'list-databases-for-health-check',
+        views.list_databases_for_health_check,
+        name='list-databases-for-health-check'
+    ),
+    path(
+        'update-database-health',
+        views.update_database_health,
+        name='update-database-health'
+    ),
+
+    # ========================================================================
+    # Cluster Operations
+    # ========================================================================
+    path(
+        'update-cluster-health',
+        views.update_cluster_health,
+        name='update-cluster-health'
     ),
 
     # ========================================================================
     # Failed Events (Event Replay System)
     # ========================================================================
     path(
-        'failed-events/pending',
-        views.failed_events_pending,
-        name='failed-events-pending'
+        'list-pending-failed-events',
+        views.list_pending_failed_events,
+        name='list-pending-failed-events'
     ),
     path(
-        'failed-events/<int:event_id>/replayed',
-        views.failed_event_replayed,
-        name='failed-event-replayed'
+        'mark-event-replayed',
+        views.mark_event_replayed,
+        name='mark-event-replayed'
     ),
     path(
-        'failed-events/<int:event_id>/failed',
-        views.failed_event_failed,
-        name='failed-event-failed'
+        'mark-event-failed',
+        views.mark_event_failed,
+        name='mark-event-failed'
     ),
     path(
-        'failed-events/cleanup',
-        views.failed_events_cleanup,
-        name='failed-events-cleanup'
+        'cleanup-failed-events',
+        views.cleanup_failed_events,
+        name='cleanup-failed-events'
     ),
 
     # ========================================================================
     # Templates (for Go Worker Template Engine)
     # ========================================================================
     path(
-        'templates/<str:template_id>',
+        'get-template',
         views.get_template,
-        name='template-get'
+        name='get-template'
     ),
     path(
-        'templates/<str:template_id>/render',
+        'render-template',
         views.render_template,
-        name='template-render'
+        name='render-template'
     ),
 ]

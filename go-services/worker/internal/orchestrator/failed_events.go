@@ -8,13 +8,13 @@ import (
 
 const (
 	// API paths for failed events endpoints
-	pathFailedEventsPending  = "/api/internal/failed-events/pending"
-	pathFailedEventReplayed  = "/api/internal/failed-events/%d/replayed"
-	pathFailedEventFailed    = "/api/internal/failed-events/%d/failed"
-	pathFailedEventsCleanup  = "/api/internal/failed-events/cleanup"
+	pathFailedEventsPending = "/api/v2/internal/list-pending-failed-events"
+	pathFailedEventReplayed = "/api/v2/internal/mark-event-replayed"
+	pathFailedEventFailed   = "/api/v2/internal/mark-event-failed"
+	pathFailedEventsCleanup = "/api/v2/internal/cleanup-failed-events"
 
 	// Default values
-	defaultBatchSize    = 100
+	defaultBatchSize     = 100
 	defaultRetentionDays = 7
 )
 
@@ -34,7 +34,6 @@ func (c *Client) GetPendingFailedEvents(ctx context.Context, batchSize int) ([]F
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("failed to get pending failed events: %w", err)
 	}
-
 	return resp.Events, nil
 }
 
@@ -49,13 +48,13 @@ func (c *Client) MarkEventReplayedAt(ctx context.Context, eventID int, replayedA
 		return fmt.Errorf("event ID must be positive")
 	}
 
-	path := fmt.Sprintf(pathFailedEventReplayed, eventID)
+	path := fmt.Sprintf("%s?event_id=%d", pathFailedEventReplayed, eventID)
 
 	req := &FailedEventReplayedRequest{
 		ReplayedAt: replayedAt,
 	}
 
-	var resp SuccessResponse
+	var resp FailedEventReplayedResponse
 	if err := c.post(ctx, path, req, &resp); err != nil {
 		return fmt.Errorf("failed to mark event as replayed: %w", err)
 	}
@@ -78,7 +77,7 @@ func (c *Client) MarkEventFailedWithOptions(ctx context.Context, eventID int, er
 		return nil, fmt.Errorf("error message is required")
 	}
 
-	path := fmt.Sprintf(pathFailedEventFailed, eventID)
+	path := fmt.Sprintf("%s?event_id=%d", pathFailedEventFailed, eventID)
 
 	req := &FailedEventFailedRequest{
 		ErrorMessage:   errorMessage,
@@ -112,7 +111,6 @@ func (c *Client) CleanupOldEvents(ctx context.Context, retentionDays int) (int, 
 	if err := c.post(ctx, pathFailedEventsCleanup, req, &resp); err != nil {
 		return 0, fmt.Errorf("failed to cleanup old events: %w", err)
 	}
-
 	return resp.DeletedCount, nil
 }
 

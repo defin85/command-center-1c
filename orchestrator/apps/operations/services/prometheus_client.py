@@ -9,6 +9,7 @@ Provides real-time and historical metrics for:
 import asyncio
 import httpx
 import logging
+import math
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -94,6 +95,16 @@ SERVICE_CONFIG = {
         'job_patterns': ['batch_service', 'batch-service', 'batchservice'],
         'namespace': 'cc1c',
     },
+    'odata-adapter': {
+        'display_name': 'OData Adapter',
+        'job_patterns': ['odata_adapter', 'odata-adapter', 'odataadapter'],
+        'namespace': 'cc1c',
+    },
+    'designer-agent': {
+        'display_name': 'Designer Agent',
+        'job_patterns': ['designer_agent', 'designer-agent', 'designeragent'],
+        'namespace': 'cc1c',
+    },
     'postgresql': {
         'display_name': 'PostgreSQL',
         'job_patterns': ['postgresql', 'postgres_exporter', 'postgres'],
@@ -130,12 +141,20 @@ SERVICE_TOPOLOGY = [
     ('redis', 'event-subscriber'),  # Event Subscriber consumes Redis Streams
     ('event-subscriber', 'postgresql'),  # Event Subscriber writes to DB
 
-    # Level 3: Worker → External services
+    # Level 3: Worker → Execution Layer (via Redis Streams)
     ('worker', 'ras-adapter'),
+    ('worker', 'odata-adapter'),
+    ('worker', 'designer-agent'),
     ('worker', 'batch-service'),
 
-    # Note: batch-service uses filesystem for backups, 1cv8.exe for 1C, no direct PostgreSQL
-    # Results flow: Worker → Redis Pub/Sub → Event Subscriber → PostgreSQL
+    # Level 3.5: Execution Layer → Redis (events back)
+    ('ras-adapter', 'redis'),
+    ('odata-adapter', 'redis'),
+    ('designer-agent', 'redis'),
+    ('batch-service', 'redis'),
+
+    # Note: All adapters communicate via Redis Streams (Event-Driven Architecture)
+    # Results flow: Adapters → Redis Streams (events:*) → Worker/Event Subscriber → PostgreSQL
 ]
 
 
@@ -312,9 +331,9 @@ class PrometheusClient:
         active_operations = int(self._extract_value(active_result))
 
         # Handle NaN values
-        if str(p95_latency_ms).lower() == 'nan':
+        if math.isnan(p95_latency_ms):
             p95_latency_ms = 0.0
-        if str(error_rate).lower() == 'nan':
+        if math.isnan(error_rate):
             error_rate = 0.0
 
         # Determine status
@@ -404,7 +423,7 @@ class PrometheusClient:
             rpm = self._extract_value(rpm_result)
             latency = self._extract_value(latency_result)
 
-            if str(latency).lower() == 'nan':
+            if math.isnan(latency):
                 latency = 0.0
 
             connections.append(ServiceConnection(

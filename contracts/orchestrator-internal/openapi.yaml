@@ -10,6 +10,10 @@ info:
     - Go Worker -> Django Orchestrator (обновление статусов, получение данных)
     - НЕ предназначен для внешних клиентов
 
+    ## API Version
+
+    **v2**: `/api/v2/internal/*` - action-based endpoints
+
     ## Аутентификация
 
     Все запросы должны содержать заголовок `X-Internal-Token` с валидным токеном.
@@ -23,16 +27,17 @@ info:
     - **Clusters** - обновление health status кластеров
     - **Templates** - получение шаблонов операций (будущий Template Engine)
     - **Workflows** - получение workflow (будущий Workflow Engine)
-  version: 1.0.0
+    - **Failed Events** - Event Replay System для управления failed events
+  version: 2.0.0
   contact:
     name: CommandCenter1C Team
     url: https://github.com/commandcenter1c/commandcenter
 
 servers:
-  - url: http://localhost:8200
-    description: Local development server (Django Orchestrator)
-  - url: http://orchestrator:8200
-    description: Docker environment
+  - url: http://localhost:8200/api/v2/internal
+    description: v2 Internal API (localhost)
+  - url: http://orchestrator:8200/api/v2/internal
+    description: v2 Internal API (Docker)
 
 tags:
   - name: scheduler
@@ -52,19 +57,16 @@ tags:
 
 paths:
   # ============================================================================
-  # SCHEDULER - История запусков планировщика
+  # V2 API - ACTION-BASED ENDPOINTS (RECOMMENDED)
   # ============================================================================
-  /api/internal/scheduler/runs/start:
+
+  # Scheduler
+  /api/v2/internal/start-scheduler-run:
     post:
       summary: Начало выполнения scheduled job
-      description: |
-        Регистрирует начало выполнения задачи планировщика.
-        Создает запись в истории запусков с статусом "running".
-      operationId: startSchedulerRun
-      tags:
-        - scheduler
-      security:
-        - ApiKeyAuth: []
+      operationId: startSchedulerRunV2
+      tags: [scheduler]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -77,33 +79,22 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SchedulerJobRunResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/SchedulerJobRunResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/scheduler/runs/{run_id}/complete:
+  /api/v2/internal/complete-scheduler-run:
     post:
       summary: Завершение выполнения scheduled job
-      description: |
-        Обновляет запись о запуске планировщика с результатами выполнения.
-        Устанавливает финальный статус (success, failed, skipped).
-      operationId: completeSchedulerRun
-      tags:
-        - scheduler
-      security:
-        - ApiKeyAuth: []
+      operationId: completeSchedulerRunV2
+      tags: [scheduler]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: run_id
-          in: path
+          in: query
           required: true
-          description: UUID запуска планировщика
-          schema:
-            type: string
-            format: uuid
+          schema: {type: string, format: uuid}
       requestBody:
         required: true
         content:
@@ -112,34 +103,23 @@ paths:
               $ref: '#/components/schemas/SchedulerJobRunCompleteRequest'
       responses:
         '200':
-          description: Запуск успешно завершен
+          description: Запуск завершен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SchedulerJobRunResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/SchedulerJobRunResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  # ============================================================================
-  # TASKS - Логирование выполнения задач
-  # ============================================================================
-  /api/internal/tasks/start:
+  # Tasks
+  /api/v2/internal/start-task:
     post:
       summary: Начало выполнения задачи
-      description: |
-        Регистрирует начало выполнения отдельной задачи внутри операции.
-        Создает запись в логе выполнения задач.
-      operationId: startTaskExecution
-      tags:
-        - tasks
-      security:
-        - ApiKeyAuth: []
+      operationId: startTaskV2
+      tags: [tasks]
+      security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
         content:
@@ -152,33 +132,22 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskExecutionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/TaskExecutionResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/tasks/{task_id}/complete:
+  /api/v2/internal/complete-task:
     post:
       summary: Завершение выполнения задачи
-      description: |
-        Обновляет запись о задаче с результатами выполнения.
-        Устанавливает финальный статус и метрики.
-      operationId: completeTaskExecution
-      tags:
-        - tasks
-      security:
-        - ApiKeyAuth: []
+      operationId: completeTaskV2
+      tags: [tasks]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: task_id
-          in: path
+          in: query
           required: true
-          description: UUID задачи
-          schema:
-            type: string
-            format: uuid
+          schema: {type: string}
       requestBody:
         required: true
         content:
@@ -187,78 +156,66 @@ paths:
               $ref: '#/components/schemas/TaskExecutionCompleteRequest'
       responses:
         '200':
-          description: Задача успешно завершена
+          description: Задача завершена
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskExecutionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/TaskExecutionResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  # ============================================================================
-  # DATABASES - Операции с базами данных
-  # ============================================================================
-  /api/internal/databases/{database_id}/credentials:
+  # Databases
+  /api/v2/internal/get-database-credentials:
     get:
       summary: Получение credentials базы данных
-      description: |
-        Возвращает учетные данные для доступа к базе 1С через OData.
-        Включает URL, логин, пароль и связанный кластер.
-
-        **ВАЖНО**: Пароль возвращается в зашифрованном виде.
-        Worker должен расшифровать его перед использованием.
-      operationId: getDatabaseCredentials
-      tags:
-        - databases
-      security:
-        - ApiKeyAuth: []
+      operationId: getDatabaseCredentialsV2
+      tags: [databases]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: database_id
-          in: path
+          in: query
           required: true
-          description: UUID базы данных в системе
-          schema:
-            type: string
-            format: uuid
+          schema: {type: string, format: uuid}
       responses:
         '200':
           description: Credentials получены
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DatabaseCredentialsResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/DatabaseCredentialsResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/databases/{database_id}/health:
+  /api/v2/internal/list-databases-for-health-check:
+    get:
+      summary: Список баз для health check
+      operationId: listDatabasesForHealthCheckV2
+      tags: [databases]
+      security: [{ApiKeyAuth: []}]
+      responses:
+        '200':
+          description: Список баз
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabasesForHealthCheckResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  /api/v2/internal/update-database-health:
     post:
-      summary: Обновление health status базы данных
-      description: |
-        Обновляет статус здоровья базы данных по результатам проверки.
-        Вызывается Worker после выполнения health check через OData.
-      operationId: updateDatabaseHealth
-      tags:
-        - databases
-      security:
-        - ApiKeyAuth: []
+      summary: Обновление health status базы
+      operationId: updateDatabaseHealthV2
+      tags: [databases]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: database_id
-          in: path
+          in: query
           required: true
-          description: UUID базы данных в системе
-          schema:
-            type: string
-            format: uuid
+          schema: {type: string, format: uuid}
       requestBody:
         required: true
         content:
@@ -267,42 +224,28 @@ paths:
               $ref: '#/components/schemas/HealthUpdateRequest'
       responses:
         '200':
-          description: Health status обновлен
+          description: Health обновлен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthUpdateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/HealthUpdateResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  # ============================================================================
-  # CLUSTERS - Операции с кластерами
-  # ============================================================================
-  /api/internal/clusters/{cluster_id}/health:
+  # Clusters
+  /api/v2/internal/update-cluster-health:
     post:
       summary: Обновление health status кластера
-      description: |
-        Обновляет статус здоровья кластера 1С по результатам проверки.
-        Вызывается Worker после выполнения health check через RAS.
-      operationId: updateClusterHealth
-      tags:
-        - clusters
-      security:
-        - ApiKeyAuth: []
+      operationId: updateClusterHealthV2
+      tags: [clusters]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: cluster_id
-          in: path
+          in: query
           required: true
-          description: UUID кластера в системе
-          schema:
-            type: string
-            format: uuid
+          schema: {type: string, format: uuid}
       requestBody:
         required: true
         content:
@@ -311,242 +254,75 @@ paths:
               $ref: '#/components/schemas/HealthUpdateRequest'
       responses:
         '200':
-          description: Health status обновлен
+          description: Health обновлен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthUpdateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/HealthUpdateResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  # ============================================================================
-  # TEMPLATES - Шаблоны операций (будущий Template Engine)
-  # ============================================================================
-  /api/internal/templates/{template_id}:
+  # Failed Events
+  /api/v2/internal/list-pending-failed-events:
     get:
-      summary: Получение шаблона операции
-      description: |
-        Возвращает определение шаблона для выполнения операции.
-        Шаблон содержит template_data для рендеринга.
-
-        **Статус**: Реализовано (Phase 4.5)
-      operationId: getTemplate
-      tags:
-        - templates
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: template_id
-          in: path
-          required: true
-          description: ID шаблона (например, "create_document")
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Шаблон получен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplateResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/internal/templates/{template_id}/render:
-    post:
-      summary: Рендеринг шаблона через Python Jinja2
-      description: |
-        Fallback endpoint для рендеринга шаблонов.
-        Используется Go Worker, когда pongo2 не может обработать шаблон
-        из-за несовместимости синтаксиса.
-
-        **Статус**: Реализовано (Phase 4.5)
-      operationId: renderTemplate
-      tags:
-        - templates
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: template_id
-          in: path
-          required: true
-          description: ID шаблона
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TemplateRenderRequest'
-      responses:
-        '200':
-          description: Результат рендеринга (success может быть false при ошибке)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TemplateRenderResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  # ============================================================================
-  # WORKFLOWS - Workflow определения (будущий Workflow Engine)
-  # ============================================================================
-  /api/internal/workflows/{workflow_id}:
-    get:
-      summary: Получение workflow определения
-      description: |
-        Возвращает определение workflow для сложных многошаговых операций.
-        Workflow описывает граф выполнения, ветвления и rollback стратегии.
-
-        **Статус**: Будет реализовано в Sprint 3.x (Workflow Engine)
-      operationId: getWorkflow
-      tags:
-        - workflows
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          description: UUID или код workflow
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Workflow получен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '501':
-          description: Workflow Engine еще не реализован
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  # ============================================================================
-  # FAILED EVENTS - Event Replay System
-  # ============================================================================
-  /api/internal/failed-events/pending:
-    get:
-      summary: Получение pending failed events для replay
-      description: |
-        Возвращает список событий, которые не удалось опубликовать в Redis
-        и ожидают повторной публикации.
-
-        Go Worker периодически вызывает этот endpoint для получения
-        событий, которые нужно переотправить.
-      operationId: getFailedEventsPending
-      tags:
-        - failed-events
-      security:
-        - ApiKeyAuth: []
+      summary: Список pending failed events
+      operationId: listPendingFailedEventsV2
+      tags: [failed-events]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: batch_size
           in: query
-          required: false
-          description: Максимальное количество событий (1-1000)
-          schema:
-            type: integer
-            default: 100
-            minimum: 1
-            maximum: 1000
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
       responses:
         '200':
-          description: Список pending событий
+          description: Список events
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FailedEventsPendingResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/FailedEventsPendingResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/failed-events/{event_id}/replayed:
+  /api/v2/internal/mark-event-replayed:
     post:
-      summary: Пометить событие как успешно переотправленное
-      description: |
-        Вызывается Go Worker после успешной публикации события в Redis.
-        Устанавливает статус события в "replayed".
-      operationId: markFailedEventReplayed
-      tags:
-        - failed-events
-      security:
-        - ApiKeyAuth: []
+      summary: Отметить event как replayed
+      operationId: markEventReplayedV2
+      tags: [failed-events]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: event_id
-          in: path
+          in: query
           required: true
-          description: ID failed event
-          schema:
-            type: integer
+          schema: {type: integer}
       requestBody:
-        required: false
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedEventReplayedRequest'
       responses:
         '200':
-          description: Событие помечено как replayed
+          description: Event отмечен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/FailedEventReplayedResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/failed-events/{event_id}/failed:
+  /api/v2/internal/mark-event-failed:
     post:
-      summary: Пометить событие как failed (инкремент retry_count)
-      description: |
-        Вызывается Go Worker при неудачной попытке публикации события.
-        Увеличивает retry_count и сохраняет сообщение об ошибке.
-
-        Если retry_count >= max_retries, статус меняется на "failed" (permanently).
-      operationId: markFailedEventFailed
-      tags:
-        - failed-events
-      security:
-        - ApiKeyAuth: []
+      summary: Отметить event как failed
+      operationId: markEventFailedV2
+      tags: [failed-events]
+      security: [{ApiKeyAuth: []}]
       parameters:
         - name: event_id
-          in: path
+          in: query
           required: true
-          description: ID failed event
-          schema:
-            type: integer
+          schema: {type: integer}
       requestBody:
         required: true
         content:
@@ -555,35 +331,23 @@ paths:
               $ref: '#/components/schemas/FailedEventFailedRequest'
       responses:
         '200':
-          description: Событие обновлено
+          description: Event отмечен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FailedEventFailedResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/FailedEventFailedResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
-  /api/internal/failed-events/cleanup:
+  /api/v2/internal/cleanup-failed-events:
     post:
-      summary: Удаление старых replayed/failed событий
-      description: |
-        Удаляет события старше указанного retention периода.
-        Удаляются только события со статусом "replayed" или "failed".
-
-        Рекомендуется вызывать ежедневно для освобождения места.
-      operationId: cleanupFailedEvents
-      tags:
-        - failed-events
-      security:
-        - ApiKeyAuth: []
+      summary: Очистка старых failed events
+      operationId: cleanupFailedEventsV2
+      tags: [failed-events]
+      security: [{ApiKeyAuth: []}]
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -594,13 +358,61 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FailedEventsCleanupResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: '#/components/schemas/FailedEventsCleanupResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  # Templates
+  /api/v2/internal/get-template:
+    get:
+      summary: Получение шаблона
+      operationId: getTemplateV2
+      tags: [templates]
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: template_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Шаблон получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponseV2'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  /api/v2/internal/render-template:
+    post:
+      summary: Рендеринг шаблона
+      operationId: renderTemplateV2
+      tags: [templates]
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: template_id
+          in: query
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRenderRequest'
+      responses:
+        '200':
+          description: Шаблон отрендерен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateRenderResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
 
 components:
   securitySchemes:
@@ -1332,6 +1144,136 @@ components:
           type: integer
           description: Количество удаленных событий
           example: 150
+
+    # ============================================================================
+    # V2 RESPONSE SCHEMAS
+    # ============================================================================
+    SchedulerJobRunResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        run_id:
+          type: integer
+        status:
+          type: string
+          enum: [running, success, failed, skipped]
+
+    TaskExecutionResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        task_id:
+          type: integer
+        status:
+          type: string
+          enum: [running, success, failed, skipped]
+
+    DatabaseCredentialsResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        credentials:
+          $ref: '#/components/schemas/DatabaseCredentialsResponse'
+
+    DatabasesForHealthCheckResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseForHealthCheck'
+        count:
+          type: integer
+
+    DatabaseForHealthCheck:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        odata_url:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+
+    HealthUpdateResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        database_id:
+          type: string
+          format: uuid
+        cluster_id:
+          type: string
+          format: uuid
+        healthy:
+          type: boolean
+
+    FailedEventsPendingResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedEvent'
+        count:
+          type: integer
+
+    FailedEventReplayedResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        event_id:
+          type: integer
+
+    FailedEventFailedResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        new_status:
+          type: string
+        retry_count:
+          type: integer
+
+    FailedEventsCleanupResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        deleted_count:
+          type: integer
+
+    TemplateResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        template:
+          $ref: '#/components/schemas/OperationTemplateResponse'
+
+    TemplateRenderResponseV2:
+      type: object
+      properties:
+        success:
+          type: boolean
+        rendered:
+          type: object
+          additionalProperties: true
+        error:
+          type: string
 
     # ============================================================================
     # COMMON SCHEMAS

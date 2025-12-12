@@ -8,9 +8,9 @@ import (
 
 const (
 	// API paths for database endpoints
-	pathDatabaseCredentials     = "/api/internal/databases/%s/credentials"
-	pathDatabaseHealth          = "/api/internal/databases/%s/health"
-	pathDatabasesForHealthCheck = "/api/internal/databases/health-check-list/"
+	pathDatabaseCredentials     = "/api/v2/internal/get-database-credentials"
+	pathDatabaseHealth          = "/api/v2/internal/update-database-health"
+	pathDatabasesForHealthCheck = "/api/v2/internal/list-databases-for-health-check"
 )
 
 // GetDatabaseCredentials fetches credentials for a database by ID.
@@ -19,14 +19,13 @@ func (c *Client) GetDatabaseCredentials(ctx context.Context, databaseID string) 
 		return nil, fmt.Errorf("database ID is required")
 	}
 
-	path := fmt.Sprintf(pathDatabaseCredentials, databaseID)
+	path := fmt.Sprintf("%s?database_id=%s", pathDatabaseCredentials, databaseID)
 
-	var creds DatabaseCredentials
-	if err := c.get(ctx, path, &creds); err != nil {
+	var resp DatabaseCredentialsResponse
+	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("failed to get database credentials: %w", err)
 	}
-
-	return &creds, nil
+	return &resp.Credentials, nil
 }
 
 // UpdateDatabaseHealth updates the health status of a database.
@@ -38,7 +37,7 @@ func (c *Client) UpdateDatabaseHealth(ctx context.Context, databaseID string, re
 		return fmt.Errorf("health update request is required")
 	}
 
-	path := fmt.Sprintf(pathDatabaseHealth, databaseID)
+	path := fmt.Sprintf("%s?database_id=%s", pathDatabaseHealth, databaseID)
 
 	var resp HealthUpdateResponse
 	if err := c.post(ctx, path, req, &resp); err != nil {
@@ -86,6 +85,5 @@ func (c *Client) GetDatabasesForHealthCheck(ctx context.Context) ([]DatabaseForH
 	if err := c.get(ctx, pathDatabasesForHealthCheck, &resp); err != nil {
 		return nil, fmt.Errorf("failed to get databases for health check: %w", err)
 	}
-
 	return resp.Databases, nil
 }

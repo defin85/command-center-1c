@@ -8,7 +8,7 @@ import (
 
 const (
 	// API paths for cluster endpoints
-	pathClusterHealth = "/api/internal/clusters/%s/health"
+	pathClusterHealth = "/api/v2/internal/update-cluster-health"
 )
 
 // UpdateClusterHealth updates the health status of a cluster.
@@ -20,7 +20,7 @@ func (c *Client) UpdateClusterHealth(ctx context.Context, clusterID string, req 
 		return fmt.Errorf("health update request is required")
 	}
 
-	path := fmt.Sprintf(pathClusterHealth, clusterID)
+	path := fmt.Sprintf("%s?cluster_id=%s", pathClusterHealth, clusterID)
 
 	var resp HealthUpdateResponse
 	if err := c.post(ctx, path, req, &resp); err != nil {

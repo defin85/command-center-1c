@@ -47,7 +47,7 @@ func TestClient_GetPendingFailedEvents_Success(t *testing.T) {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 
-		if !strings.HasPrefix(r.URL.Path, "/api/internal/failed-events/pending") {
+		if !strings.HasPrefix(r.URL.Path, "/api/v2/internal/list-pending-failed-events") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 
@@ -148,11 +148,16 @@ func TestClient_MarkEventReplayed_Success(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 
-		if r.URL.Path != "/api/internal/failed-events/123/replayed" {
+		if r.URL.Path != "/api/v2/internal/mark-event-replayed" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 
-		resp := SuccessResponse{Success: true, Message: "Event marked as replayed"}
+		eventID := r.URL.Query().Get("event_id")
+		if eventID != "123" {
+			t.Errorf("expected event_id=123, got %s", eventID)
+		}
+
+		resp := FailedEventReplayedResponse{Success: true, EventID: 123, Status: "replayed"}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(resp)
@@ -230,8 +235,13 @@ func TestClient_MarkEventFailed_Success(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 
-		if r.URL.Path != "/api/internal/failed-events/456/failed" {
+		if r.URL.Path != "/api/v2/internal/mark-event-failed" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		eventID := r.URL.Query().Get("event_id")
+		if eventID != "456" {
+			t.Errorf("expected event_id=456, got %s", eventID)
 		}
 
 		var req FailedEventFailedRequest
@@ -362,7 +372,7 @@ func TestClient_CleanupOldEvents_Success(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 
-		if r.URL.Path != "/api/internal/failed-events/cleanup" {
+		if r.URL.Path != "/api/v2/internal/cleanup-failed-events" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 
@@ -373,7 +383,7 @@ func TestClient_CleanupOldEvents_Success(t *testing.T) {
 			t.Errorf("expected retention_days 14, got %d", req.RetentionDays)
 		}
 
-		resp := FailedEventsCleanupResponse{DeletedCount: 150}
+		resp := FailedEventsCleanupResponse{Success: true, DeletedCount: 150}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(resp)

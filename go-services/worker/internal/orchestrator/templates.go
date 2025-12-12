@@ -5,6 +5,12 @@ import (
 	"fmt"
 )
 
+const (
+	// API paths for template endpoints
+	pathTemplateGet    = "/api/v2/internal/get-template"
+	pathTemplateRender = "/api/v2/internal/render-template"
+)
+
 // Template represents operation template from Orchestrator.
 type Template struct {
 	ID            string                 `json:"id"`
@@ -30,48 +36,50 @@ type TemplateRenderResponse struct {
 
 // GetTemplate fetches template by ID from Orchestrator.
 func (c *Client) GetTemplate(ctx context.Context, templateID string) (*Template, error) {
-	path := fmt.Sprintf("/api/internal/templates/%s", templateID)
+	path := fmt.Sprintf("%s?template_id=%s", pathTemplateGet, templateID)
 
-	var template Template
-	if err := c.get(ctx, path, &template); err != nil {
+	var resp TemplateGetResponse
+	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("failed to get template %s: %w", templateID, err)
 	}
-
-	return &template, nil
+	return &Template{
+		ID:            resp.Template.ID,
+		Name:          resp.Template.Name,
+		OperationType: resp.Template.OperationType,
+		TargetEntity:  resp.Template.TargetEntity,
+		TemplateData:  resp.Template.TemplateData,
+		Version:       resp.Template.Version,
+		IsActive:      resp.Template.IsActive,
+	}, nil
 }
 
 // RenderTemplate renders template via Python fallback API.
 // This is called when Go pongo2 cannot handle the template syntax.
 func (c *Client) RenderTemplate(ctx context.Context, templateID string, templateContext map[string]interface{}) (*TemplateRenderResponse, error) {
-	path := fmt.Sprintf("/api/internal/templates/%s/render", templateID)
-
-	reqBody := TemplateRenderRequest{Context: templateContext}
-
-	var result TemplateRenderResponse
-	if err := c.post(ctx, path, reqBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to render template %s: %w", templateID, err)
+	result, err := c.RenderTemplateRaw(ctx, templateID, templateContext)
+	if err != nil {
+		return nil, err
 	}
 
 	if !result.Success {
 		return nil, fmt.Errorf("template render failed: %s", result.Error)
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // RenderTemplateRaw renders template and returns the raw response,
 // including error information even on failed renders.
 func (c *Client) RenderTemplateRaw(ctx context.Context, templateID string, templateContext map[string]interface{}) (*TemplateRenderResponse, error) {
-	path := fmt.Sprintf("/api/internal/templates/%s/render", templateID)
+	path := fmt.Sprintf("%s?template_id=%s", pathTemplateRender, templateID)
 
 	reqBody := TemplateRenderRequest{Context: templateContext}
 
-	var result TemplateRenderResponse
-	if err := c.post(ctx, path, reqBody, &result); err != nil {
+	var resp TemplateRenderResponse
+	if err := c.post(ctx, path, reqBody, &resp); err != nil {
 		return nil, fmt.Errorf("failed to render template %s: %w", templateID, err)
 	}
-
-	return &result, nil
+	return &resp, nil
 }
 
 // FallbackRenderer implements template.FallbackClient interface

@@ -60,7 +60,19 @@ func TestGetTemplate(t *testing.T) {
 				w.WriteHeader(tt.serverStatus)
 
 				if tt.serverStatus == http.StatusOK {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					// Return v2 format: {success: true, template: {...}}
+					json.NewEncoder(w).Encode(TemplateGetResponse{
+						Success: true,
+						Template: OperationTemplateData{
+							ID:            tt.serverResponse.ID,
+							Name:          tt.serverResponse.Name,
+							OperationType: tt.serverResponse.OperationType,
+							TargetEntity:  tt.serverResponse.TargetEntity,
+							TemplateData:  tt.serverResponse.TemplateData,
+							Version:       tt.serverResponse.Version,
+							IsActive:      tt.serverResponse.IsActive,
+						},
+					})
 				} else {
 					json.NewEncoder(w).Encode(map[string]string{
 						"error": "Template not found",

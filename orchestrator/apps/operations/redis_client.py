@@ -35,8 +35,8 @@ class RedisClient:
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "event_type": "operation.created",
             "service_name": "orchestrator",
-            "payload": json.dumps(message),
-            "metadata": json.dumps({})
+            "payload": message,  # object, not string - Go expects json.RawMessage
+            "metadata": {}       # object, not string - Go expects map[string]interface{}
         }
 
     def enqueue_operation_stream(self, message: Dict[str, Any]) -> Optional[str]:
@@ -47,21 +47,41 @@ class RedisClient:
             message: Operation message (v2.0 schema)
 
         Returns:
-            Stream message ID or None on error
+            Stream message ID
+
+        Raises:
+            Exception: If stream write fails (propagate to rollback transaction)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Create envelope and serialize to JSON BEFORE creating stream_fields (FIX #6)
+        # This ensures json.dumps failure happens before any partial state
+        envelope = self._create_envelope(message)
+        envelope_json = json.dumps(envelope)  # May raise - happens before stream_fields
+
+        # XADD with data field containing JSON envelope
+        # Fallback fields are duplicated outside envelope for recovery
+        # when parsing fails (Error Feedback Phase 1)
+        stream_fields = {
+            "data": envelope_json,
+            "correlation_id": envelope.get("correlation_id", ""),
+            "operation_id": message.get("operation_id", ""),
+            "event_type": envelope.get("event_type", ""),
+        }
+
         try:
-            envelope = self._create_envelope(message)
-            # XADD with data field containing JSON envelope
             msg_id = self.client.xadd(
                 self.STREAM_COMMANDS,
-                {"data": json.dumps(envelope)},
+                stream_fields,
                 maxlen=self.STREAM_MAX_LEN
             )
             return msg_id
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Stream write failed: {e}")
-            return None
+            # FIX #3: raise instead of return None to propagate exception
+            # This allows transaction rollback in calling code
+            logger.error(f"Stream write failed for operation_id={message.get('operation_id')}: {e}")
+            raise  # Propagate exception to rollback transaction
 
     def enqueue_operation(self, message: Dict[str, Any]) -> bool:
         """
@@ -72,9 +92,17 @@ class RedisClient:
 
         Returns:
             True if success
+
+        Note:
+            This method catches exceptions for backward compatibility.
+            Use enqueue_operation_stream() directly if you need exception propagation
+            for transaction rollback.
         """
-        msg_id = self.enqueue_operation_stream(message)
-        return msg_id is not None
+        try:
+            msg_id = self.enqueue_operation_stream(message)
+            return msg_id is not None
+        except Exception:
+            return False
 
     def enqueue_dlq(self, message: Dict[str, Any]) -> bool:
         """Push failed message to DLQ."""

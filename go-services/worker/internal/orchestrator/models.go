@@ -38,16 +38,9 @@ type SchedulerJobRunCompleteRequest struct {
 
 // SchedulerJobRunResponse represents response from scheduler job run endpoints.
 type SchedulerJobRunResponse struct {
-	RunID          string     `json:"run_id"`
-	JobName        string     `json:"job_name"`
-	Status         string     `json:"status"` // running, success, failed, skipped
-	WorkerInstance string     `json:"worker_instance,omitempty"`
-	StartedAt      time.Time  `json:"started_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	DurationMs     int64      `json:"duration_ms,omitempty"`
-	ResultSummary  string     `json:"result_summary,omitempty"`
-	ItemsProcessed int        `json:"items_processed,omitempty"`
-	ItemsFailed    int        `json:"items_failed,omitempty"`
+	Success bool   `json:"success,omitempty"`
+	RunID   int    `json:"run_id"`
+	Status  string `json:"status"` // running, success, failed, skipped
 }
 
 // ============================================================================
@@ -76,15 +69,9 @@ type TaskExecutionCompleteRequest struct {
 
 // TaskExecutionResponse represents response from task execution endpoints.
 type TaskExecutionResponse struct {
-	TaskID      string     `json:"task_id"`
-	OperationID string     `json:"operation_id"`
-	TaskType    string     `json:"task_type"`
-	TargetID    string     `json:"target_id"`
-	TargetType  string     `json:"target_type,omitempty"`
-	Status      string     `json:"status"` // running, success, failed, skipped
-	StartedAt   time.Time  `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	DurationMs  int64      `json:"duration_ms,omitempty"`
+	Success bool   `json:"success,omitempty"`
+	TaskID  int    `json:"task_id"`
+	Status  string `json:"status"` // running, success, failed, skipped
 }
 
 // ============================================================================
@@ -111,6 +98,7 @@ type DatabaseForHealthCheck struct {
 
 // DatabasesForHealthCheckResponse represents response from databases health check list endpoint.
 type DatabasesForHealthCheckResponse struct {
+	Success   bool                     `json:"success"`
 	Databases []DatabaseForHealthCheck `json:"databases"`
 	Count     int                      `json:"count"`
 }
@@ -131,13 +119,16 @@ type HealthUpdateRequest struct {
 
 // HealthUpdateResponse represents response from health update endpoints.
 type HealthUpdateResponse struct {
-	Success         bool       `json:"success"`
-	EntityID        string     `json:"entity_id"`
-	EntityType      string     `json:"entity_type,omitempty"` // database, cluster
-	Healthy         bool       `json:"healthy"`
-	PreviousHealthy bool       `json:"previous_healthy,omitempty"`
-	StatusChanged   bool       `json:"status_changed,omitempty"`
-	LastCheckAt     *time.Time `json:"last_check_at,omitempty"`
+	Success    bool   `json:"success"`
+	DatabaseID string `json:"database_id,omitempty"`
+	ClusterID  string `json:"cluster_id,omitempty"`
+	Healthy    bool   `json:"healthy"`
+}
+
+// DatabaseCredentialsResponse represents response from credentials endpoint.
+type DatabaseCredentialsResponse struct {
+	Success     bool                `json:"success"`
+	Credentials DatabaseCredentials `json:"credentials"`
 }
 
 // ============================================================================
@@ -228,8 +219,9 @@ type FailedEvent struct {
 
 // FailedEventsPendingResponse represents response from pending events endpoint.
 type FailedEventsPendingResponse struct {
-	Events []FailedEvent `json:"events"`
-	Count  int           `json:"count"`
+	Success bool          `json:"success"`
+	Events  []FailedEvent `json:"events"`
+	Count   int           `json:"count"`
 }
 
 // FailedEventReplayedRequest represents request to mark event as replayed.
@@ -257,7 +249,36 @@ type FailedEventsCleanupRequest struct {
 
 // FailedEventsCleanupResponse represents response from cleanup endpoint.
 type FailedEventsCleanupResponse struct {
-	DeletedCount int `json:"deleted_count"`
+	Success      bool `json:"success"`
+	DeletedCount int  `json:"deleted_count"`
+}
+
+// FailedEventReplayedResponse represents response from mark replayed endpoint.
+type FailedEventReplayedResponse struct {
+	Success bool   `json:"success"`
+	EventID int    `json:"event_id"`
+	Status  string `json:"status"` // replayed
+}
+
+// ============================================================================
+// Template Response Schemas
+// ============================================================================
+
+// TemplateGetResponse represents response from template endpoint.
+type TemplateGetResponse struct {
+	Success  bool                  `json:"success"`
+	Template OperationTemplateData `json:"template"`
+}
+
+// OperationTemplateData represents template data from API.
+type OperationTemplateData struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	OperationType string                 `json:"operation_type"`
+	TargetEntity  string                 `json:"target_entity"`
+	TemplateData  map[string]interface{} `json:"template_data"`
+	Version       int                    `json:"version"`
+	IsActive      bool                   `json:"is_active"`
 }
 
 // ============================================================================

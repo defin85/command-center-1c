@@ -38,7 +38,7 @@ type ClientConfig struct {
 	BaseBackoff time.Duration
 }
 
-// Client provides methods to interact with Django Orchestrator Internal API.
+// Client provides methods to interact with Django Orchestrator Internal API v2.
 type Client struct {
 	baseURL     string
 	token       string
