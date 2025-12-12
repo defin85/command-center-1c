@@ -4,24 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/ras"
 
 	"go.uber.org/zap"
 )
 
 const (
-	// Channel names
-	// NOTE: Uses "cluster-service" prefix for backwards compatibility with Worker
-	// Worker State Machine publishes to this channel, expecting cluster-service to handle it
-	// This will be renamed to "ras-adapter" in Week 3+ when Worker is updated
-	LockCommandChannel = "commands:cluster-service:infobase:lock"
-	LockedEventChannel = "events:cluster-service:infobase:locked"
-	LockFailedChannel  = "events:cluster-service:infobase:lock-failed"
+	// Channel names for lock operations
+	// Uses new "ras" prefix as per shared/ras package
+	LockCommandChannel = ras.StreamCommandsLock
+	LockedEventChannel = ras.StreamEventsCompleted
+	LockFailedChannel  = ras.StreamEventsFailed
 
-	// Event types
-	InfobaseLockedEvent     = "cluster.infobase.locked"
-	InfobaseLockFailedEvent = "cluster.infobase.lock.failed"
+	// Event types for lock operations
+	InfobaseLockedEvent     = "ras.infobase.locked"
+	InfobaseLockFailedEvent = "ras.infobase.lock.failed"
 )
 
 // LockHandler handles lock infobase commands from the event bus
@@ -42,25 +42,25 @@ func NewLockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisCl
 	}
 }
 
-
 // HandleLockCommand handles lock infobase command from the event bus
 func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.Envelope) error {
-	// Parse payload
-	var payload LockCommandPayload
-	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+	start := time.Now()
+
+	// Parse payload as RASCommand
+	var cmd ras.RASCommand
+	if err := json.Unmarshal(envelope.Payload, &cmd); err != nil {
 		h.logger.Error("failed to parse lock command payload",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, payload, fmt.Errorf("invalid payload: %w", err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, fmt.Errorf("invalid payload: %w", err))
 	}
 
-	// Validate required fields
-	if payload.ClusterID == "" || payload.InfobaseID == "" {
-		h.logger.Error("missing required fields in lock command",
+	// Validate command
+	if err := cmd.Validate(); err != nil {
+		h.logger.Error("invalid lock command",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("cluster_id", payload.ClusterID),
-			zap.String("infobase_id", payload.InfobaseID))
-		return h.publishError(ctx, envelope.CorrelationID, payload, fmt.Errorf("cluster_id and infobase_id are required"))
+			zap.Error(err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// CHECK IDEMPOTENCY
@@ -70,53 +70,52 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 	}
 
 	if !isFirst {
-		// Already processed → return success (idempotent response)
+		// Already processed -> return success (idempotent response)
 		h.logger.Info("duplicate lock command detected, skipping operation (idempotent)",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("infobase_id", payload.InfobaseID))
-		return h.publishSuccess(ctx, envelope.CorrelationID, payload)
+			zap.String("infobase_id", cmd.InfobaseID))
+		return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, 0)
 	}
 
 	h.logger.Info("handling lock command",
 		zap.String("correlation_id", envelope.CorrelationID),
-		zap.String("cluster_id", payload.ClusterID),
-		zap.String("infobase_id", payload.InfobaseID),
-		zap.String("database_id", payload.DatabaseID))
+		zap.String("operation_id", cmd.OperationID),
+		zap.String("cluster_id", cmd.ClusterID),
+		zap.String("infobase_id", cmd.InfobaseID),
+		zap.String("database_id", cmd.DatabaseID))
 
 	// Call service to lock infobase
 	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
-	err = h.service.LockInfobase(ctx, payload.ClusterID, payload.InfobaseID, "", "")
+	err = h.service.LockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, "", "")
 	if err != nil {
 		h.logger.Error("failed to lock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("cluster_id", payload.ClusterID),
-			zap.String("infobase_id", payload.InfobaseID),
+			zap.String("cluster_id", cmd.ClusterID),
+			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, payload, err)
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// Publish success event
 	h.logger.Info("infobase locked successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
-		zap.String("cluster_id", payload.ClusterID),
-		zap.String("infobase_id", payload.InfobaseID))
+		zap.String("cluster_id", cmd.ClusterID),
+		zap.String("infobase_id", cmd.InfobaseID))
 
-	return h.publishSuccess(ctx, envelope.CorrelationID, payload)
+	duration := time.Since(start)
+	return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, duration)
 }
 
 // publishSuccess publishes a success event to the event bus
-func (h *LockHandler) publishSuccess(ctx context.Context, correlationID string, payload LockCommandPayload) error {
-	successPayload := LockSuccessPayload{
-		ClusterID:  payload.ClusterID,
-		InfobaseID: payload.InfobaseID,
-		DatabaseID: payload.DatabaseID,
-		Message:    "Infobase locked successfully (scheduled jobs blocked)",
-	}
+func (h *LockHandler) publishSuccess(ctx context.Context, correlationID string, cmd *ras.RASCommand, duration time.Duration) error {
+	result := ras.NewRASResult(cmd.OperationID, cmd.DatabaseID, cmd.CommandType, map[string]interface{}{
+		"message": "Infobase locked successfully (scheduled jobs blocked)",
+	}, duration)
 
 	err := h.publisher.Publish(ctx,
 		LockedEventChannel,
 		InfobaseLockedEvent,
-		successPayload,
+		result,
 		correlationID)
 
 	if err != nil {
@@ -136,19 +135,25 @@ func (h *LockHandler) publishSuccess(ctx context.Context, correlationID string, 
 }
 
 // publishError publishes an error event to the event bus
-func (h *LockHandler) publishError(ctx context.Context, correlationID string, payload LockCommandPayload, err error) error {
-	errorPayload := ErrorPayload{
-		ClusterID:  payload.ClusterID,
-		InfobaseID: payload.InfobaseID,
-		DatabaseID: payload.DatabaseID,
-		Error:      err.Error(),
-		Message:    "Failed to lock infobase",
+func (h *LockHandler) publishError(ctx context.Context, correlationID string, cmd *ras.RASCommand, err error) error {
+	// Handle nil or incomplete command
+	operationID := ""
+	databaseID := ""
+	commandType := ras.CommandTypeLock
+	if cmd != nil {
+		operationID = cmd.OperationID
+		databaseID = cmd.DatabaseID
+		if cmd.CommandType != "" {
+			commandType = cmd.CommandType
+		}
 	}
+
+	result := ras.NewRASErrorResult(operationID, databaseID, commandType, err.Error(), 0)
 
 	pubErr := h.publisher.Publish(ctx,
 		LockFailedChannel,
 		InfobaseLockFailedEvent,
-		errorPayload,
+		result,
 		correlationID)
 
 	if pubErr != nil {

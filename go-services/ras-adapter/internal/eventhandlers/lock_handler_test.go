@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/ras"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -103,13 +104,16 @@ func TestLockHandler_HandleLockCommand_Success(t *testing.T) {
 	// Mock event publishing
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	// Create envelope
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
-		DatabaseID: "db-789",
+	// Create envelope with RASCommand payload
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
+		CreatedAt:   time.Now(),
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -151,6 +155,37 @@ func TestLockHandler_HandleLockCommand_InvalidPayload(t *testing.T) {
 	mockPub.AssertExpectations(t)
 }
 
+func TestLockHandler_HandleLockCommand_MissingOperationID(t *testing.T) {
+	mockSvc := new(MockInfobaseManager)
+	mockPub := new(MockEventPublisher)
+	mockRedis := new(MockRedisClient)
+	logger := zap.NewNop()
+
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, logger)
+
+	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
+
+	cmd := ras.RASCommand{
+		OperationID: "", // Empty - should fail validation
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
+	}
+	payloadBytes, _ := json.Marshal(cmd)
+
+	envelope := &events.Envelope{
+		CorrelationID: "corr-123",
+		Payload:       payloadBytes,
+	}
+
+	err := handler.HandleLockCommand(context.Background(), envelope)
+
+	assert.Error(t, err)
+	assert.Equal(t, ras.ErrEmptyOperationID, err)
+	mockPub.AssertExpectations(t)
+}
+
 func TestLockHandler_HandleLockCommand_MissingClusterID(t *testing.T) {
 	mockSvc := new(MockInfobaseManager)
 	mockPub := new(MockEventPublisher)
@@ -161,11 +196,14 @@ func TestLockHandler_HandleLockCommand_MissingClusterID(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "", // Empty
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "", // Empty
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -175,7 +213,7 @@ func TestLockHandler_HandleLockCommand_MissingClusterID(t *testing.T) {
 	err := handler.HandleLockCommand(context.Background(), envelope)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
+	assert.Equal(t, ras.ErrEmptyClusterID, err)
 	mockPub.AssertExpectations(t)
 }
 
@@ -189,11 +227,14 @@ func TestLockHandler_HandleLockCommand_MissingInfobaseID(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "", // Empty
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "", // Empty
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -203,7 +244,7 @@ func TestLockHandler_HandleLockCommand_MissingInfobaseID(t *testing.T) {
 	err := handler.HandleLockCommand(context.Background(), envelope)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
+	assert.Equal(t, ras.ErrEmptyInfobaseID, err)
 	mockPub.AssertExpectations(t)
 }
 
@@ -227,11 +268,14 @@ func TestLockHandler_HandleLockCommand_ServiceError(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -263,11 +307,14 @@ func TestLockHandler_HandleLockCommand_IdempotentRequest(t *testing.T) {
 	// Mock success publishing (idempotent response)
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -309,11 +356,14 @@ func TestLockHandler_HandleLockCommand_ContextTimeout(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -349,11 +399,14 @@ func TestLockHandler_HandleLockCommand_PublishingError(t *testing.T) {
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").
 		Return(fmt.Errorf("Redis publish failed"))
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -384,11 +437,14 @@ func TestLockHandler_HandleLockCommand_RedisNotConfigured(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, LockedEventChannel, InfobaseLockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := LockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-001",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeLock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",

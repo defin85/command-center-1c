@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/ras"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -49,13 +50,15 @@ func TestUnlockHandler_HandleUnlockCommand_Success(t *testing.T) {
 	// Mock event publishing
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	// Create envelope
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
-		DatabaseID: "db-789",
+	// Create envelope with RASCommand
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -107,11 +110,14 @@ func TestUnlockHandler_HandleUnlockCommand_MissingClusterID(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "", // Empty
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "", // Empty
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -121,7 +127,7 @@ func TestUnlockHandler_HandleUnlockCommand_MissingClusterID(t *testing.T) {
 	err := handler.HandleUnlockCommand(context.Background(), envelope)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
+	assert.ErrorIs(t, err, ras.ErrEmptyClusterID)
 	mockPub.AssertExpectations(t)
 }
 
@@ -135,11 +141,14 @@ func TestUnlockHandler_HandleUnlockCommand_MissingInfobaseID(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "", // Empty
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "", // Empty
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -149,7 +158,7 @@ func TestUnlockHandler_HandleUnlockCommand_MissingInfobaseID(t *testing.T) {
 	err := handler.HandleUnlockCommand(context.Background(), envelope)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cluster_id and infobase_id are required")
+	assert.ErrorIs(t, err, ras.ErrEmptyInfobaseID)
 	mockPub.AssertExpectations(t)
 }
 
@@ -173,11 +182,14 @@ func TestUnlockHandler_HandleUnlockCommand_ServiceError(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -209,11 +221,14 @@ func TestUnlockHandler_HandleUnlockCommand_IdempotentRequest(t *testing.T) {
 	// Mock success publishing (idempotent response)
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -255,11 +270,14 @@ func TestUnlockHandler_HandleUnlockCommand_ContextTimeout(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -295,11 +313,14 @@ func TestUnlockHandler_HandleUnlockCommand_PublishingError(t *testing.T) {
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").
 		Return(fmt.Errorf("Redis publish failed"))
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -330,11 +351,14 @@ func TestUnlockHandler_HandleUnlockCommand_RedisNotConfigured(t *testing.T) {
 
 	mockPub.On("Publish", mock.Anything, UnlockedEventChannel, InfobaseUnlockedEvent, mock.Anything, "corr-123").Return(nil)
 
-	payload := UnlockCommandPayload{
-		ClusterID:  "cluster-123",
-		InfobaseID: "infobase-456",
+	cmd := ras.RASCommand{
+		OperationID: "op-123",
+		DatabaseID:  "db-789",
+		ClusterID:   "cluster-123",
+		InfobaseID:  "infobase-456",
+		CommandType: ras.CommandTypeUnlock,
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(cmd)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",

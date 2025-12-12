@@ -4,24 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/ras"
 
 	"go.uber.org/zap"
 )
 
 const (
 	// Channel names for unlock operations
-	// NOTE: Uses "cluster-service" prefix for backwards compatibility with Worker
-	// Worker State Machine publishes to this channel, expecting cluster-service to handle it
-	// This will be renamed to "ras-adapter" in Week 3+ when Worker is updated
-	UnlockCommandChannel = "commands:cluster-service:infobase:unlock"
-	UnlockedEventChannel = "events:cluster-service:infobase:unlocked"
-	UnlockFailedChannel  = "events:cluster-service:infobase:unlock-failed"
+	// Uses new "ras" prefix as per shared/ras package
+	UnlockCommandChannel = ras.StreamCommandsUnlock
+	UnlockedEventChannel = ras.StreamEventsCompleted
+	UnlockFailedChannel  = ras.StreamEventsFailed
 
 	// Event types for unlock operations
-	InfobaseUnlockedEvent     = "cluster.infobase.unlocked"
-	InfobaseUnlockFailedEvent = "cluster.infobase.unlock.failed"
+	InfobaseUnlockedEvent     = "ras.infobase.unlocked"
+	InfobaseUnlockFailedEvent = "ras.infobase.unlock.failed"
 )
 
 // UnlockHandler handles unlock infobase commands from the event bus
@@ -45,22 +45,23 @@ func NewUnlockHandler(svc InfobaseManager, pub EventPublisher, redisClient Redis
 
 // HandleUnlockCommand handles unlock infobase command from the event bus
 func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *events.Envelope) error {
-	// Parse payload
-	var payload UnlockCommandPayload
-	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+	start := time.Now()
+
+	// Parse payload as RASCommand
+	var cmd ras.RASCommand
+	if err := json.Unmarshal(envelope.Payload, &cmd); err != nil {
 		h.logger.Error("failed to parse unlock command payload",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, payload, fmt.Errorf("invalid payload: %w", err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, fmt.Errorf("invalid payload: %w", err))
 	}
 
-	// Validate required fields
-	if payload.ClusterID == "" || payload.InfobaseID == "" {
-		h.logger.Error("missing required fields in unlock command",
+	// Validate command
+	if err := cmd.Validate(); err != nil {
+		h.logger.Error("invalid unlock command",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("cluster_id", payload.ClusterID),
-			zap.String("infobase_id", payload.InfobaseID))
-		return h.publishError(ctx, envelope.CorrelationID, payload, fmt.Errorf("cluster_id and infobase_id are required"))
+			zap.Error(err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// CHECK IDEMPOTENCY
@@ -70,53 +71,52 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 	}
 
 	if !isFirst {
-		// Already processed → return success (idempotent response)
+		// Already processed -> return success (idempotent response)
 		h.logger.Info("duplicate unlock command detected, skipping operation (idempotent)",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("infobase_id", payload.InfobaseID))
-		return h.publishSuccess(ctx, envelope.CorrelationID, payload)
+			zap.String("infobase_id", cmd.InfobaseID))
+		return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, 0)
 	}
 
 	h.logger.Info("handling unlock command",
 		zap.String("correlation_id", envelope.CorrelationID),
-		zap.String("cluster_id", payload.ClusterID),
-		zap.String("infobase_id", payload.InfobaseID),
-		zap.String("database_id", payload.DatabaseID))
+		zap.String("operation_id", cmd.OperationID),
+		zap.String("cluster_id", cmd.ClusterID),
+		zap.String("infobase_id", cmd.InfobaseID),
+		zap.String("database_id", cmd.DatabaseID))
 
 	// Call service to unlock infobase
 	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
-	err = h.service.UnlockInfobase(ctx, payload.ClusterID, payload.InfobaseID, "", "")
+	err = h.service.UnlockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, "", "")
 	if err != nil {
 		h.logger.Error("failed to unlock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),
-			zap.String("cluster_id", payload.ClusterID),
-			zap.String("infobase_id", payload.InfobaseID),
+			zap.String("cluster_id", cmd.ClusterID),
+			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, payload, err)
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// Publish success event
 	h.logger.Info("infobase unlocked successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
-		zap.String("cluster_id", payload.ClusterID),
-		zap.String("infobase_id", payload.InfobaseID))
+		zap.String("cluster_id", cmd.ClusterID),
+		zap.String("infobase_id", cmd.InfobaseID))
 
-	return h.publishSuccess(ctx, envelope.CorrelationID, payload)
+	duration := time.Since(start)
+	return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, duration)
 }
 
 // publishSuccess publishes a success event to the event bus
-func (h *UnlockHandler) publishSuccess(ctx context.Context, correlationID string, payload UnlockCommandPayload) error {
-	successPayload := UnlockSuccessPayload{
-		ClusterID:  payload.ClusterID,
-		InfobaseID: payload.InfobaseID,
-		DatabaseID: payload.DatabaseID,
-		Message:    "Infobase unlocked successfully (scheduled jobs enabled)",
-	}
+func (h *UnlockHandler) publishSuccess(ctx context.Context, correlationID string, cmd *ras.RASCommand, duration time.Duration) error {
+	result := ras.NewRASResult(cmd.OperationID, cmd.DatabaseID, cmd.CommandType, map[string]interface{}{
+		"message": "Infobase unlocked successfully (scheduled jobs enabled)",
+	}, duration)
 
 	err := h.publisher.Publish(ctx,
 		UnlockedEventChannel,
 		InfobaseUnlockedEvent,
-		successPayload,
+		result,
 		correlationID)
 
 	if err != nil {
@@ -136,19 +136,25 @@ func (h *UnlockHandler) publishSuccess(ctx context.Context, correlationID string
 }
 
 // publishError publishes an error event to the event bus
-func (h *UnlockHandler) publishError(ctx context.Context, correlationID string, payload UnlockCommandPayload, err error) error {
-	errorPayload := ErrorPayload{
-		ClusterID:  payload.ClusterID,
-		InfobaseID: payload.InfobaseID,
-		DatabaseID: payload.DatabaseID,
-		Error:      err.Error(),
-		Message:    "Failed to unlock infobase",
+func (h *UnlockHandler) publishError(ctx context.Context, correlationID string, cmd *ras.RASCommand, err error) error {
+	// Handle nil or incomplete command
+	operationID := ""
+	databaseID := ""
+	commandType := ras.CommandTypeUnlock
+	if cmd != nil {
+		operationID = cmd.OperationID
+		databaseID = cmd.DatabaseID
+		if cmd.CommandType != "" {
+			commandType = cmd.CommandType
+		}
 	}
+
+	result := ras.NewRASErrorResult(operationID, databaseID, commandType, err.Error(), 0)
 
 	pubErr := h.publisher.Publish(ctx,
 		UnlockFailedChannel,
 		InfobaseUnlockFailedEvent,
-		errorPayload,
+		result,
 		correlationID)
 
 	if pubErr != nil {
