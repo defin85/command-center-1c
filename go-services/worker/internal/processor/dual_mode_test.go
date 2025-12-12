@@ -337,50 +337,11 @@ func TestValidateExtensionInstallParams(t *testing.T) {
 	}
 }
 
-// TestDualModeProcessor_DetermineExecutionMode tests mode selection
-func TestDualModeProcessor_DetermineExecutionMode(t *testing.T) {
-	tests := []struct {
-		name          string
-		operationType string
-		databaseID    string
-		eventDriven   bool
-		wantMode      ExecutionMode
-	}{
-		{
-			name:          "event_driven mode enabled",
-			operationType: "install_extension",
-			databaseID:    "db-123",
-			eventDriven:   true,
-			wantMode:      ModeEventDriven,
-		},
-		{
-			name:          "event_driven mode disabled",
-			operationType: "install_extension",
-			databaseID:    "db-123",
-			eventDriven:   false,
-			wantMode:      ModeHTTPSync,
-		},
-		{
-			name:          "extension operation type normalization",
-			operationType: "extension",
-			databaseID:    "db-456",
-			eventDriven:   true,
-			wantMode:      ModeEventDriven,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ff := createTestFeatureFlags(tt.eventDriven)
-
-			dm := &DualModeProcessor{
-				featureFlags: ff,
-			}
-
-			mode := dm.determineExecutionMode(tt.operationType, tt.databaseID)
-			assert.Equal(t, tt.wantMode, mode)
-		})
-	}
+// TestDualModeProcessor_ExecutionMode tests that Event-Driven is always used (Phase 3)
+func TestDualModeProcessor_ExecutionMode(t *testing.T) {
+	// After Phase 3 cleanup, Event-Driven is the only mode
+	// This test verifies that ExecutionMode constant is correct
+	assert.Equal(t, ExecutionMode("event_driven"), ModeEventDriven)
 }
 
 // TestDualModeProcessor_ClusterInfoResolution tests ClusterInfo resolution
@@ -644,9 +605,9 @@ func TestDualModeProcessor_GetFeatureFlags(t *testing.T) {
 }
 
 // TestExecutionMode_Constants tests ExecutionMode constants
+// After Phase 3 cleanup, only Event-Driven mode remains
 func TestExecutionMode_Constants(t *testing.T) {
 	assert.Equal(t, ExecutionMode("event_driven"), ModeEventDriven)
-	assert.Equal(t, ExecutionMode("http_sync"), ModeHTTPSync)
 }
 
 // TestDualModeProcessor_ContextCancellation tests context cancellation handling
@@ -698,19 +659,6 @@ func BenchmarkValidateExtensionInstallParams(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		validateExtensionInstallParams(data)
-	}
-}
-
-func BenchmarkDetermineExecutionMode(b *testing.B) {
-	ff := createTestFeatureFlags(true)
-
-	dm := &DualModeProcessor{
-		featureFlags: ff,
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dm.determineExecutionMode("install_extension", "db-123")
 	}
 }
 

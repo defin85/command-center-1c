@@ -15,9 +15,19 @@
 > | **Phase 1.5** | ✅ Done | 11/11 задач | pending |
 > | **Phase 1.6** | ✅ Done | 11/11 задач | pending |
 > | **Phase 2** | ✅ Done | 12/12 задач | pending |
-> | **Phase 3** | ⏳ Pending | 0/8 задач | - |
+> | **Phase 3** | ✅ Done | 6/8 задач | pending |
 >
-> **Следующий шаг:** Phase 3 - Cleanup Legacy кода
+> **Следующий шаг:** Integration tests, production deployment
+>
+> **Changelog v4.1:** Phase 3 - Cleanup Legacy кода выполнен:
+> - УДАЛЁН `processor/ras_handler.go` (615 строк) - заменён State Machine + Saga
+> - УДАЛЁН `processor/extension_handler.go` (373 строки) - HTTP к batch-service заменён на Event-Driven
+> - ОБНОВЛЁН `processor/processor.go` - удалён RASHandler
+> - ОБНОВЛЁН `processor/dual_mode.go` - удалён HTTP fallback, только Event-Driven
+> - ОСТАВЛЕН `rasadapter/client.go` - используется для sync_cluster, discover_clusters
+> - ОСТАВЛЕН `cluster_resolver.go` - используется State Machine workflows
+> - Итого удалено: ~988 строк legacy кода
+> - Build и тесты проходят
 >
 > **Changelog v4.0:** Phase 2 - Resource Manager + Saga Compensation реализован:
 > - Создан `worker/internal/resourcemanager/` - distributed locks с fair queueing
@@ -808,19 +818,19 @@ go-services/worker/internal/processor/extension_handler.go # DELETE (~372 стр
 ```
 
 **Subtasks:**
-- [ ] 3.1: Удалить rasadapter/client.go
-- [ ] 3.2: Удалить старый ras_handler.go
-- [ ] 3.3: Удалить cluster_resolver.go
-- [ ] 3.4: Удалить extension_handler.go (HTTP клиент к batch-service)
-- [ ] 3.5: Очистить processor.go от legacy imports
-- [ ] 3.6: Удалить HTTP endpoints из ras-adapter (после deprecation period)
-- [ ] 3.7: Обновить документацию
-- [ ] 3.8: Verify zero compilation warnings
+- [x] 3.1: ~~Удалить rasadapter/client.go~~ → ОСТАВЛЕН (используется sync_cluster, discover_clusters, cluster_health) ✅
+- [x] 3.2: Удалить старый ras_handler.go ✅ (615 строк)
+- [x] 3.3: ~~Удалить cluster_resolver.go~~ → ОСТАВЛЕН (используется State Machine) ✅
+- [x] 3.4: Удалить extension_handler.go (HTTP клиент к batch-service) ✅ (373 строки)
+- [x] 3.5: Очистить processor.go от legacy imports ✅
+- [ ] 3.6: Удалить HTTP endpoints из ras-adapter (после deprecation period) ⏸️ **ОТЛОЖЕНО**
+- [x] 3.7: Обновить документацию ✅
+- [x] 3.8: Verify zero compilation warnings ✅ `go build ./...`, `go vet ./...`
 
 **Критерии завершения:**
-- [ ] Нет legacy HTTP paths
-- [ ] Нет неиспользуемого кода
-- [ ] Документация актуальна
+- [x] Нет legacy HTTP paths в Worker ✅ Event-Driven only
+- [x] Нет неиспользуемого кода ✅ (~988 строк удалено)
+- [x] Документация актуальна ✅
 
 ---
 
@@ -927,15 +937,15 @@ orchestrator-group             # Django consuming events:worker:*
 
 ---
 
-## Компоненты для удаления (после Фазы 3)
+## Компоненты для удаления (Phase 3 результаты)
 
-| Файл | Строк | Причина |
-|------|-------|---------|
-| `worker/internal/rasadapter/client.go` | ~456 | Заменён на Streams |
-| `worker/internal/processor/ras_handler.go` | ~484 | Заменён на Saga |
-| `worker/internal/processor/cluster_resolver.go` | ~371 | Не нужен |
-| `worker/internal/processor/extension_handler.go` | ~372 | HTTP → Streams |
-| **Итого** | **~1683** | |
+| Файл | Строк | Статус | Причина |
+|------|-------|--------|---------|
+| `worker/internal/rasadapter/client.go` | ~456 | ❌ ОСТАВЛЕН | Используется sync_cluster, discover_clusters |
+| `worker/internal/processor/ras_handler.go` | 615 | ✅ УДАЛЁН | Заменён на State Machine + Saga |
+| `worker/internal/processor/cluster_resolver.go` | ~371 | ❌ ОСТАВЛЕН | Используется State Machine workflows |
+| `worker/internal/processor/extension_handler.go` | 373 | ✅ УДАЛЁН | HTTP к batch-service → Event-Driven |
+| **Итого удалено** | **~988** | | |
 
 ---
 

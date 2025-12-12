@@ -17,12 +17,11 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
 )
 
-// ExecutionMode represents execution mode (Event-Driven vs HTTP Sync)
+// ExecutionMode represents execution mode (Event-Driven only since Phase 3)
 type ExecutionMode string
 
 const (
 	ModeEventDriven ExecutionMode = "event_driven"
-	ModeHTTPSync    ExecutionMode = "http_sync"
 )
 
 // DualModeProcessor handles dual-mode execution
@@ -69,13 +68,13 @@ func NewDualModeProcessor(ff *config.FeatureFlags, processor *TaskProcessor) *Du
 	}
 }
 
-// ProcessExtensionInstall processes extension installation with dual-mode support
+// ProcessExtensionInstall processes extension installation via Event-Driven State Machine
+// HTTP Sync mode has been removed in Phase 3 cleanup
 func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
 	log := logger.GetLogger()
 
-	// Determine execution mode
-	mode := dm.determineExecutionMode(msg.OperationType, databaseID)
+	mode := ModeEventDriven
 
 	log.Infof("processing extension install: operation_id=%s, database_id=%s, mode=%s",
 		msg.OperationID, databaseID, string(mode))
@@ -83,15 +82,8 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 	// Record decision metrics (if metrics enabled)
 	metrics.ExecutionMode.WithLabelValues(string(mode)).Inc()
 
-	// Execute based on mode
-	var result models.DatabaseResultV2
-	var err error
-
-	if mode == ModeEventDriven {
-		result, err = dm.processEventDriven(ctx, msg, databaseID)
-	} else {
-		result, err = dm.processHTTPSync(ctx, msg, databaseID)
-	}
+	// Execute via Event-Driven State Machine (only mode since Phase 3)
+	result, err := dm.processEventDriven(ctx, msg, databaseID)
 
 	// Record metrics
 	duration := time.Since(start)
@@ -118,22 +110,6 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 	}
 
 	return result
-}
-
-// determineExecutionMode determines which execution mode to use
-func (dm *DualModeProcessor) determineExecutionMode(operationType string, databaseID string) ExecutionMode {
-	// Normalize operation type
-	normalizedOpType := operationType
-	if operationType == "install_extension" {
-		normalizedOpType = "extension"
-	}
-
-	// Check feature flags
-	if dm.featureFlags.ShouldUseEventDriven(normalizedOpType, databaseID) {
-		return ModeEventDriven
-	}
-
-	return ModeHTTPSync
 }
 
 // validateExtensionInstallParams validates extension installation parameters
@@ -337,24 +313,6 @@ func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models
 	// Additional SM-specific metrics can be added here if needed
 
 	return result, runErr
-}
-
-// processHTTPSync executes through HTTP Sync calls (legacy mode)
-func (dm *DualModeProcessor) processHTTPSync(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
-	log := logger.GetLogger()
-
-	log.Infof("executing via HTTP Sync (legacy mode): operation_id=%s, database_id=%s",
-		msg.OperationID, databaseID)
-
-	// Use existing executeExtensionInstall method
-	result := dm.processor.executeExtensionInstall(ctx, msg, databaseID)
-
-	// Check for errors
-	if !result.Success {
-		return result, fmt.Errorf("HTTP Sync execution failed: %s", result.Error)
-	}
-
-	return result, nil
 }
 
 // GetFeatureFlags returns current feature flags configuration

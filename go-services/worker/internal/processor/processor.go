@@ -63,9 +63,6 @@ type TaskProcessor struct {
 	// Workflow Engine (Phase 5)
 	workflowHandler *WorkflowHandler // Handler for execute_workflow operations
 
-	// RAS Operations Handler (Phase 4 - Context Menu Actions)
-	rasHandler *RASHandler // Handler for RAS operations (lock, unlock, block, terminate)
-
 	// Prometheus metrics for Service Mesh monitoring
 	appMetrics *sharedMetrics.Metrics
 }
@@ -177,33 +174,6 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		log.Info("workflow client not configured, execute_workflow disabled")
 	}
 
-	// Initialize RAS handler for context menu operations (Phase 4)
-	// Uses existing ClusterResolver from DualModeProcessor
-	rasAdapterURL := cfg.RASAdapterURL
-	if rasAdapterURL == "" {
-		rasAdapterURL = "http://localhost:8188"
-	}
-
-	// Create ClusterResolver config with Redis caching
-	resolverCfg := DefaultResolverConfig()
-	if redisClient != nil {
-		resolverCfg.RedisClient = redisClient
-	}
-	resolverCfg.OrchestratorURL = cfg.OrchestratorURL
-
-	clusterResolver := NewOrchestratorClusterResolver(resolverCfg)
-	rasHandler, err := NewRASHandler(rasAdapterURL, clusterResolver, processor.eventPublisher, cfg.WorkerID)
-	if err != nil {
-		log.Error("failed to create RAS handler, RAS operations disabled",
-			zap.Error(err),
-		)
-	} else {
-		processor.rasHandler = rasHandler
-		log.Info("RAS handler initialized for context menu operations",
-			zap.String("ras_adapter_url", rasAdapterURL),
-		)
-	}
-
 	return processor
 }
 
@@ -234,41 +204,6 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		discoverResult := p.processDiscoverClusters(ctx, msg)
 		p.recordTaskMetrics(msg.OperationType, discoverResult.Status, time.Since(taskStart).Seconds())
 		return discoverResult
-	}
-
-	// RAS operations handler (Phase 4 - Context Menu Actions)
-	// These operations are handled in parallel by RASHandler
-	if IsRASOperation(msg.OperationType) {
-		if p.rasHandler == nil {
-			log.Error("RAS handler not initialized, cannot process RAS operation",
-				zap.String("operation_id", msg.OperationID),
-				zap.String("operation_type", msg.OperationType),
-			)
-			result.Status = "failed"
-			result.Results = append(result.Results, models.DatabaseResultV2{
-				DatabaseID: "ras_handler",
-				Success:    false,
-				Error:      "RAS handler not configured",
-				ErrorCode:  "RAS_HANDLER_DISABLED",
-			})
-			result.Summary = models.ResultSummary{
-				Total:  1,
-				Failed: 1,
-			}
-			p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
-			return result
-		}
-
-		log.Info("delegating to RAS handler",
-			zap.String("operation_id", msg.OperationID),
-			zap.String("operation_type", msg.OperationType),
-			zap.Int("target_count", len(msg.TargetDatabases)),
-		)
-
-		rasResult := p.rasHandler.Process(ctx, msg)
-		rasResult.WorkerID = p.workerID
-		p.recordTaskMetrics(msg.OperationType, rasResult.Status, time.Since(taskStart).Seconds())
-		return rasResult
 	}
 
 	// Process each target database
