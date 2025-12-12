@@ -33,15 +33,17 @@ type TerminateHandler struct {
 	service     SessionManager
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewTerminateHandler creates a new TerminateHandler instance
-func NewTerminateHandler(svc SessionManager, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *TerminateHandler {
+func NewTerminateHandler(svc SessionManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *TerminateHandler {
 	return &TerminateHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -164,6 +166,10 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 			}
 
 			duration := time.Since(startTime)
+			// Record metrics for partial success (timeout)
+			if h.metrics != nil {
+				h.metrics.RecordCommand("terminate", "partial", duration.Seconds())
+			}
 			h.publishPartialSuccess(ctx, correlationID, cmd, initialCount, terminatedCount, finalCount, duration)
 			return
 
@@ -191,6 +197,10 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 					zap.Duration("duration", time.Since(startTime)))
 
 				duration := time.Since(startTime)
+				// Record metrics for successful operation
+				if h.metrics != nil {
+					h.metrics.RecordCommand("terminate", "success", duration.Seconds())
+				}
 				h.publishSuccess(ctx, correlationID, cmd, initialCount, terminatedCount, 0, duration)
 				return
 			}

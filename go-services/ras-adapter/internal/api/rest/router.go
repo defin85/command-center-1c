@@ -3,8 +3,10 @@ package rest
 import (
 	v2 "github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/rest/v2"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/middleware"
+	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
@@ -17,6 +19,7 @@ func NewRouter(
 	clusterSvc *service.ClusterService,
 	infobaseSvc *service.InfobaseService,
 	sessionSvc *service.SessionService,
+	rasMetrics *metrics.RASMetrics,
 	logger *zap.Logger,
 ) *gin.Engine {
 	router := gin.New()
@@ -24,9 +27,13 @@ func NewRouter(
 	// Global middleware
 	router.Use(middleware.Logger(logger))
 	router.Use(middleware.Recovery(logger))
+	router.Use(metrics.HTTPMiddleware(rasMetrics))
 
 	// Health check endpoint
 	router.GET("/health", Health())
+
+	// Prometheus metrics endpoint
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Swagger UI
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

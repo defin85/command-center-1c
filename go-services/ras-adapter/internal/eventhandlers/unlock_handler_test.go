@@ -20,7 +20,7 @@ func TestNewUnlockHandler(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, mockSvc, handler.service)
@@ -35,7 +35,7 @@ func TestUnlockHandler_HandleUnlockCommand_Success(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	ctx := context.Background()
 
@@ -81,7 +81,7 @@ func TestUnlockHandler_HandleUnlockCommand_InvalidPayload(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	// Mock error publishing
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -106,7 +106,7 @@ func TestUnlockHandler_HandleUnlockCommand_MissingClusterID(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
@@ -137,7 +137,7 @@ func TestUnlockHandler_HandleUnlockCommand_MissingInfobaseID(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	mockPub.On("Publish", mock.Anything, UnlockFailedChannel, InfobaseUnlockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
@@ -168,7 +168,7 @@ func TestUnlockHandler_HandleUnlockCommand_ServiceError(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	ctx := context.Background()
 
@@ -210,7 +210,7 @@ func TestUnlockHandler_HandleUnlockCommand_IdempotentRequest(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	ctx := context.Background()
 
@@ -252,7 +252,7 @@ func TestUnlockHandler_HandleUnlockCommand_ContextTimeout(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	// Create context with immediate timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
@@ -298,7 +298,7 @@ func TestUnlockHandler_HandleUnlockCommand_PublishingError(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, mockRedis, nil, logger)
 
 	ctx := context.Background()
 
@@ -342,7 +342,7 @@ func TestUnlockHandler_HandleUnlockCommand_RedisNotConfigured(t *testing.T) {
 	logger := zap.NewNop()
 
 	// No Redis client
-	handler := NewUnlockHandler(mockSvc, mockPub, nil, logger)
+	handler := NewUnlockHandler(mockSvc, mockPub, nil, nil, logger)
 
 	ctx := context.Background()
 

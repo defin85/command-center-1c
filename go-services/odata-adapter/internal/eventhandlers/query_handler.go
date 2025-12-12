@@ -28,15 +28,17 @@ type QueryHandler struct {
 	client      ODataClient
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewQueryHandler creates a new QueryHandler instance.
-func NewQueryHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *QueryHandler {
+func NewQueryHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *QueryHandler {
 	return &QueryHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -85,16 +87,26 @@ func (h *QueryHandler) HandleQueryCommand(ctx context.Context, envelope *events.
 
 	// Execute query
 	data, err := h.client.Query(ctx, cmd.Credentials, cmd.Entity, cmd.Query)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to execute query",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("entity", cmd.Entity),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, time.Since(start))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("query", "error", duration.Seconds())
+		}
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordOperation("query", "success", duration.Seconds())
 	}
 
 	// Publish success event
-	duration := time.Since(start)
 	h.logger.Info("query executed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.String("entity", cmd.Entity),

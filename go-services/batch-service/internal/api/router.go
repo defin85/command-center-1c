@@ -2,12 +2,15 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+
 	"github.com/command-center-1c/batch-service/internal/api/handlers"
-	"github.com/command-center-1c/batch-service/internal/service"
-	"github.com/command-center-1c/batch-service/internal/domain/storage"
 	"github.com/command-center-1c/batch-service/internal/domain/metadata"
 	"github.com/command-center-1c/batch-service/internal/domain/rollback"
+	"github.com/command-center-1c/batch-service/internal/domain/storage"
+	"github.com/command-center-1c/batch-service/internal/metrics"
+	"github.com/command-center-1c/batch-service/internal/service"
 )
 
 // SetupRouter configures and returns a Gin router with all routes
@@ -20,9 +23,16 @@ func SetupRouter(
 	metadataExtractor *metadata.Extractor,
 	rollbackManager *rollback.RollbackManager,
 	backupManager *rollback.BackupManager,
+	batchMetrics *metrics.BatchMetrics,
 	logger *zap.Logger,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Add metrics middleware (skip /metrics and /health)
+	router.Use(metrics.HTTPMiddleware(batchMetrics))
+
+	// Prometheus metrics endpoint
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Create handlers
 	extensionsHandler := handlers.NewExtensionsHandler(extensionInstaller, fileValidator)

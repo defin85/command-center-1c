@@ -28,15 +28,17 @@ type DeleteHandler struct {
 	client      ODataClient
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewDeleteHandler creates a new DeleteHandler instance.
-func NewDeleteHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *DeleteHandler {
+func NewDeleteHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *DeleteHandler {
 	return &DeleteHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -95,17 +97,29 @@ func (h *DeleteHandler) HandleDeleteCommand(ctx context.Context, envelope *event
 
 	// Execute delete
 	err = h.client.Delete(ctx, cmd.Credentials, cmd.Entity, cmd.EntityID)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to execute delete",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("entity", cmd.Entity),
 			zap.String("entity_id", cmd.EntityID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, time.Since(start))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("delete", "error", duration.Seconds())
+			h.metrics.RecordTransaction("delete", duration.Seconds())
+		}
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordOperation("delete", "success", duration.Seconds())
+		h.metrics.RecordTransaction("delete", duration.Seconds())
 	}
 
 	// Publish success event
-	duration := time.Since(start)
 	h.logger.Info("entity deleted successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.String("entity", cmd.Entity),

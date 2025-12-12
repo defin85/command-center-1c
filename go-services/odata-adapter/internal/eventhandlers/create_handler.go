@@ -28,15 +28,17 @@ type CreateHandler struct {
 	client      ODataClient
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewCreateHandler creates a new CreateHandler instance.
-func NewCreateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *CreateHandler {
+func NewCreateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *CreateHandler {
 	return &CreateHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -85,16 +87,28 @@ func (h *CreateHandler) HandleCreateCommand(ctx context.Context, envelope *event
 
 	// Execute create
 	createdEntity, err := h.client.Create(ctx, cmd.Credentials, cmd.Entity, cmd.Data)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to execute create",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("entity", cmd.Entity),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, time.Since(start))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("create", "error", duration.Seconds())
+			h.metrics.RecordTransaction("create", duration.Seconds())
+		}
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordOperation("create", "success", duration.Seconds())
+		h.metrics.RecordTransaction("create", duration.Seconds())
 	}
 
 	// Publish success event
-	duration := time.Since(start)
 	h.logger.Info("entity created successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.String("entity", cmd.Entity),

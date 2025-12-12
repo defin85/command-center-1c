@@ -1,6 +1,7 @@
 # Django и DRF
 Django==4.2.25
 djangorestframework==3.14.0
+django-prometheus>=2.3.1  # Prometheus metrics
 django-filter==23.5
 drf-spectacular==0.26.5  # OpenAPI/Swagger documentation
 

@@ -16,6 +16,7 @@ import (
 	"github.com/command-center-1c/batch-service/internal/domain/storage"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
+	"github.com/command-center-1c/batch-service/internal/metrics"
 	"github.com/command-center-1c/batch-service/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -55,8 +56,11 @@ func setupTestRouter() *gin.Engine {
 	backupManager := rollback.NewBackupManager(v8exec, backupStorage, logger)
 	rollbackManager := rollback.NewRollbackManager(backupManager, logger)
 
+	// Initialize metrics for tests
+	batchMetrics := metrics.NewBatchMetrics()
+
 	// Setup router
-	router := api.SetupRouter(installer, deleter, lister, validator, storageManager, metadataExtractor, rollbackManager, backupManager, logger)
+	router := api.SetupRouter(installer, deleter, lister, validator, storageManager, metadataExtractor, rollbackManager, backupManager, batchMetrics, logger)
 
 	return router
 }

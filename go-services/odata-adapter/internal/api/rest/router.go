@@ -1,18 +1,28 @@
 package rest
 
 import (
+	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/metrics"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
 // NewRouter creates a new Gin router with all routes configured
-func NewRouter(redisClient *redis.Client, logger *zap.Logger) *gin.Engine {
+func NewRouter(redisClient *redis.Client, odataMetrics *metrics.ODataMetrics, logger *zap.Logger) *gin.Engine {
 	router := gin.New()
 
 	// Global middleware
 	router.Use(gin.Recovery())
 	router.Use(loggerMiddleware(logger))
+
+	// Prometheus metrics middleware
+	if odataMetrics != nil {
+		router.Use(metrics.HTTPMiddleware(odataMetrics))
+	}
+
+	// Prometheus metrics endpoint
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Health checker
 	healthChecker := NewHealthChecker(redisClient)

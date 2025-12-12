@@ -105,7 +105,7 @@ func TestBatchHandler_HandleBatchCommand_Success(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	// Create test command
 	cmd := sharedodata.ODataCommand{
@@ -173,7 +173,7 @@ func TestBatchHandler_HandleBatchCommand_InvalidJSON(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	envelope := &events.Envelope{
 		CorrelationID: "corr-123",
@@ -201,7 +201,7 @@ func TestBatchHandler_HandleBatchCommand_InvalidCommandType(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	cmd := sharedodata.ODataCommand{
 		OperationID: "op-123",
@@ -243,7 +243,7 @@ func TestBatchHandler_HandleBatchCommand_EmptyBatchItems(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	cmd := sharedodata.ODataCommand{
 		OperationID: "op-123",
@@ -280,7 +280,7 @@ func TestBatchHandler_HandleBatchCommand_BatchSizeExceedsLimit(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	// Create batch with > MaxBatchSize items
 	items := make([]sharedodata.BatchItem, MaxBatchSize+1)
@@ -327,7 +327,7 @@ func TestBatchHandler_HandleBatchCommand_InvalidBatchItem(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	cmd := sharedodata.ODataCommand{
 		OperationID: "op-123",
@@ -376,7 +376,7 @@ func TestBatchHandler_HandleBatchCommand_ExecuteBatchError(t *testing.T) {
 	mockPublisher := &mockEventPublisher{}
 	mockRedis := &mockRedisClient{}
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	cmd := sharedodata.ODataCommand{
 		OperationID: "op-123",
@@ -440,7 +440,7 @@ func TestBatchHandler_HandleBatchCommand_Idempotency(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, logger)
+	handler := NewBatchHandler(mockClient, mockPublisher, mockRedis, nil, logger)
 
 	cmd := sharedodata.ODataCommand{
 		OperationID: "op-123",

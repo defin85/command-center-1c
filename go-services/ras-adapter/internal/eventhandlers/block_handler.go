@@ -29,15 +29,17 @@ type BlockHandler struct {
 	service     SessionBlocker
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewBlockHandler creates a new BlockHandler instance
-func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *BlockHandler {
+func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *BlockHandler {
 	return &BlockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -102,13 +104,24 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
 	err = h.service.BlockSessions(ctx, cmd.ClusterID, cmd.InfobaseID, "", "",
 		deniedFrom, deniedTo, message, permissionCode, parameter)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to block infobase sessions",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("cluster_id", cmd.ClusterID),
 			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("block", "error", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("block", "success", duration.Seconds())
 	}
 
 	// Publish success event
@@ -119,7 +132,6 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 		zap.Time("denied_from", deniedFrom),
 		zap.Time("denied_to", deniedTo))
 
-	duration := time.Since(start)
 	return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, duration)
 }
 

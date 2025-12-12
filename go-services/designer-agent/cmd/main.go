@@ -14,6 +14,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/api/rest"
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/config"
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/eventhandlers"
+	"github.com/commandcenter1c/commandcenter/designer-agent/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/server"
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/ssh"
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/version"
@@ -96,14 +97,18 @@ func main() {
 
 	logger.Info("event bus initialized")
 
+	// Initialize Prometheus metrics (single initialization)
+	designerMetrics := metrics.NewDesignerMetrics()
+	logger.Info("Prometheus metrics initialized")
+
 	// Initialize Event Handlers (if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
 		logger.Info("Redis Pub/Sub enabled, setting up event handlers")
 
-		// Initialize Event Handlers
-		extensionHandler := eventhandlers.NewExtensionHandler(sshPool, publisher, redisClient, logger)
-		configHandler := eventhandlers.NewConfigHandler(sshPool, publisher, redisClient, logger)
-		epfHandler := eventhandlers.NewEpfHandler(sshPool, publisher, redisClient, logger)
+		// Initialize Event Handlers with metrics
+		extensionHandler := eventhandlers.NewExtensionHandler(sshPool, publisher, redisClient, designerMetrics, logger)
+		configHandler := eventhandlers.NewConfigHandler(sshPool, publisher, redisClient, designerMetrics, logger)
+		epfHandler := eventhandlers.NewEpfHandler(sshPool, publisher, redisClient, designerMetrics, logger)
 
 		// Subscribe to extension command channels
 		if err := subscriber.Subscribe(
@@ -169,7 +174,7 @@ func main() {
 	}
 
 	// Setup REST API router
-	router := rest.NewRouter(sshPool, redisClient, logger)
+	router := rest.NewRouter(sshPool, redisClient, designerMetrics, logger)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

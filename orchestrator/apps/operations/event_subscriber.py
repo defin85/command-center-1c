@@ -27,6 +27,45 @@ from apps.operations.models import Task
 
 logger = logging.getLogger(__name__)
 
+# Import Prometheus metrics with availability flag
+try:
+    from .prometheus_metrics import record_redis_event_received, record_batch_operation
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    record_redis_event_received = None
+    record_batch_operation = None
+
+
+def _record_event_metric(event_type: str, channel: str):
+    """
+    Helper function to record received event metric.
+
+    Args:
+        event_type: Type of event (e.g., 'operation.completed')
+        channel: Redis channel/stream name
+    """
+    if METRICS_AVAILABLE:
+        try:
+            record_redis_event_received(event_type, channel)
+        except Exception as metric_err:
+            logger.debug(f"Failed to record redis event received metric: {metric_err}")
+
+
+def _record_batch_metric(operation_type: str, status: str):
+    """
+    Helper function to record batch operation metric.
+
+    Args:
+        operation_type: Type of operation (e.g., 'sync_cluster')
+        status: Status to record (e.g., 'completed', 'failed')
+    """
+    if METRICS_AVAILABLE:
+        try:
+            record_batch_operation(operation_type, status)
+        except Exception as metric_err:
+            logger.debug(f"Failed to record batch operation metric: {metric_err}")
+
 
 class EventSubscriber:
     """
@@ -342,6 +381,10 @@ class EventSubscriber:
             f"state={state}, message={message[:100] if message else ''}"
         )
 
+        # Record Prometheus metric for received pubsub event
+        # Use operation.* prefix for consistency with other metrics
+        _record_event_metric(f"operation.{state.lower()}", channel)
+
         try:
             # Close old Django DB connections in this thread
             close_old_connections()
@@ -461,6 +504,9 @@ class EventSubscriber:
             f"Processing event: {event_type} "
             f"(stream={stream}, correlation_id={correlation_id}, msg_id={message_id})"
         )
+
+        # Record Prometheus metric for received event
+        _record_event_metric(event_type, stream)
 
         # Route to appropriate handler based on stream name
         if 'extension:installed' in stream:
@@ -940,6 +986,9 @@ class EventSubscriber:
 
             logger.info(f"Updated BatchOperation {operation_id} to COMPLETED via Stream")
 
+            # Record Prometheus metric for completed operation
+            _record_batch_metric(batch_op.operation_type, 'completed')
+
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")
         except Exception as e:
@@ -995,6 +1044,9 @@ class EventSubscriber:
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
 
             logger.info(f"Updated BatchOperation {operation_id} to FAILED via Stream")
+
+            # Record Prometheus metric for failed operation
+            _record_batch_metric(batch_op.operation_type, 'failed')
 
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")

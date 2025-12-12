@@ -15,6 +15,9 @@ from apps.core.jwt_views import CustomTokenObtainPairView
 from apps.health import health_check, health_check_detailed
 
 urlpatterns = [
+    # Prometheus metrics endpoint
+    path('', include('django_prometheus.urls')),
+
     path('admin/', admin.site.urls),
 
     # Health checks

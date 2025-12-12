@@ -34,15 +34,17 @@ type BatchHandler struct {
 	client      ODataClient
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewBatchHandler creates a new BatchHandler instance.
-func NewBatchHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *BatchHandler {
+func NewBatchHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *BatchHandler {
 	return &BatchHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -126,16 +128,34 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 
 	// Execute batch
 	batchResult, err := h.client.ExecuteBatch(batchCtx, cmd.Credentials, cmd.BatchItems)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to execute batch",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.Int("batch_size", len(cmd.BatchItems)),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, time.Since(start))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("batch", "error", duration.Seconds())
+			h.metrics.RecordTransaction("batch", duration.Seconds())
+			h.metrics.RecordBatch("batch", len(cmd.BatchItems), 0, len(cmd.BatchItems))
+		}
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
+	}
+
+	// Record metrics for completed operation
+	if h.metrics != nil {
+		status := "success"
+		if batchResult.FailureCount > 0 {
+			status = "partial"
+		}
+		h.metrics.RecordOperation("batch", status, duration.Seconds())
+		h.metrics.RecordTransaction("batch", duration.Seconds())
+		h.metrics.RecordBatch("batch", batchResult.TotalCount, batchResult.SuccessCount, batchResult.FailureCount)
 	}
 
 	// Publish success event
-	duration := time.Since(start)
 	h.logger.Info("batch executed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.Int("total_count", batchResult.TotalCount),

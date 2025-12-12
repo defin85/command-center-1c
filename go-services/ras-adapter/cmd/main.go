@@ -10,6 +10,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/rest"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/config"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/eventhandlers"
+	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/ras"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/server"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/service"
@@ -101,12 +102,16 @@ func main() {
 
 	logger.Info("services initialized")
 
-	// Initialize Event Handlers
-	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, logger)
-	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, logger)
-	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, logger)
-	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, logger)
-	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, logger)
+	// Initialize Prometheus metrics
+	rasMetrics := metrics.NewRASMetrics()
+	logger.Info("prometheus metrics initialized")
+
+	// Initialize Event Handlers with metrics
+	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, rasMetrics, logger)
+	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
+	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
+	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
+	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
 
 	// Subscribe to Redis channels (only if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
@@ -168,7 +173,7 @@ func main() {
 	}
 
 	// Setup REST API router
-	router := rest.NewRouter(clusterSvc, infobaseSvc, sessionSvc, logger)
+	router := rest.NewRouter(clusterSvc, infobaseSvc, sessionSvc, rasMetrics, logger)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

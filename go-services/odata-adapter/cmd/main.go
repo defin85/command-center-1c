@@ -11,6 +11,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/api/rest"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/config"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/eventhandlers"
+	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/odata"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/server"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/version"
@@ -92,16 +93,20 @@ func main() {
 
 	logger.Info("OData client initialized")
 
+	// Initialize Prometheus metrics
+	odataMetrics := metrics.NewODataMetrics()
+	logger.Info("Prometheus metrics initialized")
+
 	// Initialize Event Handlers (if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
 		logger.Info("Redis Pub/Sub enabled, setting up event handlers")
 
-		// Initialize Event Handlers
-		queryHandler := eventhandlers.NewQueryHandler(odataClient, publisher, redisClient, logger)
-		createHandler := eventhandlers.NewCreateHandler(odataClient, publisher, redisClient, logger)
-		updateHandler := eventhandlers.NewUpdateHandler(odataClient, publisher, redisClient, logger)
-		deleteHandler := eventhandlers.NewDeleteHandler(odataClient, publisher, redisClient, logger)
-		batchHandler := eventhandlers.NewBatchHandler(odataClient, publisher, redisClient, logger)
+		// Initialize Event Handlers with metrics
+		queryHandler := eventhandlers.NewQueryHandler(odataClient, publisher, redisClient, odataMetrics, logger)
+		createHandler := eventhandlers.NewCreateHandler(odataClient, publisher, redisClient, odataMetrics, logger)
+		updateHandler := eventhandlers.NewUpdateHandler(odataClient, publisher, redisClient, odataMetrics, logger)
+		deleteHandler := eventhandlers.NewDeleteHandler(odataClient, publisher, redisClient, odataMetrics, logger)
+		batchHandler := eventhandlers.NewBatchHandler(odataClient, publisher, redisClient, odataMetrics, logger)
 
 		// Subscribe to command channels
 		if err := subscriber.Subscribe(
@@ -157,7 +162,7 @@ func main() {
 	}
 
 	// Setup REST API router
-	router := rest.NewRouter(redisClient, logger)
+	router := rest.NewRouter(redisClient, odataMetrics, logger)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

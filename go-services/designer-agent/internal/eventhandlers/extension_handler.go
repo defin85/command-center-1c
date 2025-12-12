@@ -30,16 +30,25 @@ type ExtensionHandler struct {
 	sshPool     SSHExecutor
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewExtensionHandler creates a new ExtensionHandler instance.
-func NewExtensionHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *ExtensionHandler {
+func NewExtensionHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *ExtensionHandler {
 	return &ExtensionHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger.With(zap.String("handler", "extension")),
+	}
+}
+
+// recordMetric records a metric if MetricsRecorder is available.
+func (h *ExtensionHandler) recordMetric(operation, status string, duration time.Duration) {
+	if h.metrics != nil {
+		h.metrics.RecordCommand(operation, status, duration.Seconds())
 	}
 }
 
@@ -117,6 +126,8 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("extension_name", cmd.Params.ExtensionName),
 			zap.Error(err))
+		// Record metrics for failed operation
+		h.recordMetric("extension_install", "error", duration)
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, true)
 	}
 
@@ -127,8 +138,13 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 			zap.String("extension_name", cmd.Params.ExtensionName),
 			zap.Int("exit_code", result.ExitCode),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		h.recordMetric("extension_install", "error", duration)
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, true)
 	}
+
+	// Record metrics for successful operation
+	h.recordMetric("extension_install", "success", duration)
 
 	h.logger.Info("extension installed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
@@ -212,6 +228,8 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("extension_name", cmd.Params.ExtensionName),
 			zap.Error(err))
+		// Record metrics for failed operation
+		h.recordMetric("extension_remove", "error", duration)
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, false)
 	}
 
@@ -222,8 +240,13 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 			zap.String("extension_name", cmd.Params.ExtensionName),
 			zap.Int("exit_code", result.ExitCode),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		h.recordMetric("extension_remove", "error", duration)
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, false)
 	}
+
+	// Record metrics for successful operation
+	h.recordMetric("extension_remove", "success", duration)
 
 	h.logger.Info("extension removed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),

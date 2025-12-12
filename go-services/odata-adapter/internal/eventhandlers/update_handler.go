@@ -32,15 +32,17 @@ type UpdateHandler struct {
 	client      ODataClient
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewUpdateHandler creates a new UpdateHandler instance.
-func NewUpdateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *UpdateHandler {
+func NewUpdateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *UpdateHandler {
 	return &UpdateHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -99,17 +101,29 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 
 	// Execute update
 	err = h.client.Update(ctx, cmd.Credentials, cmd.Entity, cmd.EntityID, cmd.Data)
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to execute update",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("entity", cmd.Entity),
 			zap.String("entity_id", cmd.EntityID),
 			zap.Error(err))
-		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, time.Since(start))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("update", "error", duration.Seconds())
+			h.metrics.RecordTransaction("update", duration.Seconds())
+		}
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordOperation("update", "success", duration.Seconds())
+		h.metrics.RecordTransaction("update", duration.Seconds())
 	}
 
 	// Publish success event
-	duration := time.Since(start)
 	h.logger.Info("entity updated successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
 		zap.String("entity", cmd.Entity),

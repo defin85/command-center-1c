@@ -1,9 +1,20 @@
 """Centralized Redis client for operations app."""
 import redis
 import json
+import logging
 from django.conf import settings
 from django.utils import timezone
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+# Import Prometheus metrics with availability flag
+try:
+    from .prometheus_metrics import record_redis_event_published
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    record_redis_event_published = None
 
 
 class RedisClient:
@@ -52,9 +63,6 @@ class RedisClient:
         Raises:
             Exception: If stream write fails (propagate to rollback transaction)
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Create envelope and serialize to JSON BEFORE creating stream_fields (FIX #6)
         # This ensures json.dumps failure happens before any partial state
         envelope = self._create_envelope(message)
@@ -76,6 +84,18 @@ class RedisClient:
                 stream_fields,
                 maxlen=self.STREAM_MAX_LEN
             )
+
+            # Record Prometheus metric for published event
+            if METRICS_AVAILABLE:
+                try:
+                    event_type = envelope.get("event_type")
+                    if not event_type:
+                        logger.warning(f"Missing event_type in envelope: {envelope.get('correlation_id')}")
+                        event_type = "unknown"
+                    record_redis_event_published(event_type, self.STREAM_COMMANDS)
+                except Exception as metric_err:
+                    logger.warning(f"Failed to record redis event metric: {metric_err}")
+
             return msg_id
         except Exception as e:
             # FIX #3: raise instead of return None to propagate exception

@@ -45,20 +45,27 @@ type RedisClient interface {
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
 }
 
+// MetricsRecorder defines the interface for recording Prometheus metrics.
+type MetricsRecorder interface {
+	RecordOperation(operationType, status string, duration float64)
+}
+
 // InstallHandler handles install extension commands from the event bus
 type InstallHandler struct {
 	installer   ExtensionInstaller
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewInstallHandler creates a new InstallHandler instance
-func NewInstallHandler(installer ExtensionInstaller, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *InstallHandler {
+func NewInstallHandler(installer ExtensionInstaller, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *InstallHandler {
 	return &InstallHandler{
 		installer:   installer,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -204,8 +211,17 @@ func (h *InstallHandler) executeInstallation(ctx context.Context, correlationID 
 			zap.String("infobase_name", payload.InfobaseName),
 			zap.Float64("duration_seconds", duration),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordOperation("extension_install", "error", duration)
+		}
 		h.publishError(ctx, correlationID, payload, err)
 		return
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordOperation("extension_install", "success", duration)
 	}
 
 	// Publish success event

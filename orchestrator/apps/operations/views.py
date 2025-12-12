@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -120,6 +122,7 @@ def operation_callback(request, operation_id):
         "worker_id": "worker-1"
     }
     """
+    start_time = time.time()
     logger.info(f"Received callback for operation {operation_id}")
 
     # Validate operation_id match
@@ -189,12 +192,29 @@ def operation_callback(request, operation_id):
         # Extend idempotency lock to 24 hours
         redis_client.extend_lock(operation_id, ttl_seconds=86400)
 
+        # Record Prometheus metrics for callback processing
+        duration = time.time() - start_time
+        try:
+            from .prometheus_metrics import record_operation
+            # Map result_status to callback status with timeout as separate state
+            status_map = {
+                'completed': 'success',
+                'failed': 'failure',
+                'timeout': 'timeout',
+                'cancelled': 'cancelled'
+            }
+            callback_status = status_map.get(result_status, 'unknown')
+            record_operation('callback', callback_status, duration)
+        except Exception as metric_err:
+            logger.debug(f"Failed to record callback metric: {metric_err}")
+
         logger.info(
             f"Callback processed for operation {operation_id}",
             extra={
                 "status": result_status,
                 "total_results": len(results),
-                "worker_id": worker_id
+                "worker_id": worker_id,
+                "duration_seconds": duration
             }
         )
 

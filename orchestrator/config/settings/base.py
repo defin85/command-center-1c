@@ -29,6 +29,9 @@ SECRET_KEY = env('DJANGO_SECRET_KEY', default='django-insecure-change-me-in-prod
 
 # Application definition
 INSTALLED_APPS = [
+    # Prometheus metrics - MUST be first
+    'django_prometheus',
+
     # ASGI server - MUST be before django.contrib.staticfiles
     'daphne',
 
@@ -59,6 +62,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',  # Prometheus - FIRST
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files (required for ASGI/Daphne)
     'corsheaders.middleware.CorsMiddleware',
@@ -68,6 +72,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',  # Prometheus - LAST
 ]
 
 ROOT_URLCONF = 'config.urls'

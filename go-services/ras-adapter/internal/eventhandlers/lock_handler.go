@@ -29,15 +29,17 @@ type LockHandler struct {
 	service     InfobaseManager
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewLockHandler creates a new LockHandler instance
-func NewLockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *LockHandler {
+func NewLockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *LockHandler {
 	return &LockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -87,13 +89,24 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 	// Call service to lock infobase
 	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
 	err = h.service.LockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, "", "")
+	duration := time.Since(start)
+
 	if err != nil {
 		h.logger.Error("failed to lock infobase",
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("cluster_id", cmd.ClusterID),
 			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("lock", "error", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("lock", "success", duration.Seconds())
 	}
 
 	// Publish success event
@@ -102,7 +115,6 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 		zap.String("cluster_id", cmd.ClusterID),
 		zap.String("infobase_id", cmd.InfobaseID))
 
-	duration := time.Since(start)
 	return h.publishSuccess(ctx, envelope.CorrelationID, &cmd, duration)
 }
 

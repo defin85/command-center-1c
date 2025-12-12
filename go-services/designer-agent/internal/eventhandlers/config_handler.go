@@ -39,15 +39,17 @@ type ConfigHandler struct {
 	sshPool     SSHExecutor
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewConfigHandler creates a new ConfigHandler instance.
-func NewConfigHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *ConfigHandler {
+func NewConfigHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *ConfigHandler {
 	return &ConfigHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger.With(zap.String("handler", "config")),
 	}
 }
@@ -125,6 +127,11 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.Duration("duration", duration),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_update", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_update", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "update")
 	}
 
@@ -135,7 +142,18 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 			zap.Int("exit_code", result.ExitCode),
 			zap.Duration("duration", duration),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_update", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_update", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "update")
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("config_update", "success", duration.Seconds())
+		h.metrics.RecordSSHCommand("config_update", duration.Seconds())
 	}
 
 	h.logger.Info("config update completed successfully",
@@ -218,6 +236,11 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("source_path", cmd.Params.SourcePath),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_load", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_load", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "load")
 	}
 
@@ -228,7 +251,18 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 			zap.String("source_path", cmd.Params.SourcePath),
 			zap.Int("exit_code", result.ExitCode),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_load", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_load", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "load")
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("config_load", "success", duration.Seconds())
+		h.metrics.RecordSSHCommand("config_load", duration.Seconds())
 	}
 
 	h.logger.Info("config loaded successfully",
@@ -312,6 +346,11 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("target_path", cmd.Params.TargetPath),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_dump", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "dump")
 	}
 
@@ -322,7 +361,18 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 			zap.String("target_path", cmd.Params.TargetPath),
 			zap.Int("exit_code", result.ExitCode),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("config_dump", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "dump")
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("config_dump", "success", duration.Seconds())
+		h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
 	}
 
 	h.logger.Info("config dumped successfully",

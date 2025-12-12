@@ -13,7 +13,7 @@ import (
 func TestNewTerminateHandler(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 
-	handler := NewTerminateHandler(nil, nil, nil, logger)
+	handler := NewTerminateHandler(nil, nil, nil, nil, logger)
 
 	if handler == nil {
 		t.Error("expected handler to be non-nil")
@@ -127,7 +127,7 @@ func TestPublishSuccess_Terminate(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 
 	// Create a mock publisher that accepts calls
-	handler := NewTerminateHandler(nil, nil, nil, logger)
+	handler := NewTerminateHandler(nil, nil, nil, nil, logger)
 
 	if handler == nil {
 		t.Error("expected handler to be non-nil")

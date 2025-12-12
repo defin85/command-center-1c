@@ -45,3 +45,10 @@ type EventPublisher interface {
 type RedisClient interface {
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
 }
+
+// MetricsRecorder defines the interface for recording Prometheus metrics.
+// This interface allows for easier testing with mocks.
+type MetricsRecorder interface {
+	// RecordCommand records a RAS command execution
+	RecordCommand(commandType, status string, duration float64)
+}

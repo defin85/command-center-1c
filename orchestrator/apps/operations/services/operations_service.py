@@ -20,6 +20,29 @@ from ..events import event_publisher
 
 logger = logging.getLogger(__name__)
 
+# Import Prometheus metrics with availability flag
+try:
+    from ..prometheus_metrics import record_batch_operation
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    record_batch_operation = None
+
+
+def _record_batch_metric(operation_type: str, status: str):
+    """
+    Helper function to record batch operation metric.
+
+    Args:
+        operation_type: Type of operation (e.g., 'sync_cluster')
+        status: Status to record (e.g., 'queued', 'completed', 'failed')
+    """
+    if METRICS_AVAILABLE:
+        try:
+            record_batch_operation(operation_type, status)
+        except Exception as metric_err:
+            logger.debug(f"Failed to record batch operation metric: {metric_err}")
+
 
 @dataclass
 class EnqueueResult:
@@ -168,6 +191,9 @@ class OperationsService:
                 }
             )
 
+            # Record Prometheus metric for queued batch operation
+            _record_batch_metric(operation.operation_type, 'queued')
+
             return EnqueueResult(
                 success=True,
                 operation_id=operation_id,
@@ -180,6 +206,8 @@ class OperationsService:
 
         except BatchOperation.DoesNotExist:
             logger.error(f"Operation {operation_id} not found in database")
+            # Record error metric
+            _record_batch_metric('unknown', 'error')
             return EnqueueResult(
                 success=False,
                 operation_id=operation_id,
@@ -195,6 +223,13 @@ class OperationsService:
 
             # Release lock on error
             redis_client.release_lock(operation_id)
+
+            # Record error metric (use operation type if available from local scope)
+            try:
+                op_type = operation.operation_type if 'operation' in locals() else 'unknown'
+                _record_batch_metric(op_type, 'error')
+            except Exception:
+                _record_batch_metric('unknown', 'error')
 
             return EnqueueResult(
                 success=False,
@@ -938,6 +973,9 @@ class OperationsService:
                 }
             )
 
+            # Record Prometheus metric for queued batch operation
+            _record_batch_metric(operation_type, 'queued')
+
             return batch_operation
 
         except Exception as exc:
@@ -947,4 +985,6 @@ class OperationsService:
             # Mark operation as failed
             batch_operation.status = BatchOperation.STATUS_FAILED
             batch_operation.save(update_fields=['status', 'updated_at'])
+            # Record error metric
+            _record_batch_metric(operation_type, 'error')
             raise

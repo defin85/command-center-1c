@@ -28,15 +28,17 @@ type EpfHandler struct {
 	sshPool     SSHExecutor
 	publisher   EventPublisher
 	redisClient RedisClient
+	metrics     MetricsRecorder
 	logger      *zap.Logger
 }
 
 // NewEpfHandler creates a new EpfHandler instance.
-func NewEpfHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, logger *zap.Logger) *EpfHandler {
+func NewEpfHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *EpfHandler {
 	return &EpfHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
+		metrics:     metrics,
 		logger:      logger.With(zap.String("handler", "epf")),
 	}
 }
@@ -115,6 +117,11 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 			zap.String("correlation_id", envelope.CorrelationID),
 			zap.String("target_path", cmd.Params.TargetPath),
 			zap.Error(err))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("epf_export", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration)
 	}
 
@@ -125,7 +132,18 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 			zap.String("target_path", cmd.Params.TargetPath),
 			zap.Int("exit_code", result.ExitCode),
 			zap.String("error", errMsg))
+		// Record metrics for failed operation
+		if h.metrics != nil {
+			h.metrics.RecordCommand("epf_export", "error", duration.Seconds())
+			h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration)
+	}
+
+	// Record metrics for successful operation
+	if h.metrics != nil {
+		h.metrics.RecordCommand("epf_export", "success", duration.Seconds())
+		h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
 	}
 
 	h.logger.Info("epf exported successfully",

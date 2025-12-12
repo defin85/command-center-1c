@@ -27,6 +27,7 @@ import (
 	"github.com/command-center-1c/batch-service/internal/infrastructure/cluster"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
+	"github.com/command-center-1c/batch-service/internal/metrics"
 	"github.com/command-center-1c/batch-service/internal/service"
 )
 
@@ -153,6 +154,10 @@ func main() {
 		zap.String("v8_exe", cfg.V8.ExePath),
 		zap.Duration("timeout", cfg.V8.DefaultTimeout))
 
+	// Initialize Prometheus metrics
+	batchMetrics := metrics.NewBatchMetrics()
+	logger.Info("Prometheus metrics initialized")
+
 	// Initialize Redis client for Event Bus
 	var redisClient *redis.Client
 	var eventPublisher *events.Publisher
@@ -215,8 +220,8 @@ func main() {
 		if eventPublisher != nil && eventSubscriber != nil {
 			logger.Info("registering event handlers")
 
-			// Create handlers (pass redisClient for idempotency checks)
-			installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, logger)
+			// Create handlers (pass redisClient for idempotency checks and batchMetrics for metrics recording)
+			installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, batchMetrics, logger)
 
 			// Subscribe to command channels
 			if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {
@@ -250,6 +255,7 @@ func main() {
 		metadataExtractor,
 		rollbackManager,
 		backupManager,
+		batchMetrics,
 		logger,
 	)
 

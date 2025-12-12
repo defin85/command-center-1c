@@ -36,18 +36,34 @@ scrape_configs:
     scrape_timeout: 10s
 
   # RAS Adapter (Go) - port 8188
-  # Uncomment when RAS Adapter exports /metrics
-  # - job_name: 'ras-adapter'
-  #   static_configs:
-  #     - targets: ['localhost:8188']
-  #   metrics_path: '/metrics'
+  - job_name: 'ras-adapter'
+    static_configs:
+      - targets: ['localhost:8188']
+    metrics_path: '/metrics'
 
-  # Orchestrator (Django) - requires django-prometheus middleware
-  # Uncomment when Django exports metrics
-  # - job_name: 'orchestrator'
-  #   static_configs:
-  #     - targets: ['localhost:8200']
-  #   metrics_path: '/metrics'
+  # Batch Service (Go) - port 8187
+  - job_name: 'batch-service'
+    static_configs:
+      - targets: ['localhost:8187']
+    metrics_path: '/metrics'
+
+  # OData Adapter (Go) - port 8189
+  - job_name: 'odata-adapter'
+    static_configs:
+      - targets: ['localhost:8189']
+    metrics_path: '/metrics'
+
+  # Designer Agent (Go) - port 8190
+  - job_name: 'designer-agent'
+    static_configs:
+      - targets: ['localhost:8190']
+    metrics_path: '/metrics'
+
+  # Orchestrator (Django) - port 8200
+  - job_name: 'orchestrator'
+    static_configs:
+      - targets: ['localhost:8200']
+    metrics_path: '/metrics'
 
   # PostgreSQL exporter (if installed)
   # Installation: pacman -S prometheus-postgres-exporter

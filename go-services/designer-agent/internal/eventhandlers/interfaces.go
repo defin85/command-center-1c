@@ -37,3 +37,11 @@ type RedisClient interface {
 	// SetNX sets key to value if it does not exist (for idempotency).
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
 }
+
+// MetricsRecorder defines the interface for recording Prometheus metrics.
+type MetricsRecorder interface {
+	// RecordCommand records a designer command execution
+	RecordCommand(commandType, status string, duration float64)
+	// RecordSSHCommand records SSH command duration by command type
+	RecordSSHCommand(commandType string, duration float64)
+}

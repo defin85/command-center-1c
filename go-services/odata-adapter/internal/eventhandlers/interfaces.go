@@ -39,3 +39,14 @@ type EventPublisher interface {
 type RedisClient interface {
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
 }
+
+// MetricsRecorder defines the interface for recording Prometheus metrics.
+// This interface allows for easier testing with mocks.
+type MetricsRecorder interface {
+	// RecordOperation records an OData operation execution
+	RecordOperation(operation, status string, duration float64)
+	// RecordTransaction records a 1C transaction duration (CRITICAL: must be < 15s!)
+	RecordTransaction(operation string, duration float64)
+	// RecordBatch records a batch operation with item counts
+	RecordBatch(operation string, size int, successCount, failCount int)
+}
