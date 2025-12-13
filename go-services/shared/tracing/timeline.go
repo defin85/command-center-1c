@@ -7,9 +7,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
+
+var (
+	// timelineErrorsTotal counts timeline recording errors by service and error type
+	timelineErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cc1c_timeline_errors_total",
+			Help: "Total timeline recording errors",
+		},
+		[]string{"service", "error_type"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(timelineErrorsTotal)
+}
 
 // TimelineRecorder defines the interface for recording operation timeline events.
 type TimelineRecorder interface {
@@ -163,6 +179,9 @@ func (rt *RedisTimeline) recordSync(ctx context.Context, operationID, event stri
 
 	_, err = pipe.Exec(ctx)
 	if err != nil {
+		// Increment Prometheus error counter (FIX #8)
+		timelineErrorsTotal.WithLabelValues(rt.cfg.ServiceName, "redis_write").Inc()
+
 		rt.logger.WithError(err).WithFields(logrus.Fields{
 			"operation_id": operationID,
 			"event":        event,

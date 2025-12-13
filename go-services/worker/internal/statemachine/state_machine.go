@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/redis/go-redis/v9"
 	"github.com/sony/gobreaker"
 )
@@ -60,6 +61,9 @@ type ExtensionInstallStateMachine struct {
 	closeOnce     sync.Once
 	closedFlag    atomic.Bool
 	eventChanDone chan struct{} // Signal channel to stop writes to eventChan
+
+	// Timeline for operation tracing
+	timeline tracing.TimelineRecorder
 }
 
 // CompensationAction represents a compensation action
@@ -82,6 +86,13 @@ func WithCompensationExecutor(executor *CompensationExecutor) StateMachineOption
 func WithCompensationConfig(config *CompensationConfig, auditLogger AuditLogger, metrics MetricsRecorder) StateMachineOption {
 	return func(sm *ExtensionInstallStateMachine) {
 		sm.compensationExecutor = NewCompensationExecutor(config, auditLogger, metrics)
+	}
+}
+
+// WithTimeline sets the timeline recorder for the state machine
+func WithTimeline(timeline tracing.TimelineRecorder) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.timeline = timeline
 	}
 }
 
@@ -139,6 +150,11 @@ func NewStateMachine(
 		opt(sm)
 	}
 
+	// Initialize noop timeline if not provided via options
+	if sm.timeline == nil {
+		sm.timeline = tracing.NewNoopTimeline()
+	}
+
 	// Register event handlers BEFORE router starts
 	// (в listenEvents() будет только waitforcontext, без Subscribe)
 	sm.registerEventHandlers()
@@ -192,6 +208,13 @@ func (sm *ExtensionInstallStateMachine) registerEventHandlers() {
 func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 	defer sm.cancel()
 	defer sm.Close()
+
+	// Record saga start in timeline
+	sm.timeline.Record(ctx, sm.OperationID, "saga.started", map[string]string{
+		"correlation_id": sm.CorrelationID,
+		"database_id":    sm.DatabaseID,
+		"extension_name": sm.ExtensionName,
+	})
 
 	// Start event listener
 	go sm.listenEvents(ctx)
@@ -253,6 +276,19 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 
 	fmt.Printf("[StateMachine] Exited main loop, final state: %s\n", sm.State)
 
+	// Record saga completion in timeline
+	if sm.State == StateCompleted {
+		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.completed", map[string]string{
+			"correlation_id": sm.CorrelationID,
+			"final_state":    string(sm.State),
+		})
+	} else {
+		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.failed", map[string]string{
+			"correlation_id": sm.CorrelationID,
+			"final_state":    string(sm.State),
+		})
+	}
+
 	return nil
 }
 
@@ -270,6 +306,13 @@ func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) erro
 	oldState := sm.State
 	sm.State = newState
 	sm.lastActivity = time.Now()
+
+	// Record state transition in timeline
+	sm.timeline.Record(sm.ctx, sm.OperationID, "saga.transition", map[string]string{
+		"from_state":     string(oldState),
+		"to_state":       string(newState),
+		"correlation_id": sm.CorrelationID,
+	})
 
 	// Log transition
 	fmt.Printf("[StateMachine] Transition: %s -> %s (correlation_id=%s)\n",

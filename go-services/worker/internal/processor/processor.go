@@ -16,6 +16,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	sharedMetrics "github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
@@ -65,6 +66,9 @@ type TaskProcessor struct {
 
 	// Prometheus metrics for Service Mesh monitoring
 	appMetrics *sharedMetrics.Metrics
+
+	// Timeline recorder for operation tracing
+	timeline tracing.TimelineRecorder
 }
 
 // DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
@@ -79,6 +83,7 @@ type ProcessorOptions struct {
 	OrchestratorURL  string                    // Orchestrator URL for workflow engine (optional)
 	Logger           *zap.Logger
 	Metrics          *sharedMetrics.Metrics    // Prometheus metrics for Service Mesh monitoring (optional)
+	Timeline         tracing.TimelineRecorder  // Timeline recorder for operation tracing (optional)
 }
 
 // NewTaskProcessor creates a new task processor
@@ -105,6 +110,12 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		zapLogger, _ = zap.NewProduction()
 	}
 
+	// Initialize timeline with noop fallback if not provided
+	timeline := opts.Timeline
+	if timeline == nil {
+		timeline = tracing.NewNoopTimeline()
+	}
+
 	processor := &TaskProcessor{
 		config:         cfg,
 		credsClient:    credsClient,
@@ -117,6 +128,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		templateClient: opts.TemplateClient,
 		logger:         zapLogger,
 		appMetrics:     opts.Metrics,
+		timeline:       timeline,
 	}
 
 	// Initialize dual-mode processor
@@ -181,6 +193,13 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessage) *models.OperationResultV2 {
 	log := logger.GetLogger()
 	taskStart := time.Now()
+
+	// Record operation start in timeline
+	p.timeline.Record(ctx, msg.OperationID, "operation.started", map[string]string{
+		"operation_type": msg.OperationType,
+		"worker_id":      p.workerID,
+		"databases":      fmt.Sprintf("%d", len(msg.TargetDatabases)),
+	})
 
 	result := &models.OperationResultV2{
 		OperationID: msg.OperationID,
@@ -252,6 +271,14 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	// Record metrics for Service Mesh monitoring
 	p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
 
+	// Record operation completion in timeline
+	p.timeline.Record(ctx, msg.OperationID, "operation.completed", map[string]string{
+		"status":    result.Status,
+		"succeeded": fmt.Sprintf("%d", succeeded),
+		"failed":    fmt.Sprintf("%d", failed),
+		"duration":  fmt.Sprintf("%.3f", time.Since(taskStart).Seconds()),
+	})
+
 	return result
 }
 
@@ -307,6 +334,12 @@ func (p *TaskProcessor) getODataClient(creds *credentials.DatabaseCredentials) *
 func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
 	log := logger.GetLogger()
+
+	// Record database processing start in timeline
+	p.timeline.Record(ctx, msg.OperationID, "database.processing", map[string]string{
+		"database_id":    databaseID,
+		"operation_type": msg.OperationType,
+	})
 
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
@@ -391,6 +424,20 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 
 	result.DatabaseID = databaseID
 	result.Duration = time.Since(start).Seconds()
+
+	// Record database result in timeline
+	if result.Success {
+		p.timeline.Record(ctx, msg.OperationID, "database.completed", map[string]string{
+			"database_id": databaseID,
+			"duration":    fmt.Sprintf("%.3f", result.Duration),
+		})
+	} else {
+		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]string{
+			"database_id": databaseID,
+			"error_code":  result.ErrorCode,
+			"error":       result.Error,
+		})
+	}
 
 	// Publish SUCCESS/FAILED event for OData operations
 	if result.Success {
@@ -746,6 +793,11 @@ func (p *TaskProcessor) GetEventSubscriber() *sharedEvents.Subscriber {
 // GetRedisClient returns the Redis client for State Machine persistence
 func (p *TaskProcessor) GetRedisClient() *redis.Client {
 	return p.redisClient
+}
+
+// GetTimeline returns the timeline recorder for operation tracing
+func (p *TaskProcessor) GetTimeline() tracing.TimelineRecorder {
+	return p.timeline
 }
 
 // StartEventSubscriber starts the event subscriber in background

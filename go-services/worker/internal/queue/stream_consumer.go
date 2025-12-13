@@ -14,6 +14,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 )
 
@@ -56,6 +57,7 @@ type Consumer struct {
 	consumerGroup string
 	consumerName  string
 	resultsStream string
+	timeline      tracing.TimelineRecorder
 }
 
 // FallbackIDs contains IDs extracted from message fields for error recovery.
@@ -88,12 +90,17 @@ func extractFallbackIDs(message redis.XMessage) FallbackIDs {
 }
 
 // NewConsumer creates a new Redis Streams consumer
-func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient *redis.Client) (*Consumer, error) {
+func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient *redis.Client, timeline tracing.TimelineRecorder) (*Consumer, error) {
 	if redisClient == nil {
 		return nil, fmt.Errorf("redis client is required")
 	}
 	if proc == nil {
 		return nil, fmt.Errorf("processor is required")
+	}
+
+	// Use noop timeline if not provided
+	if timeline == nil {
+		timeline = tracing.NewNoopTimeline()
 	}
 
 	consumerName := fmt.Sprintf("worker-%s", cfg.WorkerID)
@@ -106,6 +113,7 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 		consumerGroup: ConsumerGroupName,
 		consumerName:  consumerName,
 		resultsStream: StreamResultsCompleted,
+		timeline:      timeline,
 	}, nil
 }
 
@@ -195,6 +203,13 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 	// Extract fallback IDs BEFORE parsing envelope (Error Feedback Phase 1)
 	// This allows error reporting even if envelope parsing fails
 	fallback := extractFallbackIDs(message)
+
+	// Record message received in timeline IMMEDIATELY after getting messageID (FIX #4)
+	// Use fallback operation_id which may be empty for old messages (backward compatible)
+	c.timeline.Record(ctx, fallback.OperationID, "message.received", map[string]string{
+		"message_id": messageID,
+		"worker_id":  c.workerID,
+	})
 
 	// Extract envelope data from message values
 	envelopeData, ok := message.Values["data"].(string)
@@ -305,7 +320,21 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 			log.Warnf("lock for %s was taken by another worker, skipping extend", msg.OperationID)
 		}
 		publishSuccess = c.publishCompletedResult(ctx, result, envelope.CorrelationID)
+
+		// Record message.completed in timeline AFTER successful publish (FIX #5)
+		if publishSuccess {
+			c.timeline.Record(ctx, msg.OperationID, "message.completed", map[string]string{
+				"message_id": messageID,
+				"status":     result.Status,
+			})
+		}
 	} else {
+		// Record failed status before publishing (failed path is less critical)
+		c.timeline.Record(ctx, msg.OperationID, "message.failed", map[string]string{
+			"message_id": messageID,
+			"status":     result.Status,
+			"error":      getErrorSummary(result),
+		})
 		publishSuccess = c.publishFailedResult(ctx, result.OperationID, envelope.CorrelationID, messageID, getErrorSummary(result))
 	}
 

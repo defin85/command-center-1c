@@ -422,7 +422,10 @@ func (dm *DualModeProcessor) createStateMachine(
 	pubWrapper := &publisherWrapper{publisher: publisher}
 	subWrapper := &subscriberWrapper{subscriber: subscriber}
 
-	// Create State Machine
+	// Get timeline from processor
+	timeline := dm.processor.GetTimeline()
+
+	// Create State Machine with timeline
 	sm, err := statemachine.NewStateMachine(
 		ctx,
 		operationID,
@@ -432,6 +435,7 @@ func (dm *DualModeProcessor) createStateMachine(
 		subWrapper,
 		redisClient,
 		dm.smConfig,
+		statemachine.WithTimeline(timeline),
 	)
 	if err != nil {
 		// Clean up publisher on error

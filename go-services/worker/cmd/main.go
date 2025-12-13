@@ -18,6 +18,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/metrics"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
@@ -176,6 +177,15 @@ func main() {
 	}
 	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
 
+	// Initialize TimelineRecorder for operation tracing
+	timelineCfg := tracing.DefaultTimelineConfig("worker")
+	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
+	log.Info("timeline recorder initialized",
+		zap.String("service", "worker"),
+		zap.Duration("ttl", timelineCfg.TTL),
+		zap.Int("max_entries", timelineCfg.MaxEntries),
+	)
+
 	// Create zap logger for components
 	var zapLog *zap.Logger
 	if cfg.LogLevel == "debug" {
@@ -245,12 +255,14 @@ func main() {
 		OrchestratorURL: cfg.OrchestratorURL,
 		Logger:          zapLog,
 		Metrics:         appMetrics,
+		Timeline:        timeline,
 	}
 	taskProcessor := processor.NewTaskProcessorWithOptions(cfg, credsClient, redisClient, processorOpts)
 	defer taskProcessor.Close() // Graceful shutdown for event subscriber
 	log.Info("task processor initialized with event publishing and State Machine support",
 		zap.Bool("template_engine_enabled", templateEngine != nil),
 		zap.Bool("workflow_enabled", workflowClient != nil),
+		zap.Bool("timeline_enabled", timeline != nil),
 	)
 
 	// Log feature flags configuration
@@ -262,7 +274,7 @@ func main() {
 	)
 
 	// Initialize queue consumer (Redis Streams based)
-	consumer, err := queue.NewConsumer(cfg, taskProcessor, redisClient)
+	consumer, err := queue.NewConsumer(cfg, taskProcessor, redisClient, timeline)
 	if err != nil {
 		log.Fatal("failed to initialize consumer", zap.Error(err))
 	}
@@ -484,6 +496,13 @@ func main() {
 		if err := sched.Stop(); err != nil {
 			log.Error("error stopping scheduler", zap.Error(err))
 		}
+	}
+
+	// Wait for timeline to flush pending events (FIX: timeline.Wait())
+	log.Info("waiting for timeline to flush...")
+	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+		rt.Wait()
+		log.Info("timeline flushed")
 	}
 
 	cancel() // Trigger graceful shutdown
