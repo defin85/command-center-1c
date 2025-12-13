@@ -30,16 +30,18 @@ type LockHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewLockHandler creates a new LockHandler instance
-func NewLockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *LockHandler {
+func NewLockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *LockHandler {
 	return &LockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -86,6 +88,15 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 		zap.String("infobase_id", cmd.InfobaseID),
 		zap.String("database_id", cmd.DatabaseID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"cluster_id":   cmd.ClusterID,
+			"infobase_id":  cmd.InfobaseID,
+		})
+	}
+
 	// Call service to lock infobase
 	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
 	err = h.service.LockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, "", "")
@@ -101,12 +112,26 @@ func (h *LockHandler) HandleLockCommand(ctx context.Context, envelope *events.En
 		if h.metrics != nil {
 			h.metrics.RecordCommand("lock", "error", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// Record metrics for successful operation
 	if h.metrics != nil {
 		h.metrics.RecordCommand("lock", "success", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

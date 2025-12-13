@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/api/rest"
@@ -16,6 +17,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/server"
 	"github.com/commandcenter1c/commandcenter/odata-adapter/internal/version"
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -97,16 +99,21 @@ func main() {
 	odataMetrics := metrics.NewODataMetrics()
 	logger.Info("Prometheus metrics initialized")
 
+	// Initialize Timeline recorder for observability
+	timelineCfg := tracing.DefaultTimelineConfig("odata-adapter")
+	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
+	logger.Info("timeline recorder initialized")
+
 	// Initialize Event Handlers (if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
 		logger.Info("Redis Pub/Sub enabled, setting up event handlers")
 
-		// Initialize Event Handlers with metrics
-		queryHandler := eventhandlers.NewQueryHandler(odataClient, publisher, redisClient, odataMetrics, logger)
-		createHandler := eventhandlers.NewCreateHandler(odataClient, publisher, redisClient, odataMetrics, logger)
-		updateHandler := eventhandlers.NewUpdateHandler(odataClient, publisher, redisClient, odataMetrics, logger)
-		deleteHandler := eventhandlers.NewDeleteHandler(odataClient, publisher, redisClient, odataMetrics, logger)
-		batchHandler := eventhandlers.NewBatchHandler(odataClient, publisher, redisClient, odataMetrics, logger)
+		// Initialize Event Handlers with metrics and timeline
+		queryHandler := eventhandlers.NewQueryHandler(odataClient, publisher, redisClient, odataMetrics, timeline, logger)
+		createHandler := eventhandlers.NewCreateHandler(odataClient, publisher, redisClient, odataMetrics, timeline, logger)
+		updateHandler := eventhandlers.NewUpdateHandler(odataClient, publisher, redisClient, odataMetrics, timeline, logger)
+		deleteHandler := eventhandlers.NewDeleteHandler(odataClient, publisher, redisClient, odataMetrics, timeline, logger)
+		batchHandler := eventhandlers.NewBatchHandler(odataClient, publisher, redisClient, odataMetrics, timeline, logger)
 
 		// Subscribe to command channels
 		if err := subscriber.Subscribe(
@@ -206,6 +213,26 @@ func main() {
 	// Close publisher
 	if err := publisher.Close(); err != nil {
 		logger.Error("failed to close publisher", zap.Error(err))
+	}
+
+	// Wait for pending timeline writes to complete (with timeout)
+	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+		// Wait with timeout to avoid blocking forever
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer waitCancel()
+
+		done := make(chan struct{})
+		go func() {
+			rt.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			logger.Info("timeline writes completed")
+		case <-waitCtx.Done():
+			logger.Warn("timeline writes timeout, some events may be lost")
+		}
 	}
 
 	// Shutdown HTTP server

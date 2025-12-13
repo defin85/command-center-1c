@@ -35,16 +35,18 @@ type BatchHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewBatchHandler creates a new BatchHandler instance.
-func NewBatchHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *BatchHandler {
+func NewBatchHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *BatchHandler {
 	return &BatchHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -122,6 +124,14 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 		zap.String("database_id", cmd.DatabaseID),
 		zap.Int("batch_size", len(cmd.BatchItems)))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"batch_size":   fmt.Sprintf("%d", len(cmd.BatchItems)),
+		})
+	}
+
 	// Create timeout context for batch operation (< 15 seconds for 1C transactions)
 	batchCtx, cancel := context.WithTimeout(ctx, MaxBatchTimeout)
 	defer cancel()
@@ -141,6 +151,13 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 			h.metrics.RecordTransaction("batch", duration.Seconds())
 			h.metrics.RecordBatch("batch", len(cmd.BatchItems), 0, len(cmd.BatchItems))
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
 	}
 
@@ -153,6 +170,20 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 		h.metrics.RecordOperation("batch", status, duration.Seconds())
 		h.metrics.RecordTransaction("batch", duration.Seconds())
 		h.metrics.RecordBatch("batch", batchResult.TotalCount, batchResult.SuccessCount, batchResult.FailureCount)
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		status := "success"
+		if batchResult.FailureCount > 0 {
+			status = "partial"
+		}
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+			"command_type":  cmd.CommandType,
+			"status":        status,
+			"success_count": fmt.Sprintf("%d", batchResult.SuccessCount),
+			"failure_count": fmt.Sprintf("%d", batchResult.FailureCount),
+			"duration_ms":   fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

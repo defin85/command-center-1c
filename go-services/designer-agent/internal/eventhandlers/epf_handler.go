@@ -29,16 +29,18 @@ type EpfHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewEpfHandler creates a new EpfHandler instance.
-func NewEpfHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *EpfHandler {
+func NewEpfHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *EpfHandler {
 	return &EpfHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger.With(zap.String("handler", "epf")),
 	}
 }
@@ -95,6 +97,13 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("target_path", cmd.Params.TargetPath))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting EPF/ERF export")
 
@@ -122,6 +131,13 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 			h.metrics.RecordCommand("epf_export", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration)
 	}
 
@@ -137,6 +153,13 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 			h.metrics.RecordCommand("epf_export", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration)
 	}
 
@@ -144,6 +167,13 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 	if h.metrics != nil {
 		h.metrics.RecordCommand("epf_export", "success", duration.Seconds())
 		h.metrics.RecordSSHCommand("epf_export", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	h.logger.Info("epf exported successfully",

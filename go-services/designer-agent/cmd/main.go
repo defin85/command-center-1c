@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/redis/go-redis/v9"
@@ -20,6 +21,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/designer-agent/internal/version"
 	"github.com/commandcenter1c/commandcenter/shared/designer"
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 )
 
 func main() {
@@ -101,14 +103,19 @@ func main() {
 	designerMetrics := metrics.NewDesignerMetrics()
 	logger.Info("Prometheus metrics initialized")
 
+	// Initialize Timeline recorder for observability
+	timelineCfg := tracing.DefaultTimelineConfig("designer-agent")
+	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
+	logger.Info("timeline recorder initialized")
+
 	// Initialize Event Handlers (if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
 		logger.Info("Redis Pub/Sub enabled, setting up event handlers")
 
-		// Initialize Event Handlers with metrics
-		extensionHandler := eventhandlers.NewExtensionHandler(sshPool, publisher, redisClient, designerMetrics, logger)
-		configHandler := eventhandlers.NewConfigHandler(sshPool, publisher, redisClient, designerMetrics, logger)
-		epfHandler := eventhandlers.NewEpfHandler(sshPool, publisher, redisClient, designerMetrics, logger)
+		// Initialize Event Handlers with metrics and timeline
+		extensionHandler := eventhandlers.NewExtensionHandler(sshPool, publisher, redisClient, designerMetrics, timeline, logger)
+		configHandler := eventhandlers.NewConfigHandler(sshPool, publisher, redisClient, designerMetrics, timeline, logger)
+		epfHandler := eventhandlers.NewEpfHandler(sshPool, publisher, redisClient, designerMetrics, timeline, logger)
 
 		// Subscribe to extension command channels
 		if err := subscriber.Subscribe(
@@ -218,6 +225,26 @@ func main() {
 	// Close publisher
 	if err := publisher.Close(); err != nil {
 		logger.Error("failed to close publisher", zap.Error(err))
+	}
+
+	// Wait for pending timeline writes to complete (with timeout)
+	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+		// Wait with timeout to avoid blocking forever
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer waitCancel()
+
+		done := make(chan struct{})
+		go func() {
+			rt.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			logger.Info("timeline writes completed")
+		case <-waitCtx.Done():
+			logger.Warn("timeline writes timeout, some events may be lost")
+		}
 	}
 
 	// Shutdown HTTP server

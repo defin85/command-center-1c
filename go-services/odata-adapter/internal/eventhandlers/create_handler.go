@@ -29,16 +29,18 @@ type CreateHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewCreateHandler creates a new CreateHandler instance.
-func NewCreateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *CreateHandler {
+func NewCreateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *CreateHandler {
 	return &CreateHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -85,6 +87,14 @@ func (h *CreateHandler) HandleCreateCommand(ctx context.Context, envelope *event
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("entity", cmd.Entity))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"entity":       cmd.Entity,
+		})
+	}
+
 	// Execute create
 	createdEntity, err := h.client.Create(ctx, cmd.Credentials, cmd.Entity, cmd.Data)
 	duration := time.Since(start)
@@ -99,6 +109,13 @@ func (h *CreateHandler) HandleCreateCommand(ctx context.Context, envelope *event
 			h.metrics.RecordOperation("create", "error", duration.Seconds())
 			h.metrics.RecordTransaction("create", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
 	}
 
@@ -106,6 +123,13 @@ func (h *CreateHandler) HandleCreateCommand(ctx context.Context, envelope *event
 	if h.metrics != nil {
 		h.metrics.RecordOperation("create", "success", duration.Seconds())
 		h.metrics.RecordTransaction("create", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

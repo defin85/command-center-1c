@@ -30,16 +30,18 @@ type BlockHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewBlockHandler creates a new BlockHandler instance
-func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *BlockHandler {
+func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *BlockHandler {
 	return &BlockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -86,6 +88,15 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 		zap.String("infobase_id", cmd.InfobaseID),
 		zap.String("database_id", cmd.DatabaseID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"cluster_id":   cmd.ClusterID,
+			"infobase_id":  cmd.InfobaseID,
+		})
+	}
+
 	// Extract optional parameters from Options
 	message := getStringOption(cmd.Options, "message", "Maintenance in progress")
 	permissionCode := getStringOption(cmd.Options, "permission_code", "")
@@ -116,12 +127,26 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 		if h.metrics != nil {
 			h.metrics.RecordCommand("block", "error", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
 	// Record metrics for successful operation
 	if h.metrics != nil {
 		h.metrics.RecordCommand("block", "success", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

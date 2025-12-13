@@ -50,3 +50,10 @@ type MetricsRecorder interface {
 	// RecordBatch records a batch operation with item counts
 	RecordBatch(operation string, size int, successCount, failCount int)
 }
+
+// TimelineRecorder defines the interface for recording operation timeline events.
+// This interface allows for easier testing with mocks.
+type TimelineRecorder interface {
+	// Record adds a timeline event for an operation (async, non-blocking)
+	Record(ctx context.Context, operationID, event string, metadata map[string]string)
+}

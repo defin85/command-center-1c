@@ -29,16 +29,18 @@ type DeleteHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewDeleteHandler creates a new DeleteHandler instance.
-func NewDeleteHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *DeleteHandler {
+func NewDeleteHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *DeleteHandler {
 	return &DeleteHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -95,6 +97,14 @@ func (h *DeleteHandler) HandleDeleteCommand(ctx context.Context, envelope *event
 		zap.String("entity", cmd.Entity),
 		zap.String("entity_id", cmd.EntityID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"entity":       cmd.Entity,
+		})
+	}
+
 	// Execute delete
 	err = h.client.Delete(ctx, cmd.Credentials, cmd.Entity, cmd.EntityID)
 	duration := time.Since(start)
@@ -110,6 +120,13 @@ func (h *DeleteHandler) HandleDeleteCommand(ctx context.Context, envelope *event
 			h.metrics.RecordOperation("delete", "error", duration.Seconds())
 			h.metrics.RecordTransaction("delete", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
 	}
 
@@ -117,6 +134,13 @@ func (h *DeleteHandler) HandleDeleteCommand(ctx context.Context, envelope *event
 	if h.metrics != nil {
 		h.metrics.RecordOperation("delete", "success", duration.Seconds())
 		h.metrics.RecordTransaction("delete", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

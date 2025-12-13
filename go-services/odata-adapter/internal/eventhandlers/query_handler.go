@@ -29,16 +29,18 @@ type QueryHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewQueryHandler creates a new QueryHandler instance.
-func NewQueryHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *QueryHandler {
+func NewQueryHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *QueryHandler {
 	return &QueryHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -85,6 +87,14 @@ func (h *QueryHandler) HandleQueryCommand(ctx context.Context, envelope *events.
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("entity", cmd.Entity))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"entity":       cmd.Entity,
+		})
+	}
+
 	// Execute query
 	data, err := h.client.Query(ctx, cmd.Credentials, cmd.Entity, cmd.Query)
 	duration := time.Since(start)
@@ -98,12 +108,26 @@ func (h *QueryHandler) HandleQueryCommand(ctx context.Context, envelope *events.
 		if h.metrics != nil {
 			h.metrics.RecordOperation("query", "error", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
 	}
 
 	// Record metrics for successful operation
 	if h.metrics != nil {
 		h.metrics.RecordOperation("query", "success", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

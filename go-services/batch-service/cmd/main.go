@@ -13,6 +13,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -158,6 +159,9 @@ func main() {
 	batchMetrics := metrics.NewBatchMetrics()
 	logger.Info("Prometheus metrics initialized")
 
+	// Initialize Timeline recorder for observability (will be set after Redis connection)
+	var timeline tracing.TimelineRecorder
+
 	// Initialize Redis client for Event Bus
 	var redisClient *redis.Client
 	var eventPublisher *events.Publisher
@@ -192,6 +196,11 @@ func main() {
 				zap.String("addr", redisAddr),
 			)
 
+			// Initialize Timeline recorder
+			timelineCfg := tracing.DefaultTimelineConfig("batch-service")
+			timeline = tracing.NewRedisTimeline(redisClient, timelineCfg)
+			logger.Info("timeline recorder initialized")
+
 			// Initialize Watermill logger
 			watermillLogger := watermill.NewStdLogger(false, false)
 
@@ -220,8 +229,8 @@ func main() {
 		if eventPublisher != nil && eventSubscriber != nil {
 			logger.Info("registering event handlers")
 
-			// Create handlers (pass redisClient for idempotency checks and batchMetrics for metrics recording)
-			installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, batchMetrics, logger)
+			// Create handlers (pass redisClient for idempotency checks, batchMetrics for metrics recording, and timeline for observability)
+			installHandler := eventhandlers.NewInstallHandler(extensionInstaller, eventPublisher, redisClient, batchMetrics, timeline, logger)
 
 			// Subscribe to command channels
 			if err := eventSubscriber.Subscribe(eventhandlers.InstallCommandChannel, installHandler.HandleInstallCommand); err != nil {
@@ -289,6 +298,28 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("Server forced to shutdown", zap.Error(err))
 		os.Exit(1)
+	}
+
+	// Wait for pending timeline writes to complete (with timeout)
+	if timeline != nil {
+		if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+			// Wait with timeout to avoid blocking forever
+			waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer waitCancel()
+
+			done := make(chan struct{})
+			go func() {
+				rt.Wait()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				logger.Info("timeline writes completed")
+			case <-waitCtx.Done():
+				logger.Warn("timeline writes timeout, some events may be lost")
+			}
+		}
 	}
 
 	// Close event subscriber

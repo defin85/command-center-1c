@@ -53,7 +53,7 @@ func TestNewInstallHandler(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, installer, handler.installer)
@@ -66,7 +66,7 @@ func TestHandleInstallCommand_Success(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	// Prepare payload
 	payload := InstallCommandPayload{
@@ -149,7 +149,7 @@ func TestHandleInstallCommand_InvalidPayload(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	// Invalid JSON payload
 	envelope := &events.Envelope{
@@ -185,7 +185,7 @@ func TestHandleInstallCommand_MissingRequiredFields(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	testCases := []struct {
 		name    string
@@ -278,7 +278,7 @@ func TestExecuteInstallation_Success(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",
@@ -333,7 +333,7 @@ func TestExecuteInstallation_Failure(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",
@@ -381,7 +381,7 @@ func TestPublishStarted(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",
@@ -414,7 +414,7 @@ func TestPublishSuccess(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",
@@ -448,7 +448,7 @@ func TestPublishError(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:   "db-123",
@@ -483,7 +483,7 @@ func TestPublishError_PublishFails(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:   "db-123",
@@ -515,7 +515,7 @@ func TestValidateExtensionPath(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	testCases := []struct {
 		name          string
@@ -597,7 +597,7 @@ func TestHandleInstallCommand_InvalidExtensionPath(t *testing.T) {
 	publisher := &MockEventPublisher{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, nil, nil, logger)
+	handler := NewInstallHandler(installer, publisher, nil, nil, nil, logger)
 
 	testCases := []struct {
 		name          string
@@ -676,7 +676,7 @@ func TestInstallHandler_Idempotent(t *testing.T) {
 	mockRedis := &MockRedisClient{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, mockRedis, nil, logger)
+	handler := NewInstallHandler(installer, publisher, mockRedis, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",
@@ -790,7 +790,7 @@ func TestInstallHandler_RedisError_FailOpen(t *testing.T) {
 	mockRedis := &MockRedisClient{}
 	logger := zap.NewNop()
 
-	handler := NewInstallHandler(installer, publisher, mockRedis, nil, logger)
+	handler := NewInstallHandler(installer, publisher, mockRedis, nil, nil, logger)
 
 	payload := InstallCommandPayload{
 		DatabaseID:    "db-123",

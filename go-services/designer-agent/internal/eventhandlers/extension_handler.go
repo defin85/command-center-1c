@@ -31,16 +31,18 @@ type ExtensionHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewExtensionHandler creates a new ExtensionHandler instance.
-func NewExtensionHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *ExtensionHandler {
+func NewExtensionHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *ExtensionHandler {
 	return &ExtensionHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger.With(zap.String("handler", "extension")),
 	}
 }
@@ -104,6 +106,14 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("extension_name", cmd.Params.ExtensionName))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type":   cmd.CommandType,
+			"extension_name": cmd.Params.ExtensionName,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting extension installation")
 
@@ -128,6 +138,13 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 			zap.Error(err))
 		// Record metrics for failed operation
 		h.recordMetric("extension_install", "error", duration)
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, true)
 	}
 
@@ -140,11 +157,25 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 			zap.String("error", errMsg))
 		// Record metrics for failed operation
 		h.recordMetric("extension_install", "error", duration)
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, true)
 	}
 
 	// Record metrics for successful operation
 	h.recordMetric("extension_install", "success", duration)
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
+	}
 
 	h.logger.Info("extension installed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),
@@ -206,6 +237,14 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("extension_name", cmd.Params.ExtensionName))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type":   cmd.CommandType,
+			"extension_name": cmd.Params.ExtensionName,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting extension removal")
 
@@ -230,6 +269,13 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 			zap.Error(err))
 		// Record metrics for failed operation
 		h.recordMetric("extension_remove", "error", duration)
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, false)
 	}
 
@@ -242,11 +288,25 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 			zap.String("error", errMsg))
 		// Record metrics for failed operation
 		h.recordMetric("extension_remove", "error", duration)
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, false)
 	}
 
 	// Record metrics for successful operation
 	h.recordMetric("extension_remove", "success", duration)
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
+	}
 
 	h.logger.Info("extension removed successfully",
 		zap.String("correlation_id", envelope.CorrelationID),

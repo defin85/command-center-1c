@@ -33,16 +33,18 @@ type UpdateHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewUpdateHandler creates a new UpdateHandler instance.
-func NewUpdateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *UpdateHandler {
+func NewUpdateHandler(client ODataClient, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *UpdateHandler {
 	return &UpdateHandler{
 		client:      client,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -99,6 +101,14 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 		zap.String("entity", cmd.Entity),
 		zap.String("entity_id", cmd.EntityID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"entity":       cmd.Entity,
+		})
+	}
+
 	// Execute update
 	err = h.client.Update(ctx, cmd.Credentials, cmd.Entity, cmd.EntityID, cmd.Data)
 	duration := time.Since(start)
@@ -114,6 +124,13 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 			h.metrics.RecordOperation("update", "error", duration.Seconds())
 			h.metrics.RecordTransaction("update", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, duration)
 	}
 
@@ -121,6 +138,13 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 	if h.metrics != nil {
 		h.metrics.RecordOperation("update", "success", duration.Seconds())
 		h.metrics.RecordTransaction("update", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	// Publish success event

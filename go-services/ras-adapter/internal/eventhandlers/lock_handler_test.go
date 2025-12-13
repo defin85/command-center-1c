@@ -74,7 +74,7 @@ func TestNewLockHandler(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, mockSvc, handler.service)
@@ -89,7 +89,7 @@ func TestLockHandler_HandleLockCommand_Success(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	ctx := context.Background()
 
@@ -136,7 +136,7 @@ func TestLockHandler_HandleLockCommand_InvalidPayload(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	// Mock error publishing
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
@@ -161,7 +161,7 @@ func TestLockHandler_HandleLockCommand_MissingOperationID(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
@@ -192,7 +192,7 @@ func TestLockHandler_HandleLockCommand_MissingClusterID(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
@@ -223,7 +223,7 @@ func TestLockHandler_HandleLockCommand_MissingInfobaseID(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	mockPub.On("Publish", mock.Anything, LockFailedChannel, InfobaseLockFailedEvent, mock.Anything, "corr-123").Return(nil)
 
@@ -254,7 +254,7 @@ func TestLockHandler_HandleLockCommand_ServiceError(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	ctx := context.Background()
 
@@ -296,7 +296,7 @@ func TestLockHandler_HandleLockCommand_IdempotentRequest(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	ctx := context.Background()
 
@@ -338,7 +338,7 @@ func TestLockHandler_HandleLockCommand_ContextTimeout(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	// Create context with immediate timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
@@ -384,7 +384,7 @@ func TestLockHandler_HandleLockCommand_PublishingError(t *testing.T) {
 	mockRedis := new(MockRedisClient)
 	logger := zap.NewNop()
 
-	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, mockRedis, nil, nil, logger)
 
 	ctx := context.Background()
 
@@ -428,7 +428,7 @@ func TestLockHandler_HandleLockCommand_RedisNotConfigured(t *testing.T) {
 	logger := zap.NewNop()
 
 	// No Redis client
-	handler := NewLockHandler(mockSvc, mockPub, nil, nil, logger)
+	handler := NewLockHandler(mockSvc, mockPub, nil, nil, nil, logger)
 
 	ctx := context.Background()
 

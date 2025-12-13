@@ -50,22 +50,37 @@ type MetricsRecorder interface {
 	RecordOperation(operationType, status string, duration float64)
 }
 
+// TimelineRecorder defines the interface for recording operation timeline events.
+type TimelineRecorder interface {
+	// Record adds a timeline event for an operation (async, non-blocking)
+	Record(ctx context.Context, operationID, event string, metadata map[string]string)
+}
+
 // InstallHandler handles install extension commands from the event bus
 type InstallHandler struct {
 	installer   ExtensionInstaller
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
-// NewInstallHandler creates a new InstallHandler instance
-func NewInstallHandler(installer ExtensionInstaller, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *InstallHandler {
+// NewInstallHandler creates a new InstallHandler instance.
+// Parameters:
+//   - installer: ExtensionInstaller implementation for executing installations
+//   - pub: EventPublisher for publishing events to the event bus
+//   - redisClient: Redis client for idempotency checks (can be nil - idempotency will be skipped)
+//   - metrics: MetricsRecorder for Prometheus metrics (can be nil - metrics will be skipped)
+//   - timeline: TimelineRecorder for operation tracing (can be nil - timeline recording will be disabled)
+//   - logger: zap.Logger for logging
+func NewInstallHandler(installer ExtensionInstaller, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *InstallHandler {
 	return &InstallHandler{
 		installer:   installer,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -156,6 +171,14 @@ func (h *InstallHandler) HandleInstallCommand(ctx context.Context, envelope *eve
 		zap.String("infobase_name", payload.InfobaseName),
 		zap.String("extension_name", payload.ExtensionName))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.received", map[string]string{
+			"operation_type": "extension_install",
+			"extension_name": payload.ExtensionName,
+		})
+	}
+
 	// Publish "started" event immediately
 	if err := h.publishStarted(ctx, envelope.CorrelationID, payload); err != nil {
 		h.logger.Error("failed to publish started event",
@@ -215,6 +238,14 @@ func (h *InstallHandler) executeInstallation(ctx context.Context, correlationID 
 		if h.metrics != nil {
 			h.metrics.RecordOperation("extension_install", "error", duration)
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, payload.DatabaseID, "batch.command.failed", map[string]string{
+				"operation_type": "extension_install",
+				"extension_name": payload.ExtensionName,
+				"error":          err.Error(),
+			})
+		}
 		h.publishError(ctx, correlationID, payload, err)
 		return
 	}
@@ -222,6 +253,14 @@ func (h *InstallHandler) executeInstallation(ctx context.Context, correlationID 
 	// Record metrics for successful operation
 	if h.metrics != nil {
 		h.metrics.RecordOperation("extension_install", "success", duration)
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.completed", map[string]string{
+			"operation_type": "extension_install",
+			"extension_name": payload.ExtensionName,
+			"duration_ms":    fmt.Sprintf("%.0f", duration*1000),
+		})
 	}
 
 	// Publish success event

@@ -40,16 +40,18 @@ type ConfigHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewConfigHandler creates a new ConfigHandler instance.
-func NewConfigHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *ConfigHandler {
+func NewConfigHandler(pool SSHExecutor, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *ConfigHandler {
 	return &ConfigHandler{
 		sshPool:     pool,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger.With(zap.String("handler", "config")),
 	}
 }
@@ -105,6 +107,13 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 		zap.String("operation_id", cmd.OperationID),
 		zap.String("database_id", cmd.DatabaseID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting database configuration update (this may take up to 4 hours)")
 
@@ -132,6 +141,13 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 			h.metrics.RecordCommand("config_update", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_update", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "update")
 	}
 
@@ -147,6 +163,13 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 			h.metrics.RecordCommand("config_update", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_update", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "update")
 	}
 
@@ -154,6 +177,13 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 	if h.metrics != nil {
 		h.metrics.RecordCommand("config_update", "success", duration.Seconds())
 		h.metrics.RecordSSHCommand("config_update", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	h.logger.Info("config update completed successfully",
@@ -214,6 +244,13 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("source_path", cmd.Params.SourcePath))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting configuration load")
 
@@ -241,6 +278,13 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 			h.metrics.RecordCommand("config_load", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_load", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "load")
 	}
 
@@ -256,6 +300,13 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 			h.metrics.RecordCommand("config_load", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_load", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "load")
 	}
 
@@ -263,6 +314,13 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 	if h.metrics != nil {
 		h.metrics.RecordCommand("config_load", "success", duration.Seconds())
 		h.metrics.RecordSSHCommand("config_load", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	h.logger.Info("config loaded successfully",
@@ -324,6 +382,13 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 		zap.String("database_id", cmd.DatabaseID),
 		zap.String("target_path", cmd.Params.TargetPath))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+		})
+	}
+
 	// Publish progress: started
 	h.publishProgress(ctx, envelope.CorrelationID, &cmd, designer.ProgressStatusStarted, 0, "Starting configuration dump")
 
@@ -351,6 +416,13 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 			h.metrics.RecordCommand("config_dump", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err, output, duration, "dump")
 	}
 
@@ -366,6 +438,13 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 			h.metrics.RecordCommand("config_dump", "error", duration.Seconds())
 			h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
 		}
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        errMsg,
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, errors.New(errMsg), result.Output, duration, "dump")
 	}
 
@@ -373,6 +452,13 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 	if h.metrics != nil {
 		h.metrics.RecordCommand("config_dump", "success", duration.Seconds())
 		h.metrics.RecordSSHCommand("config_dump", duration.Seconds())
+	}
+	// Record timeline: command completed
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+			"command_type": cmd.CommandType,
+			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+		})
 	}
 
 	h.logger.Info("config dumped successfully",

@@ -34,16 +34,18 @@ type TerminateHandler struct {
 	publisher   EventPublisher
 	redisClient RedisClient
 	metrics     MetricsRecorder
+	timeline    TimelineRecorder
 	logger      *zap.Logger
 }
 
 // NewTerminateHandler creates a new TerminateHandler instance
-func NewTerminateHandler(svc SessionManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, logger *zap.Logger) *TerminateHandler {
+func NewTerminateHandler(svc SessionManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *TerminateHandler {
 	return &TerminateHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
+		timeline:    timeline,
 		logger:      logger,
 	}
 }
@@ -91,6 +93,15 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 		zap.String("infobase_id", cmd.InfobaseID),
 		zap.String("database_id", cmd.DatabaseID))
 
+	// Record timeline: command received
+	if h.timeline != nil {
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+			"command_type": cmd.CommandType,
+			"cluster_id":   cmd.ClusterID,
+			"infobase_id":  cmd.InfobaseID,
+		})
+	}
+
 	// Get initial sessions count
 	initialCount, err := h.service.GetSessionsCount(ctx, cmd.ClusterID, cmd.InfobaseID)
 	if err != nil {
@@ -99,6 +110,13 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 			zap.String("cluster_id", cmd.ClusterID),
 			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
@@ -114,6 +132,13 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 			zap.String("cluster_id", cmd.ClusterID),
 			zap.String("infobase_id", cmd.InfobaseID),
 			zap.Error(err))
+		// Record timeline: command failed
+		if h.timeline != nil {
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+				"command_type": cmd.CommandType,
+				"error":        err.Error(),
+			})
+		}
 		return h.publishError(ctx, envelope.CorrelationID, &cmd, err)
 	}
 
@@ -170,6 +195,14 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 			if h.metrics != nil {
 				h.metrics.RecordCommand("terminate", "partial", duration.Seconds())
 			}
+			// Record timeline: command completed (partial)
+			if h.timeline != nil {
+				h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+					"command_type": cmd.CommandType,
+					"status":       "partial",
+					"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+				})
+			}
 			h.publishPartialSuccess(ctx, correlationID, cmd, initialCount, terminatedCount, finalCount, duration)
 			return
 
@@ -200,6 +233,14 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 				// Record metrics for successful operation
 				if h.metrics != nil {
 					h.metrics.RecordCommand("terminate", "success", duration.Seconds())
+				}
+				// Record timeline: command completed (success)
+				if h.timeline != nil {
+					h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+						"command_type": cmd.CommandType,
+						"status":       "success",
+						"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
+					})
 				}
 				h.publishSuccess(ctx, correlationID, cmd, initialCount, terminatedCount, 0, duration)
 				return

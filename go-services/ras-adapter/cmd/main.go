@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/api/rest"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/config"
@@ -16,6 +17,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/service"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/version"
 	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/redis/go-redis/v9"
 	"github.com/ThreeDotsLabs/watermill"
 	"go.uber.org/zap"
@@ -106,12 +108,17 @@ func main() {
 	rasMetrics := metrics.NewRASMetrics()
 	logger.Info("prometheus metrics initialized")
 
-	// Initialize Event Handlers with metrics
-	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, rasMetrics, logger)
-	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
-	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
-	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
-	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, rasMetrics, logger)
+	// Initialize Timeline recorder for observability
+	timelineCfg := tracing.DefaultTimelineConfig("ras-adapter")
+	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
+	logger.Info("timeline recorder initialized")
+
+	// Initialize Event Handlers with metrics and timeline
+	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, rasMetrics, timeline, logger)
+	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
+	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
+	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
+	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
 
 	// Subscribe to Redis channels (only if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
@@ -218,6 +225,26 @@ func main() {
 	// Close publisher
 	if err := publisher.Close(); err != nil {
 		logger.Error("failed to close publisher", zap.Error(err))
+	}
+
+	// Wait for pending timeline writes to complete (with timeout)
+	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+		// Wait with timeout to avoid blocking forever
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer waitCancel()
+
+		done := make(chan struct{})
+		go func() {
+			rt.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			logger.Info("timeline writes completed")
+		case <-waitCtx.Done():
+			logger.Warn("timeline writes timeout, some events may be lost")
+		}
 	}
 
 	// Shutdown HTTP server
