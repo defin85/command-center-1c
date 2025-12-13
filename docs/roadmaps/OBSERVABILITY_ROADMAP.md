@@ -1,9 +1,9 @@
 # Roadmap: Observability — Метрики и Error Feedback
 
-> **Статус:** In Progress (Фазы 1-2 завершены)
-> **Версия:** 1.2
+> **Статус:** In Progress (Фазы 1-3 завершены)
+> **Версия:** 1.3
 > **Создан:** 2025-12-12
-> **Обновлён:** 2025-12-12
+> **Обновлён:** 2025-12-13
 > **Автор:** Claude Code
 
 ---
@@ -295,11 +295,11 @@ operation:timeline:{operation_id}
 ### 3.3 Реализация
 
 **Subtasks:**
-- [ ] 3.3.1: Создать `shared/tracing/timeline.go` — запись в Redis ZSET
-- [ ] 3.3.2: Интегрировать в Worker (каждый шаг саги)
-- [ ] 3.3.3: Интегрировать в адаптеры (получение/завершение команды)
-- [ ] 3.3.4: Django API `/api/v2/operations/{id}/timeline`
-- [ ] 3.3.5: Frontend компонент OperationTimeline
+- [x] 3.3.1: Создать `shared/tracing/timeline.go` — запись в Redis ZSET ✅ (60fd038)
+- [x] 3.3.2: Интегрировать в Worker (каждый шаг саги) ✅ (d1e11fc)
+- [x] 3.3.3: Интегрировать в адаптеры (получение/завершение команды) ✅ (100fd34)
+- [x] 3.3.4: Django API `/api/v2/internal/operations/{id}/timeline` ✅ (0f6c209)
+- [x] 3.3.5: Frontend Waterfall Timeline в Service Mesh ✅ (be95caa)
 
 ### 3.4 Jaeger Integration (опционально)
 
@@ -364,7 +364,7 @@ operation:timeline:{operation_id}
 **Subtasks:**
 - [ ] 5.1: WebSocket events для operation flow
 - [ ] 5.2: Frontend: анимация пути операции
-- [ ] 5.3: Frontend: Operation detail drawer с timeline
+- [x] 5.3: Frontend: Operation detail drawer с timeline ✅ (реализовано в 3.3.5 как Waterfall Timeline Drawer)
 - [ ] 5.4: Frontend: фильтры по статусу, времени, типу
 
 ---
@@ -404,9 +404,11 @@ operation:timeline:{operation_id}
 - [x] Prometheus scrape config обновлён (prometheus-native.yml)
 - [ ] Service Mesh диаграмма показывает реальные метрики (отложено)
 
-### Фаза 3
-- [ ] API возвращает timeline операции
-- [ ] Timeline показывает все этапы с timestamps
+### Фаза 3 ✅ ЗАВЕРШЕНА
+- [x] API возвращает timeline операции (`GET /api/v2/internal/operations/{id}/timeline`)
+- [x] Timeline показывает все этапы с timestamps (Waterfall Timeline в Service Mesh)
+- [x] Все сервисы записывают события: Worker, RAS, OData, Designer, Batch adapters
+- [x] 135+ тестов (Go + Python + TypeScript)
 
 ### Фаза 4
 - [ ] 4 Grafana dashboards доступны
