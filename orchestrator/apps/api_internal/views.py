@@ -1001,3 +1001,65 @@ def _render_template_data(data, context):
     else:
         # Return non-template values as-is
         return data
+
+
+# =============================================================================
+# Timeline Endpoints (Operation Observability)
+# =============================================================================
+
+@api_view(['GET'])
+@permission_classes([IsInternalService])
+def get_operation_timeline(request, operation_id: str):
+    """
+    GET /api/v2/internal/operations/{operation_id}/timeline
+
+    Get operation execution timeline from Redis.
+
+    Query params:
+        limit: int (default: 100, max: 1000)
+        offset: int (default: 0)
+
+    Response:
+    {
+        "operation_id": "op-123",
+        "timeline": [
+            {
+                "timestamp": 1734567890123,
+                "event": "operation.started",
+                "service": "worker",
+                "metadata": {}
+            }
+        ],
+        "total_events": 5,
+        "duration_ms": 1234
+    }
+    """
+    from apps.operations.models import BatchOperation
+    from apps.operations.redis_client import redis_client
+
+    # Validate operation exists (using exists() for efficiency)
+    if not BatchOperation.objects.filter(id=operation_id).exists():
+        return Response(
+            {'success': False, 'error': f'Operation {operation_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Parse query params
+    try:
+        limit = min(int(request.query_params.get('limit', 100)), 1000)
+        offset = max(int(request.query_params.get('offset', 0)), 0)
+    except (ValueError, TypeError):
+        limit, offset = 100, 0
+
+    # Get timeline from Redis
+    events, total = redis_client.get_timeline(operation_id, limit, offset)
+
+    # Get accurate duration (first to last event of entire timeline)
+    duration_ms = redis_client.get_timeline_duration(operation_id)
+
+    return Response({
+        'operation_id': operation_id,
+        'timeline': events,
+        'total_events': total,
+        'duration_ms': duration_ms
+    }, status=status.HTTP_200_OK)

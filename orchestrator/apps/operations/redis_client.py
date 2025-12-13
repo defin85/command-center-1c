@@ -173,6 +173,79 @@ class RedisClient:
         key = settings.REDIS_KEY_TASK_LOCK.format(task_id=task_id)
         return self.client.exists(key) > 0
 
+    # ========== Timeline Operations ==========
+
+    TIMELINE_KEY_PREFIX = "operation:timeline:"
+
+    def get_timeline(
+        self,
+        operation_id: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> tuple[list[dict], int]:
+        """
+        Get operation timeline from Redis ZSET.
+
+        Args:
+            operation_id: Operation ID
+            limit: Max events to return
+            offset: Starting offset
+
+        Returns:
+            (events_list, total_count)
+        """
+        key = f"{self.TIMELINE_KEY_PREFIX}{operation_id}"
+
+        # Get total count
+        total = self.client.zcard(key)
+
+        # Get range with scores (sorted by timestamp ascending)
+        start = offset
+        end = offset + limit - 1
+        results = self.client.zrange(key, start, end, withscores=True)
+
+        events = []
+        for member, score in results:
+            try:
+                data = json.loads(member)
+                events.append({
+                    "timestamp": int(score),
+                    "event": data.get("event", ""),
+                    "service": data.get("service", ""),
+                    "metadata": data.get("metadata", {})
+                })
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"Invalid JSON in timeline for {operation_id}: {str(member)[:100]}, error: {e}"
+                )
+                continue
+
+        return events, total
+
+    def get_timeline_duration(self, operation_id: str) -> Optional[int]:
+        """
+        Get duration from first to last event in timeline.
+
+        Args:
+            operation_id: Operation ID
+
+        Returns:
+            Duration in milliseconds or None if < 2 events
+        """
+        key = f"{self.TIMELINE_KEY_PREFIX}{operation_id}"
+
+        # Get first event
+        first = self.client.zrange(key, 0, 0, withscores=True)
+        if not first:
+            return None
+
+        # Get last event
+        last = self.client.zrange(key, -1, -1, withscores=True)
+        if not last or first[0][1] == last[0][1]:
+            return None
+
+        return int(last[0][1] - first[0][1])
+
     # ========== Progress Tracking ==========
 
     def update_progress(self, task_id: str, progress: int, status: str) -> bool:

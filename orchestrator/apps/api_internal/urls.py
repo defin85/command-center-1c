@@ -107,4 +107,13 @@ urlpatterns = [
         views.render_template,
         name='render-template'
     ),
+
+    # ========================================================================
+    # Timeline (Operation Observability)
+    # ========================================================================
+    path(
+        'operations/<str:operation_id>/timeline',
+        views.get_operation_timeline,
+        name='get-operation-timeline'
+    ),
 ]

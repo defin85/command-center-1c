@@ -161,3 +161,26 @@ class TemplateRenderResponseSerializer(serializers.Serializer):
     rendered = serializers.JSONField()
     success = serializers.BooleanField()
     error = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+# =============================================================================
+# Timeline Serializers (Operation Observability)
+# =============================================================================
+
+
+class TimelineEventSerializer(serializers.Serializer):
+    """Single timeline event."""
+
+    timestamp = serializers.IntegerField(help_text="Timestamp in milliseconds")
+    event = serializers.CharField()
+    service = serializers.CharField(required=False, default="")
+    metadata = serializers.JSONField(required=False, default=dict)
+
+
+class TimelineResponseSerializer(serializers.Serializer):
+    """Response for get-operation-timeline endpoint."""
+
+    operation_id = serializers.CharField()
+    timeline = TimelineEventSerializer(many=True)
+    total_events = serializers.IntegerField()
+    duration_ms = serializers.IntegerField(allow_null=True)
