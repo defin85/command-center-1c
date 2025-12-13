@@ -1,0 +1,228 @@
+/**
+ * Waterfall Timeline Styles
+ *
+ * Visualization of operation timeline as horizontal waterfall bars.
+ */
+
+.waterfall-container {
+  width: 100%;
+  font-size: 13px;
+}
+
+.waterfall-empty {
+  padding: 24px;
+  text-align: center;
+  color: #8c8c8c;
+}
+
+/* Header with time markers */
+.waterfall-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 8px;
+}
+
+.waterfall-header-label {
+  width: 220px;
+  min-width: 220px;
+  font-weight: 500;
+  color: #595959;
+  padding-right: 12px;
+}
+
+.waterfall-header-timeline {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  padding-right: 60px;
+}
+
+.waterfall-time-marker {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+/* Row container */
+.waterfall-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.waterfall-row-wrapper {
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.waterfall-row-wrapper:last-child {
+  border-bottom: none;
+}
+
+/* Individual row */
+.waterfall-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  transition: background-color 0.2s;
+}
+
+.waterfall-row:hover {
+  background-color: #fafafa;
+}
+
+.waterfall-row-expanded {
+  background-color: #f5f5f5;
+}
+
+/* Event label section */
+.waterfall-label {
+  width: 220px;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+  overflow: hidden;
+}
+
+.waterfall-service-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  font-size: 14px;
+  color: #595959;
+}
+
+.waterfall-event-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: #262626;
+}
+
+.waterfall-status-tag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  margin: 0;
+  border-radius: 2px;
+}
+
+/* Bar container */
+.waterfall-bar-container {
+  flex: 1;
+  height: 18px;
+  position: relative;
+  background-color: #fafafa;
+  border-radius: 2px;
+  margin-right: 12px;
+}
+
+.waterfall-bar {
+  position: absolute;
+  top: 2px;
+  height: 14px;
+  min-width: 4px;
+  border-radius: 2px;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.waterfall-bar:hover {
+  opacity: 0.85;
+}
+
+/* Duration label */
+.waterfall-duration {
+  width: 48px;
+  min-width: 48px;
+  text-align: right;
+  font-size: 11px;
+  color: #8c8c8c;
+  font-family: monospace;
+}
+
+/* Metadata section */
+.waterfall-metadata-collapse {
+  background: transparent;
+}
+
+.waterfall-metadata-collapse .ant-collapse-item {
+  border: none;
+}
+
+.waterfall-metadata-collapse .ant-collapse-content {
+  background: #fafafa;
+  border-radius: 0 0 4px 4px;
+}
+
+.waterfall-metadata-collapse .ant-collapse-content-box {
+  padding: 8px 12px 8px 228px;
+}
+
+.waterfall-metadata-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.waterfall-metadata-item {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.waterfall-metadata-key {
+  color: #8c8c8c;
+  min-width: 100px;
+}
+
+.waterfall-metadata-value {
+  color: #262626;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.waterfall-metadata-empty {
+  color: #bfbfbf;
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* Status-specific bar styles */
+.waterfall-bar[style*="rgb(24, 144, 255)"] {
+  /* received - blue */
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+}
+
+.waterfall-bar[style*="rgb(82, 196, 26)"] {
+  /* completed - green */
+  background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+}
+
+.waterfall-bar[style*="rgb(255, 77, 79)"] {
+  /* failed - red */
+  background: linear-gradient(90deg, #ff4d4f 0%, #ff7875 100%);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .waterfall-header-label,
+  .waterfall-label {
+    width: 160px;
+    min-width: 160px;
+  }
+
+  .waterfall-event-name {
+    font-size: 11px;
+  }
+
+  .waterfall-metadata-collapse .ant-collapse-content-box {
+    padding-left: 168px;
+  }
+}

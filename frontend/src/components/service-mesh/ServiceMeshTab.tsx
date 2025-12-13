@@ -5,23 +5,22 @@
  * - SystemHealthCard (header)
  * - ServiceFlowDiagram (main visualization)
  * - ServiceDetailDrawer (right drawer)
+ * - OperationTimelineDrawer (timeline visualization)
  * - RecentOperationsTable (bottom)
  */
 import React, { useState, useCallback, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Alert, Spin } from 'antd'
 import useServiceMesh from '../../hooks/useServiceMesh'
 import { useResponsiveDirection } from '../../hooks/useResponsiveDirection'
 import SystemHealthCard from './SystemHealthCard'
 import ServiceFlowDiagram from './ServiceFlowDiagram'
 import ServiceDetailDrawer from './ServiceDetailDrawer'
+import OperationTimelineDrawer from './OperationTimelineDrawer'
 import RecentOperationsTable from './RecentOperationsTable'
 import type { ServiceMetrics } from '../../types/serviceMesh'
 import './ServiceMeshTab.css'
 
 const ServiceMeshTab: React.FC = () => {
-  const navigate = useNavigate()
-
   // Ref for diagram container (used by useResponsiveDirection)
   const diagramContainerRef = useRef<HTMLDivElement>(null)
 
@@ -42,6 +41,9 @@ const ServiceMeshTab: React.FC = () => {
   // Selected service for detail drawer
   const [selectedService, setSelectedService] = useState<string | null>(null)
 
+  // Selected operation for timeline drawer
+  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null)
+
   // Get selected service metrics
   const selectedServiceMetrics: ServiceMetrics | null = useMemo(() => {
     if (!selectedService) return null
@@ -58,10 +60,15 @@ const ServiceMeshTab: React.FC = () => {
     setSelectedService(null)
   }, [])
 
-  // Handle operation click - navigate to unified Operations page with monitor tab
+  // Handle operation click - open timeline drawer
   const handleOperationClick = useCallback((operationId: string) => {
-    navigate(`/operations?tab=monitor&operation=${operationId}`)
-  }, [navigate])
+    setSelectedOperationId(operationId)
+  }, [])
+
+  // Handle timeline drawer close
+  const handleTimelineClose = useCallback(() => {
+    setSelectedOperationId(null)
+  }, [])
 
   // Show loading state if no services yet
   if (services.length === 0 && !connectionError) {
@@ -121,6 +128,13 @@ const ServiceMeshTab: React.FC = () => {
         service={selectedServiceMetrics}
         visible={selectedService !== null}
         onClose={handleDrawerClose}
+      />
+
+      {/* Operation Timeline Drawer */}
+      <OperationTimelineDrawer
+        operationId={selectedOperationId}
+        visible={selectedOperationId !== null}
+        onClose={handleTimelineClose}
       />
     </div>
   )
