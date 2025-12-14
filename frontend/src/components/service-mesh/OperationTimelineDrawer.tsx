@@ -6,7 +6,7 @@
  * across services.
  *
  * Fetches timeline data from:
- * GET /api/v2/internal/operations/{operation_id}/timeline
+ * POST /api/v2/operations/get-operation-timeline/
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Drawer, Spin, Empty, Statistic, Row, Col, Alert } from 'antd'
@@ -45,8 +45,9 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
     setError(null)
 
     try {
-      const response = await apiClient.get<OperationTimelineResponse>(
-        `/api/v2/internal/operations/${opId}/timeline/`
+      const response = await apiClient.post<OperationTimelineResponse>(
+        '/api/v2/operations/get-operation-timeline/',
+        { operation_id: opId }
       )
 
       setTimelineData(response.data)
@@ -56,7 +57,17 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       // Extract error message
       let errorMessage = 'Failed to load timeline data'
       if (axios.isAxiosError(err)) {
-        errorMessage = err.response?.data?.error || err.response?.data?.detail || err.message
+        const data = err.response?.data
+        // Support both formats: { error: "msg" } and { error: { code, message } }
+        if (typeof data?.error === 'object' && data?.error?.message) {
+          errorMessage = data.error.message
+        } else if (typeof data?.error === 'string') {
+          errorMessage = data.error
+        } else if (data?.detail) {
+          errorMessage = data.detail
+        } else {
+          errorMessage = err.message
+        }
       } else if (err instanceof Error) {
         errorMessage = err.message
       }
@@ -125,7 +136,9 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       {/* Loading state */}
       {loading && (
         <div className="operation-timeline-drawer__loading">
-          <Spin size="large" tip="Loading timeline..." />
+          <Spin size="large" tip="Loading timeline...">
+            <div style={{ minHeight: 200 }} />
+          </Spin>
         </div>
       )}
 

@@ -112,7 +112,7 @@ urlpatterns = [
     # Timeline (Operation Observability)
     # ========================================================================
     path(
-        'operations/<str:operation_id>/timeline',
+        'get-operation-timeline',
         views.get_operation_timeline,
         name='get-operation-timeline'
     ),

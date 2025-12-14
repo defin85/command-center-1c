@@ -1004,16 +1004,21 @@ def _render_template_data(data, context):
 # Timeline Endpoints (Operation Observability)
 # =============================================================================
 
-@api_view(['GET'])
+@api_view(['POST'])
 @permission_classes([IsInternalService])
-def get_operation_timeline(request, operation_id: str):
+def get_operation_timeline(request):
     """
-    GET /api/v2/internal/operations/{operation_id}/timeline
+    POST /api/v2/internal/get-operation-timeline
 
     Get operation execution timeline from Redis.
 
-    Query params:
-        limit: int (default: 100, max: 1000)
+    NOTE: Internal endpoint - no ownership check (service-to-service).
+    For public access with ownership validation, use:
+    POST /api/v2/operations/get-operation-timeline/
+
+    Request body:
+        operation_id: str (required)
+        limit: int (default: 100, max: 500)
         offset: int (default: 0)
 
     Response:
@@ -1031,32 +1036,50 @@ def get_operation_timeline(request, operation_id: str):
         "duration_ms": 1234
     }
     """
-    from apps.operations.models import BatchOperation
-    from apps.operations.redis_client import redis_client
+    from apps.operations.services import TimelineService
 
-    # Validate operation exists (using exists() for efficiency)
-    if not BatchOperation.objects.filter(id=operation_id).exists():
+    # Parse request body
+    operation_id = request.data.get('operation_id')
+    if not operation_id:
         return Response(
-            {'success': False, 'error': f'Operation {operation_id} not found'},
-            status=status.HTTP_404_NOT_FOUND
+            {'success': False, 'error': 'operation_id is required'},
+            status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Parse query params
+    # Parse params from body
     try:
-        limit = min(int(request.query_params.get('limit', 100)), 1000)
-        offset = max(int(request.query_params.get('offset', 0)), 0)
+        limit = min(int(request.data.get('limit', 100)), 500)
+        offset = max(int(request.data.get('offset', 0)), 0)
     except (ValueError, TypeError):
         limit, offset = 100, 0
 
-    # Get timeline from Redis
-    events, total = redis_client.get_timeline(operation_id, limit, offset)
+    # Get timeline via service (user=None skips ownership check for internal calls)
+    result = TimelineService.get_timeline(
+        operation_id=operation_id,
+        limit=limit,
+        offset=offset,
+        user=None  # Internal endpoint - no ownership check
+    )
 
-    # Get accurate duration (first to last event of entire timeline)
-    duration_ms = redis_client.get_timeline_duration(operation_id)
+    if not result.success:
+        from apps.operations.services.timeline_service import TimelineErrorCode
+
+        error_msg = result.error or "Unknown error"
+
+        # Use error_code instead of string matching
+        if result.error_code == TimelineErrorCode.NOT_FOUND:
+            return Response(
+                {'success': False, 'error': error_msg},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(
+            {'success': False, 'error': error_msg},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
     return Response({
-        'operation_id': operation_id,
-        'timeline': events,
-        'total_events': total,
-        'duration_ms': duration_ms
+        'operation_id': result.operation_id,
+        'timeline': result.timeline,
+        'total_events': result.total_events,
+        'duration_ms': result.duration_ms
     }, status=status.HTTP_200_OK)

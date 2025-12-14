@@ -19,6 +19,7 @@ from .views import (
     events,
     templates,
     files,
+    timeline,
 )
 
 app_name = 'api_v2'
@@ -60,6 +61,7 @@ urlpatterns = [
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream-ticket/', operations.get_stream_ticket, name='stream-ticket'),
     path('operations/stream/', operations.operation_stream, name='operation-stream'),
+    path('operations/get-operation-timeline/', timeline.get_operation_timeline, name='get-operation-timeline'),
 
     # ========================================================================
     # Workflows

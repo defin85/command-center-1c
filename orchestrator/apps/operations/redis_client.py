@@ -142,11 +142,19 @@ class RedisClient:
         except Exception:
             return 0
 
-    # ========== Idempotency Locks ==========
+    # ========== Enqueue Locks (Orchestrator-side duplicate prevention) ==========
+    # These locks prevent duplicate enqueue requests from reaching the queue.
+    # Key format: cc1c:enqueue:{task_id}:lock
+    # Worker uses different key (cc1c:task:{task_id}:lock) for processing idempotency.
 
-    def acquire_lock(self, task_id: str, ttl_seconds: int = 3600) -> bool:
+    def acquire_enqueue_lock(self, task_id: str, ttl_seconds: int = 3600) -> bool:
         """
-        Acquire idempotency lock.
+        Acquire enqueue lock to prevent duplicate submissions.
+
+        This lock is used by Orchestrator to prevent the same operation
+        from being enqueued multiple times (e.g., double-click protection).
+
+        Note: Worker uses separate lock (REDIS_KEY_TASK_LOCK) for processing.
 
         Args:
             task_id: Operation/Task ID
@@ -154,6 +162,31 @@ class RedisClient:
 
         Returns:
             True if lock acquired, False if already exists
+        """
+        key = settings.REDIS_KEY_ENQUEUE_LOCK.format(task_id=task_id)
+        return self.client.set(key, "orchestrator", nx=True, ex=ttl_seconds)
+
+    def release_enqueue_lock(self, task_id: str) -> bool:
+        """Release enqueue lock (on error before queue)."""
+        key = settings.REDIS_KEY_ENQUEUE_LOCK.format(task_id=task_id)
+        return self.client.delete(key) > 0
+
+    def check_enqueue_lock(self, task_id: str) -> bool:
+        """Check if enqueue lock exists."""
+        key = settings.REDIS_KEY_ENQUEUE_LOCK.format(task_id=task_id)
+        return self.client.exists(key) > 0
+
+    # ========== Legacy Task Locks (kept for backward compatibility) ==========
+    # WARNING: These use cc1c:task:{task_id}:lock which conflicts with Worker!
+    # Use acquire_enqueue_lock() for Orchestrator-side locking instead.
+    # These methods are kept for special cases (sync_cluster, discover_clusters).
+
+    def acquire_lock(self, task_id: str, ttl_seconds: int = 3600) -> bool:
+        """
+        Acquire idempotency lock (legacy - use acquire_enqueue_lock for new code).
+
+        WARNING: This uses REDIS_KEY_TASK_LOCK which may conflict with Worker.
+        For operation enqueue, use acquire_enqueue_lock() instead.
         """
         key = settings.REDIS_KEY_TASK_LOCK.format(task_id=task_id)
         return self.client.set(key, "locked", nx=True, ex=ttl_seconds)

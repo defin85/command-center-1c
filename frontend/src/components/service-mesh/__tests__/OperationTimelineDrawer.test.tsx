@@ -20,7 +20,7 @@ import type { OperationTimelineResponse } from '../../../types/operationTimeline
 // Mock API client
 vi.mock('../../../api/client', () => ({
   apiClient: {
-    get: vi.fn(),
+    post: vi.fn(),
   },
 }))
 
@@ -92,7 +92,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('renders when visible is true', () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -107,7 +107,7 @@ describe('OperationTimelineDrawer', () => {
 
     it('calls onClose when drawer is closed', async () => {
       const user = userEvent.setup()
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -125,7 +125,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('displays formatted operation ID in title', async () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -146,7 +146,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('displays full operation ID when shorter than 12 chars', () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -162,7 +162,7 @@ describe('OperationTimelineDrawer', () => {
 
   describe('Loading State', () => {
     it('shows loading spinner while fetching data', async () => {
-      vi.mocked(apiClient.get).mockImplementation(
+      vi.mocked(apiClient.post).mockImplementation(
         () => new Promise(() => {}) // Never resolves
       )
 
@@ -182,7 +182,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('shows loading spinner immediately when drawer opens', () => {
-      vi.mocked(apiClient.get).mockImplementation(
+      vi.mocked(apiClient.post).mockImplementation(
         () => new Promise(() => {}) // Never resolves
       )
 
@@ -210,7 +210,7 @@ describe('OperationTimelineDrawer', () => {
 
   describe('API Calls', () => {
     it('fetches timeline data when drawer opens', async () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -221,8 +221,9 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith(
-          `/api/v2/internal/operations/${mockOperationId}/timeline/`
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/v2/operations/get-operation-timeline/',
+          { operation_id: mockOperationId }
         )
       })
     })
@@ -236,7 +237,7 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      expect(apiClient.get).not.toHaveBeenCalled()
+      expect(apiClient.post).not.toHaveBeenCalled()
     })
 
     it('does not fetch data when operationId is null', () => {
@@ -248,11 +249,11 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      expect(apiClient.get).not.toHaveBeenCalled()
+      expect(apiClient.post).not.toHaveBeenCalled()
     })
 
     it('refetches data when operationId changes', async () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       const { rerender } = render(
         <OperationTimelineDrawer
@@ -263,8 +264,9 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith(
-          '/api/v2/internal/operations/op-first/timeline/'
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/v2/operations/get-operation-timeline/',
+          { operation_id: 'op-first' }
         )
       })
 
@@ -279,14 +281,15 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith(
-          '/api/v2/internal/operations/op-second/timeline/'
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/v2/operations/get-operation-timeline/',
+          { operation_id: 'op-second' }
         )
       })
     })
 
     it('refetches data when drawer reopens', async () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       const { rerender } = render(
         <OperationTimelineDrawer
@@ -297,7 +300,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledTimes(1)
+        expect(apiClient.post).toHaveBeenCalledTimes(1)
       })
 
       vi.clearAllMocks()
@@ -321,14 +324,14 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledTimes(1)
+        expect(apiClient.post).toHaveBeenCalledTimes(1)
       })
     })
   })
 
   describe('Error State', () => {
     it('shows error message on API failure', async () => {
-      vi.mocked(apiClient.get).mockRejectedValue(new Error('Network error'))
+      vi.mocked(apiClient.post).mockRejectedValue(new Error('Network error'))
 
       render(
         <OperationTimelineDrawer
@@ -345,14 +348,17 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('shows error message from API response.data.error', async () => {
-      const axiosError = {
+      // Create proper AxiosError-like object
+      const axiosError = Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
         response: {
           data: {
             error: 'Operation not found',
           },
+          status: 404,
         },
-      }
-      vi.mocked(apiClient.get).mockRejectedValue(axiosError)
+      })
+      vi.mocked(apiClient.post).mockRejectedValue(axiosError)
 
       render(
         <OperationTimelineDrawer
@@ -368,14 +374,17 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('shows error message from API response.data.detail', async () => {
-      const axiosError = {
+      // Create proper AxiosError-like object
+      const axiosError = Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
         response: {
           data: {
             detail: 'Unauthorized access',
           },
+          status: 401,
         },
-      }
-      vi.mocked(apiClient.get).mockRejectedValue(axiosError)
+      })
+      vi.mocked(apiClient.post).mockRejectedValue(axiosError)
 
       render(
         <OperationTimelineDrawer
@@ -391,7 +400,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('shows default error message for unknown errors', async () => {
-      vi.mocked(apiClient.get).mockRejectedValue('unknown error')
+      vi.mocked(apiClient.post).mockRejectedValue('unknown error')
 
       render(
         <OperationTimelineDrawer
@@ -407,7 +416,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('clears error when drawer is closed', async () => {
-      vi.mocked(apiClient.get).mockRejectedValue(new Error('Network error'))
+      vi.mocked(apiClient.post).mockRejectedValue(new Error('Network error'))
 
       const { rerender } = render(
         <OperationTimelineDrawer
@@ -437,7 +446,7 @@ describe('OperationTimelineDrawer', () => {
 
   describe('Success State', () => {
     beforeEach(() => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
     })
 
     it('displays summary statistics', async () => {
@@ -466,7 +475,7 @@ describe('OperationTimelineDrawer', () => {
         ...mockTimelineResponse,
         duration_ms: null,
       }
-      vi.mocked(apiClient.get).mockResolvedValue({ data: inProgressResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: inProgressResponse })
 
       render(
         <OperationTimelineDrawer
@@ -493,7 +502,7 @@ describe('OperationTimelineDrawer', () => {
         total_events: 4,
         duration_ms: 3000,
       }
-      vi.mocked(apiClient.get).mockResolvedValue({ data: responseWithDuplicates })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: responseWithDuplicates })
 
       render(
         <OperationTimelineDrawer
@@ -560,7 +569,7 @@ describe('OperationTimelineDrawer', () => {
         total_events: 0,
         duration_ms: 0,
       }
-      vi.mocked(apiClient.get).mockResolvedValue({ data: emptyResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: emptyResponse })
 
       render(
         <OperationTimelineDrawer
@@ -602,7 +611,7 @@ describe('OperationTimelineDrawer', () => {
 
   describe('Drawer Configuration', () => {
     it('renders with correct width', () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -619,7 +628,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('renders on right side', () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -635,7 +644,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('has correct CSS class', () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
         <OperationTimelineDrawer
@@ -653,7 +662,7 @@ describe('OperationTimelineDrawer', () => {
 
   describe('Integration', () => {
     it('complete flow: open → load → display → close', async () => {
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockTimelineResponse })
+      vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       const { rerender } = render(
         <OperationTimelineDrawer
@@ -686,8 +695,9 @@ describe('OperationTimelineDrawer', () => {
       })
 
       // Verify API was called
-      expect(apiClient.get).toHaveBeenCalledWith(
-        `/api/v2/internal/operations/${mockOperationId}/timeline/`
+      expect(apiClient.post).toHaveBeenCalledWith(
+        '/api/v2/operations/get-operation-timeline/',
+        { operation_id: mockOperationId }
       )
 
       // Close drawer
@@ -704,7 +714,7 @@ describe('OperationTimelineDrawer', () => {
     })
 
     it('handles rapid open/close without race conditions', async () => {
-      vi.mocked(apiClient.get).mockImplementation(
+      vi.mocked(apiClient.post).mockImplementation(
         () =>
           new Promise((resolve) => {
             setTimeout(() => resolve({ data: mockTimelineResponse }), 100)

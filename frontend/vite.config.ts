@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: '0.0.0.0',  // Allow access from Windows host
+    host: '0.0.0.0',  // Allow access from Windows host via WSL IP
     proxy: {
       '/api': {
         // Port 8180 - outside Windows reserved range (8013-8112)

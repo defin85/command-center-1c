@@ -16,6 +16,7 @@ from . import (
     events,
     templates,
     files,
+    timeline,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     'events',
     'templates',
     'files',
+    'timeline',
 ]

@@ -146,8 +146,8 @@ class OperationsService:
             # 1. Get operation from DB
             operation = BatchOperation.objects.get(id=operation_id)
 
-            # 2. Idempotency check - acquire lock
-            lock_acquired = redis_client.acquire_lock(
+            # 2. Idempotency check - acquire enqueue lock (separate from Worker's task lock)
+            lock_acquired = redis_client.acquire_enqueue_lock(
                 task_id=operation_id,
                 ttl_seconds=3600  # 1 hour
             )
@@ -236,8 +236,8 @@ class OperationsService:
                 exc_info=True
             )
 
-            # Release lock on error
-            redis_client.release_lock(operation_id)
+            # Release enqueue lock on error
+            redis_client.release_enqueue_lock(operation_id)
 
             # Record error metric (use operation type if available from local scope)
             try:
@@ -517,8 +517,9 @@ class OperationsService:
         }
 
         try:
-            # Acquire task lock for Worker (separate from idempotency lock)
-            redis_client.acquire_lock(
+            # Acquire enqueue lock (separate key from Worker's task lock)
+            # This prevents duplicate enqueue, Worker handles processing idempotency
+            redis_client.acquire_enqueue_lock(
                 task_id=op_id,
                 ttl_seconds=3600  # 1 hour
             )
@@ -531,6 +532,22 @@ class OperationsService:
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
                 cluster_id=cluster_id
+            )
+
+            # Publish flow event for Service Mesh visualization
+            flow_publisher.publish_flow(
+                operation_id=op_id,
+                current_service="orchestrator",
+                status="processing",
+                message=f"Cluster sync queued: {cluster.name}",
+                operation_type="sync_cluster",
+                operation_name=f"Sync {cluster.name}",
+                path=["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"],
+                metadata={
+                    "cluster_id": cluster_id,
+                    "cluster_name": cluster.name,
+                    "queue": cls.QUEUE_KEY
+                }
             )
 
             logger.info(
@@ -797,8 +814,8 @@ class OperationsService:
 
         enqueue_success = False
         try:
-            # Acquire task lock for Worker
-            redis_client.acquire_lock(
+            # Acquire enqueue lock (separate from Worker's task lock)
+            redis_client.acquire_enqueue_lock(
                 task_id=op_id,
                 ttl_seconds=3600  # 1 hour
             )
@@ -811,6 +828,21 @@ class OperationsService:
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
                 ras_server=ras_server
+            )
+
+            # Publish flow event for Service Mesh visualization
+            flow_publisher.publish_flow(
+                operation_id=op_id,
+                current_service="orchestrator",
+                status="processing",
+                message=f"Discover clusters queued: {ras_server}",
+                operation_type="discover_clusters",
+                operation_name=f"Discover {ras_server}",
+                path=["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"],
+                metadata={
+                    "ras_server": ras_server,
+                    "queue": cls.QUEUE_KEY
+                }
             )
 
             logger.info(
@@ -957,8 +989,9 @@ class OperationsService:
         }
 
         try:
-            # Acquire idempotency lock
-            redis_client.acquire_lock(
+            # Acquire enqueue lock (separate key from Worker's task lock)
+            # This prevents duplicate enqueue, Worker handles processing idempotency
+            redis_client.acquire_enqueue_lock(
                 task_id=operation_id,
                 ttl_seconds=3600  # 1 hour
             )
@@ -973,6 +1006,21 @@ class OperationsService:
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
                 target_databases_count=len(databases)
+            )
+
+            # Publish flow event for Service Mesh visualization
+            flow_publisher.publish_flow(
+                operation_id=operation_id,
+                current_service="orchestrator",
+                status="processing",
+                message=f"Operation queued: {operation_type}",
+                operation_type=operation_type,
+                operation_name=batch_operation.name,
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
+                metadata={
+                    "target_databases_count": len(databases),
+                    "queue": cls.QUEUE_KEY
+                }
             )
 
             # Update status to QUEUED
@@ -995,8 +1043,6 @@ class OperationsService:
 
         except Exception as exc:
             logger.error(f"Error enqueueing RAS operation: {exc}", exc_info=True)
-            # Release lock on error
-            redis_client.release_lock(operation_id)
             # Mark operation as failed
             batch_operation.status = BatchOperation.STATUS_FAILED
             batch_operation.save(update_fields=['status', 'updated_at'])
