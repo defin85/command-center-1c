@@ -124,7 +124,7 @@ class TestGetOperationTimeline:
         assert response.status_code == 404
         data = response.json()
         assert data['success'] is False
-        assert data['error']['code'] == 'NOT_FOUND'
+        assert data['error']['code'] == 'OPERATION_NOT_FOUND'
 
     @pytest.mark.django_db
     def test_superuser_can_access_any_operation(self, superuser_client, other_user_operation):
