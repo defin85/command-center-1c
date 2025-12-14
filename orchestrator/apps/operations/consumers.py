@@ -49,8 +49,8 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
     # Group name for broadcasting to all connected clients
     GROUP_NAME = "service_mesh_metrics"
 
-    # Redis channel for operation flow events
-    FLOW_CHANNEL = "service_mesh:operation_flow"
+    # Redis stream for operation flow events (migrated from Pub/Sub)
+    FLOW_STREAM = "events:service-mesh:operation-flow"
 
     # Default update interval in seconds
     DEFAULT_INTERVAL = 2
@@ -185,34 +185,76 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
                 await asyncio.sleep(self._interval)
 
     async def _listen_operation_flow(self):
-        """Listen to Redis Pub/Sub for operation flow events."""
+        """Listen to Redis Stream for operation flow events using XREAD (fan-out pattern).
+
+        Uses XREAD without Consumer Groups for fan-out to all connected WebSocket clients.
+        Each client independently reads from the stream starting from '$' (current moment).
+        """
         redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
         redis_conn = None
-        pubsub = None
 
-        logger.debug(f"Starting operation flow listener, redis_url={redis_url}")
+        logger.debug(f"Starting operation flow listener (Redis Streams), redis_url={redis_url}")
 
         try:
             redis_conn = await aioredis.from_url(redis_url, decode_responses=True)
-            pubsub = redis_conn.pubsub()
-            await pubsub.subscribe(self.FLOW_CHANNEL)
 
-            logger.info(f"Subscribed to Redis channel: {self.FLOW_CHANNEL}")
+            # Start reading from current moment ('$' = latest)
+            last_id = '$'
 
-            async for message in pubsub.listen():
-                if not self._running:
-                    break
+            logger.info(f"Listening to Redis stream: {self.FLOW_STREAM}")
 
-                if message['type'] == 'message':
-                    try:
-                        event = json.loads(message['data'])
-                        # Forward event to client
-                        await self.send_json(event)
-                        logger.debug(f"Forwarded flow event: {event.get('operation_id', 'unknown')}")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON in flow event: {e}")
-                    except Exception as e:
-                        logger.error(f"Error forwarding flow event: {e}")
+            while self._running:
+                try:
+                    # XREAD with block timeout (1000ms)
+                    # Returns: [[stream_name, [(message_id, {fields}), ...]]]
+                    messages = await redis_conn.xread(
+                        {self.FLOW_STREAM: last_id},
+                        block=1000,
+                        count=10
+                    )
+
+                    if not messages:
+                        # Timeout - no new messages, continue loop
+                        continue
+
+                    # Process messages from our stream
+                    for stream_name, stream_messages in messages:
+                        for message_id, fields in stream_messages:
+                            try:
+                                # Parse event from 'data' field
+                                data_str = fields.get('data')
+                                if not data_str:
+                                    logger.warning(f"Missing 'data' field in stream message {message_id}")
+                                    # Update last_id even for malformed messages to avoid infinite retry
+                                    last_id = message_id
+                                    continue
+
+                                event = json.loads(data_str)
+
+                                # Forward event to WebSocket client
+                                await self.send_json(event)
+                                logger.debug(
+                                    f"Forwarded flow event from stream: "
+                                    f"operation_id={event.get('operation_id', 'unknown')}, "
+                                    f"message_id={message_id}"
+                                )
+
+                                # Update last_id AFTER successful processing
+                                last_id = message_id
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Invalid JSON in stream message {message_id}: {e}")
+                                # Update last_id to skip malformed message (producer error, not recoverable)
+                                last_id = message_id
+                            except Exception as e:
+                                logger.error(f"Error forwarding flow event {message_id}: {e}")
+                                # DON'T update last_id - retry this message on next iteration
+
+                except asyncio.CancelledError:
+                    raise  # Re-raise to exit loop
+                except Exception as e:
+                    logger.error(f"Error reading from stream: {e}")
+                    # Short delay before retry to avoid tight loop on persistent errors
+                    await asyncio.sleep(1)
 
         except asyncio.CancelledError:
             logger.debug("Operation flow listener cancelled")
@@ -220,8 +262,6 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             logger.error(f"Error in operation flow listener: {e}", exc_info=True)
         finally:
             try:
-                if pubsub:
-                    await pubsub.unsubscribe(self.FLOW_CHANNEL)
                 if redis_conn:
                     await redis_conn.close()
             except Exception:

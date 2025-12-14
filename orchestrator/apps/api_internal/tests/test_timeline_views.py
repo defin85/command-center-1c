@@ -14,7 +14,7 @@ import uuid
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from apps.operations.models import BatchOperation
 

@@ -15,7 +15,7 @@ import hashlib
 import pytest
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile

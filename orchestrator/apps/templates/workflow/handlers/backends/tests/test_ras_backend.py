@@ -10,14 +10,14 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from apps.templates.workflow.handlers.backends.ras import (
     RASBackend,
     RASBackendError,
 )
-from apps.templates.workflow.handlers.base import NodeExecutionMode, NodeExecutionResult
+from apps.templates.workflow.handlers.base import NodeExecutionMode
 
 # Operation type string constants (previously TYPE_* module constants)
 TYPE_LOCK_SCHEDULED_JOBS = 'lock_scheduled_jobs'

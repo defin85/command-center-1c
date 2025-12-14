@@ -11,6 +11,7 @@ from django.conf import settings
 from .models import BatchOperation, Task
 from .serializers import BatchOperationSerializer
 from .redis_client import redis_client
+from .events import flow_publisher
 import logging
 import json
 import redis as redis_module
@@ -218,6 +219,22 @@ def operation_callback(request, operation_id):
             }
         )
 
+        # Publish flow event for Service Mesh visualization
+        flow_status = "completed" if result_status == "completed" else "failed"
+        flow_publisher.publish_flow(
+            operation_id=str(operation_id),
+            current_service="worker",
+            status=flow_status,
+            message=f"Operation {flow_status}: {operation.operation_type}",
+            operation_type=operation.operation_type,
+            operation_name=operation.name or operation.operation_type,
+            path=["frontend", "api-gateway", "orchestrator", "worker"],
+            metadata={
+                "total_results": len(results),
+                "worker_id": worker_id
+            }
+        )
+
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
     except BatchOperation.DoesNotExist:
@@ -264,19 +281,22 @@ def operation_stream(request, operation_id):
     logger.info(f"SSE stream requested for operation {operation_id} by user {user.username}")
 
     def event_stream():
-        """Generator для SSE событий."""
+        """Generator для SSE событий с использованием Redis Streams (XREAD)."""
         logger.info(f"event_stream: Starting for operation {operation_id}")
 
-        # Подключиться к Redis PubSub
+        # Подключиться к Redis
         redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
         redis_conn = redis_module.from_url(
             redis_url,
             decode_responses=True
         )
-        pubsub = redis_conn.pubsub()
-        channel = f"operation:{operation_id}:events"
-        pubsub.subscribe(channel)
-        logger.info(f"event_stream: Subscribed to channel {channel}")
+
+        # Stream name по новому паттерну
+        stream_name = f"events:operation:{operation_id}"
+        # '0-0' = читаем с начала stream для полной истории операции
+        # (MAXLEN=1000 гарантирует сохранение всех событий типичной операции)
+        last_id = '0-0'
+        logger.info(f"event_stream: Will read from stream {stream_name}")
 
         # Отправить начальное состояние
         try:
@@ -303,24 +323,45 @@ def operation_stream(request, operation_id):
                 "operation_id": str(operation_id)
             }
             yield f"data: {json.dumps(error_event)}\n\n"
-            pubsub.unsubscribe()
-            pubsub.close()
             redis_conn.close()
             return
 
-        # Слушать события из Redis PubSub
+        # Читать события из Redis Stream через XREAD с блокировкой
         try:
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    # Переслать событие клиенту
-                    yield f"data: {message['data']}\n\n"
+            while True:
+                # XREAD с block timeout 5000ms (5 сек)
+                # Возвращает None при timeout, продолжаем цикл
+                messages = redis_conn.xread(
+                    {stream_name: last_id},
+                    block=5000,
+                    count=10
+                )
+
+                if not messages:
+                    # Timeout - отправляем heartbeat для поддержания соединения
+                    yield ": heartbeat\n\n"
+                    continue
+
+                # messages = [(stream_name, [(msg_id, fields), ...])]
+                for stream, stream_messages in messages:
+                    for msg_id, fields in stream_messages:
+                        # Поле 'data' содержит JSON строку события
+                        data = fields.get('data', '{}')
+                        yield f"data: {data}\n\n"
+                        # Обновляем last_id для следующего XREAD
+                        last_id = msg_id
+
         except GeneratorExit:
             # Клиент отключился
             logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+            raise
         finally:
-            pubsub.unsubscribe()
-            pubsub.close()
-            redis_conn.close()
+            try:
+                redis_conn.close()
+            except Exception:
+                pass  # Игнорируем ошибки при закрытии
 
     response = StreamingHttpResponse(
         event_stream(),

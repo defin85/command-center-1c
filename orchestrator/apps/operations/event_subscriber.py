@@ -16,7 +16,6 @@ import signal
 import sys
 import time
 import os
-import threading
 from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
@@ -69,11 +68,9 @@ def _record_batch_metric(operation_type: str, status: str):
 
 class EventSubscriber:
     """
-    Subscribes to Redis Streams and Pub/Sub from Go services.
+    Subscribes to Redis Streams from Go services.
 
-    Uses two mechanisms:
-    1. Redis Streams with Consumer Groups - for guaranteed delivery of events
-    2. Redis Pub/Sub - for real-time operation status updates
+    Uses Redis Streams with Consumer Groups for guaranteed delivery of events.
 
     Supported Stream Events:
     - batch-service:extension:installed
@@ -83,10 +80,9 @@ class EventSubscriber:
     - cluster-service:sessions:closed
     - worker:cluster-synced
     - worker:clusters-discovered
-
-    Supported Pub/Sub Patterns:
-    - operation:*:events - Real-time operation status updates from Go Worker
-      (states: PROCESSING, SUCCESS, FAILED)
+    - worker:completed
+    - worker:failed
+    - commands:worker:dlq (Dead Letter Queue)
     """
 
     def __init__(self):
@@ -103,16 +99,6 @@ class EventSubscriber:
         self.consumer_group = "orchestrator-group"
         self.consumer_name = f"orchestrator-{os.getpid()}"
         self.running = True
-
-        # Pub/Sub client for operation events from Go Worker
-        self.pubsub_client = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=int(settings.REDIS_PORT),
-            password=redis_password if redis_password else None,
-            decode_responses=True
-        )
-        self.pubsub = None
-        self.pubsub_thread = None
 
         # Streams to subscribe to (stream_name: last_id)
         # '>' means read only new messages
@@ -175,9 +161,6 @@ class EventSubscriber:
         # Setup consumer groups
         self.setup_consumer_groups()
 
-        # Start Pub/Sub listener for operation events in separate thread
-        self._start_pubsub_listener()
-
         # Main loop
         while self.running:
             try:
@@ -217,252 +200,6 @@ class EventSubscriber:
                 time.sleep(1)
 
         logger.info("Event subscriber stopped")
-
-        # Stop Pub/Sub listener
-        self._stop_pubsub_listener()
-
-    def _start_pubsub_listener(self):
-        """
-        Start Pub/Sub listener for operation events in a separate thread.
-
-        Subscribes to pattern `operation:*:events` to receive real-time
-        status updates from Go Worker.
-        """
-        try:
-            self.pubsub = self.pubsub_client.pubsub()
-            self.pubsub.psubscribe(**{'operation:*:events': self._pubsub_message_handler})
-
-            # Start listener thread
-            self.pubsub_thread = threading.Thread(
-                target=self._run_pubsub_listener,
-                name="pubsub-operation-listener",
-                daemon=True
-            )
-            self.pubsub_thread.start()
-            logger.info("Pub/Sub listener started for pattern 'operation:*:events'")
-
-        except Exception as e:
-            logger.error(f"Failed to start Pub/Sub listener: {e}", exc_info=True)
-
-    def _stop_pubsub_listener(self):
-        """Stop Pub/Sub listener and cleanup resources."""
-        try:
-            if self.pubsub:
-                self.pubsub.punsubscribe()
-                self.pubsub.close()
-                logger.info("Pub/Sub listener stopped")
-        except Exception as e:
-            logger.error(f"Error stopping Pub/Sub listener: {e}")
-
-    def _run_pubsub_listener(self):
-        """
-        Run Pub/Sub listener loop in separate thread.
-
-        Reads messages from subscribed patterns and dispatches to handlers.
-        Reconnects automatically on connection errors.
-        """
-        logger.info("Pub/Sub listener thread started")
-
-        while self.running:
-            try:
-                # get_message() with timeout to allow graceful shutdown
-                message = self.pubsub.get_message(timeout=1.0)
-                if message is None:
-                    continue
-
-                # Skip subscribe/unsubscribe confirmation messages
-                if message['type'] in ('psubscribe', 'punsubscribe'):
-                    continue
-
-                # Pattern messages have type 'pmessage'
-                if message['type'] == 'pmessage':
-                    # Already handled by _pubsub_message_handler via callback
-                    pass
-
-            except redis.ConnectionError as e:
-                logger.error(f"Pub/Sub connection lost: {e}, reconnecting in 5s...")
-                time.sleep(5)
-                try:
-                    self._reconnect_pubsub()
-                except Exception as re:
-                    logger.error(f"Pub/Sub reconnection failed: {re}")
-
-            except Exception as e:
-                logger.error(f"Error in Pub/Sub listener: {e}", exc_info=True)
-                time.sleep(1)
-
-        logger.info("Pub/Sub listener thread stopped")
-
-    def _reconnect_pubsub(self):
-        """Reconnect Pub/Sub after connection loss."""
-        try:
-            if self.pubsub:
-                self.pubsub.close()
-        except Exception:
-            pass
-
-        redis_password = getattr(settings, 'REDIS_PASSWORD', None)
-        self.pubsub_client = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=int(settings.REDIS_PORT),
-            password=redis_password if redis_password else None,
-            decode_responses=True
-        )
-        self.pubsub = self.pubsub_client.pubsub()
-        self.pubsub.psubscribe(**{'operation:*:events': self._pubsub_message_handler})
-        logger.info("Pub/Sub reconnected successfully")
-
-    def _pubsub_message_handler(self, message: dict):
-        """
-        Callback handler for Pub/Sub messages.
-
-        Called by redis-py for each message matching subscribed pattern.
-
-        Args:
-            message: Dict with keys: type, pattern, channel, data
-        """
-        channel = message.get('channel', '')
-        data_str = message.get('data', '')
-
-        logger.debug(f"Pub/Sub message received: channel={channel}")
-
-        try:
-            # Parse JSON data
-            if isinstance(data_str, str) and data_str:
-                data = json.loads(data_str)
-            else:
-                logger.warning(f"Empty or invalid Pub/Sub data from {channel}")
-                return
-
-            # Handle the operation event
-            self.handle_operation_pubsub_event(channel, data)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in Pub/Sub message from {channel}: {e}")
-        except Exception as e:
-            logger.error(f"Error handling Pub/Sub message from {channel}: {e}", exc_info=True)
-
-    def handle_operation_pubsub_event(self, channel: str, data: Dict[str, Any]):
-        """
-        Handle operation event from Go Worker via Pub/Sub.
-
-        Updates BatchOperation status based on event state.
-
-        Channel format: operation:{operation_id}:events
-        Data format:
-            {
-                "version": "1.0",
-                "operation_id": "uuid",
-                "timestamp": "2025-12-10T...",
-                "state": "PROCESSING|SUCCESS|FAILED",
-                "microservice": "worker",
-                "message": "...",
-                "metadata": {...}
-            }
-
-        Args:
-            channel: Redis Pub/Sub channel name
-            data: Parsed event data dict
-        """
-        from apps.operations.models import BatchOperation
-
-        operation_id = data.get('operation_id')
-        state = data.get('state')
-        message = data.get('message', '')
-        metadata = data.get('metadata', {})
-        # timestamp available but not used currently: data.get('timestamp', '')
-
-        if not operation_id or not state:
-            logger.warning(f"Invalid Pub/Sub event - missing operation_id or state: {data}")
-            return
-
-        logger.info(
-            f"Processing Pub/Sub event: operation_id={operation_id}, "
-            f"state={state}, message={message[:100] if message else ''}"
-        )
-
-        # Record Prometheus metric for received pubsub event
-        # Use operation.* prefix for consistency with other metrics
-        _record_event_metric(f"operation.{state.lower()}", channel)
-
-        try:
-            # Close old Django DB connections in this thread
-            close_old_connections()
-
-            batch_op = BatchOperation.objects.get(id=operation_id)
-
-            # Map Go Worker state to BatchOperation status
-            if state == 'PROCESSING':
-                batch_op.status = BatchOperation.STATUS_PROCESSING
-                if not batch_op.started_at:
-                    from django.utils import timezone
-                    batch_op.started_at = timezone.now()
-                update_fields = ['status', 'started_at', 'updated_at']
-
-            elif state == 'SUCCESS':
-                batch_op.status = BatchOperation.STATUS_COMPLETED
-                batch_op.progress = 100
-                if not batch_op.completed_at:
-                    from django.utils import timezone
-                    batch_op.completed_at = timezone.now()
-
-                # Store success metadata
-                if metadata:
-                    batch_op.metadata['worker_result'] = metadata
-                if message:
-                    batch_op.metadata['worker_message'] = message
-
-                update_fields = ['status', 'progress', 'completed_at', 'metadata', 'updated_at']
-
-            elif state == 'FAILED':
-                batch_op.status = BatchOperation.STATUS_FAILED
-                batch_op.progress = 100  # Operation is complete (even if failed)
-                if not batch_op.completed_at:
-                    from django.utils import timezone
-                    batch_op.completed_at = timezone.now()
-
-                # Store error info
-                batch_op.metadata['error'] = message
-                if metadata:
-                    batch_op.metadata['error_details'] = metadata
-
-                update_fields = ['status', 'progress', 'completed_at', 'metadata', 'updated_at']
-
-            else:
-                logger.warning(f"Unknown state '{state}' for operation {operation_id}")
-                return
-
-            batch_op.save(update_fields=update_fields)
-            logger.info(f"Updated BatchOperation {operation_id} status to {batch_op.status}")
-
-            # Update related Tasks to match operation status
-            if state in ('SUCCESS', 'FAILED'):
-                from apps.operations.models import Task
-                from django.utils import timezone
-
-                task_status = Task.STATUS_COMPLETED if state == 'SUCCESS' else Task.STATUS_FAILED
-                now = timezone.now()
-
-                # Update all pending/processing tasks for this operation
-                updated_count = batch_op.tasks.filter(
-                    status__in=[Task.STATUS_PENDING, Task.STATUS_QUEUED, Task.STATUS_PROCESSING]
-                ).update(
-                    status=task_status,
-                    completed_at=now,
-                    error_message=message if state == 'FAILED' else '',
-                    updated_at=now
-                )
-
-                if updated_count > 0:
-                    logger.info(f"Updated {updated_count} tasks for operation {operation_id} to {task_status}")
-
-        except BatchOperation.DoesNotExist:
-            logger.warning(f"BatchOperation not found: {operation_id}")
-        except Exception as e:
-            logger.error(
-                f"Error updating BatchOperation {operation_id}: {e}",
-                exc_info=True
-            )
 
     def process_message(self, stream: str, message_id: str, data: Dict[str, str]):
         """

@@ -9,12 +9,10 @@ Tests:
 
 import pytest
 import uuid
-from unittest.mock import patch, Mock
-from io import BytesIO
+from unittest.mock import patch
 
 from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.urls import reverse
 
 from apps.files.models import UploadedFile, FilePurpose
 

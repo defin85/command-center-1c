@@ -2,10 +2,8 @@
 Pytest fixtures for files app tests.
 """
 
-import io
 import pytest
 from datetime import timedelta
-from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile

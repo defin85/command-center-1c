@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 
 from apps.databases.models import Database, Cluster
 from apps.templates.models import OperationTemplate
-from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
+from apps.templates.workflow.models import WorkflowTemplate
 
 
 @pytest.fixture

@@ -9,10 +9,15 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// EventPublisher публикует workflow события в Redis PubSub
+// EventPublisher публикует workflow события в Redis Streams
 type EventPublisher struct {
 	redisClient *redis.Client
 }
+
+const (
+	// StreamMaxLen - максимальное количество записей в stream (approximate)
+	StreamMaxLen = 1000
+)
 
 // NewEventPublisher создает новый publisher
 func NewEventPublisher(redisClient *redis.Client) *EventPublisher {
@@ -32,7 +37,7 @@ type WorkflowEvent struct {
 	Metadata     map[string]interface{} `json:"metadata"`
 }
 
-// Publish публикует событие в Redis PubSub
+// Publish публикует событие в Redis Streams (XADD)
 func (p *EventPublisher) Publish(ctx context.Context, event WorkflowEvent) error {
 	event.Version = "1.0"
 	event.Timestamp = time.Now()
@@ -43,9 +48,21 @@ func (p *EventPublisher) Publish(ctx context.Context, event WorkflowEvent) error
 		return fmt.Errorf("marshal event: %w", err)
 	}
 
-	channel := fmt.Sprintf("operation:%s:events", event.OperationID)
-	if err := p.redisClient.Publish(ctx, channel, data).Err(); err != nil {
-		return fmt.Errorf("publish to channel %s: %w", channel, err)
+	// Stream name: events:operation:{operation_id}
+	stream := fmt.Sprintf("events:operation:%s", event.OperationID)
+
+	// XADD с MAXLEN для автоматического trimming
+	if err := p.redisClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: stream,
+		MaxLen: StreamMaxLen,
+		Approx: true, // ~ для производительности
+		Values: map[string]interface{}{
+			"event_type":   event.State,
+			"data":         string(data),
+			"operation_id": event.OperationID,
+		},
+	}).Err(); err != nil {
+		return fmt.Errorf("xadd to stream %s: %w", stream, err)
 	}
 
 	return nil

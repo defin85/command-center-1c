@@ -802,16 +802,14 @@ def operation_stream(request):
     logger.info(f"SSE stream started for operation {operation_id} by user {username}")
 
     def event_generator():
-        """Generator for SSE events."""
+        """Generator for SSE events using Redis Streams (XREAD)."""
         logger.info(f"event_generator: Starting for operation {operation_id}")
 
-        # Connect to Redis PubSub
+        # Connect to Redis
         redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
         redis_conn = redis_module.from_url(redis_url, decode_responses=True)
-        pubsub = redis_conn.pubsub()
-        channel = f"operation:{operation_id}:events"
-        pubsub.subscribe(channel)
-        logger.info(f"event_generator: Subscribed to channel {channel}")
+        stream_name = f"events:operation:{operation_id}"
+        logger.info(f"event_generator: Will read from stream {stream_name}")
 
         # Send initial state
         try:
@@ -838,24 +836,44 @@ def operation_stream(request):
                 "operation_id": str(operation_id)
             }
             yield f"data: {json.dumps(error_event)}\n\n"
-            pubsub.unsubscribe()
-            pubsub.close()
             redis_conn.close()
             return
 
-        # Listen for events from Redis PubSub
+        # Read events from Redis Stream using XREAD
+        # Start with '0-0' to read from beginning for complete operation history
+        # (MAXLEN=1000 ensures all events of typical operation are preserved)
+        last_id = '0-0'
+
         try:
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    # Forward event to client
-                    yield f"data: {message['data']}\n\n"
+            while True:
+                # XREAD with 5 second block timeout
+                # Returns: [(stream_name, [(msg_id, {fields}), ...])] or None on timeout
+                messages = redis_conn.xread({stream_name: last_id}, block=5000, count=10)
+
+                if not messages:
+                    # Timeout - send heartbeat comment to keep connection alive
+                    yield ": heartbeat\n\n"
+                    continue
+
+                for stream, stream_messages in messages:
+                    for msg_id, fields in stream_messages:
+                        # Extract event data from stream message
+                        # Format: {"event_type": "...", "data": "json_string", "operation_id": "..."}
+                        event_data = fields.get('data', '{}')
+                        yield f"data: {event_data}\n\n"
+                        last_id = msg_id
+
         except GeneratorExit:
             # Client disconnected
             logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+            raise
         finally:
-            pubsub.unsubscribe()
-            pubsub.close()
-            redis_conn.close()
+            try:
+                redis_conn.close()
+            except Exception:
+                pass  # Игнорируем ошибки при закрытии
 
     response = StreamingHttpResponse(
         event_generator(),

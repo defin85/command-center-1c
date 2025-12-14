@@ -22,9 +22,8 @@ from apps.templates.workflow.serializers import (
     WorkflowExecutionListSerializer,
     WorkflowExecutionDetailSerializer,
     WorkflowStepResultSerializer,
-    WorkflowCancelResponseSerializer as BaseWorkflowCancelResponseSerializer,
 )
-from apps.api_v2.serializers.common import ErrorDetailSerializer, ErrorResponseSerializer
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -1533,7 +1532,7 @@ def cancel_execution(request):
             'message': 'Execution cancelled successfully',
         })
 
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to cancel execution")
         return Response({
             'success': False,

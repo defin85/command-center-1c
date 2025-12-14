@@ -288,10 +288,24 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 		return
 	}
 	if !acquired {
-		// Key already exists - task is being processed or was processed
-		log.Warnf("task already being processed, skipping: operation_id=%s", msg.OperationID)
-		c.ackMessage(ctx, messageID)
-		return
+		// Key already exists - check if it's our own lock (after restart)
+		lockOwner, err := c.redis.Get(ctx, lockKey).Result()
+		if err != nil {
+			log.Errorf("failed to get lock owner: %v, operation_id=%s", err, msg.OperationID)
+			c.ackMessage(ctx, messageID)
+			return
+		}
+		if lockOwner == c.workerID {
+			// Our own lock from previous run (restart recovery)
+			log.Infof("recovering own lock after restart, operation_id=%s", msg.OperationID)
+			// Refresh TTL since we're taking over
+			c.redis.Expire(ctx, lockKey, 1*time.Hour)
+		} else {
+			// Another worker is processing this task
+			log.Warnf("task already being processed by %s, skipping: operation_id=%s", lockOwner, msg.OperationID)
+			c.ackMessage(ctx, messageID)
+			return
+		}
 	}
 
 	// Task timeout context

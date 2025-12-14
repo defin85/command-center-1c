@@ -178,7 +178,7 @@ class ODataBackend(AbstractOperationBackend):
         start_time = time.time()
 
         logger.info(
-            f"ODataBackend executing operation",
+            "ODataBackend executing operation",
             extra={
                 'template_id': template.id,
                 'template_name': template.name,
@@ -200,7 +200,7 @@ class ODataBackend(AbstractOperationBackend):
             )
 
             logger.info(
-                f"BatchOperation created",
+                "BatchOperation created",
                 extra={
                     'operation_id': operation.id,
                     'target_databases_count': len(target_databases)

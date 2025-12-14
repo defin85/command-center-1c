@@ -9,7 +9,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from apps.templates.workflow.handlers.backends.odata import ODataBackend

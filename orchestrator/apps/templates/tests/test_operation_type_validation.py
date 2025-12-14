@@ -13,7 +13,6 @@ Tests verify:
 import pytest
 from django.core.exceptions import ValidationError
 from django.contrib.admin.sites import AdminSite
-from django.test import RequestFactory
 
 from apps.templates.models import OperationTemplate, validate_operation_type
 from apps.templates.admin import (

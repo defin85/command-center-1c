@@ -22,13 +22,11 @@ from .serializers import (
     SchedulerRunCompleteSerializer,
     TaskStartSerializer,
     TaskCompleteSerializer,
-    DatabaseCredentialsSerializer,
     HealthUpdateSerializer,
     FailedEventSerializer,
     FailedEventReplayedSerializer,
     FailedEventFailedSerializer,
     FailedEventsCleanupSerializer,
-    TemplateSerializer,
     TemplateRenderRequestSerializer,
 )
 
@@ -908,8 +906,7 @@ def render_template(request):
     }
     """
     from apps.templates.models import OperationTemplate
-    from jinja2 import BaseLoader, TemplateSyntaxError
-    from jinja2.sandbox import SandboxedEnvironment
+    from jinja2 import TemplateSyntaxError
 
     template_id = request.query_params.get('template_id')
     if not template_id:

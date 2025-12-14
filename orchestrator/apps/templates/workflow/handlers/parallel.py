@@ -219,7 +219,7 @@ class ParallelHandler(BaseNodeHandler):
                     failed.append({'node_id': node_id, 'error': str(exc)})
 
         except TimeoutError:
-            logger.warning(f"Timeout waiting for all parallel tasks")
+            logger.warning("Timeout waiting for all parallel tasks")
             timed_out = True
             # Check which futures completed
             for future, node_id in future_to_node.items():

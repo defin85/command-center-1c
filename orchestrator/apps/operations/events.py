@@ -7,7 +7,15 @@ import redis
 
 
 class OperationEventPublisher:
-    """Publisher для workflow events в Redis PubSub."""
+    """Publisher для workflow events в Redis Streams.
+
+    Использует Redis Streams (XADD) вместо Pub/Sub для надёжной доставки
+    и возможности replay событий через XREAD/XRANGE.
+
+    Stream name: events:operation:{operation_id}
+    """
+
+    STREAM_MAXLEN = 1000  # Auto-trim для предотвращения OOM
 
     STATES = {
         'PENDING': 'Операция создана',
@@ -27,6 +35,7 @@ class OperationEventPublisher:
             f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
             decode_responses=True
         )
+        self.logger = __import__('logging').getLogger(__name__)
 
     def publish(
         self,
@@ -36,7 +45,7 @@ class OperationEventPublisher:
         message: Optional[str] = None,
         **metadata: Any
     ) -> None:
-        """Публикует событие workflow в Redis PubSub.
+        """Публикует событие workflow в Redis Stream.
 
         Args:
             operation_id: UUID операции
@@ -55,16 +64,49 @@ class OperationEventPublisher:
             "metadata": metadata
         }
 
-        channel = f"operation:{operation_id}:events"
+        stream_name = f"events:operation:{operation_id}"
         try:
-            self.redis_client.publish(channel, json.dumps(event))
+            stream_fields = {
+                "data": json.dumps(event),
+                "operation_id": operation_id,
+                "event_type": "workflow_event",
+            }
+            self.redis_client.xadd(
+                stream_name,
+                stream_fields,
+                maxlen=self.STREAM_MAXLEN,
+                approximate=True
+            )
+            self.logger.debug(
+                f"Published workflow event to stream: operation_id={operation_id}, "
+                f"state={state}, microservice={microservice}"
+            )
         except Exception as e:
             # Log error but don't fail the operation
-            print(f"Failed to publish event: {e}")
+            self.logger.error(f"Failed to publish workflow event to stream: {e}")
 
 
-# Singleton instance
-event_publisher = OperationEventPublisher()
+# Lazy singleton instance
+_event_publisher = None
+
+
+def get_event_publisher() -> OperationEventPublisher:
+    """Get or create event publisher singleton (lazy initialization)."""
+    global _event_publisher
+    if _event_publisher is None:
+        _event_publisher = OperationEventPublisher()
+    return _event_publisher
+
+
+# Backward compatible alias
+class _EventPublisherProxy:
+    """Proxy for lazy initialization of event_publisher."""
+
+    def __getattr__(self, name):
+        return getattr(get_event_publisher(), name)
+
+
+event_publisher = _EventPublisherProxy()
 
 
 class OperationFlowPublisher:
@@ -72,9 +114,13 @@ class OperationFlowPublisher:
 
     Публикует события о прохождении операций через сервисы для
     визуализации Service Mesh в реальном времени.
+
+    Использует Redis Streams (XADD) вместо Pub/Sub для надёжной доставки
+    и возможности fan-out через XREAD.
     """
 
-    CHANNEL = "service_mesh:operation_flow"
+    STREAM_NAME = "events:service-mesh:operation-flow"
+    STREAM_MAXLEN = 5000  # Auto-trim для предотвращения OOM
 
     def __init__(self):
         """Инициализация Redis клиента."""
@@ -206,15 +252,46 @@ class OperationFlowPublisher:
         }
 
         try:
-            self.redis_client.publish(self.CHANNEL, json.dumps(event))
+            # Формируем данные для XADD (формат как в других streams проекта)
+            stream_fields = {
+                "data": json.dumps(event),
+                "operation_id": operation_id,
+                "event_type": "operation_flow_update",
+            }
+
+            self.redis_client.xadd(
+                self.STREAM_NAME,
+                stream_fields,
+                maxlen=self.STREAM_MAXLEN,
+                approximate=True
+            )
             self.logger.debug(
-                f"Published flow event: operation_id={operation_id}, "
+                f"Published flow event to stream: operation_id={operation_id}, "
                 f"service={current_service}, status={status}"
             )
         except Exception as e:
             # Логируем ошибку, но не прерываем операцию
-            self.logger.error(f"Failed to publish flow event: {e}")
+            self.logger.error(f"Failed to publish flow event to stream: {e}")
 
 
-# Singleton instance для flow events
-flow_publisher = OperationFlowPublisher()
+# Lazy singleton instance для flow events
+_flow_publisher = None
+
+
+def get_flow_publisher() -> OperationFlowPublisher:
+    """Get or create flow publisher singleton (lazy initialization)."""
+    global _flow_publisher
+    if _flow_publisher is None:
+        _flow_publisher = OperationFlowPublisher()
+    return _flow_publisher
+
+
+# Backward compatible alias
+class _FlowPublisherProxy:
+    """Proxy for lazy initialization of flow_publisher."""
+
+    def __getattr__(self, name):
+        return getattr(get_flow_publisher(), name)
+
+
+flow_publisher = _FlowPublisherProxy()

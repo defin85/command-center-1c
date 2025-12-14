@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from ..models import BatchOperation
 from ..redis_client import redis_client
-from ..events import event_publisher
+from ..events import event_publisher, flow_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +193,21 @@ class OperationsService:
 
             # Record Prometheus metric for queued batch operation
             _record_batch_metric(operation.operation_type, 'queued')
+
+            # Publish flow event for Service Mesh visualization
+            flow_publisher.publish_flow(
+                operation_id=str(operation_id),
+                current_service="orchestrator",
+                status="processing",
+                message=f"Operation queued: {operation.operation_type}",
+                operation_type=operation.operation_type,
+                operation_name=operation.name or operation.operation_type,
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
+                metadata={
+                    "target_databases_count": len(message["target_databases"]),
+                    "queue": cls.QUEUE_KEY
+                }
+            )
 
             return EnqueueResult(
                 success=True,

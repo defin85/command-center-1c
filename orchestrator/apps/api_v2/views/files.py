@@ -18,7 +18,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.files.models import UploadedFile, FilePurpose
 from apps.files.services import FileStorageService
-from apps.api_v2.serializers.common import ErrorDetailSerializer, ErrorResponseSerializer
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 
 
 logger = logging.getLogger(__name__)
