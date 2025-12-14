@@ -8,8 +8,8 @@
  *
  * Uses shared utilities from Operations page for consistency.
  */
-import React, { useState, useEffect } from 'react'
-import { Table, Tag, Tooltip, Button, Empty } from 'antd'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Table, Tag, Tooltip, Button, Empty, Select } from 'antd'
 import { ReloadOutlined, EyeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { ServiceOperation } from '../../types/serviceMesh'
@@ -19,6 +19,19 @@ import { getStatusColor } from '../../pages/Operations'
 import './RecentOperationsTable.css'
 
 const api = getV2()
+
+/** Maximum number of operations to display */
+const DISPLAY_LIMIT = 20
+
+/** Available status options for filtering */
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'processing', label: 'Processing' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
 
 interface RecentOperationsTableProps {
   selectedService: string | null
@@ -60,33 +73,83 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
 }) => {
   const [operations, setOperations] = useState<ServiceOperation[]>([])
   const [loading, setLoading] = useState(true)
-  const [total, setTotal] = useState(0)
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  // Request ID for race condition protection (requestId pattern)
+  const requestIdRef = useRef(0)
 
-  // Fetch operations
+  // Fetch operations with race condition protection
   const fetchOperations = async () => {
+    const currentRequestId = ++requestIdRef.current
     setLoading(true)
     try {
       const rawResponse = await api.getOperationsListOperations({ limit: 50 })
+      // Ignore response if a newer request was started
+      if (currentRequestId !== requestIdRef.current) {
+        return
+      }
       const response = transformOperationListResponse(rawResponse)
-      // Apply client-side service filter if selected
-      const filtered = selectedService
-        ? response.operations.filter(op => op.service === selectedService)
-        : response.operations
-      setOperations(filtered.slice(0, 20))
-      setTotal(selectedService ? filtered.length : response.total)
+      setOperations(response.operations)
     } catch (error) {
+      // Ignore if newer request started
+      if (currentRequestId !== requestIdRef.current) {
+        return
+      }
       console.error('Failed to fetch operations:', error)
       setOperations([])
     } finally {
-      setLoading(false)
+      // Only update loading if this is the latest request
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
-  // Fetch on mount and when service filter changes
+  // Fetch on mount
   useEffect(() => {
     fetchOperations()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedService])
+  }, [])
+
+  // Client-side filtering with useMemo (single source of truth)
+  const allFilteredOperations = useMemo(() => {
+    let result = operations
+    if (selectedService) {
+      result = result.filter(op => op.service === selectedService)
+    }
+    if (statusFilter.length > 0) {
+      result = result.filter(op => statusFilter.includes(op.status))
+    }
+    return result
+  }, [operations, selectedService, statusFilter])
+
+  // Limited operations for display
+  const filteredOperations = useMemo(
+    () => allFilteredOperations.slice(0, DISPLAY_LIMIT),
+    [allFilteredOperations]
+  )
+
+  // Total count from filtered operations
+  const displayTotal = allFilteredOperations.length
+
+  // Build empty message based on active filters
+  const emptyMessage = useMemo(() => {
+    if (!selectedService && statusFilter.length === 0) {
+      return 'No recent operations'
+    }
+    // For multiple statuses, show count instead of listing all
+    const statusText = statusFilter.length > 2
+      ? `with ${statusFilter.length} selected statuses`
+      : statusFilter.length > 0
+        ? `with status: ${statusFilter.join(', ')}`
+        : ''
+    if (selectedService && statusFilter.length > 0) {
+      return `No operations for ${selectedService} ${statusText}`
+    }
+    if (selectedService) {
+      return `No operations for ${selectedService}`
+    }
+    return `No operations ${statusText}`
+  }, [selectedService, statusFilter])
 
   // Table columns
   const columns: ColumnsType<ServiceOperation> = [
@@ -184,8 +247,19 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
           )}
         </div>
         <div className="recent-operations-table__actions">
+          <Select
+            mode="multiple"
+            placeholder="Filter by status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUS_OPTIONS}
+            allowClear
+            style={{ width: 200 }}
+            size="small"
+            maxTagCount="responsive"
+          />
           <span className="recent-operations-table__total">
-            {total} total
+            {displayTotal} total
           </span>
           <Button
             type="text"
@@ -201,7 +275,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
 
       <Table
         columns={columns}
-        dataSource={operations}
+        dataSource={filteredOperations}
         rowKey="id"
         loading={loading}
         size="small"
@@ -211,11 +285,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
           emptyText: (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                selectedService
-                  ? `No operations for ${selectedService}`
-                  : 'No recent operations'
-              }
+              description={emptyMessage}
             />
           ),
         }}

@@ -1,164 +1,121 @@
-# Prometheus Recording Rules for A/B Testing Metrics
-# These pre-computed aggregations reduce query load and improve dashboard performance
+# Prometheus Recording Rules for CommandCenter1C
+# Pre-computed aggregations for dashboard performance
+#
+# Based on REAL metrics from services:
+# - cc1c_requests_total{method, path, status} - API Gateway
+# - cc1c_request_duration_seconds - API Gateway
+# - cc1c_scheduler_jobs_total{job_name, status} - Worker scheduler
+# - cc1c_scheduler_job_duration_seconds - Worker scheduler
+# - cc1c_batch_requests_total - Batch Service
+# - cc1c_batch_operation_duration_seconds - Batch Service
+# - events_messages_processed_total - Worker events
+# - events_processing_duration_seconds - Worker events
 
 groups:
-  - name: worker_ab_testing
-    interval: 30s
+  - name: cc1c_api_metrics
+    interval: 15s
     rules:
-      # Success rate по mode (5-minute window)
-      # Используется для быстрого отображения success rate в dashboards
-      - record: worker:success_rate:5m
+      # Request rate per service (5-minute window)
+      - record: cc1c:request_rate:5m
+        expr: sum(rate(cc1c_requests_total[5m])) by (job)
+
+      # Request rate by path (5-minute window)
+      - record: cc1c:request_rate_by_path:5m
+        expr: sum(rate(cc1c_requests_total[5m])) by (path)
+
+      # Error rate - 5xx responses (5-minute window)
+      # Division by zero protection: returns 0 when no requests
+      - record: cc1c:error_rate:5m
         expr: |
-          rate(worker_execution_success_total[5m])
+          sum(rate(cc1c_requests_total{status=~"5.."}[5m])) by (job)
           /
-          rate(worker_execution_mode_total[5m])
-        labels:
-          aggregation: "5m"
+          (sum(rate(cc1c_requests_total[5m])) by (job) > 0 or vector(0))
 
-      # Throughput по mode (5-minute rate)
-      # Операций в секунду по каждому режиму
-      - record: worker:throughput:5m
-        expr: rate(worker_execution_mode_total[5m])
-        labels:
-          aggregation: "5m"
-
-      # P50 latency по mode
-      # Median latency для каждого execution mode
-      - record: worker:latency_p50:5m
-        expr: histogram_quantile(0.50, rate(worker_execution_duration_seconds_bucket[5m]))
-        labels:
-          percentile: "50"
-
-      # P95 latency по mode
-      # 95th percentile latency (good SLO indicator)
-      - record: worker:latency_p95:5m
-        expr: histogram_quantile(0.95, rate(worker_execution_duration_seconds_bucket[5m]))
-        labels:
-          percentile: "95"
-
-      # P99 latency по mode
-      # 99th percentile latency (tail latency)
-      - record: worker:latency_p99:5m
-        expr: histogram_quantile(0.99, rate(worker_execution_duration_seconds_bucket[5m]))
-        labels:
-          percentile: "99"
-
-      # Error rate по mode (5-minute window)
-      # Процент неудачных выполнений
-      - record: worker:error_rate:5m
+      # Error rate overall (5-minute window)
+      # Division by zero protection: returns 0 when no requests
+      - record: cc1c:error_rate_total:5m
         expr: |
-          rate(worker_execution_failure_total[5m])
+          sum(rate(cc1c_requests_total{status=~"5.."}[5m]))
           /
-          rate(worker_execution_mode_total[5m])
-        labels:
-          aggregation: "5m"
+          (sum(rate(cc1c_requests_total[5m])) > 0 or vector(0))
 
-      # Total executions per mode (hourly)
-      # Общее количество выполнений за последний час
-      - record: worker:executions_total:1h
-        expr: sum(rate(worker_execution_mode_total[1h])) by (mode)
-        labels:
-          aggregation: "1h"
+      # P50 latency (5-minute window)
+      - record: cc1c:latency_p50:5m
+        expr: histogram_quantile(0.50, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, job))
 
-      # Compensation rate (hourly)
-      # Frequency of compensation actions
-      - record: worker:compensation_rate:1h
-        expr: rate(worker_compensation_executed_total[1h])
-        labels:
-          aggregation: "1h"
+      # P95 latency (5-minute window)
+      - record: cc1c:latency_p95:5m
+        expr: histogram_quantile(0.95, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, job))
 
-      # Circuit breaker trip rate (hourly)
-      # How often circuit breaker activates
-      - record: worker:circuit_breaker_rate:1h
-        expr: rate(worker_circuit_breaker_trips_total[1h])
-        labels:
-          aggregation: "1h"
+      # P99 latency (5-minute window)
+      - record: cc1c:latency_p99:5m
+        expr: histogram_quantile(0.99, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, job))
+
+  - name: cc1c_scheduler_metrics
+    interval: 15s
+    rules:
+      # Scheduler jobs success rate (5-minute window)
+      # Division by zero protection: returns 0 when no jobs
+      - record: cc1c:scheduler_success_rate:5m
+        expr: |
+          sum(rate(cc1c_scheduler_jobs_total{status="success"}[5m])) by (job_name)
+          /
+          (sum(rate(cc1c_scheduler_jobs_total[5m])) by (job_name) > 0 or vector(0))
+
+      # Scheduler jobs throughput (5-minute window)
+      - record: cc1c:scheduler_throughput:5m
+        expr: sum(rate(cc1c_scheduler_jobs_total[5m])) by (job_name, status)
+
+      # Scheduler job duration P95 (5-minute window)
+      - record: cc1c:scheduler_duration_p95:5m
+        expr: histogram_quantile(0.95, sum(rate(cc1c_scheduler_job_duration_seconds_bucket[5m])) by (le, job_name))
+
+  - name: cc1c_events_metrics
+    interval: 15s
+    rules:
+      # Events throughput (5-minute window)
+      - record: cc1c:events_throughput:5m
+        expr: sum(rate(events_messages_processed_total[5m])) by (event_type)
+
+      # Events total throughput (5-minute window)
+      - record: cc1c:events_throughput_total:5m
+        expr: sum(rate(events_messages_processed_total[5m]))
+
+      # Events processing duration P95 (5-minute window)
+      - record: cc1c:events_duration_p95:5m
+        expr: histogram_quantile(0.95, sum(rate(events_processing_duration_seconds_bucket[5m])) by (le))
+
+  - name: cc1c_batch_metrics
+    interval: 15s
+    rules:
+      # Batch requests rate (5-minute window)
+      - record: cc1c:batch_request_rate:5m
+        expr: sum(rate(cc1c_batch_requests_total[5m])) by (operation_type)
+
+      # Batch operation duration P95 (5-minute window)
+      - record: cc1c:batch_duration_p95:5m
+        expr: histogram_quantile(0.95, sum(rate(cc1c_batch_operation_duration_seconds_bucket[5m])) by (le))
 
   # Hourly aggregations for long-term trends
-  - name: worker_ab_testing_hourly
+  - name: cc1c_hourly_aggregations
     interval: 5m
     rules:
-      # Hourly success rate для trend analysis
-      - record: worker:success_rate:1h
+      # Hourly request rate
+      - record: cc1c:request_rate:1h
+        expr: sum(rate(cc1c_requests_total[1h])) by (job)
+
+      # Hourly error rate
+      # Division by zero protection: returns 0 when no requests
+      - record: cc1c:error_rate:1h
         expr: |
-          rate(worker_execution_success_total[1h])
+          sum(rate(cc1c_requests_total{status=~"5.."}[1h])) by (job)
           /
-          rate(worker_execution_mode_total[1h])
-        labels:
-          aggregation: "1h"
+          (sum(rate(cc1c_requests_total[1h])) by (job) > 0 or vector(0))
 
-      # Hourly throughput для capacity planning
-      - record: worker:throughput:1h
-        expr: rate(worker_execution_mode_total[1h])
-        labels:
-          aggregation: "1h"
+      # Hourly P99 latency
+      - record: cc1c:latency_p99:1h
+        expr: histogram_quantile(0.99, sum(rate(cc1c_request_duration_seconds_bucket[1h])) by (le, job))
 
-      # Hourly P99 latency для SLO tracking
-      - record: worker:latency_p99:1h
-        expr: histogram_quantile(0.99, rate(worker_execution_duration_seconds_bucket[1h]))
-        labels:
-          percentile: "99"
-          aggregation: "1h"
-
-      # Hourly error rate для reliability tracking
-      - record: worker:error_rate:1h
-        expr: |
-          rate(worker_execution_failure_total[1h])
-          /
-          rate(worker_execution_mode_total[1h])
-        labels:
-          aggregation: "1h"
-
-  # Alerting rules (optional - для будущих alerts)
-  - name: worker_ab_testing_alerts
-    interval: 1m
-    rules:
-      # Alert если success rate падает ниже 95% для Event-Driven mode
-      - alert: EventDrivenLowSuccessRate
-        expr: |
-          worker:success_rate:5m{mode="event_driven"} < 0.95
-        for: 5m
-        labels:
-          severity: warning
-          component: worker
-          mode: event_driven
-        annotations:
-          summary: "Event-Driven mode success rate is low"
-          description: "Success rate for Event-Driven mode is {{ $value | humanizePercentage }}, which is below 95% threshold."
-
-      # Alert если HTTP Sync success rate падает ниже 90% (более низкий threshold)
-      - alert: HTTPSyncLowSuccessRate
-        expr: |
-          worker:success_rate:5m{mode="http_sync"} < 0.90
-        for: 5m
-        labels:
-          severity: warning
-          component: worker
-          mode: http_sync
-        annotations:
-          summary: "HTTP Sync mode success rate is low"
-          description: "Success rate for HTTP Sync mode is {{ $value | humanizePercentage }}, which is below 90% threshold."
-
-      # Alert если Circuit Breaker срабатывает слишком часто
-      - alert: HighCircuitBreakerTripRate
-        expr: |
-          sum(rate(worker_circuit_breaker_trips_total[5m])) > 0.1
-        for: 5m
-        labels:
-          severity: critical
-          component: worker
-        annotations:
-          summary: "High circuit breaker trip rate detected"
-          description: "Circuit breaker is tripping at {{ $value | humanize }} times per second, indicating system instability."
-
-      # Alert если Compensation actions слишком частые
-      - alert: HighCompensationRate
-        expr: |
-          sum(rate(worker_compensation_executed_total[5m])) > 0.05
-        for: 10m
-        labels:
-          severity: warning
-          component: worker
-        annotations:
-          summary: "High compensation action rate"
-          description: "Compensation actions are executing at {{ $value | humanize }} times per second, which may indicate failures in normal flow."
+      # Hourly events throughput
+      - record: cc1c:events_throughput:1h
+        expr: sum(rate(events_messages_processed_total[1h]))

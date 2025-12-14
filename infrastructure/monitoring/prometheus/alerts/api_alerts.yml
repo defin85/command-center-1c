@@ -1,0 +1,39 @@
+# API Alerts for CommandCenter1C
+# Alerting rules for API Gateway, latency, and error rates
+
+groups:
+  - name: cc1c_api_alerts
+    interval: 1m
+    rules:
+      # Alert if error rate exceeds 5%
+      - alert: HighErrorRate
+        expr: cc1c:error_rate_total:5m > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}, which exceeds 5% threshold."
+
+      # Alert if P99 latency exceeds 5 seconds
+      - alert: HighLatency
+        expr: cc1c:latency_p99:5m > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High latency detected"
+          description: "P99 latency is {{ $value | humanizeDuration }}, which exceeds 5s threshold."
+
+      # Alert if scheduler job success rate drops below 90%
+      - alert: SchedulerJobFailures
+        expr: cc1c:scheduler_success_rate:5m < 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Scheduler job failures detected"
+          description: "Scheduler job {{ $labels.job_name }} success rate is {{ $value | humanizePercentage }}."

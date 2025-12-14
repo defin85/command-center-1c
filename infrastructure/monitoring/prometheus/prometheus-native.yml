@@ -16,6 +16,9 @@ global:
 
 rule_files:
   - "recording_rules.yml"
+  - "alerts/rollback_alerts.yml"
+  - "alerts/operational.yml"
+  - "alerts/api_alerts.yml"
 
 scrape_configs:
   # Application services running on localhost (native mode)
@@ -65,20 +68,29 @@ scrape_configs:
       - targets: ['localhost:8200']
     metrics_path: '/metrics'
 
-  # PostgreSQL exporter (if installed)
+  # PostgreSQL exporter
   # Installation: pacman -S prometheus-postgres-exporter
-  # - job_name: 'postgres'
-  #   static_configs:
-  #     - targets: ['localhost:9187']
+  # Enable: sudo systemctl enable --now prometheus-postgres-exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['localhost:9187']
 
-  # Redis exporter (if installed)
+  # Redis exporter
   # Installation: pacman -S prometheus-redis-exporter
-  # - job_name: 'redis'
-  #   static_configs:
-  #     - targets: ['localhost:9121']
+  # Enable: sudo systemctl enable --now prometheus-redis-exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:9121']
 
-  # Node exporter for system metrics (optional)
+  # Node exporter for system metrics
   # Installation: pacman -S prometheus-node-exporter
-  # - job_name: 'node'
-  #   static_configs:
-  #     - targets: ['localhost:9100']
+  # Enable: sudo systemctl enable --now prometheus-node-exporter
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
+
+# Frontend (React:5173) не скрапится - React SPA не экспортирует Prometheus метрики.
+# Для мониторинга frontend используйте:
+# - Browser DevTools / Lighthouse для performance
+# - Sentry / LogRocket для error tracking
+# - Real User Monitoring (RUM) решения

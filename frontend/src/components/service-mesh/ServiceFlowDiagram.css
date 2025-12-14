@@ -35,6 +35,42 @@
   stroke-linecap: round;
 }
 
+/* Operation flow animation */
+@keyframes flowPulse {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.react-flow__edge.animated path {
+  stroke-dasharray: 8 8;
+  animation: flowPulse 0.5s linear infinite;
+}
+
+/* Active operation edge glow */
+.react-flow__edge.operation-active path {
+  filter: drop-shadow(0 0 4px #1890ff);
+}
+
+/* Completed operation edge */
+.react-flow__edge.operation-completed path {
+  stroke: #52c41a !important;
+}
+
+/* Failed operation edge */
+.react-flow__edge.operation-failed path {
+  stroke: #ff4d4f !important;
+  filter: drop-shadow(0 0 4px #ff4d4f);
+}
+
+/* Dim inactive edges during operation */
+.react-flow__edge.operation-inactive path {
+  opacity: 0.3;
+}
+
 /* Controls (direction switcher + fullscreen button) */
 .service-flow-diagram__controls {
   position: absolute;

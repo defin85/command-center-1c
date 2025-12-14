@@ -213,6 +213,98 @@ check_python() {
 }
 
 ##############################################################################
+# JSON Validation (Grafana dashboards)
+##############################################################################
+validate_json() {
+    print_header "JSON Validation"
+
+    local dashboard_dir="$PROJECT_ROOT/infrastructure/monitoring/grafana/dashboards"
+
+    if [[ ! -d "$dashboard_dir" ]]; then
+        print_result "JSON Validation" "SKIPPED" "(dashboards dir not found)"
+        return 0
+    fi
+
+    local errors=0
+    local count=0
+
+    for f in "$dashboard_dir"/*.json; do
+        if [[ -f "$f" ]]; then
+            ((count++))
+            if ! python3 -m json.tool "$f" > /dev/null 2>&1; then
+                echo -e "  ${RED}✗${NC} Invalid JSON: $(basename "$f")"
+                ((errors++))
+            fi
+        fi
+    done
+
+    if [[ $count -eq 0 ]]; then
+        print_result "JSON Validation" "SKIPPED" "(no JSON files found)"
+        return 0
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        print_result "JSON Validation" "OK" "($count files checked)"
+    else
+        print_result "JSON Validation" "ERRORS" "($errors/$count files invalid)"
+    fi
+
+    return $errors
+}
+
+##############################################################################
+# Prometheus Rules Validation
+##############################################################################
+validate_prometheus_rules() {
+    print_header "Prometheus Rules Validation"
+
+    if ! command -v promtool &> /dev/null; then
+        echo -e "  ${YELLOW}⚠${NC} promtool not found, skipping validation"
+        echo -e "  Install: ${YELLOW}sudo pacman -S prometheus${NC}"
+        return 0
+    fi
+
+    local rules_dir="$PROJECT_ROOT/infrastructure/monitoring/prometheus"
+    local errors=0
+    local count=0
+
+    # Check recording rules
+    if [[ -f "$rules_dir/recording_rules.yml" ]]; then
+        ((count++))
+        if ! promtool check rules "$rules_dir/recording_rules.yml" 2>/dev/null; then
+            echo -e "  ${RED}✗${NC} Invalid: recording_rules.yml"
+            ((errors++))
+        fi
+    fi
+
+    # Check alert rules
+    if [[ -d "$rules_dir/alerts" ]]; then
+        for f in "$rules_dir/alerts"/*.yml; do
+            if [[ -f "$f" ]]; then
+                ((count++))
+                if ! promtool check rules "$f" 2>/dev/null; then
+                    echo -e "  ${RED}✗${NC} Invalid: $(basename "$f")"
+                    ((errors++))
+                fi
+            fi
+        done
+    fi
+
+    if [[ $count -eq 0 ]]; then
+        print_result "Prometheus Rules" "SKIPPED" "(no rule files found)"
+        return 0
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        print_result "Prometheus Rules" "OK" "($count files checked)"
+    else
+        print_result "Prometheus Rules" "ERRORS" "($errors/$count files invalid)"
+    fi
+
+    return $errors
+}
+
+##############################################################################
 # Go Check (go vet)
 ##############################################################################
 check_go() {
@@ -261,6 +353,10 @@ main() {
     [[ "$CHECK_TS" == true ]] && check_typescript
     [[ "$CHECK_PYTHON" == true ]] && check_python
     [[ "$CHECK_GO" == true ]] && check_go
+
+    # Additional validations (always run)
+    validate_json
+    validate_prometheus_rules
 
     print_header "Summary"
 

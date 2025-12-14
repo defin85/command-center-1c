@@ -1,0 +1,156 @@
+# Operational Alerts for CommandCenter1C
+# Service health, availability, and performance alerts
+
+groups:
+  - name: service_availability
+    interval: 30s
+    rules:
+      # API Gateway down
+      - alert: APIGatewayDown
+        expr: up{job="api-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api-gateway
+        annotations:
+          summary: "API Gateway is down"
+          description: "API Gateway has been unreachable for more than 1 minute."
+
+      # Worker down
+      - alert: WorkerDown
+        expr: up{job="worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: worker
+        annotations:
+          summary: "Worker is down"
+          description: "Worker has been unreachable for more than 1 minute."
+
+      # Orchestrator down
+      - alert: OrchestratorDown
+        expr: up{job="orchestrator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: orchestrator
+        annotations:
+          summary: "Orchestrator is down"
+          description: "Orchestrator has been unreachable for more than 1 minute."
+
+      # Batch Service down
+      - alert: BatchServiceDown
+        expr: up{job="batch-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: batch-service
+        annotations:
+          summary: "Batch Service is down"
+          description: "Batch Service has been unreachable for more than 2 minutes."
+
+      # RAS Adapter down
+      - alert: RASAdapterDown
+        expr: up{job="ras-adapter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: ras-adapter
+        annotations:
+          summary: "RAS Adapter is down"
+          description: "RAS Adapter has been unreachable for more than 2 minutes."
+
+  - name: performance_alerts
+    interval: 1m
+    rules:
+      # High number of active scheduler jobs (potential backlog)
+      - alert: SchedulerBacklog
+        expr: cc1c_scheduler_active_jobs > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Scheduler job backlog detected"
+          description: "{{ $value }} active scheduler jobs, which may indicate backlog."
+
+      # High batch active operations
+      - alert: BatchOperationsBacklog
+        expr: cc1c_batch_active_operations > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: batch-service
+        annotations:
+          summary: "Batch operations backlog detected"
+          description: "{{ $value }} active batch operations, which may indicate backlog."
+
+      # High events processing concurrent handlers
+      - alert: HighEventsConcurrency
+        expr: events_concurrent_handlers > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "High events concurrency"
+          description: "{{ $value }} concurrent event handlers, which may indicate high load."
+
+      # Slow lock acquisition
+      - alert: SlowLockAcquisition
+        expr: histogram_quantile(0.95, rate(cc1c_scheduler_lock_hold_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Slow scheduler lock acquisition"
+          description: "P95 lock hold duration is {{ $value | humanizeDuration }}."
+
+  - name: infrastructure_alerts
+    interval: 1m
+    rules:
+      # PostgreSQL down (requires postgres exporter)
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL exporter is unreachable. Database may be down."
+
+      # Redis down (requires redis exporter)
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis exporter is unreachable. Redis may be down."
+
+      # High memory usage (requires node exporter)
+      # Threshold 0.95 for WSL environments (higher baseline usage)
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}."
+
+      # High disk usage (requires node exporter)
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage on root partition is {{ $value | humanizePercentage }}."

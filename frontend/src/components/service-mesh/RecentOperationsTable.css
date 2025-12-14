@@ -27,6 +27,14 @@
   gap: 12px;
 }
 
+.recent-operations-table__actions .ant-select {
+  min-width: 200px;
+}
+
+.recent-operations-table__actions .ant-select-selector {
+  border-radius: 6px;
+}
+
 .recent-operations-table__total {
   font-size: 12px;
   color: #8c8c8c;

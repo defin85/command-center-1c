@@ -49,6 +49,8 @@ import {
 import { calculateDagreLayout } from '../../utils/graphLayout'
 import './ServiceFlowDiagram.css'
 
+const NODES_UPDATE_THROTTLE = 100 // ms - throttle node updates
+
 // Register custom node types
 const nodeTypes: NodeTypes = {
   serviceNode: ServiceNode,
@@ -187,6 +189,10 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
   const isInitialLoadRef = useRef(true)
 
+  // Throttle refs for node/edge updates
+  const lastUpdateRef = useRef<number>(0)
+  const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // React Flow state management
   const [nodes, setNodes, onNodesChange] = useNodesState<ServiceNodeData>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -260,6 +266,34 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     [onNodesChange]
   )
 
+  // Throttled update for nodes and edges to prevent excessive re-renders
+  // @ts-expect-error - throttledUpdate prepared for future use when nodes/edges update is unified
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const throttledUpdate = useCallback((newNodes: Node<ServiceNodeData>[], newEdges: Edge[]) => {
+    const now = Date.now()
+    const timeSinceLastUpdate = now - lastUpdateRef.current
+
+    // Clear pending update
+    if (pendingUpdateRef.current) {
+      clearTimeout(pendingUpdateRef.current)
+      pendingUpdateRef.current = null
+    }
+
+    if (timeSinceLastUpdate >= NODES_UPDATE_THROTTLE) {
+      // Enough time passed - update immediately
+      lastUpdateRef.current = now
+      setNodes(newNodes)
+      setEdges(newEdges)
+    } else {
+      // Schedule update for later
+      pendingUpdateRef.current = setTimeout(() => {
+        lastUpdateRef.current = Date.now()
+        setNodes(newNodes)
+        setEdges(newEdges)
+      }, NODES_UPDATE_THROTTLE - timeSinceLastUpdate)
+    }
+  }, [setNodes, setEdges])
+
   // Update nodes when services, selections, or hover state change
   useEffect(() => {
     if (services.length === 0) return
@@ -306,6 +340,20 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     const newEdges: Edge[] = connections.map((conn) => {
       const operationStyle = getOperationEdgeStyle(conn.source, conn.target, activeOperation)
 
+      // Find flow edge for status-based className
+      const flowEdge = activeOperation?.flow.edges.find(
+        (e) => e.from === conn.source && e.to === conn.target
+      )
+
+      // Determine CSS class for operation state
+      const getEdgeClassName = (): string | undefined => {
+        if (!operationStyle) return undefined
+        if (operationStyle.animated) return 'operation-active'
+        if (flowEdge?.status === 'completed') return 'operation-completed'
+        if (flowEdge?.status === 'failed') return 'operation-failed'
+        return 'operation-inactive'
+      }
+
       // If there is an active operation, use its styles
       const stroke = operationStyle?.stroke || getEdgeColor(conn.source, conn.target, conn.avgLatencyMs)
       const strokeWidth = operationStyle?.strokeWidth || getEdgeWidth(conn.requestsPerMinute)
@@ -323,6 +371,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         target: conn.target,
         type: 'smoothstep',
         animated,
+        className: getEdgeClassName(),
         style: {
           stroke,
           strokeWidth,

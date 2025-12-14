@@ -136,6 +136,7 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   // Operation flow state
   const [activeOperation, setActiveOperation] = useState<OperationFlowEvent | null>(null)
   const [operationHistory, setOperationHistory] = useState<OperationFlowEvent[]>([])
+  const operationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Cache invalidation state
   const [lastInvalidation, setLastInvalidation] = useState<InvalidationEvent | null>(null)
@@ -194,13 +195,29 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       case 'operation_flow_update': {
         const flowEvent = transformOperationFlow(message as unknown as Record<string, unknown>)
 
+        // Clear previous timeout
+        if (operationTimeoutRef.current) {
+          clearTimeout(operationTimeoutRef.current)
+          operationTimeoutRef.current = null
+        }
+
         if (flowEvent.operation.status === 'processing') {
           // Operation in progress - show it
           setActiveOperation(flowEvent)
+          // Set timeout for stuck operations (60 seconds)
+          operationTimeoutRef.current = setTimeout(() => {
+            console.warn('Operation timeout - clearing stuck operation:', flowEvent.operation_id)
+            setActiveOperation(null)
+          }, 60000)
         } else {
           // Operation completed - remove and add to history
           setActiveOperation(null)
-          setOperationHistory((prev) => [flowEvent, ...prev].slice(0, 10)) // Last 10
+          setOperationHistory((prev) => {
+            // Deduplication by operation_id
+            const exists = prev.some(op => op.operation_id === flowEvent.operation_id)
+            if (exists) return prev
+            return [flowEvent, ...prev].slice(0, 50) // Last 50
+          })
         }
         break
       }
@@ -377,6 +394,11 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
+    // Clear operation timeout
+    if (operationTimeoutRef.current) {
+      clearTimeout(operationTimeoutRef.current)
+      operationTimeoutRef.current = null
+    }
 
     if (wsRef.current) {
       isIntentionalCloseRef.current = true
@@ -401,13 +423,15 @@ export const useServiceMesh = (): UseServiceMeshResult => {
 
   // Send periodic ping to keep connection alive
   useEffect(() => {
-    if (!isConnected) {
-      return
-    }
+    if (!isConnected) return
+
+    // Store ref for cleanup
+    const currentWs = wsRef.current
 
     const pingInterval = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ action: 'ping' }))
+      // Double-check connection state before ping
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send(JSON.stringify({ action: 'ping' }))
       }
     }, PING_INTERVAL)
 

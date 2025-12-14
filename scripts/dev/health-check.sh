@@ -296,6 +296,28 @@ else
 fi
 
 echo ""
+
+##############################################################################
+# Проверка Prometheus exporters (опционально)
+##############################################################################
+echo -e "${BLUE}[7] Prometheus Exporters (опционально):${NC}"
+echo ""
+
+check_exporter() {
+    local name=$1
+    local service=$2
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+        echo -e "  ${name}: ${GREEN}✓ запущен${NC}"
+    else
+        echo -e "  ${name}: ${YELLOW}⚠️  не запущен (sudo systemctl start $service)${NC}"
+    fi
+}
+
+check_exporter "PostgreSQL Exporter" "prometheus-postgres-exporter"
+check_exporter "Redis Exporter" "prometheus-redis-exporter"
+check_exporter "Node Exporter" "prometheus-node-exporter"
+
+echo ""
 echo -e "${BLUE}Управление:${NC}"
 echo -e "  Запустить все:    ${GREEN}./scripts/dev/start-all.sh${NC}"
 echo -e "  Остановить все:   ${GREEN}./scripts/dev/stop-all.sh${NC}"

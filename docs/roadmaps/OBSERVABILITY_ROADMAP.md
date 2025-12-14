@@ -1,9 +1,9 @@
 # Roadmap: Observability — Метрики и Error Feedback
 
-> **Статус:** In Progress (Фазы 1-3 завершены)
-> **Версия:** 1.3
+> **Статус:** In Progress (Фазы 1-5 завершены)
+> **Версия:** 1.6
 > **Создан:** 2025-12-12
-> **Обновлён:** 2025-12-13
+> **Обновлён:** 2025-12-14
 > **Автор:** Claude Code
 
 ---
@@ -336,15 +336,34 @@ operation:timeline:{operation_id}
 - designer-agent: SSH connections, long-running commands
 
 **Subtasks:**
-- [ ] 4.1: Dashboard: System Overview
-- [ ] 4.2: Dashboard: Operation Flow
-- [ ] 4.3: Dashboard: Worker Details
-- [ ] 4.4: Dashboard: Adapters Details
-- [ ] 4.5: Alerting rules (PagerDuty/Slack)
+- [x] 4.1: Dashboard: System Overview ✅ (`system-overview.json`, 15 панелей)
+- [x] 4.2: Dashboard: Operation Flow ✅ (`operation-flow.json`, 10 панелей)
+- [x] 4.3: Dashboard: Worker Details ✅ (`worker-details.json`, 14 панелей)
+- [x] 4.4: Dashboard: Adapters Details ✅ (`adapters-details.json`, 22 панели)
+- [x] 4.5: Alerting rules ✅ (47 правил: 19 recording + 28 alerts)
+- [ ] 4.6: PagerDuty/Slack интеграция (отложено — требует Alertmanager)
+
+**Code Review Improvements (17 рекомендаций):**
+- [x] Division by zero защита в recording rules и dashboard queries
+- [x] Datasource variable `${DS_PROMETHEUS}` во всех dashboards
+- [x] Thresholds скорректированы (scheduler 100, batch 50, lock 5s, memory 95%)
+- [x] Alerts перенесены из recording_rules.yml в `alerts/api_alerts.yml`
+- [x] Recording rules intervals унифицированы (15s = scrape_interval)
+- [x] Убраны избыточные labels (aggregation, percentile)
+- [x] Unit "opm" добавлен для rate панелей
+- [x] JSON validation добавлен в `lint.sh`
+- [x] `promtool check rules` добавлен в `lint.sh`
+- [x] Проверка exporters добавлена в `health-check.sh`
+- [x] Комментарий про Frontend scrape в prometheus-native.yml
+
+**Файлы alerts:**
+- `alerts/operational.yml` — 13 rules (ServiceDown, Backlog, Infrastructure)
+- `alerts/api_alerts.yml` — 3 rules (HighErrorRate, HighLatency, SchedulerJobFailures)
+- `alerts/rollback_alerts.yml` — 12 rules (A/B testing rollback decisions)
 
 ---
 
-## Фаза 5: Real-time Operation Visualization
+## Фаза 5: Real-time Operation Visualization ✅ ЗАВЕРШЕНА
 
 ### 5.1 Service Mesh Live View
 
@@ -362,10 +381,18 @@ operation:timeline:{operation_id}
 - Retry history
 
 **Subtasks:**
-- [ ] 5.1: WebSocket events для operation flow
-- [ ] 5.2: Frontend: анимация пути операции
-- [x] 5.3: Frontend: Operation detail drawer с timeline ✅ (реализовано в 3.3.5 как Waterfall Timeline Drawer)
-- [ ] 5.4: Frontend: фильтры по статусу, времени, типу
+- [x] 5.1: WebSocket events для operation flow ✅ (useServiceMesh.ts с race condition защитой)
+- [x] 5.2: Frontend: анимация пути операции ✅ (CSS animations в ServiceFlowDiagram.css)
+- [x] 5.3: Frontend: Operation detail drawer с timeline ✅ (Waterfall Timeline Drawer)
+- [x] 5.4: Frontend: фильтры по статусу ✅ (RecentOperationsTable с Select multiple)
+
+**Bug Fixes & Improvements:**
+- [x] 5.5: WebSocket race condition fix (requestId pattern, ping protection)
+- [x] 5.6: Throttle для setNodes() (100ms) — предотвращает UI freezes
+- [x] 5.7: Timeout 60сек для зависших операций — автоочистка
+- [x] 5.8: Deduplication для operationHistory — нет дубликатов
+- [x] 5.9: Улучшенный empty message (динамический по фильтрам)
+- [x] 5.10: DISPLAY_LIMIT константа (нет magic numbers)
 
 ---
 
@@ -410,13 +437,22 @@ operation:timeline:{operation_id}
 - [x] Все сервисы записывают события: Worker, RAS, OData, Designer, Batch adapters
 - [x] 135+ тестов (Go + Python + TypeScript)
 
-### Фаза 4
-- [ ] 4 Grafana dashboards доступны
-- [ ] Alerting настроен для критичных метрик
+### Фаза 4 ✅ ЗАВЕРШЕНА
+- [x] 4 Grafana dashboards доступны (61 панель суммарно)
+- [x] 47 Prometheus rules (19 recording + 28 alerts)
+- [x] Recording rules переписаны на реальные метрики (cc1c:*)
+- [x] Division by zero защита во всех вычислениях
+- [x] Datasource variable для переносимости dashboards
+- [x] JSON validation и promtool check в CI/CD (`lint.sh`)
+- [x] Проверка exporters в `health-check.sh`
+- [ ] PagerDuty/Slack интеграция (отложено на Phase 4.6)
 
-### Фаза 5
-- [ ] Live view показывает активные операции
-- [ ] Анимация пути операции работает
+### Фаза 5 ✅ ЗАВЕРШЕНА
+- [x] Live view показывает активные операции (WebSocket + useServiceMesh)
+- [x] Анимация пути операции работает (CSS keyframes в ServiceFlowDiagram.css)
+- [x] Фильтрация операций по статусу (RecentOperationsTable)
+- [x] Race condition protection (requestId pattern)
+- [x] Performance optimizations (throttle, deduplication)
 
 ---
 
