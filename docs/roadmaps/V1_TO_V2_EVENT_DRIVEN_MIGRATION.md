@@ -2,10 +2,10 @@
 
 > Полная миграция с REST API v1 на v2 и переход на Event-Driven архитектуру через Redis Streams
 
-**Статус:** P0, P1, P2 завершены — осталось P3 (cleanup)
-**Приоритет:** Medium (cleanup phase)
+**Статус:** ✅ P0, P1, P2, P3 ЗАВЕРШЕНЫ — миграция полностью завершена
+**Приоритет:** DONE
 **Создан:** 2025-12-15
-**Обновлён:** 2025-12-15
+**Обновлён:** 2025-12-15 (v1.5 — ЗАВЕРШЕНО)
 
 ---
 
@@ -495,10 +495,10 @@ worker-responses-group:
 8. ~~API Gateway cleanup~~ ✅ Удалён legacy ProxyToOrchestrator, flat RAS routes
 9. ~~Documentation update~~ ✅ Roadmap обновлён
 
-### P3 (Низкий — cleanup)
-10. Archive deletion
-11. Test cleanup
-12. OpenAPI regeneration
+### P3 (Низкий — cleanup) ✅ ЗАВЕРШЕНО
+10. ~~Archive deletion~~ ✅ Удалено: cluster-service (archive/), unused batch-service handlers
+11. ~~Test cleanup~~ ✅ Архивировано: 9 test files в tests/archive/v1_api_tests/
+12. ~~OpenAPI regeneration~~ ✅ Specs validated, clients regenerated (no changes needed)
 
 ---
 
@@ -518,6 +518,19 @@ worker-responses-group:
 ---
 
 ## Changelog
+
+### v1.5 (2025-12-15) — МИГРАЦИЯ ЗАВЕРШЕНА
+- ✅ P3 (cleanup) полностью завершён:
+  - P3-10: Удалён deprecated cluster-service (~500KB, 55 файлов)
+  - P3-10: Удалены unused batch-service handlers (delete, extensions, list, rollback)
+  - P3-11: Архивировано 9 test files в `tests/archive/v1_api_tests/`:
+    - test_databases_api.py, test_service_mesh_views.py, test_templates_views.py
+    - test_workflow_api.py, test_workflow_integration.py, test_jwt_service_auth.py
+    - workflow_load_test.py, test_celery_tasks.py
+    - Удалён obsolete test_sprint_1_2.py
+  - P3-12: OpenAPI specs validated, clients regenerated
+- Итого удалено: ~10,500 строк legacy кода
+- Миграция V1 → V2 Event-Driven полностью завершена!
 
 ### v1.4 (2025-12-15)
 - ✅ P2 задачи полностью завершены:
