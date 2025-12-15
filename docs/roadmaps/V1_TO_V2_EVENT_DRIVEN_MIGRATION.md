@@ -485,10 +485,10 @@ worker-responses-group:
 2. ~~Frontend: распознавание `.started` статуса~~ ✅ EventStatus + STATUS_COLORS + EVENT_LABELS
 3. ~~Credentials для RAS операций~~ ✅ `shared/credentials/` + ras-adapter fetch от Orchestrator
 
-### P1 (Высокий — после P0) ✅ ЧАСТИЧНО ЗАВЕРШЕНО
+### P1 (Высокий — после P0) ✅ ЗАВЕРШЕНО
 4. ~~Cluster-info через Streams~~ ✅ Streams-first с HTTP fallback
 5. ~~Удаление batch-service HTTP callback~~ ✅ HTTP callback удалён
-6. Django v1 endpoints deprecation — **В ПРОЦЕССЕ**
+6. ~~Django v1 endpoints deprecation~~ ✅ V1 удалены из OpenAPI spec (Django уже на v2)
 
 ### P2 (Средний — после P1)
 7. Batch-service v2 API migration
@@ -511,13 +511,18 @@ worker-responses-group:
 
 ---
 
-**Версия:** 1.2
+**Версия:** 1.3
 **Автор:** AI Assistant
 **Ревью:** Требуется
 
 ---
 
 ## Changelog
+
+### v1.3 (2025-12-15)
+- ✅ P1 задачи полностью завершены:
+  - V1 endpoints удалены из API Gateway OpenAPI spec (11 endpoints)
+  - Django и Frontend уже полностью на v2
 
 ### v1.2 (2025-12-15)
 - ✅ P1 задачи частично завершены:
