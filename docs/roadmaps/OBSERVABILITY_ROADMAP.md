@@ -1,10 +1,13 @@
 # Roadmap: Observability — Метрики и Error Feedback
 
-> **Статус:** In Progress (Фазы 1-5 завершены)
+> **Статус:** Mostly Done (Фазы 1-5 реализованы, есть отложенные пункты)
 > **Версия:** 1.6
 > **Создан:** 2025-12-12
-> **Обновлён:** 2025-12-14
+> **Обновлён:** 2025-12-15
 > **Автор:** Claude Code
+>
+> **NOTE (2025-12-15):** Незавершённые UI-пункты, связанные с администрированием (DLQ просмотр/ретраи),
+> перенесены в `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md` в рамках стратегии SPA-primary.
 
 ---
 
@@ -18,6 +21,8 @@
 ---
 
 ## Проблемы (текущее состояние)
+
+> Примечание: часть пунктов ниже — описание исходных проблем, которые уже исправлены в коде; актуальные “хвосты” отмечены как (отложено) / TODO.
 
 ### 1. Потеря обратной связи при ошибках парсинга
 
@@ -39,12 +44,12 @@ Django → Redis Stream → Worker
 | Сервис | /metrics | Prometheus метрики |
 |--------|----------|-------------------|
 | API Gateway | ✅ | cc1c_requests_total, cc1c_request_duration_seconds |
-| Orchestrator | ❌ 404 | Нет |
-| Worker | ❌ | Нет |
-| ras-adapter | ❌ | Нет |
-| odata-adapter | ❌ | Нет |
-| designer-agent | ❌ | Нет |
-| batch-service | ❌ | Нет |
+| Orchestrator | ✅ | django-prometheus + cc1c_orchestrator_* |
+| Worker | ✅ | cc1c_worker_* |
+| ras-adapter | ✅ | cc1c_ras_* |
+| odata-adapter | ✅ | cc1c_odata_* |
+| designer-agent | ✅ | cc1c_designer_* |
+| batch-service | ✅ | cc1c_batch_* |
 
 ### 3. Нет трассировки операций
 
@@ -163,8 +168,8 @@ commands:worker:operations → (ошибка) → commands:worker:dlq
 - [x] 1.2.2: Worker: перемещать failed messages в DLQ ✅
 - [x] 1.2.3: Django EventSubscriber: обработчик DLQ сообщений ✅
 - [x] 1.2.4: Deduplication DLQ через Redis Set с TTL ✅
-- [ ] 1.2.5: Django admin: UI для просмотра DLQ (отложено)
-- [ ] 1.2.6: Retry механизм из DLQ (отложено)
+- [ ] 1.2.5: UI для просмотра DLQ (перенесено → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] 1.2.6: Retry механизм из DLQ (перенесено → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 ---
 
@@ -257,7 +262,7 @@ cc1c_orchestrator_api_requests_total{endpoint, method, status}
 **Orchestrator:**
 - [x] 2.3.18: django-prometheus middleware ✅
 - [x] 2.3.19: Кастомные метрики (operations, batch, redis events) ✅
-- [ ] 2.3.20: Метрики для WebSocket connections (отложено)
+- [x] 2.3.20: Метрики для WebSocket connections ✅
 
 ---
 
@@ -298,7 +303,7 @@ operation:timeline:{operation_id}
 - [x] 3.3.1: Создать `shared/tracing/timeline.go` — запись в Redis ZSET ✅ (60fd038)
 - [x] 3.3.2: Интегрировать в Worker (каждый шаг саги) ✅ (d1e11fc)
 - [x] 3.3.3: Интегрировать в адаптеры (получение/завершение команды) ✅ (100fd34)
-- [x] 3.3.4: Django API `/api/v2/internal/operations/{id}/timeline` ✅ (0f6c209)
+- [x] 3.3.4: Django API `POST /api/v2/internal/get-operation-timeline` ✅ (0f6c209)
 - [x] 3.3.5: Frontend Waterfall Timeline в Service Mesh ✅ (be95caa)
 
 ### 3.4 Jaeger Integration (опционально)
@@ -429,10 +434,10 @@ operation:timeline:{operation_id}
 ### Фаза 2 ✅ ЗАВЕРШЕНА
 - [x] Все 7 сервисов экспортируют /metrics (API Gateway, Worker, RAS, Batch, OData, Designer, Orchestrator)
 - [x] Prometheus scrape config обновлён (prometheus-native.yml)
-- [ ] Service Mesh диаграмма показывает реальные метрики (отложено)
+- [x] Service Mesh использует реальные метрики из Prometheus (c fallback при недоступности Prometheus)
 
 ### Фаза 3 ✅ ЗАВЕРШЕНА
-- [x] API возвращает timeline операции (`GET /api/v2/internal/operations/{id}/timeline`)
+- [x] API возвращает timeline операции (`POST /api/v2/internal/get-operation-timeline` и `POST /api/v2/operations/get-operation-timeline/`)
 - [x] Timeline показывает все этапы с timestamps (Waterfall Timeline в Service Mesh)
 - [x] Все сервисы записывают события: Worker, RAS, OData, Designer, Batch adapters
 - [x] 135+ тестов (Go + Python + TypeScript)

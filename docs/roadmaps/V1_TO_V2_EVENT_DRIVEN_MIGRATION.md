@@ -7,6 +7,8 @@
 **Создан:** 2025-12-15
 **Обновлён:** 2025-12-15 (v1.6)
 
+> **NOTE (2025-12-15):** Оставшиеся (незакрытые) пункты, пересекающиеся с унификацией админ-функций и контрактов, перенесены в `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`.
+
 ---
 
 ## Executive Summary
@@ -131,11 +133,11 @@ Worker                          Redis                           Orchestrator
 ```
 
 **Задачи:**
-- [ ] Создать stream `commands:orchestrator:get-credentials`
-- [ ] Создать stream `events:orchestrator:credentials-response`
-- [ ] Django: добавить handler в Event Subscriber
-- [ ] Worker: заменить HTTP client на Stream client
-- [ ] Worker: добавить timeout и fallback на HTTP (graceful degradation)
+- [ ] Создать stream `commands:orchestrator:get-credentials` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Создать stream `events:orchestrator:credentials-response` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Django: добавить handler в Event Subscriber (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Worker: заменить HTTP client на Stream client (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Worker: добавить timeout и fallback на HTTP (graceful degradation) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```
@@ -271,9 +273,9 @@ frontend/src/components/service-mesh/WaterfallTimeline.tsx  # STATUS_COLORS
 **Целевое:** Добавить события `orchestrator.created`, `orchestrator.completed`
 
 **Задачи:**
-- [ ] Создать Redis client для timeline в Django
-- [ ] Добавить запись при создании BatchOperation
-- [ ] Добавить запись при завершении операции
+- [ ] Создать Redis client для timeline в Django (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Добавить запись при создании BatchOperation (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Добавить запись при завершении операции (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```
@@ -303,10 +305,10 @@ orchestrator/apps/operations/event_subscriber.py
 | `GET /api/v1/operations/{id}/stream` | WebSocket `/ws/operations/` | Удалить |
 
 **Задачи:**
-- [ ] Убедиться что все v2 endpoints работают
-- [ ] Обновить Frontend на v2 (если не обновлён)
-- [ ] Удалить v1 URL patterns из `urls.py`
-- [ ] Удалить v1 views
+- [ ] Убедиться что все v2 endpoints работают (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить Frontend на v2 (если не обновлён) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Удалить v1 URL patterns из `urls.py` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Удалить v1 views (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```
@@ -331,11 +333,11 @@ orchestrator/apps/operations/views.py
 | `GET /api/v1/extensions/storage` | `GET /api/v2/list-storage` | Action-based |
 
 **Задачи:**
-- [ ] Создать v2 router group в `router.go`
-- [ ] Дублировать handlers на v2 пути
-- [ ] Обновить OpenAPI spec
-- [ ] Deprecation period (30 дней)
-- [ ] Удалить v1 routes
+- [ ] Создать v2 router group в `router.go` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Дублировать handlers на v2 пути (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить OpenAPI spec (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Deprecation period (30 дней) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Удалить v1 routes (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```
@@ -354,9 +356,9 @@ contracts/batch-service/openapi.yaml
 | `/api/v1/operations/*` | Прокси на Orchestrator v2 |
 
 **Задачи:**
-- [ ] Обновить proxy rules
-- [ ] Добавить deprecation headers для v1
-- [ ] Удалить v1 routes после sunset date
+- [ ] Обновить proxy rules (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Добавить deprecation headers для v1 (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Удалить v1 routes после sunset date (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```
@@ -371,26 +373,26 @@ contracts/api-gateway/openapi.yaml
 #### 4.1 Удаление архивного кода
 
 **Задачи:**
-- [ ] Удалить `go-services/archive/cluster-service/`
-- [ ] Очистить неиспользуемые imports
-- [ ] Удалить deprecated тесты
+- [ ] Удалить `go-services/archive/cluster-service/` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Очистить неиспользуемые imports (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Удалить deprecated тесты (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 #### 4.2 Обновление документации
 
 **Задачи:**
-- [ ] Архивировать `docs/roadmaps/API_V2_UNIFICATION_ROADMAP.md`
-- [ ] Обновить `docs/REST_API_COMPARISON.md` — удалить v1
-- [ ] Обновить `docs/FRONTEND_API_V2_MAPPING.md` — пометить как completed
-- [ ] Обновить README.md всех сервисов
-- [ ] Обновить OpenAPI specs — удалить v1 paths
+- [ ] Архивировать `docs/roadmaps/API_V2_UNIFICATION_ROADMAP.md` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить `docs/REST_API_COMPARISON.md` — удалить v1 (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить `docs/FRONTEND_API_V2_MAPPING.md` — пометить как completed (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить README.md всех сервисов (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Обновить OpenAPI specs — удалить v1 paths (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 #### 4.3 Обновление контрактов
 
 **Задачи:**
-- [ ] `contracts/api-gateway/openapi.yaml` — удалить v1 paths
-- [ ] `contracts/orchestrator/openapi.yaml` — проверить полноту v2
-- [ ] `contracts/batch-service/openapi.yaml` — создать v2 spec
-- [ ] Regenerate API clients
+- [ ] `contracts/api-gateway/openapi.yaml` — удалить v1 paths (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] `contracts/orchestrator/openapi.yaml` — проверить полноту v2 (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] `contracts/batch-service/openapi.yaml` — создать v2 spec (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [ ] Regenerate API clients (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 ---
 

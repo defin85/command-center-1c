@@ -69,12 +69,12 @@ type NodeExecutionRecord struct {
 
 // ListExecutionsParams holds parameters for listing executions.
 type ListExecutionsParams struct {
-	WorkflowID string    `json:"workflow_id,omitempty"`
-	Status     string    `json:"status,omitempty"`
+	WorkflowID    string     `json:"workflow_id,omitempty"`
+	Status        string     `json:"status,omitempty"`
 	StartedAfter  *time.Time `json:"started_after,omitempty"`
 	StartedBefore *time.Time `json:"started_before,omitempty"`
-	Limit      int       `json:"limit,omitempty"`
-	Offset     int       `json:"offset,omitempty"`
+	Limit         int        `json:"limit,omitempty"`
+	Offset        int        `json:"offset,omitempty"`
 }
 
 // ListExecutionsResult holds the result of listing executions.
@@ -94,9 +94,9 @@ type HistoryClient struct {
 
 // HistoryClientConfig holds configuration for HistoryClient.
 type HistoryClientConfig struct {
-	BaseURL    string
-	AuthToken  string
-	Timeout    time.Duration
+	BaseURL   string
+	AuthToken string
+	Timeout   time.Duration
 }
 
 // NewHistoryClient creates a new history client.
@@ -129,7 +129,7 @@ func (c *HistoryClient) RecordExecution(ctx context.Context, state *WorkflowStat
 		payload["started_at"] = state.StartedAt.Format(time.RFC3339)
 	}
 
-	_, err := c.post(ctx, "/api/internal/workflow-executions/", payload)
+	_, err := c.post(ctx, "/api/v2/internal/workflow-executions/", payload)
 	return err
 }
 
@@ -148,7 +148,7 @@ func (c *HistoryClient) UpdateExecution(ctx context.Context, state *WorkflowStat
 		payload["output_data"] = state.ContextSnapshot
 	}
 
-	url := fmt.Sprintf("/api/internal/workflow-executions/%s/", state.ExecutionID)
+	url := fmt.Sprintf("/api/v2/internal/workflow-executions/%s/", state.ExecutionID)
 	_, err := c.patch(ctx, url, payload)
 	return err
 }
@@ -179,7 +179,7 @@ func (c *HistoryClient) RecordNodeExecution(ctx context.Context, executionID str
 		payload["error"] = nodeState.ErrorMessage
 	}
 
-	_, err := c.post(ctx, "/api/internal/node-executions/", payload)
+	_, err := c.post(ctx, "/api/v2/internal/node-executions/", payload)
 	return err
 }
 
@@ -206,13 +206,13 @@ func (c *HistoryClient) RecordTransition(ctx context.Context, event *StateTransi
 		payload["metadata"] = event.Metadata
 	}
 
-	_, err := c.post(ctx, "/api/internal/workflow-transitions/", payload)
+	_, err := c.post(ctx, "/api/v2/internal/workflow-transitions/", payload)
 	return err
 }
 
 // GetExecution retrieves an execution record by ID.
 func (c *HistoryClient) GetExecution(ctx context.Context, executionID string) (*WorkflowExecutionRecord, error) {
-	url := fmt.Sprintf("/api/internal/workflow-executions/%s/", executionID)
+	url := fmt.Sprintf("/api/v2/internal/workflow-executions/%s/", executionID)
 	data, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (c *HistoryClient) GetExecution(ctx context.Context, executionID string) (*
 
 // ListExecutions lists executions with pagination.
 func (c *HistoryClient) ListExecutions(ctx context.Context, params *ListExecutionsParams) (*ListExecutionsResult, error) {
-	basePath := "/api/internal/workflow-executions/"
+	basePath := "/api/v2/internal/workflow-executions/"
 
 	// Build query parameters with proper URL encoding
 	query := url.Values{}

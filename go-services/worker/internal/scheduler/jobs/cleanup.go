@@ -194,7 +194,7 @@ func (j *CleanupReplayedEventsJob) Name() string {
 }
 
 // Execute runs the cleanup job
-// Calls orchestrator.EventReplayClient.CleanupOldEvents which makes a POST to /api/internal/failed-events/cleanup
+// Calls orchestrator.EventReplayClient.CleanupOldEvents which makes a POST to /api/v2/internal/cleanup-failed-events
 func (j *CleanupReplayedEventsJob) Execute(ctx context.Context) error {
 	j.logger.Info("starting cleanup of old replayed/failed events",
 		zap.Int("retention_days", j.retentionDays),

@@ -154,7 +154,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     // WebSocket through API Gateway (which proxies to Orchestrator)
     // Port 8180 - API Gateway service
-    const host = import.meta.env.VITE_WS_HOST || 'localhost:8180'
+    const rawHost = import.meta.env.VITE_WS_HOST || 'localhost:8180'
+    // Prefer IPv4 localhost to avoid WSL/Chromium attempting ::1 while backend listens on 0.0.0.0
+    const host = rawHost.startsWith('localhost') ? `127.0.0.1${rawHost.slice('localhost'.length)}` : rawHost
     const baseUrl = `${protocol}//${host}/ws/service-mesh/`
 
     // Add JWT token for authentication
@@ -257,6 +259,9 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       return
     }
 
+    // Any close after this point is considered unintentional unless disconnect() sets the flag again
+    isIntentionalCloseRef.current = false
+
     try {
       const ws = new WebSocket(url)
 
@@ -356,7 +361,6 @@ export const useServiceMesh = (): UseServiceMeshResult => {
       return
     }
 
-    isIntentionalCloseRef.current = false
     const url = getWebSocketUrl()
 
     // Delay connection to allow StrictMode cleanup to complete

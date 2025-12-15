@@ -42,21 +42,25 @@ def _get_transport_key() -> bytes:
     if not key_str:
         raise ValueError(
             "CREDENTIALS_TRANSPORT_KEY not set in Django settings. "
-            "Add to .env.local: CREDENTIALS_TRANSPORT_KEY=<32+ bytes>"
+            "Add to .env.local: CREDENTIALS_TRANSPORT_KEY=<64+ hex chars (32+ bytes)>"
         )
 
-    # Convert to bytes and truncate to 32 bytes
-    key_bytes = key_str.encode('utf-8')[:TRANSPORT_KEY_BYTES]
+    try:
+        key_bytes = bytes.fromhex(key_str)
+    except ValueError as e:
+        raise ValueError(
+            "CREDENTIALS_TRANSPORT_KEY invalid: must be hex-encoded "
+            "(64+ hex chars = 32+ bytes). Generate with: openssl rand -hex 32"
+        ) from e
 
     if len(key_bytes) < TRANSPORT_KEY_BYTES:
-        logger.warning(
+        raise ValueError(
             f"CREDENTIALS_TRANSPORT_KEY too short ({len(key_bytes)} bytes), "
-            f"padding to {TRANSPORT_KEY_BYTES} bytes"
+            f"need {TRANSPORT_KEY_BYTES} bytes (64+ hex chars)"
         )
-        # Pad with zeros (NOT recommended for production, use proper 32+ byte key!)
-        key_bytes = key_bytes.ljust(TRANSPORT_KEY_BYTES, b'\0')
 
-    return key_bytes
+    # Truncate to exactly 32 bytes for AES-256 (Go side does the same)
+    return key_bytes[:TRANSPORT_KEY_BYTES]
 
 
 def encrypt_credentials_for_transport(credentials_dict: dict) -> dict:

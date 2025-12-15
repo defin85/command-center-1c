@@ -16,6 +16,8 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
 
+from apps.operations.models import BatchOperation
+
 
 @override_settings(INTERNAL_API_TOKEN='test-internal-token')
 class InternalAPIV2BaseTestCase(TestCase):
@@ -41,8 +43,10 @@ class SchedulerEndpointsV2Tests(InternalAPIV2BaseTestCase):
             format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['success'])
         self.assertIn('run_id', response.data)
         self.assertEqual(response.data['status'], 'running')
+        self.assertGreater(response.data['run_id'], 0)
 
     def test_start_scheduler_run_unauthorized(self):
         """Test that unauthorized requests are rejected."""
@@ -78,12 +82,19 @@ class SchedulerEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_complete_scheduler_run_success(self):
         """Test completing a scheduler run."""
+        start_resp = self.client.post(
+            '/api/v2/internal/start-scheduler-run',
+            {'job_name': 'health_check', 'worker_instance': 'worker-1'},
+            format='json'
+        )
+        self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
+        run_id = start_resp.data['run_id']
+
         response = self.client.post(
-            '/api/v2/internal/complete-scheduler-run?run_id=1',
+            f'/api/v2/internal/complete-scheduler-run?run_id={run_id}',
             {'status': 'success', 'duration_ms': 1000},
             format='json'
         )
-        # Returns 200 OK even if run doesn't exist (until model is implemented)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
         self.assertEqual(response.data['status'], 'success')
@@ -120,14 +131,21 @@ class SchedulerEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertIn('error', response.data)
 
     def test_complete_scheduler_run_missing_duration(self):
-        """Test validation - missing duration_ms."""
+        """Test that duration_ms is optional."""
+        start_resp = self.client.post(
+            '/api/v2/internal/start-scheduler-run',
+            {'job_name': 'health_check', 'worker_instance': 'worker-1'},
+            format='json'
+        )
+        run_id = start_resp.data['run_id']
+
         response = self.client.post(
-            '/api/v2/internal/complete-scheduler-run?run_id=1',
+            f'/api/v2/internal/complete-scheduler-run?run_id={run_id}',
             {'status': 'success'},
             format='json'
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
 
     def test_complete_scheduler_run_invalid_status(self):
         """Test validation - invalid status choice."""
@@ -143,32 +161,46 @@ class SchedulerEndpointsV2Tests(InternalAPIV2BaseTestCase):
 class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
     """Tests for task execution v2 endpoints."""
 
+    def _create_operation(self) -> BatchOperation:
+        return BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Test operation',
+            operation_type=BatchOperation.TYPE_QUERY,
+            target_entity='TestEntity',
+        )
+
     def test_start_task_success(self):
         """Test starting a task."""
+        operation = self._create_operation()
         response = self.client.post(
             '/api/v2/internal/start-task',
             {
-                'task_id': 'task-123',
+                'operation_id': operation.id,
                 'task_type': 'health_check',
-                'queue_name': 'default',
-                'worker_instance': 'worker-1'
+                'target_id': str(uuid.uuid4()),
+                'target_type': 'database',
+                'worker_instance': 'worker-1',
+                'parameters': {'foo': 'bar'},
             },
             format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['success'])
         self.assertIn('task_id', response.data)
         self.assertEqual(response.data['status'], 'running')
+        self.assertGreater(response.data['task_id'], 0)
 
     def test_start_task_with_operation_id(self):
-        """Test starting a task with optional operation_id."""
+        """Test starting a task."""
+        operation = self._create_operation()
         response = self.client.post(
             '/api/v2/internal/start-task',
             {
-                'task_id': 'task-456',
+                'operation_id': operation.id,
                 'task_type': 'batch_operation',
-                'queue_name': 'batch',
+                'target_id': str(uuid.uuid4()),
+                'target_type': 'database',
                 'worker_instance': 'worker-2',
-                'operation_id': str(uuid.uuid4())
             },
             format='json'
         )
@@ -176,13 +208,14 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_start_task_missing_required_fields(self):
         """Test validation - missing required fields."""
-        # Missing task_id
+        operation = self._create_operation()
+
+        # Missing operation_id
         response = self.client.post(
             '/api/v2/internal/start-task',
             {
                 'task_type': 'health_check',
-                'queue_name': 'default',
-                'worker_instance': 'worker-1'
+                'target_id': str(uuid.uuid4()),
             },
             format='json'
         )
@@ -192,9 +225,8 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
         response = self.client.post(
             '/api/v2/internal/start-task',
             {
-                'task_id': 'task-123',
-                'queue_name': 'default',
-                'worker_instance': 'worker-1'
+                'operation_id': operation.id,
+                'target_id': str(uuid.uuid4()),
             },
             format='json'
         )
@@ -202,14 +234,14 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_start_task_unauthorized(self):
         """Test that unauthorized requests are rejected."""
+        operation = self._create_operation()
         client = self.get_unauthenticated_client()
         response = client.post(
             '/api/v2/internal/start-task',
             {
-                'task_id': 'task-123',
+                'operation_id': operation.id,
                 'task_type': 'health_check',
-                'queue_name': 'default',
-                'worker_instance': 'worker-1'
+                'target_id': str(uuid.uuid4()),
             },
             format='json'
         )
@@ -217,8 +249,22 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_complete_task_success(self):
         """Test completing a task."""
+        operation = self._create_operation()
+        start_resp = self.client.post(
+            '/api/v2/internal/start-task',
+            {
+                'operation_id': operation.id,
+                'task_type': 'health_check',
+                'target_id': str(uuid.uuid4()),
+                'worker_instance': 'worker-1',
+            },
+            format='json'
+        )
+        self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
+        task_id = start_resp.data['task_id']
+
         response = self.client.post(
-            '/api/v2/internal/complete-task?task_id=1',
+            f'/api/v2/internal/complete-task?task_id={task_id}',
             {'status': 'success', 'duration_ms': 500},
             format='json'
         )
@@ -248,13 +294,26 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_complete_task_with_error(self):
         """Test completing a task with error."""
+        operation = self._create_operation()
+        start_resp = self.client.post(
+            '/api/v2/internal/start-task',
+            {
+                'operation_id': operation.id,
+                'task_type': 'health_check',
+                'target_id': str(uuid.uuid4()),
+                'worker_instance': 'worker-1',
+            },
+            format='json'
+        )
+        task_id = start_resp.data['task_id']
+
         response = self.client.post(
-            '/api/v2/internal/complete-task?task_id=1',
+            f'/api/v2/internal/complete-task?task_id={task_id}',
             {
                 'status': 'failed',
                 'duration_ms': 100,
                 'error_message': 'Connection timeout',
-                'error_type': 'NetworkError',
+                'error_code': 'NetworkError',
                 'retry_count': 3
             },
             format='json'

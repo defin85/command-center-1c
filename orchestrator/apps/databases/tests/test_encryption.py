@@ -20,6 +20,8 @@ from apps.databases.encryption import (
     _get_transport_key,
 )
 
+VALID_TRANSPORT_KEY_HEX = "0123456789abcdef" * 4  # 64 hex chars (32 bytes)
+
 
 @pytest.fixture
 def sample_credentials():
@@ -36,6 +38,7 @@ def sample_credentials():
 
 
 @pytest.mark.django_db
+@override_settings(CREDENTIALS_TRANSPORT_KEY=VALID_TRANSPORT_KEY_HEX)
 class TestCredentialsEncryption:
     """Tests для credentials encryption module"""
 
@@ -146,13 +149,17 @@ class TestCredentialsEncryption:
             with pytest.raises(ValueError, match=f"Missing required field: {field}"):
                 decrypt_credentials_from_transport(incomplete)
 
-    @override_settings(CREDENTIALS_TRANSPORT_KEY="too-short")
-    def test_short_key_warning(self, sample_credentials):
-        """Test что short key получает warning (but still works with padding)"""
-        # Should work (with warning logged) because key is padded to 32 bytes
-        encrypted = encrypt_credentials_for_transport(sample_credentials)
-        decrypted = decrypt_credentials_from_transport(encrypted)
-        assert decrypted == sample_credentials
+    @override_settings(CREDENTIALS_TRANSPORT_KEY="00" * 31)
+    def test_short_key_rejected(self, sample_credentials):
+        """Test что слишком короткий ключ отвергается"""
+        with pytest.raises(ValueError, match="too short"):
+            encrypt_credentials_for_transport(sample_credentials)
+
+    @override_settings(CREDENTIALS_TRANSPORT_KEY="not-hex!!!")
+    def test_invalid_hex_key_rejected(self, sample_credentials):
+        """Test что не-hex ключ отвергается"""
+        with pytest.raises(ValueError, match="hex-encoded"):
+            encrypt_credentials_for_transport(sample_credentials)
 
     def test_unique_nonce_per_encryption(self, sample_credentials):
         """Test что каждый encryption использует unique nonce (forward secrecy)"""

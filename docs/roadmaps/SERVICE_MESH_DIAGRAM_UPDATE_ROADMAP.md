@@ -1,9 +1,10 @@
 # Roadmap: Обновление Service Mesh диаграммы
 
 > **Статус:** Done
-> **Версия:** 1.1
+> **Версия:** 1.2
 > **Создан:** 2025-12-12
 > **Завершён:** 2025-12-12
+> **Обновлён:** 2025-12-15
 > **Автор:** Claude Code
 >
 > ### Результаты
@@ -93,10 +94,10 @@ frontend/src/types/serviceMesh.ts
 orchestrator/apps/operations/services/prometheus_client.py
 └── Добавить сбор метрик для новых сервисов
 
-go-services/odata-adapter/internal/api/health.go
+go-services/odata-adapter/internal/api/rest/health.go
 └── Убедиться, что /health и /metrics доступны
 
-go-services/designer-agent/internal/api/health.go
+go-services/designer-agent/internal/api/rest/health.go
 └── Убедиться, что /health и /metrics доступны
 ```
 
@@ -109,10 +110,10 @@ go-services/designer-agent/internal/api/health.go
 **Файл:** `frontend/src/types/serviceMesh.ts`
 
 **Subtasks:**
-- [ ] 1.1: Добавить `streams` в `ConnectionType`
-- [ ] 1.2: Добавить цвет для `streams` в `CONNECTION_TYPE_COLORS` (предлагаю `#52c41a` — зелёный, как Redis Streams)
-- [ ] 1.3: Добавить метку `Redis Streams` в `CONNECTION_TYPE_LABELS`
-- [ ] 1.4: Обновить `CONNECTION_TYPES`:
+- [x] 1.1: Добавить `streams` в `ConnectionType`
+- [x] 1.2: Добавить цвет для `streams` в `CONNECTION_TYPE_COLORS` (предлагаю `#52c41a` — зелёный, как Redis Streams)
+- [x] 1.3: Добавить метку `Redis Streams` в `CONNECTION_TYPE_LABELS`
+- [x] 1.4: Обновить `CONNECTION_TYPES`:
   - `worker->ras-adapter`: `http` → `streams`
   - `worker->batch-service`: `http` → `streams`
   - Добавить `worker->odata-adapter`: `streams`
@@ -121,8 +122,8 @@ go-services/designer-agent/internal/api/health.go
   - Добавить `odata-adapter->redis`: `streams` (events)
   - Добавить `designer-agent->redis`: `streams` (events)
   - Добавить `batch-service->redis`: `streams` (events)
-- [ ] 1.5: Добавить позиции для новых сервисов в `DEFAULT_SERVICE_POSITIONS`
-- [ ] 1.6: Добавить конфиги в `SERVICE_DISPLAY_CONFIG`:
+- [x] 1.5: Добавить позиции для новых сервисов в `DEFAULT_SERVICE_POSITIONS`
+- [x] 1.6: Добавить конфиги в `SERVICE_DISPLAY_CONFIG`:
   - `odata-adapter`: icon `database`, description `OData CRUD operations`
   - `designer-agent`: icon `tool`, description `1C Designer Agent (SSH)`
 
@@ -133,29 +134,29 @@ go-services/designer-agent/internal/api/health.go
 **Файл:** `frontend/src/components/service-mesh/ServiceFlowDiagram.tsx`
 
 **Subtasks:**
-- [ ] 2.1: Убедиться, что новые типы соединений корректно отображаются
-- [ ] 2.2: Проверить, что dagre layout работает с новой топологией
-- [ ] 2.3: Добавить `streams` в легенду (если не автоматически)
+- [x] 2.1: Убедиться, что новые типы соединений корректно отображаются
+- [x] 2.2: Проверить, что dagre layout работает с новой топологией
+- [x] 2.3: Добавить `streams` в легенду (если не автоматически)
 
 ---
 
 ### Фаза 3: Backend — метрики для новых сервисов
 
 **Subtasks:**
-- [ ] 3.1: Проверить, что `odata-adapter` экспортирует метрики на `/metrics`
-- [ ] 3.2: Проверить, что `designer-agent` экспортирует метрики на `/metrics`
-- [ ] 3.3: Обновить `prometheus_client.py` для сбора метрик с новых сервисов
-- [ ] 3.4: Добавить новые сервисы в Prometheus scrape config (если требуется)
+- [x] 3.1: Проверить, что `odata-adapter` экспортирует метрики на `/metrics`
+- [x] 3.2: Проверить, что `designer-agent` экспортирует метрики на `/metrics`
+- [x] 3.3: Обновить `prometheus_client.py` для сбора метрик с новых сервисов
+- [x] 3.4: Добавить новые сервисы в Prometheus scrape config (если требуется)
 
 ---
 
 ### Фаза 4: Тестирование и документация
 
 **Subtasks:**
-- [ ] 4.1: Визуальное тестирование диаграммы на `/service-mesh`
-- [ ] 4.2: Проверить, что все сервисы отображаются
-- [ ] 4.3: Проверить, что связи правильно типизированы и окрашены
-- [ ] 4.4: Обновить документацию (если требуется)
+- [x] 4.1: Визуальное тестирование диаграммы на `/service-mesh`
+- [x] 4.2: Проверить, что все сервисы отображаются
+- [x] 4.3: Проверить, что связи правильно типизированы и окрашены
+- [x] 4.4: Обновить документацию (если требуется)
 
 ---
 
@@ -166,7 +167,7 @@ go-services/designer-agent/internal/api/health.go
 | Сервис | Порт | Описание | Icon |
 |--------|------|----------|------|
 | `odata-adapter` | 8189 | OData CRUD операции | `database` |
-| `designer-agent` | 8086 | 1C Designer через SSH | `tool` |
+| `designer-agent` | 8190 | 1C Designer через SSH | `tool` |
 
 ### 2. Изменённые связи
 

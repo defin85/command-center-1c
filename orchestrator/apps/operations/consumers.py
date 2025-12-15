@@ -20,6 +20,13 @@ from apps.operations.services.prometheus_client import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    from apps.operations.prometheus_metrics import websocket_connections
+    WS_METRICS_AVAILABLE = True
+except Exception:
+    websocket_connections = None
+    WS_METRICS_AVAILABLE = False
+
 
 # Group name for dashboard invalidation broadcasts
 DASHBOARD_GROUP = "dashboard_updates"
@@ -61,12 +68,13 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
         self._flow_task: Optional[asyncio.Task] = None
         self._interval: int = self.DEFAULT_INTERVAL
         self._running: bool = False
+        self._counted_connection: bool = False
 
     async def connect(self):
         """Handle WebSocket connection."""
-        # Check authentication - reject anonymous users
+        # Check authentication - reject anonymous users (except DEBUG/dev mode)
         user = self.scope.get("user")
-        if user is None or user.is_anonymous:
+        if (user is None or user.is_anonymous) and not settings.DEBUG:
             logger.warning("Rejected unauthenticated WebSocket connection")
             await self.close(code=4001)
             return
@@ -85,6 +93,10 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
 
         await self.accept()
         logger.info(f"Service mesh WebSocket connected: user={user}, channel={self.channel_name}")
+
+        if WS_METRICS_AVAILABLE and websocket_connections is not None:
+            websocket_connections.inc()
+            self._counted_connection = True
 
         # Send initial metrics immediately
         await self._send_metrics()
@@ -122,6 +134,10 @@ class ServiceMeshConsumer(AsyncJsonWebsocketConsumer):
             DASHBOARD_GROUP,
             self.channel_name
         )
+
+        if self._counted_connection and WS_METRICS_AVAILABLE and websocket_connections is not None:
+            websocket_connections.dec()
+            self._counted_connection = False
 
         logger.info(f"Service mesh WebSocket disconnected: code={close_code}")
 

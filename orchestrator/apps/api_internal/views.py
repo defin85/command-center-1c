@@ -20,8 +20,8 @@ from .permissions import IsInternalService
 from .serializers import (
     SchedulerRunStartSerializer,
     SchedulerRunCompleteSerializer,
-    TaskStartSerializer,
-    TaskCompleteSerializer,
+    TaskExecutionStartSerializer,
+    TaskExecutionCompleteSerializer,
     HealthUpdateSerializer,
     FailedEventSerializer,
     FailedEventReplayedSerializer,
@@ -67,18 +67,24 @@ def start_scheduler_run(request):
 
     data = serializer.validated_data
 
-    # TODO: Implement when SchedulerJobRun model is created
-    # from apps.scheduler.models import SchedulerJobRun
-    # run = SchedulerJobRun.objects.create(...)
+    from apps.operations.models import SchedulerJobRun
+
+    run = SchedulerJobRun.objects.create(
+        job_name=data['job_name'],
+        worker_instance=data['worker_instance'],
+        status=SchedulerJobRun.STATUS_RUNNING,
+        started_at=timezone.now(),
+        job_config=data.get('job_config') or {},
+    )
 
     logger.info(
         f"Scheduler run started: job={data['job_name']}, "
         f"worker={data['worker_instance']}"
     )
 
-    # Return stub ID until model is implemented
     return Response({
-        'run_id': 0,
+        'success': True,
+        'run_id': run.id,
         'status': 'running'
     }, status=status.HTTP_201_CREATED)
 
@@ -136,11 +142,34 @@ def complete_scheduler_run(request):
 
     data = serializer.validated_data
 
-    # TODO: Implement when SchedulerJobRun model is created
-    # from apps.scheduler.models import SchedulerJobRun
-    # run = SchedulerJobRun.objects.get(id=run_id)
-    # run.status = data['status']
-    # run.save()
+    from apps.operations.models import SchedulerJobRun
+
+    try:
+        run = SchedulerJobRun.objects.get(id=run_id)
+    except SchedulerJobRun.DoesNotExist:
+        return Response(
+            {'success': False, 'error': f'Scheduler run {run_id} not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    run.status = data['status']
+    run.finished_at = timezone.now()
+    run.duration_ms = data.get('duration_ms', 0)
+    run.result_summary = data.get('result_summary', '')
+    run.error_message = data.get('error_message', '')
+    run.items_processed = data.get('items_processed', 0)
+    run.items_failed = data.get('items_failed', 0)
+    run.save(
+        update_fields=[
+            'status',
+            'finished_at',
+            'duration_ms',
+            'result_summary',
+            'error_message',
+            'items_processed',
+            'items_failed',
+        ],
+    )
 
     logger.info(
         f"Scheduler run completed: id={run_id}, status={data['status']}, "
@@ -182,7 +211,7 @@ def start_task(request):
         "status": "running"
     }
     """
-    serializer = TaskStartSerializer(data=request.data)
+    serializer = TaskExecutionStartSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(
             {'success': False, 'error': serializer.errors},
@@ -191,19 +220,43 @@ def start_task(request):
 
     data = serializer.validated_data
 
-    # TODO: Implement when TaskExecutionLog model is created
-    # from apps.scheduler.models import TaskExecutionLog
-    # log = TaskExecutionLog.objects.create(...)
+    from apps.operations.models import BatchOperation, TaskExecutionLog
 
-    logger.info(
-        f"Task started: task_id={data['task_id']}, type={data['task_type']}, "
-        f"worker={data['worker_instance']}"
+    try:
+        operation = BatchOperation.objects.get(id=data['operation_id'])
+    except BatchOperation.DoesNotExist:
+        return Response(
+            {'success': False, 'error': f"Batch operation {data['operation_id']} not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    log = TaskExecutionLog.objects.create(
+        operation=operation,
+        task_type=data['task_type'],
+        queue_name='internal',
+        worker_instance=data.get('worker_instance') or 'worker',
+        status=TaskExecutionLog.STATUS_RUNNING,
+        started_at=timezone.now(),
+        input_summary={
+            'target_id': data['target_id'],
+            'target_type': data.get('target_type') or '',
+            'parameters': data.get('parameters') or {},
+        },
     )
 
-    # Return stub ID until model is implemented
+    logger.info(
+        "Task started",
+        extra={
+            'task_id': log.id,
+            'task_type': data['task_type'],
+            'operation_id': data['operation_id'],
+        },
+    )
+
     return Response({
-        'task_id': 0,
-        'status': 'running'
+        'success': True,
+        'task_id': log.id,
+        'status': 'running',
     }, status=status.HTTP_201_CREATED)
 
 
@@ -251,7 +304,7 @@ def complete_task(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    serializer = TaskCompleteSerializer(data=request.data)
+    serializer = TaskExecutionCompleteSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(
             {'success': False, 'error': serializer.errors},
@@ -260,15 +313,38 @@ def complete_task(request):
 
     data = serializer.validated_data
 
-    # TODO: Implement when TaskExecutionLog model is created
-    # from apps.scheduler.models import TaskExecutionLog
-    # log = TaskExecutionLog.objects.get(id=task_id)
-    # log.status = data['status']
-    # log.save()
+    from apps.operations.models import TaskExecutionLog
+
+    try:
+        log = TaskExecutionLog.objects.get(id=task_id)
+    except TaskExecutionLog.DoesNotExist:
+        return Response(
+            {'success': False, 'error': f'Task {task_id} not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    log.status = data['status']
+    log.finished_at = timezone.now()
+    log.duration_ms = data.get('duration_ms', 0)
+    log.result_summary = data.get('result') or {}
+    log.error_message = data.get('error_message', '')
+    log.error_type = data.get('error_code', '')
+    log.retry_count = data.get('retry_count', 0)
+    log.save(
+        update_fields=[
+            'status',
+            'finished_at',
+            'duration_ms',
+            'result_summary',
+            'error_message',
+            'error_type',
+            'retry_count',
+        ],
+    )
 
     logger.info(
         f"Task completed: id={task_id}, status={data['status']}, "
-        f"duration={data['duration_ms']}ms"
+        f"duration={data.get('duration_ms', 0)}ms"
     )
 
     return Response({

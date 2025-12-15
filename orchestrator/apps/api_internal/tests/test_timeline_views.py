@@ -2,7 +2,7 @@
 Unit tests for Timeline API endpoint.
 
 Tests:
-- GET /api/v2/internal/operations/{operation_id}/timeline
+- POST /api/v2/internal/get-operation-timeline
 - Authentication requirements
 - Operation existence validation
 - Query parameters (limit, offset)
@@ -27,6 +27,7 @@ class TimelineEndpointTests(TestCase):
         """Set up test client and data."""
         self.client = APIClient()
         self.client.credentials(HTTP_X_INTERNAL_TOKEN='test-internal-token')
+        self.endpoint = '/api/v2/internal/get-operation-timeline'
 
         # Create test operation
         self.operation_id = 'test-op-' + str(uuid.uuid4())
@@ -46,8 +47,10 @@ class TimelineEndpointTests(TestCase):
         """Test 404 when operation does not exist."""
         non_existent_id = 'non-existent-' + str(uuid.uuid4())
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{non_existent_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': non_existent_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -61,8 +64,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -104,8 +109,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 3)
         mock_redis_client.get_timeline_duration.return_value = 1111  # 1234 - 123 = 1111ms
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -131,8 +138,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=50'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 50},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -148,8 +157,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?offset=20'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'offset': 20},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -165,8 +176,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=25&offset=10'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 25, 'offset': 10},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -183,8 +196,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline_duration.return_value = None
 
         # Invalid limit - should use default
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=invalid'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 'invalid'},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -201,8 +216,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline_duration.return_value = None
 
         # Invalid offset - should use default
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?offset=invalid'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'offset': 'invalid'},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -219,8 +236,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline_duration.return_value = None
 
         # Negative offset - should use 0
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?offset=-10'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'offset': -10},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -236,16 +255,18 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        # Limit > 1000 - should use max 1000
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=5000'
+        # Limit > 500 - should use max 500
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 5000},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Limit should be clamped to 1000
+        # Limit should be clamped to 500
         mock_redis_client.get_timeline.assert_called_once_with(
-            self.operation_id, 1000, 0
+            self.operation_id, 500, 0
         )
 
     @patch('apps.operations.redis_client.redis_client')
@@ -254,8 +275,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = ([], 0)
         mock_redis_client.get_timeline_duration.return_value = None
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -271,8 +294,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 2)
         mock_redis_client.get_timeline_duration.return_value = 4000
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -282,8 +307,10 @@ class TimelineEndpointTests(TestCase):
         """Test timeline endpoint requires authentication."""
         client = self.get_unauthenticated_client()
 
-        response = client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -293,8 +320,10 @@ class TimelineEndpointTests(TestCase):
         client = APIClient()
         client.credentials(HTTP_X_INTERNAL_TOKEN='wrong-token')
 
-        response = client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -313,8 +342,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 1)
         mock_redis_client.get_timeline_duration.return_value = 123
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -347,8 +378,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 500)
         mock_redis_client.get_timeline_duration.return_value = 10000
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=100&offset=0'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 100, 'offset': 0},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -371,8 +404,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 150)
         mock_redis_client.get_timeline_duration.return_value = 5000
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline?limit=100&offset=100'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id, 'limit': 100, 'offset': 100},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -408,8 +443,10 @@ class TimelineEndpointTests(TestCase):
         mock_redis_client.get_timeline.return_value = (mock_events, 1)
         mock_redis_client.get_timeline_duration.return_value = 100
 
-        response = self.client.get(
-            f'/api/v2/internal/operations/{self.operation_id}/timeline'
+        response = self.client.post(
+            self.endpoint,
+            {'operation_id': self.operation_id},
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)

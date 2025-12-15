@@ -34,6 +34,9 @@ type Config struct {
 
 	// Orchestrator configuration
 	OrchestratorURL string
+	// Internal API token for service-to-service calls to Django Orchestrator.
+	// Used as `X-Internal-Token` header for `/api/v2/internal/*`.
+	InternalAPIToken string
 
 	// Batch Service configuration
 	BatchServiceURL string
@@ -115,7 +118,8 @@ func LoadFromEnv() *Config {
 		DBSSLM:     getEnv("DB_SSLMODE", "disable"),
 
 		// Orchestrator (Port 8200 - outside Windows reserved ranges 7913-8012, 8013-8112)
-		OrchestratorURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
+		OrchestratorURL:  getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
+		InternalAPIToken: getEnv("INTERNAL_API_TOKEN", ""),
 
 		// Batch Service (Port 8187 - outside Windows reserved range 8013-8112)
 		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8187"),

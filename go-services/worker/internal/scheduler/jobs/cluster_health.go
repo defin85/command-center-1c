@@ -396,7 +396,7 @@ type clusterHealthRequest struct {
 
 // updateHealth sends health update to Orchestrator
 func (c *HTTPOrchestratorHealthClient) updateHealth(ctx context.Context, clusterID string, req *clusterHealthRequest) error {
-	url := fmt.Sprintf("%s/api/internal/clusters/%s/health", c.baseURL, clusterID)
+	url := fmt.Sprintf("%s/api/v2/internal/update-cluster-health?cluster_id=%s", c.baseURL, clusterID)
 
 	body, err := json.Marshal(req)
 	if err != nil {

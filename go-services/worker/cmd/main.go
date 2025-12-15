@@ -16,10 +16,10 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
-	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
@@ -210,7 +210,7 @@ func main() {
 		// Create orchestrator client for template fetching and fallback rendering
 		orchClientForTemplates, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
 			BaseURL: cfg.OrchestratorURL,
-			Token:   serviceToken,
+			Token:   cfg.InternalAPIToken,
 		})
 		if err != nil {
 			log.Warn("failed to create orchestrator client for templates, template engine disabled",
@@ -236,7 +236,7 @@ func main() {
 	var workflowClient processor.WorkflowClient
 	orchClientForWorkflows, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
 		BaseURL: cfg.OrchestratorURL,
-		Token:   serviceToken,
+		Token:   cfg.InternalAPIToken,
 	})
 	if err != nil {
 		log.Warn("failed to create orchestrator client for workflows, execute_workflow disabled",
@@ -336,7 +336,7 @@ func main() {
 				rasClientAdapter := jobs.NewRASClientAdapter(rasAdapterClient)
 				orchHealthClient := jobs.NewHTTPOrchestratorHealthClient(
 					cfg.OrchestratorURL,
-					serviceToken,
+					cfg.InternalAPIToken,
 					zapLog,
 				)
 				clusterHealthJob := jobs.NewClusterHealthJob(rasClientAdapter, orchHealthClient, zapLog)
@@ -348,7 +348,7 @@ func main() {
 			// Register database health check job
 			orchestratorClient, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
 				BaseURL: cfg.OrchestratorURL,
-				Token:   serviceToken,
+				Token:   cfg.InternalAPIToken,
 			})
 			if err != nil {
 				log.WithError(err).Error("failed to create orchestrator client for database health")

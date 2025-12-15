@@ -52,6 +52,13 @@ class SchedulerJobRun(models.Model):
         help_text="Execution duration in milliseconds"
     )
 
+    # Optional job configuration (for debugging / reproducibility)
+    job_config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Optional job configuration provided by worker"
+    )
+
     # Results
     result_summary = models.TextField(
         blank=True,

@@ -262,6 +262,16 @@ else
 
                 if [[ $? -eq 0 ]]; then
                     stop_spinner "success" "TypeScript client generated"
+
+                    # Ensure stable barrel exports for Orval-generated v2 client.
+                    # openapi-generator-cli overwrites frontend/src/api/generated/index.ts
+                    # but our frontend imports expect getV2 to be exported from that barrel.
+                    INDEX_FILE="$GATEWAY_TS_OUTPUT/index.ts"
+                    if [[ -f "$INDEX_FILE" ]] && ! grep -q 'export { getV2 } from "./v2/v2";' "$INDEX_FILE" 2>/dev/null; then
+                        echo "" >> "$INDEX_FILE"
+                        echo "// Orval-generated v2 client (preferred)" >> "$INDEX_FILE"
+                        echo 'export { getV2 } from "./v2/v2";' >> "$INDEX_FILE"
+                    fi
                 else
                     stop_spinner "error" "TypeScript generation failed (non-critical)"
                 fi

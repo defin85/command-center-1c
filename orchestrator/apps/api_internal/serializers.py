@@ -17,13 +17,14 @@ class SchedulerRunStartSerializer(serializers.Serializer):
 
     job_name = serializers.CharField(max_length=255)
     worker_instance = serializers.CharField(max_length=255)
+    job_config = serializers.JSONField(required=False, default=dict)
 
 
 class SchedulerRunCompleteSerializer(serializers.Serializer):
     """Input serializer for completing scheduler job run."""
 
-    status = serializers.ChoiceField(choices=["success", "failed", "partial"])
-    duration_ms = serializers.IntegerField(min_value=0)
+    status = serializers.ChoiceField(choices=["success", "failed", "skipped"])
+    duration_ms = serializers.IntegerField(min_value=0, required=False, default=0)
     result_summary = serializers.CharField(required=False, allow_blank=True, default="")
     error_message = serializers.CharField(required=False, allow_blank=True, default="")
     items_processed = serializers.IntegerField(min_value=0, default=0)
@@ -35,26 +36,25 @@ class SchedulerRunCompleteSerializer(serializers.Serializer):
 # =============================================================================
 
 
-class TaskStartSerializer(serializers.Serializer):
+class TaskExecutionStartSerializer(serializers.Serializer):
     """Input serializer for starting task execution."""
 
-    task_id = serializers.CharField(max_length=64)
+    operation_id = serializers.CharField(max_length=64)
     task_type = serializers.CharField(max_length=100)
-    queue_name = serializers.CharField(max_length=255)
-    worker_instance = serializers.CharField(max_length=255)
-    operation_id = serializers.CharField(
-        max_length=64, required=False, allow_blank=True
-    )
+    target_id = serializers.CharField(max_length=64)
+    target_type = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
+    worker_instance = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    parameters = serializers.JSONField(required=False, default=dict)
 
 
-class TaskCompleteSerializer(serializers.Serializer):
+class TaskExecutionCompleteSerializer(serializers.Serializer):
     """Input serializer for completing task execution."""
 
-    status = serializers.ChoiceField(choices=["success", "failed", "cancelled"])
-    duration_ms = serializers.IntegerField(min_value=0)
-    result_summary = serializers.CharField(required=False, allow_blank=True, default="")
+    status = serializers.ChoiceField(choices=["success", "failed", "skipped"])
+    duration_ms = serializers.IntegerField(min_value=0, required=False, default=0)
+    result = serializers.JSONField(required=False, default=dict)
     error_message = serializers.CharField(required=False, allow_blank=True, default="")
-    error_type = serializers.CharField(required=False, allow_blank=True, default="")
+    error_code = serializers.CharField(required=False, allow_blank=True, default="")
     retry_count = serializers.IntegerField(min_value=0, default=0)
 
 

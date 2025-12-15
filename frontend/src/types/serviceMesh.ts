@@ -428,9 +428,9 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'frontend->api-gateway': 'http',
   'api-gateway->orchestrator': 'http',
   'orchestrator->postgresql': 'database',
-  'orchestrator->redis': 'queue',
-  'redis->worker': 'queue',
-  'redis->event-subscriber': 'pubsub',
+  'orchestrator->redis': 'streams',
+  'redis->worker': 'streams',
+  'redis->event-subscriber': 'streams',
   'event-subscriber->postgresql': 'database',
   'worker->ras-adapter': 'streams',
   'worker->odata-adapter': 'streams',
@@ -441,5 +441,5 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'designer-agent->redis': 'streams',
   'batch-service->redis': 'streams',
   // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL
-  // Results: Worker → Redis Pub/Sub → Event Subscriber → PostgreSQL
+  // Results: services → Redis Streams (events:*) → Event Subscriber → PostgreSQL
 }

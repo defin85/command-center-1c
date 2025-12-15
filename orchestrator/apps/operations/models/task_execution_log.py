@@ -15,6 +15,7 @@ class TaskExecutionLog(models.Model):
     STATUS_RUNNING = 'running'
     STATUS_SUCCESS = 'success'
     STATUS_FAILED = 'failed'
+    STATUS_SKIPPED = 'skipped'
     STATUS_RETRYING = 'retrying'
 
     STATUS_CHOICES = [
@@ -22,6 +23,7 @@ class TaskExecutionLog(models.Model):
         (STATUS_RUNNING, 'Running'),
         (STATUS_SUCCESS, 'Success'),
         (STATUS_FAILED, 'Failed'),
+        (STATUS_SKIPPED, 'Skipped'),
         (STATUS_RETRYING, 'Retrying'),
     ]
 

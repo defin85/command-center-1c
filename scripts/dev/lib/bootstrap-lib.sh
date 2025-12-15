@@ -571,15 +571,31 @@ ensure_env_local() {
     local transport_key
     transport_key=$(grep -E "^CREDENTIALS_TRANSPORT_KEY=" "$env_file" 2>/dev/null | cut -d'=' -f2-)
 
-    if [[ -z "$transport_key" ]] || [[ "$transport_key" == "your-32-byte-key-here-change-me!" ]]; then
+    # Формат: 64+ hex chars (32+ bytes), т.к. Go Worker ожидает hex-encoded AES-256 key
+    local transport_key_is_valid_hex=true
+    if [[ -z "$transport_key" ]] || [[ "$transport_key" == "your-32-byte-key-here-change-me!" ]] || [[ "$transport_key" == "your-64-hex-chars-key-here-change-me!" ]]; then
+        transport_key_is_valid_hex=false
+    elif [[ ! "$transport_key" =~ ^[0-9a-fA-F]+$ ]]; then
+        transport_key_is_valid_hex=false
+    elif (( ${#transport_key} < 64 )); then
+        transport_key_is_valid_hex=false
+    elif (( ${#transport_key} % 2 != 0 )); then
+        transport_key_is_valid_hex=false
+    fi
+
+    if [[ "$transport_key_is_valid_hex" != "true" ]]; then
         log_info "Генерация ключа CREDENTIALS_TRANSPORT_KEY..."
 
         local new_transport_key
         if command -v openssl &>/dev/null; then
-            new_transport_key=$(openssl rand -base64 32)
+            new_transport_key=$(openssl rand -hex 32)
         else
-            # Fallback: использовать /dev/urandom
-            new_transport_key=$(head -c 32 /dev/urandom | base64)
+            # Fallback: использовать /dev/urandom (hex)
+            if command -v xxd &>/dev/null; then
+                new_transport_key=$(head -c 32 /dev/urandom | xxd -p -c 256 | tr -d '\n')
+            else
+                new_transport_key=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+            fi
         fi
 
         if [[ -z "$new_transport_key" ]]; then

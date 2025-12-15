@@ -127,7 +127,9 @@ export const useWorkflowExecution = (
   const getWebSocketUrl = useCallback((execId: string): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     // Connect through API Gateway for production, direct for development
-    const host = import.meta.env.VITE_WS_HOST || window.location.host
+    const rawHost = import.meta.env.VITE_WS_HOST || window.location.host
+    // Prefer IPv4 localhost to avoid WSL/Chromium attempting ::1 while backend listens on 0.0.0.0
+    const host = rawHost.startsWith('localhost') ? `127.0.0.1${rawHost.slice('localhost'.length)}` : rawHost
     return `${protocol}//${host}/ws/workflow/${execId}/`
   }, [])
 

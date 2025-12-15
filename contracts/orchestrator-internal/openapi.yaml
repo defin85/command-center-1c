@@ -34,9 +34,9 @@ info:
     url: https://github.com/commandcenter1c/commandcenter
 
 servers:
-  - url: http://localhost:8200/api/v2/internal
+  - url: http://localhost:8200
     description: v2 Internal API (localhost)
-  - url: http://orchestrator:8200/api/v2/internal
+  - url: http://orchestrator:8200
     description: v2 Internal API (Docker)
 
 tags:
@@ -54,6 +54,8 @@ tags:
     description: Workflow определения (будущий Workflow Engine)
   - name: failed-events
     description: Event Replay System - управление failed events
+  - name: timeline
+    description: Timeline / observability (operation execution timeline)
 
 paths:
   # ============================================================================
@@ -94,7 +96,7 @@ paths:
         - name: run_id
           in: query
           required: true
-          schema: {type: string, format: uuid}
+          schema: {type: integer}
       requestBody:
         required: true
         content:
@@ -147,7 +149,7 @@ paths:
         - name: task_id
           in: query
           required: true
-          schema: {type: string}
+          schema: {type: integer}
       requestBody:
         required: true
         content:
@@ -409,6 +411,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TemplateRenderResponseV2'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  # Timeline
+  /api/v2/internal/get-operation-timeline:
+    post:
+      summary: Получение execution timeline операции
+      operationId: getOperationTimelineV2
+      tags: [timeline]
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationTimelineRequest'
+      responses:
+        '200':
+          description: Timeline операции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTimelineResponse'
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -1144,6 +1171,65 @@ components:
           type: integer
           description: Количество удаленных событий
           example: 150
+
+    # ============================================================================
+    # TIMELINE SCHEMAS
+    # ============================================================================
+    OperationTimelineRequest:
+      type: object
+      required:
+        - operation_id
+      properties:
+        operation_id:
+          type: string
+          description: ID операции (BatchOperation.id)
+        limit:
+          type: integer
+          description: Максимум событий (default 100, max 500)
+          default: 100
+          minimum: 1
+          maximum: 500
+        offset:
+          type: integer
+          description: Смещение для пагинации (default 0)
+          default: 0
+          minimum: 0
+
+    TimelineEvent:
+      type: object
+      required:
+        - timestamp
+        - event
+      properties:
+        timestamp:
+          type: integer
+          description: Timestamp в миллисекундах
+        event:
+          type: string
+        service:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    OperationTimelineResponse:
+      type: object
+      required:
+        - operation_id
+        - timeline
+        - total_events
+      properties:
+        operation_id:
+          type: string
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+        total_events:
+          type: integer
+        duration_ms:
+          type: integer
+          nullable: true
 
     # ============================================================================
     # V2 RESPONSE SCHEMAS
