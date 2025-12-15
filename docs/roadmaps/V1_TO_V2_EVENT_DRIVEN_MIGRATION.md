@@ -2,10 +2,10 @@
 
 > Полная миграция с REST API v1 на v2 и переход на Event-Driven архитектуру через Redis Streams
 
-**Статус:** ✅ P0, P1, P2, P3 ЗАВЕРШЕНЫ — миграция полностью завершена
-**Приоритет:** DONE
+**Статус:** ✅ P0, P1, P2, P3 ЗАВЕРШЕНЫ | P4 (follow-up) в очереди
+**Приоритет:** Low (P4 optional cleanup)
 **Создан:** 2025-12-15
-**Обновлён:** 2025-12-15 (v1.5 — ЗАВЕРШЕНО)
+**Обновлён:** 2025-12-15 (v1.6)
 
 ---
 
@@ -500,6 +500,30 @@ worker-responses-group:
 11. ~~Test cleanup~~ ✅ Архивировано: 9 test files в tests/archive/v1_api_tests/
 12. ~~OpenAPI regeneration~~ ✅ Specs validated, clients regenerated (no changes needed)
 
+### P4 (Follow-up — dead code removal)
+13. [ ] Удалить мёртвые ViewSets из Django apps
+
+**Проблема:** ViewSets зарегистрированы в `urls.py` файлах приложений, но эти URL файлы НЕ подключены в `config/urls.py`. Функционал дублируется в v2 API.
+
+**Файлы для удаления/очистки:**
+
+| Файл | Что удалить | Строк |
+|------|-------------|-------|
+| `apps/databases/views.py` | `DatabaseViewSet`, `DatabaseGroupViewSet`, `ClusterViewSet` | ~700 |
+| `apps/databases/urls.py` | Весь файл (router + urlpatterns) | ~37 |
+| `apps/operations/views.py` | Legacy views с v1 комментариями | ~100 |
+| `apps/templates/views.py` | Legacy template validation views | ~100 |
+| `apps/templates/urls.py` | Весь файл | ~10 |
+| `apps/templates/workflow/views.py` | Legacy workflow views | ~200 |
+
+**Функции-standalone которые нужно проверить:**
+- `batch_install_extension()` — возможно используется
+- `list_extension_storage()`, `upload_extension()`, `delete_extension_storage()` — проверить
+
+**Оценка:** ~1000+ строк мёртвого кода
+
+**Риски:** Низкие — код не подключён, функционал в v2 API
+
 ---
 
 ## Связанные документы
@@ -518,6 +542,10 @@ worker-responses-group:
 ---
 
 ## Changelog
+
+### v1.6 (2025-12-15)
+- Добавлена задача P4-13: удаление мёртвых ViewSets (~1000+ строк)
+- Обнаружен dead code: ViewSets в apps/ не подключены к config/urls.py
 
 ### v1.5 (2025-12-15) — МИГРАЦИЯ ЗАВЕРШЕНА
 - ✅ P3 (cleanup) полностью завершён:
