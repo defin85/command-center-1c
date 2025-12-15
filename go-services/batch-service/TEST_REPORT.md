@@ -26,11 +26,13 @@ The subprocess deadlock fix has been successfully implemented and comprehensivel
 | Package | Tests | Coverage | Status |
 |---------|-------|----------|--------|
 | `internal/infrastructure/v8executor` | 7 | 84.3% | ✅ PASS |
-| `internal/infrastructure/django` | 28 | 93.8% | ✅ PASS |
+| `internal/infrastructure/django` | ~~28~~ | ~~93.8%~~ | REMOVED (event-driven) |
 | `internal/service` | 43 | 28.4% | ✅ PASS |
 | `pkg/v8errors` | 18 | 100.0% | ✅ PASS |
 | `tests/integration` | ~15 | N/A | ✅ PASS |
-| **TOTAL** | **97** | **77%** avg | ✅ ALL PASS |
+| **TOTAL** | **~69** | **77%** avg | ✅ ALL PASS |
+
+> **Note:** `internal/infrastructure/django` package was removed. HTTP callbacks replaced by event-driven architecture via Redis Streams.
 
 ---
 
@@ -169,7 +171,7 @@ ALL FUNCTIONS: 100.0% ✅ (18 tests covering all code paths)
 #### Django Client Package
 
 ```
-Coverage: 93.8% ✅ (28 comprehensive tests)
+REMOVED - replaced by event-driven architecture via Redis Streams
 ```
 
 ### Coverage Summary by Package
@@ -177,7 +179,7 @@ Coverage: 93.8% ✅ (28 comprehensive tests)
 | Package | Coverage | Assessment |
 |---------|----------|------------|
 | v8executor | 84.3% | ✅ Good (only minor paths untested) |
-| django | 93.8% | ✅ Excellent |
+| django | REMOVED | Event-driven architecture (Redis Streams) |
 | service | 28.4% | ⚠️ Low (extension_installer/lister are stubs) |
 | v8errors | 100.0% | ✅ Perfect |
 | **Overall** | **77% avg** | ✅ Good for Phase 1 |
@@ -293,7 +295,7 @@ cmd.StdoutPipe() + io.Copy() in goroutine
 | | Service Time | 0.7s |
 | **Coverage** | v8executor | 84.3% |
 | | v8errors | 100.0% |
-| | django | 93.8% |
+| | django | REMOVED |
 | | Overall | 77% (avg) |
 | **Edge Cases** | Large Output (660KB) | ✅ TESTED |
 | | Timeouts | ✅ TESTED |

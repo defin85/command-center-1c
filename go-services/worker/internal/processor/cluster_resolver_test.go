@@ -454,3 +454,121 @@ func TestOrchestratorClusterResolver_DefaultMaxCacheSize(t *testing.T) {
 
 	assert.Equal(t, 1000, cfg.MaxCacheSize, "Default MaxCacheSize should be 1000")
 }
+
+func TestOrchestratorClusterResolver_StreamsDisabledWithoutRedis(t *testing.T) {
+	// When RedisClient is nil, Streams should be disabled even if UseStreams is true
+	cfg := ResolverConfig{
+		OrchestratorURL: "http://localhost:8200",
+		UseStreams:      true,
+		RedisClient:     nil, // No Redis
+	}
+	resolver := NewOrchestratorClusterResolver(cfg)
+
+	assert.False(t, resolver.UseStreams(), "Streams should be disabled without Redis")
+	assert.Nil(t, resolver.clusterInfoWaiter, "ClusterInfoWaiter should not be initialized")
+}
+
+func TestOrchestratorClusterResolver_StreamsEnabledWithRedis(t *testing.T) {
+	// Skip if Redis is not available
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	defer redisClient.Close()
+
+	ctx := context.Background()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Skip("Redis not available, skipping Streams test")
+	}
+
+	cfg := ResolverConfig{
+		OrchestratorURL: "http://localhost:8200",
+		UseStreams:      true,
+		RedisClient:     redisClient,
+		StreamsTimeout:  5 * time.Second,
+	}
+	resolver := NewOrchestratorClusterResolver(cfg)
+
+	assert.True(t, resolver.UseStreams(), "Streams should be enabled with Redis")
+	assert.NotNil(t, resolver.clusterInfoWaiter, "ClusterInfoWaiter should be initialized")
+}
+
+func TestOrchestratorClusterResolver_FallbackToHTTPWhenStreamsTimeout(t *testing.T) {
+	// Skip if Redis is not available
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	defer redisClient.Close()
+
+	ctx := context.Background()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Skip("Redis not available, skipping Streams fallback test")
+	}
+
+	httpCallCount := 0
+
+	// Create HTTP server that always succeeds
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpCallCount++
+		response := map[string]string{
+			"database_id": "fallback-streams-db",
+			"cluster_id":  "fallback-streams-cluster",
+			"infobase_id": "fallback-streams-infobase",
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := ResolverConfig{
+		OrchestratorURL: server.URL,
+		UseStreams:      true,
+		RedisClient:     redisClient,
+		StreamsTimeout:  100 * time.Millisecond, // Very short timeout
+		MaxRetries:      1,
+		CacheTTL:        1 * time.Second, // Short TTL for tests
+	}
+	resolver := NewOrchestratorClusterResolver(cfg)
+
+	// Clean cache to ensure fresh test
+	resolver.ClearCache(ctx)
+	redisClient.Del(ctx, "cluster_info:fallback-streams-db")
+
+	// Start streams waiter
+	err := resolver.StartStreamsWaiter(ctx)
+	require.NoError(t, err)
+	defer resolver.StopStreamsWaiter()
+
+	// Give waiter time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Since there's no Django handler responding, Streams will timeout and fall back to HTTP
+	info, err := resolver.Resolve(ctx, "fallback-streams-db")
+
+	require.NoError(t, err)
+	assert.Equal(t, "fallback-streams-cluster", info.ClusterID)
+	assert.Equal(t, 1, httpCallCount, "Should have fallen back to HTTP")
+}
+
+func TestOrchestratorClusterResolver_DefaultStreamsConfig(t *testing.T) {
+	cfg := DefaultResolverConfig()
+
+	// Streams should be enabled by default
+	assert.True(t, cfg.UseStreams, "UseStreams should be true by default")
+	assert.Equal(t, 5*time.Second, cfg.StreamsTimeout, "StreamsTimeout should be 5s by default")
+}
+
+func TestOrchestratorClusterResolver_StartStopStreamsWaiter(t *testing.T) {
+	// Test that Start/Stop methods work correctly when Streams are disabled
+	cfg := ResolverConfig{
+		OrchestratorURL: "http://localhost:8200",
+		UseStreams:      false, // Streams disabled
+	}
+	resolver := NewOrchestratorClusterResolver(cfg)
+
+	// Start should be a no-op
+	err := resolver.StartStreamsWaiter(context.Background())
+	assert.NoError(t, err)
+
+	// Stop should be a no-op
+	err = resolver.StopStreamsWaiter()
+	assert.NoError(t, err)
+}

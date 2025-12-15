@@ -78,6 +78,14 @@ type Config struct {
 	// Template Engine configuration
 	EnableGoTemplateEngine bool
 	TemplateRenderTimeout  time.Duration
+
+	// Feature Flags
+	// UseStreamsClusterInfo enables Redis Streams for cluster info resolution (primary method).
+	// When enabled, Worker first tries to get cluster info via Streams, then falls back to HTTP.
+	// When disabled, only HTTP is used (for rollback scenarios).
+	UseStreamsClusterInfo bool
+	// StreamsClusterInfoTimeout is the timeout for Streams-based cluster info requests.
+	StreamsClusterInfoTimeout time.Duration
 }
 
 // LoadFromEnv loads configuration from environment variables
@@ -153,6 +161,10 @@ func LoadFromEnv() *Config {
 		// Template Engine - defaults to disabled (Python fallback only)
 		EnableGoTemplateEngine: getBoolEnv("ENABLE_GO_TEMPLATE_ENGINE", false),
 		TemplateRenderTimeout:  getDurationEnv("TEMPLATE_RENDER_TIMEOUT", 5*time.Second),
+
+		// Feature Flags
+		UseStreamsClusterInfo:     getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
+		StreamsClusterInfoTimeout: getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
 	}
 }
 
@@ -204,6 +216,15 @@ func getStringSliceEnv(key string, defaultValue []string) []string {
 		}
 		if len(parts) > 0 {
 			return parts
+		}
+	}
+	return defaultValue
+}
+
+func getPositiveDurationEnv(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil && duration > 0 {
+			return duration
 		}
 	}
 	return defaultValue

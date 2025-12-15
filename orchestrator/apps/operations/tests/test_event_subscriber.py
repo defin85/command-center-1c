@@ -365,3 +365,256 @@ class EventSubscriberTest(TestCase):
             )
         except Exception as e:
             self.fail(f"process_message raised exception: {e}")
+
+
+@override_settings(
+    REDIS_HOST='localhost',
+    REDIS_PORT=6379,
+)
+class EventSubscriberClusterInfoTest(TestCase):
+    """Test suite for get-cluster-info handler."""
+
+    def setUp(self):
+        """Set up test fixtures with cluster configuration."""
+        from apps.databases.models import Cluster
+        import uuid
+
+        # Create test Cluster with RAS configuration
+        self.cluster = Cluster.objects.create(
+            id=uuid.uuid4(),
+            name='Test Cluster',
+            ras_server='localhost:1545',
+            ras_cluster_uuid=uuid.uuid4(),
+            cluster_service_url='http://localhost:8188',
+            status=Cluster.STATUS_ACTIVE,
+        )
+
+        # Create test Database with cluster
+        self.database = Database.objects.create(
+            id='db-with-cluster',
+            name='Database With Cluster',
+            host='localhost',
+            port=80,
+            odata_url='http://localhost/odata',
+            username='admin',
+            password='password',
+            cluster=self.cluster,
+            ras_infobase_id=uuid.uuid4(),
+        )
+
+        # Create Database without cluster
+        self.database_no_cluster = Database.objects.create(
+            id='db-no-cluster',
+            name='Database Without Cluster',
+            host='localhost',
+            port=80,
+            odata_url='http://localhost/odata',
+            username='admin',
+            password='password',
+        )
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_success(self, mock_redis_class):
+        """Test successful cluster info retrieval."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-123',
+            'database_id': self.database.id,
+            'timestamp': '2025-12-15T10:30:00Z',
+        }
+
+        # Call handler
+        subscriber.handle_get_cluster_info(data, 'test-corr-123')
+
+        # Verify xadd was called with correct response
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+
+        # Check stream name
+        self.assertEqual(
+            call_args[0][0],
+            'events:orchestrator:cluster-info-response'
+        )
+
+        # Check response content
+        response = call_args[0][1]
+        self.assertEqual(response['correlation_id'], 'test-corr-123')
+        self.assertEqual(response['database_id'], self.database.id)
+        self.assertEqual(response['success'], 'true')
+        self.assertEqual(response['ras_server'], 'localhost:1545')
+        self.assertNotEqual(response['ras_cluster_uuid'], '')
+        self.assertNotEqual(response['infobase_id'], '')
+        self.assertEqual(response['error'], '')
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_database_not_found(self, mock_redis_class):
+        """Test cluster info for non-existent database."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-456',
+            'database_id': 'nonexistent-db',
+            'timestamp': '2025-12-15T10:30:00Z',
+        }
+
+        subscriber.handle_get_cluster_info(data, 'test-corr-456')
+
+        # Verify error response
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+        response = call_args[0][1]
+
+        self.assertEqual(response['correlation_id'], 'test-corr-456')
+        self.assertEqual(response['database_id'], 'nonexistent-db')
+        self.assertEqual(response['success'], 'false')
+        self.assertIn('not found', response['error'])
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_no_cluster(self, mock_redis_class):
+        """Test cluster info for database without cluster."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-789',
+            'database_id': self.database_no_cluster.id,
+            'timestamp': '2025-12-15T10:30:00Z',
+        }
+
+        subscriber.handle_get_cluster_info(data, 'test-corr-789')
+
+        # Verify error response
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+        response = call_args[0][1]
+
+        self.assertEqual(response['correlation_id'], 'test-corr-789')
+        self.assertEqual(response['success'], 'false')
+        self.assertIn('no cluster', response['error'].lower())
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_no_ras_cluster_uuid(self, mock_redis_class):
+        """Test cluster info for cluster without ras_cluster_uuid."""
+        from apps.databases.models import Cluster
+        import uuid
+
+        # Create cluster without ras_cluster_uuid
+        cluster_no_uuid = Cluster.objects.create(
+            id=uuid.uuid4(),
+            name='Cluster Without UUID',
+            ras_server='localhost:1545',
+            ras_cluster_uuid=None,  # No UUID
+            cluster_service_url='http://localhost:8188',
+        )
+
+        database = Database.objects.create(
+            id='db-no-ras-uuid',
+            name='DB No RAS UUID',
+            host='localhost',
+            port=80,
+            odata_url='http://localhost/odata',
+            username='admin',
+            password='password',
+            cluster=cluster_no_uuid,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-no-uuid',
+            'database_id': database.id,
+        }
+
+        subscriber.handle_get_cluster_info(data, 'test-corr-no-uuid')
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response['success'], 'false')
+        self.assertIn('ras_cluster_uuid', response['error'])
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_no_infobase_id(self, mock_redis_class):
+        """Test cluster info for database without ras_infobase_id."""
+        from apps.databases.models import Cluster
+        import uuid
+
+        # Create cluster with UUID
+        cluster = Cluster.objects.create(
+            id=uuid.uuid4(),
+            name='Cluster With UUID',
+            ras_server='localhost:1545',
+            ras_cluster_uuid=uuid.uuid4(),
+            cluster_service_url='http://localhost:8188',
+        )
+
+        database = Database.objects.create(
+            id='db-no-infobase-id',
+            name='DB No Infobase ID',
+            host='localhost',
+            port=80,
+            odata_url='http://localhost/odata',
+            username='admin',
+            password='password',
+            cluster=cluster,
+            ras_infobase_id=None,  # No infobase ID
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-no-infobase',
+            'database_id': database.id,
+        }
+
+        subscriber.handle_get_cluster_info(data, 'test-corr-no-infobase')
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response['success'], 'false')
+        self.assertIn('ras_infobase_id', response['error'])
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_process_message_routes_to_get_cluster_info(self, mock_redis_class):
+        """Test message routing to get_cluster_info handler."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+        subscriber.handle_get_cluster_info = MagicMock()
+
+        data = {
+            'correlation_id': 'test-corr-routing',
+            'database_id': 'db-123',
+            'timestamp': '2025-12-15T10:30:00Z',
+        }
+
+        subscriber.process_message(
+            'commands:orchestrator:get-cluster-info',
+            '1234567890-0',
+            data
+        )
+
+        subscriber.handle_get_cluster_info.assert_called_once()
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_subscriber_streams_includes_get_cluster_info(self, mock_redis_class):
+        """Test that subscriber streams include get-cluster-info command."""
+        subscriber = EventSubscriber()
+
+        self.assertIn(
+            'commands:orchestrator:get-cluster-info',
+            subscriber.streams
+        )

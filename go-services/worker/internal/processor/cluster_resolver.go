@@ -34,7 +34,7 @@ type ClusterInfoResolver interface {
 	Resolve(ctx context.Context, databaseID string) (*ClusterInfo, error)
 }
 
-// OrchestratorClusterResolver resolves cluster info via Orchestrator API
+// OrchestratorClusterResolver resolves cluster info via Orchestrator API or Redis Streams
 type OrchestratorClusterResolver struct {
 	// HTTP client with configured timeout
 	httpClient *http.Client
@@ -54,6 +54,14 @@ type OrchestratorClusterResolver struct {
 	cacheOrder   []string // Tracks insertion order for LRU eviction
 	maxCacheSize int      // Maximum cache entries
 	cacheMu      sync.RWMutex
+
+	// Streams-based resolution
+	// useStreams enables Redis Streams as primary method (with HTTP fallback)
+	useStreams bool
+	// streamsTimeout is the timeout for Streams-based requests
+	streamsTimeout time.Duration
+	// clusterInfoWaiter handles Streams request-response pattern
+	clusterInfoWaiter *ClusterInfoWaiter
 }
 
 // cacheEntry holds cached ClusterInfo with expiration
@@ -77,10 +85,18 @@ type ResolverConfig struct {
 	// CacheTTL for cached results (default: 5 minutes)
 	CacheTTL time.Duration
 	// RedisClient for distributed caching (optional, uses in-memory if nil)
+	// Also required for Streams-based resolution
 	RedisClient *redis.Client
 	// MaxCacheSize limits in-memory cache entries (default: 1000)
 	// When exceeded, oldest entries are evicted (LRU-like policy)
 	MaxCacheSize int
+
+	// Streams configuration
+	// UseStreams enables Redis Streams as primary method (with HTTP fallback)
+	// Requires RedisClient to be set
+	UseStreams bool
+	// StreamsTimeout is the timeout for Streams-based requests (default: 5s)
+	StreamsTimeout time.Duration
 }
 
 // DefaultResolverConfig returns configuration with sensible defaults
@@ -95,6 +111,8 @@ func DefaultResolverConfig() ResolverConfig {
 		CacheTTL:        5 * time.Minute,
 		RedisClient:     nil,
 		MaxCacheSize:    1000, // Default: 1000 entries (suitable for 700+ databases)
+		UseStreams:      cfg.UseStreamsClusterInfo,
+		StreamsTimeout:  cfg.StreamsClusterInfoTimeout,
 	}
 }
 
@@ -115,8 +133,14 @@ func NewOrchestratorClusterResolver(cfg ResolverConfig) *OrchestratorClusterReso
 	if cfg.MaxCacheSize == 0 {
 		cfg.MaxCacheSize = 1000
 	}
+	if cfg.StreamsTimeout == 0 {
+		cfg.StreamsTimeout = 5 * time.Second
+	}
 
-	return &OrchestratorClusterResolver{
+	// Disable Streams if RedisClient is not available
+	useStreams := cfg.UseStreams && cfg.RedisClient != nil
+
+	resolver := &OrchestratorClusterResolver{
 		httpClient: &http.Client{
 			Timeout: cfg.HTTPTimeout,
 		},
@@ -129,7 +153,35 @@ func NewOrchestratorClusterResolver(cfg ResolverConfig) *OrchestratorClusterReso
 		cache:           make(map[string]*cacheEntry),
 		cacheOrder:      make([]string, 0, cfg.MaxCacheSize),
 		maxCacheSize:    cfg.MaxCacheSize,
+		useStreams:      useStreams,
+		streamsTimeout:  cfg.StreamsTimeout,
 	}
+
+	// Initialize ClusterInfoWaiter if Streams are enabled
+	if useStreams {
+		resolver.clusterInfoWaiter = NewClusterInfoWaiter(cfg.RedisClient, "")
+	}
+
+	return resolver
+}
+
+// StartStreamsWaiter starts the ClusterInfoWaiter goroutine.
+// Must be called after NewOrchestratorClusterResolver if Streams are enabled.
+// Returns nil if Streams are disabled.
+func (r *OrchestratorClusterResolver) StartStreamsWaiter(ctx context.Context) error {
+	if r.clusterInfoWaiter == nil {
+		return nil
+	}
+	return r.clusterInfoWaiter.Start(ctx)
+}
+
+// StopStreamsWaiter stops the ClusterInfoWaiter goroutine.
+// Safe to call even if Streams are disabled.
+func (r *OrchestratorClusterResolver) StopStreamsWaiter() error {
+	if r.clusterInfoWaiter == nil {
+		return nil
+	}
+	return r.clusterInfoWaiter.Close()
 }
 
 // Resolve fetches ClusterInfo for the given database ID
@@ -192,8 +244,44 @@ func (r *OrchestratorClusterResolver) Resolve(ctx context.Context, databaseID st
 		databaseID, r.maxRetries, lastErr)
 }
 
-// fetchFromOrchestrator makes HTTP request to Orchestrator API
+// fetchFromOrchestrator fetches cluster info from Orchestrator.
+// If Streams are enabled, it tries Streams first, then falls back to HTTP.
+// If Streams are disabled, it uses HTTP directly.
 func (r *OrchestratorClusterResolver) fetchFromOrchestrator(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	log := logger.GetLogger()
+
+	// 1. Try Streams first (if enabled)
+	if r.useStreams && r.clusterInfoWaiter != nil {
+		info, err := r.fetchViaStreams(ctx, databaseID)
+		if err == nil {
+			log.Debug("cluster info resolved via Streams",
+				zap.String("database_id", databaseID),
+				zap.String("cluster_id", info.ClusterID),
+			)
+			return info, nil
+		}
+
+		log.Warn("streams fetch failed, falling back to HTTP",
+			zap.String("database_id", databaseID),
+			zap.Error(err),
+		)
+	}
+
+	// 2. Fallback to HTTP
+	return r.fetchViaHTTP(ctx, databaseID)
+}
+
+// fetchViaStreams requests cluster info via Redis Streams.
+func (r *OrchestratorClusterResolver) fetchViaStreams(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	if r.clusterInfoWaiter == nil {
+		return nil, fmt.Errorf("cluster info waiter not initialized")
+	}
+
+	return r.clusterInfoWaiter.RequestClusterInfo(ctx, databaseID, r.streamsTimeout)
+}
+
+// fetchViaHTTP makes HTTP request to Orchestrator API.
+func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, databaseID string) (*ClusterInfo, error) {
 	// Build URL: GET /api/v1/databases/{id}/cluster-info/
 	url := fmt.Sprintf("%s/api/v1/databases/%s/cluster-info/", r.orchestratorURL, databaseID)
 
@@ -252,6 +340,11 @@ func (r *OrchestratorClusterResolver) fetchFromOrchestrator(ctx context.Context,
 		ClusterID:  apiResponse.ClusterID,
 		InfobaseID: apiResponse.InfobaseID,
 	}, nil
+}
+
+// UseStreams returns whether Streams-based resolution is enabled.
+func (r *OrchestratorClusterResolver) UseStreams() bool {
+	return r.useStreams
 }
 
 // getFromCache retrieves ClusterInfo from cache

@@ -194,88 +194,9 @@ def extension_status(request, pk):
 
 
 # ======== Extension Storage Endpoints ========
-@api_view(['POST'])
-@permission_classes([])  # No authentication required for callbacks from batch-service
-@extend_schema(
-    summary="Callback от batch-service после установки расширения",
-    description="""
-    Принимает уведомление от batch-service о завершении установки расширения.
-    Обновляет статус ExtensionInstallation на основе результата операции.
-    """,
-    request={
-        'application/json': {
-            'type': 'object',
-            'properties': {
-                'database_id': {'type': 'string', 'format': 'uuid'},
-                'extension_name': {'type': 'string'},
-                'status': {'type': 'string', 'enum': ['completed', 'failed']},
-                'duration_seconds': {'type': 'number'},
-                'error_message': {'type': 'string', 'nullable': True}
-            },
-            'required': ['database_id', 'extension_name', 'status']
-        }
-    },
-    responses={
-        200: OpenApiResponse(description="Callback processed successfully"),
-        400: OpenApiResponse(description="Invalid request"),
-        404: OpenApiResponse(description="Installation not found")
-    }
-)
-def installation_callback(request):
-    """
-    Callback от batch-service после завершения установки расширения.
-
-    Payload:
-    {
-        "database_id": "db_uuid",
-        "extension_name": "ODataAutoConfig",
-        "status": "completed",  # completed | failed
-        "duration_seconds": 45.5,
-        "error_message": null
-    }
-    """
-
-    database_id = request.data.get('database_id')
-    extension_name = request.data.get('extension_name')
-    install_status = request.data.get('status')
-    duration = request.data.get('duration_seconds', 0)
-    error = request.data.get('error_message')
-
-    if not all([database_id, extension_name, install_status]):
-        return Response(
-            {"error": "Missing required fields: database_id, extension_name, status"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    if install_status not in ['completed', 'failed']:
-        return Response(
-            {"error": "Invalid status. Must be 'completed' or 'failed'"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    try:
-        # Найти ExtensionInstallation
-        installation = ExtensionInstallation.objects.get(
-            database_id=database_id,
-            extension_name=extension_name,
-            status__in=['pending', 'in_progress']
-        )
-
-        # Обновить статус
-        installation.status = install_status
-        installation.completed_at = timezone.now()
-        installation.duration_seconds = int(duration)
-        if error:
-            installation.error_message = error
-        installation.save()
-
-        return Response({'status': 'ok'}, status=status.HTTP_200_OK)
-
-    except ExtensionInstallation.DoesNotExist:
-        return Response(
-            {"error": f"No pending installation found for database {database_id} and extension {extension_name}"},
-            status=status.HTTP_404_NOT_FOUND
-        )
+# NOTE: HTTP callback endpoint removed - using event-driven architecture via Redis Streams
+# Events: events:batch-service:extension:installed, events:batch-service:extension:install-failed
+# See: apps/operations/event_subscriber.py
 
 
 class ClusterViewSet(viewsets.ModelViewSet):

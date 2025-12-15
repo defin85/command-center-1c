@@ -145,43 +145,54 @@ orchestrator/apps/operations/event_subscriber.py         # Новый handler
 orchestrator/apps/databases/services/credentials.py      # Service для ответа
 ```
 
-#### 1.2 Cluster Info через Streams
+#### 1.2 Cluster Info через Streams ✅ ЗАВЕРШЕНО
 
-**Текущее:** Worker делает HTTP GET для получения cluster-info перед операциями
+**Текущее:** ~~Worker делает HTTP GET для получения cluster-info перед операциями~~
 
-**Целевое:** Аналогично credentials — request/response через Streams
+**Реализовано:** Streams-first с HTTP fallback
+- Stream `commands:orchestrator:get-cluster-info` для запросов
+- Stream `events:orchestrator:cluster-info-response` для ответов
+- Django handler в event_subscriber.py
+- ClusterInfoWaiter с request-response паттерном
+- Feature flag `USE_STREAMS_CLUSTER_INFO` (default: true)
 
 **Задачи:**
-- [ ] Создать stream `commands:orchestrator:get-cluster-info`
-- [ ] Создать stream `events:orchestrator:cluster-info-response`
-- [ ] Django: добавить handler
-- [ ] Worker: заменить `cluster_resolver.go` на Stream-based
+- [x] Создать stream `commands:orchestrator:get-cluster-info`
+- [x] Создать stream `events:orchestrator:cluster-info-response`
+- [x] Django: добавить handler `handle_get_cluster_info()`
+- [x] Worker: добавить `cluster_info_waiter.go` с Streams поддержкой
+- [x] HTTP fallback при timeout (5 секунд)
 
-**Файлы для изменения:**
+**Файлы изменены:**
 ```
+go-services/shared/events/channels.go                    # Константы streams
 go-services/worker/internal/processor/cluster_resolver.go
-go-services/worker/internal/processor/cluster_resolver_stream.go # Новый
+go-services/worker/internal/processor/cluster_info_waiter.go  # Новый
 orchestrator/apps/operations/event_subscriber.py
-orchestrator/apps/databases/services/cluster_info.py             # Новый service
 ```
 
-#### 1.3 Batch-Service Callback через Streams
+#### 1.3 Batch-Service Callback через Streams ✅ ЗАВЕРШЕНО
 
-**Текущее:** Batch-service делает HTTP POST callback в Orchestrator
+**Текущее:** ~~Batch-service делает HTTP POST callback в Orchestrator~~
 
-**Целевое:** Уже частично реализовано! Event Subscriber слушает `events:batch-service:*`
+**Реализовано:** HTTP callback удалён, только Event-Driven через Redis Streams
 
 **Задачи:**
-- [ ] Удалить HTTP callback client в batch-service
-- [ ] Убедиться что все события публикуются в streams
-- [ ] Django: убрать `/api/v1/extensions/installation/callback/` endpoint
+- [x] Удалить HTTP callback client в batch-service (`django/client.go`)
+- [x] Убедиться что все события публикуются в streams (install-started, installed, failed)
+- [x] Django: убрать `/api/v1/extensions/installation/callback/` endpoint
 
-**Файлы для изменения:**
+**Файлы удалены:**
 ```
-go-services/batch-service/internal/infrastructure/django/client.go  # Удалить
-go-services/batch-service/internal/eventhandlers/install_handler.go # Проверить
-orchestrator/apps/databases/urls.py                                  # Удалить endpoint
-orchestrator/apps/databases/views.py                                 # Удалить view
+go-services/batch-service/internal/infrastructure/django/client.go      # УДАЛЁН
+go-services/batch-service/internal/infrastructure/django/client_test.go # УДАЛЁН
+orchestrator/apps/databases/tests/test_extension_callback.py            # УДАЛЁН
+```
+
+**Файлы изменены:**
+```
+orchestrator/apps/databases/urls.py   # Удалён callback endpoint
+orchestrator/apps/databases/views.py  # Удалена функция installation_callback
 ```
 
 ---
@@ -474,10 +485,10 @@ worker-responses-group:
 2. ~~Frontend: распознавание `.started` статуса~~ ✅ EventStatus + STATUS_COLORS + EVENT_LABELS
 3. ~~Credentials для RAS операций~~ ✅ `shared/credentials/` + ras-adapter fetch от Orchestrator
 
-### P1 (Высокий — после P0)
-4. Cluster-info через Streams
-5. Удаление batch-service HTTP callback
-6. Django v1 endpoints deprecation
+### P1 (Высокий — после P0) ✅ ЧАСТИЧНО ЗАВЕРШЕНО
+4. ~~Cluster-info через Streams~~ ✅ Streams-first с HTTP fallback
+5. ~~Удаление batch-service HTTP callback~~ ✅ HTTP callback удалён
+6. Django v1 endpoints deprecation — **В ПРОЦЕССЕ**
 
 ### P2 (Средний — после P1)
 7. Batch-service v2 API migration
@@ -500,13 +511,25 @@ worker-responses-group:
 
 ---
 
-**Версия:** 1.1
+**Версия:** 1.2
 **Автор:** AI Assistant
 **Ревью:** Требуется
 
 ---
 
 ## Changelog
+
+### v1.2 (2025-12-15)
+- ✅ P1 задачи частично завершены:
+  - Cluster-info через Redis Streams (primary, HTTP fallback)
+  - Batch-service HTTP callback удалён
+- Добавлен `cluster_info_waiter.go` для request-response через Streams
+- Django handler `handle_get_cluster_info()` в event_subscriber.py
+- Feature flag `USE_STREAMS_CLUSTER_INFO` (default: true)
+- Удалены файлы:
+  - `batch-service/internal/infrastructure/django/client.go`
+  - `orchestrator/apps/databases/tests/test_extension_callback.py`
+  - Endpoint `/api/v1/extensions/installation/callback/`
 
 ### v1.1 (2025-12-15)
 - ✅ P0 задачи завершены:

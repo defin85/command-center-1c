@@ -19,7 +19,7 @@ import os
 from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
-from django.db import transaction, close_old_connections
+from django.db import transaction, close_old_connections, connection
 import logging
 
 from apps.operations.models import Task
@@ -113,6 +113,8 @@ class EventSubscriber:
             'events:worker:completed': '>',
             'events:worker:failed': '>',
             'commands:worker:dlq': '>',  # Dead Letter Queue (Error Feedback Phase 1)
+            # Commands from Worker (Request-Response pattern)
+            'commands:orchestrator:get-cluster-info': '>',  # Cluster info requests from Worker
         }
 
         # Setup signal handlers for graceful shutdown
@@ -275,6 +277,9 @@ class EventSubscriber:
 
         elif 'worker:dlq' in stream:
             self.handle_dlq_message(data, correlation_id)
+
+        elif 'get-cluster-info' in stream:
+            self.handle_get_cluster_info(data, correlation_id)
 
         else:
             logger.warning(f"Unknown stream: {stream}")
@@ -919,7 +924,7 @@ class EventSubscriber:
                 with transaction.atomic():
                     # FIX #9 (MINOR #1): Check deduplication INSIDE transaction
                     # to prevent race condition where two threads pass sismember simultaneously
-                    if self.redis_client.client.sismember(dlq_dedup_key, original_message_id):
+                    if self.redis_client.sismember(dlq_dedup_key, original_message_id):
                         logger.debug(
                             f"DLQ message already processed: operation_id={operation_id}, "
                             f"original_msg_id={original_message_id}"
@@ -955,8 +960,8 @@ class EventSubscriber:
 
                     # Mark as processed INSIDE transaction (FIX #9 MINOR #1)
                     # This ensures atomicity with the deduplication check
-                    self.redis_client.client.sadd(dlq_dedup_key, original_message_id)
-                    self.redis_client.client.expire(dlq_dedup_key, 86400)  # 24h TTL
+                    self.redis_client.sadd(dlq_dedup_key, original_message_id)
+                    self.redis_client.expire(dlq_dedup_key, 86400)  # 24h TTL
 
             except BatchOperation.DoesNotExist:
                 logger.warning(
@@ -971,6 +976,151 @@ class EventSubscriber:
             logger.warning(
                 f"DLQ message without operation_id, cannot update BatchOperation: "
                 f"original_msg_id={original_message_id}, error_code={error_code}"
+            )
+
+    def handle_get_cluster_info(self, data: Dict[str, Any], correlation_id: str):
+        """
+        Handle get-cluster-info command from Go Worker.
+
+        This implements the Request-Response pattern over Redis Streams.
+        Worker sends a request with correlation_id, and we respond with
+        cluster info (or error) to the response stream.
+
+        Request data format:
+            {
+                'correlation_id': 'uuid',
+                'database_id': '123',
+                'timestamp': '2025-12-15T...'
+            }
+
+        Response format (published to events:orchestrator:cluster-info-response):
+            {
+                'correlation_id': 'uuid',
+                'database_id': '123',
+                'cluster_id': 'uuid',  # Django cluster.id
+                'ras_server': 'localhost:1545',
+                'ras_cluster_uuid': 'uuid',  # UUID in RAS
+                'infobase_id': 'uuid',  # UUID in RAS
+                'success': True/False,
+                'error': null or 'error message'
+            }
+        """
+        from apps.databases.models import Database
+
+        # Extract request fields (flat format from Redis Stream)
+        request_correlation_id = data.get('correlation_id', correlation_id)
+        database_id = data.get('database_id', '')
+        # timestamp available but not used: data.get('timestamp', '')
+
+        logger.info(
+            f"Processing get-cluster-info request: database_id={database_id}, "
+            f"correlation_id={request_correlation_id}"
+        )
+
+        # Prepare response
+        response = {
+            'correlation_id': request_correlation_id,
+            'database_id': database_id,
+            'cluster_id': '',
+            'ras_server': '',
+            'ras_cluster_uuid': '',
+            'infobase_id': '',
+            'success': 'false',  # Redis stores as string
+            'error': '',
+        }
+
+        try:
+            # Note: close_old_connections() is called in the main run_forever loop
+            # between message processing, so we don't need to call it here.
+            # This allows the handler to work correctly in both production
+            # (long-running process) and test environments.
+
+            # Lookup database with cluster relation
+            try:
+                database = Database.objects.select_related('cluster').get(pk=database_id)
+            except Database.DoesNotExist:
+                response['error'] = f'Database {database_id} not found'
+                logger.warning(f"Database not found: {database_id}")
+                self._publish_cluster_info_response(response)
+                return
+
+            # Check if cluster is configured
+            if not database.cluster:
+                response['error'] = f'Database {database_id} has no cluster configured'
+                logger.warning(f"No cluster for database: {database_id}")
+                self._publish_cluster_info_response(response)
+                return
+
+            cluster = database.cluster
+
+            # Check if cluster has RAS configuration
+            if not cluster.ras_cluster_uuid:
+                response['error'] = (
+                    f'Cluster {cluster.name} has no ras_cluster_uuid configured. '
+                    f'Run sync_cluster first or set manually in admin.'
+                )
+                logger.warning(
+                    f"No ras_cluster_uuid for cluster {cluster.name} "
+                    f"(database: {database_id})"
+                )
+                self._publish_cluster_info_response(response)
+                return
+
+            # Check if database has infobase UUID
+            if not database.ras_infobase_id:
+                response['error'] = (
+                    f'Database {database_id} has no ras_infobase_id configured. '
+                    f'Run sync_cluster first.'
+                )
+                logger.warning(
+                    f"No ras_infobase_id for database {database_id}"
+                )
+                self._publish_cluster_info_response(response)
+                return
+
+            # Success - populate response
+            response['cluster_id'] = str(cluster.id)
+            response['ras_server'] = cluster.ras_server or ''
+            response['ras_cluster_uuid'] = str(cluster.ras_cluster_uuid)
+            response['infobase_id'] = str(database.ras_infobase_id)
+            response['success'] = 'true'
+            response['error'] = ''
+
+            logger.info(
+                f"Cluster info resolved: database_id={database_id}, "
+                f"ras_cluster_uuid={cluster.ras_cluster_uuid}, "
+                f"infobase_id={database.ras_infobase_id}"
+            )
+
+        except Exception as e:
+            response['error'] = f'Internal error: {str(e)}'
+            logger.error(
+                f"Error handling get-cluster-info: {e}",
+                exc_info=True
+            )
+
+        # Publish response
+        self._publish_cluster_info_response(response)
+
+    def _publish_cluster_info_response(self, response: Dict[str, str]):
+        """
+        Publish cluster info response to the response stream.
+
+        Args:
+            response: Response dict with correlation_id, database_id, etc.
+        """
+        response_stream = 'events:orchestrator:cluster-info-response'
+
+        try:
+            self.redis_client.xadd(response_stream, response)
+            logger.debug(
+                f"Published cluster-info response: correlation_id={response.get('correlation_id')}, "
+                f"success={response.get('success')}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to publish cluster-info response: {e}",
+                exc_info=True
             )
 
     def shutdown(self, signum, frame):

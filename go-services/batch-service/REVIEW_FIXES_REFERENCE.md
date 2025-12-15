@@ -424,56 +424,15 @@ func (d *ExtensionDeleter) DeleteExtension(ctx context.Context, req DeleteReques
 }
 ```
 
-### 5. Улучшенный Django Client с Retry
+### 5. ~~Django Client с Retry~~ (REMOVED)
 
-**Файл:** `internal/infrastructure/django/client.go`
-
-```go
-func (c *Client) NotifyInstallationComplete(payload CallbackPayload) error {
-	const maxRetries = 3
-	const baseDelay = 2 * time.Second
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := baseDelay * time.Duration(attempt) // Exponential backoff
-			log.Printf("Retrying callback (attempt %d/%d) after %v", attempt+1, maxRetries, delay)
-			time.Sleep(delay)
-		}
-
-		url := c.baseURL + "/api/v1/extensions/installation/callback/"
-
-		jsonData, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("failed to marshal payload: %w", err)
-		}
-
-		log.Printf("Sending callback to Django: %s (status: %s)", url, payload.Status)
-
-		resp, err := c.httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
-		if err != nil {
-			lastErr = err
-			continue // Retry network errors
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-			log.Printf("Callback sent successfully to Django")
-			return nil // Success
-		}
-
-		lastErr = fmt.Errorf("callback error: status %d", resp.StatusCode)
-
-		// Don't retry 4xx client errors (except 429 Too Many Requests)
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-			log.Printf("Callback failed with client error (not retrying): %v", lastErr)
-			break
-		}
-	}
-
-	return fmt.Errorf("callback failed after %d attempts: %w", maxRetries, lastErr)
-}
-```
+> **NOTE:** This component was removed in favor of event-driven architecture.
+> HTTP callbacks are no longer used. Instead, batch-service publishes events to Redis Streams:
+> - `events:batch-service:extension:install-started`
+> - `events:batch-service:extension:installed`
+> - `events:batch-service:extension:install-failed`
+>
+> Django EventSubscriber (`apps/operations/event_subscriber.py`) handles these events.
 
 ## Тестирование исправлений
 
