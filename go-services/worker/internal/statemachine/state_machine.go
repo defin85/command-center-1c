@@ -210,7 +210,7 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 	defer sm.Close()
 
 	// Record saga start in timeline
-	sm.timeline.Record(ctx, sm.OperationID, "saga.started", map[string]string{
+	sm.timeline.Record(ctx, sm.OperationID, "saga.started", map[string]interface{}{
 		"correlation_id": sm.CorrelationID,
 		"database_id":    sm.DatabaseID,
 		"extension_name": sm.ExtensionName,
@@ -278,12 +278,12 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 
 	// Record saga completion in timeline
 	if sm.State == StateCompleted {
-		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.completed", map[string]string{
+		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.completed", map[string]interface{}{
 			"correlation_id": sm.CorrelationID,
 			"final_state":    string(sm.State),
 		})
 	} else {
-		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.failed", map[string]string{
+		sm.timeline.Record(sm.ctx, sm.OperationID, "saga.failed", map[string]interface{}{
 			"correlation_id": sm.CorrelationID,
 			"final_state":    string(sm.State),
 		})
@@ -308,7 +308,7 @@ func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) erro
 	sm.lastActivity = time.Now()
 
 	// Record state transition in timeline
-	sm.timeline.Record(sm.ctx, sm.OperationID, "saga.transition", map[string]string{
+	sm.timeline.Record(sm.ctx, sm.OperationID, "saga.transition", map[string]interface{}{
 		"from_state":     string(oldState),
 		"to_state":       string(newState),
 		"correlation_id": sm.CorrelationID,

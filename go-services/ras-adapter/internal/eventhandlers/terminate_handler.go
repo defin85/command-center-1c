@@ -95,7 +95,7 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"cluster_id":   cmd.ClusterID,
 			"infobase_id":  cmd.InfobaseID,
@@ -112,7 +112,7 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 			zap.Error(err))
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -134,7 +134,7 @@ func (h *TerminateHandler) HandleTerminateCommand(ctx context.Context, envelope 
 			zap.Error(err))
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -197,7 +197,7 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 			}
 			// Record timeline: command completed (partial)
 			if h.timeline != nil {
-				h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+				h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]interface{}{
 					"command_type": cmd.CommandType,
 					"status":       "partial",
 					"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
@@ -236,7 +236,7 @@ func (h *TerminateHandler) monitorSessions(ctx context.Context, correlationID st
 				}
 				// Record timeline: command completed (success)
 				if h.timeline != nil {
-					h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+					h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]interface{}{
 						"command_type": cmd.CommandType,
 						"status":       "success",
 						"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),

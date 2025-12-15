@@ -45,10 +45,11 @@ const MAX_BAR_WIDTH_PERCENT = 100
  * Event status colors
  */
 const STATUS_COLORS: Record<EventStatus, string> = {
-  received: '#1890ff',   // Blue
-  completed: '#52c41a',  // Green
-  failed: '#ff4d4f',     // Red
-  unknown: '#8c8c8c',    // Gray
+  received: '#1890ff',    // Blue
+  processing: '#faad14',  // Orange/Amber (Ant Design warning)
+  completed: '#52c41a',   // Green
+  failed: '#ff4d4f',      // Red
+  unknown: '#8c8c8c',     // Gray
 }
 
 /**

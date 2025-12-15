@@ -45,5 +45,11 @@ export interface WaterfallItem {
 
 /**
  * Event status derived from event name
+ *
+ * - received: Initial event (e.g., .received, .created)
+ * - processing: In-progress event (e.g., .started, .processing)
+ * - completed: Successfully finished (e.g., .completed)
+ * - failed: Error occurred (e.g., .failed)
+ * - unknown: Unrecognized event suffix
  */
-export type EventStatus = 'received' | 'completed' | 'failed' | 'unknown'
+export type EventStatus = 'received' | 'processing' | 'completed' | 'failed' | 'unknown'

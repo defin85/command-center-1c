@@ -109,7 +109,7 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 		})
 	}
@@ -143,7 +143,7 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -165,7 +165,7 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -180,7 +180,7 @@ func (h *ConfigHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})
@@ -246,7 +246,7 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 		})
 	}
@@ -280,7 +280,7 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -302,7 +302,7 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -317,7 +317,7 @@ func (h *ConfigHandler) HandleLoadCommand(ctx context.Context, envelope *events.
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})
@@ -384,7 +384,7 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 		})
 	}
@@ -418,7 +418,7 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -440,7 +440,7 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -455,7 +455,7 @@ func (h *ConfigHandler) HandleDumpCommand(ctx context.Context, envelope *events.
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

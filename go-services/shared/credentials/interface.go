@@ -1,4 +1,4 @@
-// go-services/worker/internal/credentials/interface.go
+// go-services/shared/credentials/interface.go
 package credentials
 
 import "context"

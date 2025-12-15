@@ -48,6 +48,13 @@ export const EVENT_LABELS: Record<string, string> = {
   'batch.command.received': 'Batch Request Received',
   'batch.command.completed': 'Batch Completed',
   'batch.command.failed': 'Batch Failed',
+
+  // Cluster sync events
+  'cluster.sync.started': 'Cluster Sync Started',
+  'cluster.sync.resolving.started': 'Resolving Cluster UUID',
+  'cluster.sync.fetching.started': 'Fetching Infobases',
+  'cluster.sync.completed': 'Cluster Sync Completed',
+  'cluster.sync.failed': 'Cluster Sync Failed',
 }
 
 /**
@@ -71,6 +78,9 @@ export function getEventLabel(event: string): string {
 export function getEventStatus(event: string): EventStatus {
   if (event.endsWith('.received') || event.endsWith('.created')) {
     return 'received'
+  }
+  if (event.endsWith('.started') || event.endsWith('.processing')) {
+    return 'processing'
   }
   if (event.endsWith('.completed')) {
     return 'completed'

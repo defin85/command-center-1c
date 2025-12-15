@@ -108,7 +108,7 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type":   cmd.CommandType,
 			"extension_name": cmd.Params.ExtensionName,
 		})
@@ -140,7 +140,7 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 		h.recordMetric("extension_install", "error", duration)
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -159,7 +159,7 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 		h.recordMetric("extension_install", "error", duration)
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -171,7 +171,7 @@ func (h *ExtensionHandler) HandleInstallCommand(ctx context.Context, envelope *e
 	h.recordMetric("extension_install", "success", duration)
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})
@@ -239,7 +239,7 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type":   cmd.CommandType,
 			"extension_name": cmd.Params.ExtensionName,
 		})
@@ -271,7 +271,7 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 		h.recordMetric("extension_remove", "error", duration)
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -290,7 +290,7 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 		h.recordMetric("extension_remove", "error", duration)
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -302,7 +302,7 @@ func (h *ExtensionHandler) HandleRemoveCommand(ctx context.Context, envelope *ev
 	h.recordMetric("extension_remove", "success", duration)
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

@@ -1,4 +1,4 @@
-// go-services/worker/internal/credentials/encryption.go
+// go-services/shared/credentials/encryption.go
 package credentials
 
 import (
@@ -11,14 +11,6 @@ import (
 	"io"
 	"time"
 )
-
-// EncryptedCredentialsResponse from Django Orchestrator (encrypted payload)
-type EncryptedCredentialsResponse struct {
-	EncryptedData     string `json:"encrypted_data"`
-	Nonce             string `json:"nonce"`
-	ExpiresAt         string `json:"expires_at"`
-	EncryptionVersion string `json:"encryption_version"`
-}
 
 const (
 	// AES-256 requires 32 bytes key
@@ -63,7 +55,7 @@ func DecryptCredentials(resp EncryptedCredentialsResponse, transportKey []byte) 
 		return nil, fmt.Errorf("failed to parse expires_at: %w", err)
 	}
 
-	// Check TTL (должен быть < 5 минут от текущего времени)
+	// Check TTL (should be < 5 minutes from current time)
 	if time.Now().After(expiresAt) {
 		return nil, fmt.Errorf("credentials payload expired (TTL exceeded)")
 	}
@@ -116,7 +108,8 @@ func DecryptCredentials(resp EncryptedCredentialsResponse, transportKey []byte) 
 	// - Tampered nonce
 	plaintext, err := aesGcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, fmt.Errorf("decryption failed (wrong key or tampered data): %w", err)
+		// Security: Don't expose underlying crypto error details
+		return nil, fmt.Errorf("decryption failed: authentication check failed")
 	}
 
 	// Parse JSON credentials

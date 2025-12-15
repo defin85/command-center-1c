@@ -16,6 +16,8 @@ import (
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/server"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/service"
 	"github.com/commandcenter1c/commandcenter/ras-adapter/internal/version"
+	"github.com/commandcenter1c/commandcenter/shared/auth"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/redis/go-redis/v9"
@@ -104,6 +106,20 @@ func main() {
 
 	logger.Info("services initialized")
 
+	// Initialize credentials client for event handlers (if configured)
+	credsClient, err := initCredentialsClient(cfg, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize credentials client", zap.Error(err))
+	}
+	if credsClient != nil {
+		logger.Info("credentials client initialized",
+			zap.String("orchestrator_url", cfg.Credentials.OrchestratorURL))
+	} else {
+		logger.Warn("credentials client NOT configured - event handlers will use empty credentials",
+			zap.Bool("jwt_secret_set", cfg.Credentials.JWTSecret != ""),
+			zap.Bool("transport_key_set", cfg.Credentials.TransportKey != ""))
+	}
+
 	// Initialize Prometheus metrics
 	rasMetrics := metrics.NewRASMetrics()
 	logger.Info("prometheus metrics initialized")
@@ -113,12 +129,12 @@ func main() {
 	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
 	logger.Info("timeline recorder initialized")
 
-	// Initialize Event Handlers with metrics and timeline
+	// Initialize Event Handlers with metrics, timeline, and credentials client
 	terminateHandler := eventhandlers.NewTerminateHandler(sessionSvc, publisher, redisClient, rasMetrics, timeline, logger)
-	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
-	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
-	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
-	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, logger)
+	lockHandler := eventhandlers.NewLockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, credsClient, logger)
+	unlockHandler := eventhandlers.NewUnlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, credsClient, logger)
+	blockHandler := eventhandlers.NewBlockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, credsClient, logger)
+	unblockHandler := eventhandlers.NewUnblockHandler(infobaseSvc, publisher, redisClient, rasMetrics, timeline, credsClient, logger)
 
 	// Subscribe to Redis channels (only if PubSub enabled)
 	if cfg.Monitor.PubSubEnabled {
@@ -253,4 +269,42 @@ func main() {
 	}
 
 	logger.Info("RAS Adapter shutdown completed")
+}
+
+// initCredentialsClient initializes the credentials client for fetching database credentials.
+// Returns nil client (not error) if credentials are not configured - this allows no-auth mode.
+func initCredentialsClient(cfg *config.Config, logger *zap.Logger) (credentials.Fetcher, error) {
+	// Check if credentials config is provided
+	if cfg.Credentials.JWTSecret == "" || cfg.Credentials.TransportKey == "" {
+		return nil, nil // No credentials configured - use no-auth mode
+	}
+
+	// Generate JWT service token for ras-adapter
+	jwtManager := auth.NewJWTManager(auth.JWTConfig{
+		Secret:     cfg.Credentials.JWTSecret,
+		ExpireTime: 24 * time.Hour,
+		Issuer:     cfg.Credentials.JWTIssuer,
+	})
+
+	serviceToken, err := jwtManager.GenerateServiceToken("ras-adapter", 24*time.Hour)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate service token: %w", err)
+	}
+
+	// Validate and decode transport key from hex
+	transportKey, err := credentials.ValidateTransportKey(cfg.Credentials.TransportKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transport key: %w", err)
+	}
+
+	client := credentials.NewClientWithConfig(credentials.ClientConfig{
+		OrchestratorURL: cfg.Credentials.OrchestratorURL,
+		ServiceToken:    serviceToken,
+		TransportKey:    transportKey,
+		CacheTTL:        2 * time.Minute,         // Cache TTL 2 min (Django TTL 5 min = max 7 min stale)
+		HTTPTimeout:     500 * time.Millisecond, // Fast timeout for event handlers
+		Logger:          logger,
+	})
+
+	return client, nil
 }

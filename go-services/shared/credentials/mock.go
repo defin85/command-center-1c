@@ -1,4 +1,4 @@
-// go-services/worker/internal/credentials/mock.go
+// go-services/shared/credentials/mock.go
 //go:build integration || test
 // +build integration test
 

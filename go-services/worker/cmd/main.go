@@ -19,7 +19,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
-	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
@@ -143,12 +143,12 @@ func main() {
 		zap.String("for_service", "worker"),
 	)
 
-	// Validate transport encryption key
-	transportKey := []byte(cfg.CredentialsTransportKey)
-	if len(transportKey) < 32 {
-		log.Fatal("CREDENTIALS_TRANSPORT_KEY must be at least 32 bytes",
-			zap.Int("current_length", len(transportKey)),
-			zap.Int("required_length", 32),
+	// Validate and decode transport encryption key (hex-encoded)
+	transportKey, err := credentials.ValidateTransportKey(cfg.CredentialsTransportKey)
+	if err != nil {
+		log.Fatal("CREDENTIALS_TRANSPORT_KEY invalid",
+			zap.Error(err),
+			zap.String("hint", "must be 64+ hex characters (32+ bytes)"),
 		)
 	}
 	log.Info("credentials transport encryption configured",

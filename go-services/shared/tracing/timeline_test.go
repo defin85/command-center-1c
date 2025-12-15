@@ -47,7 +47,7 @@ func TestRedisTimeline_Record(t *testing.T) {
 	timeline := NewRedisTimeline(client, cfg).(*RedisTimeline)
 
 	// Record an event
-	timeline.Record(ctx, operationID, "task.started", map[string]string{
+	timeline.Record(ctx, operationID, "task.started", map[string]interface{}{
 		"task_type": "sync",
 	})
 
@@ -172,7 +172,7 @@ func TestRedisTimeline_MaxEntries(t *testing.T) {
 
 	// Record more events than MaxEntries
 	for i := 0; i < maxEntries+3; i++ {
-		timeline.Record(ctx, operationID, "event", map[string]string{
+		timeline.Record(ctx, operationID, "event", map[string]interface{}{
 			"index": string(rune('A' + i)),
 		})
 		timeline.Wait()
@@ -227,7 +227,7 @@ func TestNoopTimeline(t *testing.T) {
 	timeline := NewNoopTimeline()
 
 	// Record should not panic
-	timeline.Record(ctx, "op-123", "test.event", map[string]string{"key": "value"})
+	timeline.Record(ctx, "op-123", "test.event", map[string]interface{}{"key": "value"})
 
 	// GetTimeline should return empty list without error
 	entries, err := timeline.GetTimeline(ctx, "op-123")
@@ -388,7 +388,7 @@ func TestRedisTimeline_ConcurrentRecords(t *testing.T) {
 	// Record multiple events concurrently
 	numEvents := 20
 	for i := 0; i < numEvents; i++ {
-		timeline.Record(ctx, operationID, "concurrent.event", map[string]string{
+		timeline.Record(ctx, operationID, "concurrent.event", map[string]interface{}{
 			"index": string(rune('A' + i)),
 		})
 	}

@@ -53,7 +53,8 @@ type MetricsRecorder interface {
 // TimelineRecorder defines the interface for recording operation timeline events.
 type TimelineRecorder interface {
 	// Record adds a timeline event for an operation (async, non-blocking)
-	Record(ctx context.Context, operationID, event string, metadata map[string]string)
+	// Metadata supports any JSON-serializable values (strings, numbers, bools, etc.)
+	Record(ctx context.Context, operationID, event string, metadata map[string]interface{})
 }
 
 // InstallHandler handles install extension commands from the event bus
@@ -173,7 +174,7 @@ func (h *InstallHandler) HandleInstallCommand(ctx context.Context, envelope *eve
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.received", map[string]string{
+		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.received", map[string]interface{}{
 			"operation_type": "extension_install",
 			"extension_name": payload.ExtensionName,
 		})
@@ -240,7 +241,7 @@ func (h *InstallHandler) executeInstallation(ctx context.Context, correlationID 
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, payload.DatabaseID, "batch.command.failed", map[string]string{
+			h.timeline.Record(ctx, payload.DatabaseID, "batch.command.failed", map[string]interface{}{
 				"operation_type": "extension_install",
 				"extension_name": payload.ExtensionName,
 				"error":          err.Error(),
@@ -256,7 +257,7 @@ func (h *InstallHandler) executeInstallation(ctx context.Context, correlationID 
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.completed", map[string]string{
+		h.timeline.Record(ctx, payload.DatabaseID, "batch.command.completed", map[string]interface{}{
 			"operation_type": "extension_install",
 			"extension_name": payload.ExtensionName,
 			"duration_ms":    fmt.Sprintf("%.0f", duration*1000),

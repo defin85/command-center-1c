@@ -99,7 +99,7 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 		})
 	}
@@ -133,7 +133,7 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -155,7 +155,7 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "designer.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        errMsg,
 			})
@@ -170,7 +170,7 @@ func (h *EpfHandler) HandleExportCommand(ctx context.Context, envelope *events.E
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "designer.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

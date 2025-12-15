@@ -103,7 +103,7 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"entity":       cmd.Entity,
 		})
@@ -126,7 +126,7 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -141,7 +141,7 @@ func (h *UpdateHandler) HandleUpdateCommand(ctx context.Context, envelope *event
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

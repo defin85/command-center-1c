@@ -31,17 +31,19 @@ type UnlockHandler struct {
 	redisClient RedisClient
 	metrics     MetricsRecorder
 	timeline    TimelineRecorder
+	credsClient CredentialsFetcher // Fetch credentials from Orchestrator (optional)
 	logger      *zap.Logger
 }
 
 // NewUnlockHandler creates a new UnlockHandler instance
-func NewUnlockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *UnlockHandler {
+func NewUnlockHandler(svc InfobaseManager, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, credsClient CredentialsFetcher, logger *zap.Logger) *UnlockHandler {
 	return &UnlockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
 		timeline:    timeline,
+		credsClient: credsClient,
 		logger:      logger,
 	}
 }
@@ -91,16 +93,25 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"cluster_id":   cmd.ClusterID,
 			"infobase_id":  cmd.InfobaseID,
 		})
 	}
 
+	// Fetch credentials from Orchestrator (if credentials client is configured)
+	dbUser, dbPwd, err := FetchCredentialsForRAS(ctx, h.credsClient, cmd.DatabaseID, h.logger)
+	if err != nil {
+		h.logger.Error("failed to fetch credentials",
+			zap.String("correlation_id", envelope.CorrelationID),
+			zap.String("database_id", cmd.DatabaseID),
+			zap.Error(err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, fmt.Errorf("failed to fetch credentials: %w", err))
+	}
+
 	// Call service to unlock infobase
-	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
-	err = h.service.UnlockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, "", "")
+	err = h.service.UnlockInfobase(ctx, cmd.ClusterID, cmd.InfobaseID, dbUser, dbPwd)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -115,7 +126,7 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -129,7 +140,7 @@ func (h *UnlockHandler) HandleUnlockCommand(ctx context.Context, envelope *event
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

@@ -31,17 +31,19 @@ type BlockHandler struct {
 	redisClient RedisClient
 	metrics     MetricsRecorder
 	timeline    TimelineRecorder
+	credsClient CredentialsFetcher // Fetch credentials from Orchestrator (optional)
 	logger      *zap.Logger
 }
 
 // NewBlockHandler creates a new BlockHandler instance
-func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, logger *zap.Logger) *BlockHandler {
+func NewBlockHandler(svc SessionBlocker, pub EventPublisher, redisClient RedisClient, metrics MetricsRecorder, timeline TimelineRecorder, credsClient CredentialsFetcher, logger *zap.Logger) *BlockHandler {
 	return &BlockHandler{
 		service:     svc,
 		publisher:   pub,
 		redisClient: redisClient,
 		metrics:     metrics,
 		timeline:    timeline,
+		credsClient: credsClient,
 		logger:      logger,
 	}
 }
@@ -90,7 +92,7 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"cluster_id":   cmd.ClusterID,
 			"infobase_id":  cmd.InfobaseID,
@@ -111,9 +113,18 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 		deniedTo = deniedFrom.Add(time.Duration(durationMinutes) * time.Minute)
 	}
 
+	// Fetch credentials from Orchestrator (if credentials client is configured)
+	dbUser, dbPwd, err := FetchCredentialsForRAS(ctx, h.credsClient, cmd.DatabaseID, h.logger)
+	if err != nil {
+		h.logger.Error("failed to fetch credentials",
+			zap.String("correlation_id", envelope.CorrelationID),
+			zap.String("database_id", cmd.DatabaseID),
+			zap.Error(err))
+		return h.publishError(ctx, envelope.CorrelationID, &cmd, fmt.Errorf("failed to fetch credentials: %w", err))
+	}
+
 	// Call service to block sessions
-	// NOTE: Event handlers don't provide db credentials - they should be managed by Orchestrator
-	err = h.service.BlockSessions(ctx, cmd.ClusterID, cmd.InfobaseID, "", "",
+	err = h.service.BlockSessions(ctx, cmd.ClusterID, cmd.InfobaseID, dbUser, dbPwd,
 		deniedFrom, deniedTo, message, permissionCode, parameter)
 	duration := time.Since(start)
 
@@ -129,7 +140,7 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "ras.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -143,7 +154,7 @@ func (h *BlockHandler) HandleBlockCommand(ctx context.Context, envelope *events.
 	}
 	// Record timeline: command completed
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "ras.command.completed", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"duration_ms":  fmt.Sprintf("%d", duration.Milliseconds()),
 		})

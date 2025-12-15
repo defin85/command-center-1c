@@ -54,16 +54,22 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		log.Error("failed to publish PROCESSING event", zap.Error(err))
 	}
 
-	// Parse payload
+	// Parse payload (before timeline.started - validation first)
 	payload, err := parseSyncClusterPayload(msg.Payload.Data)
 	if err != nil {
 		return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to parse payload: %v", err), "PAYLOAD_ERROR")
 	}
 
-	// Validate required fields
+	// Validate required fields (before timeline.started)
 	if err := validateSyncClusterPayload(payload); err != nil {
 		return p.failSyncCluster(ctx, result, start, err.Error(), "VALIDATION_ERROR")
 	}
+
+	// Timeline: operation started (AFTER successful validation)
+	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.started", map[string]interface{}{
+		"worker_id":  p.workerID,
+		"cluster_id": payload.ClusterID,
+	})
 
 	log.Info("starting sync_cluster operation",
 		zap.String("operation_id", msg.OperationID),
@@ -85,6 +91,12 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 	// Resolve RAS cluster UUID if not provided
 	rasClusterUUID := payload.RASClusterUUID
 	if rasClusterUUID == "" {
+		// Timeline: resolving cluster UUID
+		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.resolving.started", map[string]interface{}{
+			"cluster_name": payload.ClusterName,
+			"ras_server":   payload.RASServer,
+		})
+
 		log.Info("RAS cluster UUID not provided, looking up by name",
 			zap.String("cluster_name", payload.ClusterName),
 		)
@@ -100,6 +112,11 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 			zap.String("ras_cluster_uuid", rasClusterUUID),
 		)
 	}
+
+	// Timeline: fetching infobases from RAS
+	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.fetching.started", map[string]interface{}{
+		"ras_cluster_uuid": rasClusterUUID,
+	})
 
 	// Fetch infobases from RAS
 	infobasesResp, err := rasClient.ListInfobases(ctx, payload.RASServer, rasClusterUUID)
@@ -155,6 +172,13 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		AvgDuration: duration,
 	}
 
+	// Timeline: sync completed successfully
+	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.completed", map[string]interface{}{
+		"cluster_id":      payload.ClusterID,
+		"infobases_count": infobasesResp.Count,
+		"duration_ms":     time.Since(start).Milliseconds(),
+	})
+
 	log.Info("sync_cluster completed successfully",
 		zap.String("operation_id", msg.OperationID),
 		zap.String("cluster_id", payload.ClusterID),
@@ -169,6 +193,14 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 func (p *TaskProcessor) failSyncCluster(ctx context.Context, result *models.OperationResultV2, start time.Time, errorMsg, errorCode string) *models.OperationResultV2 {
 	log := logger.GetLogger()
 	duration := time.Since(start).Seconds()
+	durationMs := time.Since(start).Milliseconds()
+
+	// Timeline: sync failed
+	p.timeline.Record(ctx, result.OperationID, "cluster.sync.failed", map[string]interface{}{
+		"error_code":  errorCode,
+		"error":       errorMsg,
+		"duration_ms": durationMs,
+	})
 
 	log.Error("sync_cluster failed",
 		zap.String("operation_id", result.OperationID),

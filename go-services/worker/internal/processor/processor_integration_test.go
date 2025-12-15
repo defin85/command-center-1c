@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/models"
-	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 )
 
 // MockODataServer создаёт mock 1C OData сервер

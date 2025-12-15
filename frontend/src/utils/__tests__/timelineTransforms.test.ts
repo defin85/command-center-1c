@@ -59,6 +59,14 @@ describe('timelineTransforms', () => {
       expect(getEventLabel('batch.command.failed')).toBe('Batch Failed')
     })
 
+    it('returns human-readable label for known cluster.sync events', () => {
+      expect(getEventLabel('cluster.sync.started')).toBe('Cluster Sync Started')
+      expect(getEventLabel('cluster.sync.resolving.started')).toBe('Resolving Cluster UUID')
+      expect(getEventLabel('cluster.sync.fetching.started')).toBe('Fetching Infobases')
+      expect(getEventLabel('cluster.sync.completed')).toBe('Cluster Sync Completed')
+      expect(getEventLabel('cluster.sync.failed')).toBe('Cluster Sync Failed')
+    })
+
     it('falls back to Title Case conversion for unknown events', () => {
       expect(getEventLabel('custom.event.triggered')).toBe('Custom Event Triggered')
       expect(getEventLabel('database.query.executed')).toBe('Database Query Executed')
@@ -104,10 +112,22 @@ describe('timelineTransforms', () => {
       expect(getEventStatus('orchestrator.failed')).toBe('failed')
     })
 
+    it('returns "processing" for events ending with .started', () => {
+      expect(getEventStatus('operation.started')).toBe('processing')
+      expect(getEventStatus('cluster.sync.started')).toBe('processing')
+      expect(getEventStatus('saga.started')).toBe('processing')
+      expect(getEventStatus('database.query.started')).toBe('processing')
+    })
+
+    it('returns "processing" for events ending with .processing', () => {
+      expect(getEventStatus('database.processing')).toBe('processing')
+      expect(getEventStatus('worker.processing')).toBe('processing')
+    })
+
     it('returns "unknown" for events with unrecognized endings', () => {
       expect(getEventStatus('custom.event')).toBe('unknown')
-      expect(getEventStatus('database.query.started')).toBe('unknown')
-      expect(getEventStatus('worker.processing')).toBe('unknown')
+      expect(getEventStatus('database.query.pending')).toBe('unknown')
+      expect(getEventStatus('worker.waiting')).toBe('unknown')
     })
 
     it('handles empty string', () => {
@@ -115,11 +135,12 @@ describe('timelineTransforms', () => {
     })
 
     it('handles events without dots', () => {
-      // Events without dots won't match the endsWith patterns
-      expect(getEventStatus('received')).toBe('unknown')
-      expect(getEventStatus('completed')).toBe('unknown')
-      expect(getEventStatus('failed')).toBe('unknown')
-      expect(getEventStatus('processing')).toBe('unknown')
+      // Events without dots: endsWith still works for exact suffix match
+      expect(getEventStatus('received')).toBe('unknown')    // no dot prefix
+      expect(getEventStatus('completed')).toBe('unknown')   // no dot prefix
+      expect(getEventStatus('failed')).toBe('unknown')      // no dot prefix
+      expect(getEventStatus('started')).toBe('unknown')     // no dot prefix
+      expect(getEventStatus('processing')).toBe('unknown')  // no dot prefix
     })
   })
 

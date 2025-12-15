@@ -17,8 +17,8 @@ import (
 	sharedMetrics "github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
-	"github.com/commandcenter1c/commandcenter/worker/internal/credentials"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
@@ -195,10 +195,10 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	taskStart := time.Now()
 
 	// Record operation start in timeline
-	p.timeline.Record(ctx, msg.OperationID, "operation.started", map[string]string{
+	p.timeline.Record(ctx, msg.OperationID, "operation.started", map[string]interface{}{
 		"operation_type": msg.OperationType,
 		"worker_id":      p.workerID,
-		"databases":      fmt.Sprintf("%d", len(msg.TargetDatabases)),
+		"databases":      len(msg.TargetDatabases),
 	})
 
 	result := &models.OperationResultV2{
@@ -272,11 +272,11 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
 
 	// Record operation completion in timeline
-	p.timeline.Record(ctx, msg.OperationID, "operation.completed", map[string]string{
-		"status":    result.Status,
-		"succeeded": fmt.Sprintf("%d", succeeded),
-		"failed":    fmt.Sprintf("%d", failed),
-		"duration":  fmt.Sprintf("%.3f", time.Since(taskStart).Seconds()),
+	p.timeline.Record(ctx, msg.OperationID, "operation.completed", map[string]interface{}{
+		"status":      result.Status,
+		"succeeded":   succeeded,
+		"failed":      failed,
+		"duration_ms": time.Since(taskStart).Milliseconds(),
 	})
 
 	return result
@@ -336,7 +336,7 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 	log := logger.GetLogger()
 
 	// Record database processing start in timeline
-	p.timeline.Record(ctx, msg.OperationID, "database.processing", map[string]string{
+	p.timeline.Record(ctx, msg.OperationID, "database.processing", map[string]interface{}{
 		"database_id":    databaseID,
 		"operation_type": msg.OperationType,
 	})
@@ -427,12 +427,12 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 
 	// Record database result in timeline
 	if result.Success {
-		p.timeline.Record(ctx, msg.OperationID, "database.completed", map[string]string{
+		p.timeline.Record(ctx, msg.OperationID, "database.completed", map[string]interface{}{
 			"database_id": databaseID,
-			"duration":    fmt.Sprintf("%.3f", result.Duration),
+			"duration_ms": int64(result.Duration * 1000),
 		})
 	} else {
-		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]string{
+		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]interface{}{
 			"database_id": databaseID,
 			"error_code":  result.ErrorCode,
 			"error":       result.Error,

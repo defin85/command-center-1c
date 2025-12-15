@@ -55,5 +55,6 @@ type MetricsRecorder interface {
 // This interface allows for easier testing with mocks.
 type TimelineRecorder interface {
 	// Record adds a timeline event for an operation (async, non-blocking)
-	Record(ctx context.Context, operationID, event string, metadata map[string]string)
+	// Metadata supports any JSON-serializable values (strings, numbers, bools, etc.)
+	Record(ctx context.Context, operationID, event string, metadata map[string]interface{})
 }

@@ -126,7 +126,7 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 
 	// Record timeline: command received
 	if h.timeline != nil {
-		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.received", map[string]interface{}{
 			"command_type": cmd.CommandType,
 			"batch_size":   fmt.Sprintf("%d", len(cmd.BatchItems)),
 		})
@@ -153,7 +153,7 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 		}
 		// Record timeline: command failed
 		if h.timeline != nil {
-			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]string{
+			h.timeline.Record(ctx, cmd.OperationID, "odata.command.failed", map[string]interface{}{
 				"command_type": cmd.CommandType,
 				"error":        err.Error(),
 			})
@@ -177,7 +177,7 @@ func (h *BatchHandler) HandleBatchCommand(ctx context.Context, envelope *events.
 		if batchResult.FailureCount > 0 {
 			status = "partial"
 		}
-		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]string{
+		h.timeline.Record(ctx, cmd.OperationID, "odata.command.completed", map[string]interface{}{
 			"command_type":  cmd.CommandType,
 			"status":        status,
 			"success_count": fmt.Sprintf("%d", batchResult.SuccessCount),

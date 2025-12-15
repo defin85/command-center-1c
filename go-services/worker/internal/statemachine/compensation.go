@@ -23,8 +23,8 @@ func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context
 	fmt.Printf("[StateMachine] Executing compensations (count=%d)\n", len(sm.compensationStack))
 
 	// Record compensation start in timeline
-	sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.started", map[string]string{
-		"compensation_count": fmt.Sprintf("%d", len(sm.compensationStack)),
+	sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.started", map[string]interface{}{
+		"compensation_count": len(sm.compensationStack),
 		"correlation_id":     sm.CorrelationID,
 	})
 
@@ -40,7 +40,7 @@ func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context
 		fmt.Printf("[StateMachine] Executing compensation: %s\n", comp.Name)
 
 		// Record compensation step start
-		sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]string{
+		sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]interface{}{
 			"step":           comp.Name,
 			"status":         "started",
 			"correlation_id": sm.CorrelationID,
@@ -62,21 +62,21 @@ func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context
 			fmt.Printf("[StateMachine] Compensation %s succeeded (attempts=%d, duration=%v)\n",
 				comp.Name, result.Attempts, result.TotalDuration)
 			// Record successful compensation in timeline
-			sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]string{
+			sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]interface{}{
 				"step":           comp.Name,
 				"status":         "completed",
-				"attempts":       fmt.Sprintf("%d", result.Attempts),
+				"attempts":       result.Attempts,
 				"correlation_id": sm.CorrelationID,
 			})
 		} else {
 			fmt.Printf("[StateMachine] Compensation %s failed: %s (attempts=%d)\n",
 				comp.Name, result.Error, result.Attempts)
 			// Record failed compensation in timeline
-			sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]string{
+			sm.timeline.Record(ctx, sm.OperationID, "saga.compensation.step", map[string]interface{}{
 				"step":           comp.Name,
 				"status":         "failed",
 				"error":          result.Error,
-				"attempts":       fmt.Sprintf("%d", result.Attempts),
+				"attempts":       result.Attempts,
 				"correlation_id": sm.CorrelationID,
 			})
 			// Continue with other compensations even if one failed

@@ -30,7 +30,8 @@ func init() {
 // TimelineRecorder defines the interface for recording operation timeline events.
 type TimelineRecorder interface {
 	// Record adds a timeline event for an operation (async, non-blocking)
-	Record(ctx context.Context, operationID, event string, metadata map[string]string)
+	// Metadata supports any JSON-serializable values (strings, numbers, bools, etc.)
+	Record(ctx context.Context, operationID, event string, metadata map[string]interface{})
 
 	// GetTimeline returns all events for an operation, sorted by timestamp
 	GetTimeline(ctx context.Context, operationID string) ([]TimelineEntry, error)
@@ -38,17 +39,17 @@ type TimelineRecorder interface {
 
 // TimelineEntry represents a single event in an operation's timeline.
 type TimelineEntry struct {
-	Timestamp time.Time         `json:"timestamp"`
-	Event     string            `json:"event"`
-	Service   string            `json:"service"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+	Event     string                 `json:"event"`
+	Service   string                 `json:"service"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // timelineEntryStorage is the internal representation stored in Redis.
 type timelineEntryStorage struct {
-	Event    string            `json:"event"`
-	Service  string            `json:"service"`
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Event    string                 `json:"event"`
+	Service  string                 `json:"service"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // TimelineConfig holds configuration for the timeline recorder.
@@ -127,7 +128,7 @@ func timelineKey(operationID string) string {
 
 // Record adds a timeline event asynchronously (fire-and-forget).
 // Errors are logged but not returned to avoid blocking the caller.
-func (rt *RedisTimeline) Record(ctx context.Context, operationID, event string, metadata map[string]string) {
+func (rt *RedisTimeline) Record(ctx context.Context, operationID, event string, metadata map[string]interface{}) {
 	rt.wg.Add(1)
 	go func() {
 		defer rt.wg.Done()
@@ -136,7 +137,7 @@ func (rt *RedisTimeline) Record(ctx context.Context, operationID, event string, 
 }
 
 // recordSync performs the actual Redis write operation.
-func (rt *RedisTimeline) recordSync(ctx context.Context, operationID, event string, metadata map[string]string) {
+func (rt *RedisTimeline) recordSync(ctx context.Context, operationID, event string, metadata map[string]interface{}) {
 	if operationID == "" || event == "" {
 		return
 	}
@@ -246,7 +247,7 @@ func NewNoopTimeline() TimelineRecorder {
 }
 
 // Record is a no-op implementation.
-func (nt *NoopTimeline) Record(ctx context.Context, operationID, event string, metadata map[string]string) {
+func (nt *NoopTimeline) Record(ctx context.Context, operationID, event string, metadata map[string]interface{}) {
 	// No-op: intentionally does nothing
 }
 

@@ -206,7 +206,7 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 
 	// Record message received in timeline IMMEDIATELY after getting messageID (FIX #4)
 	// Use fallback operation_id which may be empty for old messages (backward compatible)
-	c.timeline.Record(ctx, fallback.OperationID, "message.received", map[string]string{
+	c.timeline.Record(ctx, fallback.OperationID, "message.received", map[string]interface{}{
 		"message_id": messageID,
 		"worker_id":  c.workerID,
 	})
@@ -337,14 +337,14 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 
 		// Record message.completed in timeline AFTER successful publish (FIX #5)
 		if publishSuccess {
-			c.timeline.Record(ctx, msg.OperationID, "message.completed", map[string]string{
+			c.timeline.Record(ctx, msg.OperationID, "message.completed", map[string]interface{}{
 				"message_id": messageID,
 				"status":     result.Status,
 			})
 		}
 	} else {
 		// Record failed status before publishing (failed path is less critical)
-		c.timeline.Record(ctx, msg.OperationID, "message.failed", map[string]string{
+		c.timeline.Record(ctx, msg.OperationID, "message.failed", map[string]interface{}{
 			"message_id": messageID,
 			"status":     result.Status,
 			"error":      getErrorSummary(result),
