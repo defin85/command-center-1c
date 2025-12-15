@@ -2,8 +2,8 @@
 
 > Полная миграция с REST API v1 на v2 и переход на Event-Driven архитектуру через Redis Streams
 
-**Статус:** В процессе (P0 завершены)
-**Приоритет:** High
+**Статус:** P0, P1, P2 завершены — осталось P3 (cleanup)
+**Приоритет:** Medium (cleanup phase)
 **Создан:** 2025-12-15
 **Обновлён:** 2025-12-15
 
@@ -490,10 +490,10 @@ worker-responses-group:
 5. ~~Удаление batch-service HTTP callback~~ ✅ HTTP callback удалён
 6. ~~Django v1 endpoints deprecation~~ ✅ V1 удалены из OpenAPI spec (Django уже на v2)
 
-### P2 (Средний — после P1)
-7. Batch-service v2 API migration
-8. API Gateway cleanup
-9. Documentation update
+### P2 (Средний — после P1) ✅ ЗАВЕРШЕНО
+7. ~~Batch-service v2 API migration~~ ✅ Flat internal API (удалено версионирование)
+8. ~~API Gateway cleanup~~ ✅ Удалён legacy ProxyToOrchestrator, flat RAS routes
+9. ~~Documentation update~~ ✅ Roadmap обновлён
 
 ### P3 (Низкий — cleanup)
 10. Archive deletion
@@ -511,13 +511,20 @@ worker-responses-group:
 
 ---
 
-**Версия:** 1.3
+**Версия:** 1.4
 **Автор:** AI Assistant
 **Ревью:** Требуется
 
 ---
 
 ## Changelog
+
+### v1.4 (2025-12-15)
+- ✅ P2 задачи полностью завершены:
+  - Batch-service: удалено версионирование, flat internal API (`/storage/*`, `/metadata/*`)
+  - API Gateway: удалён legacy `ProxyToOrchestrator()` (~77 строк)
+  - API Gateway: удалены дублирующиеся flat RAS routes
+  - Roadmap обновлён
 
 ### v1.3 (2025-12-15)
 - ✅ P1 задачи полностью завершены:
