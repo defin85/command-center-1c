@@ -28,18 +28,7 @@ func RegisterRASRoutes(rg *gin.RouterGroup, rasHandler gin.HandlerFunc) {
 		sessions.POST("/terminate-sessions", rasHandler)
 	}
 
-	// Legacy flat routes (for backward compatibility)
+	// RAS Adapter routes - Cluster management (no grouping needed - only 2 endpoints)
 	rg.GET("/list-clusters", rasHandler)
 	rg.GET("/get-cluster", rasHandler)
-	rg.GET("/list-infobases", rasHandler)
-	rg.GET("/get-infobase", rasHandler)
-	rg.POST("/create-infobase", rasHandler)
-	rg.POST("/drop-infobase", rasHandler)
-	rg.POST("/lock-infobase", rasHandler)
-	rg.POST("/unlock-infobase", rasHandler)
-	rg.POST("/block-sessions", rasHandler)
-	rg.POST("/unblock-sessions", rasHandler)
-	rg.GET("/list-sessions", rasHandler)
-	rg.POST("/terminate-session", rasHandler)
-	rg.POST("/terminate-sessions", rasHandler)
 }
