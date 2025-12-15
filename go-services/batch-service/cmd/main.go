@@ -114,27 +114,28 @@ func main() {
 		cfg.V8.DefaultTimeout,
 	)
 
-	backupManager := rollback.NewBackupManager(v8exec, backupStorage, logger)
-	rollbackManager := rollback.NewRollbackManager(backupManager, logger)
+	// NOTE: backupManager and rollbackManager are available if needed for future event handlers
+	_ = rollback.NewBackupManager(v8exec, backupStorage, logger)
 
 	logger.Info("Backup system initialized",
 		zap.String("backup_path", cfg.Backup.Path),
 		zap.Int("retention_backups", cfg.Backup.RetentionBackups))
 
-	// Initialize services
+	// Initialize services for event handlers
+	// NOTE: extensionInstaller is used by InstallHandler for Redis Streams events
 	extensionInstaller := service.NewExtensionInstaller(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
 	)
-	extensionDeleter := service.NewExtensionDeleter(
+	// NOTE: extensionDeleter and extensionLister are available for future event handlers
+	_ = service.NewExtensionDeleter(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
 	)
-	extensionLister := service.NewExtensionLister(
+	_ = service.NewExtensionLister(
 		cfg.V8.ExePath,
 		cfg.V8.DefaultTimeout,
 	)
-	fileValidator := service.NewFileValidator()
 
 	// Initialize storage manager
 	storageManager := storage.NewManager(
@@ -254,16 +255,11 @@ func main() {
 		}
 	}
 
-	// Setup router with all services
+	// Setup router with storage and metadata services
+	// NOTE: Extension operations (install, delete, rollback) are handled via Redis Streams
 	router := api.SetupRouter(
-		extensionInstaller,
-		extensionDeleter,
-		extensionLister,
-		fileValidator,
 		storageManager,
 		metadataExtractor,
-		rollbackManager,
-		backupManager,
 		batchMetrics,
 		logger,
 	)
