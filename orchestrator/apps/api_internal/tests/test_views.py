@@ -325,13 +325,6 @@ class TaskEndpointsV2Tests(InternalAPIV2BaseTestCase):
 class DatabaseEndpointsV2Tests(InternalAPIV2BaseTestCase):
     """Tests for database v2 endpoints."""
 
-    def test_get_database_credentials_missing_id(self):
-        """Test validation - missing database_id."""
-        response = self.client.get('/api/v2/internal/get-database-credentials')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', response.data)
-        self.assertIn('database_id', response.data['error'])
-
     def test_get_database_cluster_info_missing_id(self):
         """Test validation - missing database_id."""
         response = self.client.get('/api/v2/internal/get-database-cluster-info')
@@ -380,22 +373,6 @@ class DatabaseEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(response.data['cluster_info']['database_id'], db.id)
         self.assertEqual(response.data['cluster_info']['cluster_id'], str(ras_cluster_id))
         self.assertEqual(response.data['cluster_info']['infobase_id'], str(ras_infobase_id))
-
-    def test_get_database_credentials_not_found(self):
-        """Test non-existent database."""
-        response = self.client.get(
-            f'/api/v2/internal/get-database-credentials?database_id={uuid.uuid4()}'
-        )
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('error', response.data)
-
-    def test_get_database_credentials_unauthorized(self):
-        """Test that unauthorized requests are rejected."""
-        client = self.get_unauthenticated_client()
-        response = client.get(
-            f'/api/v2/internal/get-database-credentials?database_id={uuid.uuid4()}'
-        )
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_list_databases_for_health_check(self):
         """Test listing databases for health check."""
@@ -740,7 +717,6 @@ class AuthenticationTests(InternalAPIV2BaseTestCase):
             ('post', '/api/v2/internal/complete-scheduler-run?run_id=1'),
             ('post', '/api/v2/internal/start-task'),
             ('post', '/api/v2/internal/complete-task?task_id=1'),
-            ('get', '/api/v2/internal/get-database-credentials?database_id=00000000-0000-0000-0000-000000000000'),
             ('get', '/api/v2/internal/list-databases-for-health-check'),
             ('post', '/api/v2/internal/update-database-health?database_id=00000000-0000-0000-0000-000000000000'),
             ('post', '/api/v2/internal/update-cluster-health?cluster_id=00000000-0000-0000-0000-000000000000'),

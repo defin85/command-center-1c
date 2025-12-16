@@ -46,11 +46,6 @@ urlpatterns = [
     # Database Operations
     # ========================================================================
     path(
-        'get-database-credentials',
-        views.get_database_credentials,
-        name='get-database-credentials'
-    ),
-    path(
         'get-database-cluster-info',
         views.get_database_cluster_info,
         name='get-database-cluster-info'

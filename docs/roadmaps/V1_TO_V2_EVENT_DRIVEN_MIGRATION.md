@@ -137,7 +137,7 @@ Worker                          Redis                           Orchestrator
 - [x] Создать stream `events:orchestrator:database-credentials-response` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 - [x] Django: добавить handler в Event Subscriber (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 - [x] Worker: заменить HTTP client на Stream client (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
-- [x] Worker: добавить timeout и fallback на HTTP (graceful degradation) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Worker: добавить timeout (Streams-only; HTTP endpoint удалён в v1 cleanup) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```

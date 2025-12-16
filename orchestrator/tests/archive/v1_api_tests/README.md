@@ -11,7 +11,7 @@ The **v2 API uses action-based routing** with completely different request/respo
 |---------------|-----------------|
 | `GET /api/v1/databases/` | `GET /api/v2/databases/list-databases/` |
 | `GET /api/v1/databases/{id}/` | `POST /api/v2/databases/get-database/` + body |
-| `POST /api/v1/databases/{id}/credentials/` | `POST /api/v2/internal/get-database-credentials` |
+| `POST /api/v1/databases/{id}/credentials/` | `Redis Streams: commands:orchestrator:get-database-credentials` |
 
 These tests cannot be simply "URL-updated" - they require rewriting to match v2 API style.
 
@@ -35,7 +35,7 @@ New tests should be written for v2 API at:
 
 Key areas needing coverage:
 - [ ] Workflow execution via `/api/v2/workflows/execute-workflow/`
-- [ ] Database credentials via `/api/v2/internal/get-database-credentials`
+- [ ] Database credentials via `commands:orchestrator:get-database-credentials`
 - [ ] Service mesh monitoring via `/api/v2/service-mesh/get-metrics/`
 - [ ] JWT authentication for internal API
 - [ ] Load testing with v2 endpoints

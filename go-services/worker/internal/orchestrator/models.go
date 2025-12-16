@@ -74,21 +74,6 @@ type TaskExecutionResponse struct {
 	Status  string `json:"status"` // running, success, failed, skipped
 }
 
-// ============================================================================
-// Database Schemas
-// ============================================================================
-
-// DatabaseCredentials represents credentials for accessing a 1C database via OData.
-type DatabaseCredentials struct {
-	DatabaseID   string `json:"database_id"`
-	ODataURL     string `json:"odata_url"`
-	Username     string `json:"username"`
-	Password     string `json:"password"` // encrypted
-	ClusterID    string `json:"cluster_id,omitempty"`
-	RASServer    string `json:"ras_server,omitempty"`
-	InfobaseName string `json:"infobase_name,omitempty"`
-}
-
 // DatabaseForHealthCheck represents a database entry for health monitoring.
 type DatabaseForHealthCheck struct {
 	ID       string `json:"id"`
@@ -123,12 +108,6 @@ type HealthUpdateResponse struct {
 	DatabaseID string `json:"database_id,omitempty"`
 	ClusterID  string `json:"cluster_id,omitempty"`
 	Healthy    bool   `json:"healthy"`
-}
-
-// DatabaseCredentialsResponse represents response from credentials endpoint.
-type DatabaseCredentialsResponse struct {
-	Success     bool                `json:"success"`
-	Credentials DatabaseCredentials `json:"credentials"`
 }
 
 // ============================================================================

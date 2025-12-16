@@ -90,8 +90,6 @@ type Config struct {
 	// StreamsClusterInfoTimeout is the timeout for Streams-based cluster info requests.
 	StreamsClusterInfoTimeout time.Duration
 
-	// UseStreamsCredentials enables Redis Streams for encrypted credentials fetch (instead of HTTP).
-	UseStreamsCredentials bool
 	// StreamsCredentialsTimeout is the timeout for Streams-based credentials requests.
 	StreamsCredentialsTimeout time.Duration
 }
@@ -174,7 +172,6 @@ func LoadFromEnv() *Config {
 		// Feature Flags
 		UseStreamsClusterInfo:     getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
 		StreamsClusterInfoTimeout: getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
-		UseStreamsCredentials:     getBoolEnv("USE_STREAMS_CREDENTIALS", true),
 		StreamsCredentialsTimeout: getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
 	}
 }

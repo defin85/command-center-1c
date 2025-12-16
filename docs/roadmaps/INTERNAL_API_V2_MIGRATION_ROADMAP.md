@@ -55,7 +55,7 @@
 
 | v1 (текущий) | v2 (целевой) | Метод |
 |--------------|--------------|-------|
-| `GET /api/internal/databases/{id}/credentials` | `GET /api/v2/internal/get-database-credentials?database_id=X` | GET |
+| `GET /api/internal/databases/{id}/credentials` | `Redis Streams: commands:orchestrator:get-database-credentials` | STREAM |
 | `GET /api/internal/databases/health-check-list/` | `GET /api/v2/internal/list-databases-for-health-check` | GET |
 | `POST /api/internal/databases/{id}/health` | `POST /api/v2/internal/update-database-health?database_id=X` | POST |
 
@@ -157,7 +157,6 @@ urlpatterns = [
     path('complete-task', views_v2.complete_task),
 
     # Databases
-    path('get-database-credentials', views_v2.get_database_credentials),
     path('list-databases-for-health-check', views_v2.list_databases_for_health_check),
     path('update-database-health', views_v2.update_database_health),
 

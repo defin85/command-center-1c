@@ -168,29 +168,6 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '500': {$ref: '#/components/responses/InternalServerError'}
 
-  # Databases
-  /api/v2/internal/get-database-credentials:
-    get:
-      summary: Получение credentials базы данных
-      operationId: getDatabaseCredentialsV2
-      tags: [databases]
-      security: [{ApiKeyAuth: []}]
-      parameters:
-        - name: database_id
-          in: query
-          required: true
-          schema: {type: string, format: uuid}
-      responses:
-        '200':
-          description: Credentials получены
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseCredentialsResponseV2'
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '500': {$ref: '#/components/responses/InternalServerError'}
-
   /api/v2/internal/get-database-cluster-info:
     get:
       summary: Получение cluster/infobase ids для базы
@@ -683,32 +660,6 @@ components:
           type: integer
           format: int64
           description: Время выполнения в миллисекундах
-
-    # ============================================================================
-    # DATABASE SCHEMAS
-    # ============================================================================
-    DatabaseCredentialsResponse:
-      type: object
-      required:
-        - encrypted_data
-        - nonce
-        - expires_at
-        - encryption_version
-      properties:
-        encrypted_data:
-          type: string
-          description: Base64 AES-GCM ciphertext
-        nonce:
-          type: string
-          description: Base64 nonce (12 bytes)
-        expires_at:
-          type: string
-          format: date-time
-          description: Expiration timestamp (TTL <= 5m)
-        encryption_version:
-          type: string
-          description: Encryption version
-          enum: [aes-gcm-256-v1]
 
     # ============================================================================
     # HEALTH UPDATE SCHEMAS
@@ -1264,14 +1215,6 @@ components:
         status:
           type: string
           enum: [running, success, failed, skipped]
-
-    DatabaseCredentialsResponseV2:
-      type: object
-      properties:
-        success:
-          type: boolean
-        credentials:
-          $ref: '#/components/schemas/DatabaseCredentialsResponse'
 
     DatabaseClusterInfoResponseV2:
       type: object

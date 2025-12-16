@@ -1475,36 +1475,6 @@ paths:
       responses:
         '200':
           description: No response body
-  /api/v2/internal/get-database-credentials:
-    get:
-      operationId: v2_internal_get_database_credentials_retrieve
-      description: |-
-        GET /api/v2/internal/get-database-credentials?database_id=X
-
-        Get database credentials for OData access.
-        Called by Go Worker to fetch credentials for batch operations.
-
-        Query params:
-            database_id: uuid (required)
-
-        Response:
-        {
-            "success": true,
-            "credentials": {
-                "odata_url": "http://localhost:8080/base/odata/standard.odata",
-                "username": "admin",
-                "password": "secret",
-                "cluster_id": "550e8400-e29b-41d4-a716-446655440000"
-            }
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
   /api/v2/internal/get-operation-timeline:
     post:
       operationId: v2_internal_get_operation_timeline_create

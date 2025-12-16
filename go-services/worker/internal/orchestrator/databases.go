@@ -8,25 +8,9 @@ import (
 
 const (
 	// API paths for database endpoints
-	pathDatabaseCredentials     = "/api/v2/internal/get-database-credentials"
 	pathDatabaseHealth          = "/api/v2/internal/update-database-health"
 	pathDatabasesForHealthCheck = "/api/v2/internal/list-databases-for-health-check"
 )
-
-// GetDatabaseCredentials fetches credentials for a database by ID.
-func (c *Client) GetDatabaseCredentials(ctx context.Context, databaseID string) (*DatabaseCredentials, error) {
-	if databaseID == "" {
-		return nil, fmt.Errorf("database ID is required")
-	}
-
-	path := fmt.Sprintf("%s?database_id=%s", pathDatabaseCredentials, databaseID)
-
-	var resp DatabaseCredentialsResponse
-	if err := c.get(ctx, path, &resp); err != nil {
-		return nil, fmt.Errorf("failed to get database credentials: %w", err)
-	}
-	return &resp.Credentials, nil
-}
 
 // UpdateDatabaseHealth updates the health status of a database.
 func (c *Client) UpdateDatabaseHealth(ctx context.Context, databaseID string, req *HealthUpdateRequest) error {

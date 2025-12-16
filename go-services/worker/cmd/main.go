@@ -14,7 +14,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"github.com/commandcenter1c/commandcenter/shared/auth"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
@@ -155,39 +154,19 @@ func main() {
 		zap.String("algorithm", "AES-GCM-256"),
 	)
 
-	// Initialize credentials fetcher (prefer Redis Streams)
-	var credsClient credentials.Fetcher
-	if cfg.UseStreamsCredentials {
-		streamsClient, err := credentials.NewStreamsClient(credentials.StreamsClientConfig{
-			RedisClient:    redisClient,
-			TransportKey:   transportKey,
-			RequestTimeout: cfg.StreamsCredentialsTimeout,
-			Logger:         zapLog,
-		})
-		if err != nil {
-			log.Fatal("failed to initialize streams credentials client", zap.Error(err))
-		}
-		credsClient = streamsClient
-		defer streamsClient.Close()
-		log.Info("credentials client initialized (Redis Streams)")
-	} else {
-		// Fallback to HTTP client (requires JWT service token)
-		jwtManager := auth.NewJWTManager(auth.JWTConfig{
-			Secret:     cfg.JWTSecret,
-			ExpireTime: 24 * time.Hour,
-			Issuer:     "commandcenter",
-		})
-
-		serviceToken, err := jwtManager.GenerateServiceToken("worker", 24*time.Hour)
-		if err != nil {
-			log.Fatal("failed to generate service token", zap.Error(err))
-		}
-
-		httpClient := credentials.NewClient(cfg.OrchestratorURL, serviceToken, transportKey)
-		credsClient = httpClient
-		defer httpClient.Close()
-		log.Info("credentials client initialized (HTTP fallback)")
+	// Initialize credentials fetcher (Redis Streams only; internal HTTP endpoint removed)
+	streamsClient, err := credentials.NewStreamsClient(credentials.StreamsClientConfig{
+		RedisClient:    redisClient,
+		TransportKey:   transportKey,
+		RequestTimeout: cfg.StreamsCredentialsTimeout,
+		Logger:         zapLog,
+	})
+	if err != nil {
+		log.Fatal("failed to initialize streams credentials client", zap.Error(err))
 	}
+	defer streamsClient.Close()
+	credsClient := credentials.Fetcher(streamsClient)
+	log.Info("credentials client initialized (Redis Streams)")
 
 	// Initialize TimelineRecorder for operation tracing
 	timelineCfg := tracing.DefaultTimelineConfig("worker")

@@ -40,7 +40,6 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/internal/cleanup-failed-events", OperationID: "v2_internal_cleanup_failed_events_create"},
 	{Method: "POST", Path: "/internal/complete-scheduler-run", OperationID: "v2_internal_complete_scheduler_run_create"},
 	{Method: "POST", Path: "/internal/complete-task", OperationID: "v2_internal_complete_task_create"},
-	{Method: "GET", Path: "/internal/get-database-credentials", OperationID: "v2_internal_get_database_credentials_retrieve"},
 	{Method: "POST", Path: "/internal/get-operation-timeline", OperationID: "v2_internal_get_operation_timeline_create"},
 	{Method: "GET", Path: "/internal/get-template", OperationID: "v2_internal_get_template_retrieve"},
 	{Method: "GET", Path: "/internal/list-databases-for-health-check", OperationID: "v2_internal_list_databases_for_health_check_retrieve"},

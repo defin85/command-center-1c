@@ -164,7 +164,7 @@ result, err := redis.BRPop(ctx, 5*time.Second, "cc1c:operations:v1")
 
 ### 3. Credential Management
 
-**Решение:** **Centralized Store (Django DB) + Fetch by ID**
+**Решение:** **Centralized Store (Django DB) + Request/Response через Redis Streams (encrypted payload)**
 
 **Message payload (НЕ содержит credentials):**
 ```json
@@ -175,26 +175,12 @@ result, err := redis.BRPop(ctx, 5*time.Second, "cc1c:operations:v1")
 }
 ```
 
-**Worker fetches credentials:**
-```go
-// Worker makes HTTP call to Orchestrator API
-GET /api/v2/internal/get-database-credentials?database_id={database_id}
-Authorization: Bearer <worker_token>
-
-Response:
-{
-  "success": true,
-  "credentials": {
-    "encrypted_data": "base64(...)",
-    "nonce": "base64(...)",
-    "expires_at": "RFC3339 timestamp",
-    "encryption_version": "aes-gcm-256-v1"
-  }
-}
-```
+**Worker fetches credentials (Streams):**
+- Request: `XADD commands:orchestrator:get-database-credentials correlation_id=... database_id=...`
+- Response: `XREADGROUP` from `events:orchestrator:database-credentials-response` with `encrypted_data/nonce/expires_at/encryption_version`
 
 **Преимущества:**
-- ✅ **Security:** Credentials не передаются через Redis queue
+- ✅ **Security:** Credentials передаются только в зашифрованном виде (transport encryption)
 - ✅ **Single source of truth:** Django DB (encrypted with `EncryptedCharField`)
 - ✅ **Audit trail:** Можно логировать кто запросил credentials
 - ✅ **Credential rotation:** Обновление в DB → сразу для всех workers
@@ -205,16 +191,12 @@ Response:
 - ❌ **No audit:** Нельзя отследить credential access
 
 **Implementation Note:**
-- Orchestrator endpoint: `/api/v2/internal/get-database-credentials?database_id=...` (internal auth required)
 - Worker caching: **TTL 2 минуты** (reduce API calls, balance security)
   - **Обоснование:** Credentials меняются редко (раз в месяц), но при смене обновятся быстро (2 мин)
-  - Снижает нагрузку на Django API (~70% меньше запросов vs без cache)
+  - Снижает нагрузку на Orchestrator/Redis Streams processing
   - Достаточная security (компромисс между 0 и 5 минут)
-- Worker authentication: **API Key** (Phase 1), можно мигрировать на JWT в Phase 2
-  - **Обоснование:** Проще для internal service-to-service communication
-  - Нет overhead на refresh token logic
-  - Rotation: manual (раз в квартал или при компрометации)
-- Fallback: Refresh on 401 Unauthorized
+- Worker authentication: доступ к Redis (network-level) + transport key для расшифровки payload
+- HTTP fallback: удалён (Streams-only)
 
 ---
 
@@ -824,10 +806,10 @@ HTTP callback на `/api/v1/operations/{id}/callback` удалён вместе 
    - Authentication
    - Result processing
 
-4. ✅ **Add credentials endpoint** (`orchestrator/apps/databases/views.py`)
-   - `/api/v2/internal/get-database-credentials?database_id=...`
-   - Worker authentication
-   - Encrypted credential decryption
+4. ✅ **Credentials через Streams** (`orchestrator/apps/operations/event_subscriber.py`)
+   - Request: `commands:orchestrator:get-database-credentials`
+   - Response: `events:orchestrator:database-credentials-response`
+   - Encrypted transport payload
 
 **Go Worker Side:**
 
