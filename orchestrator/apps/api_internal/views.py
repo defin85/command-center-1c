@@ -398,19 +398,94 @@ def get_database_credentials(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    data = {
-        'odata_url': database.odata_url,
-        'username': database.username,
-        'password': database.password,  # EncryptedCharField auto-decrypts
-        'cluster_id': str(database.cluster_id) if database.cluster else None,
+    from apps.databases.encryption import encrypt_credentials_for_transport
+
+    credentials_dict = {
+        "database_id": str(database.id),
+        "odata_url": database.odata_url,
+        "username": database.username,
+        "password": database.password,  # EncryptedCharField auto-decrypts
+        # Legacy fields (some workers still rely on them)
+        "host": database.host,
+        "port": database.port,
+        "base_name": database.base_name,
+        # DESIGNER connection fields
+        "server_address": database.server_address,
+        "server_port": database.server_port,
+        "infobase_name": database.infobase_name or database.name,
     }
 
-    logger.debug(f"Credentials fetched for database: {database_id}")
+    encrypted_payload = encrypt_credentials_for_transport(credentials_dict)
 
-    return Response({
-        'success': True,
-        'credentials': data
-    }, status=status.HTTP_200_OK)
+    logger.debug("Credentials encrypted for database: %s", database_id)
+
+    return Response(
+        {
+            'success': True,
+            'credentials': encrypted_payload,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsInternalService])
+def get_database_cluster_info(request):
+    """
+    GET /api/v2/internal/get-database-cluster-info?database_id=X
+
+    Get RAS cluster/infobase identifiers for a database.
+    Used as HTTP fallback for worker when Streams are unavailable.
+
+    Query params:
+        database_id: string (required)
+
+    Response:
+    {
+        "success": true,
+        "cluster_info": {
+            "database_id": "db-123",
+            "cluster_id": "550e8400-e29b-41d4-a716-446655440000",
+            "infobase_id": "550e8400-e29b-41d4-a716-446655440001"
+        }
+    }
+    """
+    from apps.databases.models import Database
+
+    database_id = request.query_params.get('database_id')
+    if not database_id:
+        return Response(
+            {'success': False, 'error': {'database_id': 'This query parameter is required'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        database = Database.objects.get(id=database_id)
+    except Database.DoesNotExist:
+        return Response(
+            {'success': False, 'error': f'Database {database_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if not database.ras_cluster_id:
+        return Response(
+            {'success': False, 'error': {'ras_cluster_id': 'RAS cluster metadata is not configured'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    infobase_id = str(database.ras_infobase_id) if database.ras_infobase_id else str(database.id)
+
+    return Response(
+        {
+            'success': True,
+            'cluster_info': {
+                'database_id': str(database.id),
+                'cluster_id': str(database.ras_cluster_id),
+                'infobase_id': infobase_id,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['GET'])

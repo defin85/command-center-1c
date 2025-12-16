@@ -54,47 +54,28 @@ result = renderer.render(template, {
 ### Использование через REST API
 
 ```bash
-# Create template
-POST /api/v1/templates/
+# v1 CRUD endpoints удалены.
+# Для операторов основной путь — SPA: /templates (sync from registry) и API v2:
+#
+# List templates
+GET /api/v2/templates/list-templates/
+#
+# Sync templates from registry (staff-only)
+POST /api/v2/templates/sync-from-registry/
 {
-  "name": "Create User",
-  "operation_type": "create",
-  "target_entity": "Catalog_Users",
-  "template_data": {"Name": "{{user_name}}"}
+  "dry_run": false
 }
-
-# Render template
-POST /api/v1/templates/{id}/render/
-{
-  "context": {"user_name": "Alice"}
-}
-
-# Validate template
-POST /api/v1/templates/{id}/validate/
+#
+# Render/validate используются worker'ом через internal API:
+# GET /api/v2/internal/get-template?template_id=...
+# POST /api/v2/internal/render-template?template_id=...
 ```
 
-### Использование в Celery Tasks
+### Использование в Worker (Go)
 
 ```python
-from apps.operations.tasks import process_operation_with_template
-
-# Создать operation с template
-operation = BatchOperation.objects.create(
-    name='Create Users Batch',
-    operation_type='create',
-    template=my_template,
-    payload={"user_name": "Alice"}
-)
-operation.target_databases.add(database)
-
-# Запустить Celery task
-result = process_operation_with_template.delay(str(operation.id))
-
-# Task автоматически:
-# 1. Загрузит operation из DB
-# 2. Отрендерит template с payload
-# 3. Обновит operation.payload
-# 4. Логирует все операции
+# Celery удалён; выполнение операций делает Go Worker.
+# Template render/validation выполняются через internal API (`/api/v2/internal/*`).
 ```
 
 ## Синтаксис шаблонов
@@ -238,66 +219,26 @@ template = OperationTemplate.objects.create(
 
 ### Endpoints
 
-**GET /api/v1/templates/**
-- Получить список всех templates
-- Query params: `?operation_type=create`, `?is_active=true`
+v1 CRUD endpoints удалены.
 
-**POST /api/v1/templates/**
-- Создать новый template
-- Body: `{"name": "...", "operation_type": "create", "template_data": {...}}`
+**GET /api/v2/templates/list-templates/**
+- Список OperationTemplate (для SPA)
 
-**GET /api/v1/templates/{id}/**
-- Получить конкретный template
+**POST /api/v2/templates/sync-from-registry/**
+- Синхронизация шаблонов из registry (staff-only; основной путь через SPA `/templates`)
 
-**PUT /api/v1/templates/{id}/**
-- Обновить template
-
-**DELETE /api/v1/templates/{id}/**
-- Удалить template
-
-**POST /api/v1/templates/{id}/validate/**
-- Валидировать template schema
-- Response: `{"valid": true}` или `{"valid": false, "errors": [...]}`
-
-**POST /api/v1/templates/{id}/render/**
-- Отрендерить template с контекстом
-- Body: `{"context": {"var1": "value1"}, "validate": true}`
-- Response: `{"success": true, "result": {...}}`
-
-**POST /api/v1/templates/validate_data/**
-- Валидировать template_data без сохранения в DB
-- Body: `{"template_data": {...}}`
-- Response: `{"valid": true, "errors": []}`
+**Internal API (для Worker)**
+- `GET /api/v2/internal/get-template?template_id=...`
+- `POST /api/v2/internal/render-template?template_id=...`
 
 ### Example API Usage
 
 ```bash
-# Create template
-curl -X POST http://localhost:8000/api/v1/templates/ \
+# Sync from registry (staff-only)
+curl -X POST http://localhost:8200/api/v2/templates/sync-from-registry/ \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Create User",
-    "operation_type": "create",
-    "target_entity": "Catalog_Users",
-    "template_data": {
-      "Name": "{{user_name}}",
-      "Email": "{{email}}"
-    }
-  }'
-
-# Validate template
-curl -X POST http://localhost:8000/api/v1/templates/1/validate/ \
-  -H "Content-Type: application/json"
-
-# Render template
-curl -X POST http://localhost:8000/api/v1/templates/1/render/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "context": {
-      "user_name": "Alice",
-      "email": "alice@test.com"
-    }
-  }'
+  -d '{"dry_run": false}'
 ```
 
 ## Testing

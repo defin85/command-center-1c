@@ -42,17 +42,21 @@ func TestOrchestratorClusterResolver_SuccessfulResolve(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Contains(t, r.URL.Path, "/api/v1/databases/test-db-123/cluster-info/")
+		assert.Equal(t, "/api/v2/internal/get-database-cluster-info", r.URL.Path)
+		assert.Equal(t, "test-db-123", r.URL.Query().Get("database_id"))
 		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+		assert.Equal(t, "test-api-key", r.Header.Get("X-Internal-Service-Token"))
 
 		// Return success response
-		response := map[string]string{
-			"database_id": "test-db-123",
-			"cluster_id":  "cluster-uuid-abc",
-			"infobase_id": "infobase-uuid-def",
-		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "test-db-123",
+				"cluster_id":  "cluster-uuid-abc",
+				"infobase_id": "infobase-uuid-def",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -81,12 +85,14 @@ func TestOrchestratorClusterResolver_CachingWorks(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		response := map[string]string{
-			"database_id": "cached-db",
-			"cluster_id":  "cached-cluster",
-			"infobase_id": "cached-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "cached-db",
+				"cluster_id":  "cached-cluster",
+				"infobase_id": "cached-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -116,12 +122,14 @@ func TestOrchestratorClusterResolver_InvalidateCache(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		response := map[string]string{
-			"database_id": "invalidate-db",
-			"cluster_id":  "cluster-" + string(rune('0'+callCount)),
-			"infobase_id": "infobase-" + string(rune('0'+callCount)),
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "invalidate-db",
+				"cluster_id":  "cluster-" + string(rune('0'+callCount)),
+				"infobase_id": "infobase-" + string(rune('0'+callCount)),
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -158,12 +166,14 @@ func TestOrchestratorClusterResolver_RetryOnFailure(t *testing.T) {
 			return
 		}
 		// Third call succeeds
-		response := map[string]string{
-			"database_id": "retry-db",
-			"cluster_id":  "retry-cluster",
-			"infobase_id": "retry-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "retry-db",
+				"cluster_id":  "retry-cluster",
+				"infobase_id": "retry-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -207,12 +217,14 @@ func TestOrchestratorClusterResolver_FailsAfterMaxRetries(t *testing.T) {
 
 func TestOrchestratorClusterResolver_MissingClusterID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := map[string]string{
-			"database_id": "missing-cluster-db",
-			"cluster_id":  "", // Missing cluster_id
-			"infobase_id": "some-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "missing-cluster-db",
+				"cluster_id":  "", // Missing cluster_id
+				"infobase_id": "some-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -233,12 +245,14 @@ func TestOrchestratorClusterResolver_ContextCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate slow response
 		time.Sleep(100 * time.Millisecond)
-		response := map[string]string{
-			"database_id": "slow-db",
-			"cluster_id":  "slow-cluster",
-			"infobase_id": "slow-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "slow-db",
+				"cluster_id":  "slow-cluster",
+				"infobase_id": "slow-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -285,12 +299,14 @@ func TestOrchestratorClusterResolver_WithRedisCache(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		response := map[string]string{
-			"database_id": "redis-cached-db",
-			"cluster_id":  "redis-cluster",
-			"infobase_id": "redis-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "redis-cached-db",
+				"cluster_id":  "redis-cluster",
+				"infobase_id": "redis-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -325,13 +341,15 @@ func TestOrchestratorClusterResolver_APIKeyHeader(t *testing.T) {
 	receivedAPIKey := ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedAPIKey = r.Header.Get("X-API-Key")
-		response := map[string]string{
-			"database_id": "api-key-db",
-			"cluster_id":  "api-key-cluster",
-			"infobase_id": "api-key-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		receivedAPIKey = r.Header.Get("X-Internal-Service-Token")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "api-key-db",
+				"cluster_id":  "api-key-cluster",
+				"infobase_id": "api-key-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -355,30 +373,17 @@ func TestOrchestratorClusterResolver_CacheEviction(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		// Extract database ID from URL path
-		path := r.URL.Path
-		// Path format: /api/v1/databases/{db_id}/cluster-info/
-		parts := make([]string, 0)
-		for _, p := range splitPath(path) {
-			if p != "" {
-				parts = append(parts, p)
-			}
-		}
-		dbID := ""
-		for i, p := range parts {
-			if p == "databases" && i+1 < len(parts) {
-				dbID = parts[i+1]
-				break
-			}
-		}
+		dbID := r.URL.Query().Get("database_id")
 		requestedDBs = append(requestedDBs, dbID)
 
-		response := map[string]string{
-			"database_id": dbID,
-			"cluster_id":  "cluster-" + dbID,
-			"infobase_id": "infobase-" + dbID,
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": dbID,
+				"cluster_id":  "cluster-" + dbID,
+				"infobase_id": "infobase-" + dbID,
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -509,12 +514,14 @@ func TestOrchestratorClusterResolver_FallbackToHTTPWhenStreamsTimeout(t *testing
 	// Create HTTP server that always succeeds
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		httpCallCount++
-		response := map[string]string{
-			"database_id": "fallback-streams-db",
-			"cluster_id":  "fallback-streams-cluster",
-			"infobase_id": "fallback-streams-infobase",
-		}
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"cluster_info": map[string]string{
+				"database_id": "fallback-streams-db",
+				"cluster_id":  "fallback-streams-cluster",
+				"infobase_id": "fallback-streams-infobase",
+			},
+		})
 	}))
 	defer server.Close()
 

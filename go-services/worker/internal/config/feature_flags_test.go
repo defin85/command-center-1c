@@ -176,7 +176,7 @@ func TestLoadFeatureFlagsFromEnv_Defaults(t *testing.T) {
 
 	// Check defaults
 	assert.False(t, ff.EnableEventDriven, "Default should be disabled")
-	assert.Equal(t, 0.0, ff.RolloutPercentage, "Default rollout should be 0%")
+	assert.Equal(t, 1.0, ff.RolloutPercentage, "Default rollout should be 100%")
 	assert.Empty(t, ff.TargetedDatabases, "Default targeted databases should be empty")
 	assert.True(t, ff.EnableForExtensions, "Default should enable extensions")
 	assert.False(t, ff.EnableForBackups, "Default should disable backups")

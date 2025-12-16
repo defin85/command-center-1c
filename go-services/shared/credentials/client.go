@@ -125,7 +125,8 @@ func (c *Client) Fetch(ctx context.Context, databaseID string) (*DatabaseCredent
 }
 
 func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*DatabaseCredentials, error) {
-	url := fmt.Sprintf("%s/api/v1/databases/%s/credentials", c.orchestratorURL, databaseID)
+	// Internal v2 endpoint (v1 removed).
+	url := fmt.Sprintf("%s/api/v2/internal/get-database-credentials?database_id=%s", c.orchestratorURL, databaseID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -143,7 +144,7 @@ func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*Database
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("authentication failed: invalid API key")
+		return nil, fmt.Errorf("authentication failed: unauthorized")
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -154,18 +155,24 @@ func (c *Client) fetchFromAPI(ctx context.Context, databaseID string) (*Database
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Decode encrypted response from Django Orchestrator
-	var encResp EncryptedCredentialsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&encResp); err != nil {
-		return nil, fmt.Errorf("failed to decode encrypted response: %w", err)
+	// Decode encrypted response from Django Orchestrator (internal v2 wraps payload).
+	var envelope struct {
+		Success     bool                       `json:"success"`
+		Credentials *EncryptedCredentialsResponse `json:"credentials"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if !envelope.Success || envelope.Credentials == nil {
+		return nil, fmt.Errorf("invalid credentials response")
 	}
 
 	c.logger.Debug("received encrypted credentials",
 		zap.String("database_id", databaseID),
-		zap.String("encryption_version", encResp.EncryptionVersion))
+		zap.String("encryption_version", envelope.Credentials.EncryptionVersion))
 
 	// Decrypt credentials using transport key (AES-GCM-256)
-	creds, err := DecryptCredentials(encResp, c.transportKey)
+	creds, err := DecryptCredentials(*envelope.Credentials, c.transportKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
 	}

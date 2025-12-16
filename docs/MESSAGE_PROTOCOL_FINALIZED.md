@@ -178,14 +178,18 @@ result, err := redis.BRPop(ctx, 5*time.Second, "cc1c:operations:v1")
 **Worker fetches credentials:**
 ```go
 // Worker makes HTTP call to Orchestrator API
-GET /api/v1/databases/{database_id}/credentials
+GET /api/v2/internal/get-database-credentials?database_id={database_id}
 Authorization: Bearer <worker_token>
 
 Response:
 {
-  "odata_url": "http://...",
-  "username": "admin",
-  "password": "encrypted_value"  // Decrypted by Orchestrator
+  "success": true,
+  "credentials": {
+    "encrypted_data": "base64(...)",
+    "nonce": "base64(...)",
+    "expires_at": "RFC3339 timestamp",
+    "encryption_version": "aes-gcm-256-v1"
+  }
 }
 ```
 
@@ -201,7 +205,7 @@ Response:
 - ❌ **No audit:** Нельзя отследить credential access
 
 **Implementation Note:**
-- Orchestrator endpoint: `/api/v1/databases/{id}/credentials` (auth required)
+- Orchestrator endpoint: `/api/v2/internal/get-database-credentials?database_id=...` (internal auth required)
 - Worker caching: **TTL 2 минуты** (reduce API calls, balance security)
   - **Обоснование:** Credentials меняются редко (раз в месяц), но при смене обновятся быстро (2 мин)
   - Снижает нагрузку на Django API (~70% меньше запросов vs без cache)
@@ -794,77 +798,8 @@ func (c *Consumer) publishResult(ctx context.Context, result *models.OperationRe
 
 ### Callback Protocol (Worker → Django)
 
-**Go Worker Callback:**
-
-```go
-// Alternative to Redis results queue: HTTP callback
-func (c *Consumer) sendCallback(result *models.OperationResult) error {
-    url := fmt.Sprintf("%s/api/v1/operations/%s/callback",
-        c.orchestratorURL, result.OperationID)
-
-    body, _ := json.Marshal(result)
-    req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer "+c.workerToken)
-
-    resp, err := c.httpClient.Do(req)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != 200 {
-        return fmt.Errorf("callback failed: %d", resp.StatusCode)
-    }
-
-    return nil
-}
-```
-
-**Django Callback Handler:**
-
-```python
-# orchestrator/apps/operations/views.py
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from .models import BatchOperation, Task
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def operation_callback(request, operation_id):
-    """Receive callback from Go worker."""
-
-    operation = BatchOperation.objects.get(id=operation_id)
-
-    # Update operation status
-    status = request.data.get("status")
-    results = request.data.get("results", [])
-
-    if status == "completed":
-        operation.status = BatchOperation.STATUS_COMPLETED
-    elif status == "failed":
-        operation.status = BatchOperation.STATUS_FAILED
-
-    # Update tasks
-    for result in results:
-        task = Task.objects.get(
-            batch_operation=operation,
-            database_id=result["database_id"]
-        )
-
-        if result["success"]:
-            task.mark_completed(result=result.get("data"))
-        else:
-            task.mark_failed(
-                error_message=result.get("error"),
-                error_code=result.get("error_code")
-            )
-
-    operation.update_progress()
-
-    return Response({"status": "ok"})
-```
+HTTP callback на `/api/v1/operations/{id}/callback` удалён вместе с v1 API.
+Результаты/статусы передаются event-driven через Redis Streams (events), а операторский UX и мутации делаются через `/api/v2/*` action endpoints.
 
 ---
 
@@ -890,7 +825,7 @@ def operation_callback(request, operation_id):
    - Result processing
 
 4. ✅ **Add credentials endpoint** (`orchestrator/apps/databases/views.py`)
-   - `/api/v1/databases/{id}/credentials`
+   - `/api/v2/internal/get-database-credentials?database_id=...`
    - Worker authentication
    - Encrypted credential decryption
 
@@ -1361,4 +1296,3 @@ type Config struct {
 **Документ готов к implementation.**
 **Все open questions решены на основе industry best practices.**
 **Все решения утверждены и задокументированы.**
-

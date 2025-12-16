@@ -74,7 +74,7 @@ type cacheEntry struct {
 type ResolverConfig struct {
 	// OrchestratorURL is the base URL (e.g., "http://localhost:8200")
 	OrchestratorURL string
-	// APIKey for authentication (X-API-Key header)
+	// APIKey for authentication (X-Internal-Service-Token header)
 	APIKey string
 	// HTTPTimeout for requests (default: 10s)
 	HTTPTimeout time.Duration
@@ -282,8 +282,8 @@ func (r *OrchestratorClusterResolver) fetchViaStreams(ctx context.Context, datab
 
 // fetchViaHTTP makes HTTP request to Orchestrator API.
 func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, databaseID string) (*ClusterInfo, error) {
-	// Build URL: GET /api/v1/databases/{id}/cluster-info/
-	url := fmt.Sprintf("%s/api/v1/databases/%s/cluster-info/", r.orchestratorURL, databaseID)
+	// Internal v2 endpoint (v1 removed).
+	url := fmt.Sprintf("%s/api/v2/internal/get-database-cluster-info?database_id=%s", r.orchestratorURL, databaseID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -294,7 +294,8 @@ func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, database
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if r.apiKey != "" {
-		req.Header.Set("X-API-Key", r.apiKey)
+		// Internal API supports X-Internal-Service-Token (legacy) and JWT.
+		req.Header.Set("X-Internal-Service-Token", r.apiKey)
 	}
 
 	// Execute request
@@ -316,29 +317,34 @@ func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, database
 	}
 
 	// Parse response
-	// Expected: {"database_id": "...", "cluster_id": "...", "infobase_id": "..."}
 	var apiResponse struct {
-		DatabaseID string `json:"database_id"`
-		ClusterID  string `json:"cluster_id"`
-		InfobaseID string `json:"infobase_id"`
+		Success     bool `json:"success"`
+		ClusterInfo struct {
+			DatabaseID string `json:"database_id"`
+			ClusterID  string `json:"cluster_id"`
+			InfobaseID string `json:"infobase_id"`
+		} `json:"cluster_info"`
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if !apiResponse.Success {
+		return nil, fmt.Errorf("unexpected response: %s", string(body))
+	}
 
 	// Validate required fields
-	if apiResponse.ClusterID == "" {
+	if apiResponse.ClusterInfo.ClusterID == "" {
 		return nil, fmt.Errorf("cluster_id not available for database %s (not configured in Orchestrator)", databaseID)
 	}
-	if apiResponse.InfobaseID == "" {
+	if apiResponse.ClusterInfo.InfobaseID == "" {
 		return nil, fmt.Errorf("infobase_id not available for database %s", databaseID)
 	}
 
 	return &ClusterInfo{
 		DatabaseID: databaseID,
-		ClusterID:  apiResponse.ClusterID,
-		InfobaseID: apiResponse.InfobaseID,
+		ClusterID:  apiResponse.ClusterInfo.ClusterID,
+		InfobaseID: apiResponse.ClusterInfo.InfobaseID,
 	}, nil
 }
 

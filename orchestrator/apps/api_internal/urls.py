@@ -51,6 +51,11 @@ urlpatterns = [
         name='get-database-credentials'
     ),
     path(
+        'get-database-cluster-info',
+        views.get_database_cluster_info,
+        name='get-database-cluster-info'
+    ),
+    path(
         'list-databases-for-health-check',
         views.list_databases_for_health_check,
         name='list-databases-for-health-check'

@@ -16,12 +16,16 @@ import (
 func getTestRedisClient(t *testing.T) *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
+		DB:   15, // isolate tests from running services on default DB=0
 	})
 
 	ctx := context.Background()
 	if err := client.Ping(ctx).Err(); err != nil {
 		t.Skip("Redis not available, skipping test")
 	}
+
+	// Ensure clean slate for each test.
+	_ = client.FlushDB(ctx).Err()
 
 	return client
 }

@@ -32,6 +32,14 @@ func TestClient_Fetch_Success(t *testing.T) {
 
 	// Mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/internal/get-database-credentials" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Query().Get("database_id") != "db-123" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer test-api-key" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -39,7 +47,10 @@ func TestClient_Fetch_Success(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 
@@ -74,7 +85,7 @@ func TestClient_Fetch_Unauthorized(t *testing.T) {
 		t.Fatal("expected error for unauthorized request")
 	}
 
-	if err.Error() != "authentication failed: invalid API key" {
+	if err.Error() != "authentication failed: unauthorized" {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -109,6 +120,10 @@ func TestClient_Fetch_Cache(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+		if r.URL.Path != "/api/v2/internal/get-database-credentials" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
 		creds := &DatabaseCredentials{
 			DatabaseID: "db-123",
@@ -125,7 +140,10 @@ func TestClient_Fetch_Cache(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 
@@ -158,6 +176,10 @@ func TestClient_Fetch_CacheExpiry(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+		if r.URL.Path != "/api/v2/internal/get-database-credentials" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
 		creds := &DatabaseCredentials{
 			DatabaseID: "db-123",
@@ -174,7 +196,10 @@ func TestClient_Fetch_CacheExpiry(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 
@@ -209,6 +234,10 @@ func TestClient_ClearCache(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+		if r.URL.Path != "/api/v2/internal/get-database-credentials" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
 		creds := &DatabaseCredentials{
 			DatabaseID: "db-123",
@@ -225,7 +254,10 @@ func TestClient_ClearCache(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 
@@ -271,7 +303,10 @@ func TestClient_InvalidateCache(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 
@@ -309,7 +344,10 @@ func TestClient_CacheSize(t *testing.T) {
 		encResp, _ := EncryptCredentials(creds, testKey)
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encResp)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"credentials": encResp,
+		})
 	}))
 	defer server.Close()
 

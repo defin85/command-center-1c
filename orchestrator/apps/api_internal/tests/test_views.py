@@ -332,6 +332,55 @@ class DatabaseEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertIn('error', response.data)
         self.assertIn('database_id', response.data['error'])
 
+    def test_get_database_cluster_info_missing_id(self):
+        """Test validation - missing database_id."""
+        response = self.client.get('/api/v2/internal/get-database-cluster-info')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+        self.assertIn('database_id', response.data['error'])
+
+    def test_get_database_cluster_info_not_found(self):
+        """Test non-existent database."""
+        response = self.client.get(
+            f'/api/v2/internal/get-database-cluster-info?database_id={uuid.uuid4()}'
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+
+    def test_get_database_cluster_info_unauthorized(self):
+        """Test that unauthorized requests are rejected."""
+        client = self.get_unauthenticated_client()
+        response = client.get(
+            f'/api/v2/internal/get-database-cluster-info?database_id={uuid.uuid4()}'
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_database_cluster_info_success(self):
+        """Test cluster/infobase ids retrieval."""
+        from apps.databases.models import Database
+
+        ras_cluster_id = uuid.uuid4()
+        ras_infobase_id = uuid.uuid4()
+        db = Database.objects.create(
+            id="db-cluster-info-1",
+            name="DB Cluster Info 1",
+            host="localhost",
+            odata_url="http://localhost/odata",
+            username="admin",
+            password="secret",
+            ras_cluster_id=ras_cluster_id,
+            ras_infobase_id=ras_infobase_id,
+        )
+
+        response = self.client.get(
+            f'/api/v2/internal/get-database-cluster-info?database_id={db.id}'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['cluster_info']['database_id'], db.id)
+        self.assertEqual(response.data['cluster_info']['cluster_id'], str(ras_cluster_id))
+        self.assertEqual(response.data['cluster_info']['infobase_id'], str(ras_infobase_id))
+
     def test_get_database_credentials_not_found(self):
         """Test non-existent database."""
         response = self.client.get(

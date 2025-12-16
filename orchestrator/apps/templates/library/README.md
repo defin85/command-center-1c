@@ -137,22 +137,10 @@ result = renderer.render(template, catalog_users['example_context'])
 ### Вариант 3: REST API
 
 ```bash
-# Load template from library
-curl -X POST http://localhost:8000/api/v1/templates/ \
-  -H "Content-Type: application/json" \
-  -d @apps/templates/library/catalog_users.json
-
-# Render template
-curl -X POST http://localhost:8000/api/v1/templates/{id}/render/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "context": {
-      "user_code": "USER001",
-      "user_name": "Иванов Алексей",
-      "email": "ivanov@company.com",
-      "is_active": true
-    }
-  }'
+# v1 CRUD endpoints удалены.
+# Для операторов основной путь — SPA: /templates и API v2:
+#   GET  /api/v2/templates/list-templates/
+#   POST /api/v2/templates/sync-from-registry/
 ```
 
 ## Добавление новых шаблонов
