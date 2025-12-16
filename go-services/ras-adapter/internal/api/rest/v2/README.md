@@ -324,21 +324,10 @@ curl -X POST "http://localhost:8088/api/v2/terminate-sessions?cluster_id=UUID&in
 
 ## Миграция с v1 на v2
 
-### v1 → v2 Mapping
-
-| v1 Endpoint | v2 Endpoint | Изменения |
-|------------|-------------|-----------|
-| `GET /api/v1/clusters` | `GET /api/v2/list-clusters?server=...` | Добавлен query param `server` |
-| `GET /api/v1/clusters/:id` | `GET /api/v2/get-cluster?cluster_id=...&server=...` | Path param → Query param |
-| `GET /api/v1/infobases` | `GET /api/v2/list-infobases?cluster_id=...` | Без изменений в логике |
-| `POST /api/v1/infobases/:id/lock` | `POST /api/v2/lock-infobase?cluster_id=...&infobase_id=...` | Path params → Query params |
-| `POST /api/v1/sessions/terminate` | `POST /api/v2/terminate-sessions?cluster_id=...&infobase_id=...` | Query params обязательны |
+v1 endpoints удалены. Используйте action-based API `/api/v2/*` из этого документа.
 
 ---
 
 ## Версионирование
 
-- **v1**: Legacy API (поддерживается для обратной совместимости)
-- **v2**: Action-based API (рекомендуется для новых проектов)
-
-Оба API работают параллельно и используют один и тот же service layer.
+- **v2**: Action-based API

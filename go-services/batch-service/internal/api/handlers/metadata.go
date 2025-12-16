@@ -33,7 +33,7 @@ func NewMetadataHandler(
 	}
 }
 
-// GetExtensionMetadata handles GET /api/v1/extensions/:file/metadata
+// GetExtensionMetadata handles GET /metadata/:file
 // Extracts metadata from specified .cfe file in storage
 //
 // Path parameter:

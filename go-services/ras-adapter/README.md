@@ -58,7 +58,7 @@ Response:
 ### Get Clusters
 
 ```bash
-GET /api/v1/clusters?server=localhost:1545
+GET /api/v2/list-clusters?server=localhost:1545
 ```
 
 Response:
@@ -78,7 +78,7 @@ Response:
 ### Get Infobases
 
 ```bash
-GET /api/v1/infobases?cluster_id=UUID
+GET /api/v2/list-infobases?cluster_id=UUID
 ```
 
 Response:
@@ -99,7 +99,7 @@ Response:
 ### Get Sessions
 
 ```bash
-GET /api/v1/sessions?cluster_id=UUID&infobase_id=UUID
+GET /api/v2/list-sessions?cluster_id=UUID&infobase_id=UUID
 ```
 
 Response:
@@ -121,13 +121,7 @@ Response:
 ### Terminate Sessions
 
 ```bash
-POST /api/v1/sessions/terminate
-Content-Type: application/json
-
-{
-  "infobase_id": "UUID",
-  "session_ids": ["UUID1", "UUID2"]
-}
+POST /api/v2/terminate-sessions?cluster_id=UUID&infobase_id=UUID
 ```
 
 Response:
@@ -216,18 +210,16 @@ go test ./tests/integration/...
 curl http://localhost:8088/health
 
 # Get clusters
-curl "http://localhost:8088/api/v1/clusters?server=localhost:1545"
+curl "http://localhost:8088/api/v2/list-clusters?server=localhost:1545"
 
 # Get infobases
-curl "http://localhost:8088/api/v1/infobases?cluster_id=UUID"
+curl "http://localhost:8088/api/v2/list-infobases?cluster_id=UUID"
 
 # Get sessions
-curl "http://localhost:8088/api/v1/sessions?cluster_id=UUID&infobase_id=UUID"
+curl "http://localhost:8088/api/v2/list-sessions?cluster_id=UUID&infobase_id=UUID"
 
 # Terminate sessions
-curl -X POST http://localhost:8088/api/v1/sessions/terminate \
-  -H "Content-Type: application/json" \
-  -d '{"infobase_id": "UUID", "session_ids": ["UUID1"]}'
+curl -X POST "http://localhost:8088/api/v2/terminate-sessions?cluster_id=UUID&infobase_id=UUID"
 ```
 
 ## Development Roadmap

@@ -128,7 +128,7 @@ The client logs all operations at INFO level and errors at ERROR level:
 
 ```
 INFO: Initialized InstallationServiceClient with base_url=http://localhost:8085
-INFO: Calling installation-service: GET /api/v1/infobases with params={'server': 'localhost:1545', 'detailed': 'true'}
+INFO: Calling installation-service: GET /api/v2/list-infobases with params={'server': 'localhost:1545', 'detailed': 'true'}
 INFO: Installation-service response: status=200, duration=1.234s
 INFO: Successfully retrieved 2 infobases from cluster 'Local cluster' (d2e1f9c8-...)
 ```

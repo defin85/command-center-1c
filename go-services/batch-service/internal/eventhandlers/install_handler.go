@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,10 +17,10 @@ import (
 
 const (
 	// Channel names
-	InstallCommandChannel   = "commands:batch-service:extension:install"
-	InstallStartedChannel   = "events:batch-service:extension:install-started"
-	InstalledEventChannel   = "events:batch-service:extension:installed"
-	InstallFailedChannel    = "events:batch-service:extension:install-failed"
+	InstallCommandChannel = "commands:batch-service:extension:install"
+	InstallStartedChannel = "events:batch-service:extension:install-started"
+	InstalledEventChannel = "events:batch-service:extension:installed"
+	InstallFailedChannel  = "events:batch-service:extension:install-failed"
 
 	// Event types
 	ExtensionInstallStartedEvent = "batch.extension.install.started"
@@ -377,21 +378,28 @@ func (h *InstallHandler) validateExtensionPath(extensionPath string) error {
 		return fmt.Errorf("extension_path must have .cfe extension, got: %s", extensionPath)
 	}
 
+	isWindowsAbs := len(extensionPath) >= 3 &&
+		(extensionPath[1] == ':' && (extensionPath[2] == '\\' || extensionPath[2] == '/'))
+
 	// Check if path is absolute (prevents relative path attacks)
-	// Accept both Unix-style (/path/to/file) and Windows-style (C:\path\to\file) paths
-	if !filepath.IsAbs(extensionPath) && !strings.HasPrefix(extensionPath, "/") {
+	// Accept both Unix-style (/path/to/file) and Windows drive paths (C:\path\to\file)
+	if !filepath.IsAbs(extensionPath) && !isWindowsAbs {
 		return fmt.Errorf("extension_path must be an absolute path, got: %s", extensionPath)
 	}
 
 	// Clean the path and check if it changed (detects path traversal attempts like ../)
-	cleanPath := filepath.Clean(extensionPath)
-	// On Unix, Clean() converts /// to /, so compare after normalization
-	// Also handle volume name on Windows (C: vs c:)
-	if filepath.ToSlash(cleanPath) != filepath.ToSlash(extensionPath) {
-		// Allow volume letter case differences on Windows
-		if !strings.EqualFold(cleanPath, extensionPath) {
+	if isWindowsAbs {
+		normalized := strings.ReplaceAll(extensionPath, "\\", "/")
+		cleaned := path.Clean(normalized)
+		if !strings.EqualFold(cleaned, normalized) {
 			return fmt.Errorf("extension_path contains invalid characters or path traversal sequences: %s", extensionPath)
 		}
+		return nil
+	}
+
+	cleanPath := filepath.Clean(extensionPath)
+	if filepath.ToSlash(cleanPath) != filepath.ToSlash(extensionPath) {
+		return fmt.Errorf("extension_path contains invalid characters or path traversal sequences: %s", extensionPath)
 	}
 
 	return nil

@@ -158,13 +158,7 @@ contracts/
 
 ```yaml
 # Правильно:
-GET /api/v1/infobases?cluster_id=<uuid>
-POST /api/v1/infobases
-  body: { cluster_id: "uuid", ... }
-
-# НЕПРАВИЛЬНО (deprecated):
-GET /api/v1/infobases?cluster=<uuid>
-GET /api/v1/infobases?cluster_user=admin
+GET /api/v2/list-infobases?cluster_id=<uuid>
 ```
 
 ### Для кластеров (clusters endpoints)
@@ -173,8 +167,8 @@ GET /api/v1/infobases?cluster_user=admin
 
 ```yaml
 # Правильно:
-GET /api/v1/clusters?server=localhost:1545
-GET /api/v1/clusters/{id}?server=localhost:1545
+GET /api/v2/list-clusters?server=localhost:1545
+GET /api/v2/get-cluster?cluster_id=<uuid>&server=localhost:1545
 ```
 
 ---

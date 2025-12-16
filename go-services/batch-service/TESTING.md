@@ -3,8 +3,8 @@
 ## Запуск batch-service
 
 ```bash
-cd /c/1CProject/command-center-1c-track4
-./bin/cc1c-batch-service.exe
+cd go-services/batch-service
+go run cmd/main.go
 ```
 
 ## Переменные окружения (опционально)
@@ -33,14 +33,14 @@ curl http://localhost:8087/health
 }
 ```
 
-### 2. Upload Extension (POST /api/v1/extensions/storage/upload)
+### 2. Upload Extension (POST /storage/upload)
 
 ```bash
 # Создать тестовый .cfe файл
 echo "Test CFE content v1.0.5" > ODataAutoConfig_v1.0.5.cfe
 
 # Загрузить файл
-curl -X POST http://localhost:8087/api/v1/extensions/storage/upload \
+curl -X POST http://localhost:8087/storage/upload \
   -F "file=@ODataAutoConfig_v1.0.5.cfe" \
   -F "author=Developer Name"
 ```
@@ -57,14 +57,14 @@ curl -X POST http://localhost:8087/api/v1/extensions/storage/upload \
 }
 ```
 
-### 3. List Extensions (GET /api/v1/extensions/storage)
+### 3. List Extensions (GET /storage/list)
 
 ```bash
 # Получить список всех расширений
-curl http://localhost:8087/api/v1/extensions/storage
+curl http://localhost:8087/storage/list
 
 # Фильтр по имени расширения
-curl "http://localhost:8087/api/v1/extensions/storage?extension_name=ODataAutoConfig"
+curl "http://localhost:8087/storage/list?extension_name=ODataAutoConfig"
 ```
 
 **Ожидаемый ответ:**
@@ -86,10 +86,10 @@ curl "http://localhost:8087/api/v1/extensions/storage?extension_name=ODataAutoCo
 }
 ```
 
-### 4. Get Extension Metadata (GET /api/v1/extensions/storage/:name)
+### 4. Get Extension Metadata (GET /storage/:name/metadata)
 
 ```bash
-curl "http://localhost:8087/api/v1/extensions/storage/ODataAutoConfig_v1.0.5.cfe"
+curl "http://localhost:8087/storage/ODataAutoConfig_v1.0.5.cfe/metadata"
 ```
 
 **Ожидаемый ответ:**
@@ -106,10 +106,10 @@ curl "http://localhost:8087/api/v1/extensions/storage/ODataAutoConfig_v1.0.5.cfe
 }
 ```
 
-### 5. Delete Extension (DELETE /api/v1/extensions/storage/:name)
+### 5. Delete Extension (DELETE /storage/:name)
 
 ```bash
-curl -X DELETE "http://localhost:8087/api/v1/extensions/storage/ODataAutoConfig_v1.0.5.cfe"
+curl -X DELETE "http://localhost:8087/storage/ODataAutoConfig_v1.0.5.cfe"
 ```
 
 **Ожидаемый ответ:**
@@ -134,14 +134,19 @@ echo "v1.0.6" > OData_v1.0.6.cfe
 echo "v1.0.7" > OData_v1.0.7.cfe
 
 # Загрузить все версии
-curl -s -X POST http://localhost:8087/api/v1/extensions/storage/upload -F "file=@OData_v1.0.3.cfe"
-curl -s -X POST http://localhost:8087/api/v1/extensions/storage/upload -F "file=@OData_v1.0.4.cfe"
-curl -s -X POST http://localhost:8087/api/v1/extensions/storage/upload -F "file=@OData_v1.0.5.cfe"
-curl -s -X POST http://localhost:8087/api/v1/extensions/storage/upload -F "file=@OData_v1.0.6.cfe"
-curl -s -X POST http://localhost:8087/api/v1/extensions/storage/upload -F "file=@OData_v1.0.7.cfe"
+curl -s -X POST http://localhost:8087/storage/upload -F "file=@OData_v1.0.3.cfe"
+curl -s -X POST http://localhost:8087/storage/upload -F "file=@OData_v1.0.4.cfe"
+curl -s -X POST http://localhost:8087/storage/upload -F "file=@OData_v1.0.5.cfe"
+curl -s -X POST http://localhost:8087/storage/upload -F "file=@OData_v1.0.6.cfe"
+curl -s -X POST http://localhost:8087/storage/upload -F "file=@OData_v1.0.7.cfe"
 
 # Проверить что остались только последние 3 версии (1.0.5, 1.0.6, 1.0.7)
-curl -s http://localhost:8087/api/v1/extensions/storage | jq '.extensions | map(.version) | sort'
+python - <<'PY'
+import json, urllib.request
+data = json.loads(urllib.request.urlopen("http://localhost:8087/storage/list").read().decode("utf-8"))
+versions = sorted([e.get("version") for e in data.get("extensions", []) if e.get("version")])
+print(versions)
+PY
 ```
 
 **Ожидаемый результат:**
@@ -204,7 +209,7 @@ API выполняет следующие проверки:
 
 ### Неправильный формат имени файла
 ```bash
-curl -X POST http://localhost:8087/api/v1/extensions/storage/upload \
+curl -X POST http://localhost:8087/storage/upload \
   -F "file=@invalid_name.cfe"
 ```
 **Ответ:**
@@ -217,7 +222,7 @@ curl -X POST http://localhost:8087/api/v1/extensions/storage/upload \
 
 ### Файл не найден
 ```bash
-curl "http://localhost:8087/api/v1/extensions/storage/NonExistent_v1.0.0.cfe"
+curl "http://localhost:8087/storage/NonExistent_v1.0.0.cfe/metadata"
 ```
 **Ответ:**
 ```json
@@ -232,7 +237,7 @@ curl "http://localhost:8087/api/v1/extensions/storage/NonExistent_v1.0.0.cfe"
 # Создать файл > 100MB
 dd if=/dev/zero of=Large_v1.0.0.cfe bs=1M count=101
 
-curl -X POST http://localhost:8087/api/v1/extensions/storage/upload \
+curl -X POST http://localhost:8087/storage/upload \
   -F "file=@Large_v1.0.0.cfe"
 ```
 **Ответ:**

@@ -1,12 +1,11 @@
 # batch-service
 
-Go микросервис для установки расширений в 1С:Предприятие с использованием `v8platform/api`.
+Go микросервис для хранения файлов расширений 1С (.cfe) и извлечения их метаданных.
 
 ## Возможности
 
-- ✅ Установка расширений (.cfe) через REST API
-- ✅ Batch установка на множество баз параллельно
-- ✅ Использование `v8platform/api` (high-level SDK)
+- ✅ Upload/List/Delete для хранилища расширений
+- ✅ Извлечение метаданных из `.cfe` (через `v8platform/api`)
 - ✅ Graceful shutdown
 - ✅ Health check endpoint
 
@@ -65,92 +64,16 @@ GET /health
 }
 ```
 
----
+### Extension Storage (internal)
 
-### Install Extension (Single Base)
-
-```bash
-POST /api/v1/extensions/install
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "server": "localhost:1541",
-  "infobase_name": "dev",
-  "username": "admin",
-  "password": "password",
-  "extension_path": "C:\\extensions\\ODataAutoConfig.cfe",
-  "extension_name": "ODataAutoConfig",
-  "update_db_config": true
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Extension 'ODataAutoConfig' installed successfully on 'dev'",
-  "duration_seconds": 45.2
-}
-```
-
----
-
-### Batch Install Extension
+> Эти endpoints используются Orchestrator’ом. Остальные операции (install/delete/rollback/backups) выполняются event-driven через Redis Streams.
 
 ```bash
-POST /api/v1/extensions/batch-install
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "infobases": [
-    {
-      "server": "localhost:1541",
-      "infobase_name": "dev",
-      "username": "admin",
-      "password": "password",
-      "extension_path": "C:\\extensions\\ODataAutoConfig.cfe",
-      "extension_name": "ODataAutoConfig",
-      "update_db_config": true
-    },
-    {
-      "server": "localhost:1541",
-      "infobase_name": "delans_unf",
-      "username": "admin",
-      "password": "password",
-      "extension_path": "C:\\extensions\\ODataAutoConfig.cfe",
-      "extension_name": "ODataAutoConfig",
-      "update_db_config": true
-    }
-  ],
-  "parallel_workers": 10
-}
-```
-
-**Response:**
-```json
-{
-  "total": 2,
-  "success": 2,
-  "failed": 0,
-  "results": [
-    {
-      "infobase": "dev",
-      "status": "success",
-      "duration_seconds": 45.2
-    },
-    {
-      "infobase": "delans_unf",
-      "status": "success",
-      "duration_seconds": 50.1
-    }
-  ]
-}
+POST   /storage/upload
+GET    /storage/list
+GET    /storage/:name/metadata
+DELETE /storage/:name
+GET    /metadata/:file
 ```
 
 ## Архитектура
@@ -162,12 +85,11 @@ internal/
   ├── api/
   │   ├── router.go        # Route configuration
   │   └── handlers/
-  │       └── extensions.go # HTTP handlers
+  │       ├── storage.go   # Storage handlers
+  │       └── metadata.go  # Metadata extraction handlers
   ├── service/
   │   └── extension_installer.go # Business logic (uses v8platform/api)
   ├── models/
-  │   ├── cluster.go
-  │   ├── infobase.go
   │   └── extension.go     # Request/Response models
   └── config/
       └── config.go        # Configuration
@@ -201,8 +123,7 @@ go fmt ./...
 ## Roadmap
 
 - [x] Phase 1: Базовая структура
-- [x] Phase 2: ExtensionInstaller через v8platform/api
-- [x] Phase 3: REST API endpoints
+- [x] Phase 2: Extension storage + metadata API
 - [ ] Phase 4: MonitoringService через ras-grpc-gw
 - [ ] Phase 5: Интеграция с Orchestrator
 

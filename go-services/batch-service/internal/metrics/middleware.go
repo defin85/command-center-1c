@@ -32,7 +32,7 @@ func HTTPMiddleware(m *BatchMetrics) gin.HandlerFunc {
 // normalizePath returns the route template to avoid high cardinality
 func normalizePath(c *gin.Context) string {
 	// Use route template instead of actual path to avoid high cardinality
-	// e.g., "/api/v1/extensions/storage/:name" instead of "/api/v1/extensions/storage/my-extension"
+	// e.g., "/storage/:name/metadata" instead of "/storage/my-extension.cfe/metadata"
 	if fullPath := c.FullPath(); fullPath != "" {
 		return fullPath
 	}

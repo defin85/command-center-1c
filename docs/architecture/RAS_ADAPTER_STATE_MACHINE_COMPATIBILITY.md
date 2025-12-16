@@ -173,7 +173,7 @@ Worker State Machine
 ```
 Admin / curl
   │
-  │ HTTP POST /api/v1/infobases/{id}/lock
+  │ HTTP POST /api/v2/lock-infobase?cluster_id=...&infobase_id=...
   └─► RAS Adapter REST API
       │
       └─► service.LockInfobase(clusterID, infobaseID)
@@ -298,7 +298,7 @@ Admin / curl
 
 **Tasks:**
 - [ ] Run [RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md](RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md)
-- [ ] Test REST API endpoints (GET /clusters, /infobases, POST /lock, /unlock)
+- [ ] Test v2 REST API endpoints (`/api/v2/list-clusters`, `/api/v2/list-infobases`, `/api/v2/lock-infobase`, `/api/v2/unlock-infobase`)
 - [ ] Test Redis Pub/Sub event handlers
   - Publish command → verify event received
   - Test all 3 handlers (lock, unlock, terminate)
@@ -323,11 +323,10 @@ go-services/ras-adapter/
 │   └── main.go                      # Entry point
 ├── internal/
 │   ├── api/
+│   │   ├── generated/               # oapi-codegen server/types
 │   │   └── rest/
 │   │       ├── router.go            # Gin REST API
-│   │       ├── clusters.go          # GET /api/v1/clusters
-│   │       ├── infobases.go         # GET /api/v1/infobases
-│   │       └── sessions.go          # GET /api/v1/sessions
+│   │       └── v2/                  # /api/v2/* handlers + docs
 │   ├── eventhandlers/               # Redis Pub/Sub handlers
 │   │   ├── lock_handler.go          # Lock command handler
 │   │   ├── unlock_handler.go        # Unlock command handler

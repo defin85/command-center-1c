@@ -97,10 +97,10 @@ curl http://localhost:8088/health
 
 **Endpoints:**
 - Health: http://localhost:8088/health
-- Clusters: http://localhost:8088/api/v1/clusters?server=localhost:1545
-- Infobases: http://localhost:8088/api/v1/infobases?cluster_id={uuid}
-- Lock: POST http://localhost:8088/api/v1/infobases/{id}/lock
-- Unlock: POST http://localhost:8088/api/v1/infobases/{id}/unlock
+- Clusters: http://localhost:8088/api/v2/list-clusters?server=localhost:1545
+- Infobases: http://localhost:8088/api/v2/list-infobases?cluster_id={uuid}
+- Lock: POST http://localhost:8088/api/v2/lock-infobase?cluster_id={uuid}&infobase_id={uuid}
+- Unlock: POST http://localhost:8088/api/v2/unlock-infobase?cluster_id={uuid}&infobase_id={uuid}
 
 **Architecture:**
 ```
@@ -702,20 +702,20 @@ docker-compose -f docker-compose.local.yml down
 curl http://localhost:8088/health
 
 # 4. Получить список кластеров
-curl "http://localhost:8088/api/v1/clusters?server=localhost:1545"
+curl "http://localhost:8088/api/v2/list-clusters?server=localhost:1545"
 
 # 5. Получить список информационных баз (подставить cluster_id)
-curl "http://localhost:8088/api/v1/infobases?cluster_id=<UUID>"
+curl "http://localhost:8088/api/v2/list-infobases?cluster_id=<UUID>"
 
 # 6. Manual Lock Test (подставить cluster_id и infobase_id)
-curl -X POST http://localhost:8088/api/v1/infobases/<INFOBASE_ID>/lock \
+curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>" \
   -H "Content-Type: application/json" \
-  -d '{"cluster_id":"<CLUSTER_ID>"}'
+  -d '{"db_user":"admin","db_password":"secret"}'
 
 # 7. Manual Unlock Test
-curl -X POST http://localhost:8088/api/v1/infobases/<INFOBASE_ID>/unlock \
+curl -X POST "http://localhost:8088/api/v2/unlock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>" \
   -H "Content-Type: application/json" \
-  -d '{"cluster_id":"<CLUSTER_ID>"}'
+  -d '{"db_user":"admin","db_password":"secret"}'
 
 # 8. Просмотр логов
 ./scripts/dev/logs.sh ras-adapter

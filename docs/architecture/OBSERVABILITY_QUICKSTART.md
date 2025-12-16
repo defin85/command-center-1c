@@ -178,9 +178,9 @@
 
 ```bash
 # Check if RAS integration is broken
-curl -X POST http://localhost:8088/api/v1/infobases/lock \
+curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=...&infobase_id=..." \
   -H "Content-Type: application/json" \
-  -d '{"cluster_id":"...","infobase_id":"..."}'
+  -d '{"db_user":"admin","db_password":"secret"}'
 
 # Expected: HTTP 500 (RAS error: unknown type)
 ```
@@ -193,7 +193,9 @@ curl http://localhost:8088/health
 # Expected: {"status":"healthy","service":"ras-adapter","version":"v2.0.0"}
 
 # Test Lock/Unlock
-curl -X POST http://localhost:8088/api/v1/infobases/{id}/lock
+curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=...&infobase_id=..." \
+  -H "Content-Type: application/json" \
+  -d '{"db_user":"admin","db_password":"secret"}'
 # Expected: {"success":true,"message":"Locked"}
 ```
 

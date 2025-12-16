@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Removed legacy REST API v1 (only `/api/v2/*` is supported).
+
 ### Week 4+ (Planned)
 - Integration tests with real RAS server
 - Connection pooling optimization
@@ -45,7 +48,7 @@
 - Lock/Unlock functionality for infobases (scheduled jobs blocking)
 - RAS Client methods: `LockInfobase()`, `UnlockInfobase()`, `GetInfobaseInfo()`, `RegInfoBase()`
 - Service layer: `InfobaseService.LockInfobase()`, `InfobaseService.UnlockInfobase()`
-- REST API endpoints: `POST /api/v1/infobases/:id/lock`, `POST /api/v1/infobases/:id/unlock`
+- REST API endpoints: `POST /api/v2/lock-infobase`, `POST /api/v2/unlock-infobase`
 - Event handlers: `LockHandler`, `UnlockHandler` (Redis Pub/Sub)
 - Models: `Infobase.ScheduledJobsDeny`, `Infobase.SessionsDeny` fields
 
@@ -69,10 +72,10 @@
 - RAS connection pool (`internal/ras/pool.go`)
 - REST API handlers:
   - `GET /health` - health check
-  - `GET /api/v1/clusters` - get clusters
-  - `GET /api/v1/infobases` - get infobases
-  - `GET /api/v1/sessions` - get sessions
-  - `POST /api/v1/sessions/terminate` - terminate sessions
+  - `GET /api/v2/list-clusters` - list clusters
+  - `GET /api/v2/list-infobases` - list infobases
+  - `GET /api/v2/list-sessions` - list sessions
+  - `POST /api/v2/terminate-sessions` - terminate sessions
 - Service layer (`internal/service/`)
   - ClusterService
   - InfobaseService

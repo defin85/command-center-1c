@@ -200,7 +200,7 @@ c.JSON(http.StatusOK, generated.SuccessResponse{
 import requests
 
 response = requests.get(
-    "http://localhost:8088/api/v1/infobases",
+    "http://localhost:8088/api/v2/list-infobases",
     params={"cluster": cluster_uuid}  # НЕПРАВИЛЬНО!
 )
 ```

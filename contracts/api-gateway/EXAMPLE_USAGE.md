@@ -520,7 +520,7 @@ export const mockApi = {
 
 ```typescript
 // Старый код
-const response = await fetch('/api/v1/operations');
+const response = await fetch('/api/v2/operations/list-operations/');
 const data = await response.json();
 // Нет типов, нет автодополнения
 data.operations.forEach(op => {

@@ -14,8 +14,8 @@ import (
 
 const (
 	// Лимиты для загрузки файлов
-	maxUploadSize  = 100 * 1024 * 1024 // 100 MB
-	minUploadSize  = 1                  // 1 byte
+	maxUploadSize = 100 * 1024 * 1024 // 100 MB
+	minUploadSize = 1                 // 1 byte
 )
 
 // StorageHandler управляет HTTP запросами для storage API
@@ -32,7 +32,7 @@ func NewStorageHandler(storageManager *storage.Manager, logger *zap.Logger) *Sto
 	}
 }
 
-// UploadExtension обрабатывает POST /api/v1/extensions/storage/upload
+// UploadExtension handles POST /storage/upload
 // Загружает .cfe файл расширения в хранилище
 func (h *StorageHandler) UploadExtension(c *gin.Context) {
 	h.logger.Info("upload extension request received")
@@ -43,7 +43,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 		h.logger.Error("failed to get file from request",
 			zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "file is required",
+			"error":   "file is required",
 			"details": err.Error(),
 		})
 		return
@@ -55,7 +55,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 		h.logger.Warn("file size too small",
 			zap.Int64("size", header.Size))
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "file size too small",
+			"error":   "file size too small",
 			"details": fmt.Sprintf("minimum size: %d bytes", minUploadSize),
 		})
 		return
@@ -66,7 +66,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 			zap.Int64("size", header.Size),
 			zap.Int64("max", maxUploadSize))
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "file size too large",
+			"error":   "file size too large",
 			"details": fmt.Sprintf("maximum size: %d MB", maxUploadSize/(1024*1024)),
 		})
 		return
@@ -81,7 +81,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 			zap.String("file_name", fileName),
 			zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid file name",
+			"error":   "invalid file name",
 			"details": err.Error(),
 		})
 		return
@@ -106,7 +106,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 			zap.String("file_name", fileName),
 			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to save extension",
+			"error":   "failed to save extension",
 			"details": err.Error(),
 		})
 		return
@@ -130,7 +130,7 @@ func (h *StorageHandler) UploadExtension(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ListStorage обрабатывает GET /api/v1/extensions/storage
+// ListStorage handles GET /storage/list
 // Возвращает список всех расширений в хранилище
 func (h *StorageHandler) ListStorage(c *gin.Context) {
 	// Опциональный фильтр по имени расширения
@@ -146,7 +146,7 @@ func (h *StorageHandler) ListStorage(c *gin.Context) {
 			zap.String("filter", extensionName),
 			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to list extensions",
+			"error":   "failed to list extensions",
 			"details": err.Error(),
 		})
 		return
@@ -165,7 +165,7 @@ func (h *StorageHandler) ListStorage(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetExtensionMetadata обрабатывает GET /api/v1/extensions/storage/:name
+// GetExtensionMetadata handles GET /storage/:name/metadata
 // Возвращает метаданные конкретного расширения
 func (h *StorageHandler) GetExtensionMetadata(c *gin.Context) {
 	fileName := c.Param("name")
@@ -193,14 +193,14 @@ func (h *StorageHandler) GetExtensionMetadata(c *gin.Context) {
 		// Проверяем тип ошибки
 		if strings.Contains(err.Error(), "not found") {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "extension not found",
+				"error":   "extension not found",
 				"details": err.Error(),
 			})
 			return
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to get extension",
+			"error":   "failed to get extension",
 			"details": err.Error(),
 		})
 		return
@@ -212,7 +212,7 @@ func (h *StorageHandler) GetExtensionMetadata(c *gin.Context) {
 	c.JSON(http.StatusOK, extension)
 }
 
-// DeleteExtension обрабатывает DELETE /api/v1/extensions/storage/:name
+// DeleteExtension handles DELETE /storage/:name
 // Удаляет файл расширения из хранилища
 func (h *StorageHandler) DeleteExtension(c *gin.Context) {
 	fileName := c.Param("name")
@@ -239,14 +239,14 @@ func (h *StorageHandler) DeleteExtension(c *gin.Context) {
 		// Проверяем тип ошибки
 		if strings.Contains(err.Error(), "not found") {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "extension not found",
+				"error":   "extension not found",
 				"details": err.Error(),
 			})
 			return
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to delete extension",
+			"error":   "failed to delete extension",
 			"details": err.Error(),
 		})
 		return

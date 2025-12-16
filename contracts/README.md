@@ -46,7 +46,7 @@ contracts/
 
 ```yaml
 paths:
-  /api/v1/my-new-endpoint:
+  /api/v2/my-new-endpoint/:
     get:
       summary: My new endpoint
       operationId: getMyEndpoint
@@ -330,8 +330,8 @@ git config core.hooksPath .githooks
 
 См. `contracts/ras-adapter/openapi.yaml` для полных примеров:
 - Health check: `/health`
-- CRUD: `/api/v1/infobases`
-- Actions: `/api/v1/infobases/{id}/lock`
+- Actions: `/api/v2/list-infobases`
+- Actions: `/api/v2/lock-infobase`
 
 ### Использование сгенерированных типов
 

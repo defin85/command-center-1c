@@ -23,9 +23,11 @@ func TestBuildInstallLoadCommand(t *testing.T) {
 	// Verify command structure
 	expected := []string{
 		"DESIGNER",
-		"/F", "testserver\\testbase",
-		"/N", "admin",
-		"/P", "pass",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		"/Stestserver\\testbase",
+		"/Nadmin",
+		"/Ppass",
 		"/LoadCfg", "C:\\extensions\\test.cfe",
 		"-Extension", "TestExt",
 	}
@@ -134,9 +136,11 @@ func TestBuildInstallUpdateCommand(t *testing.T) {
 	// Verify command structure
 	expected := []string{
 		"DESIGNER",
-		"/F", "testserver\\testbase",
-		"/N", "admin",
-		"/P", "pass",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		"/Stestserver\\testbase",
+		"/Nadmin",
+		"/Ppass",
 		"/UpdateDBCfg",
 		"-Extension", "TestExt",
 	}
@@ -169,9 +173,11 @@ func TestBuildUpdateCommand(t *testing.T) {
 	// Verify command structure
 	expected := []string{
 		"DESIGNER",
-		"/F", "testserver\\testbase",
-		"/N", "admin",
-		"/P", "pass",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		"/Stestserver\\testbase",
+		"/Nadmin",
+		"/Ppass",
 		"/UpdateDBCfg",
 		"-Extension", "TestExt",
 	}
@@ -205,9 +211,11 @@ func TestBuildDumpCommand(t *testing.T) {
 	// Verify command structure
 	expected := []string{
 		"DESIGNER",
-		"/F", "testserver\\testbase",
-		"/N", "admin",
-		"/P", "pass",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		"/Stestserver\\testbase",
+		"/Nadmin",
+		"/Ppass",
 		"/DumpCfg", "C:\\backup\\test.cfe",
 		"-Extension", "TestExt",
 	}
@@ -316,9 +324,11 @@ func TestBuildRollbackCommand(t *testing.T) {
 	// Verify command structure
 	expected := []string{
 		"DESIGNER",
-		"/F", "testserver\\testbase",
-		"/N", "admin",
-		"/P", "pass",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		"/Stestserver\\testbase",
+		"/Nadmin",
+		"/Ppass",
 		"/RollbackCfg",
 		"-Extension", "TestExt",
 	}

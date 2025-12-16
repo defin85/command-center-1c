@@ -26,7 +26,7 @@ docker-compose down
 ### cluster-service
 - **Port:** 8088 (HTTP API)
 - **Health:** http://localhost:8088/health
-- **API:** http://localhost:8088/api/v1
+- **API:** http://localhost:8088/api/v2
 - **Image:** cluster-service:v1.0.0-sprint1
 
 ## Testing
@@ -37,10 +37,10 @@ curl http://localhost:8081/health  # ras-grpc-gw
 curl http://localhost:8088/health  # cluster-service
 
 # Get clusters (requires RAS server)
-curl "http://localhost:8088/api/v1/clusters?server=host.docker.internal:1545"
+curl "http://localhost:8088/api/v2/list-clusters?server=host.docker.internal:1545"
 
-# Get infobases
-curl "http://localhost:8088/api/v1/infobases?server=host.docker.internal:1545"
+# Get infobases (requires cluster_id from list-clusters)
+curl "http://localhost:8088/api/v2/list-infobases?cluster_id=<UUID>"
 ```
 
 ## Troubleshooting

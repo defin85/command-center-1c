@@ -82,7 +82,7 @@ echo "Running $NUM_REQUESTS requests..."
 
 clusters_latencies=""
 for i in $(seq 1 $NUM_REQUESTS); do
-    latency=$(curl -o /dev/null -s -w '%{time_total}\n' "$RAS_ADAPTER_URL/api/v1/clusters?server=$RAS_SERVER" | awk '{print $1 * 1000}')
+    latency=$(curl -o /dev/null -s -w '%{time_total}\n' "$RAS_ADAPTER_URL/api/v2/list-clusters?server=$RAS_SERVER" | awk '{print $1 * 1000}')
     clusters_latencies="$clusters_latencies$latency\n"
 
     # Progress indicator

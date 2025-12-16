@@ -82,7 +82,7 @@ tail -f ras-protocol-capture.log
 cd tools/ras-sniffer && ./start.sh
 
 # Terminal 2: Test cluster-service через proxy
-curl "http://localhost:8088/api/v1/clusters?server=localhost:1546"
+curl "http://localhost:8088/api/v2/list-clusters?server=localhost:1546"
 
 # Terminal 3: Analyze traffic
 tail -f tools/ras-sniffer/ras-protocol-capture.log

@@ -195,8 +195,8 @@ func TestExtractBasePrefix(t *testing.T) {
 			expected: "/ws/*",
 		},
 		{
-			name:     "Legacy API path",
-			input:    "/api/v1/legacy/",
+			name:     "Unknown API version path",
+			input:    "/api/v3/legacy/",
 			expected: "/api/*",
 		},
 		{

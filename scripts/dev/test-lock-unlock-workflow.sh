@@ -51,7 +51,7 @@ fi
 # Test 2: GET /clusters (RAS connection)
 echo ""
 echo "Test 2: GET /clusters (RAS connection)"
-CLUSTERS_RESPONSE=$(curl -sf "$RAS_ADAPTER_URL/api/v1/clusters?server=localhost:1545" 2>&1)
+CLUSTERS_RESPONSE=$(curl -sf "$RAS_ADAPTER_URL/api/v2/list-clusters?server=localhost:1545" 2>&1)
 if [ $? -eq 0 ] && [ ! -z "$CLUSTERS_RESPONSE" ]; then
     pass "GET /clusters PASSED"
     echo "  Response: $CLUSTERS_RESPONSE" | head -c 100
@@ -64,35 +64,42 @@ fi
 # Test 3: GET /infobases
 echo ""
 echo "Test 3: GET /infobases"
-# Extract first cluster_id from clusters response (if jq available)
-if command -v jq &> /dev/null && [ ! -z "$CLUSTERS_RESPONSE" ]; then
-    CLUSTER_ID=$(echo "$CLUSTERS_RESPONSE" | jq -r '.[0].uuid' 2>/dev/null || echo "")
-    if [ ! -z "$CLUSTER_ID" ] && [ "$CLUSTER_ID" != "null" ]; then
-        INFOBASES_RESPONSE=$(curl -sf "$RAS_ADAPTER_URL/api/v1/infobases?cluster_id=$CLUSTER_ID" 2>&1)
-        if [ $? -eq 0 ]; then
-            pass "GET /infobases PASSED"
-            echo "  Cluster ID: $CLUSTER_ID"
-        else
-            fail "GET /infobases FAILED"
-        fi
+# Extract first cluster_id from clusters response (prefer Python, jq is not guaranteed)
+CLUSTER_ID=$(python - <<'PY' <<<"$CLUSTERS_RESPONSE"
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+clusters = data.get("clusters") if isinstance(data, dict) else data
+if isinstance(clusters, list) and clusters and isinstance(clusters[0], dict):
+    print(clusters[0].get("uuid", ""))
+PY
+)
+
+if [ ! -z "$CLUSTER_ID" ]; then
+    INFOBASES_RESPONSE=$(curl -sf "$RAS_ADAPTER_URL/api/v2/list-infobases?cluster_id=$CLUSTER_ID" 2>&1)
+    if [ $? -eq 0 ]; then
+        pass "GET /infobases PASSED"
+        echo "  Cluster ID: $CLUSTER_ID"
     else
-        warn "GET /infobases SKIPPED (no cluster_id found, install jq)"
+        fail "GET /infobases FAILED"
     fi
 else
-    warn "GET /infobases SKIPPED (jq not installed or no clusters)"
+    warn "GET /infobases SKIPPED (no cluster_id found)"
 fi
 
 # Test 4: POST /lock (REST API)
 echo ""
 echo "Test 4: POST /lock (REST API)"
 warn "POST /lock SKIPPED (requires valid cluster_id and infobase_id)"
-echo "  Manual test: curl -X POST $RAS_ADAPTER_URL/api/v1/infobases/{infobase_id}/lock -H 'Content-Type: application/json' -d '{\"cluster_id\":\"...\"}'"
+echo "  Manual test: curl -X POST \"$RAS_ADAPTER_URL/api/v2/lock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>\" -H 'Content-Type: application/json' -d '{\"db_user\":\"admin\",\"db_password\":\"secret\"}'"
 
 # Test 5: POST /unlock (REST API)
 echo ""
 echo "Test 5: POST /unlock (REST API)"
 warn "POST /unlock SKIPPED (requires valid cluster_id and infobase_id)"
-echo "  Manual test: curl -X POST $RAS_ADAPTER_URL/api/v1/infobases/{infobase_id}/unlock -H 'Content-Type: application/json' -d '{\"cluster_id\":\"...\"}'"
+echo "  Manual test: curl -X POST \"$RAS_ADAPTER_URL/api/v2/unlock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>\" -H 'Content-Type: application/json' -d '{\"db_user\":\"admin\",\"db_password\":\"secret\"}'"
 
 # Test 6: Redis connectivity
 echo ""

@@ -22,10 +22,8 @@ import (
 	"github.com/command-center-1c/batch-service/internal/config"
 	"github.com/command-center-1c/batch-service/internal/domain/metadata"
 	"github.com/command-center-1c/batch-service/internal/domain/rollback"
-	"github.com/command-center-1c/batch-service/internal/domain/session"
 	"github.com/command-center-1c/batch-service/internal/domain/storage"
 	"github.com/command-center-1c/batch-service/internal/eventhandlers"
-	"github.com/command-center-1c/batch-service/internal/infrastructure/cluster"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/filesystem"
 	"github.com/command-center-1c/batch-service/internal/infrastructure/v8executor"
 	"github.com/command-center-1c/batch-service/internal/metrics"
@@ -75,35 +73,8 @@ func main() {
 		zap.String("v8_exe", cfg.V8.ExePath),
 		zap.String("storage_path", cfg.Storage.Path),
 		zap.String("backup_path", cfg.Backup.Path),
-		zap.String("cluster_service_url", cfg.ClusterServiceURL),
-		zap.Duration("cluster_request_timeout", cfg.ClusterRequestTimeout),
 		zap.Int("retention_versions", cfg.Storage.RetentionVersions),
 		zap.Int("retention_backups", cfg.Backup.RetentionBackups))
-
-	// Initialize cluster client for session management with configurable timeout
-	clusterClient := cluster.NewClusterClient(
-		cfg.ClusterServiceURL,
-		cfg.ClusterRequestTimeout,
-		logger,
-	)
-
-	logger.Info("cluster client initialized",
-		zap.String("url", cfg.ClusterServiceURL),
-		zap.Duration("timeout", cfg.ClusterRequestTimeout))
-
-	// Health check cluster-service (non-blocking)
-	if err := clusterClient.HealthCheck(); err != nil {
-		logger.Warn("cluster-service not available at startup",
-			zap.String("url", cfg.ClusterServiceURL),
-			zap.Error(err))
-		logger.Info("session termination features will be unavailable until cluster-service is ready")
-	} else {
-		logger.Info("cluster-service health check passed",
-			zap.String("url", cfg.ClusterServiceURL))
-	}
-
-	// Initialize session manager
-	_ = session.NewSessionManager(clusterClient, logger)
 
 	// Initialize backup system
 	backupStorage := filesystem.NewBackupStorage(cfg.Backup.Path, logger)

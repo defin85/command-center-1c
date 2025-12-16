@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -47,8 +48,8 @@ type StorageConfig struct {
 
 // BackupConfig holds backup configuration
 type BackupConfig struct {
-	Path              string // Path to backups directory
-	RetentionBackups  int    // Number of backups to keep per extension
+	Path             string // Path to backups directory
+	RetentionBackups int    // Number of backups to keep per extension
 }
 
 // RedisConfig holds Redis configuration
@@ -130,6 +131,12 @@ func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
 // Uses strconv.ParseBool for standard boolean parsing
 func getBoolEnv(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "yes", "y", "on":
+			return true
+		case "no", "n", "off":
+			return false
+		}
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
 		}

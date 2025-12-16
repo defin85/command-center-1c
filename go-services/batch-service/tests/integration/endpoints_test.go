@@ -147,41 +147,6 @@ func TestMetadataEndpoint_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestOldAPIv1Endpoints_NotFound(t *testing.T) {
-	// Verify that old API v1 endpoints are no longer available
-	router := getTestRouter()
-
-	oldEndpoints := []struct {
-		method string
-		path   string
-	}{
-		{"POST", "/api/v1/extensions/install"},
-		{"POST", "/api/v1/extensions/batch-install"},
-		{"POST", "/api/v1/extensions/delete"},
-		{"GET", "/api/v1/extensions/list"},
-		{"POST", "/api/v1/extensions/rollback"},
-		{"GET", "/api/v1/extensions/rollback/history"},
-		{"POST", "/api/v1/extensions/backups/create"},
-		{"GET", "/api/v1/extensions/backups/test-db"},
-		{"GET", "/api/v1/extensions/backups/test-db/latest"},
-		{"DELETE", "/api/v1/extensions/backups/test-db/backup-1"},
-	}
-
-	for _, endpoint := range oldEndpoints {
-		t.Run(endpoint.method+" "+endpoint.path, func(t *testing.T) {
-			req, err := http.NewRequest(endpoint.method, endpoint.path, nil)
-			require.NoError(t, err)
-
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-
-			// All old v1 endpoints should return 404
-			assert.Equal(t, http.StatusNotFound, w.Code,
-				"Old endpoint %s %s should return 404", endpoint.method, endpoint.path)
-		})
-	}
-}
-
 // BenchmarkHealthEndpoint benchmarks health endpoint response time
 func BenchmarkHealthEndpoint(b *testing.B) {
 	router := getTestRouter()
