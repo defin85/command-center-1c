@@ -774,10 +774,10 @@ DiscoverClustersRequest:
 
 - [ ] Integration tests (общие) — из Phase 0/1.x/2.x (отложенные пункты)
 - [ ] Production readiness: SLO/latency/success-rate проверки (p99/p95 и т.п.)
-- [ ] Удаление v1 HTTP endpoints в ras-adapter после deprecation period (если принято как цель)
+- [x] Удаление v1 HTTP endpoints в ras-adapter (done, commit `42f8655`)
 
 ### Из `docs/roadmaps/V1_TO_V2_EVENT_DRIVEN_MIGRATION.md`
 
 - [ ] Credentials через Streams (commands/events + Django handler + Worker client) — убрать прямые HTTP зависимости
 - [x] Timeline записи в Django для BatchOperation (Redis ZSET + created/queued/completed/failed события)
-- [ ] Финальная зачистка v1 (удалить v1 views/urls, обновить docs, обновить OpenAPI specs, regenerate clients)
+- [x] Финальная зачистка v1 (done, commit `42f8655`)
