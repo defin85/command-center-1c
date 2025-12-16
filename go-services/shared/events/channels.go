@@ -7,6 +7,10 @@ const (
 	// StreamCommandsGetClusterInfo is the stream for requesting cluster info from Orchestrator.
 	// Used when Worker needs to resolve database_id to cluster/infobase UUIDs.
 	StreamCommandsGetClusterInfo = "commands:orchestrator:get-cluster-info"
+
+	// StreamCommandsGetDatabaseCredentials is the stream for requesting encrypted database credentials from Orchestrator.
+	// Used by Worker to fetch OData/DESIGNER credentials without direct HTTP calls.
+	StreamCommandsGetDatabaseCredentials = "commands:orchestrator:get-database-credentials"
 )
 
 // Redis Streams channels for Orchestrator events (responses).
@@ -14,6 +18,9 @@ const (
 const (
 	// StreamEventsClusterInfoResponse is the stream for cluster info responses from Orchestrator.
 	StreamEventsClusterInfoResponse = "events:orchestrator:cluster-info-response"
+
+	// StreamEventsDatabaseCredentialsResponse is the stream for encrypted database credentials responses from Orchestrator.
+	StreamEventsDatabaseCredentialsResponse = "events:orchestrator:database-credentials-response"
 )
 
 // Consumer group names for Orchestrator communication.
@@ -25,12 +32,17 @@ const (
 	// ConsumerGroupWorkerClusterInfo is the consumer group name for Worker instances
 	// consuming cluster info responses from Orchestrator.
 	ConsumerGroupWorkerClusterInfo = "worker-cluster-info-group"
+
+	// ConsumerGroupWorkerCredentials is the consumer group name for Worker instances
+	// consuming database credentials responses from Orchestrator.
+	ConsumerGroupWorkerCredentials = "worker-credentials-group"
 )
 
 // AllOrchestratorCommandStreams returns a list of all Orchestrator command stream names.
 func AllOrchestratorCommandStreams() []string {
 	return []string{
 		StreamCommandsGetClusterInfo,
+		StreamCommandsGetDatabaseCredentials,
 	}
 }
 
@@ -38,5 +50,6 @@ func AllOrchestratorCommandStreams() []string {
 func AllOrchestratorEventStreams() []string {
 	return []string{
 		StreamEventsClusterInfoResponse,
+		StreamEventsDatabaseCredentialsResponse,
 	}
 }

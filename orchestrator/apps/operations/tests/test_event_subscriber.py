@@ -450,6 +450,65 @@ class EventSubscriberClusterInfoTest(TestCase):
         self.assertEqual(response['error'], '')
 
     @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_database_credentials_success(self, mock_redis_class):
+        """Test successful database credentials retrieval."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-creds-123',
+            'database_id': self.database.id,
+            'timestamp': '2025-12-16T10:30:00Z',
+        }
+
+        subscriber.handle_get_database_credentials(data, 'test-creds-123')
+
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+
+        self.assertEqual(call_args[0][0], 'events:orchestrator:database-credentials-response')
+
+        response = call_args[0][1]
+        self.assertEqual(response['correlation_id'], 'test-creds-123')
+        self.assertEqual(response['database_id'], self.database.id)
+        self.assertEqual(response['success'], 'true')
+        self.assertEqual(response['error'], '')
+        self.assertNotEqual(response['encrypted_data'], '')
+        self.assertNotEqual(response['nonce'], '')
+        self.assertNotEqual(response['expires_at'], '')
+        self.assertNotEqual(response['encryption_version'], '')
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_database_credentials_not_found(self, mock_redis_class):
+        """Test database credentials handler for non-existent database."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-creds-404',
+            'database_id': 'nonexistent-db',
+            'timestamp': '2025-12-16T10:30:00Z',
+        }
+
+        subscriber.handle_get_database_credentials(data, 'test-creds-404')
+
+        mock_redis.xadd.assert_called_once()
+        response = mock_redis.xadd.call_args[0][1]
+
+        self.assertEqual(response['correlation_id'], 'test-creds-404')
+        self.assertEqual(response['database_id'], 'nonexistent-db')
+        self.assertEqual(response['success'], 'false')
+        self.assertIn('not found', response['error'])
+        self.assertEqual(response['encrypted_data'], '')
+        self.assertEqual(response['nonce'], '')
+        self.assertEqual(response['expires_at'], '')
+        self.assertEqual(response['encryption_version'], '')
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
     def test_handle_get_cluster_info_database_not_found(self, mock_redis_class):
         """Test cluster info for non-existent database."""
         mock_redis = MagicMock()
@@ -609,11 +668,44 @@ class EventSubscriberClusterInfoTest(TestCase):
         subscriber.handle_get_cluster_info.assert_called_once()
 
     @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_process_message_routes_to_get_database_credentials(self, mock_redis_class):
+        """Test message routing to get_database_credentials handler."""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+        subscriber.handle_get_database_credentials = MagicMock()
+
+        data = {
+            'correlation_id': 'test-creds-routing',
+            'database_id': 'db-123',
+            'timestamp': '2025-12-16T10:30:00Z',
+        }
+
+        subscriber.process_message(
+            'commands:orchestrator:get-database-credentials',
+            '1234567890-0',
+            data
+        )
+
+        subscriber.handle_get_database_credentials.assert_called_once()
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
     def test_subscriber_streams_includes_get_cluster_info(self, mock_redis_class):
         """Test that subscriber streams include get-cluster-info command."""
         subscriber = EventSubscriber()
 
         self.assertIn(
             'commands:orchestrator:get-cluster-info',
+            subscriber.streams
+        )
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_subscriber_streams_includes_get_database_credentials(self, mock_redis_class):
+        """Test that subscriber streams include get-database-credentials command."""
+        subscriber = EventSubscriber()
+
+        self.assertIn(
+            'commands:orchestrator:get-database-credentials',
             subscriber.streams
         )

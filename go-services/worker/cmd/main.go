@@ -120,28 +120,27 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Generate JWT service token for Worker
-	jwtManager := auth.NewJWTManager(auth.JWTConfig{
-		Secret:     cfg.JWTSecret,
-		ExpireTime: 24 * time.Hour, // Not used for service tokens
-		Issuer:     "commandcenter",
+	// Initialize Redis client (shared between processor and consumer)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
 	})
 
-	serviceToken, err := jwtManager.GenerateServiceToken("worker", 24*time.Hour)
-	if err != nil {
-		log.Fatal("failed to generate service token", zap.Error(err))
+	// Test Redis connection
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatal("failed to connect to Redis", zap.Error(err))
 	}
-	log.Info("service JWT token generated", zap.Duration("ttl", 24*time.Hour))
+	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
 
-	// Debug: Show first 20 chars of generated token for debugging
-	tokenPreview := serviceToken
-	if len(tokenPreview) > 20 {
-		tokenPreview = tokenPreview[:20] + "..."
+	// Create zap logger for components
+	var zapLog *zap.Logger
+	if cfg.LogLevel == "debug" {
+		zapLog, _ = zap.NewDevelopment()
+	} else {
+		zapLog, _ = zap.NewProduction()
 	}
-	log.Info("service token details",
-		zap.String("token_preview", tokenPreview),
-		zap.String("for_service", "worker"),
-	)
+	defer zapLog.Sync()
 
 	// Validate and decode transport encryption key (hex-encoded)
 	transportKey, err := credentials.ValidateTransportKey(cfg.CredentialsTransportKey)
@@ -156,26 +155,39 @@ func main() {
 		zap.String("algorithm", "AES-GCM-256"),
 	)
 
-	// Initialize credentials client with JWT token and transport key
-	credsClient := credentials.NewClient(
-		cfg.OrchestratorURL,
-		serviceToken,
-		transportKey, // AES-256 key for decrypting credentials payload
-	)
-	log.Info("credentials client initialized with encrypted transport")
+	// Initialize credentials fetcher (prefer Redis Streams)
+	var credsClient credentials.Fetcher
+	if cfg.UseStreamsCredentials {
+		streamsClient, err := credentials.NewStreamsClient(credentials.StreamsClientConfig{
+			RedisClient:    redisClient,
+			TransportKey:   transportKey,
+			RequestTimeout: cfg.StreamsCredentialsTimeout,
+			Logger:         zapLog,
+		})
+		if err != nil {
+			log.Fatal("failed to initialize streams credentials client", zap.Error(err))
+		}
+		credsClient = streamsClient
+		defer streamsClient.Close()
+		log.Info("credentials client initialized (Redis Streams)")
+	} else {
+		// Fallback to HTTP client (requires JWT service token)
+		jwtManager := auth.NewJWTManager(auth.JWTConfig{
+			Secret:     cfg.JWTSecret,
+			ExpireTime: 24 * time.Hour,
+			Issuer:     "commandcenter",
+		})
 
-	// Initialize Redis client (shared between processor and consumer)
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
+		serviceToken, err := jwtManager.GenerateServiceToken("worker", 24*time.Hour)
+		if err != nil {
+			log.Fatal("failed to generate service token", zap.Error(err))
+		}
 
-	// Test Redis connection
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatal("failed to connect to Redis", zap.Error(err))
+		httpClient := credentials.NewClient(cfg.OrchestratorURL, serviceToken, transportKey)
+		credsClient = httpClient
+		defer httpClient.Close()
+		log.Info("credentials client initialized (HTTP fallback)")
 	}
-	log.Info("connected to Redis", zap.String("addr", cfg.RedisHost+":"+cfg.RedisPort))
 
 	// Initialize TimelineRecorder for operation tracing
 	timelineCfg := tracing.DefaultTimelineConfig("worker")
@@ -185,15 +197,6 @@ func main() {
 		zap.Duration("ttl", timelineCfg.TTL),
 		zap.Int("max_entries", timelineCfg.MaxEntries),
 	)
-
-	// Create zap logger for components
-	var zapLog *zap.Logger
-	if cfg.LogLevel == "debug" {
-		zapLog, _ = zap.NewDevelopment()
-	} else {
-		zapLog, _ = zap.NewProduction()
-	}
-	defer zapLog.Sync()
 
 	// Initialize template engine (Phase 4.6)
 	var templateEngine *template.EngineWithFallback

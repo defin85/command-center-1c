@@ -110,14 +110,14 @@
 
 #### 1.1 Credentials через Streams
 
-**Текущее:** Worker делает HTTP GET к Orchestrator для получения credentials базы
+**Текущее:** Worker делал HTTP GET к Orchestrator для получения credentials базы
 
 **Целевое:**
 ```
 Worker                          Redis                           Orchestrator
   │                               │                                   │
   │ XADD commands:orchestrator:   │                                   │
-  │      get-credentials          │                                   │
+  │      get-database-credentials │                                   │
   ├──────────────────────────────→│                                   │
   │                               │ XREAD (blocking)                  │
   │                               │←──────────────────────────────────┤
@@ -126,18 +126,18 @@ Worker                          Redis                           Orchestrator
   │                               │──────────────────────────────────→│
   │                               │                                   │
   │                               │ XADD events:orchestrator:         │
-  │                               │      credentials-response         │
+  │                               │      database-credentials-response│
   │                               │←──────────────────────────────────┤
   │ XREAD (with timeout)          │                                   │
   │←──────────────────────────────┤                                   │
 ```
 
 **Задачи:**
-- [ ] Создать stream `commands:orchestrator:get-credentials` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
-- [ ] Создать stream `events:orchestrator:credentials-response` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
-- [ ] Django: добавить handler в Event Subscriber (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
-- [ ] Worker: заменить HTTP client на Stream client (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
-- [ ] Worker: добавить timeout и fallback на HTTP (graceful degradation) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Создать stream `commands:orchestrator:get-database-credentials` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Создать stream `events:orchestrator:database-credentials-response` (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Django: добавить handler в Event Subscriber (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Worker: заменить HTTP client на Stream client (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
+- [x] Worker: добавить timeout и fallback на HTTP (graceful degradation) (moved → `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`)
 
 **Файлы для изменения:**
 ```

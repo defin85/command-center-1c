@@ -778,6 +778,6 @@ DiscoverClustersRequest:
 
 ### Из `docs/roadmaps/V1_TO_V2_EVENT_DRIVEN_MIGRATION.md`
 
-- [ ] Credentials через Streams (commands/events + Django handler + Worker client) — убрать прямые HTTP зависимости
+- [x] Credentials через Streams (commands/events + Django handler + Worker client) — убрать прямые HTTP зависимости
 - [x] Timeline записи в Django для BatchOperation (Redis ZSET + created/queued/completed/failed события)
 - [x] Финальная зачистка v1 (done, commit `42f8655`)

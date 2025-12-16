@@ -116,6 +116,7 @@ class EventSubscriber:
             'commands:worker:dlq': '>',  # Dead Letter Queue (Error Feedback Phase 1)
             # Commands from Worker (Request-Response pattern)
             'commands:orchestrator:get-cluster-info': '>',  # Cluster info requests from Worker
+            'commands:orchestrator:get-database-credentials': '>',  # Credentials requests from Worker
         }
 
         # Setup signal handlers for graceful shutdown
@@ -281,6 +282,9 @@ class EventSubscriber:
 
         elif 'get-cluster-info' in stream:
             self.handle_get_cluster_info(data, correlation_id)
+
+        elif 'get-database-credentials' in stream:
+            self.handle_get_database_credentials(data, correlation_id)
 
         else:
             logger.warning(f"Unknown stream: {stream}")
@@ -1168,6 +1172,95 @@ class EventSubscriber:
         except Exception as e:
             logger.error(
                 f"Failed to publish cluster-info response: {e}",
+                exc_info=True
+            )
+
+    def handle_get_database_credentials(self, data: Dict[str, Any], correlation_id: str):
+        """
+        Handle get-database-credentials command from Go Worker.
+
+        Request fields (flat Redis Stream):
+            - correlation_id (required)
+            - database_id (required)
+
+        Response is published to events:orchestrator:database-credentials-response.
+        Credentials payload is encrypted via apps.databases.encryption.encrypt_credentials_for_transport.
+        """
+        from apps.databases.models import Database
+        from apps.databases.encryption import encrypt_credentials_for_transport
+
+        request_correlation_id = data.get('correlation_id', correlation_id)
+        database_id = data.get('database_id', '')
+
+        logger.info(
+            f"Processing get-database-credentials request: database_id={database_id}, "
+            f"correlation_id={request_correlation_id}"
+        )
+
+        response = {
+            'correlation_id': request_correlation_id,
+            'database_id': database_id,
+            'success': 'false',
+            'error': '',
+            'encrypted_data': '',
+            'nonce': '',
+            'expires_at': '',
+            'encryption_version': '',
+        }
+
+        try:
+            try:
+                database = Database.objects.get(id=database_id)
+            except Database.DoesNotExist:
+                response['error'] = f'Database {database_id} not found'
+                logger.warning(f"Database not found: {database_id}")
+                self._publish_database_credentials_response(response)
+                return
+
+            credentials_dict = {
+                "database_id": str(database.id),
+                "odata_url": database.odata_url,
+                "username": database.username,
+                "password": database.password,  # EncryptedCharField auto-decrypts
+                "host": database.host,
+                "port": database.port,
+                "base_name": database.base_name,
+                "server_address": database.server_address,
+                "server_port": database.server_port,
+                "infobase_name": database.infobase_name or database.name,
+            }
+
+            encrypted_payload = encrypt_credentials_for_transport(credentials_dict)
+
+            response['success'] = 'true'
+            response['error'] = ''
+            response['encrypted_data'] = encrypted_payload.get('encrypted_data', '')
+            response['nonce'] = encrypted_payload.get('nonce', '')
+            response['expires_at'] = encrypted_payload.get('expires_at', '')
+            response['encryption_version'] = encrypted_payload.get('encryption_version', '')
+
+        except Exception as e:
+            response['error'] = f'Internal error: {str(e)}'
+            logger.error(
+                f"Error handling get-database-credentials: {e}",
+                exc_info=True
+            )
+
+        self._publish_database_credentials_response(response)
+
+    def _publish_database_credentials_response(self, response: Dict[str, str]):
+        """Publish database credentials response to Redis Streams."""
+        response_stream = 'events:orchestrator:database-credentials-response'
+
+        try:
+            self.redis_client.xadd(response_stream, response)
+            logger.debug(
+                f"Published database-credentials response: correlation_id={response.get('correlation_id')}, "
+                f"success={response.get('success')}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to publish database-credentials response: {e}",
                 exc_info=True
             )
 
