@@ -57,7 +57,7 @@ class TestParallelHandler:
 
         # Mock step result creation
         with patch.object(handler, '_create_step_result') as mock_create:
-            with patch.object(handler, '_update_step_result') as mock_update:
+            with patch.object(handler, '_update_step_result'):
                 # Mock the import to raise ImportError directly
                 with patch('builtins.__import__', side_effect=ImportError("apps.templates.tasks not found")):
                     mock_create.return_value = Mock(spec=WorkflowStepResult)
@@ -71,7 +71,7 @@ class TestParallelHandler:
 
     def test_missing_parallel_config(self, db):
         """Test error when parallel_config is missing (Pydantic validation)."""
-        handler = ParallelHandler()
+        ParallelHandler()
 
         execution = Mock(spec=WorkflowExecution)
         execution.id = "exec-123"
@@ -79,7 +79,7 @@ class TestParallelHandler:
         # Attempting to create node without parallel_config should fail Pydantic validation
         with pytest.raises(Exception) as exc_info:
             from apps.templates.workflow.models import NodeConfig
-            node = WorkflowNode(
+            WorkflowNode(
                 id="parallel_1",
                 name="Parallel Node",
                 type="parallel",
@@ -184,7 +184,7 @@ class TestLoopHandler:
         context = {}
 
         with patch.object(handler, '_create_step_result') as mock_create:
-            with patch.object(handler, '_update_step_result') as mock_update:
+            with patch.object(handler, '_update_step_result'):
                 mock_create.return_value = Mock(spec=WorkflowStepResult)
 
                 result = handler.execute(node, context, execution)
@@ -197,13 +197,13 @@ class TestLoopHandler:
 
     def test_missing_loop_config(self, db):
         """Test error when loop_config is missing (Pydantic validation)."""
-        handler = LoopHandler()
+        LoopHandler()
 
-        execution = Mock(spec=WorkflowExecution)
+        Mock(spec=WorkflowExecution)
 
         # Attempting to create node without loop_config should fail Pydantic validation
         with pytest.raises(Exception) as exc_info:
-            node = WorkflowNode(
+            WorkflowNode(
                 id="loop_1",
                 name="Loop Node",
                 type="loop",
@@ -315,7 +315,7 @@ class TestSubWorkflowHandler:
         context = {}
 
         with patch.object(handler, '_create_step_result') as mock_create:
-            with patch.object(handler, '_update_step_result') as mock_update:
+            with patch.object(handler, '_update_step_result'):
                 mock_create.return_value = Mock(spec=WorkflowStepResult)
 
                 result = handler.execute(node, context, execution)
@@ -326,13 +326,13 @@ class TestSubWorkflowHandler:
 
     def test_missing_subworkflow_config(self, db):
         """Test error when subworkflow_config is missing (Pydantic validation)."""
-        handler = SubWorkflowHandler()
+        SubWorkflowHandler()
 
-        execution = Mock(spec=WorkflowExecution)
+        Mock(spec=WorkflowExecution)
 
         # Attempting to create node without subworkflow_config should fail Pydantic validation
         with pytest.raises(Exception) as exc_info:
-            node = WorkflowNode(
+            WorkflowNode(
                 id="subworkflow_1",
                 name="SubWorkflow Node",
                 type="subworkflow",

@@ -332,7 +332,6 @@ class EventSubscriberTest(TestCase):
         subscriber = EventSubscriber()
 
         # Stop after handling connection error
-        original_process = subscriber.process_message
         def stop_after_sleep(*args, **kwargs):
             subscriber.running = False
         mock_sleep.side_effect = stop_after_sleep

@@ -4,8 +4,11 @@
  * API client for file upload, download, and management operations.
  */
 
-import { apiClient } from './client'
 import type { AxiosProgressEvent } from 'axios'
+
+import { getV2 } from './generated'
+
+const api = getV2()
 
 /**
  * File upload response from API.
@@ -57,10 +60,13 @@ export const filesApi = {
       formData.append('expiry_hours', String(expiryHours))
     }
 
-    const response = await apiClient.post<FileUploadResponse>(
-      '/api/v2/files/upload/',
-      formData,
+    const response = await api.postFilesUpload(
       {
+        purpose,
+        expiry_hours: expiryHours,
+      },
+      {
+        data: formData,
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -70,10 +76,10 @@ export const filesApi = {
             onProgress(percent)
           }
         },
-      }
+      },
     )
 
-    return response.data
+    return response as unknown as FileUploadResponse
   },
 
   /**
@@ -82,7 +88,7 @@ export const filesApi = {
    * @param fileId - File ID to delete
    */
   delete: async (fileId: string): Promise<void> => {
-    await apiClient.delete(`/api/v2/files/delete/${fileId}/`)
+    await api.delFilesDelete(fileId)
   },
 
   /**
@@ -103,23 +109,7 @@ export const filesApi = {
    * @returns Blob of the file content
    */
   download: async (fileId: string): Promise<Blob> => {
-    const response = await apiClient.get(`/api/v2/files/download/${fileId}/`, {
-      responseType: 'blob',
-    })
-    return response.data
-  },
-
-  /**
-   * Get file metadata.
-   *
-   * @param fileId - File ID
-   * @returns File metadata
-   */
-  getMetadata: async (fileId: string): Promise<FileUploadResponse> => {
-    const response = await apiClient.get<FileUploadResponse>(
-      `/api/v2/files/metadata/${fileId}/`
-    )
-    return response.data
+    return api.getFilesDownload(fileId, { responseType: 'blob' }) as unknown as Blob
   },
 }
 

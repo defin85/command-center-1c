@@ -112,6 +112,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -136,6 +137,7 @@ paths:
               $ref: '#/components/schemas/Cluster'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '201':
@@ -173,6 +175,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -215,6 +218,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -251,7 +255,20 @@ paths:
       summary: Discover clusters on RAS server
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoverClustersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DiscoverClustersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DiscoverClustersRequest'
+        required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -296,6 +313,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -344,6 +362,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -386,6 +405,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -411,6 +431,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -442,6 +463,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -496,6 +518,7 @@ paths:
               $ref: '#/components/schemas/Cluster'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -549,6 +572,7 @@ paths:
               $ref: '#/components/schemas/Cluster'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -597,6 +621,7 @@ paths:
             schema:
               $ref: '#/components/schemas/BulkHealthCheckRequest'
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -629,6 +654,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -672,6 +698,7 @@ paths:
               $ref: '#/components/schemas/HealthCheckRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -734,6 +761,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -744,6 +772,136 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/dlq/get/:
+    get:
+      operationId: v2_dlq_get_retrieve
+      description: Fetch a single DLQ entry by stream entry id or original_message_id.
+        Staff-only.
+      summary: Get DLQ message
+      parameters:
+      - in: query
+        name: dlq_message_id
+        schema:
+          type: string
+        description: Redis Stream entry ID
+      - in: query
+        name: original_message_id
+        schema:
+          type: string
+        description: Original stream message ID
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DLQMessage'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/dlq/list/:
+    get:
+      operationId: v2_dlq_list_retrieve
+      description: List recent DLQ entries from Redis Stream `commands:worker:dlq`.
+        Staff-only.
+      summary: List DLQ messages
+      parameters:
+      - in: query
+        name: error_code
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 1..200 (default 50)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset within the fetched window
+      - in: query
+        name: operation_id
+        schema:
+          type: string
+      - in: query
+        name: since
+        schema:
+          type: string
+        description: RFC3339 timestamp filter
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DLQListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/dlq/retry/:
+    post:
+      operationId: v2_dlq_retry_create
+      description: Retry an operation associated with a DLQ entry by re-enqueueing
+        it to worker stream. Staff-only.
+      summary: Retry DLQ message
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DLQRetryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DLQRetryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DLQRetryRequest'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DLQRetryResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/events/pending/:
     get:
       operationId: v2_events_pending_retrieve
@@ -754,6 +912,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       - {}
       responses:
@@ -779,6 +938,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -804,6 +964,7 @@ paths:
               $ref: '#/components/schemas/BatchInstallRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -841,6 +1002,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -885,6 +1047,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -922,6 +1085,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -979,6 +1143,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -997,6 +1162,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1034,6 +1200,7 @@ paths:
               $ref: '#/components/schemas/RetryInstallationRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1064,6 +1231,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '201':
@@ -1101,6 +1269,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1138,6 +1307,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1183,6 +1353,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '201':
@@ -1227,6 +1398,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1262,6 +1434,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1297,6 +1470,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1326,6 +1500,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1364,6 +1539,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1396,6 +1572,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1424,6 +1601,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1449,6 +1627,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1481,6 +1660,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1511,6 +1691,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1544,6 +1725,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1571,6 +1753,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1601,6 +1784,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1633,6 +1817,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1666,6 +1851,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1691,6 +1877,7 @@ paths:
               $ref: '#/components/schemas/CancelOperationRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1740,6 +1927,7 @@ paths:
               $ref: '#/components/schemas/ExecuteOperationRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '202':
@@ -1777,6 +1965,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1826,6 +2015,7 @@ paths:
               $ref: '#/components/schemas/GetOperationTimelineRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1890,6 +2080,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1930,6 +2121,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       - {}
       responses:
@@ -1975,6 +2167,7 @@ paths:
               $ref: '#/components/schemas/SSETicketRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -1997,6 +2190,300 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/rbac/get-effective-access/:
+    get:
+      operationId: v2_rbac_get_effective_access_retrieve
+      summary: Get effective access
+      parameters:
+      - in: query
+        name: include_clusters
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: include_databases
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+        description: 'Optional (default: current user). Staff-only.'
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveAccessResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/rbac/grant-cluster-permission/:
+    post:
+      operationId: v2_rbac_grant_cluster_permission_create
+      summary: Grant cluster permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantClusterPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantClusterPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantClusterPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterPermissionUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/rbac/grant-database-permission/:
+    post:
+      operationId: v2_rbac_grant_database_permission_create
+      summary: Grant database permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantDatabasePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantDatabasePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantDatabasePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabasePermissionUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/rbac/list-cluster-permissions/:
+    get:
+      operationId: v2_rbac_list_cluster_permissions_retrieve
+      summary: List cluster permissions
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterPermissionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/rbac/list-database-permissions/:
+    get:
+      operationId: v2_rbac_list_database_permissions_retrieve
+      summary: List database permissions
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+      - in: query
+        name: database_id
+        schema:
+          type: string
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabasePermissionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/rbac/revoke-cluster-permission/:
+    post:
+      operationId: v2_rbac_revoke_cluster_permission_create
+      summary: Revoke cluster permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/rbac/revoke-database-permission/:
+    post:
+      operationId: v2_rbac_revoke_database_permission_create
+      summary: Revoke database permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabasePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabasePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabasePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/service-mesh/get-history/:
     get:
       operationId: v2_service_mesh_get_history_retrieve
@@ -2018,6 +2505,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2054,6 +2542,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2078,6 +2567,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2097,6 +2587,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2104,6 +2595,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemHealthResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/system/me/:
+    get:
+      operationId: v2_system_me_retrieve
+      description: Returns the currently authenticated user (minimal identity for
+        SPA header/roles).
+      summary: Get current user
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
           description: ''
         '401':
           description: Unauthorized
@@ -2142,16 +2653,56 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TemplateListResponse'
+                $ref: '#/components/schemas/OperationTemplateListResponse'
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/templates/sync-from-registry/:
+    post:
+      operationId: v2_templates_sync_from_registry_create
+      description: Synchronize OperationTemplate records with the in-code operation
+        registry. Staff-only.
+      summary: Sync templates from registry
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateSyncRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateSyncRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateSyncRequest'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateSyncResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/workflows/cancel-execution/:
     post:
       operationId: v2_workflows_cancel_execution_create
@@ -2173,6 +2724,7 @@ paths:
               $ref: '#/components/schemas/ExecutionCancelRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2228,6 +2780,7 @@ paths:
               $ref: '#/components/schemas/CloneWorkflowRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '201':
@@ -2270,6 +2823,7 @@ paths:
               $ref: '#/components/schemas/CreateWorkflowRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '201':
@@ -2307,6 +2861,7 @@ paths:
               $ref: '#/components/schemas/DeleteWorkflowRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2362,6 +2917,7 @@ paths:
               $ref: '#/components/schemas/ExecuteWorkflowRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2406,6 +2962,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2449,6 +3006,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2487,6 +3045,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2530,6 +3089,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2582,6 +3142,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2618,6 +3179,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2669,6 +3231,7 @@ paths:
       tags:
       - v2
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2700,6 +3263,7 @@ paths:
               $ref: '#/components/schemas/UpdateWorkflowRequest'
         required: true
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -2748,6 +3312,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ValidateWorkflowRequest'
       security:
+      - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
@@ -3184,6 +3749,66 @@ components:
       required:
       - clusters
       - count
+    ClusterPermission:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRef'
+        cluster:
+          $ref: '#/components/schemas/ClusterRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/UserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - cluster
+      - granted_at
+      - granted_by
+      - level
+      - user
+    ClusterPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    ClusterPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/ClusterPermission'
+      required:
+      - created
+      - permission
+    ClusterRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     ClusterStatistics:
       type: object
       description: Statistics for a cluster.
@@ -3266,6 +3891,23 @@ components:
       required:
       - dag_structure
       - name
+    CurrentUser:
+      type: object
+      description: Minimal identity payload for SPA.
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        is_staff:
+          type: boolean
+        is_superuser:
+          type: boolean
+      required:
+      - id
+      - is_staff
+      - is_superuser
+      - username
     CustomTokenObtainPair:
       type: object
       description: |-
@@ -3303,6 +3945,66 @@ components:
           description: List of directed edges
       required:
       - nodes
+    DLQListResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/DLQMessage'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - messages
+      - total
+    DLQMessage:
+      type: object
+      properties:
+        dlq_message_id:
+          type: string
+          description: Redis Stream entry ID
+        original_message_id:
+          type: string
+        correlation_id:
+          type: string
+        operation_id:
+          type: string
+        event_type:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+        worker_id:
+          type: string
+        failed_at:
+          type: string
+      required:
+      - dlq_message_id
+    DLQRetryRequest:
+      type: object
+      properties:
+        original_message_id:
+          type: string
+        operation_id:
+          type: string
+        reason:
+          type: string
+    DLQRetryResponse:
+      type: object
+      properties:
+        enqueued:
+          type: boolean
+        operation_id:
+          type: string
+        message:
+          type: string
+      required:
+      - enqueued
+      - message
     Database:
       type: object
       description: Serializer для Database model.
@@ -3451,6 +4153,70 @@ components:
       - count
       - databases
       - total
+    DatabasePermission:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRef'
+        database:
+          $ref: '#/components/schemas/DatabaseRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/UserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - database
+      - granted_at
+      - granted_by
+      - level
+      - user
+    DatabasePermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabasePermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    DatabasePermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/DatabasePermission'
+      required:
+      - created
+      - permission
+    DatabaseRef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - cluster_id
+      - id
+      - name
     DeleteWorkflowRequest:
       type: object
       description: Request for delete_workflow endpoint.
@@ -3463,6 +4229,23 @@ components:
           default: false
       required:
       - workflow_id
+    DiscoverClustersRequest:
+      type: object
+      description: Request body for discover_clusters endpoint.
+      properties:
+        ras_server:
+          type: string
+          description: RAS server address (host:port)
+        cluster_service_url:
+          type: string
+          description: RAS adapter URL (optional, reserved for worker usage)
+        cluster_user:
+          type: string
+        cluster_pwd:
+          type: string
+          writeOnly: true
+      required:
+      - ras_server
     DiscoverClustersResponse:
       type: object
       description: Response for discover_clusters endpoint.
@@ -3479,6 +4262,46 @@ components:
       - message
       - operation_id
       - status
+    EffectiveAccessClusterItem:
+      type: object
+      properties:
+        cluster:
+          $ref: '#/components/schemas/ClusterRef'
+        level:
+          type: string
+      required:
+      - cluster
+      - level
+    EffectiveAccessDatabaseItem:
+      type: object
+      properties:
+        database:
+          $ref: '#/components/schemas/DatabaseRef'
+        level:
+          type: string
+        source:
+          $ref: '#/components/schemas/SourceEnum'
+      required:
+      - database
+      - level
+      - source
+    EffectiveAccessResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserRef'
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessClusterItem'
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessDatabaseItem'
+      required:
+      - clusters
+      - databases
+      - user
     ErrorDetail:
       type: object
       description: Error detail structure.
@@ -3919,6 +4742,37 @@ components:
       - operation_id
       - timeline
       - total_events
+    GrantClusterPermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        cluster_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+      required:
+      - cluster_id
+      - level
+      - user_id
+    GrantDatabasePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        database_id:
+          type: string
+        level:
+          type: string
+        notes:
+          type: string
+      required:
+      - database_id
+      - level
+      - user_id
     HealthCheckRequest:
       type: object
       description: Request body for health_check endpoint.
@@ -4349,6 +5203,43 @@ components:
       - operation_type
       - target_entity
       - updated_at
+    OperationTemplateListResponse:
+      type: object
+      description: Response for list_templates endpoint.
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTemplate'
+          description: List of operation templates
+        count:
+          type: integer
+          description: Total number of templates (before pagination)
+      required:
+      - count
+      - templates
+    OperationTemplateSyncRequest:
+      type: object
+      properties:
+        dry_run:
+          type: boolean
+          default: false
+    OperationTemplateSyncResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+        updated:
+          type: integer
+        unchanged:
+          type: integer
+        message:
+          type: string
+      required:
+      - created
+      - message
+      - unchanged
+      - updated
     OverallStatusEnum:
       enum:
       - healthy
@@ -4462,6 +5353,34 @@ components:
       - installation_id
       - message
       - status
+    RevokeClusterPermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        cluster_id:
+          type: string
+          format: uuid
+      required:
+      - cluster_id
+      - user_id
+    RevokeDatabasePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        database_id:
+          type: string
+      required:
+      - database_id
+      - user_id
+    RevokePermissionResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+      required:
+      - deleted
     SSETicketRequest:
       type: object
       description: Request body for get_stream_ticket endpoint.
@@ -4688,6 +5607,14 @@ components:
         * `healthy` - healthy
         * `degraded` - degraded
         * `unhealthy` - unhealthy
+    SourceEnum:
+      enum:
+      - direct
+      - cluster
+      type: string
+      description: |-
+        * `direct` - direct
+        * `cluster` - cluster
     Status2a6Enum:
       enum:
       - pending
@@ -4897,6 +5824,37 @@ components:
         * `failed` - Failed
         * `retry` - Retry
         * `cancelled` - Cancelled
+    TemplateListItem:
+      type: object
+      description: Serializer for template list items.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        icon:
+          type: string
+        workflow_type:
+          type: string
+        version_number:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - category
+      - created_at
+      - description
+      - icon
+      - id
+      - name
+      - version_number
+      - workflow_type
     TemplateListResponse:
       type: object
       description: Response for list_templates endpoint.
@@ -4904,11 +5862,9 @@ components:
         templates:
           type: array
           items:
-            $ref: '#/components/schemas/OperationTemplate'
-          description: List of operation templates
+            $ref: '#/components/schemas/TemplateListItem'
         count:
           type: integer
-          description: Total number of templates (before pagination)
       required:
       - count
       - templates
@@ -5068,6 +6024,16 @@ components:
       - purpose
       - size
       - size_human
+    UserRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+      required:
+      - id
+      - username
     ValidateWorkflowRequest:
       type: object
       description: Request for validate_workflow endpoint.
@@ -5778,6 +6744,10 @@ components:
       required:
       - valid
   securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
     cookieAuth:
       type: apiKey
       in: cookie

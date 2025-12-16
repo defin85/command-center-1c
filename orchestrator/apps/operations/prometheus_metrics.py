@@ -86,6 +86,16 @@ queue_depth = Gauge(
     ['queue_name']
 )
 
+# =============================================================================
+# Admin/Operator Actions Metrics
+# =============================================================================
+
+admin_actions_total = Counter(
+    'cc1c_orchestrator_admin_actions_total',
+    'Total operator/admin actions executed via API',
+    ['action', 'outcome']
+)
+
 
 # =============================================================================
 # Helper Functions
@@ -156,3 +166,14 @@ def set_queue_depth(queue_name: str, depth: int) -> None:
         depth: Number of items in queue
     """
     queue_depth.labels(queue_name=queue_name).set(depth)
+
+
+def record_admin_action(action: str, outcome: str) -> None:
+    """
+    Record an operator/admin action (SPA-primary flows).
+
+    Args:
+        action: Action identifier (e.g. 'dlq.retry')
+        outcome: 'success' | 'error'
+    """
+    admin_actions_total.labels(action=action, outcome=outcome).inc()

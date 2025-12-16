@@ -118,6 +118,14 @@
 - Конкретные mitigation strategies
 
 **Часть 6: Метрики успеха**
+
+---
+
+### Операторские гайды (SPA)
+
+#### 🧭 [OPERATORS_SPA_GUIDE.md](./OPERATORS_SPA_GUIDE.md)
+**Для кого:** Operators / on-call инженеры
+**Содержание:** единый путь через SPA (Clusters/Operations/Templates/RBAC/DLQ), типовые сценарии, где смотреть audit/metrics.
 - Технические KPI
 - Бизнес-метрики
 - Skill matrix для команды

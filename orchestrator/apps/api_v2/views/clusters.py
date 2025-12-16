@@ -19,6 +19,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.databases.models import Cluster
 from apps.databases.serializers import ClusterSerializer, DatabaseSerializer
 from apps.operations.models import BatchOperation
+from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,18 @@ class DiscoverClustersResponseSerializer(serializers.Serializer):
     operation_id = serializers.CharField(help_text="BatchOperation ID for tracking")
     status = serializers.CharField(help_text="Status: discovering, error")
     message = serializers.CharField()
+
+
+class DiscoverClustersRequestSerializer(serializers.Serializer):
+    """Request body for discover_clusters endpoint."""
+    ras_server = serializers.CharField(help_text="RAS server address (host:port)")
+    cluster_service_url = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="RAS adapter URL (optional, reserved for worker usage)",
+    )
+    cluster_user = serializers.CharField(required=False, allow_blank=True)
+    cluster_pwd = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
 
 class ClusterFiltersSerializer(serializers.Serializer):
@@ -795,6 +808,15 @@ def reset_sync_status(request):
         try:
             cluster = Cluster.objects.get(id=cluster_id)
         except Cluster.DoesNotExist:
+            log_admin_action(
+                request,
+                action="clusters.reset_sync_status",
+                outcome="error",
+                target_type="cluster",
+                target_id=str(cluster_id),
+                metadata={"mode": "single"},
+                error_message="CLUSTER_NOT_FOUND",
+            )
             return Response({
                 'success': False,
                 'error': {
@@ -844,6 +866,19 @@ def reset_sync_status(request):
                 'old_status': old_status
             })
             logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> success")
+
+    log_admin_action(
+        request,
+        action="clusters.reset_sync_status",
+        outcome="success",
+        target_type="cluster",
+        target_id=str(cluster_id) if cluster_id else "",
+        metadata={
+            "mode": "single" if cluster_id else ("all" if reset_all else "stuck"),
+            "reset_count": len(reset_clusters),
+            "clusters": [c["id"] for c in reset_clusters[:50]],
+        },
+    )
 
     return Response({
         'message': 'Sync status reset successfully' if reset_clusters else 'No clusters to reset',
@@ -951,7 +986,7 @@ def get_cluster_databases(request):
     tags=['v2'],
     summary='Discover clusters on RAS server',
     description='Trigger cluster discovery on a RAS server. Creates or updates Cluster records for all found clusters.',
-    request=None,
+    request=DiscoverClustersRequestSerializer,
     responses={
         200: DiscoverClustersResponseSerializer,
         400: ErrorResponseSerializer,

@@ -73,11 +73,11 @@ class TestTracingHelpers:
     def test_start_span_exits_cleanly(self):
         """Test span context manager cleans up properly."""
         # Should not raise any exceptions
-        with start_span("test_span") as span:
+        with start_span("test_span"):
             pass
 
         # Should be able to create another span after
-        with start_span("another_span") as span:
+        with start_span("another_span"):
             pass
 
     def test_get_trace_id_format(self):
@@ -321,8 +321,8 @@ class TestWorkflowExecutionTracing:
             workflow_name=simple_workflow_template.name,
             execution_id="test-exec-001",
             template_id=str(simple_workflow_template.id)
-        ) as span:
-            execution = simple_workflow_template.create_execution({"input": "data"})
+        ):
+            simple_workflow_template.create_execution({"input": "data"})
             # trace_id should be available during execution
             trace_id = get_current_trace_id()
             # Not necessarily filled, but should be accessible
@@ -334,7 +334,7 @@ class TestWorkflowExecutionTracing:
             workflow_id=str(simple_workflow_template.id),
             workflow_name=simple_workflow_template.name,
             execution_id="test-exec-001"
-        ) as wf_span:
+        ):
             trace_id_wf = get_current_trace_id()
 
             with start_node_span(
@@ -342,7 +342,7 @@ class TestWorkflowExecutionTracing:
                 node_name="Step1",
                 node_type="operation",
                 execution_id="test-exec-001"
-            ) as node_span:
+            ):
                 trace_id_node = get_current_trace_id()
                 # Should be same trace ID in nested context
                 assert trace_id_wf == trace_id_node
@@ -358,7 +358,7 @@ class TestTracingGracefulDegradation:
     @patch('apps.templates.tracing._enabled', False)
     def test_tracing_disabled_get_tracer(self):
         """Test get_tracer returns None when disabled."""
-        tracer = get_tracer()
+        get_tracer()
         # When tracing disabled, should return None
         # (actual behavior depends on current _enabled state)
 
@@ -449,7 +449,7 @@ class TestCeleryTracingIntegration:
                 'traceparent': '00-0af7651916cd43dd8448eb211c80319c-b9c7c989f97918e1-01'
             }
         }
-        context = extract_celery_headers(headers)
+        extract_celery_headers(headers)
         # Should not raise
 
     def test_celery_header_roundtrip(self):
@@ -458,7 +458,7 @@ class TestCeleryTracingIntegration:
         inject_celery_headers(headers_out)
 
         # Extract from injected headers
-        context = extract_celery_headers(headers_out)
+        extract_celery_headers(headers_out)
         # Should be able to extract without error
 
     def test_celery_disabled_inject(self):
@@ -554,12 +554,12 @@ class TestSpanAttributesAndEvents:
 
     def test_span_add_event_no_data(self):
         """Test adding event without data."""
-        with start_span("test") as span:
+        with start_span("test"):
             add_span_event("event_name")
 
     def test_span_add_event_with_data(self):
         """Test adding event with data."""
-        with start_span("test") as span:
+        with start_span("test"):
             add_span_event("payment_completed", {
                 "provider": "stripe",
                 "status": "success"
@@ -568,7 +568,7 @@ class TestSpanAttributesAndEvents:
     def test_span_set_error_in_except(self):
         """Test setting error on span in exception handler."""
         try:
-            with start_span("risky_operation") as span:
+            with start_span("risky_operation"):
                 raise ValueError("Test error")
         except ValueError as e:
             set_span_error(e)
@@ -584,7 +584,8 @@ class TestTracingWithMocks:
     @pytest.mark.skipif(not OTEL_AVAILABLE, reason="OTEL not available")
     def test_tracer_methods_exist(self):
         """Test that tracer has expected methods."""
-        with patch('apps.templates.tracing.get_tracer') as mock_get_tracer:
+        # Patch the symbol used by this test module (imported via `from ... import get_tracer`).
+        with patch('apps.templates.workflow.tests.test_tracing.get_tracer') as mock_get_tracer:
             mock_tracer = MagicMock()
             mock_get_tracer.return_value = mock_tracer
 
@@ -641,7 +642,7 @@ class TestTracingIntegrationScenarios:
             workflow_id=str(simple_workflow_template.id),
             workflow_name=simple_workflow_template.name,
             execution_id=str(execution.id)
-        ) as wf_span:
+        ):
             # Simulate executing multiple nodes
             for idx, node_id in enumerate(["step1", "step2"]):
                 with start_node_span(
@@ -649,7 +650,7 @@ class TestTracingIntegrationScenarios:
                     node_name=f"Step {idx+1}",
                     node_type="operation",
                     execution_id=str(execution.id)
-                ) as node_span:
+                ):
                     # Record some operations
                     trace_workflow_event(
                         "node_executed",
@@ -665,14 +666,14 @@ class TestTracingIntegrationScenarios:
             workflow_id=str(simple_workflow_template.id),
             workflow_name=simple_workflow_template.name,
             execution_id=str(execution.id)
-        ) as wf_span:
+        ):
             try:
                 with start_node_span(
                     node_id="step1",
                     node_name="Step1",
                     node_type="operation",
                     execution_id=str(execution.id)
-                ) as node_span:
+                ):
                     raise RuntimeError("Node execution failed")
             except RuntimeError as e:
                 set_span_error(e)
@@ -690,13 +691,13 @@ class TestTracingIntegrationScenarios:
             workflow_id=str(simple_workflow_template.id),
             workflow_name=simple_workflow_template.name,
             execution_id=str(execution.id)
-        ) as wf_span:
+        ):
             with start_operation_span(
                 operation_type="db_lock",
                 target_id="db-001",
                 target_name="Main1C",
                 execution_id=str(execution.id)
-            ) as op_span:
+            ):
                 set_span_attribute("lock.type", "shared")
                 add_span_event("lock_acquired", {"duration_ms": 100})
 
@@ -704,7 +705,7 @@ class TestTracingIntegrationScenarios:
                 operation_type="odata_batch",
                 target_id="db-001",
                 execution_id=str(execution.id)
-            ) as op_span:
+            ):
                 set_span_attribute("batch.size", 500)
                 add_span_event("batch_completed", {"records": 500})
 
@@ -741,7 +742,7 @@ class TestTracingErrorHandling:
             "tracestate": "invalid"
         }
         # Should not raise
-        context = extract_trace_context(headers)
+        extract_trace_context(headers)
 
     def test_celery_extract_with_no_trace_context(self):
         """Test Celery extract without trace_context key."""
@@ -776,7 +777,7 @@ class TestTracingContextPropagation:
         inject_trace_headers(headers)
 
         # Extract same context
-        context = extract_trace_context(headers)
+        extract_trace_context(headers)
         # Should not raise
 
     def test_context_propagation_celery_headers(self):
@@ -786,7 +787,7 @@ class TestTracingContextPropagation:
         inject_celery_headers(celery_headers)
 
         # Extract from Celery headers
-        context = extract_celery_headers(celery_headers)
+        extract_celery_headers(celery_headers)
         # Should not raise
 
     def test_nested_span_context_propagation(self):
@@ -795,7 +796,7 @@ class TestTracingContextPropagation:
             workflow_id="wf-1",
             workflow_name="Test",
             execution_id="exec-1"
-        ) as wf_span:
+        ):
             parent_trace = get_current_trace_id()
 
             with start_node_span(
@@ -803,7 +804,7 @@ class TestTracingContextPropagation:
                 node_name="Node1",
                 node_type="operation",
                 execution_id="exec-1"
-            ) as node_span:
+            ):
                 child_trace = get_current_trace_id()
                 # Should be same trace
                 assert parent_trace == child_trace

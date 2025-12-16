@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """Тест чтения справочника Патенты."""
 
+# ruff: noqa: E402
+
 import os
 import django
 

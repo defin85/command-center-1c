@@ -8,26 +8,14 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { apiClient } from '../client'
-import type { BatchOperation } from '../generated/model/batchOperation'
+import { getV2 } from '../generated'
+import type { OperationListResponse } from '../generated/model/operationListResponse'
 import { transformBatchOperation } from '../../utils/operationTransforms'
 import type { UIBatchOperation } from '../../utils/operationTransforms'
 
 import { queryKeys, type OperationFilters } from './index'
 
-// =============================================================================
-// API Response Types
-// =============================================================================
-
-export interface OperationsListResponse {
-  operations: BatchOperation[]
-  count?: number
-  total?: number
-}
-
-export interface OperationDetailResponse {
-  operation: BatchOperation
-}
+const api = getV2()
 
 // =============================================================================
 // Fetch Functions
@@ -41,14 +29,8 @@ export async function fetchOperations(
   filters?: OperationFilters,
   signal?: AbortSignal
 ): Promise<UIBatchOperation[]> {
-  const response = await apiClient.get<OperationsListResponse>(
-    '/api/v2/operations/list-operations/',
-    {
-      signal,
-      params: filters,
-    }
-  )
-  return response.data.operations.map(transformBatchOperation)
+  const response: OperationListResponse = await api.getOperationsListOperations(filters, { signal })
+  return response.operations.map(transformBatchOperation)
 }
 
 /**
@@ -58,18 +40,18 @@ export async function fetchOperation(
   id: string,
   signal?: AbortSignal
 ): Promise<UIBatchOperation> {
-  const response = await apiClient.get<OperationDetailResponse>(
-    `/api/v2/operations/get-operation/${id}/`,
+  const response = await api.getOperationsGetOperation(
+    { operation_id: id, include_tasks: true },
     { signal }
   )
-  return transformBatchOperation(response.data.operation)
+  return transformBatchOperation(response.operation)
 }
 
 /**
  * Cancel operation by ID.
  */
 export async function cancelOperation(operationId: string): Promise<void> {
-  await apiClient.post('/api/v2/operations/cancel-operation/', {
+  await api.postOperationsCancelOperation({
     operation_id: operationId,
   })
 }

@@ -276,7 +276,7 @@ class TestResultWaiter:
         operation.save()
 
         # Create corresponding task
-        task = Task.objects.create(
+        Task.objects.create(
             id=f"{operation.id}-task1",
             batch_operation=operation,
             database=test_database,
@@ -306,7 +306,7 @@ class TestResultWaiter:
         operation.save()
 
         # Create failed task
-        task = Task.objects.create(
+        Task.objects.create(
             id=f"{operation.id}-task1",
             batch_operation=operation,
             database=test_database,

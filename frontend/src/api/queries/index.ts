@@ -16,6 +16,24 @@ export const queryKeys = {
     list: () => [...queryKeys.clusters.all, 'list'] as const,
     detail: (id: string) => [...queryKeys.clusters.all, 'detail', id] as const,
   },
+  rbac: {
+    all: ['rbac'] as const,
+    clusterPermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'cluster', filters] as const,
+    databasePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'database', filters] as const,
+    effectiveAccess: (userId?: number) => [...queryKeys.rbac.all, 'effective-access', userId] as const,
+  },
+  templates: {
+    all: ['templates'] as const,
+    list: (filters?: unknown) => [...queryKeys.templates.all, 'list', filters] as const,
+  },
+  me: {
+    all: ['me'] as const,
+    current: () => [...queryKeys.me.all, 'current'] as const,
+  },
+  dlq: {
+    all: ['dlq'] as const,
+    list: (filters?: unknown) => [...queryKeys.dlq.all, 'list', filters] as const,
+  },
   dashboard: {
     stats: ['dashboard', 'stats'] as const,
   },
@@ -33,3 +51,7 @@ export {
   fetchOperation,
   cancelOperation,
 } from './operations'
+
+export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates'
+export { useMe } from './me'
+export { useDlqMessages, useRetryDlqMessage } from './dlq'

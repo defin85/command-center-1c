@@ -299,7 +299,6 @@ class TestODataBackendIntegration:
                         node=node,
                         context={
                             'target_databases': [str(database.id)],
-                            'user_id': 'admin',
                             'user_id': '123',
                             'status': 'active'
                         },

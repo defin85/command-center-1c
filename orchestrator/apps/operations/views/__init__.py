@@ -5,7 +5,6 @@ This package handles the split between:
 - service_mesh.py (new Service Mesh monitoring views)
 - ../views.py (legacy operations views like BatchOperationViewSet)
 """
-import sys
 import os
 
 # First import service_mesh views

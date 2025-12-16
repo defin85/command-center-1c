@@ -455,7 +455,7 @@ class WorkflowTemplate(models.Model):
                 if isinstance(self.dag_structure, DAGStructure)
                 else DAGStructure(**self.dag_structure)
             )
-            config = (
+            (
                 self.config
                 if isinstance(self.config, WorkflowConfig)
                 else WorkflowConfig(**self.config)

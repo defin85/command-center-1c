@@ -205,7 +205,6 @@ class OperationFlowPublisher:
             to_service = path[i + 1]
 
             # Определяем статус edge
-            from_idx = i
             to_idx = i + 1
 
             if status == "failed":

@@ -19,10 +19,11 @@ import os
 from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
-from django.db import transaction, close_old_connections, connection
+from django.db import transaction, close_old_connections
 import logging
 
 from apps.operations.models import Task
+from apps.operations.redis_client import redis_client as operations_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +523,19 @@ class EventSubscriber:
                             batch_op.status = BatchOperation.STATUS_FAILED
                             batch_op.metadata['error'] = error
                         batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        try:
+                            operations_redis_client.add_timeline_event(
+                                operation_id,
+                                event="operation.completed" if success else "operation.failed",
+                                service="event-subscriber",
+                                metadata={
+                                    "status": batch_op.status,
+                                    "cluster_id": str(cluster_id),
+                                    "error": error if not success else None,
+                                },
+                            )
+                        except Exception:
+                            pass
                         logger.info(
                             f"Updated BatchOperation {operation_id} status: {batch_op.status}"
                         )
@@ -646,6 +660,22 @@ class EventSubscriber:
                             batch_op.status = BatchOperation.STATUS_FAILED
                             batch_op.metadata['error'] = error
                         batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        try:
+                            operations_redis_client.add_timeline_event(
+                                operation_id,
+                                event="operation.completed" if success else "operation.failed",
+                                service="event-subscriber",
+                                metadata={
+                                    "status": batch_op.status,
+                                    "ras_server": ras_server,
+                                    "clusters_found": len(clusters_data),
+                                    "created": created,
+                                    "updated": updated,
+                                    "error": error if not success else None,
+                                },
+                            )
+                        except Exception:
+                            pass
                         logger.info(
                             f"Updated BatchOperation {operation_id} status: {batch_op.status}"
                         )
@@ -725,6 +755,15 @@ class EventSubscriber:
                 'results_count': len(results),
             }
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+            try:
+                operations_redis_client.add_timeline_event(
+                    operation_id,
+                    event="operation.completed",
+                    service="event-subscriber",
+                    metadata={"status": batch_op.status, "results_count": len(results)},
+                )
+            except Exception:
+                pass
 
             logger.info(f"Updated BatchOperation {operation_id} to COMPLETED via Stream")
 
@@ -784,6 +823,15 @@ class EventSubscriber:
 
             batch_op.metadata['error'] = error_msg
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+            try:
+                operations_redis_client.add_timeline_event(
+                    operation_id,
+                    event="operation.failed",
+                    service="event-subscriber",
+                    metadata={"status": batch_op.status, "error": error_msg},
+                )
+            except Exception:
+                pass
 
             logger.info(f"Updated BatchOperation {operation_id} to FAILED via Stream")
 

@@ -304,7 +304,7 @@ class TestServiceMeshOperationsView:
     def test_operations_view_success(self, api_client, authenticated_user):
         """Test successful operations retrieval."""
         # Create test BatchOperation
-        op1 = BatchOperation.objects.create(
+        BatchOperation.objects.create(
             id='op-1',
             name='Operation 1',
             operation_type=BatchOperation.TYPE_INSTALL_EXTENSION,
@@ -482,7 +482,7 @@ class TestServiceMeshOperationsView:
         ]
 
         for op_type, target, expected_service in operations_data:
-            op = BatchOperation.objects.create(
+            BatchOperation.objects.create(
                 id=f'op-{op_type}',
                 name=f'Operation {op_type}',
                 operation_type=op_type,
@@ -519,7 +519,7 @@ class TestServiceMeshOperationsView:
     def test_operations_view_operation_data_format(self, api_client, authenticated_user):
         """Test operation data includes all required fields."""
         now = timezone.now()
-        op = BatchOperation.objects.create(
+        BatchOperation.objects.create(
             id='op-test',
             name='Test Operation',
             operation_type=BatchOperation.TYPE_INSTALL_EXTENSION,

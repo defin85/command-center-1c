@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { Modal, Form, Input, App } from 'antd'
-import { useSystemConfig, useDiscoverClusters, type DiscoverClustersRequest } from '../../api/queries/clusters'
+import type { DiscoverClustersRequest } from '../../api/generated/model/discoverClustersRequest'
+import { useSystemConfig, useDiscoverClusters } from '../../api/queries/clusters'
 
 interface DiscoverClustersModalProps {
     visible: boolean

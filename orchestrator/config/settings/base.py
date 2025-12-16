@@ -3,6 +3,7 @@ Django settings for CommandCenter1C orchestrator.
 Base settings shared across all environments.
 """
 from pathlib import Path
+from datetime import timedelta
 import environ
 from django.core.exceptions import ImproperlyConfigured
 
@@ -185,9 +186,6 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
-
-# Simple JWT settings
-from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),  # Для dev - 24 часа, для prod уменьшить

@@ -68,10 +68,10 @@ class TestWorkflowEngineSingleton:
     def test_singleton_only_initializes_once(self):
         """Test that __init__ only runs once due to singleton."""
         with patch('apps.templates.workflow.engine.logger') as mock_logger:
-            engine1 = WorkflowEngine()
+            WorkflowEngine()
             engine1_init_calls = mock_logger.info.call_count
 
-            engine2 = WorkflowEngine()
+            WorkflowEngine()
             engine2_init_calls = mock_logger.info.call_count
 
             # init should only log once

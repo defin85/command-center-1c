@@ -1,3 +1,4 @@
+# ruff: noqa: F403
 # Settings package
 import os
 

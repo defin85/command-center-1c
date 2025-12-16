@@ -149,9 +149,6 @@ if ! smart_rebuild_services; then
     exit 1
 fi
 
-# После Phase 1 Go бинарники гарантированно актуальны - пропускаем rebuild в start_service
-export SKIP_GO_REBUILD=true
-
 echo ""
 
 ##############################################################################
@@ -226,6 +223,24 @@ if [ -f "$PROJECT_ROOT/contracts/scripts/verify-generated-code.sh" ]; then
 else
     echo -e "${YELLOW}⚠️  Скрипт верификации не найден (contracts/scripts/verify-generated-code.sh)${NC}"
 fi
+
+# Phase 1.5c: Rebuild Go services again if OpenAPI generation touched Go sources
+# (e.g., api-gateway proxy routes are generated from Django OpenAPI)
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Phase 1.5c: Пересборка Go сервисов после генерации${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+if ! smart_rebuild_services; then
+    echo ""
+    echo -e "${RED}✗ Ошибка при пересборке Go сервисов (после генерации)${NC}"
+    echo -e "${YELLOW}Совет: Проверьте логи сборки выше${NC}"
+    exit 1
+fi
+
+# После Phase 1.5c Go бинарники гарантированно актуальны - пропускаем rebuild в start_service
+export SKIP_GO_REBUILD=true
 
 echo ""
 

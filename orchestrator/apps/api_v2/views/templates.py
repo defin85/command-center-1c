@@ -6,13 +6,18 @@ Provides action-based endpoints for operation template management.
 
 import logging
 
+from django.db import transaction
+from drf_spectacular.utils import OpenApiResponse
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import serializers
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.templates.models import OperationTemplate
+from apps.templates.registry import get_registry
+from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +45,7 @@ class OperationTemplateSerializer(serializers.ModelSerializer):
 # Response Serializers for OpenAPI documentation
 # =============================================================================
 
-class TemplateListResponseSerializer(serializers.Serializer):
+class OperationTemplateListResponseSerializer(serializers.Serializer):
     """Response for list_templates endpoint."""
     templates = OperationTemplateSerializer(many=True, help_text="List of operation templates")
     count = serializers.IntegerField(help_text="Total number of templates (before pagination)")
@@ -58,7 +63,7 @@ class TemplateListResponseSerializer(serializers.Serializer):
         OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
     ],
     responses={
-        200: TemplateListResponseSerializer,
+        200: OperationTemplateListResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -124,4 +129,138 @@ def list_templates(request):
     return Response({
         'templates': serializer.data,
         'count': total,
+    })
+
+
+class OperationTemplateSyncRequestSerializer(serializers.Serializer):
+    dry_run = serializers.BooleanField(required=False, default=False)
+
+
+class OperationTemplateSyncResponseSerializer(serializers.Serializer):
+    created = serializers.IntegerField()
+    updated = serializers.IntegerField()
+    unchanged = serializers.IntegerField()
+    message = serializers.CharField()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Sync templates from registry',
+    description='Synchronize OperationTemplate records with the in-code operation registry. Staff-only.',
+    request=OperationTemplateSyncRequestSerializer,
+    responses={
+        200: OperationTemplateSyncResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def sync_from_registry(request):
+    """
+    POST /api/v2/templates/sync-from-registry/
+
+    Synchronize OperationTemplate records with the operation registry.
+
+    Request Body (optional):
+        { "dry_run": false }
+
+    Response:
+        {
+            "created": 1,
+            "updated": 0,
+            "unchanged": 10,
+            "message": "Sync completed"
+        }
+    """
+    request_serializer = OperationTemplateSyncRequestSerializer(data=request.data)
+    request_serializer.is_valid(raise_exception=True)
+    dry_run = request_serializer.validated_data.get('dry_run', False)
+
+    registry = get_registry()
+    templates_data = registry.get_for_template_sync()
+    if not templates_data:
+        log_admin_action(
+            request,
+            action="templates.sync_from_registry",
+            outcome="error",
+            target_type="template_registry",
+            metadata={"dry_run": dry_run},
+            error_message="REGISTRY_EMPTY",
+        )
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'REGISTRY_EMPTY',
+                'message': 'No operation types registered in registry',
+            }
+        }, status=400)
+
+    created = 0
+    updated = 0
+    unchanged = 0
+
+    def apply_sync():
+        nonlocal created, updated, unchanged
+
+        for data in templates_data:
+            template_id = data['id']
+            defaults = {
+                'name': data.get('name', ''),
+                'description': data.get('description', ''),
+                'operation_type': data.get('operation_type', ''),
+                'target_entity': data.get('target_entity', ''),
+                'template_data': data.get('template_data', {}),
+                'is_active': data.get('is_active', True),
+            }
+
+            try:
+                template = OperationTemplate.objects.get(id=template_id)
+            except OperationTemplate.DoesNotExist:
+                created += 1
+                if not dry_run:
+                    OperationTemplate.objects.create(id=template_id, **defaults)
+                continue
+
+            changed_fields = [key for key, value in defaults.items() if getattr(template, key) != value]
+            if not changed_fields:
+                unchanged += 1
+                continue
+
+            updated += 1
+            if not dry_run:
+                for key in changed_fields:
+                    setattr(template, key, defaults[key])
+                template.save(update_fields=changed_fields)
+
+    if dry_run:
+        apply_sync()
+    else:
+        with transaction.atomic():
+            apply_sync()
+
+    if dry_run:
+        message = "Dry run completed (no changes applied)"
+    else:
+        message = "Sync completed"
+
+    log_admin_action(
+        request,
+        action="templates.sync_from_registry",
+        outcome="success",
+        target_type="template_registry",
+        metadata={
+            "dry_run": dry_run,
+            "created": created,
+            "updated": updated,
+            "unchanged": unchanged,
+        },
+    )
+
+    return Response({
+        'created': created,
+        'updated': updated,
+        'unchanged': unchanged,
+        'message': message,
     })

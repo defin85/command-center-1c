@@ -5,21 +5,11 @@ import { ExtensionInstallation } from '../../types/installation'
 import { getV2 } from '../../api/generated'
 import { convertInstallationsToLegacy } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
-import { customInstance } from '../../api/mutator'
 
 const { Option } = Select
 
 // Get generated API functions
 const api = getV2()
-
-// InstallSingle API response type (not in generated yet)
-interface InstallSingleResponse {
-  task_id: string
-  operation_id: string
-  message: string
-  status: string
-  queued_count?: number
-}
 
 export const InstallationStatusTable: React.FC = () => {
   const [installations, setInstallations] = useState<ExtensionInstallation[]>([])
@@ -70,17 +60,12 @@ export const InstallationStatusTable: React.FC = () => {
 
     try {
       const values = await form.validateFields()
-      // installSingle endpoint not in generated API yet, use customInstance directly
-      const response = await customInstance<InstallSingleResponse>({
-        url: '/extensions/install-single/',
-        method: 'POST',
-        data: {
-          database_id: selectedDatabase.id,
-          extension_name: values.extension_name,
-          extension_path: values.extension_path,
-        },
+      const result = await api.postExtensionsBatchInstall({
+        database_ids: [selectedDatabase.id],
+        extension_name: values.extension_name,
+        extension_path: values.extension_path,
       })
-      message.success(response.message)
+      message.success(`Installation queued: ${result.queued}, skipped: ${result.skipped}`)
       setModalVisible(false)
       form.resetFields()
       fetchInstallations()

@@ -427,7 +427,7 @@ class TestWorkflowTemplateDelete:
     ):
         """Test that deleting template with executions fails."""
         # Create an execution
-        execution = simple_workflow_template.create_execution({"test": "input"})
+        simple_workflow_template.create_execution({"test": "input"})
 
         url = f"{WORKFLOWS_URL}{simple_workflow_template.id}/"
         response = authenticated_client.delete(url)
@@ -808,7 +808,7 @@ class TestWorkflowExecutionSteps:
     ):
         """Test getting steps with existing data."""
         # Create step results
-        step_result = WorkflowStepResult.objects.create(
+        WorkflowStepResult.objects.create(
             workflow_execution=workflow_execution,
             node_id="node_1",
             node_name="Step 1",

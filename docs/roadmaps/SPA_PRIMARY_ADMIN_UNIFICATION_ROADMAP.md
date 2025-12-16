@@ -1,10 +1,10 @@
 # Roadmap: Унификация администрирования (SPA-primary)
 
-> **Статус:** DRAFT
+> **Статус:** IN_PROGRESS
 > **Версия:** 0.1
 > **Создан:** 2025-12-15
-> **Обновлён:** 2025-12-15
-> **Автор:** Codex CLI (GPT-5.2)
+> **Обновлён:** 2025-12-16
+> **Автор:** Codex CLI (GPT-5.2) + repo reality-check
 
 ---
 
@@ -24,18 +24,29 @@
 
 ## Текущее состояние (кратко)
 
+> **Reality-check (2025-12-16):** часть работ из Phase 1/2 уже сделана в коде, но roadmap не был обновлён.
+> Этот документ синхронизирован с репозиторием: `contracts/orchestrator/openapi.yaml`, `orchestrator/apps/api_v2/**`, `frontend/src/**`, `go-services/api-gateway/**`.
+
 ### Где есть дублирование
 
 | Домен | Сейчас в SPA | Сейчас в Django Admin | Проблема |
 |------:|--------------|-----------------------|----------|
 | Clusters | CRUD + sync/discover | CRUD + actions (sync/reset и т.п.) | двойной UX и риск расхождения правил |
 | Workflows/Templates | CRUD + validate (частично) | CRUD + validate + sync from registry | дублирование flows и источников истины |
-| RBAC (ClusterPermission/DatabasePermission) | отсутствует UI | есть управление | SPA не может быть “primary console” без RBAC |
+| RBAC (ClusterPermission/DatabasePermission) | есть UI (`/rbac`) + v2 endpoints | есть управление | нужно ужесточить Admin (break-glass), чтобы не было “второго пути” |
 
 ### Contract drift (важно закрыть рано)
 
-- OpenAPI `securitySchemes` сейчас только `cookieAuth`, при этом SPA использует `Authorization: Bearer <JWT>` и refresh.
-- В контракте у некоторых action endpoints отсутствуют requestBody (например, cluster discovery), из-за чего SPA вынужден обходить генерацию.
+- ✅ `bearerAuth` уже описан в `contracts/orchestrator/openapi.yaml` и используется на `/api/v2/*`.
+- ✅ `discover-clusters` уже имеет requestBody/schema (обход в SPA больше не нужен).
+- ❗ `GET /api/v2/tracing/*` (Jaeger proxy) реально живёт в API Gateway, но не описан в `contracts/api-gateway/openapi.yaml` → SPA использует ручной клиент (`frontend/src/api/endpoints/jaeger.ts`).
+- ❗ Нет endpoint “me”/“whoami” для UI-ролей/фич (если нужно убирать предположения в SPA).
+
+### Phase 0 — Decisions (фиксируем до реализации)
+
+- **Auth (SPA ↔ API):** основной механизм для SPA — `Authorization: Bearer <JWT>` (SimpleJWT через API Gateway). `cookieAuth` остаётся только как совместимость/для Django Admin (если реально используется).
+- **Tracing/Jaeger proxy:** контракт для `/api/v2/tracing/*` ведём отдельным OpenAPI для API Gateway (`contracts/api-gateway/openapi.yaml`), чтобы не смешивать proxy и Orchestrator API.
+- **Extensions “install single”:** не добавляем новый `/api/v2/extensions/install-single/`, вместо этого унифицируем SPA на существующий `/api/v2/extensions/batch-install/` (одна база = `database_ids: [id]`).
 
 ---
 
@@ -126,7 +137,7 @@
 | Databases | list + actions (operate) + extension install | CRUD + health-check actions + “sync from cluster” wizard | операционные flows в SPA; импорт/редкие правки — отдельный v2 action или убрать |
 | Workflows | list/edit/clone/delete/validate (через v2) | CRUD + validate | SPA = основной; admin = read-only |
 | Operation templates | использует list-templates (reference) | CRUD + “sync from registry” | вынести “sync from registry” в v2 + добавить UI |
-| RBAC (ClusterPermission/DatabasePermission) | нет UI | есть управление | must-have: v2 RBAC endpoints + UI, затем ужесточить admin |
+| RBAC (ClusterPermission/DatabasePermission) | есть UI + v2 endpoints | есть управление | уже есть в SPA; следующий шаг — ужесточить admin (break-glass) |
 
 ---
 
@@ -134,32 +145,35 @@
 
 ### 1) Security schemes (auth) — критично
 
-**Симптом:** OpenAPI описывает только `cookieAuth`, а SPA использует `Authorization: Bearer <JWT>` и refresh (`frontend/src/api/client.ts`).
+**Симптом (исторический):** OpenAPI описывал только `cookieAuth`, а SPA использовал `Authorization: Bearer <JWT>` и refresh (`frontend/src/api/client.ts`).
 
 **Действия:**
-- [ ] В `contracts/orchestrator/openapi.yaml` добавить `bearerAuth` (HTTP bearer, JWT).
-- [ ] Для `/api/v2/*` endpoints указать `security` как “cookieAuth OR bearerAuth” (если бэкенд реально поддерживает оба), либо только bearerAuth.
-- [ ] Опционально: добавить endpoint “me” (кто я / роли / фичи), чтобы SPA не хардкодил “admin” в UI.
+- [x] В `contracts/orchestrator/openapi.yaml` добавить `bearerAuth` (HTTP bearer, JWT).
+- [x] Для `/api/v2/*` endpoints указать `security` как “cookieAuth OR bearerAuth” (если бэкенд реально поддерживает оба), либо только bearerAuth.
+- [x] Добавить endpoint “me” (кто я / роли / фичи), чтобы SPA не хардкодил “admin” в UI.
 
 ### 2) Request body / schemas gaps — убрать ручные обходы
 
-**Текущие обходы в SPA:**
-- `POST /api/v2/clusters/discover-clusters/` — SPA отправляет body, но OpenAPI не описывает requestBody → ручной `apiClient.post` (`frontend/src/api/queries/clusters.ts`).
-- `POST /api/v2/extensions/install-single/` — используется SPA, но отсутствует в OpenAPI → ручной `apiClient.post` (`frontend/src/api/queries/databases.ts`).
-- `GET /api/v2/tracing/*` (Jaeger proxy через Gateway) — используется SPA, но отсутствует в OpenAPI → ручной клиент (`frontend/src/api/endpoints/jaeger.ts`).
+**Фактические “обходы” в SPA (на 2025-12-16):**
+- ✅ `POST /api/v2/clusters/discover-clusters/` — контракт описан, SPA использует generated (`frontend/src/api/queries/clusters.ts`).
+- ✅ `POST /api/v2/extensions/batch-install/` — SPA унифицирован на batch-install, `install-single` не используется.
+- ❗ `GET /api/v2/tracing/*` (Jaeger proxy через Gateway) — SPA использует ручной клиент (`frontend/src/api/endpoints/jaeger.ts`), т.к. `contracts/api-gateway/openapi.yaml` не описывает эти пути.
+- ❗ Operations list/get частично на ручном `apiClient` (удобство AbortSignal + несостыковки по форме endpoint для single get); можно перевести на generated после выравнивания контрактов/клиента.
 
 **Действия:**
-- [ ] Добавить schema + requestBody для `discover-clusters` (и ответы/ошибки).
-- [ ] Добавить endpoint `extensions/install-single` в OpenAPI (request/response).
-- [ ] Принять решение по tracing/jaeger proxy:
+- [x] Добавить schema + requestBody для `discover-clusters` (и ответы/ошибки).
+- [x] Унифицировать SPA на `/api/v2/extensions/batch-install/` для single-db install (и убрать `install-single` вызовы).
+- [x] Принять решение по tracing/jaeger proxy: выбран вариант **B** (отдельный контракт для API Gateway).
   - Вариант A: добавить `/api/v2/tracing/*` в `contracts/orchestrator/openapi.yaml` как proxy endpoints (минимальные схемы).
   - Вариант B: завести отдельный контракт для API Gateway и генерировать второй клиент (предпочтительнее архитектурно, но дороже).
 
 ### 3) Generated client adoption — “нулевые” выигрыши
 
 После фикса контрактов:
-- [ ] Заменить ручной `GET /api/v2/system/config/` на generated `getSystemConfig` (`frontend/src/api/queries/clusters.ts`).
-- [ ] Заменить ручной `GET/POST` там, где endpoints уже есть в контракте (operations/dashboard/файлы/расширения).
+- [x] Заменить ручной `GET /api/v2/system/config/` на generated `getSystemConfig` (`frontend/src/api/queries/clusters.ts`).
+- [x] Перевести `POST /api/v2/clusters/discover-clusters/` на generated (`frontend/src/api/queries/clusters.ts`).
+- [x] `POST /api/v2/operations/cancel-operation/` — generated (`frontend/src/api/queries/operations.ts`).
+- [x] Перевести manual calls на generated там, где это уже возможно и полезно (operations list/get, files upload/download/delete, др.).
 
 ---
 
@@ -167,13 +181,13 @@
 
 ### RBAC UI + v2 endpoints (must-have)
 
-- [ ] `GET /api/v2/rbac/list-cluster-permissions` (+ фильтры: user/cluster/level)
-- [ ] `POST /api/v2/rbac/grant-cluster-permission`
-- [ ] `POST /api/v2/rbac/revoke-cluster-permission`
-- [ ] `GET /api/v2/rbac/list-database-permissions`
-- [ ] `POST /api/v2/rbac/grant-database-permission`
-- [ ] `POST /api/v2/rbac/revoke-database-permission`
-- [ ] `GET /api/v2/rbac/effective-access?user_id=...` (кластеры/базы + уровень)
+- [x] `GET /api/v2/rbac/list-cluster-permissions` (+ фильтры: user/cluster/level)
+- [x] `POST /api/v2/rbac/grant-cluster-permission`
+- [x] `POST /api/v2/rbac/revoke-cluster-permission`
+- [x] `GET /api/v2/rbac/list-database-permissions`
+- [x] `POST /api/v2/rbac/grant-database-permission`
+- [x] `POST /api/v2/rbac/revoke-database-permission`
+- [x] `GET /api/v2/rbac/effective-access?user_id=...` (кластеры/базы + уровень)
 
 > Реализация должна опираться на текущий `PermissionService` и уровни (VIEW/OPERATE/MANAGE/ADMIN).
 
@@ -585,22 +599,23 @@ DiscoverClustersRequest:
 **Проблема:** SPA использует `/api/v2/tracing/*`, но это прокси в API Gateway, не в Orchestrator.
 
 **Решение (рекомендуемое):**
-- [ ] Создать `contracts/api-gateway/openapi.yaml`
-- [ ] Описать `/api/v2/tracing/traces` и `/api/v2/tracing/traces/{traceId}` (минимальные схемы, совместимые с Jaeger API)
-- [ ] Добавить генерацию второго клиента и использовать его в `frontend/src/api/endpoints/jaeger.ts`
+- [x] Создать `contracts/api-gateway/openapi.yaml`
+- [x] Описать `/api/v2/tracing/traces` и `/api/v2/tracing/traces/{traceId}` (минимальные схемы, совместимые с Jaeger API)
+- [x] Добавить генерацию второго клиента (по `contracts/api-gateway/openapi.yaml`) и использовать его в `frontend/src/api/endpoints/jaeger.ts`
 
 **Альтернатива (быстро, но менее чисто):** временно описать tracing endpoints в `contracts/orchestrator/openapi.yaml` как proxy.
 
 ### “Sync from registry” для OperationTemplate
 
-- [ ] v2 action endpoint (например, `POST /api/v2/templates/sync-from-registry`)
-- [ ] UI кнопка/страница в SPA (с результатом created/updated/unchanged)
-- [ ] После паритета: отключить action/button в Django Admin
+- [x] v2 action endpoint `POST /api/v2/templates/sync-from-registry/` + OpenAPI schema
+- [x] UI страница в SPA (`/templates`) + кнопка Sync (created/updated/unchanged)
+- [x] После паритета: ограничить admin action суперпользователем (break-glass) (`orchestrator/apps/templates/admin.py`)
 
 ### “Reset sync status / unstick” для Clusters
 
-- [ ] UI в SPA для `POST /api/v2/clusters/reset-sync-status/` (точечно или bulk)
-- [ ] После паритета: отключить аналогичный admin action
+- [x] v2 endpoint уже реализован: `POST /api/v2/clusters/reset-sync-status/` (`orchestrator/apps/api_v2/views/clusters.py`)
+- [x] UI в SPA для `POST /api/v2/clusters/reset-sync-status/` (точечно + bulk по выбранным)
+- [x] После паритета: отключить/ограничить аналогичный admin action (`orchestrator/apps/databases/admin.py`)
 
 ---
 
@@ -617,18 +632,37 @@ DiscoverClustersRequest:
 
 ### Задачи (MVP)
 
-- [ ] Добавить v2 endpoints для DLQ (list/get/retry) + описать в OpenAPI
-- [ ] SPA: экран `DLQ` (таблица: operation_id, error_code, error_message, worker_id, failed_at, original_message_id)
-- [ ] SPA: действие `Retry` (одиночное + bulk) с подтверждением и rate limit
-- [ ] SPA: связка с Operations Center (переход к `operation_id`, если существует)
-- [ ] Аудит retry: кто/когда/что перезапустил (минимум metadata в BatchOperation или отдельная модель)
+- [x] Добавить v2 endpoints для DLQ (list/get/retry) + описать в OpenAPI
+- [x] SPA: экран `DLQ` (таблица: operation_id, error_code, error_message, worker_id, failed_at, original_message_id)
+- [x] SPA: действие `Retry` (одиночное + bulk) с подтверждением и safe rate limit (sequential)
+- [x] SPA: связка с Operations Center (переход к `operation_id`, если существует)
+- [x] Аудит retry: кто/когда/что перезапустил (metadata в `BatchOperation.metadata.dlq_retries`)
 
 ### Контракт (черновик, action-based)
 
 > Реализация может быть “proxy view” поверх Redis Stream `commands:worker:dlq` (read) и механизма re-enqueue (write).
 
-- [ ] `GET /api/v2/dlq/list/` (фильтры: `operation_id`, `error_code`, `since`, `limit`, `offset`)
-- [ ] `POST /api/v2/dlq/retry/` (body: `original_message_id` или `operation_id`; режим: `requeue|replay`; `reason`)
+- [x] `GET /api/v2/dlq/list/` (фильтры: `operation_id`, `error_code`, `since`, `limit`, `offset`)
+- [x] `GET /api/v2/dlq/get/` (query: `dlq_message_id` или `original_message_id`)
+- [x] `POST /api/v2/dlq/retry/` (body: `original_message_id` или `operation_id`; `reason`)
+
+---
+
+## Cross-Phase Dependency Log
+
+> Правило: если в ходе текущей фазы обнаружена задача/изменение, принадлежащее другой фазе, оно **не реализуется сразу** — только логируется здесь и выполняется в целевой фазе.
+
+| ID | Found In Phase | Target Phase | Area | Description | Link | Status |
+|----|---------------|--------------|------|-------------|------|--------|
+| XPD-0001 | Phase 0 | Phase 1 | contracts/auth | _TODO_ | _TODO_ | logged |
+
+**Поля:**
+- `ID`: `XPD-####`
+- `Found In Phase`: фаза, где обнаружили пересечение
+- `Target Phase`: фаза, в которой это должно быть выполнено
+- `Area`: `contracts/auth`, `frontend`, `rbac`, `admin`, `observability`, `docs`, `other`
+- `Link`: ссылка на файл/секцию/issue (минимум: путь)
+- `Status`: `logged` → `moved` (в backlog целевой фазы) → `done`
 
 ---
 
@@ -638,32 +672,76 @@ DiscoverClustersRequest:
 
 ### Фаза 0 (Week 0–1): Инвентаризация и фиксация целевой модели
 
-- [ ] Зафиксировать список “что считается админ-функцией” и где она должна жить (SPA vs Admin).
-- [ ] Определить target auth схему для SPA (`bearerAuth`).
-- [ ] Сформировать список contract drift пунктов (минимальный набор для генерации клиентов без обходов).
+- [x] Зафиксировать список “что считается админ-функцией” и где она должна жить (SPA vs Admin).
+- [x] Определить target auth схему для SPA (`bearerAuth`).
+- [x] Сформировать список contract drift пунктов (минимальный набор для генерации клиентов без обходов).
+
+#### Матрица ответственности (SPA vs Django Admin)
+
+| Домен | Операторский путь (SPA) | Break-glass (Django Admin) | Примечание |
+|------:|--------------------------|----------------------------|------------|
+| Auth / Me | `/login`, header user (`/api/v2/system/me/`) | — | SPA uses JWT через API Gateway |
+| Clusters | `/clusters` (CRUD/sync/discover/reset) | read-only для staff; write для superuser | reset/sync actions в admin закрыты для non-superuser |
+| Databases | `/databases` (health check, RAS actions, extension install) | read-only для staff; write для superuser | “импорт/ручные” admin flows оставлены как break-glass |
+| Operations | `/operations` (list/details/monitor/cancel) | read-only | операторские мутации через v2 actions |
+| Templates | `/templates` (list + sync-from-registry staff-only) | read-only для staff; write для superuser | sync action/button в admin — superuser-only |
+| Workflows | `/workflows` (designer/validate/execute/monitor) | read-only для staff; write для superuser | validate в admin — superuser-only |
+| RBAC | `/rbac` (grant/revoke/effective) | read-only для staff; write для superuser | единый путь для выдачи прав — SPA |
+| DLQ | `/dlq` (list/get/retry + audit) | — | операторский UX только в SPA |
+| Tracing | Trace viewer (Jaeger proxy via Gateway) | — | `/api/v2/tracing/*` контракт + generated client |
 
 ### Фаза 1 (Week 1–3): Contract + Auth выравнивание
 
-- [ ] Обновить OpenAPI: `bearerAuth` + security для `/api/v2/*`.
-- [ ] Добавить недостающие requestBody/response схемы (например, cluster discovery).
-- [ ] Перевести максимум ручных вызовов SPA на generated client (там, где контракт уже корректен).
+- [x] Обновить OpenAPI: `bearerAuth` + security для `/api/v2/*`.
+- [x] Добавить недостающие requestBody/response схемы (например, cluster discovery).
+- [x] Перевести ключевые ручные вызовы SPA на generated client (clusters discover/config, operations cancel, extensions single-install → batch-install).
 
 ### Фаза 2 (Week 3–6): RBAC v2 + SPA UI
 
-- [ ] Реализовать v2 RBAC endpoints (grant/revoke/list/effective permissions).
-- [ ] Добавить UI в SPA для управления правами (минимум: выдача/отзыв + просмотр).
-- [ ] Добавить тесты на RBAC и запреты (DoD: нельзя выполнить операции без уровня OPERATE/MANAGE/ADMIN).
+- [x] Реализовать v2 RBAC endpoints (grant/revoke/list/effective permissions).
+- [x] Добавить UI в SPA для управления правами (минимум: выдача/отзыв + просмотр).
+- [x] Добавить тесты на RBAC и запреты (DoD: нельзя выполнить операции без уровня OPERATE/MANAGE/ADMIN).
 
 ### Фаза 3 (Week 6–8): Миграция admin-actions → v2 + SPA
 
-- [ ] Вынести “sync from registry” в v2 action + кнопку/страницу в SPA.
-- [ ] Закрыть все operator-critical действия, которые сейчас возможны только через Django Admin.
+- [x] Вынести “sync from registry” в v2 action + кнопку/страницу в SPA.
+- [x] Отключить/ограничить admin action “sync from registry” (break-glass only).
+- [x] Закрыть все operator-critical действия, которые сейчас возможны только через Django Admin.
 
 ### Фаза 4 (Week 8–10): De-duplication в Django Admin + финализация
 
-- [ ] Отключить/урезать дублирующие модели/действия в Django Admin (read-only).
-- [ ] Обновить документацию для операторов: “единый путь через SPA”.
-- [ ] Добавить минимальный контроль: метрики/аудит по ключевым админ-действиям.
+- [x] Отключить/урезать дублирующие модели/действия в Django Admin (read-only / superuser-only write).
+- [x] Обновить документацию для операторов: “единый путь через SPA”.
+- [x] Добавить минимальный контроль: метрики/аудит по ключевым админ-действиям.
+
+---
+
+## TODO (следующие шаги реализации, приоритетно)
+
+### P0 — Закрыть оставшийся contract drift / generated client
+
+- [x] `contracts/api-gateway/openapi.yaml`: описать Jaeger proxy пути:
+  - `GET /api/v2/tracing/traces` (query params: `service`, `operation`, `limit`, `lookback`, etc.)
+  - `GET /api/v2/tracing/traces/{traceId}`
+- [x] Добавить генерацию второго TS клиента по `contracts/api-gateway/openapi.yaml` (или расширить текущую orval-конфигурацию) и перевести `frontend/src/api/endpoints/jaeger.ts` на generated.
+- [x] Синхронизировать operations list/get с generated client (с поддержкой `AbortSignal` через mutator).
+
+### P0 — Миграция “sync from registry” из Django Admin
+
+- [x] Добавить v2 endpoint `POST /api/v2/templates/sync-from-registry/` в `orchestrator/apps/api_v2/views/templates.py` (и подключить в `orchestrator/apps/api_v2/urls.py`).
+- [x] Описать endpoint + `TemplateSyncResponse` в `contracts/orchestrator/openapi.yaml`.
+- [x] SPA: добавить кнопку/страницу (с отчётом created/updated/unchanged и `dry_run`).
+- [x] После паритета: отключить admin action `sync_from_registry` в `orchestrator/apps/templates/admin.py` (или ограничить суперпользователем).
+
+### P1 — Убрать оставшийся “второй путь” через Admin (break-glass)
+
+- [x] SPA: добавить UI “Reset sync status” (точечно + bulk) поверх `POST /api/v2/clusters/reset-sync-status/`.
+- [x] Django Admin: отключить/ограничить дублирующие actions (sync/reset/health/import) → superuser-only break-glass, основной путь через SPA.
+
+### P1 — DLQ Console (операторский UX)
+
+- [x] Добавить v2 endpoints для DLQ (list/get/retry) + OpenAPI.
+- [x] SPA: экран DLQ + safe retry (single/bulk) + аудит.
 
 ---
 
@@ -701,5 +779,5 @@ DiscoverClustersRequest:
 ### Из `docs/roadmaps/V1_TO_V2_EVENT_DRIVEN_MIGRATION.md`
 
 - [ ] Credentials через Streams (commands/events + Django handler + Worker client) — убрать прямые HTTP зависимости
-- [ ] Timeline записи в Django для BatchOperation (redis client + started/completed события)
+- [x] Timeline записи в Django для BatchOperation (Redis ZSET + created/queued/completed/failed события)
 - [ ] Финальная зачистка v1 (удалить v1 views/urls, обновить docs, обновить OpenAPI specs, regenerate clients)

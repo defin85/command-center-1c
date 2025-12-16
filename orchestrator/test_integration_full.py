@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Full integration test for BatchService migration."""
+# ruff: noqa: E402
 import os
 import django
 
@@ -92,13 +93,13 @@ print("\nPASSED: Status history correctly tracks all transitions")
 # Test backward compatibility
 print("\n--- Verify backward compatibility ---")
 print(f"is_active_compat (when status='active'): {service.is_active_compat}")
-assert service.is_active_compat == True
+assert service.is_active_compat
 
 service.status = 'inactive'
 service.save()
 service.refresh_from_db()
 print(f"is_active_compat (when status='inactive'): {service.is_active_compat}")
-assert service.is_active_compat == False
+assert not service.is_active_compat
 print("PASSED: is_active_compat works correctly")
 
 # Test get_active() and get_or_raise()

@@ -58,4 +58,44 @@ export default defineConfig({
       afterAllFilesWrite: 'prettier --write',
     },
   },
+  apiGateway: {
+    input: {
+      target: '../contracts/api-gateway/openapi.yaml',
+      filters: {
+        tags: ['tracing'],
+      },
+    },
+    output: {
+      mode: 'single',
+      target: './src/api/generated-gateway.ts',
+      schemas: './src/api/generated-gateway/model',
+      client: 'axios',
+      override: {
+        mutator: {
+          path: './src/api/mutator.ts',
+          name: 'customInstance',
+        },
+        operationName: (operation, _route, verb) => {
+          const opId = operation.operationId || ''
+          let name = opId.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+          const verbMap: Record<string, string> = {
+            get: 'get',
+            post: 'post',
+            put: 'put',
+            patch: 'patch',
+            delete: 'del',
+          }
+          const verbPrefix = verbMap[verb] || verb
+          const startsWithVerb = /^(get|list|create|update|delete|post|put|patch)/.test(name.toLowerCase())
+          if (!startsWithVerb) {
+            name = verbPrefix + name.charAt(0).toUpperCase() + name.slice(1)
+          }
+          return name
+        },
+      },
+    },
+    hooks: {
+      afterAllFilesWrite: 'prettier --write',
+    },
+  },
 })

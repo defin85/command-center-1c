@@ -60,6 +60,44 @@ class SystemHealthResponseSerializer(serializers.Serializer):
     services = ServiceHealthSerializer(many=True, help_text="List of service health statuses")
     statistics = SystemStatisticsSerializer(help_text="Aggregated statistics")
 
+# =============================================================================
+# Current User Endpoint (SPA identity)
+# =============================================================================
+
+
+class CurrentUserSerializer(serializers.Serializer):
+    """Minimal identity payload for SPA."""
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    is_staff = serializers.BooleanField()
+    is_superuser = serializers.BooleanField()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get current user',
+    description='Returns the currently authenticated user (minimal identity for SPA header/roles).',
+    responses={
+        200: CurrentUserSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def system_me(request):
+    """
+    GET /api/v2/system/me/
+
+    Returns minimal identity information for SPA.
+    """
+    user = request.user
+    return Response({
+        'id': user.id,
+        'username': user.get_username(),
+        'is_staff': bool(getattr(user, 'is_staff', False)),
+        'is_superuser': bool(getattr(user, 'is_superuser', False)),
+    })
+
 # Health check timeout in seconds
 HEALTH_TIMEOUT = 1.5
 

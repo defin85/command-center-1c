@@ -4,6 +4,7 @@
 
 Тестирует связь Django → installation-service
 """
+# ruff: noqa: E402
 import os
 import sys
 import django

@@ -12,6 +12,28 @@ from django_json_widget.widgets import JSONEditorWidget
 from .models import OperationTemplate, WorkflowTemplate, WorkflowExecution, WorkflowStepResult
 
 
+class SuperuserWriteAdminMixin:
+    """
+    Make Django Admin effectively read-only for non-superusers.
+
+    Operators should use SPA (/api/v2/*); Django Admin is break-glass for superusers.
+    """
+
+    def has_view_permission(self, request, obj=None):
+        return True
+
+    def has_add_permission(self, request):
+        return bool(getattr(request.user, "is_superuser", False))
+
+    def has_change_permission(self, request, obj=None):
+        if getattr(request.user, "is_superuser", False):
+            return True
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(getattr(request.user, "is_superuser", False))
+
+
 class SafeJSONEditorWidget(JSONEditorWidget):
     """JSONEditorWidget that handles None values gracefully."""
 
@@ -78,6 +100,13 @@ def sync_from_registry(modeladmin, request, queryset):
 
     Creates missing templates, updates existing ones.
     """
+    if not request.user.is_superuser:
+        messages.error(
+            request,
+            "Sync from registry is disabled in Django Admin. Use SPA (/templates). Superuser-only break-glass.",
+        )
+        return
+
     from django.db import transaction
     from apps.templates.registry import get_registry
 
@@ -132,7 +161,7 @@ def sync_from_registry(modeladmin, request, queryset):
 
 
 @admin.register(OperationTemplate)
-class OperationTemplateAdmin(admin.ModelAdmin):
+class OperationTemplateAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     form = OperationTemplateAdminForm
     list_display = ['name', 'operation_type', 'target_entity', 'is_active', 'created_at']
     list_filter = ['operation_type', 'is_active', 'created_at']
@@ -161,6 +190,15 @@ class OperationTemplateAdmin(admin.ModelAdmin):
 
         Performs the same logic as sync_from_registry action but without queryset.
         """
+        if not request.user.is_superuser:
+            messages.error(
+                request,
+                "Sync from registry is disabled in Django Admin. Use SPA (/templates). Superuser-only break-glass.",
+            )
+            return HttpResponseRedirect(
+                reverse('admin:templates_operationtemplate_changelist')
+            )
+
         from django.db import transaction
         from apps.templates.registry import get_registry
 
@@ -253,6 +291,13 @@ def validate_workflows(modeladmin, request, queryset):
 
     Runs DAG validation on each selected template and shows results via messages.
     """
+    if not request.user.is_superuser:
+        messages.error(
+            request,
+            "Workflow validation is disabled in Django Admin. Use SPA (/workflows). Superuser-only break-glass.",
+        )
+        return
+
     valid_count = 0
     invalid_count = 0
     errors = []
@@ -285,7 +330,7 @@ def validate_workflows(modeladmin, request, queryset):
 
 
 @admin.register(WorkflowTemplate)
-class WorkflowTemplateAdmin(admin.ModelAdmin):
+class WorkflowTemplateAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     form = WorkflowTemplateAdminForm
     list_display = ['name', 'workflow_type', 'is_valid', 'is_active', 'is_template', 'version_number', 'created_at']
     list_filter = ['workflow_type', 'is_valid', 'is_active', 'is_template', 'created_at']
@@ -343,6 +388,15 @@ class WorkflowTemplateAdmin(admin.ModelAdmin):
 
         GET/POST: Validates the workflow and redirects back to change page.
         """
+        if not request.user.is_superuser:
+            messages.error(
+                request,
+                "Workflow validation is disabled in Django Admin. Use SPA (/workflows). Superuser-only break-glass.",
+            )
+            return HttpResponseRedirect(
+                reverse('admin:templates_workflowtemplate_changelist')
+            )
+
         try:
             obj = self.get_object(request, object_id)
             if obj is None:
@@ -416,7 +470,7 @@ class WorkflowTemplateAdmin(admin.ModelAdmin):
 
 
 @admin.register(WorkflowExecution)
-class WorkflowExecutionAdmin(admin.ModelAdmin):
+class WorkflowExecutionAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     list_display = ['id_short', 'workflow_template', 'status', 'progress_percent', 'started_at', 'completed_at']
     list_filter = ['status', 'started_at', 'completed_at']
     search_fields = ['id', 'workflow_template__name']
@@ -437,7 +491,7 @@ class WorkflowExecutionAdmin(admin.ModelAdmin):
 
 
 @admin.register(WorkflowStepResult)
-class WorkflowStepResultAdmin(admin.ModelAdmin):
+class WorkflowStepResultAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     list_display = ['node_name', 'node_type', 'status', 'workflow_execution', 'started_at', 'completed_at']
     list_filter = ['status', 'node_type']
     search_fields = ['node_id', 'node_name', 'workflow_execution__id']

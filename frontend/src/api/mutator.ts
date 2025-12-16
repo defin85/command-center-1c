@@ -8,17 +8,19 @@ export const customInstance = <T>(
   config: AxiosRequestConfig,
   options?: AxiosRequestConfig,
 ): Promise<T> => {
-  const controller = new AbortController()
+  const externalSignal = options?.signal
+  const controller = externalSignal ? undefined : new AbortController()
+  const signal = externalSignal ?? controller?.signal
 
   const promise = apiClient({
     ...config,
     ...options,
-    signal: controller.signal,
+    signal,
   }).then(({ data }) => data as T)
 
   // @ts-expect-error - adding cancel property for React Query
   promise.cancel = () => {
-    controller.abort()
+    controller?.abort()
   }
 
   return promise

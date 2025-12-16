@@ -381,7 +381,7 @@ class TestBulkHealthCheck:
     def test_bulk_health_check_all(self, mock_get_client, api_client, test_database, db):
         """Тест: Bulk health check для всех баз."""
         # Создаем еще одну тестовую базу
-        db2 = Database.objects.create(
+        Database.objects.create(
             id='test_db_002',
             name='Test Database 2',
             host='localhost',
@@ -413,7 +413,7 @@ class TestBulkHealthCheck:
     def test_bulk_health_check_filtered(self, mock_get_client, api_client, test_database, db):
         """Тест: Bulk health check с фильтром по статусу."""
         # Создаем базу с другим статусом
-        db2 = Database.objects.create(
+        Database.objects.create(
             id='test_db_003',
             name='Inactive Database',
             host='localhost',

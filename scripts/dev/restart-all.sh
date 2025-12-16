@@ -114,7 +114,21 @@ restart_all_services() {
     print_status "info" "Запуск всех сервисов..."
     echo ""
 
-    if bash "$SCRIPTS_DIR/start-all.sh"; then
+    local start_args=()
+    if [ "$FORCE_REBUILD" = true ]; then
+        start_args+=("--force-rebuild")
+    fi
+    if [ "$NO_REBUILD" = true ]; then
+        start_args+=("--no-rebuild")
+    fi
+    if [ "$PARALLEL_BUILD" = true ]; then
+        start_args+=("--parallel-build")
+    fi
+    if [ "$VERBOSE" = true ]; then
+        start_args+=("--verbose")
+    fi
+
+    if bash "$SCRIPTS_DIR/start-all.sh" "${start_args[@]}"; then
         print_status "success" "Все сервисы запущены"
         echo ""
         return 0

@@ -99,14 +99,14 @@ class TestCustomJSONEncoder:
     def test_encode_datetime_object(self):
         """Test encoding datetime object."""
         dt = datetime(2025, 1, 1, 12, 0, 0)
-        encoder = CustomJSONEncoder()
+        CustomJSONEncoder()
         result = json.dumps({"timestamp": dt}, cls=CustomJSONEncoder)
         assert "2025-01-01T12:00:00" in result
 
     def test_encode_date_object(self):
         """Test encoding date object."""
         d = date(2025, 1, 1)
-        encoder = CustomJSONEncoder()
+        CustomJSONEncoder()
         result = json.dumps({"date": d}, cls=CustomJSONEncoder)
         assert "2025-01-01" in result
 

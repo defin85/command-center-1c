@@ -946,6 +946,21 @@ class OperationsService:
         )
         batch_operation.target_databases.set(databases)
 
+        # Timeline: operation created (best-effort)
+        try:
+            redis_client.add_timeline_event(
+                operation_id,
+                event="operation.created",
+                service="orchestrator",
+                metadata={
+                    "operation_type": operation_type,
+                    "target_databases_count": len(databases),
+                    "created_by": user.username if user else "system",
+                },
+            )
+        except Exception:
+            pass
+
         # Create Tasks for each database
         tasks = [
             Task(
@@ -998,6 +1013,17 @@ class OperationsService:
 
             # Enqueue to Redis
             redis_client.enqueue_operation(message)
+
+            # Timeline: operation queued (best-effort)
+            try:
+                redis_client.add_timeline_event(
+                    operation_id,
+                    event="operation.queued",
+                    service="orchestrator",
+                    metadata={"queue": cls.QUEUE_KEY},
+                )
+            except Exception:
+                pass
 
             # Publish QUEUED event
             event_publisher.publish(

@@ -5,6 +5,7 @@ import logging
 from django.conf import settings
 from django.utils import timezone
 from typing import Optional, Dict, Any
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,47 @@ class RedisClient:
     # ========== Timeline Operations ==========
 
     TIMELINE_KEY_PREFIX = "operation:timeline:"
+    TIMELINE_MAX_LEN = 5000
+    TIMELINE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days
+
+    def add_timeline_event(
+        self,
+        operation_id: str,
+        *,
+        event: str,
+        service: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        timestamp_ms: Optional[int] = None,
+    ) -> None:
+        """
+        Append a timeline event into Redis ZSET.
+
+        Stored format:
+          score: timestamp_ms
+          member: JSON with at least {event, service, metadata}
+        """
+        key = f"{self.TIMELINE_KEY_PREFIX}{operation_id}"
+        ts_ms = timestamp_ms if timestamp_ms is not None else int(timezone.now().timestamp() * 1000)
+        member = json.dumps(
+            {
+                "id": str(uuid.uuid4()),
+                "event": event,
+                "service": service,
+                "metadata": metadata or {},
+            }
+        )
+
+        self.client.zadd(key, {member: ts_ms})
+
+        # Best-effort cap + TTL
+        try:
+            size = self.client.zcard(key)
+            if size > self.TIMELINE_MAX_LEN:
+                # Remove oldest (lowest scores)
+                self.client.zremrangebyrank(key, 0, size - self.TIMELINE_MAX_LEN - 1)
+            self.client.expire(key, self.TIMELINE_TTL_SECONDS)
+        except Exception as e:
+            logger.debug("Timeline cap/ttl update failed: %s", e)
 
     def get_timeline(
         self,

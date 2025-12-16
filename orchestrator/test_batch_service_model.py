@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Test BatchService model and mark_health_check() method."""
+# ruff: noqa: E402
 import os
 import django
 

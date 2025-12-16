@@ -13,15 +13,15 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development')
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.security.websocket import AllowedHostsOriginValidator
+from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
+from channels.security.websocket import AllowedHostsOriginValidator  # noqa: E402
 
 # Import WebSocket routing after Django is initialized
-from apps.templates.routing import websocket_urlpatterns as templates_ws_patterns
-from apps.operations.routing import websocket_urlpatterns as operations_ws_patterns
+from apps.templates.routing import websocket_urlpatterns as templates_ws_patterns  # noqa: E402
+from apps.operations.routing import websocket_urlpatterns as operations_ws_patterns  # noqa: E402
 
 # Custom JWT middleware for WebSocket authentication
-from apps.core.middleware import JWTAuthMiddlewareStack
+from apps.core.middleware import JWTAuthMiddlewareStack  # noqa: E402
 
 # Combine all WebSocket URL patterns
 websocket_urlpatterns = templates_ws_patterns + operations_ws_patterns

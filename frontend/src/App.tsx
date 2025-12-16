@@ -10,6 +10,9 @@ import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
 import { ServiceMeshPage } from './pages/ServiceMesh'
+import { RBACPage } from './pages/RBAC/RBACPage'
+import { TemplatesPage } from './pages/Templates/TemplatesPage'
+import { DLQPage } from './pages/DLQ'
 import { Login } from './pages/Login/Login'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
@@ -152,11 +155,32 @@ function App() {
               <WorkflowMonitor />
             </ProtectedRoute>
           } />
+          <Route path="/templates" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <TemplatesPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
           {/* Service Mesh route */}
           <Route path="/service-mesh" element={
             <ProtectedRoute>
               <MainLayout>
                 <ServiceMeshPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/rbac" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <RBACPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/dlq" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <DLQPage />
               </MainLayout>
             </ProtectedRoute>
           } />

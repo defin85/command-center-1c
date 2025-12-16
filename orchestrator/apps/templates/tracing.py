@@ -39,14 +39,12 @@ _enabled = False
 # Check if OpenTelemetry is available
 try:
     from opentelemetry import trace
-    from opentelemetry.context import Context
     from opentelemetry.propagate import extract, inject
     from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.trace import Status, StatusCode, SpanKind
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
     OTEL_AVAILABLE = True
     logger.debug("OpenTelemetry libraries loaded successfully.")

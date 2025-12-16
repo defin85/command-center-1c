@@ -317,7 +317,7 @@ class TestFileSaving:
 
     def test_save_file_creates_directory(self, admin_user, sample_text_file, mock_upload_root):
         """Test save_file creates year/month/uuid directory structure."""
-        uploaded_file = FileStorageService.save_file(
+        FileStorageService.save_file(
             file=sample_text_file,
             purpose=FilePurpose.OPERATION_INPUT,
             uploaded_by=admin_user,

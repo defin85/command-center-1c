@@ -7,11 +7,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { getV2 } from '../generated'
-import { apiClient } from '../client'
 import type { Cluster } from '../generated/model/cluster'
 import type { ClusterListResponse } from '../generated/model/clusterListResponse'
 import type { ClusterSyncResponse } from '../generated/model/clusterSyncResponse'
+import type { DiscoverClustersRequest } from '../generated/model/discoverClustersRequest'
 import type { DiscoverClustersResponse } from '../generated/model/discoverClustersResponse'
+import type { PostClustersResetSyncStatusParams } from '../generated/model/postClustersResetSyncStatusParams'
+import type { ResetSyncStatusResponse } from '../generated/model/resetSyncStatusResponse'
+import type { SystemConfig } from '../generated/model/systemConfig'
 
 import { queryKeys } from './index'
 
@@ -21,18 +24,6 @@ const api = getV2()
 // =============================================================================
 // Types
 // =============================================================================
-
-export interface SystemConfig {
-  ras_default_server: string
-  ras_adapter_url: string
-}
-
-export interface DiscoverClustersRequest {
-  ras_server: string
-  cluster_service_url: string
-  cluster_user?: string
-  cluster_pwd?: string
-}
 
 // Cluster create/update uses the Cluster type without readonly fields
 export type ClusterInput = Omit<Cluster, 'id' | 'status_display' | 'last_sync' | 'databases_count' | 'created_at' | 'updated_at'>
@@ -47,8 +38,7 @@ async function fetchClusters(): Promise<ClusterListResponse> {
 
 async function fetchSystemConfig(): Promise<SystemConfig> {
   try {
-    const response = await apiClient.get<SystemConfig>('/api/v2/system/config/')
-    return response.data
+    return api.getSystemConfig()
   } catch {
     // Use fallback defaults if config endpoint fails
     console.warn('Failed to load system config, using defaults')
@@ -158,6 +148,22 @@ export function useSyncCluster() {
 }
 
 /**
+ * Reset sync status for a cluster (unstick).
+ * Invalidates clusters list on success.
+ */
+export function useResetClusterSyncStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params?: PostClustersResetSyncStatusParams): Promise<ResetSyncStatusResponse> =>
+      api.postClustersResetSyncStatus(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
+    },
+  })
+}
+
+/**
  * Discover clusters on a RAS server.
  * Note: Uses apiClient directly because OpenAPI spec doesn't include request body.
  * Invalidates cluster list after delay to allow discovery to complete.
@@ -166,13 +172,8 @@ export function useDiscoverClusters() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (data: DiscoverClustersRequest): Promise<DiscoverClustersResponse> => {
-      const response = await apiClient.post<DiscoverClustersResponse>(
-        '/api/v2/clusters/discover-clusters/',
-        data
-      )
-      return response.data
-    },
+    mutationFn: (data: DiscoverClustersRequest): Promise<DiscoverClustersResponse> =>
+      api.postClustersDiscoverClusters(data),
     onSuccess: () => {
       // Delay invalidation to allow discovery to complete
       setTimeout(() => {

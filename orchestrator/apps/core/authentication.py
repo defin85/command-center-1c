@@ -90,3 +90,26 @@ class ServiceJWTAuthentication(JWTAuthentication):
         """Get the claim name used for user ID"""
         from rest_framework_simplejwt.settings import api_settings
         return api_settings.USER_ID_CLAIM
+
+
+# drf-spectacular OpenAPI integration
+#
+# Ensures that ServiceJWTAuthentication is represented as HTTP Bearer (JWT)
+# in the exported OpenAPI spec (contracts/orchestrator/openapi.yaml).
+try:
+    from drf_spectacular.extensions import OpenApiAuthenticationExtension
+except Exception:  # pragma: no cover
+    OpenApiAuthenticationExtension = None
+
+
+if OpenApiAuthenticationExtension is not None:
+    class ServiceJWTAuthenticationScheme(OpenApiAuthenticationExtension):
+        target_class = 'apps.core.authentication.ServiceJWTAuthentication'
+        name = 'bearerAuth'
+
+        def get_security_definition(self, auto_schema):
+            return {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            }

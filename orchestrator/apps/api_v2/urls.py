@@ -17,9 +17,11 @@ from .views import (
     service_mesh,
     audit,
     events,
+    rbac,
     templates,
     files,
     timeline,
+    dlq,
 )
 
 app_name = 'api_v2'
@@ -30,6 +32,7 @@ urlpatterns = [
     # ========================================================================
     path('system/health/', system.system_health, name='system-health'),
     path('system/config/', system.system_config, name='system-config'),
+    path('system/me/', system.system_me, name='system-me'),
 
     # ========================================================================
     # Databases
@@ -99,9 +102,21 @@ urlpatterns = [
     path('extensions/delete-extension/', extensions.delete_extension_storage, name='delete-extension-storage'),
 
     # ========================================================================
+    # RBAC (SPA-primary administration)
+    # ========================================================================
+    path('rbac/list-cluster-permissions/', rbac.list_cluster_permissions, name='list-cluster-permissions'),
+    path('rbac/grant-cluster-permission/', rbac.grant_cluster_permission, name='grant-cluster-permission'),
+    path('rbac/revoke-cluster-permission/', rbac.revoke_cluster_permission, name='revoke-cluster-permission'),
+    path('rbac/list-database-permissions/', rbac.list_database_permissions, name='list-database-permissions'),
+    path('rbac/grant-database-permission/', rbac.grant_database_permission, name='grant-database-permission'),
+    path('rbac/revoke-database-permission/', rbac.revoke_database_permission, name='revoke-database-permission'),
+    path('rbac/get-effective-access/', rbac.get_effective_access, name='get-effective-access'),
+
+    # ========================================================================
     # Templates
     # ========================================================================
     path('templates/list-templates/', templates.list_templates, name='list-templates'),
+    path('templates/sync-from-registry/', templates.sync_from_registry, name='sync-from-registry'),
 
     # ========================================================================
     # Service Mesh
@@ -126,4 +141,11 @@ urlpatterns = [
     path('files/upload/', files.upload_file, name='upload-file'),
     path('files/download/<uuid:file_id>/', files.download_file, name='download-file'),
     path('files/delete/<uuid:file_id>/', files.delete_file, name='delete-file'),
+
+    # ========================================================================
+    # DLQ (SPA-primary administration)
+    # ========================================================================
+    path('dlq/list/', dlq.list_dlq, name='dlq-list'),
+    path('dlq/get/', dlq.get_dlq, name='dlq-get'),
+    path('dlq/retry/', dlq.retry_dlq, name='dlq-retry'),
 ]

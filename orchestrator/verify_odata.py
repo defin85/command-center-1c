@@ -30,6 +30,13 @@ def main():
             OData1CSpecificError,
             ODataTimeoutError,
         )
+        _unused_exceptions = (
+            ODataAuthenticationError,
+            ODataRequestError,
+            OData1CSpecificError,
+            ODataTimeoutError,
+        )
+        assert all(_unused_exceptions)
         print("   ✅ All imports successful")
 
         # Test entities module
@@ -41,6 +48,8 @@ def main():
             get_entity_url_part,
             parse_entity_url_part,
         )
+        _unused_entity_maps = (ENTITY_TYPES, COMMON_CATALOGS, COMMON_DOCUMENTS)
+        assert all(_unused_entity_maps)
         print("   ✅ Entities module imported")
 
         # Test entity URL building

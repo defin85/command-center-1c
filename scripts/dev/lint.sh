@@ -96,10 +96,10 @@ print_result() {
         echo -e "${GREEN}✓${NC} $name: ${GREEN}$status${NC}"
     elif [[ "$status" == "WARNINGS" ]]; then
         echo -e "${YELLOW}⚠${NC} $name: ${YELLOW}$status${NC} $details"
-        ((WARNINGS++))
+        ((++WARNINGS))
     else
         echo -e "${RED}✗${NC} $name: ${RED}$status${NC} $details"
-        ((ERRORS++))
+        ((++ERRORS))
     fi
 }
 
@@ -230,10 +230,10 @@ validate_json() {
 
     for f in "$dashboard_dir"/*.json; do
         if [[ -f "$f" ]]; then
-            ((count++))
+            ((++count))
             if ! python3 -m json.tool "$f" > /dev/null 2>&1; then
                 echo -e "  ${RED}✗${NC} Invalid JSON: $(basename "$f")"
-                ((errors++))
+                ((++errors))
             fi
         fi
     done
@@ -270,10 +270,10 @@ validate_prometheus_rules() {
 
     # Check recording rules
     if [[ -f "$rules_dir/recording_rules.yml" ]]; then
-        ((count++))
+        ((++count))
         if ! promtool check rules "$rules_dir/recording_rules.yml" 2>/dev/null; then
             echo -e "  ${RED}✗${NC} Invalid: recording_rules.yml"
-            ((errors++))
+            ((++errors))
         fi
     fi
 
@@ -281,10 +281,10 @@ validate_prometheus_rules() {
     if [[ -d "$rules_dir/alerts" ]]; then
         for f in "$rules_dir/alerts"/*.yml; do
             if [[ -f "$f" ]]; then
-                ((count++))
+                ((++count))
                 if ! promtool check rules "$f" 2>/dev/null; then
                     echo -e "  ${RED}✗${NC} Invalid: $(basename "$f")"
-                    ((errors++))
+                    ((++errors))
                 fi
             fi
         done

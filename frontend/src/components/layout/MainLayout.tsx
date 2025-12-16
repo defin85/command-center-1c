@@ -1,8 +1,10 @@
 import { Layout, Menu, Button, Dropdown } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined } from '@ant-design/icons'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
+
+import { useMe } from '../../api/queries/me'
 
 const { Header, Content, Sider } = Layout
 
@@ -13,6 +15,7 @@ interface MainLayoutProps {
 export const MainLayout = ({ children }: MainLayoutProps) => {
   const navigate = useNavigate()
   const location = useLocation()
+  const meQuery = useMe()
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -61,9 +64,24 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Workflows',
     },
     {
+      key: '/templates',
+      icon: <FileTextOutlined />,
+      label: 'Templates',
+    },
+    {
       key: '/service-mesh',
       icon: <DeploymentUnitOutlined />,
       label: 'Service Mesh',
+    },
+    {
+      key: '/rbac',
+      icon: <SafetyCertificateOutlined />,
+      label: 'RBAC',
+    },
+    {
+      key: '/dlq',
+      icon: <WarningOutlined />,
+      label: 'DLQ',
     },
   ]
 
@@ -75,7 +93,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         </div>
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
-            admin
+            {meQuery.data?.username ?? '...'}
           </Button>
         </Dropdown>
       </Header>

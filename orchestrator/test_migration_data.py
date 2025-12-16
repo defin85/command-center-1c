@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Test data migration for BatchService."""
+# ruff: noqa: E402
 import os
 import sys
 import django

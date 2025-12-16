@@ -16,8 +16,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from apps.databases.models import Database, ExtensionInstallation
+from apps.databases.models import Database, ExtensionInstallation, PermissionLevel
 from apps.databases.serializers import ExtensionInstallationSerializer
+from apps.databases.services import PermissionService
 from apps.api_v2.views.clusters import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
@@ -600,6 +601,25 @@ def batch_install(request):
                 'message': f'Some databases not found: {missing_ids}'
             }
         }, status=404)
+
+    # RBAC: require MANAGE on all target databases
+    all_allowed, denied = PermissionService.check_bulk_permission(
+        request.user,
+        [str(db_id) for db_id in database_ids],
+        PermissionLevel.MANAGE
+    )
+    if not all_allowed:
+        denied_str = ', '.join(denied[:5])
+        message = f"Access denied for databases: {denied_str}"
+        if len(denied) > 5:
+            message += f" and {len(denied) - 5} more"
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'PERMISSION_DENIED',
+                'message': message
+            }
+        }, status=403)
 
     batch_id = str(uuid_lib.uuid4())
     installations = []

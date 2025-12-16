@@ -4,10 +4,11 @@
  * Provides methods to fetch and parse Jaeger traces for workflow execution monitoring.
  */
 
-// v2 migration: Jaeger через API Gateway proxy
-import { apiClient } from '../client'
+// Jaeger через API Gateway proxy (contract-driven)
+import { getCommandCenter1CAPIGateway } from '../generated-gateway'
 
 const JAEGER_URL = import.meta.env.VITE_JAEGER_URL || 'http://localhost:16686'
+const apiGateway = getCommandCenter1CAPIGateway()
 
 // ============================================================================
 // Jaeger API Types
@@ -75,12 +76,10 @@ export interface JaegerResponse {
 export const getTraceById = async (traceId: string, timeoutMs: number = 10000): Promise<JaegerTrace | null> => {
   // Standard Jaeger API: GET /tracing/traces/{traceId}
   try {
-    const response = await apiClient.get(`/api/v2/tracing/traces/${traceId}`, {
-      timeout: timeoutMs
-    })
+    const response = await apiGateway.getTracingGetTrace(traceId, { timeout: timeoutMs })
 
-    if (response.data && response.data.data && response.data.data.length > 0) {
-      return response.data.data[0]
+    if (response?.data && response.data.length > 0) {
+      return response.data[0] as unknown as JaegerTrace
     }
 
     return null
@@ -208,22 +207,17 @@ export const searchTraces = async (
 ): Promise<JaegerTrace[]> => {
   // Standard Jaeger API: GET /tracing/traces?service=...
   try {
-    const params: any = {
-      service,
-      limit,
-      lookback
-    }
+    const response = await apiGateway.getTracingGetTraces(
+      {
+        service,
+        limit,
+        lookback,
+        operation,
+      },
+      { timeout: timeoutMs }
+    )
 
-    if (operation) {
-      params.operation = operation
-    }
-
-    const response = await apiClient.get('/api/v2/tracing/traces', {
-      params,
-      timeout: timeoutMs
-    })
-
-    return response.data?.data || []
+    return (response?.data || []) as unknown as JaegerTrace[]
   } catch (error: any) {
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.error(`Jaeger search timed out after ${timeoutMs}ms`)

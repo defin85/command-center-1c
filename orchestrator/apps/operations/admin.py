@@ -8,6 +8,7 @@ from .models import (
     Task,
     BatchOperation,
     CompensationAuditLog,
+    AdminActionAuditLog,
     FailedEvent,
     SchedulerJobRun,
     TaskExecutionLog,
@@ -168,6 +169,46 @@ class CompensationAuditLogAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AdminActionAuditLog)
+class AdminActionAuditLogAdmin(admin.ModelAdmin):
+    """Read-only audit log for operator/admin actions (SPA-primary flows)."""
+
+    list_display = [
+        "created_at",
+        "action",
+        "outcome",
+        "actor_username",
+        "target_type",
+        "target_id",
+    ]
+    list_filter = ["action", "outcome", "target_type", "created_at"]
+    search_fields = ["action", "actor_username", "target_type", "target_id", "error_message"]
+    readonly_fields = [
+        "id",
+        "action",
+        "outcome",
+        "actor",
+        "actor_username",
+        "actor_ip",
+        "user_agent",
+        "target_type",
+        "target_id",
+        "metadata",
+        "error_message",
+        "created_at",
+    ]
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 

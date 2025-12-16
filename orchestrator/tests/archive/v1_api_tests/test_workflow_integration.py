@@ -929,7 +929,7 @@ class TestDataPersistence:
 
         def execute_with_step_result(node, context, execution, mode):
             # Create step result like real handlers do
-            step_result = WorkflowStepResult.objects.create(
+            WorkflowStepResult.objects.create(
                 workflow_execution=execution,
                 node_id=node.id,
                 node_name=node.name,

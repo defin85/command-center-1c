@@ -11,6 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 
 import { apiClient } from '../client'
+import { getV2 } from '../generated'
+import type { BatchInstallResponse } from '../generated/model/batchInstallResponse'
 import type { Database } from '../generated/model/database'
 import type { Cluster } from '../generated/model/cluster'
 import {
@@ -21,6 +23,9 @@ import {
 } from '../operations'
 
 import { queryKeys, type DatabaseFilters } from './index'
+
+// Initialize API client (generated)
+const api = getV2()
 
 // =============================================================================
 // API Response Types
@@ -207,11 +212,17 @@ export interface InstallExtensionParams {
 }
 
 export interface InstallExtensionResponse {
-  task_id: string
-  operation_id: string
   message: string
-  status: string
-  queued_count?: number
+  batch_id: string
+  total: number
+  queued: number
+  skipped: number
+}
+
+function formatInstallExtensionMessage(result: BatchInstallResponse): string {
+  const queued = result.queued ?? 0
+  const skipped = result.skipped ?? 0
+  return `Installation queued: ${queued}, skipped: ${skipped}`
 }
 
 /**
@@ -234,15 +245,19 @@ export function useInstallExtension() {
     mutationFn: async (
       params: InstallExtensionParams
     ): Promise<InstallExtensionResponse> => {
-      const response = await apiClient.post<InstallExtensionResponse>(
-        '/api/v2/extensions/install-single/',
-        {
-          database_id: params.databaseId,
-          extension_name: params.extensionName,
-          extension_path: params.extensionPath,
-        }
-      )
-      return response.data
+      const result = await api.postExtensionsBatchInstall({
+        database_ids: [params.databaseId],
+        extension_name: params.extensionName,
+        extension_path: params.extensionPath,
+      })
+
+      return {
+        message: formatInstallExtensionMessage(result),
+        batch_id: result.batch_id,
+        total: result.total ?? 1,
+        queued: result.queued ?? 0,
+        skipped: result.skipped ?? 0,
+      }
     },
     onSuccess: () => {
       // Invalidate databases to refresh installation status

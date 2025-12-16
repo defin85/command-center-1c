@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Test StatusHistory automatic logging."""
+# ruff: noqa: E402
 import os
 import django
 

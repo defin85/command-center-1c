@@ -122,7 +122,7 @@ class Command(BaseCommand):
 
                 # Handle unknown templates
                 if deactivate_unknown:
-                    registered_ids = registry.get_ids()
+                    registry.get_ids()
                     # Also get template IDs that we manage
                     managed_ids = {d['id'] for d in templates_data}
 

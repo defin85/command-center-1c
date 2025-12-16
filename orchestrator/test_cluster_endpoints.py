@@ -6,6 +6,8 @@ Usage:
     python test_cluster_endpoints.py
 """
 
+# ruff: noqa: E402
+
 import os
 import sys
 import django

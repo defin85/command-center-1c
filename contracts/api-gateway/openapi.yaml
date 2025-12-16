@@ -34,6 +34,8 @@ security:
 tags:
   - name: health
     description: Service health and status
+  - name: tracing
+    description: Jaeger tracing proxy (via API Gateway)
   - name: operations
     description: Batch operations management
   - name: databases
@@ -75,6 +77,91 @@ paths:
             text/plain:
               schema:
                 type: string
+
+  /api/v2/tracing/traces:
+    get:
+      summary: Search traces (Jaeger proxy)
+      description: Proxies to Jaeger API (`/api/traces`) via API Gateway. Returns Jaeger-compatible response.
+      operationId: tracing_get_traces
+      tags:
+        - tracing
+      parameters:
+        - in: query
+          name: service
+          schema:
+            type: string
+          description: Service name (required by Jaeger)
+          required: true
+        - in: query
+          name: operation
+          schema:
+            type: string
+          description: Operation name (optional)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+          description: Maximum number of traces
+        - in: query
+          name: lookback
+          schema:
+            type: string
+            default: 1h
+          description: Lookback window (e.g., 1h, 30m)
+        - in: query
+          name: start
+          schema:
+            type: string
+          description: Start time in microseconds since epoch (Jaeger)
+        - in: query
+          name: end
+          schema:
+            type: string
+          description: End time in microseconds since epoch (Jaeger)
+      responses:
+        '200':
+          description: Jaeger traces response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JaegerTracesResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '503':
+          description: Jaeger unavailable
+
+  /api/v2/tracing/traces/{traceId}:
+    get:
+      summary: Get trace by ID (Jaeger proxy)
+      description: Proxies to Jaeger API (`/api/traces/{traceId}`) via API Gateway.
+      operationId: tracing_get_trace
+      tags:
+        - tracing
+      parameters:
+        - in: path
+          name: traceId
+          required: true
+          schema:
+            type: string
+          description: Jaeger trace ID
+      responses:
+        '200':
+          description: Jaeger trace response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JaegerTracesResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '503':
+          description: Jaeger unavailable
 
 
 components:
@@ -224,6 +311,46 @@ components:
         response_time_ms:
           type: integer
           example: 150
+
+    JaegerTracesResponse:
+      type: object
+      description: Minimal Jaeger-compatible response (data + paging).
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JaegerTrace'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+
+    JaegerTrace:
+      type: object
+      description: Minimal Jaeger trace payload. Additional fields may exist.
+      properties:
+        traceID:
+          type: string
+        spans:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        processes:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          nullable: true
+          items:
+            type: string
+      additionalProperties: true
 
     ClusterList:
       type: object

@@ -130,7 +130,7 @@ class TestOperationHandler:
         from apps.templates.models import OperationTemplate
 
         # Create real OperationTemplate
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="test_template",
             name="Test Template",
             operation_type="query",
@@ -173,7 +173,7 @@ class TestOperationHandler:
         from apps.templates.engine.exceptions import TemplateRenderError
 
         # Create template
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="bad_template",
             name="Bad Template",
             operation_type="query",
@@ -207,7 +207,7 @@ class TestOperationHandler:
         from apps.templates.models import OperationTemplate
 
         # Create template
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="audit_test",
             name="Audit Test",
             operation_type="test",
@@ -225,7 +225,7 @@ class TestOperationHandler:
         handler = OperationHandler()
 
         with patch.object(handler.renderer, 'render', return_value={"ok": True}):
-            result = handler.execute(node, {}, workflow_execution)
+            handler.execute(node, {}, workflow_execution)
 
         # Check step result was created
         step_results = WorkflowStepResult.objects.filter(
@@ -421,7 +421,7 @@ class TestHandlersIntegration:
         from apps.templates.models import OperationTemplate
 
         # Create template
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="context_test",
             name="Context Test",
             operation_type="query",
@@ -487,7 +487,7 @@ class TestHandlersIntegration:
         from apps.templates.models import OperationTemplate
 
         # Test OperationHandler
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="step_test",
             name="Step Test",
             operation_type="test",
@@ -544,7 +544,7 @@ class TestHandlersEdgeCases:
         """Test operation with empty context."""
         from apps.templates.models import OperationTemplate
 
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="empty_ctx",
             name="Empty Context",
             operation_type="test",
@@ -600,7 +600,7 @@ class TestHandlersEdgeCases:
         """Test handlers work with Unicode/Cyrillic data."""
         from apps.templates.models import OperationTemplate
 
-        op_template = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id="unicode_test",
             name="Тестовый шаблон",  # Cyrillic
             operation_type="test",

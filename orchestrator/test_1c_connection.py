@@ -11,6 +11,8 @@
 Запуск: docker exec -it commandcenter-orchestrator-minimal python /app/test_1c_connection.py
 """
 
+# ruff: noqa: E402
+
 import os
 import sys
 import django

@@ -6,7 +6,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from django.db.models import Count, Q, Avg
-from django.utils import timezone
 
 from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster
 from .serializers import DatabaseSerializer, DatabaseGroupSerializer, ExtensionInstallationSerializer, ClusterSerializer

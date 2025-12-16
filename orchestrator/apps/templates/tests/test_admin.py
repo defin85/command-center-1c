@@ -359,7 +359,7 @@ class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
     def test_extra_context_preserved(self):
         """Test that extra_context parameter is preserved."""
         # Create a template
-        tpl = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id='tpl-test',
             name='Test Template',
             operation_type='test',
@@ -679,7 +679,7 @@ class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
     def test_context_isolation_between_requests(self):
         """Test that context doesn't leak between different requests."""
         # Create templates
-        tpl_1 = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id='tpl-isolation-1',
             name='Isolation Template 1',
             operation_type='isolation',
@@ -699,7 +699,7 @@ class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
         templates_1 = list(response_1.context_data['operation_templates'])
 
         # Create second template
-        tpl_2 = OperationTemplate.objects.create(
+        OperationTemplate.objects.create(
             id='tpl-isolation-2',
             name='Isolation Template 2',
             operation_type='isolation',

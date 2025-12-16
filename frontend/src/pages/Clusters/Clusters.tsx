@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
-import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
@@ -11,6 +11,7 @@ import {
     useUpdateCluster,
     useDeleteCluster,
     useSyncCluster,
+    useResetClusterSyncStatus,
 } from '../../api/queries/clusters'
 
 const { TextArea } = Input
@@ -23,6 +24,8 @@ export const Clusters = () => {
     const [modalVisible, setModalVisible] = useState(false)
     const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
     const [discoverModalVisible, setDiscoverModalVisible] = useState(false)
+    const [selectedClusterIds, setSelectedClusterIds] = useState<string[]>([])
+    const [resettingClusterId, setResettingClusterId] = useState<string | null>(null)
     const [form] = Form.useForm()
 
     // React Query hooks
@@ -34,6 +37,7 @@ export const Clusters = () => {
     const updateCluster = useUpdateCluster()
     const deleteCluster = useDeleteCluster()
     const syncCluster = useSyncCluster()
+    const resetSyncStatus = useResetClusterSyncStatus()
 
     const handleCreate = () => {
         setEditingCluster(null)
@@ -79,6 +83,54 @@ export const Clusters = () => {
             },
             onError: (error: Error) => {
                 message.error({ content: 'Sync failed: ' + error.message, key: 'sync' })
+            },
+        })
+    }
+
+    const handleResetSyncStatus = async (clusterId: string, clusterName?: string) => {
+        try {
+            setResettingClusterId(clusterId)
+            const result = await resetSyncStatus.mutateAsync({ cluster_id: clusterId })
+            message.success(result.message || `Reset sync status for ${clusterName ?? clusterId}`)
+        } catch (error: any) {
+            message.error(`Reset sync status failed: ${error?.message ?? 'unknown error'}`)
+        } finally {
+            setResettingClusterId(null)
+        }
+    }
+
+    const handleBulkResetSyncStatus = () => {
+        if (selectedClusterIds.length === 0) return
+
+        Modal.confirm({
+            title: 'Reset sync status?',
+            content: `Reset sync status for ${selectedClusterIds.length} selected cluster(s).`,
+            okText: 'Reset',
+            cancelText: 'Cancel',
+            onOk: async () => {
+                const ids = [...selectedClusterIds]
+                const key = 'bulk-reset'
+                let success = 0
+                let failed = 0
+
+                message.loading({ content: `Resetting ${ids.length} cluster(s)...`, key })
+                for (let i = 0; i < ids.length; i++) {
+                    const id = ids[i]
+                    try {
+                        // sequential to avoid bursts
+                        await resetSyncStatus.mutateAsync({ cluster_id: id })
+                        success++
+                    } catch {
+                        failed++
+                    }
+                    message.loading({ content: `Resetting... (${i + 1}/${ids.length})`, key })
+                }
+
+                if (failed === 0) {
+                    message.success({ content: `Reset sync status: ${success}/${ids.length} succeeded`, key })
+                } else {
+                    message.warning({ content: `Reset sync status: ${success} ok, ${failed} failed`, key })
+                }
             },
         })
     }
@@ -192,6 +244,20 @@ export const Clusters = () => {
                         title="Sync with RAS"
                         disabled={syncCluster.isPending}
                     />
+                    <Popconfirm
+                        title="Reset sync status?"
+                        description="Use this if cluster sync is stuck."
+                        onConfirm={() => handleResetSyncStatus(record.id, record.name)}
+                        okText="Reset"
+                        cancelText="Cancel"
+                    >
+                        <Button
+                            size="small"
+                            icon={<UnlockOutlined />}
+                            title="Reset sync status"
+                            loading={resettingClusterId === record.id}
+                        />
+                    </Popconfirm>
                     <Button
                         size="small"
                         icon={<EditOutlined />}
@@ -224,6 +290,13 @@ export const Clusters = () => {
                 <h1>Clusters</h1>
                 <Space>
                     <Button
+                        icon={<UnlockOutlined />}
+                        onClick={handleBulkResetSyncStatus}
+                        disabled={selectedClusterIds.length === 0 || resetSyncStatus.isPending}
+                    >
+                        Reset Sync ({selectedClusterIds.length})
+                    </Button>
+                    <Button
                         icon={<SearchOutlined />}
                         onClick={() => setDiscoverModalVisible(true)}
                     >
@@ -241,6 +314,10 @@ export const Clusters = () => {
                 loading={isLoading}
                 rowKey="id"
                 pagination={{ pageSize: 20 }}
+                rowSelection={{
+                    selectedRowKeys: selectedClusterIds,
+                    onChange: (keys) => setSelectedClusterIds(keys as string[]),
+                }}
             />
 
             <Modal
