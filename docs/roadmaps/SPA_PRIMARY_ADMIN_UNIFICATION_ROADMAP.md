@@ -1,7 +1,7 @@
 # Roadmap: Унификация администрирования (SPA-primary)
 
 > **Статус:** IN_PROGRESS
-> **Версия:** 0.1
+> **Версия:** 0.2
 > **Создан:** 2025-12-15
 > **Обновлён:** 2025-12-16
 > **Автор:** Codex CLI (GPT-5.2) + repo reality-check
@@ -39,8 +39,8 @@
 
 - ✅ `bearerAuth` уже описан в `contracts/orchestrator/openapi.yaml` и используется на `/api/v2/*`.
 - ✅ `discover-clusters` уже имеет requestBody/schema (обход в SPA больше не нужен).
-- ❗ `GET /api/v2/tracing/*` (Jaeger proxy) реально живёт в API Gateway, но не описан в `contracts/api-gateway/openapi.yaml` → SPA использует ручной клиент (`frontend/src/api/endpoints/jaeger.ts`).
-- ❗ Нет endpoint “me”/“whoami” для UI-ролей/фич (если нужно убирать предположения в SPA).
+- ✅ `GET /api/v2/tracing/*` (Jaeger proxy) описан в `contracts/api-gateway/openapi.yaml`; SPA использует generated client.
+- ✅ Endpoint “me” для UI-ролей/фич: `GET /api/v2/system/me/`.
 
 ### Phase 0 — Decisions (фиксируем до реализации)
 
@@ -157,8 +157,8 @@
 **Фактические “обходы” в SPA (на 2025-12-16):**
 - ✅ `POST /api/v2/clusters/discover-clusters/` — контракт описан, SPA использует generated (`frontend/src/api/queries/clusters.ts`).
 - ✅ `POST /api/v2/extensions/batch-install/` — SPA унифицирован на batch-install, `install-single` не используется.
-- ❗ `GET /api/v2/tracing/*` (Jaeger proxy через Gateway) — SPA использует ручной клиент (`frontend/src/api/endpoints/jaeger.ts`), т.к. `contracts/api-gateway/openapi.yaml` не описывает эти пути.
-- ❗ Operations list/get частично на ручном `apiClient` (удобство AbortSignal + несостыковки по форме endpoint для single get); можно перевести на generated после выравнивания контрактов/клиента.
+- ✅ `GET /api/v2/tracing/*` (Jaeger proxy через Gateway) — контракт описан, SPA использует generated (`frontend/src/api/endpoints/jaeger.ts`).
+- ✅ Operations list/get — через generated (`frontend/src/api/queries/operations.ts`); dashboard stats всё ещё делает прямой `apiClient.get('/api/v2/operations/list-operations/')`.
 
 **Действия:**
 - [x] Добавить schema + requestBody для `discover-clusters` (и ответы/ошибки).
@@ -778,6 +778,6 @@ DiscoverClustersRequest:
 
 ### Из `docs/roadmaps/V1_TO_V2_EVENT_DRIVEN_MIGRATION.md`
 
-- [x] Credentials через Streams (commands/events + Django handler + Worker client) — убрать прямые HTTP зависимости
+- [x] Credentials через Streams (Streams-only, HTTP endpoint удалён; commit `7a64c42`)
 - [x] Timeline записи в Django для BatchOperation (Redis ZSET + created/queued/completed/failed события)
-- [x] Финальная зачистка v1 (done, commit `42f8655`)
+- [x] Финальная зачистка v1 (done, commit `42f8655`) + удаление HTTP credentials endpoint (commit `7a64c42`)
