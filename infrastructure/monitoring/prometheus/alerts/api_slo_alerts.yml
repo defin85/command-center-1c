@@ -42,10 +42,10 @@ groups:
       - alert: ApiCriticalActionAvailabilityLow
         expr: |
           min(
-            cc1c:availability_by_path:5m{path="/api/v2/operations/execute/"},
-            cc1c:availability_by_path:5m{path="/api/v2/extensions/batch-install/"},
-            cc1c:availability_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
-            cc1c:availability_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+            cc1c:availability_by_path:5m{path="/api/v2/operations/execute/"}
+            or cc1c:availability_by_path:5m{path="/api/v2/extensions/batch-install/"}
+            or cc1c:availability_by_path:5m{path="/api/v2/clusters/sync-cluster/"}
+            or cc1c:availability_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
           ) < 0.99
         for: 10m
         labels:
@@ -58,10 +58,10 @@ groups:
       - alert: ApiCriticalActionLatencyP95High
         expr: |
           max(
-            cc1c:latency_p95_by_path:5m{path="/api/v2/operations/execute/"},
-            cc1c:latency_p95_by_path:5m{path="/api/v2/extensions/batch-install/"},
-            cc1c:latency_p95_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
-            cc1c:latency_p95_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+            cc1c:latency_p95_by_path:5m{path="/api/v2/operations/execute/"}
+            or cc1c:latency_p95_by_path:5m{path="/api/v2/extensions/batch-install/"}
+            or cc1c:latency_p95_by_path:5m{path="/api/v2/clusters/sync-cluster/"}
+            or cc1c:latency_p95_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
           ) > 1.0
         for: 10m
         labels:
@@ -74,10 +74,10 @@ groups:
       - alert: ApiCriticalActionLatencyP99High
         expr: |
           max(
-            cc1c:latency_p99_by_path:5m{path="/api/v2/operations/execute/"},
-            cc1c:latency_p99_by_path:5m{path="/api/v2/extensions/batch-install/"},
-            cc1c:latency_p99_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
-            cc1c:latency_p99_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+            cc1c:latency_p99_by_path:5m{path="/api/v2/operations/execute/"}
+            or cc1c:latency_p99_by_path:5m{path="/api/v2/extensions/batch-install/"}
+            or cc1c:latency_p99_by_path:5m{path="/api/v2/clusters/sync-cluster/"}
+            or cc1c:latency_p99_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
           ) > 5.0
         for: 10m
         labels:
@@ -86,4 +86,3 @@ groups:
         annotations:
           summary: "Critical action latency p99 above SLO"
           description: "One of critical SPA-primary actions has p99 latency > 5s over 5m."
-

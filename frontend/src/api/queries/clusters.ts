@@ -12,7 +12,7 @@ import type { ClusterListResponse } from '../generated/model/clusterListResponse
 import type { ClusterSyncResponse } from '../generated/model/clusterSyncResponse'
 import type { DiscoverClustersRequest } from '../generated/model/discoverClustersRequest'
 import type { DiscoverClustersResponse } from '../generated/model/discoverClustersResponse'
-import type { PostClustersResetSyncStatusParams } from '../generated/model/postClustersResetSyncStatusParams'
+import type { ResetSyncStatusRequest } from '../generated/model/resetSyncStatusRequest'
 import type { ResetSyncStatusResponse } from '../generated/model/resetSyncStatusResponse'
 import type { SystemConfig } from '../generated/model/systemConfig'
 
@@ -155,8 +155,8 @@ export function useResetClusterSyncStatus() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (params?: PostClustersResetSyncStatusParams): Promise<ResetSyncStatusResponse> =>
-      api.postClustersResetSyncStatus(params),
+    mutationFn: (request?: ResetSyncStatusRequest): Promise<ResetSyncStatusResponse> =>
+      api.postClustersResetSyncStatus(request ?? {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
     },
