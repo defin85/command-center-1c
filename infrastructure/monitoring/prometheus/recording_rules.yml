@@ -39,6 +39,17 @@ groups:
           /
           (sum(rate(cc1c_requests_total[5m])) > 0 or vector(0))
 
+      # Availability (non-5xx) overall (5-minute window)
+      - record: cc1c:availability_total:5m
+        expr: 1 - cc1c:error_rate_total:5m
+
+      # Client error rate overall (4xx) (5-minute window)
+      - record: cc1c:client_error_rate_total:5m
+        expr: |
+          sum(rate(cc1c_requests_total{status=~"4.."}[5m]))
+          /
+          (sum(rate(cc1c_requests_total[5m])) > 0 or vector(0))
+
       # P50 latency (5-minute window)
       - record: cc1c:latency_p50:5m
         expr: histogram_quantile(0.50, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, job))
@@ -50,6 +61,31 @@ groups:
       # P99 latency (5-minute window)
       - record: cc1c:latency_p99:5m
         expr: histogram_quantile(0.99, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, job))
+
+      # Availability by path (5-minute window)
+      - record: cc1c:availability_by_path:5m
+        expr: |
+          1 -
+          (
+            sum(rate(cc1c_requests_total{status=~"5.."}[5m])) by (path)
+            /
+            (sum(rate(cc1c_requests_total[5m])) by (path) > 0 or vector(0))
+          )
+
+      # Client error rate by path (5-minute window)
+      - record: cc1c:client_error_rate_by_path:5m
+        expr: |
+          sum(rate(cc1c_requests_total{status=~"4.."}[5m])) by (path)
+          /
+          (sum(rate(cc1c_requests_total[5m])) by (path) > 0 or vector(0))
+
+      # P95 latency by path (5-minute window)
+      - record: cc1c:latency_p95_by_path:5m
+        expr: histogram_quantile(0.95, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, path))
+
+      # P99 latency by path (5-minute window)
+      - record: cc1c:latency_p99_by_path:5m
+        expr: histogram_quantile(0.99, sum(rate(cc1c_request_duration_seconds_bucket[5m])) by (le, path))
 
   - name: cc1c_scheduler_metrics
     interval: 15s

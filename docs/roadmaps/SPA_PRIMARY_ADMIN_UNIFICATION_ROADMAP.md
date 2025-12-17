@@ -773,7 +773,11 @@ DiscoverClustersRequest:
 ### Из `docs/roadmaps/STATE_MACHINE_MIGRATION_ROADMAP.md`
 
 - [ ] Integration tests (общие) — из Phase 0/1.x/2.x (отложенные пункты)
-- [ ] Production readiness: SLO/latency/success-rate проверки (p99/p95 и т.п.)
+- [x] Production readiness: SLO/latency/success-rate проверки (p99/p95 и т.п.)
+  - SLO doc: `docs/observability/API_SLO.md`
+  - Prometheus: recording rules + alerts (`infrastructure/monitoring/prometheus/recording_rules.yml`, `infrastructure/monitoring/prometheus/alerts/api_slo_alerts.yml`)
+  - Grafana: dashboard `infrastructure/monitoring/grafana/dashboards/api-slo.json`
+  - Go/No-Go: `./scripts/rollout/check-api-slo.sh --lookback=30m`
 - [x] Удаление v1 HTTP endpoints в ras-adapter (done, commit `42f8655`)
 
 ### Из `docs/roadmaps/V1_TO_V2_EVENT_DRIVEN_MIGRATION.md`

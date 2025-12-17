@@ -35,11 +35,10 @@ scrape_configs:
   #   metrics_path: '/metrics'
 
   # Orchestrator (Django) - требует django-prometheus middleware
-  # Пока отключено - Django не экспортирует метрики по умолчанию
-  # - job_name: 'orchestrator'
-  #   static_configs:
-  #     - targets: ['host.docker.internal:8200']
-  #   metrics_path: '/metrics'
+  - job_name: 'orchestrator'
+    static_configs:
+      - targets: ['host.docker.internal:8200']
+    metrics_path: '/metrics'
 
   # Infrastructure Exporters (running on WSL host)
   # PostgreSQL Exporter - порт 9187

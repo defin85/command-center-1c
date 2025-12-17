@@ -1,0 +1,89 @@
+# API SLO Alerts for CommandCenter1C (SPA-primary readiness)
+#
+# Uses recording rules from `recording_rules.yml`:
+# - cc1c:availability_total:5m, cc1c:latency_p95:5m, cc1c:latency_p99:5m
+# - cc1c:availability_by_path:5m, cc1c:latency_p95_by_path:5m, cc1c:latency_p99_by_path:5m
+
+groups:
+  - name: cc1c_api_slo_alerts
+    interval: 1m
+    rules:
+      - alert: ApiAvailabilityLow
+        expr: cc1c:availability_total:5m < 0.99
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API availability below SLO"
+          description: "Availability (non-5xx) is {{ $value | humanizePercentage }} (< 99%) over 5m."
+
+      - alert: ApiLatencyP95High
+        expr: cc1c:latency_p95:5m > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API latency p95 above SLO"
+          description: "P95 latency is {{ $value | humanizeDuration }} (> 500ms) over 5m."
+
+      - alert: ApiLatencyP99High
+        expr: cc1c:latency_p99:5m > 2.0
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API latency p99 above SLO"
+          description: "P99 latency is {{ $value | humanizeDuration }} (> 2s) over 5m."
+
+      # Critical SPA-primary actions (path-based)
+      - alert: ApiCriticalActionAvailabilityLow
+        expr: |
+          min(
+            cc1c:availability_by_path:5m{path="/api/v2/operations/execute/"},
+            cc1c:availability_by_path:5m{path="/api/v2/extensions/batch-install/"},
+            cc1c:availability_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
+            cc1c:availability_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+          ) < 0.99
+        for: 10m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical action availability below SLO"
+          description: "One of critical SPA-primary actions has availability < 99% over 5m."
+
+      - alert: ApiCriticalActionLatencyP95High
+        expr: |
+          max(
+            cc1c:latency_p95_by_path:5m{path="/api/v2/operations/execute/"},
+            cc1c:latency_p95_by_path:5m{path="/api/v2/extensions/batch-install/"},
+            cc1c:latency_p95_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
+            cc1c:latency_p95_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+          ) > 1.0
+        for: 10m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical action latency p95 above SLO"
+          description: "One of critical SPA-primary actions has p95 latency > 1s over 5m."
+
+      - alert: ApiCriticalActionLatencyP99High
+        expr: |
+          max(
+            cc1c:latency_p99_by_path:5m{path="/api/v2/operations/execute/"},
+            cc1c:latency_p99_by_path:5m{path="/api/v2/extensions/batch-install/"},
+            cc1c:latency_p99_by_path:5m{path="/api/v2/clusters/sync-cluster/"},
+            cc1c:latency_p99_by_path:5m{path="/api/v2/workflows/execute-workflow/"}
+          ) > 5.0
+        for: 10m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical action latency p99 above SLO"
+          description: "One of critical SPA-primary actions has p99 latency > 5s over 5m."
+
