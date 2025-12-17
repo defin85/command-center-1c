@@ -7,6 +7,10 @@
 # Supports two modes:
 #   USE_DOCKER=true  (default) - Docker containers
 #   USE_DOCKER=false           - Native systemd services (Arch Linux)
+#
+# Native Prometheus convenience:
+#   PROMETHEUS_SYNC_CONFIG=true ./scripts/dev/start-monitoring.sh
+#   (copies repo rules into /etc/prometheus and validates with promtool)
 ##############################################################################
 
 set -euo pipefail
@@ -104,6 +108,17 @@ else
     # Native режим (systemd)
     ##########################################################################
     log_info "Режим: Native (systemd)"
+
+    # Optional: sync repo Prometheus config into /etc/prometheus before start
+    if [[ "${PROMETHEUS_SYNC_CONFIG:-false}" == "true" ]]; then
+        log_info "PROMETHEUS_SYNC_CONFIG=true: синхронизация конфигурации Prometheus..."
+        if [[ -f "$PROJECT_ROOT/scripts/dev/sync-prometheus-config.sh" ]]; then
+            bash "$PROJECT_ROOT/scripts/dev/sync-prometheus-config.sh" --apply || true
+        else
+            log_warning "sync-prometheus-config.sh не найден, пропускаю"
+        fi
+        echo ""
+    fi
 
     # Запуск нативного мониторинга
     if start_native_monitoring; then

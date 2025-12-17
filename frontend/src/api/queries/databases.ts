@@ -8,13 +8,18 @@
  * - Installing extensions
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 
-import { apiClient } from '../client'
 import { getV2 } from '../generated'
 import type { BatchInstallResponse } from '../generated/model/batchInstallResponse'
+import type { ClusterDatabasesResponse } from '../generated/model/clusterDatabasesResponse'
 import type { Database } from '../generated/model/database'
-import type { Cluster } from '../generated/model/cluster'
+import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
+import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
+import type { HealthCheckResponse } from '../generated/model/healthCheckResponse'
+import type { BulkHealthCheckResponse } from '../generated/model/bulkHealthCheckResponse'
+import type { SetDatabaseStatusRequest } from '../generated/model/setDatabaseStatusRequest'
+import type { SetDatabaseStatusResponse } from '../generated/model/setDatabaseStatusResponse'
 import {
   executeOperation,
   type RASOperationType,
@@ -27,24 +32,37 @@ import { queryKeys, type DatabaseFilters } from './index'
 // Initialize API client (generated)
 const api = getV2()
 
-// =============================================================================
-// API Response Types
-// =============================================================================
+async function fetchAllDatabases(
+  filters?: DatabaseFilters,
+  signal?: AbortSignal
+): Promise<Database[]> {
+  const limit = 1000
+  let offset = 0
+  const databases: Database[] = []
+  let total: number | null = null
 
-export interface DatabaseListResponse {
-  databases?: Database[]
-  count?: number
-  total?: number
-}
+  while (total === null || databases.length < total) {
+    const res: DatabaseListResponse = await api.getDatabasesListDatabases(
+      {
+        limit,
+        offset,
+        status: filters?.status,
+      },
+      { signal }
+    )
+    const page = res.databases ?? []
+    databases.push(...page)
 
-export interface ClusterDatabasesResponse {
-  databases?: Database[]
-  cluster?: Cluster
-  count?: number
-}
+    total = typeof res.total === 'number' ? res.total : databases.length
+    const pageCount = typeof res.count === 'number' ? res.count : page.length
+    offset += pageCount
 
-export interface DatabaseDetailResponse {
-  database?: Database
+    if (page.length === 0) return databases
+    if (databases.length >= total) return databases
+    if (page.length < limit) return databases
+  }
+
+  return databases
 }
 
 // =============================================================================
@@ -60,25 +78,14 @@ export async function fetchDatabases(
 ): Promise<Database[]> {
   if (filters?.cluster_id) {
     // Fetch databases for a specific cluster
-    const response = await apiClient.get<ClusterDatabasesResponse>(
-      '/api/v2/clusters/get-cluster-databases/',
-      {
-        signal,
-        params: { cluster_id: filters.cluster_id },
-      }
+    const response: ClusterDatabasesResponse = await api.getClustersGetClusterDatabases(
+      { cluster_id: filters.cluster_id, status: filters?.status },
+      { signal }
     )
-    return response.data.databases || []
+    return response.databases || []
   }
 
-  // Fetch all databases
-  const response = await apiClient.get<DatabaseListResponse>(
-    '/api/v2/databases/list-databases/',
-    {
-      signal,
-      params: filters?.status ? { status: filters.status } : undefined,
-    }
-  )
-  return response.data.databases || []
+  return fetchAllDatabases(filters, signal)
 }
 
 /**
@@ -88,14 +95,8 @@ export async function fetchDatabase(
   id: string,
   signal?: AbortSignal
 ): Promise<Database | null> {
-  const response = await apiClient.get<DatabaseDetailResponse>(
-    '/api/v2/databases/get-database/',
-    {
-      signal,
-      params: { database_id: id },
-    }
-  )
-  return response.data.database || null
+  const response: DatabaseDetailResponse = await api.getDatabasesGetDatabase({ database_id: id }, { signal })
+  return response.database || null
 }
 
 // =============================================================================
@@ -179,6 +180,7 @@ export interface ExecuteRasOperationParams {
  */
 export function useExecuteRasOperation() {
   const queryClient = useQueryClient()
+  const { message } = App.useApp()
 
   return useMutation({
     mutationFn: async (
@@ -219,6 +221,16 @@ export interface InstallExtensionResponse {
   skipped: number
 }
 
+export interface BulkHealthCheckParams {
+  databaseIds: string[]
+}
+
+export interface SetDatabaseStatusParams {
+  databaseIds: string[]
+  status: SetDatabaseStatusRequest['status']
+  reason?: string
+}
+
 function formatInstallExtensionMessage(result: BatchInstallResponse): string {
   const queued = result.queued ?? 0
   const skipped = result.skipped ?? 0
@@ -240,6 +252,7 @@ function formatInstallExtensionMessage(result: BatchInstallResponse): string {
  */
 export function useInstallExtension() {
   const queryClient = useQueryClient()
+  const { message } = App.useApp()
 
   return useMutation({
     mutationFn: async (
@@ -265,6 +278,46 @@ export function useInstallExtension() {
     },
     onError: (error: Error) => {
       message.error(error.message || 'Failed to start installation')
+    },
+  })
+}
+
+export function useHealthCheckDatabase() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (databaseId: string): Promise<HealthCheckResponse> =>
+      api.postDatabasesHealthCheck({ database_id: databaseId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+export function useBulkHealthCheckDatabases() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params: BulkHealthCheckParams): Promise<BulkHealthCheckResponse> =>
+      api.postDatabasesBulkHealthCheck({ database_ids: params.databaseIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+export function useSetDatabaseStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params: SetDatabaseStatusParams): Promise<SetDatabaseStatusResponse> =>
+      api.postDatabasesSetStatus({
+        database_ids: params.databaseIds,
+        status: params.status,
+        reason: params.reason ?? '',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },
   })
 }

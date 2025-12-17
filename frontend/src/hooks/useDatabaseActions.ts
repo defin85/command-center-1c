@@ -15,7 +15,7 @@
  * ```
  */
 import { useState, useCallback } from 'react';
-import { message } from 'antd';
+import { App } from 'antd';
 import { executeOperation, type RASOperationType, type ExecuteOperationRequest } from '../api/operations';
 
 interface DatabaseInfo {
@@ -36,6 +36,7 @@ export interface UseDatabaseActionsResult {
 export const useDatabaseActions = (): UseDatabaseActionsResult => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { message } = App.useApp();
 
   const execute = useCallback(
     async (

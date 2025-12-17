@@ -725,7 +725,8 @@ class ClusterService:
                 if not isinstance(ib.denied_message, type(UNSET)) and ib.denied_message:
                     metadata['denied_message'] = ib.denied_message
 
-                # Create or update Database
+                # Create or update Database.
+                # IMPORTANT: do not override operator-set status on update.
                 database, created = Database.objects.update_or_create(
                     id=ib_uuid,
                     defaults={
@@ -738,10 +739,12 @@ class ClusterService:
                         'username': '',
                         'password': '',
                         'cluster': cluster,
-                        'status': Database.STATUS_INACTIVE,
                         'metadata': metadata,
                     }
                 )
+                if created:
+                    database.status = Database.STATUS_INACTIVE
+                    database.save(update_fields=['status', 'updated_at'])
 
                 if created:
                     created_count += 1
@@ -829,10 +832,12 @@ class ClusterService:
                         'username': '',
                         'password': '',
                         'cluster': cluster,
-                        'status': Database.STATUS_INACTIVE,
                         'metadata': metadata,
                     }
                 )
+                if created:
+                    database.status = Database.STATUS_INACTIVE
+                    database.save(update_fields=['status', 'updated_at'])
 
                 if created:
                     created_count += 1
@@ -994,7 +999,8 @@ class ClusterService:
                 if ib.get('denied_message'):
                     metadata['denied_message'] = ib['denied_message']
 
-                # Create or update Database
+                # Create or update Database.
+                # IMPORTANT: do not override operator-set status on update.
                 database, created = Database.objects.update_or_create(
                     id=ib_uuid,
                     defaults={
@@ -1007,10 +1013,12 @@ class ClusterService:
                         'username': '',
                         'password': '',
                         'cluster': cluster,
-                        'status': Database.STATUS_INACTIVE,
                         'metadata': metadata,
                     }
                 )
+                if created:
+                    database.status = Database.STATUS_INACTIVE
+                    database.save(update_fields=['status', 'updated_at'])
 
                 if created:
                     created_count += 1

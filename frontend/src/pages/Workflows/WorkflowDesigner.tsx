@@ -15,11 +15,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
+  App,
   Layout,
   Typography,
   Button,
   Space,
-  message,
   Modal,
   Input,
   Form,
@@ -81,6 +81,7 @@ const initialDagStructure: DAGStructure = {
 const WorkflowDesigner = () => {
   const { id: templateId } = useParams<{ id?: string }>()
   const navigate = useNavigate()
+  const { message } = App.useApp()
   const [form] = Form.useForm()
 
   const [state, setState] = useState<WorkflowDesignerState>({

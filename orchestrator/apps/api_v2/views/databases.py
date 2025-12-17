@@ -9,12 +9,13 @@ import logging
 from django.db.models import Q
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.databases.models import Database
 from apps.databases.serializers import DatabaseSerializer, ClusterSerializer
+from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,35 @@ class BulkHealthCheckRequestSerializer(serializers.Serializer):
 class HealthCheckRequestSerializer(serializers.Serializer):
     """Request body for health_check endpoint."""
     database_id = serializers.CharField(help_text="Database UUID to check")
+
+
+class SetDatabaseStatusRequestSerializer(serializers.Serializer):
+    """Request body for set_status endpoint."""
+
+    database_ids = serializers.ListField(
+        child=serializers.CharField(),
+        min_length=1,
+        max_length=500,
+        help_text="List of database IDs to update",
+    )
+    status = serializers.ChoiceField(
+        choices=[
+            Database.STATUS_ACTIVE,
+            Database.STATUS_INACTIVE,
+            Database.STATUS_MAINTENANCE,
+        ],
+        help_text="New database status (active, inactive, maintenance)",
+    )
+    reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class SetDatabaseStatusResponseSerializer(serializers.Serializer):
+    """Response for set_status endpoint."""
+
+    updated = serializers.IntegerField()
+    not_found = serializers.ListField(child=serializers.CharField())
+    status = serializers.CharField()
+    message = serializers.CharField()
 
 
 def _perform_odata_health_check(db, timeout=None):
@@ -469,3 +499,71 @@ def bulk_health_check(request):
         'results': results,
         'summary': summary,
     })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Set database status',
+    description='Set status for one or more databases (staff-only). Intended for operator control (exclude from ops, maintenance windows, etc.).',
+    request=SetDatabaseStatusRequestSerializer,
+    responses={
+        200: SetDatabaseStatusResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def set_status(request):
+    """
+    POST /api/v2/databases/set-status/
+
+    Set status for one or more databases.
+
+    Request body:
+        {
+          "database_ids": ["id1", "id2"],
+          "status": "maintenance",
+          "reason": "Planned maintenance window"  // optional
+        }
+    """
+    serializer = SetDatabaseStatusRequestSerializer(data=request.data or {})
+    serializer.is_valid(raise_exception=True)
+
+    database_ids = [str(x).strip() for x in serializer.validated_data['database_ids']]
+    new_status = serializer.validated_data['status']
+    reason = serializer.validated_data.get('reason', '')
+
+    existing_ids = set(Database.objects.filter(id__in=database_ids).values_list('id', flat=True))
+    not_found = [db_id for db_id in database_ids if db_id not in existing_ids]
+
+    updated = Database.objects.filter(id__in=list(existing_ids)).update(status=new_status)
+
+    log_admin_action(
+        request,
+        action="databases.set_status",
+        outcome="success",
+        target_type="database",
+        target_id="bulk" if len(database_ids) > 1 else (database_ids[0] if database_ids else ""),
+        metadata={
+            "status": new_status,
+            "reason": reason,
+            "database_ids": database_ids[:200],
+            "not_found": not_found[:200],
+            "updated": updated,
+        },
+    )
+
+    message = f"Status set to '{new_status}' for {updated} database(s)"
+    if not_found:
+        message += f" ({len(not_found)} not found)"
+
+    return Response(
+        {
+            "updated": updated,
+            "not_found": not_found,
+            "status": new_status,
+            "message": message,
+        }
+    )

@@ -18,6 +18,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/clusters/update-cluster/", OperationID: "v2_clusters_update_cluster_create"},
 	{Method: "PUT", Path: "/clusters/update-cluster/", OperationID: "v2_clusters_update_cluster_update"},
 	{Method: "POST", Path: "/databases/bulk-health-check/", OperationID: "v2_databases_bulk_health_check_create"},
+	{Method: "POST", Path: "/databases/set-status/", OperationID: "v2_databases_set_status_create"},
 	{Method: "GET", Path: "/databases/get-database/", OperationID: "v2_databases_get_database_retrieve"},
 	{Method: "POST", Path: "/databases/health-check/", OperationID: "v2_databases_health_check_create"},
 	{Method: "GET", Path: "/databases/list-databases/", OperationID: "v2_databases_list_databases_retrieve"},

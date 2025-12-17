@@ -173,6 +173,8 @@ class PrometheusClient:
             settings, 'PROMETHEUS_URL', 'http://localhost:9090'
         )
         self._client: Optional[httpx.AsyncClient] = None
+        self._health_client: Optional[httpx.AsyncClient] = None
+        self._health_cache: Dict[str, Dict[str, Any]] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -183,11 +185,20 @@ class PrometheusClient:
             )
         return self._client
 
+    async def _get_health_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client for direct service probes."""
+        if self._health_client is None or self._health_client.is_closed:
+            self._health_client = httpx.AsyncClient(timeout=1.5)
+        return self._health_client
+
     async def close(self):
         """Close the HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+        if self._health_client and not self._health_client.is_closed:
+            await self._health_client.aclose()
+            self._health_client = None
 
     async def query(self, promql: str) -> Dict[str, Any]:
         """
@@ -265,6 +276,58 @@ class PrometheusClient:
             logger.debug(f"Error extracting Prometheus value: {e}")
         return default
 
+    def _has_result(self, result: Dict[str, Any]) -> bool:
+        """Return True if Prometheus response has at least one result series."""
+        try:
+            return bool(result.get('data', {}).get('result', []))
+        except Exception:
+            return False
+
+    def _fallback_probe_url(self, service: str) -> Optional[str]:
+        """Best-effort URL to probe when Prometheus has no target for service."""
+        if service == 'api-gateway':
+            return f"{getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')}/health"
+        if service == 'worker':
+            return f"{getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')}/health"
+        if service == 'ras-adapter':
+            return f"{getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')}/health"
+        if service == 'batch-service':
+            return f"{getattr(settings, 'BATCH_SERVICE_URL', 'http://localhost:8187').rstrip('/')}/health"
+        if service == 'odata-adapter':
+            return f"{getattr(settings, 'ODATA_ADAPTER_URL', 'http://localhost:8189').rstrip('/')}/health"
+        if service == 'designer-agent':
+            return f"{getattr(settings, 'DESIGNER_AGENT_URL', 'http://localhost:8190').rstrip('/')}/health"
+        if service == 'orchestrator':
+            return 'http://localhost:8200/health'
+        if service == 'frontend':
+            return f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')}/"
+        return None
+
+    async def _probe_service_health(self, service: str) -> Optional[bool]:
+        """
+        Probe service directly when Prometheus doesn't scrape it.
+
+        Returns:
+            True if reachable, False if unreachable, None if no probe URL.
+        """
+        url = self._fallback_probe_url(service)
+        if not url:
+            return None
+
+        cached = self._health_cache.get(service)
+        if cached and isinstance(cached.get('ts'), datetime) and cached['ts'] > datetime.utcnow() - timedelta(seconds=10):
+            return cached.get('ok')  # type: ignore[return-value]
+
+        try:
+            client = await self._get_health_client()
+            resp = await client.get(url, follow_redirects=True)
+            ok = 200 <= resp.status_code < 400
+        except Exception:
+            ok = False
+
+        self._health_cache[service] = {'ts': datetime.utcnow(), 'ok': ok}
+        return ok
+
     def _determine_status(
         self,
         error_rate: float,
@@ -305,6 +368,8 @@ class PrometheusClient:
         # Build job filter for PromQL
         job_filter = '|'.join(job_patterns)
 
+        up_query = f'max(up{{job=~"{job_filter}"}})'
+
         # Queries depend on metrics type (HTTP requests vs task processing)
         if metrics_type == 'tasks':
             # Worker uses tasks_processed_total and task_duration_seconds
@@ -320,9 +385,48 @@ class PrometheusClient:
         active_query = f'{namespace}_active_workers{{job=~"{job_filter}"}}'
 
         # Execute queries in parallel
-        ops_result, latency_result, error_result, active_result = await self._execute_queries([
-            ops_query, latency_query, error_query, active_query
+        ops_result, latency_result, error_result, active_result, up_result = await self._execute_queries([
+            ops_query, latency_query, error_query, active_query, up_query
         ])
+
+        if any(r.get('status') == 'error' for r in [ops_result, latency_result, error_result, active_result, up_result]):
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status='degraded',
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
+
+        if not self._has_result(up_result):
+            ok = await self._probe_service_health(service)
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status='healthy' if ok else 'critical',
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
+
+        up_value = self._extract_value(up_result)
+        if up_value < 0.5:
+            ok = await self._probe_service_health(service)
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status='healthy' if ok else 'critical',
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
 
         # Extract values
         ops_per_minute = self._extract_value(ops_result)

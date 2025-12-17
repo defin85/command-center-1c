@@ -1,0 +1,74 @@
+export type ServiceName =
+  | 'frontend'
+  | 'api-gateway'
+  | 'orchestrator'
+  | 'worker'
+  | 'ras-adapter'
+  | 'odata-adapter'
+  | 'designer-agent'
+  | 'batch-service'
+
+export interface KnownService {
+  name: ServiceName
+  title: string
+  url?: string
+  healthPath?: string
+}
+
+function envUrl(key: string): string | undefined {
+  const v = (import.meta.env as Record<string, unknown>)[key]
+  if (typeof v !== 'string') return undefined
+  const trimmed = v.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+export const KNOWN_SERVICES: KnownService[] = [
+  {
+    name: 'frontend',
+    title: 'Frontend',
+    url: envUrl('VITE_FRONTEND_URL') ?? 'http://localhost:5173',
+  },
+  {
+    name: 'api-gateway',
+    title: 'API Gateway',
+    url: envUrl('VITE_API_GATEWAY_URL') ?? 'http://localhost:8180',
+    healthPath: '/health',
+  },
+  {
+    name: 'orchestrator',
+    title: 'Orchestrator',
+    url: envUrl('VITE_ORCHESTRATOR_URL') ?? 'http://localhost:8200',
+    healthPath: '/health',
+  },
+  {
+    name: 'worker',
+    title: 'Worker',
+    url: envUrl('VITE_WORKER_URL') ?? 'http://localhost:9091',
+    healthPath: '/health',
+  },
+  {
+    name: 'ras-adapter',
+    title: 'RAS Adapter',
+    url: envUrl('VITE_RAS_ADAPTER_URL') ?? 'http://localhost:8188',
+    healthPath: '/health',
+  },
+  {
+    name: 'odata-adapter',
+    title: 'OData Adapter',
+    url: envUrl('VITE_ODATA_ADAPTER_URL') ?? 'http://localhost:8189',
+    healthPath: '/health',
+  },
+  {
+    name: 'designer-agent',
+    title: 'Designer Agent',
+    url: envUrl('VITE_DESIGNER_AGENT_URL') ?? 'http://localhost:8190',
+    healthPath: '/health',
+  },
+  {
+    name: 'batch-service',
+    title: 'Batch Service',
+    url: envUrl('VITE_BATCH_SERVICE_URL') ?? 'http://localhost:8187',
+    healthPath: '/health',
+  },
+]
+

@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Form, Select, Upload, Button, Space, message, Spin } from 'antd';
+import { App, Form, Select, Upload, Button, Space, Spin } from 'antd';
 import { UploadOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import { extensionStorageApi, type ExtensionFile } from '../../api/endpoints/extensionStorage';
@@ -17,6 +17,7 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
     value,
     onChange,
 }) => {
+    const { message } = App.useApp();
     const [extensions, setExtensions] = useState<ExtensionFile[]>([]);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -67,9 +68,10 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
                     path: result.file.path,
                 });
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const maybe = error as { response?: { data?: { error?: string } } } | null
             console.error('Upload failed:', error);
-            message.error(error.response?.data?.error || 'Ошибка загрузки файла');
+            message.error(maybe?.response?.data?.error || 'Ошибка загрузки файла');
         } finally {
             setUploading(false);
         }

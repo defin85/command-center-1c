@@ -28,11 +28,28 @@ scrape_configs:
     scrape_timeout: 10s
 
   # RAS Adapter (Go) - порт 8188
-  # Пока отключено - RAS Adapter не экспортирует /metrics
-  # - job_name: 'ras-adapter'
-  #   static_configs:
-  #     - targets: ['host.docker.internal:8188']
-  #   metrics_path: '/metrics'
+  - job_name: 'ras-adapter'
+    static_configs:
+      - targets: ['host.docker.internal:8188']
+    metrics_path: '/metrics'
+
+  # Batch Service (Go) - порт 8187
+  - job_name: 'batch-service'
+    static_configs:
+      - targets: ['host.docker.internal:8187']
+    metrics_path: '/metrics'
+
+  # OData Adapter (Go) - порт 8189
+  - job_name: 'odata-adapter'
+    static_configs:
+      - targets: ['host.docker.internal:8189']
+    metrics_path: '/metrics'
+
+  # Designer Agent (Go) - порт 8190
+  - job_name: 'designer-agent'
+    static_configs:
+      - targets: ['host.docker.internal:8190']
+    metrics_path: '/metrics'
 
   # Orchestrator (Django) - требует django-prometheus middleware
   - job_name: 'orchestrator'

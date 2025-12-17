@@ -315,7 +315,7 @@ check_go() {
         return
     fi
 
-    local go_services=("api-gateway" "worker" "ras-adapter")
+    local go_services=("api-gateway" "worker" "ras-adapter" "odata-adapter" "designer-agent" "batch-service")
     local all_ok=true
 
     for service in "${go_services[@]}"; do

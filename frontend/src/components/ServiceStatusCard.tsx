@@ -66,10 +66,18 @@ export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ service })
 
                 <Space size="small">
                     <Tag color="blue">{service.type}</Tag>
-                    {service.response_time_ms !== null && (
+                    {service.response_time_ms != null && (
                         <Tag color="green">{service.response_time_ms}ms</Tag>
                     )}
                 </Space>
+
+                {'url' in service && service.url && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        <a href={service.url} target="_blank" rel="noreferrer">
+                            {service.url}
+                        </a>
+                    </Text>
+                )}
 
                 {service.details && Object.keys(service.details).length > 0 && (
                     <div style={{ marginTop: 8 }}>

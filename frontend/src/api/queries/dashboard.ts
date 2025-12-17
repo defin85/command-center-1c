@@ -6,33 +6,13 @@
  */
 import { useQuery } from '@tanstack/react-query'
 
-import { apiClient } from '../client'
 import type { BatchOperation } from '../generated/model/batchOperation'
 import type { Database } from '../generated/model/database'
 import type { Cluster } from '../generated/model/cluster'
+import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
+import { getV2 } from '../generated'
 
 import { queryKeys } from './index'
-
-// =============================================================================
-// API Response Types (v2 action-based API)
-// =============================================================================
-
-export interface OperationsResponse {
-  operations?: BatchOperation[]
-  count?: number
-  total?: number
-}
-
-export interface DatabasesResponse {
-  databases?: Database[]
-  count?: number
-  total?: number
-}
-
-export interface ClustersResponse {
-  clusters?: Cluster[]
-  count?: number
-}
 
 // =============================================================================
 // Raw Data Type (before statistics calculation)
@@ -48,6 +28,31 @@ export interface DashboardRawData {
 // Fetch Function
 // =============================================================================
 
+const api = getV2()
+
+async function fetchAllDatabases(signal?: AbortSignal): Promise<Database[]> {
+  const limit = 1000
+  let offset = 0
+  const databases: Database[] = []
+  let total: number | null = null
+
+  while (total === null || databases.length < total) {
+    const res: DatabaseListResponse = await api.getDatabasesListDatabases({ limit, offset }, { signal })
+    const page = res.databases ?? []
+    databases.push(...page)
+
+    total = typeof res.total === 'number' ? res.total : databases.length
+    const pageCount = typeof res.count === 'number' ? res.count : page.length
+    offset += pageCount
+
+    if (page.length === 0) return databases
+    if (databases.length >= total) return databases
+    if (page.length < limit) return databases
+  }
+
+  return databases
+}
+
 /**
  * Fetch all dashboard data in parallel.
  * Returns raw data for statistics calculation.
@@ -55,23 +60,16 @@ export interface DashboardRawData {
 export async function fetchDashboardData(
   signal?: AbortSignal
 ): Promise<DashboardRawData> {
-  const [operationsRes, databasesRes, clustersRes] = await Promise.all([
-    apiClient.get<OperationsResponse>('/api/v2/operations/list-operations/', {
-      signal,
-      params: { limit: 100 },
-    }),
-    apiClient.get<DatabasesResponse>('/api/v2/databases/list-databases/', {
-      signal,
-    }),
-    apiClient.get<ClustersResponse>('/api/v2/clusters/list-clusters/', {
-      signal,
-    }),
+  const [operationsRes, databases, clustersRes] = await Promise.all([
+    api.getOperationsListOperations({ limit: 100 }, { signal }),
+    fetchAllDatabases(signal),
+    api.getClustersListClusters(undefined, { signal }),
   ])
 
   return {
-    operations: operationsRes.data.operations || [],
-    databases: databasesRes.data.databases || [],
-    clusters: clustersRes.data.clusters || [],
+    operations: operationsRes.operations || [],
+    databases,
+    clusters: clustersRes.clusters || [],
   }
 }
 

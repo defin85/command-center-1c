@@ -165,7 +165,6 @@ export function useResetClusterSyncStatus() {
 
 /**
  * Discover clusters on a RAS server.
- * Note: Uses apiClient directly because OpenAPI spec doesn't include request body.
  * Invalidates cluster list after delay to allow discovery to complete.
  */
 export function useDiscoverClusters() {

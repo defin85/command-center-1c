@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Button, Modal, Form, Input, message } from 'antd'
+import { App, Button, Modal, Form, Input } from 'antd'
 import { RocketOutlined } from '@ant-design/icons'
 import { getV2 } from '../../api/generated'
 import { convertBatchResponseToLegacy } from '../../utils/installationTransforms'
@@ -13,6 +13,7 @@ interface BatchInstallButtonProps {
 }
 
 export const BatchInstallButton: React.FC<BatchInstallButtonProps> = ({ onStarted }) => {
+  const { message } = App.useApp()
   const [modalVisible, setModalVisible] = useState(false)
   const [loading, setLoading] = useState(false)
   const [form] = Form.useForm()
@@ -39,8 +40,9 @@ export const BatchInstallButton: React.FC<BatchInstallButtonProps> = ({ onStarte
       if (onStarted) {
         onStarted(response.task_id)
       }
-    } catch (error: any) {
-      message.error(error.message || 'Failed to start installation')
+    } catch (error: unknown) {
+      const maybe = error as { message?: string } | null
+      message.error(maybe?.message || 'Failed to start installation')
     } finally {
       setLoading(false)
     }

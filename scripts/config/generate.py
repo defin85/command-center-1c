@@ -87,7 +87,16 @@ def validate_schema(config: dict, schema: dict) -> list[str]:
 
     # Check services
     services = config.get("services", {})
-    required_services = ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    required_services = [
+        "frontend",
+        "api-gateway",
+        "orchestrator",
+        "ras-adapter",
+        "odata-adapter",
+        "designer-agent",
+        "batch-service",
+        "worker",
+    ]
     for svc in required_services:
         if svc not in services:
             errors.append(f"Missing required service: {svc}")
@@ -254,7 +263,16 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
     lines.append("// Default service URLs (for config fallbacks)")
     lines.append("const (")
 
-    default_url_services = ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    default_url_services = [
+        "frontend",
+        "api-gateway",
+        "orchestrator",
+        "ras-adapter",
+        "odata-adapter",
+        "designer-agent",
+        "batch-service",
+        "worker",
+    ]
     for name in default_url_services:
         if name in config["services"]:
             svc = config["services"][name]
@@ -293,7 +311,16 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
     # Address builder functions
     lines.append("// Address builders for http.ListenAndServe")
 
-    addr_services = ["frontend", "api-gateway", "orchestrator", "ras-adapter", "batch-service", "worker"]
+    addr_services = [
+        "frontend",
+        "api-gateway",
+        "orchestrator",
+        "ras-adapter",
+        "odata-adapter",
+        "designer-agent",
+        "batch-service",
+        "worker",
+    ]
     for name in addr_services:
         if name in config["services"]:
             func_name = to_go_const(name) + "Addr"

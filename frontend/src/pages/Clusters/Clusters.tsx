@@ -19,7 +19,7 @@ const { TextArea } = Input
 
 export const Clusters = () => {
     const navigate = useNavigate()
-    const { message } = App.useApp()
+    const { message, modal } = App.useApp()
 
     // UI state
     const [modalVisible, setModalVisible] = useState(false)
@@ -110,7 +110,7 @@ export const Clusters = () => {
     const handleBulkResetSyncStatus = () => {
         if (selectedClusterIds.length === 0) return
 
-        Modal.confirm({
+        modal.confirm({
             title: 'Reset sync status?',
             content: `Reset sync status for ${selectedClusterIds.length} selected cluster(s).`,
             okText: 'Reset',

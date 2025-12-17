@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { Modal, Steps, Button, Space, message } from 'antd'
+import { App, Modal, Steps, Button, Space } from 'antd'
 import { getV2 } from '../../../../api/generated'
 import type { Database } from '../../../../api/generated/model/database'
 import { SelectTypeStep } from './SelectTypeStep'
@@ -58,6 +58,7 @@ export const NewOperationWizard = ({
   onSubmit,
   preselectedDatabases,
 }: NewOperationWizardProps) => {
+  const { message } = App.useApp()
   // Wizard state
   const [state, setState] = useState<WizardState>(() =>
     getInitialState(preselectedDatabases)

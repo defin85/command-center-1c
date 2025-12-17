@@ -651,6 +651,44 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/databases/set-status/:
+    post:
+      operationId: v2_databases_set_status_create
+      description: Set status for one or more databases (staff-only).
+      summary: Set database status
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetDatabaseStatusResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/databases/get-database/:
     get:
       operationId: v2_databases_get_database_retrieve
@@ -3560,6 +3598,47 @@ components:
       required:
       - results
       - summary
+    SetDatabaseStatusRequest:
+      type: object
+      description: Request body for set_status endpoint.
+      properties:
+        database_ids:
+          type: array
+          items:
+            type: string
+          description: List of database IDs to update
+        status:
+          type: string
+          enum:
+          - active
+          - inactive
+          - maintenance
+          description: New status to set
+        reason:
+          type: string
+          description: Optional operator reason
+      required:
+      - database_ids
+      - status
+    SetDatabaseStatusResponse:
+      type: object
+      description: Response for set_status endpoint.
+      properties:
+        updated:
+          type: integer
+        not_found:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        message:
+          type: string
+      required:
+      - updated
+      - not_found
+      - status
+      - message
     CancelOperationRequest:
       type: object
       description: Request body for cancel_operation endpoint.

@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Upload, Button, message, Progress } from 'antd'
+import { App, Upload, Button, Progress } from 'antd'
 import {
   UploadOutlined,
   DeleteOutlined,
@@ -64,6 +64,7 @@ export function FileFieldRenderer({
   onFileUpload,
   onFileRemove,
 }: FieldRendererProps) {
+  const { message } = App.useApp()
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [fileList, setFileList] = useState<UploadFile[]>(() => {

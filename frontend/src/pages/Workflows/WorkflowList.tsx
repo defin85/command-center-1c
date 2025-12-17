@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  App,
   Table,
   Button,
   Space,
@@ -20,7 +21,6 @@ import {
   Input,
   Select,
   Popconfirm,
-  message,
   Tooltip
 } from 'antd'
 import {
@@ -51,6 +51,7 @@ const workflowTypeColors: Record<string, string> = {
 
 const WorkflowList = () => {
   const navigate = useNavigate()
+  const { message } = App.useApp()
   const [templates, setTemplates] = useState<WorkflowTemplateList[]>([])
   const [loading, setLoading] = useState(true)
   const [pagination, setPagination] = useState({

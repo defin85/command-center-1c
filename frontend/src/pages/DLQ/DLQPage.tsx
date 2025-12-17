@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Alert, App, Button, Card, DatePicker, Form, Input, Modal, Space, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, DatePicker, Form, Input, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, RetweetOutlined, RightCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -18,7 +18,7 @@ type FilterState = {
 
 export function DLQPage() {
   const navigate = useNavigate()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
 
   const [filters, setFilters] = useState<FilterState>({})
   const [retryReason, setRetryReason] = useState<string>('')
@@ -80,7 +80,7 @@ export function DLQPage() {
     const entries = (dlqQuery.data?.messages ?? []).filter((m) => selectedRowKeys.includes(m.dlq_message_id))
     if (entries.length === 0) return
 
-    Modal.confirm({
+    modal.confirm({
       title: 'Retry selected DLQ messages?',
       content: `Re-enqueue ${entries.length} message(s) sequentially.`,
       okText: 'Retry',

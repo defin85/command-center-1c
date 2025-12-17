@@ -3,7 +3,7 @@
 > **Статус:** IN_PROGRESS
 > **Версия:** 0.2
 > **Создан:** 2025-12-15
-> **Обновлён:** 2025-12-16
+> **Обновлён:** 2025-12-17
 > **Автор:** Codex CLI (GPT-5.2) + repo reality-check
 
 ---
@@ -158,7 +158,7 @@
 - ✅ `POST /api/v2/clusters/discover-clusters/` — контракт описан, SPA использует generated (`frontend/src/api/queries/clusters.ts`).
 - ✅ `POST /api/v2/extensions/batch-install/` — SPA унифицирован на batch-install, `install-single` не используется.
 - ✅ `GET /api/v2/tracing/*` (Jaeger proxy через Gateway) — контракт описан, SPA использует generated (`frontend/src/api/endpoints/jaeger.ts`).
-- ✅ Operations list/get — через generated (`frontend/src/api/queries/operations.ts`); dashboard stats всё ещё делает прямой `apiClient.get('/api/v2/operations/list-operations/')`.
+- ✅ Operations list/get — через generated (`frontend/src/api/queries/operations.ts`); dashboard stats тоже через generated (`frontend/src/api/queries/dashboard.ts`).
 
 **Действия:**
 - [x] Добавить schema + requestBody для `discover-clusters` (и ответы/ошибки).

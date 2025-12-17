@@ -321,6 +321,27 @@ RAS_ADAPTER_TIMEOUT = int(env(
     default='180'  # 3 minutes - RAS operations can be slow
 ))
 
+# OData Adapter Configuration
+# Port 8189 - outside Windows reserved range (8013-8112)
+ODATA_ADAPTER_URL = env(
+    'ODATA_ADAPTER_URL',
+    default='http://localhost:8189'
+)
+
+# Designer Agent Configuration
+# Port 8190 - outside Windows reserved range (8013-8112)
+DESIGNER_AGENT_URL = env(
+    'DESIGNER_AGENT_URL',
+    default='http://localhost:8190'
+)
+
+# Worker Configuration
+# Port 9091 - Go Worker health endpoint
+WORKER_URL = env(
+    'WORKER_URL',
+    default='http://localhost:9091'
+)
+
 # Default RAS Server address (used for new clusters)
 # Should match RAS_SERVER_ADDR in Go services and RAS_PORT in start scripts
 RAS_DEFAULT_SERVER = env(
@@ -362,6 +383,7 @@ FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='
 # Ports outside Windows reserved range (8013-8112)
 API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
 # Note: BATCH_SERVICE_URL and RAS_ADAPTER_URL defined above
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
 MONITORED_SERVICES = [
     {
@@ -371,15 +393,39 @@ MONITORED_SERVICES = [
         'critical': True,
     },
     {
+        'name': 'frontend',
+        'type': 'frontend',
+        'health_url': f'{FRONTEND_URL}/',
+        'critical': False,
+    },
+    {
         'name': 'ras-adapter',
         'type': 'backend',
         'health_url': f'{RAS_ADAPTER_URL}/health',
         'critical': True,
     },
     {
+        'name': 'worker',
+        'type': 'backend',
+        'health_url': f'{WORKER_URL}/health',
+        'critical': True,
+    },
+    {
         'name': 'batch-service',
         'type': 'backend',
         'health_url': f'{BATCH_SERVICE_URL}/health',
+        'critical': False,
+    },
+    {
+        'name': 'odata-adapter',
+        'type': 'backend',
+        'health_url': f'{ODATA_ADAPTER_URL}/health',
+        'critical': False,
+    },
+    {
+        'name': 'designer-agent',
+        'type': 'backend',
+        'health_url': f'{DESIGNER_AGENT_URL}/health',
         'critical': False,
     },
 ]

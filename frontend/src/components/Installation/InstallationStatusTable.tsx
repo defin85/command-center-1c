@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Tag, Button, Input, Select, Space, message, Modal, Form } from 'antd'
+import { App, Table, Tag, Button, Input, Select, Space, Modal, Form } from 'antd'
 import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
 import { getV2 } from '../../api/generated'
@@ -12,6 +12,7 @@ const { Option } = Select
 const api = getV2()
 
 export const InstallationStatusTable: React.FC = () => {
+  const { message } = App.useApp()
   const [installations, setInstallations] = useState<ExtensionInstallation[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<string>('all')

@@ -52,6 +52,22 @@ export default tseslint.config(
 
       // Downgrade any to warning - fix gradually, not all at once
       '@typescript-eslint/no-explicit-any': 'warn',
+
+      // Ant Design context-aware APIs:
+      // forbid static imports that bypass dynamic theme/context; use `App.useApp()` instead.
+      'no-restricted-imports': ['error', {
+        paths: [
+          {
+            name: 'antd',
+            importNames: ['message', 'notification'],
+            message: 'Use `const { message, notification } = App.useApp()` from `antd` instead of static imports.',
+          },
+        ],
+      }],
+      'no-restricted-syntax': ['error', {
+        selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
+        message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
+      }],
     },
   },
 )

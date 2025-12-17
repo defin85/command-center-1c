@@ -214,11 +214,23 @@ def system_health(request):
     use_docker = os.environ.get('USE_DOCKER', 'true').lower() == 'true'
     grafana_port = '5000' if use_docker else '3000'
 
+    api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
+    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+    ras_adapter_url = getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')
+    worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
+    batch_service_url = getattr(settings, 'BATCH_SERVICE_URL', 'http://localhost:8187').rstrip('/')
+    odata_adapter_url = getattr(settings, 'ODATA_ADAPTER_URL', 'http://localhost:8189').rstrip('/')
+    designer_agent_url = getattr(settings, 'DESIGNER_AGENT_URL', 'http://localhost:8190').rstrip('/')
+
     services = [
-        ('API Gateway', 'go-service', 'http://localhost:8180/health'),
-        ('RAS Adapter', 'go-service', 'http://localhost:8188/health'),
-        ('Worker', 'go-service', 'http://localhost:9091/health'),
+        ('Frontend', 'frontend', f'{frontend_url}/'),
+        ('API Gateway', 'go-service', f'{api_gateway_url}/health'),
         ('Orchestrator', 'django', 'http://localhost:8200/health'),
+        ('Worker', 'go-service', f'{worker_url}/health'),
+        ('RAS Adapter', 'go-service', f'{ras_adapter_url}/health'),
+        ('OData Adapter', 'go-service', f'{odata_adapter_url}/health'),
+        ('Designer Agent', 'go-service', f'{designer_agent_url}/health'),
+        ('Batch Service', 'go-service', f'{batch_service_url}/health'),
         ('Prometheus', 'monitoring', 'http://localhost:9090/-/healthy'),
         ('Grafana', 'monitoring', f'http://localhost:{grafana_port}/api/health'),
         ('Jaeger', 'tracing', 'http://localhost:16686/'),
@@ -363,9 +375,23 @@ def system_health(request):
     }
 
     # Determine overall status (frontend uses: healthy, degraded, critical)
-    if statistics['offline'] > 0:
+    critical_services = {
+        'API Gateway',
+        'Orchestrator',
+        'Worker',
+        'RAS Adapter',
+        'PostgreSQL',
+        'Redis',
+        'Event Subscriber',
+    }
+    critical_offline = any(
+        (r.get('name') in critical_services) and (r.get('status') != 'online')
+        for r in results
+    )
+
+    if critical_offline:
         overall = 'critical'
-    elif statistics['degraded'] > 0:
+    elif statistics['offline'] > 0 or statistics['degraded'] > 0:
         overall = 'degraded'
     else:
         overall = 'healthy'

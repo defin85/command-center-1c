@@ -10,7 +10,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/prometheus/client_golang v1.23.0
 	github.com/redis/go-redis/v9 v9.16.0
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.1
 )
 
 require (

@@ -1,11 +1,13 @@
 import { useState, useCallback, useMemo } from 'react'
-import { Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, message } from 'antd'
+import { App, Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined } from '@ant-design/icons'
+import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { getV2 } from '../../api/generated'
 import type { Database } from '../../api/generated/model/database'
+import { SetDatabaseStatusRequestStatus } from '../../api/generated/model/setDatabaseStatusRequestStatus'
+import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import { extractInstallationFromStatus } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
 import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
@@ -14,7 +16,7 @@ import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
 import { queryKeys } from '../../api/queries'
-import { useDatabases, useExecuteRasOperation, useInstallExtension } from '../../api/queries/databases'
+import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 
 // Get generated API functions (for fetchStatus in InstallationProgressModal)
@@ -23,6 +25,7 @@ const api = getV2()
 export const Databases = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const clusterIdFromUrl = searchParams.get('cluster')
 
@@ -55,12 +58,27 @@ export const Databases = () => {
   // Mutations
   const executeRasOperation = useExecuteRasOperation()
   const installExtension = useInstallExtension()
+  const healthCheck = useHealthCheckDatabase()
+  const bulkHealthCheck = useBulkHealthCheckDatabases()
+  const setDatabaseStatus = useSetDatabaseStatus()
 
   // Derived state: selected cluster object
   const selectedCluster = useMemo(() => {
     if (!selectedClusterId || !clusters.length) return null
     return clusters.find((c) => c.id === selectedClusterId) || null
   }, [selectedClusterId, clusters])
+
+  type AxiosErrorLike = { response?: { status?: number }; message?: string }
+
+  const getErrorStatus = (error: unknown): number | undefined => {
+    const maybe = error as AxiosErrorLike | null
+    return maybe?.response?.status
+  }
+
+  const getErrorMessage = (error: unknown): string => {
+    const maybe = error as AxiosErrorLike | null
+    return maybe?.message || 'unknown error'
+  }
 
   const handleClusterChange = (value: string | undefined) => {
     setSelectedClusterId(value)
@@ -140,21 +158,37 @@ export const Databases = () => {
     }),
   }
 
+  const runBulkHealthCheck = useCallback(async (ids: string[]) => {
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50))
+
+    let ok = 0
+    let degraded = 0
+    let down = 0
+
+    for (let i = 0; i < chunks.length; i++) {
+      const res = await bulkHealthCheck.mutateAsync({ databaseIds: chunks[i] })
+      ok += res.summary.healthy
+      degraded += res.summary.degraded
+      down += res.summary.down
+    }
+
+    modal.info({
+      title: 'Health check completed',
+      content: `ok=${ok}, degraded=${degraded}, down=${down}`,
+    })
+  }, [bulkHealthCheck, modal])
+
+  const runSetStatus = useCallback(async (ids: string[], status: SetDatabaseStatusValue) => {
+    const res = await setDatabaseStatus.mutateAsync({ databaseIds: ids, status })
+    message.success(res.message)
+  }, [setDatabaseStatus, message])
+
   // Handler for single database action (context menu)
   const handleSingleAction = useCallback((action: DatabaseActionKey, database: Database) => {
     if (action === 'more') {
       // Open Operations Wizard with preselected database
       navigate(`/operations?wizard=true&databases=${database.id}`)
-      return
-    }
-
-    if (action === 'health_check') {
-      // Health check has separate flow - show confirm for single DB
-      setConfirmModal({
-        visible: true,
-        operation: action,
-        databases: [{ id: database.id, name: database.name }],
-      })
       return
     }
 
@@ -229,15 +263,35 @@ export const Databases = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : 'red'}>
+        <Tag color={status === 'active' ? 'green' : status === 'maintenance' ? 'orange' : status === 'inactive' ? 'default' : 'red'}>
           {status}
         </Tag>
       ),
       filters: [
         { text: 'Active', value: 'active' },
         { text: 'Inactive', value: 'inactive' },
+        { text: 'Maintenance', value: 'maintenance' },
+        { text: 'Error', value: 'error' },
       ],
       onFilter: (value: boolean | React.Key, record: Database) => record.status === value,
+    },
+    {
+      title: 'Health',
+      dataIndex: 'last_check_status',
+      key: 'last_check_status',
+      render: (status: string) => (
+        <Tag color={status === 'ok' ? 'green' : status === 'degraded' ? 'orange' : status === 'down' ? 'red' : 'default'}>
+          {status}
+        </Tag>
+      ),
+      filters: [
+        { text: 'OK', value: 'ok' },
+        { text: 'Degraded', value: 'degraded' },
+        { text: 'Down', value: 'down' },
+        { text: 'Unknown', value: 'unknown' },
+      ],
+      onFilter: (value: boolean | React.Key, record: Database) => record.last_check_status === value,
+      width: 120,
     },
     {
       title: 'Last Check',
@@ -248,7 +302,7 @@ export const Databases = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 180,
+      width: 260,
       render: (_: unknown, record: Database) => (
         <Space size="small">
           <Button
@@ -260,6 +314,47 @@ export const Databases = () => {
           >
             Install
           </Button>
+          <Button
+            size="small"
+            icon={<HeartOutlined />}
+            onClick={async () => {
+              try {
+                const res = await healthCheck.mutateAsync(record.id)
+                message.success(`${record.name}: ${res.status} (${res.response_time_ms}ms)`)
+              } catch (e: unknown) {
+                message.error(`Health check failed: ${getErrorMessage(e)}`)
+              }
+            }}
+            loading={healthCheck.isPending}
+          >
+            Check
+          </Button>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
+                { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
+                { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
+              ],
+              onClick: async ({ key }) => {
+                try {
+                  await runSetStatus([record.id], key as SetDatabaseStatusValue)
+                } catch (e: unknown) {
+                  const status = getErrorStatus(e)
+                  if (status === 403) {
+                    message.error('Set status requires staff access')
+                    return
+                  }
+                  message.error(`Set status failed: ${getErrorMessage(e)}`)
+                }
+              },
+            }}
+          >
+            <Button size="small" icon={<EditOutlined />}>
+              Status <DownOutlined />
+            </Button>
+          </Dropdown>
           <DatabaseActionsMenu
             databaseId={record.id}
             databaseStatus={record.status}
@@ -315,8 +410,53 @@ export const Databases = () => {
         selectedCount={selectedRowKeys.length}
         onAction={handleBulkAction}
         onClearSelection={handleClearSelection}
-        loading={executeRasOperation.isPending}
+        loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
       />
+
+      {selectedRowKeys.length > 0 && (
+        <Space style={{ marginBottom: 16 }}>
+          <Typography.Text type="secondary">Ops:</Typography.Text>
+          <Button
+            icon={<HeartOutlined />}
+            onClick={async () => {
+              try {
+                await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
+              } catch (e: unknown) {
+                message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
+              }
+            }}
+            loading={bulkHealthCheck.isPending}
+          >
+            Health check
+          </Button>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
+                { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
+                { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
+              ],
+              onClick: async ({ key }) => {
+                try {
+                  await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
+                } catch (e: unknown) {
+                  const status = getErrorStatus(e)
+                  if (status === 403) {
+                    message.error('Set status requires staff access')
+                    return
+                  }
+                  message.error(`Set status failed: ${getErrorMessage(e)}`)
+                }
+              },
+            }}
+          >
+            <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending}>
+              Set status <DownOutlined />
+            </Button>
+          </Dropdown>
+        </Space>
+      )}
 
       <Table
         rowSelection={rowSelection}
