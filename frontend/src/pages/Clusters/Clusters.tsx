@@ -13,6 +13,7 @@ import {
     useSyncCluster,
     useResetClusterSyncStatus,
 } from '../../api/queries/clusters'
+import { useMe } from '../../api/queries'
 
 const { TextArea } = Input
 
@@ -31,6 +32,8 @@ export const Clusters = () => {
     // React Query hooks
     const { data: clusters = [], isLoading } = useClusters()
     const { data: systemConfig } = useSystemConfig()
+    const meQuery = useMe()
+    const canResetSync = Boolean(meQuery.data?.is_staff)
 
     // Mutations
     const createCluster = useCreateCluster()
@@ -93,6 +96,11 @@ export const Clusters = () => {
             const result = await resetSyncStatus.mutateAsync({ cluster_id: clusterId })
             message.success(result.message || `Reset sync status for ${clusterName ?? clusterId}`)
         } catch (error: any) {
+            const status = error?.response?.status
+            if (status === 403) {
+                message.error('Reset sync status requires staff access')
+                return
+            }
             message.error(`Reset sync status failed: ${error?.message ?? 'unknown error'}`)
         } finally {
             setResettingClusterId(null)
@@ -244,20 +252,22 @@ export const Clusters = () => {
                         title="Sync with RAS"
                         disabled={syncCluster.isPending}
                     />
-                    <Popconfirm
-                        title="Reset sync status?"
-                        description="Use this if cluster sync is stuck."
-                        onConfirm={() => handleResetSyncStatus(record.id, record.name)}
-                        okText="Reset"
-                        cancelText="Cancel"
-                    >
-                        <Button
-                            size="small"
-                            icon={<UnlockOutlined />}
-                            title="Reset sync status"
-                            loading={resettingClusterId === record.id}
-                        />
-                    </Popconfirm>
+                    {canResetSync && (
+                        <Popconfirm
+                            title="Reset sync status?"
+                            description="Use this if cluster sync is stuck."
+                            onConfirm={() => handleResetSyncStatus(record.id, record.name)}
+                            okText="Reset"
+                            cancelText="Cancel"
+                        >
+                            <Button
+                                size="small"
+                                icon={<UnlockOutlined />}
+                                title="Reset sync status"
+                                loading={resettingClusterId === record.id}
+                            />
+                        </Popconfirm>
+                    )}
                     <Button
                         size="small"
                         icon={<EditOutlined />}
@@ -289,13 +299,15 @@ export const Clusters = () => {
             <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
                 <h1>Clusters</h1>
                 <Space>
-                    <Button
-                        icon={<UnlockOutlined />}
-                        onClick={handleBulkResetSyncStatus}
-                        disabled={selectedClusterIds.length === 0 || resetSyncStatus.isPending}
-                    >
-                        Reset Sync ({selectedClusterIds.length})
-                    </Button>
+                    {canResetSync && (
+                        <Button
+                            icon={<UnlockOutlined />}
+                            onClick={handleBulkResetSyncStatus}
+                            disabled={selectedClusterIds.length === 0 || resetSyncStatus.isPending}
+                        >
+                            Reset Sync ({selectedClusterIds.length})
+                        </Button>
+                    )}
                     <Button
                         icon={<SearchOutlined />}
                         onClick={() => setDiscoverModalVisible(true)}

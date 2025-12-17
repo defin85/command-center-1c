@@ -12,7 +12,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
@@ -131,6 +131,10 @@ class ResetClusterInfoSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
     old_status = serializers.CharField()
+
+class ResetSyncStatusRequestSerializer(serializers.Serializer):
+    cluster_id = serializers.UUIDField(required=False)
+    all = serializers.BooleanField(required=False, default=False)
 
 
 class ResetSyncStatusResponseSerializer(serializers.Serializer):
@@ -758,33 +762,31 @@ def delete_cluster(request):
 @extend_schema(
     tags=['v2'],
     summary='Reset sync status',
-    description='Reset sync status for stuck clusters (pending -> idle). Can reset specific cluster or all stuck clusters.',
+    description='Reset sync status for stuck clusters (pending -> failed). Can reset a specific cluster or all stuck clusters.',
     parameters=[
         OpenApiParameter(name='cluster_id', type=str, required=False, description='Cluster UUID (optional, resets specific cluster)'),
     ],
-    request=None,
+    request=ResetSyncStatusRequestSerializer,
     responses={
         200: ResetSyncStatusResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
         404: ErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def reset_sync_status(request):
     """
     POST /api/v2/clusters/reset-sync-status/?cluster_id=X
 
-    Reset sync status for a stuck cluster (pending -> idle).
+    Reset sync status for a stuck cluster (pending -> failed).
 
     Query Parameters:
         - cluster_id: Cluster UUID (optional, resets specific cluster)
 
     Request Body (optional):
-        {
-            "cluster_id": "uuid",  // optional, reset specific cluster
-            "all": false  // optional, reset all stuck clusters
-        }
+        { "all": false }
 
     Response (200):
         {
@@ -798,8 +800,11 @@ def reset_sync_status(request):
     Errors:
         404 - Cluster not found (when cluster_id specified)
     """
-    cluster_id = request.query_params.get('cluster_id') or request.data.get('cluster_id')
-    reset_all = request.data.get('all', False)
+    request_serializer = ResetSyncStatusRequestSerializer(data=request.data or {})
+    request_serializer.is_valid(raise_exception=True)
+
+    cluster_id = request.query_params.get('cluster_id') or request_serializer.validated_data.get('cluster_id')
+    reset_all = bool(request_serializer.validated_data.get('all', False))
 
     reset_clusters = []
 
@@ -826,8 +831,8 @@ def reset_sync_status(request):
             }, status=404)
 
         old_status = cluster.last_sync_status
-        if old_status != 'pending':
-            cluster.last_sync_status = 'pending'
+        if old_status == 'pending':
+            cluster.last_sync_status = 'failed'
             cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_clusters.append({
@@ -835,29 +840,15 @@ def reset_sync_status(request):
                 'name': cluster.name,
                 'old_status': old_status
             })
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> pending")
-
-    elif reset_all:
-        # Reset all non-pending clusters
-        clusters = Cluster.objects.exclude(last_sync_status='pending')
-        for cluster in clusters:
-            old_status = cluster.last_sync_status
-            cluster.last_sync_status = 'pending'
-            cluster.last_sync_error = ''
-            cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
-            reset_clusters.append({
-                'id': str(cluster.id),
-                'name': cluster.name,
-                'old_status': old_status
-            })
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> pending")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> failed")
 
     else:
-        # Reset stuck clusters (failed or pending for too long) to success
-        stuck_clusters = Cluster.objects.filter(last_sync_status__in=['pending', 'failed'])
+        # Reset stuck clusters (pending) to failed (idle).
+        # Note: reset_all is kept for backward compatibility with older clients.
+        stuck_clusters = Cluster.objects.filter(last_sync_status='pending')
         for cluster in stuck_clusters:
             old_status = cluster.last_sync_status
-            cluster.last_sync_status = 'success'
+            cluster.last_sync_status = 'failed'
             cluster.last_sync_error = ''
             cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
             reset_clusters.append({
@@ -865,12 +856,12 @@ def reset_sync_status(request):
                 'name': cluster.name,
                 'old_status': old_status
             })
-            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> success")
+            logger.info(f"Reset sync status for cluster {cluster.name}: {old_status} -> failed")
 
     log_admin_action(
         request,
         action="clusters.reset_sync_status",
-        outcome="success",
+        outcome="success" if reset_clusters else "noop",
         target_type="cluster",
         target_id=str(cluster_id) if cluster_id else "",
         metadata={

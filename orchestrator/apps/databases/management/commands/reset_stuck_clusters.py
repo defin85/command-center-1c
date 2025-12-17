@@ -13,7 +13,7 @@ from apps.databases.models import Cluster
 
 
 class Command(BaseCommand):
-    help = 'Reset stuck cluster sync statuses to pending'
+    help = 'Reset stuck cluster sync statuses (pending -> failed)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -51,17 +51,16 @@ class Command(BaseCommand):
                 )
             else:
                 old_status = cluster.last_sync_status
-                cluster.last_sync_status = 'pending'
-                cluster.last_sync_error = ''
-                cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f'Reset: {cluster.name} ({old_status} -> pending)'
-                    )
-                )
+                if old_status != 'pending':
+                    self.stdout.write(self.style.SUCCESS(f'No reset needed: {cluster.name} (status: {old_status})'))
+                else:
+                    cluster.last_sync_status = 'failed'
+                    cluster.last_sync_error = ''
+                    cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
+                    self.stdout.write(self.style.SUCCESS(f'Reset: {cluster.name} ({old_status} -> failed)'))
         elif reset_all:
-            # Reset all clusters
-            clusters = Cluster.objects.exclude(last_sync_status='pending')
+            # Reset all stuck clusters (pending)
+            clusters = Cluster.objects.filter(last_sync_status='pending')
             count = clusters.count()
 
             if dry_run:
@@ -74,20 +73,20 @@ class Command(BaseCommand):
             else:
                 for cluster in clusters:
                     old_status = cluster.last_sync_status
-                    cluster.last_sync_status = 'pending'
+                    cluster.last_sync_status = 'failed'
                     cluster.last_sync_error = ''
                     cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
                     self.stdout.write(
                         self.style.SUCCESS(
-                            f'Reset: {cluster.name} ({old_status} -> pending)'
+                            f'Reset: {cluster.name} ({old_status} -> failed)'
                         )
                     )
                 self.stdout.write(
                     self.style.SUCCESS(f'\nReset {count} clusters')
                 )
         else:
-            # Reset stuck clusters (failed or pending for too long) to success
-            stuck_clusters = Cluster.objects.filter(last_sync_status__in=['pending', 'failed'])
+            # Reset stuck clusters (pending)
+            stuck_clusters = Cluster.objects.filter(last_sync_status='pending')
             count = stuck_clusters.count()
 
             if count == 0:
@@ -105,12 +104,12 @@ class Command(BaseCommand):
             else:
                 for cluster in stuck_clusters:
                     old_status = cluster.last_sync_status
-                    cluster.last_sync_status = 'success'
+                    cluster.last_sync_status = 'failed'
                     cluster.last_sync_error = ''
                     cluster.save(update_fields=['last_sync_status', 'last_sync_error'])
                     self.stdout.write(
                         self.style.SUCCESS(
-                            f'Reset: {cluster.name} ({old_status} -> success)'
+                            f'Reset: {cluster.name} ({old_status} -> failed)'
                         )
                     )
                 self.stdout.write(
