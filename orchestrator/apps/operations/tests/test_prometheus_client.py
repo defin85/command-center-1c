@@ -318,7 +318,7 @@ class TestHealthStatus:
         status = client._determine_status(
             error_rate=0.001,  # < 1%
             p95_latency_ms=500,  # < 1000ms
-            ops_per_minute=100
+            ops_per_minute=100,
         )
         assert status == 'healthy'
 
@@ -327,7 +327,7 @@ class TestHealthStatus:
         status = client._determine_status(
             error_rate=0.05,  # 5% - between 1% and 10%
             p95_latency_ms=500,
-            ops_per_minute=100
+            ops_per_minute=100,
         )
         assert status == 'degraded'
 
@@ -336,7 +336,7 @@ class TestHealthStatus:
         status = client._determine_status(
             error_rate=0.001,
             p95_latency_ms=2000,  # Between 1000 and 5000
-            ops_per_minute=100
+            ops_per_minute=100,
         )
         assert status == 'degraded'
 
@@ -345,7 +345,7 @@ class TestHealthStatus:
         status = client._determine_status(
             error_rate=0.15,  # > 10%
             p95_latency_ms=500,
-            ops_per_minute=100
+            ops_per_minute=100,
         )
         assert status == 'critical'
 
@@ -354,9 +354,24 @@ class TestHealthStatus:
         status = client._determine_status(
             error_rate=0.001,
             p95_latency_ms=6000,  # > 5000ms
-            ops_per_minute=100
+            ops_per_minute=100,
         )
         assert status == 'critical'
+
+    def test_custom_thresholds_for_tasks(self, client):
+        """Test custom thresholds (e.g., worker task p95) don't mark long tasks as critical."""
+        status = client._determine_status(
+            error_rate=0.0,
+            p95_latency_ms=30_000,  # 30s
+            ops_per_minute=1,
+            thresholds={
+                'critical_p95_ms': 60_000,
+                'degraded_p95_ms': 15_000,
+                'critical_error_rate': 0.10,
+                'degraded_error_rate': 0.01,
+            }
+        )
+        assert status == 'degraded'
 
 
 class TestServiceMetrics:

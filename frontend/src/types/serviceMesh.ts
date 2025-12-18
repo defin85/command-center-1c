@@ -289,6 +289,7 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
 
   // Level 4: Worker children (bottom)
   'ras-adapter': { x: 200, y: 540 },
+  'ras-server': { x: 60, y: 540 },
   'odata-adapter': { x: 400, y: 540 },
   'designer-agent': { x: 600, y: 540 },
   'batch-service': { x: 800, y: 540 },
@@ -337,6 +338,12 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'RAS Adapter',
     icon: 'api',
     description: '1C cluster management',
+  },
+  'ras-server': {
+    name: 'ras-server',
+    displayName: 'RAS Server',
+    icon: 'cloud-server',
+    description: '1C Remote Administration Server (TCP)',
   },
   'batch-service': {
     name: 'batch-service',
@@ -397,7 +404,7 @@ export const STATUS_TEXT: Record<ServiceStatus, string> = {
 /**
  * Connection type between services
  */
-export type ConnectionType = 'http' | 'queue' | 'database' | 'pubsub' | 'streams'
+export type ConnectionType = 'http' | 'queue' | 'database' | 'pubsub' | 'streams' | 'tcp'
 
 /**
  * Color mapping for connection types
@@ -408,6 +415,7 @@ export const CONNECTION_TYPE_COLORS: Record<ConnectionType, string> = {
   database: '#13c2c2',  // Cyan - DB connections
   pubsub: '#eb2f96',    // Magenta - Redis Pub/Sub
   streams: '#52c41a',   // Green - Redis Streams
+  tcp: '#595959',       // Gray - raw TCP dependencies
 }
 
 /**
@@ -419,6 +427,30 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   database: 'Database',
   pubsub: 'Pub/Sub',
   streams: 'Redis Streams',
+  tcp: 'TCP',
+}
+
+/**
+ * Short labels for edge badges (used when focusing a node).
+ */
+export const CONNECTION_TYPE_SHORT_LABELS: Record<ConnectionType, string> = {
+  http: 'HTTP',
+  queue: 'Q',
+  database: 'DB',
+  pubsub: 'PS',
+  streams: 'RS',
+  tcp: 'TCP',
+}
+
+/**
+ * Visual patterns for connection types (improves readability when many edges overlap).
+ * Used by ReactFlow edge styles.
+ */
+export const CONNECTION_TYPE_DASHARRAY: Partial<Record<ConnectionType, string>> = {
+  queue: '6 3',
+  database: '1 4',
+  pubsub: '10 3 2 3',
+  streams: '8 4',
 }
 
 /**
@@ -437,6 +469,7 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'worker->designer-agent': 'streams',
   'worker->batch-service': 'streams',
   'ras-adapter->redis': 'streams',
+  'ras-adapter->ras-server': 'tcp',
   'odata-adapter->redis': 'streams',
   'designer-agent->redis': 'streams',
   'batch-service->redis': 'streams',

@@ -176,11 +176,19 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 
 		req.Header.Set(headerContentType, contentTypeJSON)
 
+		attemptStart := time.Now()
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			elapsed := time.Since(attemptStart)
 			lastErr = fmt.Errorf("request failed: %w", err)
 			logger.Warnf("ras-adapter client: request error (attempt %d/%d): %v",
 				attempt+1, c.maxRetries+1, err)
+			logger.Debugf("ras-adapter client: request timing (%s %s, attempt=%d/%d, elapsed_ms=%d, status=error)",
+				method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds())
+			if elapsed >= 2*time.Second {
+				logger.Warnf("ras-adapter client: slow request (%s %s, attempt=%d/%d, elapsed_ms=%d, status=error)",
+					method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds())
+			}
 			continue
 		}
 
@@ -188,8 +196,19 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			elapsed := time.Since(attemptStart)
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			logger.Debugf("ras-adapter client: request timing (%s %s, attempt=%d/%d, elapsed_ms=%d, status=%d)",
+				method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds(), resp.StatusCode)
 			continue
+		}
+
+		elapsed := time.Since(attemptStart)
+		logger.Debugf("ras-adapter client: request timing (%s %s, attempt=%d/%d, elapsed_ms=%d, status=%d, request_id=%s)",
+			method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds(), resp.StatusCode, resp.Header.Get(headerRequestID))
+		if elapsed >= 2*time.Second {
+			logger.Infof("ras-adapter client: slow request (%s %s, elapsed_ms=%d, status=%d)",
+				method, path, elapsed.Milliseconds(), resp.StatusCode)
 		}
 
 		// Handle error responses

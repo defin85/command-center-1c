@@ -52,7 +52,12 @@ export const EVENT_LABELS: Record<string, string> = {
   // Cluster sync events
   'cluster.sync.started': 'Cluster Sync Started',
   'cluster.sync.resolving.started': 'Resolving Cluster UUID',
+  'cluster.sync.resolving.finished': 'Cluster UUID Resolved',
   'cluster.sync.fetching.started': 'Fetching Infobases',
+  'cluster.sync.fetching.finished': 'Infobases Fetched',
+  'cluster.sync.publish_result.started': 'Publishing Sync Result',
+  'cluster.sync.publish_result.finished': 'Sync Result Published',
+  'cluster.sync.publish_result.failed': 'Sync Result Publish Failed',
   'cluster.sync.completed': 'Cluster Sync Completed',
   'cluster.sync.failed': 'Cluster Sync Failed',
 }
@@ -82,7 +87,7 @@ export function getEventStatus(event: string): EventStatus {
   if (event.endsWith('.started') || event.endsWith('.processing')) {
     return 'processing'
   }
-  if (event.endsWith('.completed')) {
+  if (event.endsWith('.completed') || event.endsWith('.finished')) {
     return 'completed'
   }
   if (event.endsWith('.failed')) {

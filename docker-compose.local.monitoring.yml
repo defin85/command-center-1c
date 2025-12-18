@@ -15,13 +15,14 @@ services:
     restart: unless-stopped
     extra_hosts:
       # WSL2: хост доступен через gateway IP
-      - "host.docker.internal:172.20.16.1"
+      - "host.docker.internal:172.24.80.1"
     ports:
       - "9090:9090"
     volumes:
       - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./infrastructure/monitoring/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml
       - ./infrastructure/monitoring/prometheus/alerts:/etc/prometheus/alerts
+      - ./infrastructure/monitoring/prometheus/targets:/etc/prometheus/targets
       - prometheus_data_local:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -29,6 +30,22 @@ services:
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
+    networks:
+      - cc1c-local
+
+  ##############################################################################
+  # Blackbox Exporter - External TCP/HTTP probes for Prometheus
+  ##############################################################################
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: cc1c-blackbox-exporter-local
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./infrastructure/monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
     networks:
       - cc1c-local
 

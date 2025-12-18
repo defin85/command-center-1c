@@ -35,6 +35,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
   'ras-adapter': <ApiOutlined />,
+  'ras-server': <CloudServerOutlined />,
   'batch-service': <BuildOutlined />,
   'odata-adapter': <SwapOutlined />,
   'designer-agent': <ToolOutlined />,

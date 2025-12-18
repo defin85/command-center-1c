@@ -11,6 +11,7 @@
 #   - Prometheus (9090)     - сбор и хранение метрик
 #   - Grafana (3000)        - визуализация
 #   - node_exporter (9100)  - системные метрики
+#   - blackbox_exporter (9115) - TCP/HTTP probes (RAS port monitoring)
 #   - postgres_exporter (9187) - метрики PostgreSQL (AUR)
 #   - redis_exporter (9121) - метрики Redis (AUR)
 #
@@ -79,6 +80,7 @@ GRAFANA_PACKAGES=(
 # Exporters - node_exporter из pacman, остальные из AUR
 EXPORTER_PACKAGES=(
     "node_exporter"
+    "blackbox_exporter"
 )
 
 # AUR пакеты для Arch Linux
@@ -91,6 +93,7 @@ AUR_EXPORTER_PACKAGES=(
 EXPORTER_SERVICES=(
     "postgres-exporter.service"
     "redis-exporter.service"
+    "blackbox-exporter.service"
 )
 
 ##############################################################################
@@ -188,6 +191,7 @@ Options:
   Prometheus (9090)       Сбор и хранение метрик
   Grafana (3000)          Визуализация метрик
   node_exporter (9100)    Системные метрики (CPU, RAM, disk, network)
+  blackbox_exporter (9115) TCP/HTTP probes (e.g., RAS port monitoring)
   postgres_exporter (9187) Метрики PostgreSQL (connections, queries, etc.)
   redis_exporter (9121)   Метрики Redis (memory, clients, commands)
 
@@ -200,6 +204,11 @@ Examples:
   ./scripts/setup/install-monitoring.sh --dry-run      # Показать план
   ./scripts/setup/install-monitoring.sh --only-exporters
   ./scripts/setup/install-monitoring.sh --skip-exporters
+
+Notes:
+  - blackbox targets for RAS are generated from .env.local via:
+      ./scripts/dev/generate-blackbox-targets.sh
+    and then copied to /etc/prometheus/targets/blackbox_tcp.yml
 EOF
 }
 
@@ -362,8 +371,11 @@ install_grafana() {
 install_exporters() {
     log_step "Установка Prometheus exporters..."
 
-    # Node exporter (из основных репозиториев)
+    # node_exporter (из основных репозиториев)
     install_node_exporter
+
+    # blackbox_exporter (из основных репозиториев)
+    install_blackbox_exporter
 
     # AUR exporters (postgres, redis)
     if is_arch; then
@@ -377,6 +389,7 @@ install_exporters() {
 
     # Установка systemd unit files
     if ! $SKIP_CONFIG; then
+        configure_blackbox_exporter
         install_exporter_services
     fi
 }
@@ -399,6 +412,66 @@ install_node_exporter() {
             log_info "Установка node_exporter..."
             pkg_install "node_exporter"
         fi
+    fi
+}
+
+install_blackbox_exporter() {
+    log_verbose "Проверка blackbox_exporter..."
+
+    local mapped_name
+    mapped_name=$(pkg_map_name "blackbox_exporter")
+
+    if pkg_is_installed "$mapped_name"; then
+        local version
+        version=$(pkg_version "$mapped_name")
+        log_success "blackbox_exporter уже установлен: $version"
+        return 0
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет установлен: $mapped_name"
+        return 0
+    fi
+
+    log_info "Установка blackbox_exporter..."
+    pkg_install "blackbox_exporter"
+}
+
+configure_blackbox_exporter() {
+    log_step "Настройка blackbox_exporter (config + targets)..."
+
+    local blackbox_config_src="$PROJECT_ROOT/infrastructure/monitoring/blackbox/blackbox.yml"
+    local blackbox_config_dest_dir="/etc/blackbox_exporter"
+    local blackbox_config_dest="$blackbox_config_dest_dir/config.yml"
+
+    local targets_src="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
+    local targets_dest_dir="/etc/prometheus/targets"
+    local targets_dest="$targets_dest_dir/blackbox_tcp.yml"
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] blackbox config: $blackbox_config_src -> $blackbox_config_dest"
+        log_info "[DRY-RUN] blackbox targets: $targets_src -> $targets_dest"
+        return 0
+    fi
+
+    # Ensure dirs
+    sudo mkdir -p "$blackbox_config_dest_dir"
+    sudo mkdir -p "$targets_dest_dir"
+
+    if [[ -f "$blackbox_config_src" ]]; then
+        backup_file "$blackbox_config_dest"
+        sudo cp "$blackbox_config_src" "$blackbox_config_dest"
+        log_success "blackbox_exporter config установлен: $blackbox_config_dest"
+    else
+        log_warning "blackbox_exporter config не найден: $blackbox_config_src"
+    fi
+
+    if [[ -f "$targets_src" ]]; then
+        backup_file "$targets_dest"
+        sudo cp "$targets_src" "$targets_dest"
+        log_success "blackbox targets установлен: $targets_dest"
+    else
+        log_warning "blackbox targets не найден: $targets_src (сгенерируйте через scripts/dev/generate-blackbox-targets.sh)"
     fi
 }
 
@@ -493,6 +566,7 @@ enable_services() {
         $INSTALL_PROMETHEUS && log_info "  - prometheus"
         $INSTALL_GRAFANA && log_info "  - grafana"
         $INSTALL_EXPORTERS && log_info "  - prometheus-node-exporter"
+        $INSTALL_EXPORTERS && log_info "  - blackbox-exporter"
         $INSTALL_EXPORTERS && log_info "  - postgres-exporter"
         $INSTALL_EXPORTERS && log_info "  - redis-exporter"
         return 0
@@ -510,6 +584,7 @@ enable_services() {
 
     if $INSTALL_EXPORTERS; then
         services_to_enable+=("prometheus-node-exporter")
+        services_to_enable+=("blackbox-exporter")
         # Добавляем только если пакеты установлены
         is_pkg_installed "prometheus-postgres-exporter" && services_to_enable+=("postgres-exporter")
         is_pkg_installed "prometheus-redis-exporter" && services_to_enable+=("redis-exporter")

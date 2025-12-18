@@ -1,0 +1,22 @@
+[Unit]
+Description=Prometheus Blackbox Exporter
+Documentation=https://github.com/prometheus/blackbox_exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+# Arch Linux package provides /usr/bin/prometheus-blackbox-exporter.
+# If you installed manually under a different path/name, adjust ExecStart accordingly.
+ExecStart=/usr/bin/prometheus-blackbox-exporter --config.file=/etc/blackbox_exporter/config.yml
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

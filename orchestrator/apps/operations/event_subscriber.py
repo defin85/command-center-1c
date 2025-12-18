@@ -67,6 +67,52 @@ def _record_batch_metric(operation_type: str, status: str):
             logger.debug(f"Failed to record batch operation metric: {metric_err}")
 
 
+def _default_flow_path(operation_type: str) -> list[str]:
+    if operation_type in {
+        "lock_scheduled_jobs",
+        "unlock_scheduled_jobs",
+        "block_sessions",
+        "unblock_sessions",
+        "terminate_sessions",
+        "sync_cluster",
+        "discover_clusters",
+    }:
+        return ["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"]
+    if operation_type == "install_extension":
+        return ["frontend", "api-gateway", "orchestrator", "worker", "batch-service"]
+    if operation_type in {"query", "health_check"}:
+        return ["frontend", "api-gateway", "orchestrator", "worker", "odata-adapter"]
+    if operation_type == "execute_workflow":
+        return ["frontend", "api-gateway", "orchestrator", "worker"]
+    return ["frontend", "api-gateway", "orchestrator", "worker"]
+
+
+def _publish_completion_flow(
+    *,
+    operation_id: str,
+    operation_type: str,
+    operation_name: str,
+    status: str,
+    message: str,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    try:
+        from apps.operations.events import flow_publisher
+
+        flow_publisher.publish_flow(
+            operation_id=operation_id,
+            current_service="worker",
+            status=status,
+            message=message,
+            operation_type=operation_type,
+            operation_name=operation_name,
+            path=_default_flow_path(operation_type),
+            metadata=metadata or {},
+        )
+    except Exception:
+        pass
+
+
 class EventSubscriber:
     """
     Subscribes to Redis Streams from Go services.
@@ -774,6 +820,15 @@ class EventSubscriber:
             # Record Prometheus metric for completed operation
             _record_batch_metric(batch_op.operation_type, 'completed')
 
+            _publish_completion_flow(
+                operation_id=operation_id,
+                operation_type=batch_op.operation_type,
+                operation_name=batch_op.name,
+                status="completed",
+                message="Worker completed",
+                metadata={"summary": summary, "results_count": len(results)},
+            )
+
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")
         except Exception as e:
@@ -841,6 +896,15 @@ class EventSubscriber:
 
             # Record Prometheus metric for failed operation
             _record_batch_metric(batch_op.operation_type, 'failed')
+
+            _publish_completion_flow(
+                operation_id=operation_id,
+                operation_type=batch_op.operation_type,
+                operation_name=batch_op.name,
+                status="failed",
+                message=error_msg or "Worker failed",
+                metadata={"error": error_msg},
+            )
 
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")

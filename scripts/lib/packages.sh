@@ -69,6 +69,7 @@ declare -gA _PKG_MAP=(
     ["node_exporter"]="prometheus-node-exporter|prometheus-node-exporter|node_exporter"
     ["postgres_exporter"]="AUR:prometheus-postgres-exporter|prometheus-postgres-exporter|-"
     ["redis_exporter"]="AUR:prometheus-redis-exporter|prometheus-redis-exporter|-"
+    ["blackbox_exporter"]="prometheus-blackbox-exporter|prometheus-blackbox-exporter|prometheus-blackbox-exporter"
 
     # Языки и рантаймы
     ["python"]="python|python3|python3"

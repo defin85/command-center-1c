@@ -77,3 +77,22 @@ scrape_configs:
       - source_labels: [__address__]
         target_label: instance
         replacement: 'redis'
+
+  # Blackbox Exporter - TCP probes for external dependencies (e.g., RAS Server)
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/blackbox_tcp.yml
+        refresh_interval: 30s
+    relabel_configs:
+      # Target from file_sd
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      # Send scrape to blackbox exporter
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

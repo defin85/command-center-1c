@@ -88,3 +88,35 @@ check_port 8180
 
 - Bash 4.0+
 - Linux / macOS / WSL
+
+## Monitoring (Native mode)
+
+Если вы работаете в native режиме (`USE_DOCKER=false`) и хотите, чтобы в UI (`/system-status`, `/service-mesh`)
+корректно отображалась доступность внешних зависимостей (например, **RAS Server:1545**), используйте
+**Prometheus + Blackbox Exporter** как единую точку ответственности.
+
+Минимальный набор:
+- Prometheus (9090)
+- blackbox_exporter (9115)
+- targets file: `/etc/prometheus/targets/blackbox_tcp.yml` (генерируется из `.env.local` → `RAS_SERVER_ADDR`)
+
+Команды:
+```bash
+./scripts/dev/generate-blackbox-targets.sh
+sudo mkdir -p /etc/prometheus/targets
+sudo cp infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml /etc/prometheus/targets/blackbox_tcp.yml
+sudo systemctl restart prometheus
+sudo systemctl restart blackbox-exporter
+```
+
+Автоматизация:
+- `./scripts/dev/start-all.sh` (native mode) пытается синхронизировать `/etc/prometheus/*` и `/etc/blackbox_exporter/*`
+  через `./scripts/dev/sync-native-monitoring.sh` (использует `sudo -n`, без запроса пароля).
+- Если видите предупреждение про `sudo password required`, выполните `sudo -v` и повторите запуск,
+  либо запустите `./scripts/dev/sync-native-monitoring.sh` вручную.
+
+Установка/настройка мониторинга: `scripts/setup/install-monitoring.sh`, детали: `scripts/setup/README.md`.
+
+Примечание (Arch Linux):
+- бинарник обычно называется `prometheus-blackbox-exporter`
+- unit файл проекта: `infrastructure/systemd/blackbox-exporter.service` запускает его через `blackbox-exporter.service`

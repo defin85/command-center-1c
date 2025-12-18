@@ -6,6 +6,13 @@
 #   sudo cp prometheus-native.yml /etc/prometheus/prometheus.yml
 #   sudo systemctl enable prometheus
 #   sudo systemctl start prometheus
+#
+# Blackbox Exporter (RAS TCP probe):
+#   # Install / run blackbox_exporter separately (native)
+#   # Then copy target file and restart Prometheus:
+#   sudo mkdir -p /etc/prometheus/targets
+#   sudo cp infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml /etc/prometheus/targets/blackbox_tcp.yml
+#   sudo systemctl restart prometheus
 
 global:
   scrape_interval: 15s
@@ -88,6 +95,24 @@ scrape_configs:
   - job_name: 'node'
     static_configs:
       - targets: ['localhost:9100']
+
+  # Blackbox Exporter - TCP probes for external dependencies (e.g., RAS Server)
+  # Exporter listens on 9115 by default.
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/blackbox_tcp.yml
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9115
 
 # Frontend (React:5173) не скрапится - React SPA не экспортирует Prometheus метрики.
 # Для мониторинга frontend используйте:

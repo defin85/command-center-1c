@@ -895,6 +895,25 @@ start_native_monitoring() {
         log_warning "Jaeger не установлен (опционально)"
     fi
 
+    # Blackbox Exporter (опционально, но рекомендуется для RAS probes)
+    # Arch package binary name: prometheus-blackbox-exporter
+    if command -v prometheus-blackbox-exporter &>/dev/null || command -v blackbox_exporter &>/dev/null; then
+        if check_systemd_autostart "blackbox-exporter"; then
+            if check_systemd_service "blackbox-exporter"; then
+                log_info "blackbox-exporter: запущен (systemd, автозапуск)"
+            else
+                log_warning "blackbox-exporter: не запущен, но в автозапуске - ожидание..."
+                sleep 3
+            fi
+        else
+            if ! start_systemd_service "blackbox-exporter"; then
+                log_warning "blackbox-exporter не удалось запустить (это не критично)"
+            fi
+        fi
+    else
+        log_warning "blackbox_exporter не установлен (рекомендуется для RAS probes)"
+    fi
+
     if [[ "$success" == "true" ]]; then
         log_success "Нативный мониторинг запущен"
         return 0
@@ -983,6 +1002,22 @@ check_native_monitoring_health() {
         fi
     else
         print_status "warning" "Jaeger: не запущен (опционально)${jaeger_suffix}"
+    fi
+
+    # blackbox-exporter (RAS probes)
+    local blackbox_suffix=""
+    if check_systemd_autostart "blackbox-exporter"; then
+        blackbox_suffix=" (systemd, автозапуск)"
+    fi
+
+    if check_systemd_service "blackbox-exporter"; then
+        if check_health_endpoint "http://localhost:9115/metrics" 2; then
+            print_status "success" "blackbox-exporter: запущен (http://localhost:9115)${blackbox_suffix}"
+        else
+            print_status "warning" "blackbox-exporter: запущен, но не отвечает${blackbox_suffix}"
+        fi
+    else
+        print_status "warning" "blackbox-exporter: не запущен (опционально)${blackbox_suffix}"
     fi
 }
 

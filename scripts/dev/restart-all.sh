@@ -111,6 +111,15 @@ restart_all_services() {
     # Небольшая задержка для корректного освобождения портов
     sleep 2
 
+    # Native mode: Prometheus reads /etc/*, so sync configs/targets before restart (best-effort).
+    # This uses sudo -n (no password prompt). If sudo credentials are not cached, run: sudo -v
+    if is_native_mode && [[ -x "$PROJECT_ROOT/scripts/dev/sync-native-monitoring.sh" ]]; then
+        print_status "info" "Native monitoring: sync /etc configs (если нужно: sudo -v)"
+        echo ""
+        "$PROJECT_ROOT/scripts/dev/sync-native-monitoring.sh" || true
+        export CC1C_NATIVE_MONITORING_SYNC_DONE=1
+    fi
+
     # Шаг 2: Запуск всех сервисов
     print_status "info" "Запуск всех сервисов..."
     echo ""

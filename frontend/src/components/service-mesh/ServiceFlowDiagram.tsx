@@ -44,6 +44,8 @@ import {
   STATUS_COLORS,
   CONNECTION_TYPE_COLORS,
   CONNECTION_TYPE_LABELS,
+  CONNECTION_TYPE_SHORT_LABELS,
+  CONNECTION_TYPE_DASHARRAY,
   CONNECTION_TYPES,
 } from '../../types/serviceMesh'
 import { calculateDagreLayout } from '../../utils/graphLayout'
@@ -107,6 +109,20 @@ function getEdgeWidth(requestsPerMinute: number): number {
     return 2
   }
   return 1
+}
+
+function getConnectionBaseWidth(connType: ConnectionType): number {
+  // Non-HTTP edges can be hard to see on large graphs, so give them a small baseline.
+  switch (connType) {
+    case 'database':
+    case 'streams':
+    case 'queue':
+    case 'pubsub':
+    case 'tcp':
+      return 2
+    default:
+      return 1
+  }
 }
 
 /**
@@ -337,8 +353,12 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
 
   // Update edges when connections, hover state, or active operation change
   useEffect(() => {
+    const focusNode = hoveredNode || selectedService
+
     const newEdges: Edge[] = connections.map((conn) => {
       const operationStyle = getOperationEdgeStyle(conn.source, conn.target, activeOperation)
+      const connType = getConnectionType(conn.source, conn.target)
+      const dasharray = CONNECTION_TYPE_DASHARRAY[connType]
 
       // Find flow edge for status-based className
       const flowEdge = activeOperation?.flow.edges.find(
@@ -356,14 +376,22 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
 
       // If there is an active operation, use its styles
       const stroke = operationStyle?.stroke || getEdgeColor(conn.source, conn.target, conn.avgLatencyMs)
-      const strokeWidth = operationStyle?.strokeWidth || getEdgeWidth(conn.requestsPerMinute)
+      const strokeWidth =
+        operationStyle?.strokeWidth ||
+        Math.max(getConnectionBaseWidth(connType), getEdgeWidth(conn.requestsPerMinute))
       const animated = operationStyle?.animated ?? (conn.requestsPerMinute > 0)
 
-      // Calculate opacity based on hovered node
-      const isConnectedToHovered = hoveredNode
-        ? conn.source === hoveredNode || conn.target === hoveredNode
+      // Calculate opacity based on hovered/selected node (focus)
+      const isConnectedToFocus = focusNode
+        ? conn.source === focusNode || conn.target === focusNode
         : true
-      const opacity = hoveredNode ? (isConnectedToHovered ? 1 : 0.15) : 1
+      const opacity = focusNode ? (isConnectedToFocus ? 1 : 0.1) : 1
+
+      // Show connection type label when focusing a node (otherwise keep it minimal).
+      const shortType = CONNECTION_TYPE_SHORT_LABELS[connType]
+      const labelText = focusNode
+        ? (conn.requestsPerMinute > 0 ? `${shortType} ${conn.requestsPerMinute.toFixed(0)}/m` : shortType)
+        : (conn.requestsPerMinute > 0 ? `${conn.requestsPerMinute.toFixed(0)}/min` : undefined)
 
       return {
         id: `${conn.source}-${conn.target}`,
@@ -375,6 +403,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
         style: {
           stroke,
           strokeWidth,
+          strokeDasharray: dasharray,
           opacity,
           transition: 'opacity 0.2s ease',
         },
@@ -384,7 +413,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           width: 20,
           height: 20,
         },
-        label: conn.requestsPerMinute > 0 ? `${conn.requestsPerMinute.toFixed(0)}/min` : undefined,
+        label: labelText,
         labelStyle: {
           fontSize: 10,
           fill: '#8c8c8c',
@@ -399,7 +428,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     })
 
     setEdges(newEdges)
-  }, [connections, activeOperation, hoveredNode, setEdges])
+  }, [connections, activeOperation, hoveredNode, selectedService, setEdges])
 
   // Handle click on empty canvas to deselect
   const handlePaneClick = useCallback(() => {
@@ -490,7 +519,10 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
             <div key={type} className="service-flow-diagram__legend-item">
               <span
                 className="service-flow-diagram__legend-line"
-                style={{ background: color }}
+                style={{
+                  borderTop: `3px ${type === 'database' ? 'dotted' : (type === 'http' || type === 'tcp' ? 'solid' : 'dashed')} ${color}`,
+                  background: 'transparent',
+                }}
               />
               <span>{CONNECTION_TYPE_LABELS[type]}</span>
             </div>

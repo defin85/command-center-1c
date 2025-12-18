@@ -10,6 +10,7 @@ import asyncio
 import httpx
 import logging
 import math
+import redis.asyncio as aioredis
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -74,6 +75,15 @@ SERVICE_CONFIG = {
         'job_patterns': ['worker', 'go_worker'],
         'namespace': 'cc1c',
         'metrics_type': 'tasks',  # Use tasks_processed_total instead of requests_total
+        # Worker processes long-running tasks (e.g., sync_cluster, install_extension).
+        # Use wider p95 thresholds than HTTP services to avoid false "critical"
+        # when the system is healthy but doing long work.
+        'thresholds': {
+            'critical_error_rate': 0.10,
+            'degraded_error_rate': 0.01,
+            'critical_p95_ms': 60_000,
+            'degraded_p95_ms': 15_000,
+        },
     },
     'ras-adapter': {
         'display_name': 'RAS Adapter',
@@ -120,6 +130,11 @@ SERVICE_CONFIG = {
         'job_patterns': ['event_subscriber', 'event-subscriber', 'eventsubscriber'],
         'namespace': 'orchestrator',  # Part of Django orchestrator
     },
+    'ras-server': {
+        'display_name': 'RAS Server',
+        'job_patterns': [],
+        'namespace': 'external',
+    },
 }
 
 # Service mesh topology (connections between services)
@@ -149,6 +164,7 @@ SERVICE_TOPOLOGY = [
 
     # Level 3.5: Execution Layer → Redis (events back)
     ('ras-adapter', 'redis'),
+    ('ras-adapter', 'ras-server'),
     ('odata-adapter', 'redis'),
     ('designer-agent', 'redis'),
     ('batch-service', 'redis'),
@@ -303,6 +319,54 @@ class PrometheusClient:
             return f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')}/"
         return None
 
+    async def _get_event_subscriber_status(self) -> str:
+        """
+        Event Subscriber is a Django management command, not a separate HTTP service.
+
+        Prometheus usually can't expose it as a distinct target/job, so we derive its
+        health from Redis Streams consumer group state (same signal as /api/v2/system/health).
+        """
+        stream = "events:worker:cluster-synced"
+        group = "orchestrator-group"
+
+        redis_password = getattr(settings, "REDIS_PASSWORD", None)
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+        client = aioredis.from_url(
+            redis_url,
+            password=redis_password if redis_password else None,
+            decode_responses=True,
+            socket_timeout=1.5,
+        )
+
+        try:
+            groups = await client.xinfo_groups(stream)
+            group_info = next((g for g in groups if g.get("name") == group), None)
+            if not group_info:
+                return "critical"
+            consumers = int(group_info.get("consumers", 0) or 0)
+            return "healthy" if consumers > 0 else "degraded"
+        except Exception:
+            return "critical"
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+    async def _get_ras_server_status(self) -> str:
+        """
+        RAS Server is an external dependency.
+
+        We treat Prometheus as the single source of truth and read a Blackbox Exporter probe:
+        `probe_success{cc1c_service="ras-server"}`.
+        """
+        result = await self.query('max(probe_success{cc1c_service="ras-server"})')
+        if result.get("status") == "error" or not self._has_result(result):
+            return "critical"
+
+        value = self._extract_value(result)
+        return "healthy" if value >= 0.5 else "critical"
+
     async def _probe_service_health(self, service: str) -> Optional[bool]:
         """
         Probe service directly when Prometheus doesn't scrape it.
@@ -332,7 +396,8 @@ class PrometheusClient:
         self,
         error_rate: float,
         p95_latency_ms: float,
-        ops_per_minute: float
+        ops_per_minute: float,
+        thresholds: Optional[Dict[str, float]] = None,
     ) -> str:
         """
         Determine service health status based on metrics.
@@ -342,9 +407,15 @@ class PrometheusClient:
         - degraded: error_rate > 1% OR p95 > 1000ms
         - healthy: otherwise
         """
-        if error_rate > 0.10 or p95_latency_ms > 5000:
+        thresholds = thresholds or {}
+        critical_error_rate = float(thresholds.get('critical_error_rate', 0.10))
+        degraded_error_rate = float(thresholds.get('degraded_error_rate', 0.01))
+        critical_p95_ms = float(thresholds.get('critical_p95_ms', 5000))
+        degraded_p95_ms = float(thresholds.get('degraded_p95_ms', 1000))
+
+        if error_rate > critical_error_rate or p95_latency_ms > critical_p95_ms:
             return 'critical'
-        elif error_rate > 0.01 or p95_latency_ms > 1000:
+        elif error_rate > degraded_error_rate or p95_latency_ms > degraded_p95_ms:
             return 'degraded'
         else:
             return 'healthy'
@@ -361,6 +432,42 @@ class PrometheusClient:
         """
         config = SERVICE_CONFIG.get(service, {})
         display_name = config.get('display_name', service.title())
+
+        if service == "event-subscriber":
+            status = await self._get_event_subscriber_status()
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status=status,
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
+
+        if service == "ras-server":
+            success_result, duration_result = await self._execute_queries([
+                'max(probe_success{cc1c_service="ras-server"})',
+                'max(probe_duration_seconds{cc1c_service="ras-server"}) * 1000',
+            ])
+            if success_result.get("status") == "error" or not self._has_result(success_result):
+                status = "critical"
+            else:
+                status = "healthy" if self._extract_value(success_result) >= 0.5 else "critical"
+
+            p95_latency_ms = self._extract_value(duration_result) if self._has_result(duration_result) else 0.0
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status=status,
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=p95_latency_ms,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
+
         namespace = config.get('namespace', 'cc1c')
         job_patterns = config.get('job_patterns', [service])
         metrics_type = config.get('metrics_type', 'requests')  # 'requests' or 'tasks'
@@ -441,7 +548,8 @@ class PrometheusClient:
             error_rate = 0.0
 
         # Determine status
-        status = self._determine_status(error_rate, p95_latency_ms, ops_per_minute)
+        thresholds = config.get('thresholds')
+        status = self._determine_status(error_rate, p95_latency_ms, ops_per_minute, thresholds)
 
         return ServiceMetrics(
             name=service,

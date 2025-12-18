@@ -219,6 +219,7 @@ services:
       - "9090:9090"
     volumes:
       - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/prometheus/targets:/etc/prometheus/targets
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -226,6 +227,22 @@ services:
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
+    depends_on:
+      - blackbox-exporter
+    networks:
+      - commandcenter-network
+
+  # Blackbox Exporter - External TCP/HTTP probes for Prometheus
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: commandcenter-blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./infrastructure/monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
     networks:
       - commandcenter-network
 

@@ -29,6 +29,7 @@ const RECONNECT_MAX_DELAY = 30000 // 30 seconds
 const RECONNECT_MAX_ATTEMPTS = 10
 const PING_INTERVAL = 30000 // 30 seconds
 const CONNECT_DELAY = 50 // ms, delay for StrictMode double-mount
+const LONG_RUNNING_OPERATION_TYPES = new Set(['sync_cluster', 'install_extension', 'execute_workflow'])
 
 /**
  * Last invalidation event data
@@ -206,11 +207,15 @@ export const useServiceMesh = (): UseServiceMeshResult => {
         if (flowEvent.operation.status === 'processing') {
           // Operation in progress - show it
           setActiveOperation(flowEvent)
-          // Set timeout for stuck operations (60 seconds)
+          const opType = flowEvent.operation.type || ''
+          const timeoutMs =
+            LONG_RUNNING_OPERATION_TYPES.has(opType) ? 5 * 60_000 : 60_000
+
+          // Set timeout for stuck operations (best-effort UI cleanup)
           operationTimeoutRef.current = setTimeout(() => {
             console.warn('Operation timeout - clearing stuck operation:', flowEvent.operation_id)
             setActiveOperation(null)
-          }, 60000)
+          }, timeoutMs)
         } else {
           // Operation completed - remove and add to history
           setActiveOperation(null)

@@ -464,7 +464,7 @@ class OperationsService:
         sync_lock_key = f"sync_cluster:{cluster_id}"
         lock_acquired = redis_client.acquire_lock(
             task_id=sync_lock_key,
-            ttl_seconds=300  # 5 minutes - sync should complete within this time
+            ttl_seconds=900  # 15 minutes - large clusters may take longer
         )
 
         if not lock_acquired:
@@ -503,7 +503,7 @@ class OperationsService:
             },
             "execution_config": {
                 "batch_size": 50,
-                "timeout_seconds": 60,
+                "timeout_seconds": 180,
                 "retry_count": 3,
                 "priority": "normal",
                 "idempotency_key": op_id

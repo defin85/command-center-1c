@@ -62,7 +62,12 @@ describe('timelineTransforms', () => {
     it('returns human-readable label for known cluster.sync events', () => {
       expect(getEventLabel('cluster.sync.started')).toBe('Cluster Sync Started')
       expect(getEventLabel('cluster.sync.resolving.started')).toBe('Resolving Cluster UUID')
+      expect(getEventLabel('cluster.sync.resolving.finished')).toBe('Cluster UUID Resolved')
       expect(getEventLabel('cluster.sync.fetching.started')).toBe('Fetching Infobases')
+      expect(getEventLabel('cluster.sync.fetching.finished')).toBe('Infobases Fetched')
+      expect(getEventLabel('cluster.sync.publish_result.started')).toBe('Publishing Sync Result')
+      expect(getEventLabel('cluster.sync.publish_result.finished')).toBe('Sync Result Published')
+      expect(getEventLabel('cluster.sync.publish_result.failed')).toBe('Sync Result Publish Failed')
       expect(getEventLabel('cluster.sync.completed')).toBe('Cluster Sync Completed')
       expect(getEventLabel('cluster.sync.failed')).toBe('Cluster Sync Failed')
     })
@@ -104,6 +109,12 @@ describe('timelineTransforms', () => {
       expect(getEventStatus('worker.command.completed')).toBe('completed')
       expect(getEventStatus('ras.command.completed')).toBe('completed')
       expect(getEventStatus('orchestrator.completed')).toBe('completed')
+    })
+
+    it('returns "completed" for events ending with .finished', () => {
+      expect(getEventStatus('cluster.sync.fetching.finished')).toBe('completed')
+      expect(getEventStatus('cluster.sync.resolving.finished')).toBe('completed')
+      expect(getEventStatus('cluster.sync.publish_result.finished')).toBe('completed')
     })
 
     it('returns "failed" for events ending with .failed', () => {

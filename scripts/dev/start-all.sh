@@ -33,6 +33,19 @@ cd "$PROJECT_ROOT"
 # Load environment variables from .env.local
 load_env_file
 
+# Generate Prometheus Blackbox targets from .env.local (single source of truth)
+if [[ -x "$PROJECT_ROOT/scripts/dev/generate-blackbox-targets.sh" ]]; then
+    if ! "$PROJECT_ROOT/scripts/dev/generate-blackbox-targets.sh" >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Не удалось сгенерировать blackbox targets (RAS probe может быть неактуален)${NC}"
+    fi
+fi
+
+# Native mode: Prometheus reads /etc/*, so sync configs/targets on start (best-effort)
+# If restart-all already did the sync, it exports CC1C_NATIVE_MONITORING_SYNC_DONE=1.
+if is_native_mode && [[ -x "$PROJECT_ROOT/scripts/dev/sync-native-monitoring.sh" ]] && [[ "${CC1C_NATIVE_MONITORING_SYNC_DONE:-}" != "1" ]]; then
+    "$PROJECT_ROOT/scripts/dev/sync-native-monitoring.sh" || true
+fi
+
 # Флаги по умолчанию
 FORCE_REBUILD=false
 NO_REBUILD=false

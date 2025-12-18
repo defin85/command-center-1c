@@ -102,6 +102,49 @@ def system_me(request):
 HEALTH_TIMEOUT = 1.5
 
 
+def _check_ras_via_prometheus() -> dict:
+    """RAS Server health via Prometheus Blackbox probe (single source of truth)."""
+    import time
+
+    start_time = time.time()
+    prom_url = getattr(settings, "PROMETHEUS_URL", "http://localhost:9090").rstrip("/")
+    query = 'max(probe_success{cc1c_service="ras-server"})'
+
+    try:
+        resp = requests.get(f"{prom_url}/api/v1/query", params={"query": query}, timeout=2.0)
+        if resp.status_code != 200:
+            raise RuntimeError(f"prometheus_http_{resp.status_code}")
+
+        data = resp.json()
+        result = (data.get("data") or {}).get("result") or []
+        if not result:
+            status = "offline"
+            details = {"error": "no_probe_data", "query": query}
+        else:
+            value = float(result[0].get("value", [0, "0"])[1])
+            status = "online" if value >= 0.5 else "offline"
+            details = {"query": query, "probe_success": value}
+
+        response_time_ms = (time.time() - start_time) * 1000
+        return {
+            "name": "RAS Server",
+            "type": "external",
+            "status": status,
+            "response_time_ms": round(response_time_ms, 2),
+            "last_check": timezone.now().isoformat(),
+            "details": details,
+        }
+    except Exception as e:
+        return {
+            "name": "RAS Server",
+            "type": "external",
+            "status": "offline",
+            "response_time_ms": None,
+            "last_check": timezone.now().isoformat(),
+            "details": {"error": str(e), "query": query},
+        }
+
+
 def check_service(name: str, service_type: str, url: str) -> dict:
     """
     Check health of a single service.
@@ -321,6 +364,12 @@ def system_health(request):
             'details': {'error': str(e)},
         })
 
+    # Check RAS Server (1C) - via Prometheus Blackbox probe
+    ras_check = _check_ras_via_prometheus()
+    if ras_check.get("status") != "online":
+        logger.warning(f"RAS Server connectivity check failed: {ras_check.get('details')}")
+    results.append(ras_check)
+
     # Check Event Subscriber (via Redis consumer group)
     try:
         start = time.time()
@@ -380,6 +429,7 @@ def system_health(request):
         'Orchestrator',
         'Worker',
         'RAS Adapter',
+        'RAS Server',
         'PostgreSQL',
         'Redis',
         'Event Subscriber',

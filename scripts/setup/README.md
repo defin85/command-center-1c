@@ -36,6 +36,7 @@ source ~/.bashrc
 | **Prometheus** | Сбор метрик (опционально) |
 | **Grafana** | Визуализация метрик (опционально) |
 | **Exporters** | postgres_exporter, redis_exporter (опционально) |
+| **Blackbox Exporter** | TCP/HTTP probes (RAS port monitoring) |
 
 ### Минимальная установка (`bootstrap.sh --minimal`)
 
@@ -130,6 +131,7 @@ Options:
 - Prometheus (порт 9090)
 - Grafana (порт 3000)
 - node_exporter (порт 9100)
+- blackbox_exporter (порт 9115)
 - postgres_exporter (порт 9187)
 - redis_exporter (порт 9121)
 

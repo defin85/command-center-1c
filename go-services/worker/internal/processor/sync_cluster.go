@@ -91,6 +91,7 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 	// Resolve RAS cluster UUID if not provided
 	rasClusterUUID := payload.RASClusterUUID
 	if rasClusterUUID == "" {
+		resolveStart := time.Now()
 		// Timeline: resolving cluster UUID
 		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.resolving.started", map[string]interface{}{
 			"cluster_name": payload.ClusterName,
@@ -107,6 +108,11 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		}
 		rasClusterUUID = resolved
 
+		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.resolving.finished", map[string]interface{}{
+			"ras_cluster_uuid": rasClusterUUID,
+			"duration_ms":      time.Since(resolveStart).Milliseconds(),
+		})
+
 		log.Info("resolved RAS cluster UUID",
 			zap.String("cluster_name", payload.ClusterName),
 			zap.String("ras_cluster_uuid", rasClusterUUID),
@@ -119,10 +125,16 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 	})
 
 	// Fetch infobases from RAS
+	fetchStart := time.Now()
 	infobasesResp, err := rasClient.ListInfobases(ctx, payload.RASServer, rasClusterUUID)
 	if err != nil {
 		return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to list infobases: %v", err), "RAS_ERROR")
 	}
+	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.fetching.finished", map[string]interface{}{
+		"ras_cluster_uuid": rasClusterUUID,
+		"infobases_count":  infobasesResp.Count,
+		"duration_ms":      time.Since(fetchStart).Milliseconds(),
+	})
 
 	log.Info("fetched infobases from RAS",
 		zap.String("cluster_id", payload.ClusterID),
@@ -141,14 +153,30 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		Success:        true,
 	}
 
+	publishStart := time.Now()
+	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.publish_result.started", map[string]interface{}{
+		"stream": "events:worker:cluster-synced",
+	})
 	if err := p.publishSyncClusterResult(ctx, syncResult); err != nil {
 		log.Error("failed to publish sync result to Redis Stream", zap.Error(err))
+		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.publish_result.failed", map[string]interface{}{
+			"duration_ms": time.Since(publishStart).Milliseconds(),
+			"error":       err.Error(),
+		})
 		// Don't fail the operation - data was fetched successfully
+	} else {
+		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.publish_result.finished", map[string]interface{}{
+			"duration_ms": time.Since(publishStart).Milliseconds(),
+		})
 	}
 
 	// Publish SUCCESS event
-	if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
-		log.Error("failed to publish SUCCESS event", zap.Error(err))
+	{
+		publishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.eventPublisher.PublishSuccess(publishCtx, msg.OperationID); err != nil {
+			log.Error("failed to publish SUCCESS event", zap.Error(err))
+		}
 	}
 
 	// Build success result
@@ -209,8 +237,12 @@ func (p *TaskProcessor) failSyncCluster(ctx context.Context, result *models.Oper
 	)
 
 	// Publish FAILED event
-	if err := p.eventPublisher.PublishFailed(ctx, result.OperationID, errorMsg); err != nil {
-		log.Error("failed to publish FAILED event", zap.Error(err))
+	{
+		publishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.eventPublisher.PublishFailed(publishCtx, result.OperationID, errorMsg); err != nil {
+			log.Error("failed to publish FAILED event", zap.Error(err))
+		}
 	}
 
 	result.Status = "failed"
@@ -295,14 +327,14 @@ func convertInfobasesToMap(infobases []*rasadapter.Infobase) []map[string]interf
 
 	for _, ib := range infobases {
 		item := map[string]interface{}{
-			"uuid":                ib.UUID,
-			"name":                ib.Name,
-			"description":         ib.Description,
-			"dbms":                ib.DBMS,
-			"db_server":           ib.DBServerName, // Match Python field name (db_server)
-			"db_name":             ib.DBName,
-			"sessions_deny":       ib.SessionsDenied,       // Match Python field name
-			"scheduled_jobs_deny": ib.ScheduledJobsDenied,  // Match Python field name
+			"uuid":                 ib.UUID,
+			"name":                 ib.Name,
+			"description":          ib.Description,
+			"dbms":                 ib.DBMS,
+			"db_server":            ib.DBServerName, // Match Python field name (db_server)
+			"db_name":              ib.DBName,
+			"sessions_deny":        ib.SessionsDenied,      // Match Python field name
+			"scheduled_jobs_deny":  ib.ScheduledJobsDenied, // Match Python field name
 			"license_distribution": ib.LicenseDistribution,
 		}
 		result = append(result, item)
@@ -317,6 +349,12 @@ func (p *TaskProcessor) publishSyncClusterResult(ctx context.Context, result Syn
 		return fmt.Errorf("redis client not initialized")
 	}
 
+	// Decouple event publishing from operation timeout context.
+	// Sync operations may run close to their deadline; publishing the cluster-synced
+	// event is critical for Orchestrator to import databases.
+	publishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Serialize result to JSON
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -325,7 +363,7 @@ func (p *TaskProcessor) publishSyncClusterResult(ctx context.Context, result Syn
 
 	// Publish to Redis Stream
 	streamKey := "events:worker:cluster-synced"
-	_, err = p.redisClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = p.redisClient.XAdd(publishCtx, &redis.XAddArgs{
 		Stream: streamKey,
 		Values: map[string]interface{}{
 			"event_type":     "cluster.synced",
