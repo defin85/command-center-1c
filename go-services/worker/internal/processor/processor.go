@@ -12,16 +12,17 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	sharedMetrics "github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
-	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
+	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
 )
 
@@ -43,18 +44,20 @@ type TemplateData struct {
 
 // TaskProcessor handles task processing logic
 type TaskProcessor struct {
-	config         *config.Config
-	credsClient    credentials.Fetcher
-	odataClients   map[string]*odata.Client // Cache clients per database
-	clientsMutex   sync.RWMutex
-	workerID       string
-	featureFlags   *workerConfig.FeatureFlags  // Feature flags for dual-mode
-	dualModeProc   *DualModeProcessor          // Dual-mode processor
-	eventPublisher *events.EventPublisher      // Event publisher for workflow tracking (internal)
+	config          *config.Config
+	credsClient     credentials.Fetcher
+	odataClients    map[string]*odata.Client // Cache clients per database
+	clientsMutex    sync.RWMutex
+	workerID        string
+	featureFlags    *workerConfig.FeatureFlags // Feature flags for dual-mode
+	dualModeProc    *DualModeProcessor         // Dual-mode processor
+	eventPublisher  *events.EventPublisher     // Event publisher for workflow tracking (internal)
+	clusterResolver ClusterInfoResolver        // Cluster/infobase resolver for RAS operations
+	rasHTTPClient   *rasadapter.Client         // Cached HTTP client to RAS Adapter
 
 	// State Machine dependencies (Sprint 2.1)
-	redisClient     *redis.Client             // Redis client for State Machine persistence
-	eventSubscriber *sharedEvents.Subscriber  // Subscriber for events from ras-adapter/batch-service
+	redisClient     *redis.Client            // Redis client for State Machine persistence
+	eventSubscriber *sharedEvents.Subscriber // Subscriber for events from ras-adapter/batch-service
 
 	// Template Engine (Phase 4.6)
 	templateEngine *template.EngineWithFallback // Go template engine with Python fallback
@@ -77,13 +80,13 @@ const DefaultConsumerGroupWorker = "worker-state-machine"
 
 // ProcessorOptions contains optional dependencies for TaskProcessor
 type ProcessorOptions struct {
-	TemplateEngine   *template.EngineWithFallback
-	TemplateClient   TemplateClient
-	WorkflowClient   WorkflowClient            // Client for workflow operations (optional)
-	OrchestratorURL  string                    // Orchestrator URL for workflow engine (optional)
-	Logger           *zap.Logger
-	Metrics          *sharedMetrics.Metrics    // Prometheus metrics for Service Mesh monitoring (optional)
-	Timeline         tracing.TimelineRecorder  // Timeline recorder for operation tracing (optional)
+	TemplateEngine  *template.EngineWithFallback
+	TemplateClient  TemplateClient
+	WorkflowClient  WorkflowClient // Client for workflow operations (optional)
+	OrchestratorURL string         // Orchestrator URL for workflow engine (optional)
+	Logger          *zap.Logger
+	Metrics         *sharedMetrics.Metrics   // Prometheus metrics for Service Mesh monitoring (optional)
+	Timeline        tracing.TimelineRecorder // Timeline recorder for operation tracing (optional)
 }
 
 // NewTaskProcessor creates a new task processor
@@ -129,6 +132,20 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		logger:         zapLogger,
 		appMetrics:     opts.Metrics,
 		timeline:       timeline,
+	}
+
+	// Initialize cluster resolver for RAS operations (HTTP-based to avoid Streams waiter dependency here).
+	{
+		resolverCfg := DefaultResolverConfig()
+		resolverCfg.OrchestratorURL = cfg.OrchestratorURL
+		resolverCfg.APIKey = cfg.WorkerAPIKey
+		resolverCfg.RedisClient = redisClient
+		resolverCfg.UseStreams = false
+		processor.clusterResolver = NewOrchestratorClusterResolver(resolverCfg)
+		log.Info("cluster resolver initialized for RAS operations",
+			zap.Bool("use_streams", resolverCfg.UseStreams),
+			zap.String("orchestrator_url", resolverCfg.OrchestratorURL),
+		)
 	}
 
 	// Initialize dual-mode processor
@@ -358,6 +375,25 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		result.Duration = time.Since(start).Seconds()
 
 		// Publish SUCCESS/FAILED event for extension installation
+		if result.Success {
+			if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+				log.Error("failed to publish SUCCESS event", zap.Error(err))
+			}
+		} else {
+			if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+				log.Error("failed to publish FAILED event", zap.Error(err))
+			}
+		}
+
+		return result
+	}
+
+	// Per-database RAS operations (scheduled jobs / sessions control)
+	if isRasInfobaseOperationType(msg.OperationType) {
+		result = p.processRasInfobaseOperation(ctx, msg, databaseID)
+		result.DatabaseID = databaseID
+		result.Duration = time.Since(start).Seconds()
+
 		if result.Success {
 			if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
 				log.Error("failed to publish SUCCESS event", zap.Error(err))
