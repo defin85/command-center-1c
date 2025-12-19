@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
@@ -78,14 +80,27 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		zap.String("cluster_name", payload.ClusterName),
 	)
 
-	// Create RAS Adapter client
-	rasClient, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
-		BaseURL:    payload.ClusterServiceURL,
-		Timeout:    30 * time.Second,
-		MaxRetries: 3,
-	})
-	if err != nil {
-		return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to create RAS client: %v", err), "CLIENT_ERROR")
+	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
+	var rasClient *rasadapter.Client
+	var directClient *rasdirect.Client
+	if useDirect {
+		dc, err := rasdirect.NewClient(payload.RASServer)
+		if err != nil {
+			return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR")
+		}
+		directClient = dc
+		defer directClient.Close()
+	} else {
+		// Create RAS Adapter client
+		c, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
+			BaseURL:    payload.ClusterServiceURL,
+			Timeout:    30 * time.Second,
+			MaxRetries: 3,
+		})
+		if err != nil {
+			return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to create RAS client: %v", err), "CLIENT_ERROR")
+		}
+		rasClient = c
 	}
 
 	// Resolve RAS cluster UUID if not provided
@@ -102,11 +117,27 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 			zap.String("cluster_name", payload.ClusterName),
 		)
 
-		resolved, err := resolveClusterUUID(ctx, rasClient, payload.RASServer, payload.ClusterName)
-		if err != nil {
-			return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to resolve cluster UUID: %v", err), "CLUSTER_LOOKUP_ERROR")
+		if useDirect {
+			list, err := directClient.GetClusters(ctx)
+			if err != nil {
+				return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to resolve cluster UUID (direct): %v", err), "CLUSTER_LOOKUP_ERROR")
+			}
+			for _, c := range list {
+				if c.Name == payload.ClusterName {
+					rasClusterUUID = c.UUID
+					break
+				}
+			}
+			if rasClusterUUID == "" {
+				return p.failSyncCluster(ctx, result, start, fmt.Sprintf("cluster not found by name: %s", payload.ClusterName), "CLUSTER_LOOKUP_ERROR")
+			}
+		} else {
+			resolved, err := resolveClusterUUID(ctx, rasClient, payload.RASServer, payload.ClusterName)
+			if err != nil {
+				return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to resolve cluster UUID: %v", err), "CLUSTER_LOOKUP_ERROR")
+			}
+			rasClusterUUID = resolved
 		}
-		rasClusterUUID = resolved
 
 		p.timeline.Record(ctx, msg.OperationID, "cluster.sync.resolving.finished", map[string]interface{}{
 			"ras_cluster_uuid": rasClusterUUID,
@@ -126,23 +157,49 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 
 	// Fetch infobases from RAS
 	fetchStart := time.Now()
-	infobasesResp, err := rasClient.ListInfobases(ctx, payload.RASServer, rasClusterUUID)
-	if err != nil {
-		return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to list infobases: %v", err), "RAS_ERROR")
+	var infobasesCount int
+	var infobases []map[string]interface{}
+	if useDirect {
+		list, err := directClient.GetInfobases(ctx, rasClusterUUID, payload.ClusterUser, payload.ClusterPwd)
+		if err != nil {
+			return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to list infobases (direct): %v", err), "RAS_ERROR")
+		}
+		infobasesCount = len(list)
+		infobases = make([]map[string]interface{}, 0, len(list))
+		for _, ib := range list {
+			infobases = append(infobases, map[string]interface{}{
+				"uuid":                ib.UUID,
+				"name":                ib.Name,
+				"dbms":                ib.DBMS,
+				"db_server":           ib.DBServer,
+				"db_name":             ib.DBName,
+				"scheduled_jobs_deny": ib.ScheduledJobsDeny,
+				"sessions_deny":       ib.SessionsDeny,
+				"denied_from":         ib.DeniedFrom,
+				"denied_to":           ib.DeniedTo,
+				"denied_message":      ib.DeniedMessage,
+				"permission_code":     ib.PermissionCode,
+				"denied_parameter":    ib.DeniedParameter,
+			})
+		}
+	} else {
+		infobasesResp, err := rasClient.ListInfobases(ctx, payload.RASServer, rasClusterUUID)
+		if err != nil {
+			return p.failSyncCluster(ctx, result, start, fmt.Sprintf("failed to list infobases: %v", err), "RAS_ERROR")
+		}
+		infobasesCount = infobasesResp.Count
+		infobases = convertInfobasesToMap(infobasesResp.Infobases)
 	}
 	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.fetching.finished", map[string]interface{}{
 		"ras_cluster_uuid": rasClusterUUID,
-		"infobases_count":  infobasesResp.Count,
+		"infobases_count":  infobasesCount,
 		"duration_ms":      time.Since(fetchStart).Milliseconds(),
 	})
 
 	log.Info("fetched infobases from RAS",
 		zap.String("cluster_id", payload.ClusterID),
-		zap.Int("count", infobasesResp.Count),
+		zap.Int("count", infobasesCount),
 	)
-
-	// Convert infobases to generic format for Orchestrator
-	infobases := convertInfobasesToMap(infobasesResp.Infobases)
 
 	// Publish result to Redis Stream for Orchestrator
 	syncResult := SyncClusterResult{
@@ -188,7 +245,7 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 		Data: map[string]interface{}{
 			"cluster_id":       payload.ClusterID,
 			"ras_cluster_uuid": rasClusterUUID,
-			"infobases_count":  infobasesResp.Count,
+			"infobases_count":  infobasesCount,
 			"infobases":        infobases,
 		},
 		Duration: duration,
@@ -203,14 +260,14 @@ func (p *TaskProcessor) processSyncCluster(ctx context.Context, msg *models.Oper
 	// Timeline: sync completed successfully
 	p.timeline.Record(ctx, msg.OperationID, "cluster.sync.completed", map[string]interface{}{
 		"cluster_id":      payload.ClusterID,
-		"infobases_count": infobasesResp.Count,
+		"infobases_count": infobasesCount,
 		"duration_ms":     time.Since(start).Milliseconds(),
 	})
 
 	log.Info("sync_cluster completed successfully",
 		zap.String("operation_id", msg.OperationID),
 		zap.String("cluster_id", payload.ClusterID),
-		zap.Int("infobases_count", infobasesResp.Count),
+		zap.Int("infobases_count", infobasesCount),
 		zap.Float64("duration_seconds", duration),
 	)
 

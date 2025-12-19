@@ -376,7 +376,10 @@ def get_database_cluster_info(request):
         "cluster_info": {
             "database_id": "db-123",
             "cluster_id": "550e8400-e29b-41d4-a716-446655440000",
-            "infobase_id": "550e8400-e29b-41d4-a716-446655440001"
+            "infobase_id": "550e8400-e29b-41d4-a716-446655440001",
+            "ras_server": "localhost:1545",
+            "cluster_user": "",
+            "cluster_pwd": ""
         }
     }
     """
@@ -404,6 +407,9 @@ def get_database_cluster_info(request):
         )
 
     infobase_id = str(database.ras_infobase_id) if database.ras_infobase_id else str(database.id)
+    ras_server = str(database.cluster.ras_server) if database.cluster else ""
+    cluster_user = str(database.cluster.cluster_user) if database.cluster else ""
+    cluster_pwd = str(database.cluster.cluster_pwd) if database.cluster else ""
 
     return Response(
         {
@@ -412,6 +418,9 @@ def get_database_cluster_info(request):
                 'database_id': str(database.id),
                 'cluster_id': str(database.ras_cluster_id),
                 'infobase_id': infobase_id,
+                'ras_server': ras_server,
+                'cluster_user': cluster_user,
+                'cluster_pwd': cluster_pwd,
             },
         },
         status=status.HTTP_200_OK,

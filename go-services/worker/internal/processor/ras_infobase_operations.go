@@ -3,12 +3,14 @@ package processor
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
@@ -96,46 +98,83 @@ func (p *TaskProcessor) processRasInfobaseOperation(
 		}
 	}
 
-	client, err := p.getRasHTTPClient()
-	if err != nil {
-		p.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
-			"database_id":  databaseID,
-			"error":        err.Error(),
-			"duration_ms":  time.Since(start).Milliseconds(),
-			"error_source": "ras_client",
-		})
-		return models.DatabaseResultV2{
-			DatabaseID: databaseID,
-			Success:    false,
-			Error:      fmt.Sprintf("failed to create RAS adapter client: %v", err),
-			ErrorCode:  "CLIENT_ERROR",
-			Duration:   time.Since(start).Seconds(),
-		}
-	}
-
 	clusterID := clusterInfo.ClusterID
 	infobaseID := clusterInfo.InfobaseID
 
 	data := msg.Payload.Data
 	var opErr error
 
-	switch msg.OperationType {
-	case "lock_scheduled_jobs":
-		_, opErr = client.LockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.LockInfobaseRequest{})
-	case "unlock_scheduled_jobs":
-		_, opErr = client.UnlockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.UnlockInfobaseRequest{})
-	case "block_sessions":
-		req := &rasadapter.BlockSessionsRequest{
-			DeniedMessage:  extractString(data, "message"),
-			PermissionCode: extractString(data, "permission_code"),
+	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
+	if useDirect && clusterInfo.RASServer != "" {
+		dc, err := rasdirect.NewClient(clusterInfo.RASServer)
+		if err != nil {
+			opErr = err
+		} else {
+			defer dc.Close()
+			switch msg.OperationType {
+			case "lock_scheduled_jobs":
+				opErr = dc.LockScheduledJobs(ctx, clusterID, infobaseID, clusterInfo.ClusterUser, clusterInfo.ClusterPwd)
+			case "unlock_scheduled_jobs":
+				opErr = dc.UnlockScheduledJobs(ctx, clusterID, infobaseID, clusterInfo.ClusterUser, clusterInfo.ClusterPwd)
+			case "block_sessions":
+				deniedFrom := time.Now().UTC()
+				deniedTo := deniedFrom.Add(24 * time.Hour)
+				opErr = dc.BlockSessions(
+					ctx,
+					clusterID,
+					infobaseID,
+					clusterInfo.ClusterUser,
+					clusterInfo.ClusterPwd,
+					deniedFrom,
+					deniedTo,
+					extractString(data, "message"),
+					extractString(data, "permission_code"),
+					extractString(data, "parameter"),
+				)
+			case "unblock_sessions":
+				opErr = dc.UnblockSessions(ctx, clusterID, infobaseID, clusterInfo.ClusterUser, clusterInfo.ClusterPwd)
+			case "terminate_sessions":
+				opErr = dc.TerminateAllSessions(ctx, clusterID, infobaseID, clusterInfo.ClusterUser, clusterInfo.ClusterPwd)
+			default:
+				opErr = fmt.Errorf("unsupported RAS operation type: %s", msg.OperationType)
+			}
 		}
-		_, opErr = client.BlockSessions(ctx, clusterID, infobaseID, req)
-	case "unblock_sessions":
-		_, opErr = client.UnblockSessions(ctx, clusterID, infobaseID, &rasadapter.UnblockSessionsRequest{})
-	case "terminate_sessions":
-		_, opErr = client.TerminateAllSessions(ctx, clusterID, infobaseID)
-	default:
-		opErr = fmt.Errorf("unsupported RAS operation type: %s", msg.OperationType)
+	} else {
+		client, err := p.getRasHTTPClient()
+		if err != nil {
+			p.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+				"database_id":  databaseID,
+				"error":        err.Error(),
+				"duration_ms":  time.Since(start).Milliseconds(),
+				"error_source": "ras_client",
+			})
+			return models.DatabaseResultV2{
+				DatabaseID: databaseID,
+				Success:    false,
+				Error:      fmt.Sprintf("failed to create RAS adapter client: %v", err),
+				ErrorCode:  "CLIENT_ERROR",
+				Duration:   time.Since(start).Seconds(),
+			}
+		}
+
+		switch msg.OperationType {
+		case "lock_scheduled_jobs":
+			_, opErr = client.LockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.LockInfobaseRequest{})
+		case "unlock_scheduled_jobs":
+			_, opErr = client.UnlockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.UnlockInfobaseRequest{})
+		case "block_sessions":
+			req := &rasadapter.BlockSessionsRequest{
+				DeniedMessage:  extractString(data, "message"),
+				PermissionCode: extractString(data, "permission_code"),
+			}
+			_, opErr = client.BlockSessions(ctx, clusterID, infobaseID, req)
+		case "unblock_sessions":
+			_, opErr = client.UnblockSessions(ctx, clusterID, infobaseID, &rasadapter.UnblockSessionsRequest{})
+		case "terminate_sessions":
+			_, opErr = client.TerminateAllSessions(ctx, clusterID, infobaseID)
+		default:
+			opErr = fmt.Errorf("unsupported RAS operation type: %s", msg.OperationType)
+		}
 	}
 
 	duration := time.Since(start)

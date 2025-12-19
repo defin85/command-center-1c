@@ -25,6 +25,11 @@ type ClusterInfo struct {
 	InfobaseID string `json:"infobase_id"`
 	// DatabaseID is the original database ID from the request
 	DatabaseID string `json:"database_id"`
+	// RASServer is the RAS server address (host:port)
+	RASServer string `json:"ras_server"`
+	// ClusterUser/ClusterPwd are optional cluster admin credentials
+	ClusterUser string `json:"cluster_user"`
+	ClusterPwd  string `json:"cluster_pwd"`
 }
 
 // ClusterInfoResolver resolves cluster and infobase IDs from database ID
@@ -320,9 +325,12 @@ func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, database
 	var apiResponse struct {
 		Success     bool `json:"success"`
 		ClusterInfo struct {
-			DatabaseID string `json:"database_id"`
-			ClusterID  string `json:"cluster_id"`
-			InfobaseID string `json:"infobase_id"`
+			DatabaseID  string `json:"database_id"`
+			ClusterID   string `json:"cluster_id"`
+			InfobaseID  string `json:"infobase_id"`
+			RASServer   string `json:"ras_server"`
+			ClusterUser string `json:"cluster_user"`
+			ClusterPwd  string `json:"cluster_pwd"`
 		} `json:"cluster_info"`
 	}
 
@@ -342,9 +350,12 @@ func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, database
 	}
 
 	return &ClusterInfo{
-		DatabaseID: databaseID,
-		ClusterID:  apiResponse.ClusterInfo.ClusterID,
-		InfobaseID: apiResponse.ClusterInfo.InfobaseID,
+		DatabaseID:  databaseID,
+		ClusterID:   apiResponse.ClusterInfo.ClusterID,
+		InfobaseID:  apiResponse.ClusterInfo.InfobaseID,
+		RASServer:   apiResponse.ClusterInfo.RASServer,
+		ClusterUser: apiResponse.ClusterInfo.ClusterUser,
+		ClusterPwd:  apiResponse.ClusterInfo.ClusterPwd,
 	}, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
@@ -20,7 +22,7 @@ const StreamKeyClustersDiscovered = "events:worker:clusters-discovered"
 
 // DiscoverClustersPayload contains data for discover_clusters operation
 type DiscoverClustersPayload struct {
-	RASServer   string `json:"ras_server"`          // RAS server address (host:port)
+	RASServer   string `json:"ras_server"`             // RAS server address (host:port)
 	ClusterUser string `json:"cluster_user,omitempty"` // Optional cluster admin user
 	ClusterPwd  string `json:"cluster_pwd,omitempty"`  // Optional cluster admin password
 }
@@ -69,24 +71,48 @@ func (p *TaskProcessor) processDiscoverClusters(ctx context.Context, msg *models
 	)
 
 	// Create RAS Adapter client
-	rasClient, err := rasadapter.NewClient()
-	if err != nil {
-		return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to create RAS client: %v", err), "CLIENT_ERROR")
-	}
+	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
+	var clusters []map[string]interface{}
+	var clustersCount int
+	if useDirect {
+		client, err := rasdirect.NewClient(payload.RASServer)
+		if err != nil {
+			return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR")
+		}
+		defer client.Close()
 
-	// Fetch clusters from RAS server
-	clustersResp, err := rasClient.ListClusters(ctx, payload.RASServer)
-	if err != nil {
-		return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to list clusters: %v", err), "RAS_ERROR")
+		list, err := client.GetClusters(ctx)
+		if err != nil {
+			return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to list clusters (direct RAS): %v", err), "RAS_ERROR")
+		}
+		clustersCount = len(list)
+		clusters = make([]map[string]interface{}, 0, len(list))
+		for _, c := range list {
+			clusters = append(clusters, map[string]interface{}{
+				"uuid": c.UUID,
+				"name": c.Name,
+				"host": c.Host,
+				"port": c.Port,
+			})
+		}
+	} else {
+		rasClient, err := rasadapter.NewClient()
+		if err != nil {
+			return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to create RAS adapter client: %v", err), "CLIENT_ERROR")
+		}
+
+		clustersResp, err := rasClient.ListClusters(ctx, payload.RASServer)
+		if err != nil {
+			return p.failDiscoverClusters(ctx, result, start, fmt.Sprintf("failed to list clusters: %v", err), "RAS_ERROR")
+		}
+		clustersCount = clustersResp.Count
+		clusters = convertClustersToMap(clustersResp.Clusters)
 	}
 
 	log.Info("discovered clusters from RAS server",
 		zap.String("ras_server", payload.RASServer),
-		zap.Int("count", clustersResp.Count),
+		zap.Int("count", clustersCount),
 	)
-
-	// Convert clusters to generic format
-	clusters := convertClustersToMap(clustersResp.Clusters)
 
 	// Publish result to Redis Stream for Orchestrator
 	discoverResult := DiscoverClustersResult{
@@ -114,7 +140,7 @@ func (p *TaskProcessor) processDiscoverClusters(ctx context.Context, msg *models
 		Success:    true,
 		Data: map[string]interface{}{
 			"ras_server":     payload.RASServer,
-			"clusters_count": clustersResp.Count,
+			"clusters_count": clustersCount,
 			"clusters":       clusters,
 		},
 		Duration: duration,
@@ -129,7 +155,7 @@ func (p *TaskProcessor) processDiscoverClusters(ctx context.Context, msg *models
 	log.Info("discover_clusters completed successfully",
 		zap.String("operation_id", msg.OperationID),
 		zap.String("ras_server", payload.RASServer),
-		zap.Int("clusters_count", clustersResp.Count),
+		zap.Int("clusters_count", clustersCount),
 		zap.Float64("duration_seconds", duration),
 	)
 
