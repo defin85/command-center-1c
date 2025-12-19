@@ -21,6 +21,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/extensionops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
@@ -51,8 +52,7 @@ type TaskProcessor struct {
 	odataClients    map[string]*odata.Client // Cache clients per database
 	clientsMutex    sync.RWMutex
 	workerID        string
-	featureFlags    *workerConfig.FeatureFlags // Feature flags for dual-mode
-	dualModeProc    *DualModeProcessor         // Dual-mode processor
+	featureFlags    *workerConfig.FeatureFlags // Feature flags for worker behavior
 	eventPublisher  *events.EventPublisher     // Event publisher for workflow tracking (internal)
 	clusterResolver clusterinfo.Resolver       // Cluster/infobase resolver for RAS operations
 
@@ -153,9 +153,6 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		)
 	}
 
-	// Initialize dual-mode processor
-	processor.dualModeProc = NewDualModeProcessor(featureFlags, processor)
-
 	// Initialize shared events subscriber for State Machine
 	// Uses Watermill logger adapter
 	wmLogger := watermill.NewStdLogger(false, false)
@@ -221,11 +218,13 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 
 	// Database operations
 	_ = processor.driverRegistry.RegisterDatabase(
-		drivers.NewFuncDatabaseDriver("extension-install", []string{"install_extension"}, func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
-			res := processor.dualModeProc.ProcessExtensionInstall(ctx, msg, databaseID)
-			res.DatabaseID = databaseID
-			return res, nil
-		}),
+		extensionops.NewInstallDriver(
+			featureFlags,
+			processor.clusterResolver,
+			redisClient,
+			processor.eventSubscriber,
+			processor.timeline,
+		),
 	)
 	_ = processor.driverRegistry.RegisterDatabase(
 		rasops.NewInfobaseDriver(processor.workerID, processor.clusterResolver, processor.timeline, cfg.RASAdapterURL),
@@ -878,12 +877,18 @@ func stringContains(s, substr string) bool {
 
 // GetFeatureFlags returns current feature flags configuration
 func (p *TaskProcessor) GetFeatureFlags() map[string]interface{} {
-	return p.dualModeProc.GetFeatureFlags()
+	if p.featureFlags == nil {
+		return map[string]interface{}{}
+	}
+	return p.featureFlags.GetConfig()
 }
 
 // ReloadFeatureFlags hot-reloads feature flags from environment
 func (p *TaskProcessor) ReloadFeatureFlags() error {
-	return p.dualModeProc.ReloadFeatureFlags()
+	if p.featureFlags == nil {
+		return fmt.Errorf("feature flags not configured")
+	}
+	return p.featureFlags.Reload()
 }
 
 // --- State Machine methods (Sprint 2.1) ---

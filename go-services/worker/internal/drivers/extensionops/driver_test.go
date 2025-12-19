@@ -1,5 +1,5 @@
-// go-services/worker/internal/processor/dual_mode_test.go
-package processor
+// go-services/worker/internal/drivers/extensionops/driver_test.go
+package extensionops
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commandcenter1c/commandcenter/shared/events"
+	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
@@ -20,14 +20,14 @@ import (
 
 // ========== Mock ClusterInfoResolver ==========
 
-// MockClusterResolver is a mock implementation of ClusterInfoResolver for testing
+// MockClusterResolver is a mock implementation of ClusterInfoResolver for testing.
 type MockClusterResolver struct {
 	mu           sync.Mutex
 	ResolveFunc  func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error)
 	ResolveCalls []string
 }
 
-// NewMockClusterResolver creates a new MockClusterResolver with default behavior
+// NewMockClusterResolver creates a new MockClusterResolver with default behavior.
 func NewMockClusterResolver() *MockClusterResolver {
 	return &MockClusterResolver{
 		ResolveCalls: make([]string, 0),
@@ -41,7 +41,7 @@ func NewMockClusterResolver() *MockClusterResolver {
 	}
 }
 
-// Resolve implements ClusterInfoResolver
+// Resolve implements ClusterInfoResolver.
 func (m *MockClusterResolver) Resolve(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 	m.mu.Lock()
 	m.ResolveCalls = append(m.ResolveCalls, databaseID)
@@ -53,7 +53,7 @@ func (m *MockClusterResolver) Resolve(ctx context.Context, databaseID string) (*
 	return nil, errors.New("ResolveFunc not configured")
 }
 
-// GetCallCount returns the number of Resolve calls
+// GetCallCount returns the number of Resolve calls.
 func (m *MockClusterResolver) GetCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -62,7 +62,7 @@ func (m *MockClusterResolver) GetCallCount() int {
 
 // ========== Mock EventPublisher for Processor tests ==========
 
-// MockProcessorPublisher is a mock implementation of statemachine.EventPublisher
+// MockProcessorPublisher is a mock implementation of statemachine.EventPublisher.
 type MockProcessorPublisher struct {
 	mu             sync.Mutex
 	PublishedCalls []MockPublishCall
@@ -110,20 +110,20 @@ func (m *MockProcessorPublisher) Close() error {
 
 // ========== Mock EventSubscriber for Processor tests ==========
 
-// MockProcessorSubscriber is a mock implementation of statemachine.EventSubscriber
+// MockProcessorSubscriber is a mock implementation of statemachine.EventSubscriber.
 type MockProcessorSubscriber struct {
 	mu       sync.Mutex
-	Handlers map[string]events.HandlerFunc
+	Handlers map[string]sharedEvents.HandlerFunc
 	Closed   bool
 }
 
 func NewMockProcessorSubscriber() *MockProcessorSubscriber {
 	return &MockProcessorSubscriber{
-		Handlers: make(map[string]events.HandlerFunc),
+		Handlers: make(map[string]sharedEvents.HandlerFunc),
 	}
 }
 
-func (m *MockProcessorSubscriber) Subscribe(channel string, handler events.HandlerFunc) error {
+func (m *MockProcessorSubscriber) Subscribe(channel string, handler sharedEvents.HandlerFunc) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -138,8 +138,8 @@ func (m *MockProcessorSubscriber) Close() error {
 	return nil
 }
 
-// SimulateEvent simulates receiving an event
-func (m *MockProcessorSubscriber) SimulateEvent(ctx context.Context, channel string, envelope *events.Envelope) error {
+// SimulateEvent simulates receiving an event.
+func (m *MockProcessorSubscriber) SimulateEvent(ctx context.Context, channel string, envelope *sharedEvents.Envelope) error {
 	m.mu.Lock()
 	handler, exists := m.Handlers[channel]
 	m.mu.Unlock()
@@ -153,7 +153,7 @@ func (m *MockProcessorSubscriber) SimulateEvent(ctx context.Context, channel str
 
 // ========== Test Helper Functions ==========
 
-// createTestOperationMessage creates a test OperationMessage for extension installation
+// createTestOperationMessage creates a test OperationMessage for extension installation.
 func createTestOperationMessage(extensionName, extensionPath, databaseID string) *models.OperationMessage {
 	return &models.OperationMessage{
 		Version:         "2.0",
@@ -179,21 +179,18 @@ func createTestOperationMessage(extensionName, extensionPath, databaseID string)
 	}
 }
 
-// createTestDualModeProcessor creates a DualModeProcessor for testing
-func createTestDualModeProcessor(resolver clusterinfo.Resolver) *DualModeProcessor {
+// createTestInstallDriver creates an InstallDriver for testing.
+func createTestInstallDriver(resolver clusterinfo.Resolver) *InstallDriver {
 	ff := createTestFeatureFlags(true) // Enable Event-Driven mode for testing
 
-	dm := &DualModeProcessor{
+	return &InstallDriver{
 		featureFlags:    ff,
-		processor:       nil, // Will be set via SetClusterResolver
 		smConfig:        statemachine.DefaultConfig(),
 		clusterResolver: resolver,
 	}
-
-	return dm
 }
 
-// createTestFeatureFlags creates FeatureFlags with specified settings for testing
+// createTestFeatureFlags creates FeatureFlags with specified settings for testing.
 func createTestFeatureFlags(enableEventDriven bool) *config.FeatureFlags {
 	ff := config.NewFeatureFlags()
 	ff.EnableEventDriven = enableEventDriven
@@ -204,7 +201,7 @@ func createTestFeatureFlags(enableEventDriven bool) *config.FeatureFlags {
 
 // ========== Tests ==========
 
-// TestValidateExtensionInstallParams tests parameter validation
+// TestValidateExtensionInstallParams tests parameter validation.
 func TestValidateExtensionInstallParams(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -338,15 +335,15 @@ func TestValidateExtensionInstallParams(t *testing.T) {
 	}
 }
 
-// TestDualModeProcessor_ExecutionMode tests that Event-Driven is always used (Phase 3)
-func TestDualModeProcessor_ExecutionMode(t *testing.T) {
+// TestInstallDriver_ExecutionMode tests that Event-Driven is always used (Phase 3).
+func TestInstallDriver_ExecutionMode(t *testing.T) {
 	// After Phase 3 cleanup, Event-Driven is the only mode
 	// This test verifies that ExecutionMode constant is correct
 	assert.Equal(t, ExecutionMode("event_driven"), ModeEventDriven)
 }
 
-// TestDualModeProcessor_ClusterInfoResolution tests ClusterInfo resolution
-func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
+// TestInstallDriver_ClusterInfoResolution tests ClusterInfo resolution.
+func TestInstallDriver_ClusterInfoResolution(t *testing.T) {
 	tests := []struct {
 		name        string
 		resolveFunc func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error)
@@ -388,10 +385,10 @@ func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
 			mockResolver.ResolveFunc = tt.resolveFunc
 
 			// Test via ResolveClusterInfo directly
-			dm := createTestDualModeProcessor(mockResolver)
+			driver := createTestInstallDriver(mockResolver)
 			ctx := context.Background()
 
-			info, err := dm.ResolveClusterInfo(ctx, "test-db-id")
+			info, err := driver.ResolveClusterInfo(ctx, "test-db-id")
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -406,43 +403,43 @@ func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
 	}
 }
 
-// TestDualModeProcessor_ResolveClusterInfo_NilResolver tests nil resolver handling
-func TestDualModeProcessor_ResolveClusterInfo_NilResolver(t *testing.T) {
-	dm := &DualModeProcessor{
+// TestInstallDriver_ResolveClusterInfo_NilResolver tests nil resolver handling.
+func TestInstallDriver_ResolveClusterInfo_NilResolver(t *testing.T) {
+	driver := &InstallDriver{
 		clusterResolver: nil,
 	}
 
-	info, err := dm.ResolveClusterInfo(context.Background(), "test-db")
+	info, err := driver.ResolveClusterInfo(context.Background(), "test-db")
 
 	require.Error(t, err)
 	assert.Nil(t, info)
 	assert.Contains(t, err.Error(), "not configured")
 }
 
-// TestDualModeProcessor_SetClusterResolver tests resolver injection
-func TestDualModeProcessor_SetClusterResolver(t *testing.T) {
-	dm := &DualModeProcessor{}
+// TestInstallDriver_SetClusterResolver tests resolver injection.
+func TestInstallDriver_SetClusterResolver(t *testing.T) {
+	driver := &InstallDriver{}
 
 	mockResolver := NewMockClusterResolver()
-	dm.SetClusterResolver(mockResolver)
+	driver.SetClusterResolver(mockResolver)
 
-	assert.NotNil(t, dm.GetClusterResolver())
-	assert.Equal(t, mockResolver, dm.GetClusterResolver())
+	assert.NotNil(t, driver.GetClusterResolver())
+	assert.Equal(t, mockResolver, driver.GetClusterResolver())
 }
 
-// TestNullClusterResolver_DualMode tests NullClusterResolver behavior in dual mode context
-func TestNullClusterResolver_DualMode(t *testing.T) {
+// TestNullClusterResolver_InstallDriver tests NullClusterResolver behavior in driver context.
+func TestNullClusterResolver_InstallDriver(t *testing.T) {
 	resolver := &clusterinfo.NullResolver{}
 
-	info, err := resolver.Resolve(context.Background(), "dual-mode-db-test")
+	info, err := resolver.Resolve(context.Background(), "driver-db-test")
 
 	assert.Nil(t, info)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ClusterInfoResolver not configured")
-	assert.Contains(t, err.Error(), "dual-mode-db-test")
+	assert.Contains(t, err.Error(), "driver-db-test")
 }
 
-// TestProcessEventDriven_ValidationError tests validation error handling
+// TestProcessEventDriven_ValidationError tests validation error handling.
 func TestProcessEventDriven_ValidationError(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -467,14 +464,14 @@ func TestProcessEventDriven_ValidationError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockResolver := NewMockClusterResolver()
-			dm := createTestDualModeProcessor(mockResolver)
+			driver := createTestInstallDriver(mockResolver)
 
 			ctx := context.Background()
 			msg := createTestOperationMessage(tt.extName, tt.extPath, "db-123")
 
 			// Call processEventDriven indirectly through ProcessExtensionInstall
 			// Since we can't call processEventDriven directly (lowercase), we test via the public method
-			result := dm.ProcessExtensionInstall(ctx, msg, "db-123")
+			result := driver.ProcessExtensionInstall(ctx, msg, "db-123")
 
 			assert.False(t, result.Success)
 			// Error code is set to EXECUTION_ERROR by ProcessExtensionInstall wrapper
@@ -485,19 +482,19 @@ func TestProcessEventDriven_ValidationError(t *testing.T) {
 	}
 }
 
-// TestProcessEventDriven_ClusterResolveError tests cluster resolution error handling
+// TestProcessEventDriven_ClusterResolveError tests cluster resolution error handling.
 func TestProcessEventDriven_ClusterResolveError(t *testing.T) {
 	mockResolver := NewMockClusterResolver()
 	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		return nil, errors.New("orchestrator connection timeout")
 	}
 
-	dm := createTestDualModeProcessor(mockResolver)
+	driver := createTestInstallDriver(mockResolver)
 
 	ctx := context.Background()
 	msg := createTestOperationMessage("TestExtension", "/path/to/ext.cfe", "db-123")
 
-	result := dm.ProcessExtensionInstall(ctx, msg, "db-123")
+	result := driver.ProcessExtensionInstall(ctx, msg, "db-123")
 
 	assert.False(t, result.Success)
 	// ProcessExtensionInstall wraps the error with EXECUTION_ERROR
@@ -509,7 +506,7 @@ func TestProcessEventDriven_ClusterResolveError(t *testing.T) {
 	assert.Equal(t, 1, mockResolver.GetCallCount())
 }
 
-// TestProcessEventDriven_NoFallback tests that there's no fallback to HTTP Sync
+// TestProcessEventDriven_NoFallback tests that there's no fallback to HTTP Sync.
 func TestProcessEventDriven_NoFallback(t *testing.T) {
 	// When ClusterInfo resolution fails, there should be NO fallback to HTTP Sync
 	mockResolver := NewMockClusterResolver()
@@ -517,12 +514,12 @@ func TestProcessEventDriven_NoFallback(t *testing.T) {
 		return nil, errors.New("orchestrator unavailable")
 	}
 
-	dm := createTestDualModeProcessor(mockResolver)
+	driver := createTestInstallDriver(mockResolver)
 
 	ctx := context.Background()
 	msg := createTestOperationMessage("TestExtension", "/path/to/ext.cfe", "db-123")
 
-	result := dm.ProcessExtensionInstall(ctx, msg, "db-123")
+	result := driver.ProcessExtensionInstall(ctx, msg, "db-123")
 
 	// Should fail, NOT succeed via HTTP Sync fallback
 	assert.False(t, result.Success)
@@ -534,7 +531,7 @@ func TestProcessEventDriven_NoFallback(t *testing.T) {
 	assert.NotContains(t, result.Error, "fallback")
 }
 
-// TestPublisherWrapper tests publisherWrapper implementation
+// TestPublisherWrapper tests publisherWrapper implementation.
 func TestPublisherWrapper(t *testing.T) {
 	mockPub := NewMockProcessorPublisher()
 
@@ -558,7 +555,7 @@ func TestPublisherWrapper(t *testing.T) {
 	assert.True(t, mockPub.Closed)
 }
 
-// TestSubscriberWrapper tests subscriberWrapper implementation
+// TestSubscriberWrapper tests subscriberWrapper implementation.
 func TestSubscriberWrapper(t *testing.T) {
 	mockSub := NewMockProcessorSubscriber()
 
@@ -567,7 +564,7 @@ func TestSubscriberWrapper(t *testing.T) {
 
 	// Test subscribe
 	handlerCalled := false
-	err := mockSub.Subscribe("test-channel", func(ctx context.Context, envelope *events.Envelope) error {
+	err := mockSub.Subscribe("test-channel", func(ctx context.Context, envelope *sharedEvents.Envelope) error {
 		handlerCalled = true
 		return nil
 	})
@@ -575,7 +572,7 @@ func TestSubscriberWrapper(t *testing.T) {
 
 	// Simulate event
 	ctx := context.Background()
-	envelope := &events.Envelope{
+	envelope := &sharedEvents.Envelope{
 		MessageID:     "msg-1",
 		EventType:     "test.event",
 		CorrelationID: "corr-1",
@@ -590,29 +587,29 @@ func TestSubscriberWrapper(t *testing.T) {
 	assert.True(t, mockSub.Closed)
 }
 
-// TestDualModeProcessor_GetFeatureFlags tests feature flag retrieval
-func TestDualModeProcessor_GetFeatureFlags(t *testing.T) {
+// TestInstallDriver_GetFeatureFlags tests feature flag retrieval.
+func TestInstallDriver_GetFeatureFlags(t *testing.T) {
 	ff := createTestFeatureFlags(true)
 
-	dm := &DualModeProcessor{
+	driver := &InstallDriver{
 		featureFlags: ff,
 	}
 
-	flags := dm.GetFeatureFlags()
+	flags := driver.GetFeatureFlags()
 	require.NotNil(t, flags)
 	// Verify some expected flags
 	assert.Equal(t, true, flags["enable_event_driven"])
 	assert.Equal(t, true, flags["enable_for_extensions"])
 }
 
-// TestExecutionMode_Constants tests ExecutionMode constants
-// After Phase 3 cleanup, only Event-Driven mode remains
+// TestExecutionMode_Constants tests ExecutionMode constants.
+// After Phase 3 cleanup, only Event-Driven mode remains.
 func TestExecutionMode_Constants(t *testing.T) {
 	assert.Equal(t, ExecutionMode("event_driven"), ModeEventDriven)
 }
 
-// TestDualModeProcessor_ContextCancellation tests context cancellation handling
-func TestDualModeProcessor_ContextCancellation(t *testing.T) {
+// TestInstallDriver_ContextCancellation tests context cancellation handling.
+func TestInstallDriver_ContextCancellation(t *testing.T) {
 	mockResolver := NewMockClusterResolver()
 	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		// Simulate slow resolution
@@ -628,7 +625,7 @@ func TestDualModeProcessor_ContextCancellation(t *testing.T) {
 		}
 	}
 
-	dm := createTestDualModeProcessor(mockResolver)
+	driver := createTestInstallDriver(mockResolver)
 
 	// Create cancelled context
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -636,7 +633,7 @@ func TestDualModeProcessor_ContextCancellation(t *testing.T) {
 
 	msg := createTestOperationMessage("TestExt", "/path/ext.cfe", "db-123")
 
-	result := dm.ProcessExtensionInstall(ctx, msg, "db-123")
+	result := driver.ProcessExtensionInstall(ctx, msg, "db-123")
 
 	// Should fail due to context cancellation
 	assert.False(t, result.Success)
@@ -665,8 +662,8 @@ func BenchmarkValidateExtensionInstallParams(b *testing.B) {
 
 // ========== Integration-like Tests (with mocks) ==========
 
-// TestProcessEventDriven_ClusterResolutionCalled tests that cluster resolution is called
-// Note: Full SM flow requires TaskProcessor with Redis, which is tested in integration tests
+// TestProcessEventDriven_ClusterResolutionCalled tests that cluster resolution is called.
+// Note: Full SM flow requires Redis + subscriber, which is tested in integration tests.
 func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 	t.Run("cluster resolution is called with correct database_id", func(t *testing.T) {
 		resolverCalled := false
@@ -675,16 +672,16 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 			resolverCalled = true
 			receivedDBID = databaseID
-			// Return error to prevent going to createStateMachine (which needs processor)
+			// Return error to prevent going to createStateMachine (which needs redis/subscriber)
 			return nil, errors.New("test: intentional resolver error")
 		}
 
-		dm := createTestDualModeProcessor(mockResolver)
+		driver := createTestInstallDriver(mockResolver)
 
 		ctx := context.Background()
 		msg := createTestOperationMessage("ValidExtension", "/valid/path/ext.cfe", "db-test-123")
 
-		result := dm.ProcessExtensionInstall(ctx, msg, "db-test-123")
+		result := driver.ProcessExtensionInstall(ctx, msg, "db-test-123")
 
 		// Cluster resolution should have been called with correct database ID
 		assert.True(t, resolverCalled, "Resolver should be called")
@@ -703,13 +700,13 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 			return nil, errors.New("should not be called")
 		}
 
-		dm := createTestDualModeProcessor(mockResolver)
+		driver := createTestInstallDriver(mockResolver)
 
 		ctx := context.Background()
 		// Invalid message - empty extension name
 		msg := createTestOperationMessage("", "/valid/path/ext.cfe", "db-test")
 
-		result := dm.ProcessExtensionInstall(ctx, msg, "db-test")
+		result := driver.ProcessExtensionInstall(ctx, msg, "db-test")
 
 		// Resolver should NOT be called because validation fails first
 		assert.False(t, resolverCalled, "Resolver should NOT be called when validation fails")
@@ -718,7 +715,7 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 	})
 }
 
-// TestProcessEventDriven_MultipleDatabases tests processing multiple databases
+// TestProcessEventDriven_MultipleDatabases tests processing multiple databases.
 func TestProcessEventDriven_MultipleDatabases(t *testing.T) {
 	callCounts := make(map[string]int)
 	var mu sync.Mutex
@@ -729,18 +726,18 @@ func TestProcessEventDriven_MultipleDatabases(t *testing.T) {
 		callCounts[databaseID]++
 		mu.Unlock()
 
-		// Return error to prevent going to createStateMachine (which needs processor)
+		// Return error to prevent going to createStateMachine (which needs redis/subscriber)
 		return nil, fmt.Errorf("test: intentional error for %s", databaseID)
 	}
 
-	dm := createTestDualModeProcessor(mockResolver)
+	driver := createTestInstallDriver(mockResolver)
 	ctx := context.Background()
 
 	databases := []string{"db-1", "db-2", "db-3"}
 
 	for _, dbID := range databases {
 		msg := createTestOperationMessage("TestExt", "/path/ext.cfe", dbID)
-		result := dm.ProcessExtensionInstall(ctx, msg, dbID)
+		result := driver.ProcessExtensionInstall(ctx, msg, dbID)
 		// Each should fail (expected)
 		assert.False(t, result.Success)
 	}

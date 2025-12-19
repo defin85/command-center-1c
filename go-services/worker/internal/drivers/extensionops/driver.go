@@ -1,5 +1,5 @@
-// go-services/worker/internal/processor/dual_mode.go
-package processor
+// go-services/worker/internal/drivers/extensionops/driver.go
+package extensionops
 
 import (
 	"context"
@@ -9,69 +9,78 @@ import (
 	"strings"
 	"time"
 
-	"github.com/commandcenter1c/commandcenter/shared/events"
+	"github.com/redis/go-redis/v9"
+
+	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
 )
 
-// ExecutionMode represents execution mode (Event-Driven only since Phase 3)
+// ExecutionMode represents execution mode (Event-Driven only since Phase 3).
 type ExecutionMode string
 
 const (
 	ModeEventDriven ExecutionMode = "event_driven"
 )
 
-// DualModeProcessor handles dual-mode execution
-type DualModeProcessor struct {
+// InstallDriver executes install_extension operations via state machine.
+type InstallDriver struct {
 	featureFlags    *config.FeatureFlags
-	processor       *TaskProcessor
-	smConfig        *statemachine.Config // State Machine configuration
-	clusterResolver clusterinfo.Resolver // Resolver for cluster/infobase IDs
+	smConfig        *statemachine.Config
+	clusterResolver clusterinfo.Resolver
+	redisClient     *redis.Client
+	eventSubscriber *sharedEvents.Subscriber
+	timeline        tracing.TimelineRecorder
 }
 
-// NewDualModeProcessor creates new DualModeProcessor instance
-func NewDualModeProcessor(ff *config.FeatureFlags, processor *TaskProcessor) *DualModeProcessor {
-	log := logger.GetLogger()
+// NewInstallDriver creates a new driver for install_extension.
+func NewInstallDriver(
+	featureFlags *config.FeatureFlags,
+	clusterResolver clusterinfo.Resolver,
+	redisClient *redis.Client,
+	eventSubscriber *sharedEvents.Subscriber,
+	timeline tracing.TimelineRecorder,
+) *InstallDriver {
+	if featureFlags == nil {
+		featureFlags = config.NewFeatureFlags()
+	}
+	if clusterResolver == nil {
+		clusterResolver = &clusterinfo.NullResolver{}
+	}
+	if timeline == nil {
+		timeline = tracing.NewNoopTimeline()
+	}
 
-	// Load State Machine config from environment
-	// Pass nil for logger since logrus doesn't implement zap interface
-	// Config loading will skip debug logging
 	smConfig := statemachine.LoadFromEnv(nil)
 
-	// Initialize ClusterInfoResolver
-	// Uses OrchestratorClusterResolver with Redis caching if available
-	var clusterResolver clusterinfo.Resolver
-	resolverCfg := clusterinfo.DefaultConfig()
-
-	if processor != nil && processor.GetRedisClient() != nil {
-		resolverCfg.RedisClient = processor.GetRedisClient()
-	}
-
-	if resolverCfg.OrchestratorURL != "" {
-		clusterResolver = clusterinfo.NewOrchestratorResolver(resolverCfg)
-		log.Info("ClusterInfoResolver initialized with OrchestratorClusterResolver")
-	} else {
-		clusterResolver = &clusterinfo.NullResolver{}
-		log.Warn("ClusterInfoResolver not configured (OrchestratorURL is empty), Event-Driven mode will fail")
-	}
-
-	log.Info("DualModeProcessor initialized with State Machine config")
-
-	return &DualModeProcessor{
-		featureFlags:    ff,
-		processor:       processor,
+	return &InstallDriver{
+		featureFlags:    featureFlags,
 		smConfig:        smConfig,
 		clusterResolver: clusterResolver,
+		redisClient:     redisClient,
+		eventSubscriber: eventSubscriber,
+		timeline:        timeline,
 	}
 }
 
-// ProcessExtensionInstall processes extension installation via Event-Driven State Machine
-// HTTP Sync mode has been removed in Phase 3 cleanup
-func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
+func (d *InstallDriver) Name() string { return "extension-install" }
+
+func (d *InstallDriver) OperationTypes() []string { return []string{"install_extension"} }
+
+func (d *InstallDriver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
+	res := d.ProcessExtensionInstall(ctx, msg, databaseID)
+	res.DatabaseID = databaseID
+	return res, nil
+}
+
+// ProcessExtensionInstall processes extension installation via Event-Driven State Machine.
+// HTTP Sync mode has been removed in Phase 3 cleanup.
+func (d *InstallDriver) ProcessExtensionInstall(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
 	log := logger.GetLogger()
 
@@ -84,7 +93,7 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 	metrics.ExecutionMode.WithLabelValues(string(mode)).Inc()
 
 	// Execute via Event-Driven State Machine (only mode since Phase 3)
-	result, err := dm.processEventDriven(ctx, msg, databaseID)
+	result, err := d.processEventDriven(ctx, msg, databaseID)
 
 	// Record metrics
 	duration := time.Since(start)
@@ -113,7 +122,7 @@ func (dm *DualModeProcessor) ProcessExtensionInstall(ctx context.Context, msg *m
 	return result
 }
 
-// validateExtensionInstallParams validates extension installation parameters
+// validateExtensionInstallParams validates extension installation parameters.
 func validateExtensionInstallParams(data map[string]interface{}) (extensionName, extensionPath, databaseID string, err error) {
 	// Validate extension_name
 	extensionName, ok := data["extension_name"].(string)
@@ -161,9 +170,9 @@ func validateExtensionInstallParams(data map[string]interface{}) (extensionName,
 	return extensionName, extensionPath, databaseID, nil
 }
 
-// processEventDriven executes through Event-Driven State Machine
+// processEventDriven executes through Event-Driven State Machine.
 // This is the REAL implementation - NO fallback to HTTP Sync!
-func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
+func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	log := logger.GetLogger()
 	start := time.Now()
 
@@ -193,7 +202,7 @@ func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models
 
 	// Step 3: Resolve cluster info from Orchestrator (NO fallback!)
 	resolveStart := time.Now()
-	clusterInfo, err := dm.clusterResolver.Resolve(ctx, databaseID)
+	clusterInfo, err := d.clusterResolver.Resolve(ctx, databaseID)
 	resolveDuration := time.Since(resolveStart)
 	metrics.RecordClusterResolveDuration(resolveDuration.Seconds())
 
@@ -214,7 +223,7 @@ func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models
 		databaseID, clusterInfo.ClusterID, clusterInfo.InfobaseID, resolveDuration)
 
 	// Step 4: Create State Machine
-	sm, err := dm.createStateMachine(
+	sm, err := d.createStateMachine(
 		ctx,
 		msg.OperationID,
 		databaseID,
@@ -316,79 +325,83 @@ func (dm *DualModeProcessor) processEventDriven(ctx context.Context, msg *models
 	return result, runErr
 }
 
-// GetFeatureFlags returns current feature flags configuration
-func (dm *DualModeProcessor) GetFeatureFlags() map[string]interface{} {
-	return dm.featureFlags.GetConfig()
+// GetFeatureFlags returns current feature flags configuration.
+func (d *InstallDriver) GetFeatureFlags() map[string]interface{} {
+	if d.featureFlags == nil {
+		return map[string]interface{}{}
+	}
+	return d.featureFlags.GetConfig()
 }
 
-// ReloadFeatureFlags hot-reloads feature flags from environment
-func (dm *DualModeProcessor) ReloadFeatureFlags() error {
+// ReloadFeatureFlags hot-reloads feature flags from environment.
+func (d *InstallDriver) ReloadFeatureFlags() error {
 	log := logger.GetLogger()
 	log.Infof("reloading feature flags from environment")
-	return dm.featureFlags.Reload()
+	if d.featureFlags == nil {
+		return fmt.Errorf("feature flags not configured")
+	}
+	return d.featureFlags.Reload()
 }
 
-// GetClusterResolver returns the ClusterInfoResolver instance
-func (dm *DualModeProcessor) GetClusterResolver() clusterinfo.Resolver {
-	return dm.clusterResolver
+// GetClusterResolver returns the ClusterInfoResolver instance.
+func (d *InstallDriver) GetClusterResolver() clusterinfo.Resolver {
+	return d.clusterResolver
 }
 
-// SetClusterResolver sets a custom ClusterInfoResolver (useful for testing)
-func (dm *DualModeProcessor) SetClusterResolver(resolver clusterinfo.Resolver) {
-	dm.clusterResolver = resolver
+// SetClusterResolver sets a custom ClusterInfoResolver (useful for testing).
+func (d *InstallDriver) SetClusterResolver(resolver clusterinfo.Resolver) {
+	d.clusterResolver = resolver
 }
 
-// ResolveClusterInfo resolves cluster info for a database ID
-// This is a convenience method that wraps clusterResolver.Resolve
-func (dm *DualModeProcessor) ResolveClusterInfo(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
-	if dm.clusterResolver == nil {
+// ResolveClusterInfo resolves cluster info for a database ID.
+// This is a convenience method that wraps clusterResolver.Resolve.
+func (d *InstallDriver) ResolveClusterInfo(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
+	if d.clusterResolver == nil {
 		return nil, fmt.Errorf("ClusterInfoResolver not configured")
 	}
-	return dm.clusterResolver.Resolve(ctx, databaseID)
+	return d.clusterResolver.Resolve(ctx, databaseID)
 }
 
 // --- State Machine Factory ---
 
-// Note: ClusterInfo lives in internal/clusterinfo.
-
-// publisherWrapper wraps shared/events.Publisher to implement statemachine.EventPublisher
+// publisherWrapper wraps shared/events.Publisher to implement statemachine.EventPublisher.
 type publisherWrapper struct {
-	publisher *events.Publisher
+	publisher *sharedEvents.Publisher
 }
 
-// Publish implements statemachine.EventPublisher
+// Publish implements statemachine.EventPublisher.
 func (pw *publisherWrapper) Publish(ctx context.Context, channel string, eventType string, payload interface{}, correlationID string) error {
 	return pw.publisher.Publish(ctx, channel, eventType, payload, correlationID)
 }
 
-// Close implements statemachine.EventPublisher
+// Close implements statemachine.EventPublisher.
 func (pw *publisherWrapper) Close() error {
 	return pw.publisher.Close()
 }
 
-// subscriberWrapper wraps shared/events.Subscriber to implement statemachine.EventSubscriber
+// subscriberWrapper wraps shared/events.Subscriber to implement statemachine.EventSubscriber.
 // IMPORTANT: This wrapper does NOT close the underlying subscriber because it's shared
-// across multiple State Machines and managed by TaskProcessor
+// across multiple State Machines and managed by TaskProcessor.
 type subscriberWrapper struct {
-	subscriber *events.Subscriber
+	subscriber *sharedEvents.Subscriber
 }
 
-// Subscribe implements statemachine.EventSubscriber
-func (sw *subscriberWrapper) Subscribe(channel string, handler events.HandlerFunc) error {
+// Subscribe implements statemachine.EventSubscriber.
+func (sw *subscriberWrapper) Subscribe(channel string, handler sharedEvents.HandlerFunc) error {
 	return sw.subscriber.Subscribe(channel, handler)
 }
 
-// Close implements statemachine.EventSubscriber
-// DO NOT close shared subscriber - it's managed by TaskProcessor
+// Close implements statemachine.EventSubscriber.
+// DO NOT close shared subscriber - it's managed by TaskProcessor.
 func (sw *subscriberWrapper) Close() error {
 	// Critical #1 Fix: shared subscriber lifecycle is managed by TaskProcessor,
 	// not by individual State Machines. Closing here would break all other SMs.
 	return nil
 }
 
-// createStateMachine creates a new ExtensionInstallStateMachine instance
-// Returns error if required dependencies are not available
-func (dm *DualModeProcessor) createStateMachine(
+// createStateMachine creates a new ExtensionInstallStateMachine instance.
+// Returns error if required dependencies are not available.
+func (d *InstallDriver) createStateMachine(
 	ctx context.Context,
 	operationID string,
 	databaseID string,
@@ -399,12 +412,12 @@ func (dm *DualModeProcessor) createStateMachine(
 ) (*statemachine.ExtensionInstallStateMachine, error) {
 	log := logger.GetLogger()
 
-	// Get dependencies from TaskProcessor
-	redisClient := dm.processor.GetRedisClient()
-	subscriber := dm.processor.GetEventSubscriber()
+	if d.redisClient == nil {
+		return nil, fmt.Errorf("redis client not configured for State Machine")
+	}
 
 	// Check subscriber availability (graceful degradation)
-	if subscriber == nil {
+	if d.eventSubscriber == nil {
 		log.Warnf("event subscriber not available, State Machine cannot be created: operation_id=%s, database_id=%s",
 			operationID, databaseID)
 		return nil, fmt.Errorf("event subscriber not available for State Machine")
@@ -413,7 +426,7 @@ func (dm *DualModeProcessor) createStateMachine(
 	// Create publisher for State Machine
 	// Note: We create a new publisher instance for each State Machine
 	// to ensure proper isolation and cleanup
-	publisher, err := events.NewPublisher(redisClient, "worker-state-machine", nil)
+	publisher, err := sharedEvents.NewPublisher(d.redisClient, "worker-state-machine", nil)
 	if err != nil {
 		log.Errorf("failed to create event publisher for State Machine: %v", err)
 		return nil, fmt.Errorf("failed to create event publisher: %w", err)
@@ -421,10 +434,7 @@ func (dm *DualModeProcessor) createStateMachine(
 
 	// Wrap publisher and subscriber to implement statemachine interfaces
 	pubWrapper := &publisherWrapper{publisher: publisher}
-	subWrapper := &subscriberWrapper{subscriber: subscriber}
-
-	// Get timeline from processor
-	timeline := dm.processor.GetTimeline()
+	subWrapper := &subscriberWrapper{subscriber: d.eventSubscriber}
 
 	// Create State Machine with timeline
 	sm, err := statemachine.NewStateMachine(
@@ -434,9 +444,9 @@ func (dm *DualModeProcessor) createStateMachine(
 		correlationID,
 		pubWrapper,
 		subWrapper,
-		redisClient,
-		dm.smConfig,
-		statemachine.WithTimeline(timeline),
+		d.redisClient,
+		d.smConfig,
+		statemachine.WithTimeline(d.timeline),
 	)
 	if err != nil {
 		// Clean up publisher on error
@@ -458,5 +468,3 @@ func (dm *DualModeProcessor) createStateMachine(
 
 	return sm, nil
 }
-
-// Metrics recording functions (placeholder - to be implemented with Prometheus)
