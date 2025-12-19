@@ -338,6 +338,8 @@ func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Co
 		return fmt.Errorf("designer credentials provider not configured")
 	}
 
+	fmt.Printf("[StateMachine] Rehydrating designer credentials from provider (no persistence): database_id=%s\n", sm.DatabaseID)
+
 	creds, err := sm.credentialsProvider.Fetch(ctx, sm.DatabaseID)
 	if err != nil {
 		metrics.RecordDesignerCredentialsRehydrate(false)
