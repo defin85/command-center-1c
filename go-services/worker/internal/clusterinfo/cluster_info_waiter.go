@@ -1,5 +1,5 @@
-// Package processor provides cluster info resolution via Redis Streams.
-package processor
+// Package clusterinfo provides cluster info resolution via Orchestrator (HTTP) or Redis Streams.
+package clusterinfo
 
 import (
 	"context"
@@ -324,6 +324,7 @@ func (w *ClusterInfoWaiter) RequestClusterInfo(ctx context.Context, databaseID s
 			DatabaseID: response.DatabaseID,
 			ClusterID:  clusterID,
 			InfobaseID: response.InfobaseID,
+			RASServer:  response.RASServer,
 		}, nil
 
 	case <-ctx.Done():

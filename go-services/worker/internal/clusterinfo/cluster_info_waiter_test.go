@@ -1,5 +1,5 @@
-// Package processor provides tests for ClusterInfoWaiter.
-package processor
+// Package clusterinfo provides tests for ClusterInfoWaiter.
+package clusterinfo
 
 import (
 	"context"
@@ -216,6 +216,7 @@ func TestClusterInfoWaiter_SuccessfulRequestResponse(t *testing.T) {
 	assert.Equal(t, "test-db-123", info.DatabaseID)
 	assert.Equal(t, "test-ras-cluster-uuid", info.ClusterID) // Uses RASClusterUUID
 	assert.Equal(t, "test-infobase-uuid", info.InfobaseID)
+	assert.Equal(t, "localhost:1545", info.RASServer)
 }
 
 func TestClusterInfoWaiter_ErrorResponse(t *testing.T) {

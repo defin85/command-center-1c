@@ -23,11 +23,11 @@ type WorkflowClient interface {
 
 // WorkflowHandler handles execute_workflow operations.
 type WorkflowHandler struct {
-	workflowClient   WorkflowClient
-	redisClient      *redis.Client
-	orchestratorURL  string
-	logger           *zap.Logger
-	engine           *engine.Engine
+	workflowClient  WorkflowClient
+	redisClient     *redis.Client
+	orchestratorURL string
+	logger          *zap.Logger
+	engine          *engine.Engine
 }
 
 // NewWorkflowHandler creates a new workflow handler.

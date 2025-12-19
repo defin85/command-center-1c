@@ -11,6 +11,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ import (
 // MockClusterResolver is a mock implementation of ClusterInfoResolver for testing
 type MockClusterResolver struct {
 	mu           sync.Mutex
-	ResolveFunc  func(ctx context.Context, databaseID string) (*ClusterInfo, error)
+	ResolveFunc  func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error)
 	ResolveCalls []string
 }
 
@@ -30,8 +31,8 @@ type MockClusterResolver struct {
 func NewMockClusterResolver() *MockClusterResolver {
 	return &MockClusterResolver{
 		ResolveCalls: make([]string, 0),
-		ResolveFunc: func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
-			return &ClusterInfo{
+		ResolveFunc: func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
+			return &clusterinfo.ClusterInfo{
 				ClusterID:  "cluster-test-123",
 				InfobaseID: "infobase-test-456",
 				DatabaseID: databaseID,
@@ -41,7 +42,7 @@ func NewMockClusterResolver() *MockClusterResolver {
 }
 
 // Resolve implements ClusterInfoResolver
-func (m *MockClusterResolver) Resolve(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+func (m *MockClusterResolver) Resolve(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 	m.mu.Lock()
 	m.ResolveCalls = append(m.ResolveCalls, databaseID)
 	m.mu.Unlock()
@@ -155,10 +156,10 @@ func (m *MockProcessorSubscriber) SimulateEvent(ctx context.Context, channel str
 // createTestOperationMessage creates a test OperationMessage for extension installation
 func createTestOperationMessage(extensionName, extensionPath, databaseID string) *models.OperationMessage {
 	return &models.OperationMessage{
-		Version:       "2.0",
-		OperationID:   "op-test-123",
-		OperationType: "install_extension",
-		Entity:        "extension",
+		Version:         "2.0",
+		OperationID:     "op-test-123",
+		OperationType:   "install_extension",
+		Entity:          "extension",
 		TargetDatabases: []models.TargetDatabase{{ID: databaseID}},
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
@@ -179,7 +180,7 @@ func createTestOperationMessage(extensionName, extensionPath, databaseID string)
 }
 
 // createTestDualModeProcessor creates a DualModeProcessor for testing
-func createTestDualModeProcessor(resolver ClusterInfoResolver) *DualModeProcessor {
+func createTestDualModeProcessor(resolver clusterinfo.Resolver) *DualModeProcessor {
 	ff := createTestFeatureFlags(true) // Enable Event-Driven mode for testing
 
 	dm := &DualModeProcessor{
@@ -348,14 +349,14 @@ func TestDualModeProcessor_ExecutionMode(t *testing.T) {
 func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
 	tests := []struct {
 		name        string
-		resolveFunc func(ctx context.Context, databaseID string) (*ClusterInfo, error)
+		resolveFunc func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error)
 		wantErr     bool
 		wantErrCode string
 	}{
 		{
 			name: "successful resolution",
-			resolveFunc: func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
-				return &ClusterInfo{
+			resolveFunc: func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
+				return &clusterinfo.ClusterInfo{
 					ClusterID:  "cluster-abc",
 					InfobaseID: "infobase-xyz",
 					DatabaseID: databaseID,
@@ -365,7 +366,7 @@ func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
 		},
 		{
 			name: "resolution error",
-			resolveFunc: func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+			resolveFunc: func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 				return nil, errors.New("orchestrator unavailable")
 			},
 			wantErr:     true,
@@ -373,7 +374,7 @@ func TestDualModeProcessor_ClusterInfoResolution(t *testing.T) {
 		},
 		{
 			name: "nil ClusterInfo returned",
-			resolveFunc: func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+			resolveFunc: func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 				return nil, errors.New("database not found in orchestrator")
 			},
 			wantErr:     true,
@@ -431,7 +432,7 @@ func TestDualModeProcessor_SetClusterResolver(t *testing.T) {
 
 // TestNullClusterResolver_DualMode tests NullClusterResolver behavior in dual mode context
 func TestNullClusterResolver_DualMode(t *testing.T) {
-	resolver := &NullClusterResolver{}
+	resolver := &clusterinfo.NullResolver{}
 
 	info, err := resolver.Resolve(context.Background(), "dual-mode-db-test")
 
@@ -487,7 +488,7 @@ func TestProcessEventDriven_ValidationError(t *testing.T) {
 // TestProcessEventDriven_ClusterResolveError tests cluster resolution error handling
 func TestProcessEventDriven_ClusterResolveError(t *testing.T) {
 	mockResolver := NewMockClusterResolver()
-	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		return nil, errors.New("orchestrator connection timeout")
 	}
 
@@ -512,7 +513,7 @@ func TestProcessEventDriven_ClusterResolveError(t *testing.T) {
 func TestProcessEventDriven_NoFallback(t *testing.T) {
 	// When ClusterInfo resolution fails, there should be NO fallback to HTTP Sync
 	mockResolver := NewMockClusterResolver()
-	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		return nil, errors.New("orchestrator unavailable")
 	}
 
@@ -613,13 +614,13 @@ func TestExecutionMode_Constants(t *testing.T) {
 // TestDualModeProcessor_ContextCancellation tests context cancellation handling
 func TestDualModeProcessor_ContextCancellation(t *testing.T) {
 	mockResolver := NewMockClusterResolver()
-	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		// Simulate slow resolution
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
-			return &ClusterInfo{
+			return &clusterinfo.ClusterInfo{
 				ClusterID:  "cluster-1",
 				InfobaseID: "infobase-1",
 				DatabaseID: databaseID,
@@ -671,7 +672,7 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 		resolverCalled := false
 		receivedDBID := ""
 		mockResolver := NewMockClusterResolver()
-		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 			resolverCalled = true
 			receivedDBID = databaseID
 			// Return error to prevent going to createStateMachine (which needs processor)
@@ -697,7 +698,7 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 	t.Run("validation runs before cluster resolution", func(t *testing.T) {
 		resolverCalled := false
 		mockResolver := NewMockClusterResolver()
-		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 			resolverCalled = true
 			return nil, errors.New("should not be called")
 		}
@@ -723,7 +724,7 @@ func TestProcessEventDriven_MultipleDatabases(t *testing.T) {
 	var mu sync.Mutex
 
 	mockResolver := NewMockClusterResolver()
-	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 		mu.Lock()
 		callCounts[databaseID]++
 		mu.Unlock()

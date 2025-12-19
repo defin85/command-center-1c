@@ -12,6 +12,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
@@ -28,8 +29,8 @@ const (
 type DualModeProcessor struct {
 	featureFlags    *config.FeatureFlags
 	processor       *TaskProcessor
-	smConfig        *statemachine.Config    // State Machine configuration
-	clusterResolver ClusterInfoResolver     // Resolver for cluster/infobase IDs
+	smConfig        *statemachine.Config // State Machine configuration
+	clusterResolver clusterinfo.Resolver // Resolver for cluster/infobase IDs
 }
 
 // NewDualModeProcessor creates new DualModeProcessor instance
@@ -43,18 +44,18 @@ func NewDualModeProcessor(ff *config.FeatureFlags, processor *TaskProcessor) *Du
 
 	// Initialize ClusterInfoResolver
 	// Uses OrchestratorClusterResolver with Redis caching if available
-	var clusterResolver ClusterInfoResolver
-	resolverCfg := DefaultResolverConfig()
+	var clusterResolver clusterinfo.Resolver
+	resolverCfg := clusterinfo.DefaultConfig()
 
 	if processor != nil && processor.GetRedisClient() != nil {
 		resolverCfg.RedisClient = processor.GetRedisClient()
 	}
 
 	if resolverCfg.OrchestratorURL != "" {
-		clusterResolver = NewOrchestratorClusterResolver(resolverCfg)
+		clusterResolver = clusterinfo.NewOrchestratorResolver(resolverCfg)
 		log.Info("ClusterInfoResolver initialized with OrchestratorClusterResolver")
 	} else {
-		clusterResolver = &NullClusterResolver{}
+		clusterResolver = &clusterinfo.NullResolver{}
 		log.Warn("ClusterInfoResolver not configured (OrchestratorURL is empty), Event-Driven mode will fail")
 	}
 
@@ -328,18 +329,18 @@ func (dm *DualModeProcessor) ReloadFeatureFlags() error {
 }
 
 // GetClusterResolver returns the ClusterInfoResolver instance
-func (dm *DualModeProcessor) GetClusterResolver() ClusterInfoResolver {
+func (dm *DualModeProcessor) GetClusterResolver() clusterinfo.Resolver {
 	return dm.clusterResolver
 }
 
 // SetClusterResolver sets a custom ClusterInfoResolver (useful for testing)
-func (dm *DualModeProcessor) SetClusterResolver(resolver ClusterInfoResolver) {
+func (dm *DualModeProcessor) SetClusterResolver(resolver clusterinfo.Resolver) {
 	dm.clusterResolver = resolver
 }
 
 // ResolveClusterInfo resolves cluster info for a database ID
 // This is a convenience method that wraps clusterResolver.Resolve
-func (dm *DualModeProcessor) ResolveClusterInfo(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+func (dm *DualModeProcessor) ResolveClusterInfo(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 	if dm.clusterResolver == nil {
 		return nil, fmt.Errorf("ClusterInfoResolver not configured")
 	}
@@ -348,7 +349,7 @@ func (dm *DualModeProcessor) ResolveClusterInfo(ctx context.Context, databaseID 
 
 // --- State Machine Factory ---
 
-// Note: ClusterInfo is defined in cluster_resolver.go
+// Note: ClusterInfo lives in internal/clusterinfo.
 
 // publisherWrapper wraps shared/events.Publisher to implement statemachine.EventPublisher
 type publisherWrapper struct {
@@ -392,7 +393,7 @@ func (dm *DualModeProcessor) createStateMachine(
 	operationID string,
 	databaseID string,
 	correlationID string,
-	clusterInfo *ClusterInfo,
+	clusterInfo *clusterinfo.ClusterInfo,
 	extensionName string,
 	extensionPath string,
 ) (*statemachine.ExtensionInstallStateMachine, error) {
@@ -459,7 +460,3 @@ func (dm *DualModeProcessor) createStateMachine(
 }
 
 // Metrics recording functions (placeholder - to be implemented with Prometheus)
-
-
-
-

@@ -18,12 +18,13 @@ import (
 	sharedMetrics "github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
-	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
 )
 
@@ -53,8 +54,7 @@ type TaskProcessor struct {
 	featureFlags    *workerConfig.FeatureFlags // Feature flags for dual-mode
 	dualModeProc    *DualModeProcessor         // Dual-mode processor
 	eventPublisher  *events.EventPublisher     // Event publisher for workflow tracking (internal)
-	clusterResolver ClusterInfoResolver        // Cluster/infobase resolver for RAS operations
-	rasHTTPClient   *rasadapter.Client         // Cached HTTP client to RAS Adapter
+	clusterResolver clusterinfo.Resolver       // Cluster/infobase resolver for RAS operations
 
 	// State Machine dependencies (Sprint 2.1)
 	redisClient     *redis.Client            // Redis client for State Machine persistence
@@ -141,12 +141,12 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 
 	// Initialize cluster resolver for RAS operations (HTTP-based to avoid Streams waiter dependency here).
 	{
-		resolverCfg := DefaultResolverConfig()
+		resolverCfg := clusterinfo.DefaultConfig()
 		resolverCfg.OrchestratorURL = cfg.OrchestratorURL
 		resolverCfg.APIKey = cfg.WorkerAPIKey
 		resolverCfg.RedisClient = redisClient
 		resolverCfg.UseStreams = false
-		processor.clusterResolver = NewOrchestratorClusterResolver(resolverCfg)
+		processor.clusterResolver = clusterinfo.NewOrchestratorResolver(resolverCfg)
 		log.Info("cluster resolver initialized for RAS operations",
 			zap.Bool("use_streams", resolverCfg.UseStreams),
 			zap.String("orchestrator_url", resolverCfg.OrchestratorURL),
@@ -216,14 +216,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		}),
 	)
 	_ = processor.driverRegistry.RegisterMeta(
-		drivers.NewFuncMetaDriver("cluster-sync", []string{"sync_cluster"}, func(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
-			return processor.processSyncCluster(ctx, msg), nil
-		}),
-	)
-	_ = processor.driverRegistry.RegisterMeta(
-		drivers.NewFuncMetaDriver("discover-clusters", []string{"discover_clusters"}, func(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
-			return processor.processDiscoverClusters(ctx, msg), nil
-		}),
+		rasops.NewMetaDriver(processor.workerID, redisClient, processor.eventPublisher, processor.timeline, cfg.RASAdapterURL),
 	)
 
 	// Database operations
@@ -235,11 +228,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		}),
 	)
 	_ = processor.driverRegistry.RegisterDatabase(
-		drivers.NewFuncDatabaseDriver("ras-infobase", RasInfobaseOperationTypes(), func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
-			res := processor.processRasInfobaseOperation(ctx, msg, databaseID)
-			res.DatabaseID = databaseID
-			return res, nil
-		}),
+		rasops.NewInfobaseDriver(processor.workerID, processor.clusterResolver, processor.timeline, cfg.RASAdapterURL),
 	)
 	_ = processor.driverRegistry.RegisterDatabase(
 		drivers.NewFuncDatabaseDriver("odata", []string{"create", "update", "delete", "query"}, func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {

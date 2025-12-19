@@ -12,8 +12,8 @@ import (
 
 // mockWorkflowClient is a mock implementation of WorkflowClient for testing.
 type mockWorkflowClient struct {
-	getExecutionFn    func(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error)
-	updateStatusFn    func(ctx context.Context, executionID, status, errorMessage string) error
+	getExecutionFn func(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error)
+	updateStatusFn func(ctx context.Context, executionID, status, errorMessage string) error
 }
 
 func (m *mockWorkflowClient) GetWorkflowExecution(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error) {
