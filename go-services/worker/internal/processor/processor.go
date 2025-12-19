@@ -21,6 +21,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/designerops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/extensionops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
@@ -224,6 +225,12 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 			processor.credsClient,
 			redisClient,
 			processor.eventSubscriber,
+			processor.timeline,
+		),
+	)
+	_ = processor.driverRegistry.RegisterDatabase(
+		designerops.NewDriver(
+			processor.credsClient,
 			processor.timeline,
 		),
 	)

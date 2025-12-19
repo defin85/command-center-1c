@@ -206,3 +206,93 @@ func BuildInstallUpdateCommand(server, infobase, username, password, extensionNa
 		"-Extension", extensionName,
 	}, nil
 }
+
+// BuildDeleteCommand builds command arguments for deleting an extension.
+func BuildDeleteCommand(server, infobase, username, password, extensionName string) ([]string, error) {
+	if strings.TrimSpace(server) == "" {
+		return nil, fmt.Errorf("server cannot be empty")
+	}
+	if strings.TrimSpace(infobase) == "" {
+		return nil, fmt.Errorf("infobase cannot be empty")
+	}
+	if strings.TrimSpace(extensionName) == "" {
+		return nil, fmt.Errorf("extension name cannot be empty")
+	}
+
+	return []string{
+		"DESIGNER",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		fmt.Sprintf("/S%s\\%s", server, infobase),
+		fmt.Sprintf("/N%s", username),
+		fmt.Sprintf("/P%s", password),
+		"/DeleteCfg",
+		"-Extension", extensionName,
+	}, nil
+}
+
+// BuildUpdateDBCfgCommand builds command arguments for updating DB configuration (no extension).
+func BuildUpdateDBCfgCommand(server, infobase, username, password string) ([]string, error) {
+	if strings.TrimSpace(server) == "" {
+		return nil, fmt.Errorf("server cannot be empty")
+	}
+	if strings.TrimSpace(infobase) == "" {
+		return nil, fmt.Errorf("infobase cannot be empty")
+	}
+
+	return []string{
+		"DESIGNER",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		fmt.Sprintf("/S%s\\%s", server, infobase),
+		fmt.Sprintf("/N%s", username),
+		fmt.Sprintf("/P%s", password),
+		"/UpdateDBCfg",
+	}, nil
+}
+
+// BuildLoadConfigCommand builds command arguments for loading configuration from file (.cf).
+func BuildLoadConfigCommand(server, infobase, username, password, configPath string) ([]string, error) {
+	if strings.TrimSpace(server) == "" {
+		return nil, fmt.Errorf("server cannot be empty")
+	}
+	if strings.TrimSpace(infobase) == "" {
+		return nil, fmt.Errorf("infobase cannot be empty")
+	}
+	if strings.TrimSpace(configPath) == "" {
+		return nil, fmt.Errorf("config path cannot be empty")
+	}
+
+	return []string{
+		"DESIGNER",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		fmt.Sprintf("/S%s\\%s", server, infobase),
+		fmt.Sprintf("/N%s", username),
+		fmt.Sprintf("/P%s", password),
+		"/LoadCfg", configPath,
+	}, nil
+}
+
+// BuildDumpConfigCommand builds command arguments for dumping configuration to file (.cf).
+func BuildDumpConfigCommand(server, infobase, username, password, targetPath string) ([]string, error) {
+	if strings.TrimSpace(server) == "" {
+		return nil, fmt.Errorf("server cannot be empty")
+	}
+	if strings.TrimSpace(infobase) == "" {
+		return nil, fmt.Errorf("infobase cannot be empty")
+	}
+	if strings.TrimSpace(targetPath) == "" {
+		return nil, fmt.Errorf("target path cannot be empty")
+	}
+
+	return []string{
+		"DESIGNER",
+		"/DisableStartupMessages",
+		"/DisableStartupDialogs",
+		fmt.Sprintf("/S%s\\%s", server, infobase),
+		fmt.Sprintf("/N%s", username),
+		fmt.Sprintf("/P%s", password),
+		"/DumpCfg", targetPath,
+	}, nil
+}
