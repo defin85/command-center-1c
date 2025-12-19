@@ -19,11 +19,6 @@ type stateData struct {
 	InfobaseID    string       `json:"infobase_id"`
 	ExtensionPath string       `json:"extension_path"`
 	ExtensionName string       `json:"extension_name"`
-	ServerAddress string       `json:"server_address"`
-	ServerPort    int          `json:"server_port"`
-	InfobaseName  string       `json:"infobase_name"`
-	Username      string       `json:"username"`
-	Password      string       `json:"password"`
 	LastActivity  time.Time    `json:"last_activity"`
 }
 
@@ -53,11 +48,6 @@ func (sm *ExtensionInstallStateMachine) saveStateUnsafe(ctx context.Context) err
 		InfobaseID:    sm.InfobaseID,
 		ExtensionPath: sm.ExtensionPath,
 		ExtensionName: sm.ExtensionName,
-		ServerAddress: sm.ServerAddress,
-		ServerPort:    sm.ServerPort,
-		InfobaseName:  sm.InfobaseName,
-		Username:      sm.Username,
-		Password:      sm.Password,
 		LastActivity:  sm.lastActivity,
 	}
 
@@ -109,11 +99,6 @@ func (sm *ExtensionInstallStateMachine) loadState(ctx context.Context) error {
 	sm.InfobaseID = data.InfobaseID
 	sm.ExtensionPath = data.ExtensionPath
 	sm.ExtensionName = data.ExtensionName
-	sm.ServerAddress = data.ServerAddress
-	sm.ServerPort = data.ServerPort
-	sm.InfobaseName = data.InfobaseName
-	sm.Username = data.Username
-	sm.Password = data.Password
 	sm.lastActivity = data.LastActivity
 
 	fmt.Printf("[StateMachine] State loaded from Redis: %s\n", sm.State)

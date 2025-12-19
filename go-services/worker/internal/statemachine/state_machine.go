@@ -72,6 +72,9 @@ type ExtensionInstallStateMachine struct {
 
 	// Optional direct installer (CLI)
 	extensionInstaller ExtensionInstaller
+
+	// Optional credentials provider (re-init without persisted secrets)
+	credentialsProvider DesignerCredentialsProvider
 }
 
 // CompensationAction represents a compensation action
@@ -108,6 +111,13 @@ func WithTimeline(timeline tracing.TimelineRecorder) StateMachineOption {
 func WithExtensionInstaller(installer ExtensionInstaller) StateMachineOption {
 	return func(sm *ExtensionInstallStateMachine) {
 		sm.extensionInstaller = installer
+	}
+}
+
+// WithDesignerCredentialsProvider sets a provider for rehydrating credentials on resume.
+func WithDesignerCredentialsProvider(provider DesignerCredentialsProvider) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.credentialsProvider = provider
 	}
 }
 
@@ -239,6 +249,10 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		// Ignore error, start from Init
 	}
 
+	if err := sm.ensureDesignerCredentials(ctx); err != nil {
+		return err
+	}
+
 	// Main state loop
 	for !sm.State.IsFinal() {
 		fmt.Printf("[StateMachine] Loop iteration, current state: %s (correlation_id=%s)\n", sm.State, sm.CorrelationID)
@@ -304,6 +318,33 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		})
 	}
 
+	return nil
+}
+
+func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Context) error {
+	if sm.extensionInstaller == nil {
+		return nil
+	}
+	if sm.ServerAddress != "" && sm.InfobaseName != "" && sm.Username != "" {
+		return nil
+	}
+	if sm.credentialsProvider == nil {
+		return fmt.Errorf("designer credentials provider not configured")
+	}
+
+	creds, err := sm.credentialsProvider.Fetch(ctx, sm.DatabaseID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch designer credentials: %w", err)
+	}
+	if creds == nil || creds.ServerAddress == "" || creds.InfobaseName == "" || creds.Username == "" {
+		return fmt.Errorf("designer credentials are incomplete")
+	}
+
+	sm.ServerAddress = creds.ServerAddress
+	sm.ServerPort = creds.ServerPort
+	sm.InfobaseName = creds.InfobaseName
+	sm.Username = creds.Username
+	sm.Password = creds.Password
 	return nil
 }
 

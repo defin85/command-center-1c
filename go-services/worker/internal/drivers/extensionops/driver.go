@@ -256,6 +256,8 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		adapter = &cliInstallerAdapter{installer: installer}
 	}
 
+	credsProvider := &designerCredsProvider{fetcher: d.credsClient}
+
 	sm, err := d.createStateMachine(
 		ctx,
 		msg.OperationID,
@@ -266,6 +268,7 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		extensionPath,
 		adapter,
 		creds,
+		credsProvider,
 	)
 	if err != nil {
 		metrics.RecordStateMachineCreated(false)
@@ -446,6 +449,7 @@ func (d *InstallDriver) createStateMachine(
 	extensionPath string,
 	installer statemachine.ExtensionInstaller,
 	creds *credentials.DatabaseCredentials,
+	credsProvider statemachine.DesignerCredentialsProvider,
 ) (*statemachine.ExtensionInstallStateMachine, error) {
 	log := logger.GetLogger()
 
@@ -485,6 +489,7 @@ func (d *InstallDriver) createStateMachine(
 		d.smConfig,
 		statemachine.WithTimeline(d.timeline),
 		statemachine.WithExtensionInstaller(installer),
+		statemachine.WithDesignerCredentialsProvider(credsProvider),
 	)
 	if err != nil {
 		// Clean up publisher on error
@@ -555,4 +560,31 @@ func (a *cliInstallerAdapter) InstallExtension(ctx context.Context, req statemac
 		Duration: res.Duration,
 		Output:   res.Output,
 	}, err
+}
+
+type designerCredsProvider struct {
+	fetcher credentials.Fetcher
+}
+
+func (p *designerCredsProvider) Fetch(ctx context.Context, databaseID string) (*statemachine.DesignerCredentials, error) {
+	if p == nil || p.fetcher == nil {
+		return nil, fmt.Errorf("credentials provider not configured")
+	}
+
+	creds, err := p.fetcher.Fetch(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	if creds.ServerAddress == "" || creds.InfobaseName == "" || creds.Username == "" {
+		return nil, fmt.Errorf("designer credentials are incomplete for database %s", databaseID)
+	}
+
+	return &statemachine.DesignerCredentials{
+		ServerAddress: creds.ServerAddress,
+		ServerPort:    creds.ServerPort,
+		InfobaseName:  creds.InfobaseName,
+		Username:      creds.Username,
+		Password:      creds.Password,
+	}, nil
 }
