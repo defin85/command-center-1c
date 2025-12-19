@@ -18,6 +18,9 @@
 - **Extensions driver (install_extension) вынесен из processor**:
   - Собственный драйвер: `go-services/worker/internal/drivers/extensionops/*`
   - State Machine использует прямой CLI путь, если доступен `EXE_1CV8_PATH` и `USE_DIRECT_CLI != "false"`
+- **CLI Designer ops (remove/config)**:
+  - Драйвер `designerops` для `remove_extension`, `config_update`, `config_load`, `config_dump`
+  - CLI executor: `go-services/worker/internal/drivers/cli/*`
 - **Direct RAS (внутри Worker)**: добавлен прямой RAS client/driver (`rasdirect`) + использование `ras_server` из internal API.
   - Код: `go-services/worker/internal/drivers/rasdirect/client.go`
   - Internal API расширен на `ras_server`/cluster creds (референс в orchestrator).
@@ -33,13 +36,13 @@
 
 - **“Единая точка ответственности по workflow”**: `install_extension` вынесен в драйвер, `execute_workflow` остаётся отдельным (следом — полная изоляция workflow-логики в driver/engine).
 - **Observability унификация UI**: довести до правила “UI читает только Prometheus” для `/system-status` и `/service-mesh`, включая внешние probes (RAS port / TCP).
-- **CLI/Designer/ibcmd**: начата миграция (CLI installer для расширений), дальше — remove/config ops и отказ от designer-agent/batch-service.
+- **CLI/Designer/ibcmd**: migrated core designer ops, дальше — полный отказ от designer-agent/batch-service и покрытие edge-cases.
 
 ### Статус фаз (кратко)
 
 - Phase 1 — Driver Framework в Worker: **DONE**
 - Phase 2 — Migrating RAS operations: **DONE (core)**
-- Phase 3 — Migrating Designer/Extensions: **IN PROGRESS**
+- Phase 3 — Migrating Designer/Extensions: **IN PROGRESS (core)**
 - Phase 4 — Migrating OData operations: **TODO**
 - Phase 5 — ibcmd/ibsrv integration: **TODO**
 - Phase 6 — Декомиссия сервисов: **TODO**
@@ -201,6 +204,7 @@ Status: **IN PROGRESS**
 - `install_extension` вынесен в `extensionops` драйвер
 - CLI путь реализован через `internal/drivers/cli` и включается `USE_DIRECT_CLI`
 - State Machine использует direct CLI при наличии `EXE_1CV8_PATH`, иначе fallback на batch-service
+- Добавлен `designerops` для `remove_extension` и config ops (Update/Load/Dump)
 
 ### Phase 4 — Migrating OData operations (2–4 недели)
 
