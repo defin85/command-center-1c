@@ -180,6 +180,16 @@ var (
 			Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2.5, 5},
 		},
 	)
+
+	// DesignerCredentialsRehydrate - счетчик восстановления designer-credentials
+	// Labels: status (success, failed)
+	DesignerCredentialsRehydrate = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "worker_designer_credentials_rehydrate_total",
+			Help: "Designer credentials rehydration attempts",
+		},
+		[]string{"status"},
+	)
 )
 
 // validateMode ensures mode is one of the expected values to prevent label explosion
@@ -205,6 +215,15 @@ func RecordExecution(mode string, durationSeconds float64, success bool) {
 	} else {
 		ExecutionFailure.WithLabelValues(validMode).Inc()
 	}
+}
+
+// RecordDesignerCredentialsRehydrate records credentials rehydration result.
+func RecordDesignerCredentialsRehydrate(success bool) {
+	status := "failed"
+	if success {
+		status = "success"
+	}
+	DesignerCredentialsRehydrate.WithLabelValues(status).Inc()
 }
 
 // RecordCompensation записывает метрику compensation action
@@ -250,13 +269,13 @@ func UpdateSuccessRate(mode string, rate float64) {
 // GetMetricsForMode возвращает текущие значения счетчиков для mode
 // Используется для debugging и testing
 type ModeMetrics struct {
-	Mode             string
-	TotalExecutions  float64
-	SuccessCount     float64
-	FailureCount     float64
-	CompensationCount float64
+	Mode                string
+	TotalExecutions     float64
+	SuccessCount        float64
+	FailureCount        float64
+	CompensationCount   float64
 	CircuitBreakerTrips float64
-	RetryCount       float64
+	RetryCount          float64
 }
 
 // Note: Prometheus Counters не поддерживают прямое чтение значений

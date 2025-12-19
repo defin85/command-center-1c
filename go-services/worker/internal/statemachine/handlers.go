@@ -80,6 +80,8 @@ func (sm *ExtensionInstallStateMachine) handleSessionsClosed(ctx context.Context
 	fmt.Printf("[StateMachine] Handling SessionsClosed state\n")
 
 	if sm.extensionInstaller != nil {
+		defer sm.clearDesignerCredentials()
+
 		server := sm.ServerAddress
 		if sm.ServerPort > 0 {
 			server = fmt.Sprintf("%s:%d", sm.ServerAddress, sm.ServerPort)

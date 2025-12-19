@@ -9,6 +9,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/redis/go-redis/v9"
 	"github.com/sony/gobreaker"
 )
@@ -329,14 +330,29 @@ func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Co
 		return nil
 	}
 	if sm.credentialsProvider == nil {
+		metrics.RecordDesignerCredentialsRehydrate(false)
+		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
+			"database_id": sm.DatabaseID,
+			"error":       "credentials provider not configured",
+		})
 		return fmt.Errorf("designer credentials provider not configured")
 	}
 
 	creds, err := sm.credentialsProvider.Fetch(ctx, sm.DatabaseID)
 	if err != nil {
+		metrics.RecordDesignerCredentialsRehydrate(false)
+		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
+			"database_id": sm.DatabaseID,
+			"error":       err.Error(),
+		})
 		return fmt.Errorf("failed to fetch designer credentials: %w", err)
 	}
 	if creds == nil || creds.ServerAddress == "" || creds.InfobaseName == "" || creds.Username == "" {
+		metrics.RecordDesignerCredentialsRehydrate(false)
+		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
+			"database_id": sm.DatabaseID,
+			"error":       "designer credentials are incomplete",
+		})
 		return fmt.Errorf("designer credentials are incomplete")
 	}
 
@@ -345,7 +361,17 @@ func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Co
 	sm.InfobaseName = creds.InfobaseName
 	sm.Username = creds.Username
 	sm.Password = creds.Password
+	metrics.RecordDesignerCredentialsRehydrate(true)
+	sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrated", map[string]interface{}{
+		"database_id": sm.DatabaseID,
+		"source":      "provider",
+	})
+	fmt.Printf("[StateMachine] Designer credentials rehydrated: database_id=%s\n", sm.DatabaseID)
 	return nil
+}
+
+func (sm *ExtensionInstallStateMachine) clearDesignerCredentials() {
+	sm.Password = ""
 }
 
 // transitionTo transitions to new state
