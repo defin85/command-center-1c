@@ -630,6 +630,7 @@ async def scrape(
     include_raw_text: bool,
     name_style: str,
     sanitize_text: bool,
+    open_url: str,
 ) -> tuple[dict[str, Any], Path]:
     import websockets
 
@@ -640,6 +641,10 @@ async def scrape(
     async with websockets.connect(ws_url, max_size=64 * 1024 * 1024) as ws:
         await cdp.command(ws, "Runtime.enable")
         await cdp.command(ws, "Page.enable")
+        if open_url:
+            prev_outer = await cdp.eval(ws, "String(location.href||'')")
+            await cdp.command(ws, "Page.navigate", {"url": open_url})
+            await _wait_for_change(cdp=cdp, ws=ws, expr="String(location.href||'')", prev_value=prev_outer, timeout_s=15.0)
         payload = await _scrape_current_in_session(
             cdp=cdp,
             ws=ws,
@@ -861,6 +866,11 @@ def main() -> int:
         help="Substring to find the open ITS page in CDP /json list",
     )
     parser.add_argument(
+        "--open-url",
+        default="",
+        help="If set, navigates the matched tab to this URL before scraping",
+    )
+    parser.add_argument(
         "--out",
         default="",
         help="Output JSON path. If omitted, auto-generates from title + version + TI",
@@ -935,6 +945,7 @@ def main() -> int:
                 include_raw_text=include_raw_text,
                 name_style=str(args.name_style),
                 sanitize_text=sanitize_text,
+                open_url=str(args.open_url or ""),
             )
         )
     except Exception as e:
