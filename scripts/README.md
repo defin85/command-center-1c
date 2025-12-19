@@ -120,3 +120,25 @@ sudo systemctl restart blackbox-exporter
 Примечание (Arch Linux):
 - бинарник обычно называется `prometheus-blackbox-exporter`
 - unit файл проекта: `infrastructure/systemd/blackbox-exporter.service` запускает его через `blackbox-exporter.service`
+
+## ITS (its.1c.ru) Scraper
+
+Скрипт `scripts/dev/its-scrape.py` читает **отрендеренный** контент ITS из открытого Chromium (через CDP) и сохраняет
+в JSON (для последующего парсинга/индексации).
+
+Требования:
+- Chromium в WSL с CDP: `chromium --remote-debugging-port=9222 --no-first-run "https://its.1c.ru/..." &`
+- Ручной логин в браузере
+- Python dependency: `pip install websockets`
+
+Примеры:
+```bash
+# Сохранить текущую открытую страницу (имя файла автогенерируется из breadcrumbs + версии)
+./scripts/dev/its-scrape.py --url-pattern "its.1c.ru/db/v8327doc"
+
+# Сохранить, используя полное breadcrumb-имя в filename
+./scripts/dev/its-scrape.py --name-style full
+
+# Пройти по оглавлению (TOC) и сохранить каждую посещенную страницу
+./scripts/dev/its-scrape.py --crawl-toc --out-dir generated/its/crawl --no-raw-text --only-unique-docs
+```
