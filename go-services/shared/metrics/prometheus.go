@@ -12,14 +12,18 @@ type Metrics struct {
 	RequestDuration *prometheus.HistogramVec
 
 	// Worker metrics
-	TasksProcessed  *prometheus.CounterVec
-	TaskDuration    *prometheus.HistogramVec
-	ActiveWorkers   prometheus.Gauge
-	QueueDepth      prometheus.Gauge
+	TasksProcessed *prometheus.CounterVec
+	TaskDuration   *prometheus.HistogramVec
+	ActiveWorkers  prometheus.Gauge
+	QueueDepth     prometheus.Gauge
 
 	// 1C operations metrics
 	OneCOperations *prometheus.CounterVec
 	OneCErrors     *prometheus.CounterVec
+
+	// Worker driver metrics (Phase A: Driver framework)
+	DriverExecutions *prometheus.CounterVec
+	DriverDuration   *prometheus.HistogramVec
 }
 
 // NewMetrics creates and registers all metrics
@@ -93,6 +97,24 @@ func NewMetrics(namespace string) *Metrics {
 				Help:      "Total number of 1C operation errors",
 			},
 			[]string{"operation_type", "error_type"},
+		),
+
+		DriverExecutions: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "driver_executions_total",
+				Help:      "Total number of worker driver executions",
+			},
+			[]string{"driver", "operation_type", "status"},
+		),
+		DriverDuration: promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Name:      "driver_duration_seconds",
+				Help:      "Worker driver execution duration in seconds",
+				Buckets:   prometheus.DefBuckets,
+			},
+			[]string{"driver", "operation_type"},
 		),
 	}
 }

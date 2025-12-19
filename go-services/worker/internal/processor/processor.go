@@ -19,6 +19,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
@@ -72,6 +73,9 @@ type TaskProcessor struct {
 
 	// Timeline recorder for operation tracing
 	timeline tracing.TimelineRecorder
+
+	// Operation drivers registry (radical control-plane refactor, Phase 1)
+	driverRegistry *drivers.Registry
 }
 
 // DefaultConsumerGroupWorker is the default consumer group name for Worker event subscribers
@@ -132,6 +136,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		logger:         zapLogger,
 		appMetrics:     opts.Metrics,
 		timeline:       timeline,
+		driverRegistry: drivers.NewRegistry(),
 	}
 
 	// Initialize cluster resolver for RAS operations (HTTP-based to avoid Streams waiter dependency here).
@@ -203,6 +208,85 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		log.Info("workflow client not configured, execute_workflow disabled")
 	}
 
+	// Register operation drivers (Phase 1: wrap existing implementations).
+	// Meta operations
+	_ = processor.driverRegistry.RegisterMeta(
+		drivers.NewFuncMetaDriver("workflow", []string{"execute_workflow"}, func(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
+			return processor.processWorkflow(ctx, msg), nil
+		}),
+	)
+	_ = processor.driverRegistry.RegisterMeta(
+		drivers.NewFuncMetaDriver("cluster-sync", []string{"sync_cluster"}, func(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
+			return processor.processSyncCluster(ctx, msg), nil
+		}),
+	)
+	_ = processor.driverRegistry.RegisterMeta(
+		drivers.NewFuncMetaDriver("discover-clusters", []string{"discover_clusters"}, func(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
+			return processor.processDiscoverClusters(ctx, msg), nil
+		}),
+	)
+
+	// Database operations
+	_ = processor.driverRegistry.RegisterDatabase(
+		drivers.NewFuncDatabaseDriver("extension-install", []string{"install_extension"}, func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
+			res := processor.dualModeProc.ProcessExtensionInstall(ctx, msg, databaseID)
+			res.DatabaseID = databaseID
+			return res, nil
+		}),
+	)
+	_ = processor.driverRegistry.RegisterDatabase(
+		drivers.NewFuncDatabaseDriver("ras-infobase", RasInfobaseOperationTypes(), func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
+			res := processor.processRasInfobaseOperation(ctx, msg, databaseID)
+			res.DatabaseID = databaseID
+			return res, nil
+		}),
+	)
+	_ = processor.driverRegistry.RegisterDatabase(
+		drivers.NewFuncDatabaseDriver("odata", []string{"create", "update", "delete", "query"}, func(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
+			creds, err := processor.credsClient.Fetch(ctx, databaseID)
+			if err != nil {
+				return models.DatabaseResultV2{
+					DatabaseID: databaseID,
+					Success:    false,
+					Error:      fmt.Sprintf("failed to fetch credentials: %v", err),
+					ErrorCode:  "CREDENTIALS_ERROR",
+				}, nil
+			}
+
+			// Render template if template_id is present
+			if msg.Metadata.TemplateID != "" {
+				renderedPayload, err := processor.renderTemplatePayload(ctx, msg, databaseID, creds)
+				if err != nil {
+					return models.DatabaseResultV2{
+						DatabaseID: databaseID,
+						Success:    false,
+						Error:      fmt.Sprintf("template rendering failed: %v", err),
+						ErrorCode:  "TEMPLATE_ERROR",
+					}, nil
+				}
+				msg.Payload.Data = renderedPayload
+			}
+
+			switch msg.OperationType {
+			case "create":
+				return processor.executeCreate(ctx, msg, creds), nil
+			case "update":
+				return processor.executeUpdate(ctx, msg, creds), nil
+			case "delete":
+				return processor.executeDelete(ctx, msg, creds), nil
+			case "query":
+				return processor.executeQuery(ctx, msg, creds), nil
+			default:
+				return models.DatabaseResultV2{
+					DatabaseID: databaseID,
+					Success:    false,
+					Error:      fmt.Sprintf("unknown operation type: %s", msg.OperationType),
+					ErrorCode:  "INVALID_OPERATION",
+				}, nil
+			}
+		}),
+	)
+
 	return processor
 }
 
@@ -225,21 +309,39 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		Results:     []models.DatabaseResultV2{},
 	}
 
-	// Special handling for meta-operations (not per-database)
-	if msg.OperationType == "execute_workflow" {
-		workflowResult := p.processWorkflow(ctx, msg)
-		p.recordTaskMetrics(msg.OperationType, workflowResult.Status, time.Since(taskStart).Seconds())
-		return workflowResult
-	}
-	if msg.OperationType == "sync_cluster" {
-		syncResult := p.processSyncCluster(ctx, msg)
-		p.recordTaskMetrics(msg.OperationType, syncResult.Status, time.Since(taskStart).Seconds())
-		return syncResult
-	}
-	if msg.OperationType == "discover_clusters" {
-		discoverResult := p.processDiscoverClusters(ctx, msg)
-		p.recordTaskMetrics(msg.OperationType, discoverResult.Status, time.Since(taskStart).Seconds())
-		return discoverResult
+	// Meta-operations (not per-database) via drivers registry
+	if metaDriver, ok := p.driverRegistry.LookupMeta(msg.OperationType); ok {
+		driverStart := time.Now()
+		p.timeline.Record(ctx, msg.OperationID, "driver.started", map[string]interface{}{
+			"driver":         metaDriver.Name(),
+			"operation_type": msg.OperationType,
+		})
+		metaResult, err := metaDriver.Execute(ctx, msg)
+		if err != nil {
+			metaResult = &models.OperationResultV2{
+				OperationID: msg.OperationID,
+				WorkerID:    p.workerID,
+				Timestamp:   time.Now(),
+				Status:      "failed",
+				Results:     []models.DatabaseResultV2{},
+				Summary:     models.ResultSummary{Total: 0, Succeeded: 0, Failed: 0, AvgDuration: 0},
+			}
+			// Preserve error in timeline (OperationResultV2 has no top-level error field)
+			p.timeline.Record(ctx, msg.OperationID, "driver.failed", map[string]interface{}{
+				"driver":         metaDriver.Name(),
+				"operation_type": msg.OperationType,
+				"error":          err.Error(),
+			})
+		}
+		p.timeline.Record(ctx, msg.OperationID, "driver.finished", map[string]interface{}{
+			"driver":         metaDriver.Name(),
+			"operation_type": msg.OperationType,
+			"status":         metaResult.Status,
+			"duration_ms":    time.Since(driverStart).Milliseconds(),
+		})
+		p.recordDriverMetrics(metaDriver.Name(), msg.OperationType, metaResult.Status, time.Since(driverStart).Seconds())
+		p.recordTaskMetrics(msg.OperationType, metaResult.Status, time.Since(taskStart).Seconds())
+		return metaResult
 	}
 
 	// Process each target database
@@ -315,6 +417,24 @@ func (p *TaskProcessor) recordTaskMetrics(taskType, status string, duration floa
 	p.appMetrics.TaskDuration.WithLabelValues(taskType).Observe(duration)
 }
 
+func (p *TaskProcessor) recordDriverMetrics(driverName, operationType, status string, duration float64) {
+	if p.appMetrics == nil {
+		return
+	}
+	if driverName == "" {
+		driverName = "unknown"
+	}
+	if operationType == "" {
+		operationType = "unknown"
+	}
+	if status == "" {
+		status = "unknown"
+	}
+
+	p.appMetrics.DriverExecutions.WithLabelValues(driverName, operationType, status).Inc()
+	p.appMetrics.DriverDuration.WithLabelValues(driverName, operationType).Observe(duration)
+}
+
 // getODataClient retrieves or creates OData client for database
 func (p *TaskProcessor) getODataClient(creds *credentials.DatabaseCredentials) *odata.Client {
 	p.clientsMutex.RLock()
@@ -367,96 +487,41 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		log.Error("failed to publish PROCESSING event", zap.Error(err))
 	}
 
-	// Special handling for extension installation (with dual-mode support)
-	if msg.OperationType == "install_extension" {
-		// Use dual-mode processor
-		result = p.dualModeProc.ProcessExtensionInstall(ctx, msg, databaseID)
-		result.DatabaseID = databaseID
-		result.Duration = time.Since(start).Seconds()
-
-		// Publish SUCCESS/FAILED event for extension installation
-		if result.Success {
-			if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
-				log.Error("failed to publish SUCCESS event", zap.Error(err))
-			}
-		} else {
-			if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
-				log.Error("failed to publish FAILED event", zap.Error(err))
-			}
-		}
-
-		return result
-	}
-
-	// Per-database RAS operations (scheduled jobs / sessions control)
-	if isRasInfobaseOperationType(msg.OperationType) {
-		result = p.processRasInfobaseOperation(ctx, msg, databaseID)
-		result.DatabaseID = databaseID
-		result.Duration = time.Since(start).Seconds()
-
-		if result.Success {
-			if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
-				log.Error("failed to publish SUCCESS event", zap.Error(err))
-			}
-		} else {
-			if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
-				log.Error("failed to publish FAILED event", zap.Error(err))
-			}
-		}
-
-		return result
-	}
-
-	// Fetch credentials for OData operations
-	creds, err := p.credsClient.Fetch(ctx, databaseID)
-	if err != nil {
-		result.Success = false
-		result.Error = fmt.Sprintf("failed to fetch credentials: %v", err)
-		result.ErrorCode = "CREDENTIALS_ERROR"
-		result.Duration = time.Since(start).Seconds()
-		return result
-	}
-
-	// Render template if template_id is present
-	if msg.Metadata.TemplateID != "" {
-		renderedPayload, err := p.renderTemplatePayload(ctx, msg, databaseID, creds)
-		if err != nil {
-			result.Success = false
-			result.Error = fmt.Sprintf("template rendering failed: %v", err)
-			result.ErrorCode = "TEMPLATE_ERROR"
-			result.Duration = time.Since(start).Seconds()
-
-			// Publish FAILED event
-			if pubErr := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); pubErr != nil {
-				log.Error("failed to publish FAILED event", zap.Error(pubErr))
-			}
-
-			return result
-		}
-
-		// Replace payload with rendered version
-		msg.Payload.Data = renderedPayload
-		log.Debug("template rendered successfully",
-			zap.String("template_id", msg.Metadata.TemplateID),
-			zap.String("database_id", databaseID),
-		)
-	}
-
-	// Execute operation via OData
-	switch msg.OperationType {
-	case "create":
-		result = p.executeCreate(ctx, msg, creds)
-	case "update":
-		result = p.executeUpdate(ctx, msg, creds)
-	case "delete":
-		result = p.executeDelete(ctx, msg, creds)
-	case "query":
-		result = p.executeQuery(ctx, msg, creds)
-	default:
+	dbDriver, ok := p.driverRegistry.LookupDatabase(msg.OperationType)
+	if !ok {
 		result.Success = false
 		result.Error = fmt.Sprintf("unknown operation type: %s", msg.OperationType)
 		result.ErrorCode = "INVALID_OPERATION"
+		result.Duration = time.Since(start).Seconds()
+
+		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]interface{}{
+			"database_id": databaseID,
+			"error_code":  result.ErrorCode,
+			"error":       result.Error,
+		})
+		if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+			log.Error("failed to publish FAILED event", zap.Error(err))
+		}
+		return result
 	}
+
+	driverStart := time.Now()
+	p.timeline.Record(ctx, msg.OperationID, "driver.started", map[string]interface{}{
+		"driver":         dbDriver.Name(),
+		"operation_type": msg.OperationType,
+		"database_id":    databaseID,
+	})
+
+	dbRes, err := dbDriver.Execute(ctx, msg, databaseID)
+	if err != nil {
+		dbRes = models.DatabaseResultV2{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      err.Error(),
+			ErrorCode:  "EXECUTION_ERROR",
+		}
+	}
+	result = dbRes
 
 	result.DatabaseID = databaseID
 	result.Duration = time.Since(start).Seconds()
@@ -485,6 +550,20 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 			log.Error("failed to publish FAILED event", zap.Error(err))
 		}
 	}
+
+	p.timeline.Record(ctx, msg.OperationID, "driver.finished", map[string]interface{}{
+		"driver":         dbDriver.Name(),
+		"operation_type": msg.OperationType,
+		"database_id":    databaseID,
+		"success":        result.Success,
+		"error_code":     result.ErrorCode,
+		"duration_ms":    time.Since(driverStart).Milliseconds(),
+	})
+	status := "success"
+	if !result.Success {
+		status = "failed"
+	}
+	p.recordDriverMetrics(dbDriver.Name(), msg.OperationType, status, time.Since(driverStart).Seconds())
 
 	return result
 }

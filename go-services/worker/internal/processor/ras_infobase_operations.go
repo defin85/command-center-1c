@@ -20,6 +20,14 @@ var rasInfobaseOperationTypes = map[string]struct{}{
 	"terminate_sessions":    {},
 }
 
+func RasInfobaseOperationTypes() []string {
+	out := make([]string, 0, len(rasInfobaseOperationTypes))
+	for t := range rasInfobaseOperationTypes {
+		out = append(out, t)
+	}
+	return out
+}
+
 func isRasInfobaseOperationType(operationType string) bool {
 	_, ok := rasInfobaseOperationTypes[operationType]
 	return ok
