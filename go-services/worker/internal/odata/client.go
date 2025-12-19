@@ -10,6 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
+	"github.com/commandcenter1c/commandcenter/shared/logger"
+	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 )
 
 // Client is a lightweight HTTP client for 1C OData API
@@ -136,6 +140,12 @@ func (c *Client) Query(ctx context.Context, req QueryRequest) ([]map[string]inte
 	if req.Skip > 0 {
 		params.Set("$skip", fmt.Sprintf("%d", req.Skip))
 	}
+	if req.OrderBy != "" {
+		params.Set("$orderby", req.OrderBy)
+	}
+	if req.Expand != "" {
+		params.Set("$expand", req.Expand)
+	}
 
 	// Append query params
 	fullURL := baseURL
@@ -150,6 +160,62 @@ func (c *Client) Query(ctx context.Context, req QueryRequest) ([]map[string]inte
 	}
 
 	return response.Value, nil
+}
+
+// ExecuteBatch executes batch operation (POST /$batch).
+// Uses multipart/mixed format with changeset for atomic transaction.
+func (c *Client) ExecuteBatch(ctx context.Context, items []sharedodata.BatchItem) (*sharedodata.BatchResult, error) {
+	batchURL := c.baseURL + "/$batch"
+
+	body, contentType, err := buildBatchBody(c.baseURL, items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build batch body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", batchURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.auth.Username, c.auth.Password)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "multipart/mixed")
+
+	start := time.Now()
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
+		return nil, &ODataError{
+			Code:        ErrorCategoryNetwork,
+			Message:     fmt.Sprintf("batch request failed: %v", err),
+			StatusCode:  0,
+			IsTransient: true,
+		}
+	}
+	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBatchResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read batch response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, &ODataError{
+			Code:        categorizeByStatus(resp.StatusCode),
+			Message:     fmt.Sprintf("batch request failed with status %d: %s", resp.StatusCode, string(respBody)),
+			StatusCode:  resp.StatusCode,
+			IsTransient: isTransientStatus(resp.StatusCode),
+		}
+	}
+
+	result, err := parseBatchResponse(respBody, resp.Header.Get("Content-Type"), items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse batch response: %w", err)
+	}
+
+	return result, nil
 }
 
 // doWithRetry executes HTTP request with retry logic
@@ -203,8 +269,10 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 	}
 
 	// Execute request
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		return &ODataError{
 			Code:        ErrorCategoryNetwork,
 			Message:     fmt.Sprintf("HTTP request failed: %v", err),
@@ -213,6 +281,8 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 		}
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	// Check status code
 	if resp.StatusCode >= 400 {

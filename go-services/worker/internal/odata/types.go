@@ -39,11 +39,13 @@ type DeleteRequest struct {
 
 // QueryRequest represents entity query request
 type QueryRequest struct {
-	Entity string   `json:"-"`
-	Filter string   `json:"-"` // OData $filter query
-	Select []string `json:"-"` // Fields to select
-	Top    int      `json:"-"` // Limit
-	Skip   int      `json:"-"` // Offset
+	Entity  string   `json:"-"`
+	Filter  string   `json:"-"` // OData $filter query
+	Select  []string `json:"-"` // Fields to select
+	OrderBy string   `json:"-"` // OData $orderby
+	Top     int      `json:"-"` // Limit
+	Skip    int      `json:"-"` // Offset
+	Expand  string   `json:"-"` // OData $expand
 }
 
 // QueryResponse represents query result from OData

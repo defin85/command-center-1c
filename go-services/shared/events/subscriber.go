@@ -230,6 +230,15 @@ func (s *Subscriber) Close() error {
 
 	s.closed = true
 
+	if !s.router.IsRunning() {
+		if err := s.watermill.Close(); err != nil {
+			s.logger.Error("Failed to close subscriber", err, nil)
+			return fmt.Errorf("failed to close subscriber: %w", err)
+		}
+		s.logger.Info("Subscriber closed successfully", nil)
+		return nil
+	}
+
 	// Close router (this will stop all handlers)
 	if err := s.router.Close(); err != nil {
 		s.logger.Error("Failed to close router", err, nil)

@@ -1,4 +1,4 @@
-package processor
+package workflowops
 
 import (
 	"context"

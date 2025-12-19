@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +23,6 @@ func newMockRedisClient() *redis.Client {
 func TestStateMachine_Creation(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
 	sm, err := NewStateMachine(
 		ctx,
@@ -32,7 +30,6 @@ func TestStateMachine_Creation(t *testing.T) {
 		"db-456",
 		"corr-789",
 		publisher,
-		subscriber,
 		newMockRedisClient(),
 		nil, // Use default config
 	)
@@ -114,9 +111,8 @@ func TestStateMachine_StateIsFinal(t *testing.T) {
 func TestStateMachine_TransitionTo(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	// Valid transition
@@ -138,9 +134,8 @@ func TestStateMachine_TransitionTo(t *testing.T) {
 func TestStateMachine_CompensationStack(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	executed := []string{}
@@ -173,9 +168,8 @@ func TestStateMachine_CompensationStack(t *testing.T) {
 func TestStateMachine_CompensationStack_WithError(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	executed := []string{}
@@ -273,9 +267,8 @@ func TestStateMachine_Config_Validate(t *testing.T) {
 func TestStateMachine_PublishCommand(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	payload := map[string]string{"key": "value"}
@@ -294,9 +287,8 @@ func TestStateMachine_PublishCommand_Error(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
 	publisher.PublishError = assert.AnError // Simulate publish error
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	err = sm.publishCommand(ctx, "test-channel", "test.event", map[string]string{})
@@ -305,159 +297,18 @@ func TestStateMachine_PublishCommand_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to publish command")
 }
 
-func TestStateMachine_EventDeduplication(t *testing.T) {
-	ctx := context.Background()
-	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
-
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
-	require.NoError(t, err)
-
-	messageID := "msg-123"
-
-	// First check - should not be processed
-	assert.False(t, sm.isEventProcessed(messageID))
-
-	// Mark as processed
-	sm.markEventProcessed(messageID)
-
-	// Second check - should be processed
-	assert.True(t, sm.isEventProcessed(messageID))
-}
-
 func TestStateMachine_Close_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
 
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
+	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, nil, nil)
 	require.NoError(t, err)
 
 	// First close
 	err = sm.Close()
 	assert.NoError(t, err)
-	assert.True(t, sm.closedFlag.Load())
 
 	// Second close (idempotent)
 	err = sm.Close()
-	assert.NoError(t, err)
-}
-
-func TestStateMachine_CalculateBackoff(t *testing.T) {
-	ctx := context.Background()
-	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
-
-	config := DefaultConfig()
-	config.RetryInitialDelay = 1 * time.Second
-	config.RetryMaxDelay = 30 * time.Second
-
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, config)
-	require.NoError(t, err)
-
-	// Test exponential backoff
-	backoff1 := sm.calculateBackoff(1)
-	backoff2 := sm.calculateBackoff(2)
-	backoff3 := sm.calculateBackoff(3)
-
-	// Should increase exponentially
-	assert.Greater(t, backoff2, backoff1)
-	assert.Greater(t, backoff3, backoff2)
-
-	// Should not exceed max delay
-	backoff10 := sm.calculateBackoff(10)
-	assert.LessOrEqual(t, backoff10, config.RetryMaxDelay+config.RetryMaxDelay/10) // max + jitter
-}
-
-func TestStateMachine_EventBuffer(t *testing.T) {
-	ctx := context.Background()
-	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
-
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
-	require.NoError(t, err)
-	defer sm.Close()
-
-	// Simulate receiving unexpected event
-	unexpectedEnvelope := &events.Envelope{
-		MessageID:     "msg-1",
-		EventType:     "unexpected.event",
-		CorrelationID: "corr1",
-	}
-
-	sm.mu.Lock()
-	sm.eventBuffer = append(sm.eventBuffer, unexpectedEnvelope)
-	sm.mu.Unlock()
-
-	// Check that buffer is not empty
-	assert.Equal(t, 1, len(sm.eventBuffer))
-
-	// Now simulate waiting for this event
-	expectedEnvelope := &events.Envelope{
-		MessageID:     "msg-2",
-		EventType:     "expected.event",
-		CorrelationID: "corr1",
-	}
-
-	sm.mu.Lock()
-	sm.eventBuffer = append(sm.eventBuffer, expectedEnvelope)
-	sm.mu.Unlock()
-
-	// Check buffer has both events
-	assert.Equal(t, 2, len(sm.eventBuffer))
-
-	// Clear buffer
-	sm.clearEventBuffer()
-	assert.Equal(t, 0, len(sm.eventBuffer))
-}
-
-func TestStateMachine_CircuitBreaker_ClusterService(t *testing.T) {
-	ctx := context.Background()
-	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
-
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
-	require.NoError(t, err)
-	defer sm.Close()
-
-	// Simulate 5 failures to cluster-service
-	publisher.PublishError = assert.AnError
-
-	for i := 0; i < 5; i++ {
-		err = sm.publishCommand(ctx, "commands:cluster-service:lock", "cluster.lock", map[string]string{})
-		if err != nil {
-			// Expected - circuit breaker should trip after 3 failures
-		}
-	}
-
-	// Circuit breaker should be open now
-	// Next call should fail immediately (without retry)
-	start := time.Now()
-	err = sm.publishCommand(ctx, "commands:cluster-service:lock", "cluster.lock", map[string]string{})
-	elapsed := time.Since(start)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "circuit breaker is open")
-	assert.Less(t, elapsed, 100*time.Millisecond) // Should be instantaneous
-}
-
-func TestStateMachine_CircuitBreaker_BatchService(t *testing.T) {
-	ctx := context.Background()
-	publisher := NewMockPublisher()
-	subscriber := NewMockSubscriber()
-
-	sm, err := NewStateMachine(ctx, "op1", "db1", "corr1", publisher, subscriber, nil, nil)
-	require.NoError(t, err)
-	defer sm.Close()
-
-	// Circuit breaker for batch-service should be independent
-	publisher.PublishError = assert.AnError
-
-	err = sm.publishCommand(ctx, "commands:batch-service:install", "batch.install", map[string]string{})
-	assert.Error(t, err)
-
-	// cluster-service breaker should NOT be affected
-	publisher.PublishError = nil // Reset error
-	err = sm.publishCommand(ctx, "commands:cluster-service:lock", "cluster.lock", map[string]string{})
 	assert.NoError(t, err)
 }

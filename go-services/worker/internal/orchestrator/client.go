@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
@@ -191,9 +192,11 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		req.Header.Set(headerInternalToken, c.token)
 		req.Header.Set(headerContentType, contentTypeJSON)
 
+		attemptStart := time.Now()
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
+			httptrace.LogError(logger.GetLogger(), method, path, time.Since(attemptStart), err)
 			logger.Warnf("orchestrator client: request error (attempt %d/%d): %v",
 				attempt+1, c.maxRetries+1, err)
 			continue
@@ -205,8 +208,11 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			httptrace.LogResponse(logger.GetLogger(), method, path, resp.StatusCode, time.Since(attemptStart))
 			continue
 		}
+
+		httptrace.LogResponse(logger.GetLogger(), method, path, resp.StatusCode, time.Since(attemptStart))
 
 		// Handle error responses
 		if resp.StatusCode >= 400 {

@@ -290,7 +290,6 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   // Level 4: Worker children (bottom)
   'ras-adapter': { x: 200, y: 540 },
   'ras-server': { x: 60, y: 540 },
-  'odata-adapter': { x: 400, y: 540 },
   'designer-agent': { x: 600, y: 540 },
   'batch-service': { x: 800, y: 540 },
 }
@@ -368,12 +367,6 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'Event Subscriber',
     icon: 'notification',
     description: 'Redis Streams event processor',
-  },
-  'odata-adapter': {
-    name: 'odata-adapter',
-    displayName: 'OData Adapter',
-    icon: 'database',
-    description: 'OData CRUD operations',
   },
   'designer-agent': {
     name: 'designer-agent',
@@ -465,12 +458,10 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'redis->event-subscriber': 'streams',
   'event-subscriber->postgresql': 'database',
   'worker->ras-adapter': 'streams',
-  'worker->odata-adapter': 'streams',
   'worker->designer-agent': 'streams',
   'worker->batch-service': 'streams',
   'ras-adapter->redis': 'streams',
   'ras-adapter->ras-server': 'tcp',
-  'odata-adapter->redis': 'streams',
   'designer-agent->redis': 'streams',
   'batch-service->redis': 'streams',
   // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL

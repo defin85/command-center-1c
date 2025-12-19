@@ -1,3 +1,6 @@
+//go:build legacy_event_driven
+// +build legacy_event_driven
+
 package statemachine
 
 import (

@@ -6,7 +6,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/events"
 )
 
-// SubscriberAdapter adapts events.Subscriber to statemachine.EventSubscriber interface
+// SubscriberAdapter adapts events.Subscriber for integration helpers.
 type SubscriberAdapter struct {
 	subscriber *events.Subscriber
 }
@@ -16,12 +16,12 @@ func NewSubscriberAdapter(subscriber *events.Subscriber) *SubscriberAdapter {
 	return &SubscriberAdapter{subscriber: subscriber}
 }
 
-// Subscribe implements statemachine.EventSubscriber interface
+// Subscribe forwards event subscriptions.
 func (a *SubscriberAdapter) Subscribe(channel string, handler events.HandlerFunc) error {
 	return a.subscriber.Subscribe(channel, handler)
 }
 
-// Close implements statemachine.EventSubscriber interface
+// Close closes the underlying subscriber.
 func (a *SubscriberAdapter) Close() error {
 	return a.subscriber.Close()
 }

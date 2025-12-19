@@ -47,7 +47,7 @@ Django → Redis Stream → Worker
 | Orchestrator | ✅ | django-prometheus + cc1c_orchestrator_* |
 | Worker | ✅ | cc1c_worker_* |
 | ras-adapter | ✅ | cc1c_ras_* |
-| odata-adapter | ✅ | cc1c_odata_* |
+| worker (OData) | ✅ | external_http_* + driver metrics |
 | designer-agent | ✅ | cc1c_designer_* |
 | batch-service | ✅ | cc1c_batch_* |
 
@@ -205,12 +205,12 @@ cc1c_ras_connections_active
 cc1c_ras_connection_errors_total
 ```
 
-**odata-adapter:**
+**worker (OData):**
 ```
-cc1c_odata_requests_total{operation, status}
-cc1c_odata_request_duration_seconds{operation}
-cc1c_odata_batch_size{operation}
-cc1c_odata_connections_active
+external_http_requests_total{method,path,status}
+external_http_duration_seconds{method,path}
+cc1c_driver_executions_total{driver,operation_type,status}
+cc1c_driver_duration_seconds{driver,operation_type}
 ```
 
 **designer-agent:**
@@ -249,9 +249,9 @@ cc1c_orchestrator_api_requests_total{endpoint, method, status}
 - [x] 2.3.10: Batch operations метрики ✅
 - [x] 2.3.11: v8executor метрики ✅
 
-**odata-adapter:**
-- [x] 2.3.12: /metrics endpoint (порт 8189) ✅
-- [x] 2.3.13: OData operations метрики ✅
+**worker (OData):**
+- [x] 2.3.12: OData HTTP метрики через shared httptrace ✅
+- [x] 2.3.13: Driver executions/duration метрики ✅
 - [x] 2.3.14: Transaction duration (<15s SLA) ✅
 
 **designer-agent:**
@@ -275,7 +275,7 @@ cc1c_orchestrator_api_requests_total{endpoint, method, status}
 ```
 Frontend → API Gateway → Orchestrator → Redis → Worker → ras-adapter → 1C
                                                     ↓
-                                              odata-adapter → 1C
+                                               OData (direct) → 1C
 ```
 
 **Цель:** Видеть полный путь операции с временными метками на каждом этапе.
@@ -337,7 +337,7 @@ operation:timeline:{operation_id}
 
 - Worker: Saga execution, locks, compensations
 - ras-adapter: RAS commands, connection pool
-- odata-adapter: CRUD operations, batch sizes
+- worker: OData CRUD + batch metrics (driver + external_http)
 - designer-agent: SSH connections, long-running commands
 
 **Subtasks:**

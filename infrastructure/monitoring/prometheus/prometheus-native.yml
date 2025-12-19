@@ -57,12 +57,6 @@ scrape_configs:
       - targets: ['localhost:8187']
     metrics_path: '/metrics'
 
-  # OData Adapter (Go) - port 8189
-  - job_name: 'odata-adapter'
-    static_configs:
-      - targets: ['localhost:8189']
-    metrics_path: '/metrics'
-
   # Designer Agent (Go) - port 8190
   - job_name: 'designer-agent'
     static_configs:

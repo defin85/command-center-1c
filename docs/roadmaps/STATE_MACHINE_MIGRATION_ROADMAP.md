@@ -8,6 +8,10 @@
 >
 > **NOTE (2025-12-15):** Незавершённые пункты, влияющие на “SPA-primary” унификацию и контракты, перенесены в `docs/roadmaps/SPA_PRIMARY_ADMIN_UNIFICATION_ROADMAP.md`.
 >
+> **NOTE (2025-12-19):** `odata-adapter` больше не используется в актуальной архитектуре —
+> OData выполняется напрямую в Worker (см. `docs/roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md`).
+> Упоминания `odata-adapter` ниже сохранены как исторические записи миграции.
+>
 > ### Текущий прогресс
 >
 > | Фаза | Статус | Прогресс | Commits |

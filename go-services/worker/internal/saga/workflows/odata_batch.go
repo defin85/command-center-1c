@@ -14,10 +14,10 @@ import (
 
 // OData workflow errors.
 var (
-	ErrMissingDatabaseID      = errors.New("database_id is required")
+	ErrMissingDatabaseID       = errors.New("database_id is required")
 	ErrMissingODataCredentials = errors.New("odata_credentials is required")
-	ErrMissingOperations      = errors.New("operations is required")
-	ErrBatchFailed            = errors.New("batch operation failed")
+	ErrMissingOperations       = errors.New("operations is required")
+	ErrBatchFailed             = errors.New("batch operation failed")
 )
 
 // ODataBatchInput defines input parameters for OData batch workflow.
@@ -26,7 +26,7 @@ type ODataBatchInput struct {
 	DatabaseID string `json:"database_id"`
 
 	// Credentials contains OData endpoint credentials.
-	Credentials ODataCredentials `json:"odata_credentials"`
+	Credentials odata.ODataCredentials `json:"odata_credentials"`
 
 	// Operations is the list of batch operations to execute.
 	Operations []ODataOperation `json:"operations"`
@@ -407,12 +407,12 @@ func compensateBatchStep(deps *WorkflowDependencies) saga.StepFunc {
 
 // Helper functions
 
-func getODataCredentials(sagaCtx *saga.SagaContext) ODataCredentials {
+func getODataCredentials(sagaCtx *saga.SagaContext) odata.ODataCredentials {
 	credsRaw, _ := sagaCtx.Get("odata_credentials")
-	creds := ODataCredentials{}
+	creds := odata.ODataCredentials{}
 
 	switch v := credsRaw.(type) {
-	case ODataCredentials:
+	case odata.ODataCredentials:
 		return v
 	case map[string]interface{}:
 		if baseURL, ok := v["base_url"].(string); ok {

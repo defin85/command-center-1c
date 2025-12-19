@@ -940,7 +940,11 @@ import (
 )
 
 func TestProcessOperation_Success(t *testing.T) {
-    processor := NewTaskProcessor(mockConfig)
+    odataPool := odata.NewClientPool()
+    odataService := odata.NewService(odataPool)
+    processor := NewTaskProcessorWithOptions(mockConfig, mockCredsClient, mockRedisClient, ProcessorOptions{
+        ODataService: odataService,
+    })
 
     operation := &models.OperationMessage{
         OperationID: "test-123",
@@ -960,7 +964,11 @@ func TestProcessOperation_Success(t *testing.T) {
 }
 
 func TestProcessOperation_Timeout(t *testing.T) {
-    processor := NewTaskProcessor(mockConfig)
+    odataPool := odata.NewClientPool()
+    odataService := odata.NewService(odataPool)
+    processor := NewTaskProcessorWithOptions(mockConfig, mockCredsClient, mockRedisClient, ProcessorOptions{
+        ODataService: odataService,
+    })
 
     ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
     defer cancel()

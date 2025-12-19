@@ -19,7 +19,9 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/workflowops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/handlers"
+	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
@@ -27,6 +29,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
+	"github.com/commandcenter1c/commandcenter/worker/internal/templatesvc"
 )
 
 var (
@@ -177,9 +180,13 @@ func main() {
 		zap.Int("max_entries", timelineCfg.MaxEntries),
 	)
 
+	// Shared OData service for drivers and workflows.
+	odataPool := odata.NewClientPool()
+	odataService := odata.NewService(odataPool)
+
 	// Initialize template engine (Phase 4.6)
 	var templateEngine *template.EngineWithFallback
-	var templateClient processor.TemplateClient
+	var templateClient templatesvc.TemplateClient
 
 	if cfg.EnableGoTemplateEngine {
 		log.Info("initializing Go template engine",
@@ -206,7 +213,7 @@ func main() {
 			templateEngine = template.NewEngineWithFallback(baseEngine, fallbackRenderer, zapLog)
 
 			// Create template client adapter
-			templateClient = processor.NewOrchestratorTemplateClient(orchClientForTemplates)
+			templateClient = templatesvc.NewOrchestratorTemplateClient(orchClientForTemplates)
 
 			log.Info("template engine initialized with Python fallback support")
 		}
@@ -215,7 +222,7 @@ func main() {
 	}
 
 	// Initialize workflow client for execute_workflow operations
-	var workflowClient processor.WorkflowClient
+	var workflowClient workflowops.WorkflowClient
 	orchClientForWorkflows, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
 		BaseURL: cfg.OrchestratorURL,
 		Token:   cfg.InternalAPIToken,
@@ -225,7 +232,7 @@ func main() {
 			zap.Error(err),
 		)
 	} else {
-		workflowClient = processor.NewOrchestratorWorkflowClient(orchClientForWorkflows)
+		workflowClient = workflowops.NewOrchestratorWorkflowClient(orchClientForWorkflows)
 		log.Info("workflow client initialized for execute_workflow operations")
 	}
 
@@ -235,6 +242,7 @@ func main() {
 		TemplateClient:  templateClient,
 		WorkflowClient:  workflowClient,
 		OrchestratorURL: cfg.OrchestratorURL,
+		ODataService:    odataService,
 		Logger:          zapLog,
 		Metrics:         appMetrics,
 		Timeline:        timeline,

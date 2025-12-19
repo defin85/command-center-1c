@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/redis/go-redis/v9"
-	"github.com/sony/gobreaker"
 )
 
 // ExtensionInstallStateMachine orchestrates extension installation workflow
@@ -41,15 +38,8 @@ type ExtensionInstallStateMachine struct {
 	ClusterUser   string
 	ClusterPwd    string
 
-	// Event integration (используем Task 1.1!)
-	publisher   EventPublisher
-	subscriber  EventSubscriber
-	eventChan   chan *events.Envelope
-	eventBuffer []*events.Envelope // Buffer for unexpected events
-
-	// Circuit breakers for external services
-	clusterServiceBreaker *gobreaker.CircuitBreaker
-	batchServiceBreaker   *gobreaker.CircuitBreaker
+	// Event integration
+	publisher EventPublisher
 
 	// Dependencies
 	redisClient *redis.Client
@@ -60,16 +50,11 @@ type ExtensionInstallStateMachine struct {
 	compensationExecutor *CompensationExecutor
 
 	// Deduplication
-	processedEvents map[string]bool
-
-	// Control
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Critical #3 Fix: Safe channel closing with sync.Once and atomic flag
-	closeOnce     sync.Once
-	closedFlag    atomic.Bool
-	eventChanDone chan struct{} // Signal channel to stop writes to eventChan
+	// Control
+	closeOnce sync.Once
 
 	// Timeline for operation tracing
 	timeline tracing.TimelineRecorder
@@ -140,7 +125,6 @@ func NewStateMachine(
 	ctx context.Context,
 	operationID, databaseID, correlationID string,
 	publisher EventPublisher,
-	subscriber EventSubscriber,
 	redisClient *redis.Client,
 	config *Config,
 	opts ...StateMachineOption,
@@ -149,9 +133,6 @@ func NewStateMachine(
 	if publisher == nil {
 		return nil, fmt.Errorf("publisher is required")
 	}
-	if subscriber == nil {
-		return nil, fmt.Errorf("subscriber is required")
-	}
 	// redisClient is optional (for unit tests without persistence)
 	if config == nil {
 		config = DefaultConfig()
@@ -159,29 +140,19 @@ func NewStateMachine(
 
 	smCtx, cancel := context.WithCancel(ctx)
 
-	// Create circuit breakers
-	clusterBreaker, batchBreaker := createCircuitBreakers()
-
 	sm := &ExtensionInstallStateMachine{
-		ID:                    fmt.Sprintf("sm-%s", correlationID),
-		OperationID:           operationID,
-		DatabaseID:            databaseID,
-		CorrelationID:         correlationID,
-		State:                 StateInit,
-		lastActivity:          time.Now(),
-		publisher:             publisher,
-		subscriber:            subscriber,
-		redisClient:           redisClient,
-		config:                config,
-		eventChan:             make(chan *events.Envelope, 100),
-		eventBuffer:           make([]*events.Envelope, 0, 10),
-		processedEvents:       make(map[string]bool),
-		compensationStack:     make([]CompensationAction, 0),
-		clusterServiceBreaker: clusterBreaker,
-		batchServiceBreaker:   batchBreaker,
-		ctx:                   smCtx,
-		cancel:                cancel,
-		eventChanDone:         make(chan struct{}),
+		ID:                fmt.Sprintf("sm-%s", correlationID),
+		OperationID:       operationID,
+		DatabaseID:        databaseID,
+		CorrelationID:     correlationID,
+		State:             StateInit,
+		lastActivity:      time.Now(),
+		publisher:         publisher,
+		redisClient:       redisClient,
+		config:            config,
+		compensationStack: make([]CompensationAction, 0),
+		ctx:               smCtx,
+		cancel:            cancel,
 	}
 
 	// Apply options
@@ -194,46 +165,7 @@ func NewStateMachine(
 		sm.timeline = tracing.NewNoopTimeline()
 	}
 
-	// Register event handlers BEFORE router starts
-	// (в listenEvents() будет только waitforcontext, без Subscribe)
-	sm.registerEventHandlers()
-
 	return sm, nil
-}
-
-// registerEventHandlers registers handlers for incoming events
-// This must be called BEFORE subscriber.Run() starts the router
-func (sm *ExtensionInstallStateMachine) registerEventHandlers() {
-	handler := func(ctx context.Context, envelope *events.Envelope) error {
-		// Critical #3 Fix: Check if SM is closed before writing to channel
-		if sm.closedFlag.Load() {
-			return nil // Silently ignore events after close
-		}
-
-		if envelope.CorrelationID == sm.CorrelationID {
-			select {
-			case sm.eventChan <- envelope:
-			case <-sm.eventChanDone:
-				return nil // SM is closing, ignore event
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		return nil
-	}
-
-	// Subscribe to specific event channels
-	// NOTE: Redis Streams НЕ поддерживают wildcard подписки
-	eventChannels := []string{
-		// batch-service events
-		"events:batch-service:extension:installed",
-		"events:batch-service:extension:install-failed",
-		"events:batch-service:extension:install-started",
-	}
-
-	for _, channel := range eventChannels {
-		sm.subscriber.Subscribe(channel, handler)
-	}
 }
 
 // Run executes the state machine main loop
@@ -247,9 +179,6 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		"database_id":    sm.DatabaseID,
 		"extension_name": sm.ExtensionName,
 	})
-
-	// Start event listener
-	go sm.listenEvents(ctx)
 
 	// Load state if exists (for recovery)
 	if err := sm.loadState(ctx); err != nil {
@@ -475,23 +404,8 @@ func (sm *ExtensionInstallStateMachine) transitionTo(newState InstallState) erro
 // Critical #3 Fix: Uses sync.Once to ensure safe single close
 func (sm *ExtensionInstallStateMachine) Close() error {
 	sm.closeOnce.Do(func() {
-		// Set closed flag FIRST to prevent new writes to eventChan
-		sm.closedFlag.Store(true)
-
-		// Signal writers to stop (non-blocking)
-		close(sm.eventChanDone)
-
 		// Cancel context
 		sm.cancel()
-
-		sm.mu.Lock()
-		// Clear event buffer
-		sm.eventBuffer = nil
-		sm.mu.Unlock()
-
-		// Note: We intentionally don't close eventChan here.
-		// The channel will be garbage collected when all references are gone.
-		// This prevents "send on closed channel" panics from racing goroutines.
 	})
 
 	return nil
@@ -504,19 +418,4 @@ func (sm *ExtensionInstallStateMachine) ClosePublisher() error {
 		return sm.publisher.Close()
 	}
 	return nil
-}
-
-// clearEventBuffer clears the event buffer (for cleanup)
-func (sm *ExtensionInstallStateMachine) clearEventBuffer() {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	sm.eventBuffer = sm.eventBuffer[:0]
-}
-
-// listenEvents waits for context cancellation
-// Event handlers are already registered in registerEventHandlers() (called from NewStateMachine)
-// This goroutine just prevents the eventChan from being closed prematurely
-func (sm *ExtensionInstallStateMachine) listenEvents(ctx context.Context) {
-	// Wait for context cancellation to prevent goroutine leak
-	<-ctx.Done()
 }

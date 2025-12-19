@@ -61,29 +61,22 @@ type DesignerClient interface {
 	DumpConfig(ctx context.Context, ssh SSHCredentials, dbPath, targetPath string) error
 }
 
-// ODataCredentials contains OData endpoint credentials.
-type ODataCredentials struct {
-	BaseURL  string `json:"base_url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-// ODataClient sends commands to odata-adapter via Redis Streams.
+// ODataClient executes OData calls (direct HTTP inside worker).
 type ODataClient interface {
 	// Query executes an OData query and returns results.
-	Query(ctx context.Context, creds ODataCredentials, entity string, query *odata.QueryParams) ([]map[string]interface{}, error)
+	Query(ctx context.Context, creds odata.ODataCredentials, entity string, query *odata.QueryParams) ([]map[string]interface{}, error)
 
 	// Create creates a new entity record.
-	Create(ctx context.Context, creds ODataCredentials, entity string, data map[string]interface{}) (map[string]interface{}, error)
+	Create(ctx context.Context, creds odata.ODataCredentials, entity string, data map[string]interface{}) (map[string]interface{}, error)
 
 	// Update updates an existing entity record.
-	Update(ctx context.Context, creds ODataCredentials, entity, entityID string, data map[string]interface{}) error
+	Update(ctx context.Context, creds odata.ODataCredentials, entity, entityID string, data map[string]interface{}) error
 
 	// Delete deletes an entity record.
-	Delete(ctx context.Context, creds ODataCredentials, entity, entityID string) error
+	Delete(ctx context.Context, creds odata.ODataCredentials, entity, entityID string) error
 
 	// ExecuteBatch executes multiple operations in a single batch request.
-	ExecuteBatch(ctx context.Context, creds ODataCredentials, items []odata.BatchItem) (*odata.BatchResult, error)
+	ExecuteBatch(ctx context.Context, creds odata.ODataCredentials, items []odata.BatchItem) (*odata.BatchResult, error)
 }
 
 // DatabaseInfo contains information about a 1C database for workflow operations.

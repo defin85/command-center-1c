@@ -59,12 +59,15 @@ func NewWorkflowRegistry(
 	designerClient DesignerClient,
 	config *WorkflowConfig,
 	logger *zap.Logger,
-) *WorkflowRegistry {
+) (*WorkflowRegistry, error) {
 	if config == nil {
 		config = DefaultWorkflowConfig()
 	}
 	if logger == nil {
 		logger = zap.NewNop()
+	}
+	if odataClient == nil {
+		return nil, fmt.Errorf("odata client is required for workflow registry")
 	}
 
 	return &WorkflowRegistry{
@@ -77,7 +80,7 @@ func NewWorkflowRegistry(
 			Config:         config,
 		},
 		logger: logger,
-	}
+	}, nil
 }
 
 // RegisterAll registers all workflow definitions with the orchestrator.

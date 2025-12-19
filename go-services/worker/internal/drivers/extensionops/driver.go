@@ -38,7 +38,6 @@ type InstallDriver struct {
 	clusterResolver clusterinfo.Resolver
 	credsClient     credentials.Fetcher
 	redisClient     *redis.Client
-	eventSubscriber *sharedEvents.Subscriber
 	timeline        tracing.TimelineRecorder
 }
 
@@ -48,7 +47,6 @@ func NewInstallDriver(
 	clusterResolver clusterinfo.Resolver,
 	credsClient credentials.Fetcher,
 	redisClient *redis.Client,
-	eventSubscriber *sharedEvents.Subscriber,
 	timeline tracing.TimelineRecorder,
 ) *InstallDriver {
 	if featureFlags == nil {
@@ -69,7 +67,6 @@ func NewInstallDriver(
 		clusterResolver: clusterResolver,
 		credsClient:     credsClient,
 		redisClient:     redisClient,
-		eventSubscriber: eventSubscriber,
 		timeline:        timeline,
 	}
 }
@@ -126,6 +123,16 @@ func (d *InstallDriver) ProcessExtensionInstall(ctx context.Context, msg *models
 	}
 
 	return result
+}
+
+func (d *InstallDriver) failResult(msg *models.OperationMessage, databaseID string, start time.Time, errMsg, errCode string) models.DatabaseResultV2 {
+	return models.DatabaseResultV2{
+		DatabaseID: databaseID,
+		Success:    false,
+		Error:      errMsg,
+		ErrorCode:  errCode,
+		Duration:   time.Since(start).Seconds(),
+	}
 }
 
 // validateExtensionInstallParams validates extension installation parameters.
@@ -229,32 +236,29 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		databaseID, clusterInfo.ClusterID, clusterInfo.InfobaseID, resolveDuration)
 
 	// Step 4: Create State Machine
-	useDirectCLI := os.Getenv("USE_DIRECT_CLI") != "false"
-	installer, installerErr := cli.NewExtensionInstallerFromEnv()
-	if installerErr != nil {
-		log.Warnf("[Event-Driven] CLI installer not configured: %v (fallback to batch-service)", installerErr)
+	if os.Getenv("USE_DIRECT_CLI") == "false" {
+		return d.failResult(msg, databaseID, start, "direct CLI disabled (USE_DIRECT_CLI=false)", "CLI_DISABLED"), nil
 	}
 
-	var (
-		creds    *credentials.DatabaseCredentials
-		adapter  statemachine.ExtensionInstaller
-		credsErr error
-	)
-	if useDirectCLI && installerErr == nil && installer != nil {
-		creds, credsErr = d.fetchDesignerCredentials(ctx, databaseID)
-		if credsErr != nil {
-			log.Errorf("[Event-Driven] Failed to fetch designer credentials: database_id=%s, error=%v",
-				databaseID, credsErr)
-			return models.DatabaseResultV2{
-				DatabaseID: databaseID,
-				Success:    false,
-				Error:      fmt.Sprintf("failed to fetch designer credentials: %v", credsErr),
-				ErrorCode:  "CREDENTIALS_ERROR",
-				Duration:   time.Since(start).Seconds(),
-			}, fmt.Errorf("failed to fetch designer credentials for database %s: %w", databaseID, credsErr)
-		}
-		adapter = &cliInstallerAdapter{installer: installer}
+	installer, installerErr := cli.NewExtensionInstallerFromEnv()
+	if installerErr != nil || installer == nil {
+		return d.failResult(msg, databaseID, start, fmt.Sprintf("cli installer not configured: %v", installerErr), "CLI_NOT_CONFIGURED"), nil
 	}
+
+	creds, credsErr := d.fetchDesignerCredentials(ctx, databaseID)
+	if credsErr != nil {
+		log.Errorf("[Event-Driven] Failed to fetch designer credentials: database_id=%s, error=%v",
+			databaseID, credsErr)
+		return models.DatabaseResultV2{
+			DatabaseID: databaseID,
+			Success:    false,
+			Error:      fmt.Sprintf("failed to fetch designer credentials: %v", credsErr),
+			ErrorCode:  "CREDENTIALS_ERROR",
+			Duration:   time.Since(start).Seconds(),
+		}, fmt.Errorf("failed to fetch designer credentials for database %s: %w", databaseID, credsErr)
+	}
+
+	adapter := &cliInstallerAdapter{installer: installer}
 
 	credsProvider := &designerCredsProvider{fetcher: d.credsClient}
 	clusterInfoProvider := &clusterInfoProvider{resolver: d.clusterResolver}
@@ -419,26 +423,6 @@ func (pw *publisherWrapper) Close() error {
 	return pw.publisher.Close()
 }
 
-// subscriberWrapper wraps shared/events.Subscriber to implement statemachine.EventSubscriber.
-// IMPORTANT: This wrapper does NOT close the underlying subscriber because it's shared
-// across multiple State Machines and managed by TaskProcessor.
-type subscriberWrapper struct {
-	subscriber *sharedEvents.Subscriber
-}
-
-// Subscribe implements statemachine.EventSubscriber.
-func (sw *subscriberWrapper) Subscribe(channel string, handler sharedEvents.HandlerFunc) error {
-	return sw.subscriber.Subscribe(channel, handler)
-}
-
-// Close implements statemachine.EventSubscriber.
-// DO NOT close shared subscriber - it's managed by TaskProcessor.
-func (sw *subscriberWrapper) Close() error {
-	// Critical #1 Fix: shared subscriber lifecycle is managed by TaskProcessor,
-	// not by individual State Machines. Closing here would break all other SMs.
-	return nil
-}
-
 // createStateMachine creates a new ExtensionInstallStateMachine instance.
 // Returns error if required dependencies are not available.
 func (d *InstallDriver) createStateMachine(
@@ -460,13 +444,6 @@ func (d *InstallDriver) createStateMachine(
 		return nil, fmt.Errorf("redis client not configured for State Machine")
 	}
 
-	// Check subscriber availability (graceful degradation)
-	if d.eventSubscriber == nil {
-		log.Warnf("event subscriber not available, State Machine cannot be created: operation_id=%s, database_id=%s",
-			operationID, databaseID)
-		return nil, fmt.Errorf("event subscriber not available for State Machine")
-	}
-
 	// Create publisher for State Machine
 	// Note: We create a new publisher instance for each State Machine
 	// to ensure proper isolation and cleanup
@@ -476,9 +453,8 @@ func (d *InstallDriver) createStateMachine(
 		return nil, fmt.Errorf("failed to create event publisher: %w", err)
 	}
 
-	// Wrap publisher and subscriber to implement statemachine interfaces
+	// Wrap publisher to implement statemachine interfaces
 	pubWrapper := &publisherWrapper{publisher: publisher}
-	subWrapper := &subscriberWrapper{subscriber: d.eventSubscriber}
 
 	// Create State Machine with timeline
 	sm, err := statemachine.NewStateMachine(
@@ -487,7 +463,6 @@ func (d *InstallDriver) createStateMachine(
 		databaseID,
 		correlationID,
 		pubWrapper,
-		subWrapper,
 		d.redisClient,
 		d.smConfig,
 		statemachine.WithTimeline(d.timeline),

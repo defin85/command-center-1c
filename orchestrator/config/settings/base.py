@@ -323,10 +323,6 @@ RAS_ADAPTER_TIMEOUT = int(env(
 
 # OData Adapter Configuration
 # Port 8189 - outside Windows reserved range (8013-8112)
-ODATA_ADAPTER_URL = env(
-    'ODATA_ADAPTER_URL',
-    default='http://localhost:8189'
-)
 
 # Designer Agent Configuration
 # Port 8190 - outside Windows reserved range (8013-8112)
@@ -414,12 +410,6 @@ MONITORED_SERVICES = [
         'name': 'batch-service',
         'type': 'backend',
         'health_url': f'{BATCH_SERVICE_URL}/health',
-        'critical': False,
-    },
-    {
-        'name': 'odata-adapter',
-        'type': 'backend',
-        'health_url': f'{ODATA_ADAPTER_URL}/health',
         'critical': False,
     },
     {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"go.uber.org/zap"
 )
 
@@ -56,8 +57,10 @@ func (c *HTTPBatchServiceClient) CheckHealth(ctx context.Context) (*BatchService
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestErrorZap(c.logger, req, time.Since(start), err)
 		return &BatchServiceHealthStatus{
 			Status:    "unhealthy",
 			Service:   "batch-service",
@@ -66,6 +69,8 @@ func (c *HTTPBatchServiceClient) CheckHealth(ctx context.Context) (*BatchService
 		}, nil
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(c.logger, req, resp.StatusCode, time.Since(start))
 
 	var status BatchServiceHealthStatus
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {

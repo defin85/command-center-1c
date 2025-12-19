@@ -107,7 +107,7 @@ func TestWorkflowRegistryRegisterAll(t *testing.T) {
 	rm := newMockResourceManager()
 	logger := zaptest.NewLogger(t)
 
-	registry := NewWorkflowRegistry(
+	registry, err := NewWorkflowRegistry(
 		orchestrator,
 		rm,
 		&mockRASClient{},
@@ -116,9 +116,10 @@ func TestWorkflowRegistryRegisterAll(t *testing.T) {
 		DefaultWorkflowConfig(),
 		logger,
 	)
+	require.NoError(t, err)
 
 	// Execute
-	err := registry.RegisterAll()
+	err = registry.RegisterAll()
 
 	// Verify
 	require.NoError(t, err)
@@ -170,7 +171,7 @@ func TestWorkflowRegistryRegisterSubset(t *testing.T) {
 			rm := newMockResourceManager()
 			logger := zaptest.NewLogger(t)
 
-			registry := NewWorkflowRegistry(
+			registry, err := NewWorkflowRegistry(
 				orchestrator,
 				rm,
 				&mockRASClient{},
@@ -179,8 +180,9 @@ func TestWorkflowRegistryRegisterSubset(t *testing.T) {
 				DefaultWorkflowConfig(),
 				logger,
 			)
+			require.NoError(t, err)
 
-			err := registry.RegisterSubset(tt.workflowIDs...)
+			err = registry.RegisterSubset(tt.workflowIDs...)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -199,7 +201,7 @@ func TestWorkflowRegistryNilDefaults(t *testing.T) {
 	rm := newMockResourceManager()
 
 	// Create registry with nil config and logger
-	registry := NewWorkflowRegistry(
+	registry, err := NewWorkflowRegistry(
 		orchestrator,
 		rm,
 		&mockRASClient{},
@@ -208,13 +210,15 @@ func TestWorkflowRegistryNilDefaults(t *testing.T) {
 		nil, // config = nil
 		nil, // logger = nil
 	)
+	require.NoError(t, err)
 
 	require.NotNil(t, registry)
 	require.NotNil(t, registry.deps)
 	require.NotNil(t, registry.deps.Config)
+	require.NotNil(t, registry.deps.ODataClient)
 	require.NotNil(t, registry.logger)
 
 	// Should work without panics
-	err := registry.RegisterSubset(WorkflowODataBatch)
+	err = registry.RegisterSubset(WorkflowODataBatch)
 	assert.NoError(t, err)
 }

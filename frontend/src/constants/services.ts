@@ -4,7 +4,6 @@ export type ServiceName =
   | 'orchestrator'
   | 'worker'
   | 'ras-adapter'
-  | 'odata-adapter'
   | 'designer-agent'
   | 'batch-service'
 
@@ -53,12 +52,6 @@ export const KNOWN_SERVICES: KnownService[] = [
     healthPath: '/health',
   },
   {
-    name: 'odata-adapter',
-    title: 'OData Adapter',
-    url: envUrl('VITE_ODATA_ADAPTER_URL') ?? 'http://localhost:8189',
-    healthPath: '/health',
-  },
-  {
     name: 'designer-agent',
     title: 'Designer Agent',
     url: envUrl('VITE_DESIGNER_AGENT_URL') ?? 'http://localhost:8190',
@@ -71,4 +64,3 @@ export const KNOWN_SERVICES: KnownService[] = [
     healthPath: '/health',
   },
 ]
-

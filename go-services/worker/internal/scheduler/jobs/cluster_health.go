@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
@@ -413,11 +414,15 @@ func (c *HTTPOrchestratorHealthClient) updateHealth(ctx context.Context, cluster
 		httpReq.Header.Set("X-Internal-Token", c.token)
 	}
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		httptrace.LogRequestErrorZap(c.logger, httpReq, time.Since(start), err)
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(c.logger, httpReq, resp.StatusCode, time.Since(start))
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("health update failed: HTTP %d", resp.StatusCode)

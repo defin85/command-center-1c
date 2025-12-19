@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
@@ -180,6 +181,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			elapsed := time.Since(attemptStart)
+			httptrace.LogError(logger.GetLogger(), method, path, elapsed, err)
 			lastErr = fmt.Errorf("request failed: %w", err)
 			logger.Warnf("ras-adapter client: request error (attempt %d/%d): %v",
 				attempt+1, c.maxRetries+1, err)
@@ -197,6 +199,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		resp.Body.Close()
 		if err != nil {
 			elapsed := time.Since(attemptStart)
+			httptrace.LogResponse(logger.GetLogger(), method, path, resp.StatusCode, elapsed)
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
 			logger.Debugf("ras-adapter client: request timing (%s %s, attempt=%d/%d, elapsed_ms=%d, status=%d)",
 				method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds(), resp.StatusCode)
@@ -204,6 +207,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		}
 
 		elapsed := time.Since(attemptStart)
+		httptrace.LogResponse(logger.GetLogger(), method, path, resp.StatusCode, elapsed)
 		logger.Debugf("ras-adapter client: request timing (%s %s, attempt=%d/%d, elapsed_ms=%d, status=%d, request_id=%s)",
 			method, path, attempt+1, c.maxRetries+1, elapsed.Milliseconds(), resp.StatusCode, resp.Header.Get(headerRequestID))
 		if elapsed >= 2*time.Second {

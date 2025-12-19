@@ -12,9 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/models"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/odataops"
+	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
+	"github.com/redis/go-redis/v9"
 )
 
 // MockODataServer создаёт mock 1C OData сервер
@@ -110,6 +114,33 @@ func handleQuery(w http.ResponseWriter, r *http.Request, entities map[string]map
 	json.NewEncoder(w).Encode(response)
 }
 
+func setupTestProcessor(t *testing.T, credsClient credentials.Fetcher) (*TaskProcessor, func()) {
+	t.Helper()
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+
+	cfg := &config.Config{WorkerID: "test-worker-1"}
+	odataPool := odata.NewClientPool()
+	odataService := odata.NewService(odataPool)
+	processor := NewTaskProcessorWithOptions(cfg, credsClient, redisClient, ProcessorOptions{
+		ODataService: odataService,
+	})
+
+	cleanup := func() {
+		redisClient.Close()
+		mr.Close()
+	}
+
+	return processor, cleanup
+}
+
 // TestProcessor_Integration_CreateOperation тестирует Create через весь processor
 func TestProcessor_Integration_CreateOperation(t *testing.T) {
 	// Setup mock OData server
@@ -125,11 +156,8 @@ func TestProcessor_Integration_CreateOperation(t *testing.T) {
 		},
 	}
 
-	// Create processor
-	cfg := &config.Config{
-		WorkerID: "test-worker-1",
-	}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	// Create operation message
 	msg := &models.OperationMessage{
@@ -193,8 +221,8 @@ func TestProcessor_Integration_UpdateOperation(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",
@@ -240,8 +268,8 @@ func TestProcessor_Integration_DeleteOperation(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",
@@ -284,8 +312,8 @@ func TestProcessor_Integration_QueryOperation(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",
@@ -338,8 +366,8 @@ func TestProcessor_Integration_AuthError(t *testing.T) {
 		},
 	}
 
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",
@@ -391,8 +419,8 @@ func TestProcessor_Integration_MultipleTargets(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",
@@ -446,8 +474,8 @@ func TestProcessor_Integration_ClientCaching(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	// First operation - creates client
 	msg1 := &models.OperationMessage{
@@ -489,9 +517,15 @@ func TestProcessor_Integration_ClientCaching(t *testing.T) {
 	}
 
 	// Check client cache size
-	processor.clientsMutex.RLock()
-	cacheSize := len(processor.odataClients)
-	processor.clientsMutex.RUnlock()
+	driver, ok := processor.driverRegistry.LookupDatabase("create")
+	if !ok {
+		t.Fatal("expected odata driver to be registered")
+	}
+	odataDriver, ok := driver.(*odataops.Driver)
+	if !ok {
+		t.Fatalf("expected odata driver, got %T", driver)
+	}
+	cacheSize := odataDriver.CacheSize()
 
 	if cacheSize != 1 {
 		t.Errorf("Expected 1 cached client, got %d", cacheSize)
@@ -514,8 +548,8 @@ func TestProcessor_Integration_Timeout(t *testing.T) {
 			Password: "testpass",
 		},
 	}
-	cfg := &config.Config{WorkerID: "test-worker-1"}
-	processor := NewTaskProcessor(cfg, credsClient)
+	processor, cleanup := setupTestProcessor(t, credsClient)
+	defer cleanup()
 
 	msg := &models.OperationMessage{
 		Version:         "2.0",

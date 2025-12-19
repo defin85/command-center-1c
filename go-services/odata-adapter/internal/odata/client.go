@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 	"go.uber.org/zap"
 )
@@ -170,8 +171,10 @@ func (c *Client) ExecuteBatch(ctx context.Context, creds sharedodata.ODataCreden
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "multipart/mixed")
 
+	start := time.Now()
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestErrorZap(c.logger, req, time.Since(start), err)
 		return nil, &ODataError{
 			Code:        ErrorCategoryNetwork,
 			Message:     fmt.Sprintf("batch request failed: %v", err),
@@ -180,6 +183,8 @@ func (c *Client) ExecuteBatch(ctx context.Context, creds sharedodata.ODataCreden
 		}
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(c.logger, req, resp.StatusCode, time.Since(start))
 
 	// Read response body with size limit to prevent memory exhaustion
 	const maxBatchResponseSize = 50 * 1024 * 1024 // 50 MB
@@ -219,11 +224,15 @@ func (c *Client) HealthCheck(ctx context.Context, creds sharedodata.ODataCredent
 	req.SetBasicAuth(creds.Username, creds.Password)
 	req.Header.Set("Accept", "application/json")
 
+	start := time.Now()
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestErrorZap(c.logger, req, time.Since(start), err)
 		return fmt.Errorf("health check failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(c.logger, req, resp.StatusCode, time.Since(start))
 
 	if resp.StatusCode >= 400 {
 		return ParseODataError(resp)
@@ -292,8 +301,10 @@ func (c *Client) doRequest(ctx context.Context, creds sharedodata.ODataCredentia
 	}
 
 	// Execute request
+	start := time.Now()
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestErrorZap(c.logger, req, time.Since(start), err)
 		return &ODataError{
 			Code:        ErrorCategoryNetwork,
 			Message:     fmt.Sprintf("HTTP request failed: %v", err),
@@ -302,6 +313,8 @@ func (c *Client) doRequest(ctx context.Context, creds sharedodata.ODataCredentia
 		}
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(c.logger, req, resp.StatusCode, time.Since(start))
 
 	// Check status code
 	if resp.StatusCode >= 400 {

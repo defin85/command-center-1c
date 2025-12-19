@@ -3,8 +3,6 @@ package statemachine
 import (
 	"context"
 	"sync"
-
-	"github.com/commandcenter1c/commandcenter/shared/events"
 )
 
 // MockPublisher is a mock implementation of EventPublisher for testing
@@ -68,45 +66,4 @@ func (m *MockPublisher) GetLastPublished() *PublishCall {
 	}
 
 	return &m.PublishedCalls[len(m.PublishedCalls)-1]
-}
-
-// MockSubscriber is a mock implementation of EventSubscriber for testing
-type MockSubscriber struct {
-	mu       sync.Mutex
-	Handlers map[string]events.HandlerFunc
-	Closed   bool
-}
-
-func NewMockSubscriber() *MockSubscriber {
-	return &MockSubscriber{
-		Handlers: make(map[string]events.HandlerFunc),
-	}
-}
-
-func (m *MockSubscriber) Subscribe(channel string, handler events.HandlerFunc) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.Handlers[channel] = handler
-	return nil
-}
-
-func (m *MockSubscriber) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.Closed = true
-	return nil
-}
-
-// SimulateEvent simulates receiving an event (для тестов)
-func (m *MockSubscriber) SimulateEvent(ctx context.Context, channel string, envelope *events.Envelope) error {
-	m.mu.Lock()
-	handler, exists := m.Handlers[channel]
-	m.mu.Unlock()
-
-	if !exists {
-		return nil // No handler registered
-	}
-
-	return handler(ctx, envelope)
 }

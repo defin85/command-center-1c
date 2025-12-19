@@ -65,7 +65,6 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,
   'event-subscriber': <NotificationOutlined />,
-  'odata-adapter': <DatabaseOutlined />,
   'designer-agent': <ToolOutlined />,
 }
 

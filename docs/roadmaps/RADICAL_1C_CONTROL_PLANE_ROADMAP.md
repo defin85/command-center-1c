@@ -31,10 +31,23 @@
   - db ops: `lock_scheduled_jobs`, `unlock_scheduled_jobs`, `block_sessions`, `unblock_sessions`, `terminate_sessions`
   - Код: `go-services/worker/internal/drivers/rasops/*`
   - Удалены старые реализации из `go-services/worker/internal/processor/*` (RAS-специфика больше не живёт в processor).
+- **State Machine (extensions) больше не зависит от batch-service**:
+  - direct CLI обязателен для `install_extension`
+  - убраны batch-service события/подписчики и circuit breakers из SM
+  - processor больше не поднимает shared subscriber для SM
+- **execute_workflow выделен в отдельный driver**:
+  - WorkflowHandler + Orchestrator adapter перенесены в `internal/drivers/workflowops`
+  - processor больше не содержит workflow-логику, только регистрирует driver
+- **Workflow observability & edge-cases (Phase 3)**:
+  - timeline подшагов (`workflow.execute.*`, `external.orchestrator.*`, `external.workflow_engine.*`)
+  - retries при update status в Orchestrator
+- **OData adapter выводится из runtime**:
+  - UI/service-mesh/system-status больше не показывают `odata-adapter` как отдельный сервис
+  - Prometheus scrape/job удалён, мониторинг отражает direct OData в Worker
 
 ### В работе / ближайшее
 
-- **“Единая точка ответственности по workflow”**: `install_extension` вынесен в драйвер, `execute_workflow` остаётся отдельным (следом — полная изоляция workflow-логики в driver/engine).
+- **“Единая точка ответственности по workflow”**: `install_extension` и `execute_workflow` вынесены в драйверы, следующий шаг — унификация внешних HTTP логов по стандарту (path + elapsed + status).
 - **Observability унификация UI**: довести до правила “UI читает только Prometheus” для `/system-status` и `/service-mesh`, включая внешние probes (RAS port / TCP).
 - **CLI/Designer/ibcmd**: migrated core designer ops, дальше — полный отказ от designer-agent/batch-service и покрытие edge-cases.
 
@@ -43,7 +56,7 @@
 - Phase 1 — Driver Framework в Worker: **DONE**
 - Phase 2 — Migrating RAS operations: **DONE (core)**
 - Phase 3 — Migrating Designer/Extensions: **IN PROGRESS (core)**
-- Phase 4 — Migrating OData operations: **TODO**
+- Phase 4 — Migrating OData operations: **IN PROGRESS**
 - Phase 5 — ibcmd/ibsrv integration: **TODO**
 - Phase 6 — Декомиссия сервисов: **TODO**
 
@@ -203,7 +216,7 @@ Acceptance:
 Status: **IN PROGRESS**
 - `install_extension` вынесен в `extensionops` драйвер
 - CLI путь реализован через `internal/drivers/cli` и включается `USE_DIRECT_CLI`
-- State Machine использует direct CLI при наличии `EXE_1CV8_PATH`, иначе fallback на batch-service
+- State Machine требует direct CLI (fallback на batch-service удалён)
 - Добавлен `designerops` для `remove_extension` и config ops (Update/Load/Dump)
 
 ### Phase 4 — Migrating OData operations (2–4 недели)
@@ -214,6 +227,14 @@ Deliverables:
 
 Acceptance:
 - все OData workflows не зависят от внешнего “adapter service”
+
+Status: **IN PROGRESS**
+- CRUD/query OData операции вынесены в driver `odataops` (worker direct HTTP)
+- template rendering для OData перенесён в driver (Processor больше не содержит OData logic)
+- Batch support перенесён в worker internal OData client (используется для saga workflows)
+- OData client унифицирован: общий пул для driver + saga workflows
+- ODataService внедряется через DI (без default fallback)
+- `odata-adapter` исключён из runtime-мониторинга и UI (service mesh/system status)
 
 ### Phase 5 — ibcmd/ibsrv integration (2–4 недели, optional)
 
@@ -241,7 +262,7 @@ Acceptance:
 Правило: **внешний API v2 не ломаем**. Меняем только внутреннюю реализацию.
 
 Переходные механизмы:
-- feature-flag `USE_DIRECT_RAS`, `USE_DIRECT_ODATA`, `USE_DIRECT_CLI`, `USE_DIRECT_IBCMD`
+- feature-flag `USE_DIRECT_RAS`, `USE_DIRECT_CLI`, `USE_DIRECT_IBCMD` (OData всегда direct)
 - shadow-mode на выборочных action types (сравнение результатов без применения)
 
 ---

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
+	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
 // HTTPAuditLogger sends compensation audit logs to Orchestrator API
@@ -62,11 +65,15 @@ func (l *HTTPAuditLogger) LogCompensation(ctx context.Context, operationID strin
 		req.Header.Set("X-Internal-Service-Token", l.serviceToken)
 	}
 
+	start := time.Now()
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		return fmt.Errorf("http error: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("orchestrator returned status %d", resp.StatusCode)
@@ -118,11 +125,15 @@ func (l *HTTPAuditLogger) LogCompensationBatch(ctx context.Context, operationID 
 		req.Header.Set("X-Internal-Service-Token", l.serviceToken)
 	}
 
+	start := time.Now()
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		return fmt.Errorf("http error: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("orchestrator returned status %d", resp.StatusCode)

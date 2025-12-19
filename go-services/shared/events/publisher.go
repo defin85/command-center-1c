@@ -13,6 +13,9 @@ import (
 	"github.com/ThreeDotsLabs/watermill-redisstream/pkg/redisstream"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
+	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
 // Publisher wraps Watermill Publisher with our Envelope format
@@ -315,11 +318,15 @@ func (p *Publisher) storeFailedEvent(
 	p.mu.RUnlock()
 
 	// Use reusable HTTP client for connection pooling
+	start := time.Now()
 	resp, err := p.fallbackClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		return fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("fallback API returned %d", resp.StatusCode)

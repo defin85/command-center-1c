@@ -20,7 +20,6 @@ import {
   CloudServerOutlined,
   ToolOutlined,
   NotificationOutlined,
-  SwapOutlined,
 } from '@ant-design/icons'
 import type { ServiceStatus, ServiceNodeData, OperationFlowStatus } from '../../types/serviceMesh'
 import { STATUS_COLORS, STATUS_TEXT } from '../../types/serviceMesh'
@@ -37,7 +36,6 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'ras-adapter': <ApiOutlined />,
   'ras-server': <CloudServerOutlined />,
   'batch-service': <BuildOutlined />,
-  'odata-adapter': <SwapOutlined />,
   'designer-agent': <ToolOutlined />,
   'event-subscriber': <NotificationOutlined />,
   postgresql: <DatabaseOutlined />,

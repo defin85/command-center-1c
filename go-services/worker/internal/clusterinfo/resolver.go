@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
@@ -207,6 +208,7 @@ func (r *OrchestratorClusterResolver) fetchFromOrchestrator(ctx context.Context,
 }
 
 func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	log := logger.GetLogger()
 	url := fmt.Sprintf("%s/api/v2/internal/get-database-cluster-info?database_id=%s", r.orchestratorURL, databaseID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -220,11 +222,15 @@ func (r *OrchestratorClusterResolver) fetchViaHTTP(ctx context.Context, database
 		req.Header.Set("X-Internal-Service-Token", r.apiKey)
 	}
 
+	start := time.Now()
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(log, req, time.Since(start), err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(log, req, resp.StatusCode, time.Since(start))
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

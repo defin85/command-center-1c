@@ -42,16 +42,6 @@
       "env_var": "RAS_ADAPTER_PORT",
       "description": "Go RAS Adapter - 1C cluster management via RAS protocol"
     },
-    "odata-adapter": {
-      "port": 8189,
-      "host": {
-        "docker": "odata-adapter",
-        "local": "localhost"
-      },
-      "health_path": "/health",
-      "env_var": "ODATA_ADAPTER_PORT",
-      "description": "Go OData Adapter - 1C infobase integration via OData"
-    },
     "designer-agent": {
       "port": 8190,
       "host": {

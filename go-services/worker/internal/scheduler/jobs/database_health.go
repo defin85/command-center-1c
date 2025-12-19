@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"go.uber.org/zap"
 )
 
@@ -16,10 +17,10 @@ const (
 	DatabaseHealthJobName = "periodic_database_health_check"
 
 	// Default configuration values
-	defaultDatabaseBatchSize      = 10
-	defaultDatabaseCheckTimeout   = 5 * time.Second
-	defaultHTTPClientTimeout      = 10 * time.Second
-	odataMetadataPath             = "/$metadata"
+	defaultDatabaseBatchSize    = 10
+	defaultDatabaseCheckTimeout = 5 * time.Second
+	defaultHTTPClientTimeout    = 10 * time.Second
+	odataMetadataPath           = "/$metadata"
 )
 
 // DatabaseInfo represents database information for health checks.
@@ -273,12 +274,15 @@ func (j *DatabaseHealthJob) checkDatabase(ctx context.Context, db DatabaseInfo) 
 	result.ResponseTimeMs = int(responseTime.Milliseconds())
 
 	if err != nil {
+		httptrace.LogRequestErrorZap(j.logger, req, responseTime, err)
 		result.Healthy = false
 		result.ErrorMessage = err.Error()
 		result.ErrorCode = j.categorizeError(err)
 		return result
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequestZap(j.logger, req, resp.StatusCode, responseTime)
 
 	// Check HTTP status code
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

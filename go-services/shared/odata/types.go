@@ -1,5 +1,5 @@
 // Package odata provides types and constants for OData operations.
-// Used for communication between Worker and odata-adapter via Redis Streams.
+// Used by Worker drivers and legacy Redis Streams-based adapters.
 package odata
 
 import (
@@ -63,8 +63,8 @@ var (
 	ErrInvalidEntityIDFormat = errors.New("odata: invalid entity_id format, expected guid'...'")
 )
 
-// ODataCommand represents a command to be executed by odata-adapter.
-// Commands are published to Redis Streams by Worker and consumed by odata-adapter.
+// ODataCommand represents a command for stream-based OData execution (legacy).
+// Commands are published to Redis Streams by Worker and consumed by an adapter.
 type ODataCommand struct {
 	// OperationID is the unique identifier for the parent batch operation
 	OperationID string `json:"operation_id"`

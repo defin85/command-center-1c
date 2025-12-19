@@ -101,7 +101,6 @@ echo -e "${BLUE}Проверка остаточных процессов...${NC}
 kill_process_on_port 5173 "Frontend" || true
 kill_process_on_port 8187 "Batch Service" || true
 kill_process_on_port 8188 "RAS Adapter" || true
-kill_process_on_port 8189 "OData Adapter" || true
 kill_process_on_port 8190 "Designer Agent" || true
 
 # RAS - пропускаем если работает как Windows служба

@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
+	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
 // HistoryStore defines the interface for persisting workflow execution history.
@@ -303,11 +306,15 @@ func (c *HistoryClient) request(ctx context.Context, method, path string, payloa
 		req.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

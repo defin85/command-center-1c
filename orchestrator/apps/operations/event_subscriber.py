@@ -81,7 +81,7 @@ def _default_flow_path(operation_type: str) -> list[str]:
     if operation_type == "install_extension":
         return ["frontend", "api-gateway", "orchestrator", "worker", "batch-service"]
     if operation_type in {"query", "health_check"}:
-        return ["frontend", "api-gateway", "orchestrator", "worker", "odata-adapter"]
+        return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type == "execute_workflow":
         return ["frontend", "api-gateway", "orchestrator", "worker"]
     return ["frontend", "api-gateway", "orchestrator", "worker"]

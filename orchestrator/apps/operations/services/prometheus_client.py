@@ -105,11 +105,6 @@ SERVICE_CONFIG = {
         'job_patterns': ['batch_service', 'batch-service', 'batchservice'],
         'namespace': 'cc1c',
     },
-    'odata-adapter': {
-        'display_name': 'OData Adapter',
-        'job_patterns': ['odata_adapter', 'odata-adapter', 'odataadapter'],
-        'namespace': 'cc1c',
-    },
     'designer-agent': {
         'display_name': 'Designer Agent',
         'job_patterns': ['designer_agent', 'designer-agent', 'designeragent'],
@@ -158,14 +153,12 @@ SERVICE_TOPOLOGY = [
 
     # Level 3: Worker → Execution Layer (via Redis Streams)
     ('worker', 'ras-adapter'),
-    ('worker', 'odata-adapter'),
     ('worker', 'designer-agent'),
     ('worker', 'batch-service'),
 
     # Level 3.5: Execution Layer → Redis (events back)
     ('ras-adapter', 'redis'),
     ('ras-adapter', 'ras-server'),
-    ('odata-adapter', 'redis'),
     ('designer-agent', 'redis'),
     ('batch-service', 'redis'),
 
@@ -309,8 +302,6 @@ class PrometheusClient:
             return f"{getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')}/health"
         if service == 'batch-service':
             return f"{getattr(settings, 'BATCH_SERVICE_URL', 'http://localhost:8187').rstrip('/')}/health"
-        if service == 'odata-adapter':
-            return f"{getattr(settings, 'ODATA_ADAPTER_URL', 'http://localhost:8189').rstrip('/')}/health"
         if service == 'designer-agent':
             return f"{getattr(settings, 'DESIGNER_AGENT_URL', 'http://localhost:8190').rstrip('/')}/health"
         if service == 'orchestrator':

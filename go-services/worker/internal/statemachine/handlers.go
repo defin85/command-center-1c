@@ -82,36 +82,7 @@ func (sm *ExtensionInstallStateMachine) handleSessionsClosed(ctx context.Context
 		return sm.transitionTo(StateExtensionInstalled)
 	}
 
-	// Publish install extension command
-	payload := map[string]interface{}{
-		"database_id":    sm.DatabaseID,
-		"extension_path": sm.ExtensionPath,
-		"extension_name": sm.ExtensionName,
-	}
-
-	err := sm.publishCommand(ctx,
-		"commands:batch-service:extension:install",
-		"batch.extension.install",
-		payload,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to publish install command: %w", err)
-	}
-
-	// Wait for extension installed event
-	_, err = sm.waitForEvent(ctx,
-		"batch.extension.installed",
-		sm.config.TimeoutInstall,
-	)
-	if err != nil {
-		return fmt.Errorf("failed waiting for extension installed: %w", err)
-	}
-
-	// Add compensation for rollback (if needed)
-	// Note: rollback расширений в 1С сложен, пока skip
-
-	// Transition to next state
-	return sm.transitionTo(StateExtensionInstalled)
+	return fmt.Errorf("direct installer is required for extension install")
 }
 
 // handleExtensionInstalled handles extension installed state

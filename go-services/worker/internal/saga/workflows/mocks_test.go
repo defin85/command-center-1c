@@ -139,23 +139,23 @@ type mockODataClient struct {
 	executeBatchCalled bool
 }
 
-func (m *mockODataClient) Query(ctx context.Context, creds ODataCredentials, entity string, query *odata.QueryParams) ([]map[string]interface{}, error) {
+func (m *mockODataClient) Query(ctx context.Context, creds odata.ODataCredentials, entity string, query *odata.QueryParams) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (m *mockODataClient) Create(ctx context.Context, creds ODataCredentials, entity string, data map[string]interface{}) (map[string]interface{}, error) {
+func (m *mockODataClient) Create(ctx context.Context, creds odata.ODataCredentials, entity string, data map[string]interface{}) (map[string]interface{}, error) {
 	return data, nil
 }
 
-func (m *mockODataClient) Update(ctx context.Context, creds ODataCredentials, entity, entityID string, data map[string]interface{}) error {
+func (m *mockODataClient) Update(ctx context.Context, creds odata.ODataCredentials, entity, entityID string, data map[string]interface{}) error {
 	return nil
 }
 
-func (m *mockODataClient) Delete(ctx context.Context, creds ODataCredentials, entity, entityID string) error {
+func (m *mockODataClient) Delete(ctx context.Context, creds odata.ODataCredentials, entity, entityID string) error {
 	return nil
 }
 
-func (m *mockODataClient) ExecuteBatch(ctx context.Context, creds ODataCredentials, items []odata.BatchItem) (*odata.BatchResult, error) {
+func (m *mockODataClient) ExecuteBatch(ctx context.Context, creds odata.ODataCredentials, items []odata.BatchItem) (*odata.BatchResult, error) {
 	m.executeBatchCalled = true
 	return &odata.BatchResult{
 		TotalCount:   len(items),

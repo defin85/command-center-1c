@@ -9,10 +9,13 @@
 >
 > ### Результаты
 > - Добавлен тип связи `streams` (Redis Streams) с зелёным цветом
-> - Добавлены сервисы: `odata-adapter`, `designer-agent`
+> - Добавлены сервисы: `designer-agent`
 > - Обновлены связи Worker → адаптеры на Redis Streams
 > - Добавлены обратные связи адаптеры → Redis (events)
-> - Диаграмма показывает 11 сервисов (без backup-service — PLANNED)
+> - Диаграмма показывает 10 сервисов (без backup-service — PLANNED)
+>
+> **Update (2025-12-19):** `odata-adapter` выведен из актуальной схемы.
+> OData выполняется напрямую в Worker; ссылки на `odata-adapter` далее — исторические.
 
 ---
 
@@ -41,7 +44,7 @@ Frontend → API Gateway → Orchestrator → PostgreSQL
 **Проблемы:**
 1. Worker → ras-adapter показан как HTTP (устарело — теперь Redis Streams)
 2. Worker → batch-service показан как HTTP (устарело — теперь Redis Streams)
-3. Отсутствует `odata-adapter` (создан в Phase 1.5)
+3. Отсутствует `designer-agent` (создан в Phase 1.6)
 4. Отсутствует `designer-agent` (создан в Phase 1.6)
 5. Нет типа соединения `streams` для Redis Streams
 6. Связи через Redis не показаны для Execution Layer
@@ -59,8 +62,8 @@ Frontend → API Gateway → Orchestrator → PostgreSQL
                       (Redis Streams)                │
               ┌────────┬────────┬────────┐          │
               ↓        ↓        ↓        ↓          │
-        ras-adapter  odata    designer  batch       │
-              │     adapter    agent   service      │
+        ras-adapter  designer  batch                │
+              │        agent   service              │
               └────────┴────────┴────────┘          │
                          │ (events:*)               │
                          └──────────────────────────┘
@@ -68,7 +71,7 @@ Frontend → API Gateway → Orchestrator → PostgreSQL
 
 **Изменения:**
 - Worker общается с адаптерами через Redis Streams (не HTTP)
-- Добавлены новые сервисы: `odata-adapter`, `designer-agent`
+- Добавлены новые сервисы: `designer-agent`
 - Новый тип соединения: `streams` (Redis Streams)
 - Адаптеры публикуют результаты обратно в Redis
 
@@ -94,9 +97,6 @@ frontend/src/types/serviceMesh.ts
 orchestrator/apps/operations/services/prometheus_client.py
 └── Добавить сбор метрик для новых сервисов
 
-go-services/odata-adapter/internal/api/rest/health.go
-└── Убедиться, что /health и /metrics доступны
-
 go-services/designer-agent/internal/api/rest/health.go
 └── Убедиться, что /health и /metrics доступны
 ```
@@ -116,15 +116,12 @@ go-services/designer-agent/internal/api/rest/health.go
 - [x] 1.4: Обновить `CONNECTION_TYPES`:
   - `worker->ras-adapter`: `http` → `streams`
   - `worker->batch-service`: `http` → `streams`
-  - Добавить `worker->odata-adapter`: `streams`
   - Добавить `worker->designer-agent`: `streams`
   - Добавить `ras-adapter->redis`: `streams` (events)
-  - Добавить `odata-adapter->redis`: `streams` (events)
   - Добавить `designer-agent->redis`: `streams` (events)
   - Добавить `batch-service->redis`: `streams` (events)
 - [x] 1.5: Добавить позиции для новых сервисов в `DEFAULT_SERVICE_POSITIONS`
 - [x] 1.6: Добавить конфиги в `SERVICE_DISPLAY_CONFIG`:
-  - `odata-adapter`: icon `database`, description `OData CRUD operations`
   - `designer-agent`: icon `tool`, description `1C Designer Agent (SSH)`
 
 ---
@@ -143,10 +140,9 @@ go-services/designer-agent/internal/api/rest/health.go
 ### Фаза 3: Backend — метрики для новых сервисов
 
 **Subtasks:**
-- [x] 3.1: Проверить, что `odata-adapter` экспортирует метрики на `/metrics`
-- [x] 3.2: Проверить, что `designer-agent` экспортирует метрики на `/metrics`
-- [x] 3.3: Обновить `prometheus_client.py` для сбора метрик с новых сервисов
-- [x] 3.4: Добавить новые сервисы в Prometheus scrape config (если требуется)
+- [x] 3.1: Проверить, что `designer-agent` экспортирует метрики на `/metrics`
+- [x] 3.2: Обновить `prometheus_client.py` для сбора метрик с новых сервисов
+- [x] 3.3: Добавить новые сервисы в Prometheus scrape config (если требуется)
 
 ---
 
@@ -166,7 +162,6 @@ go-services/designer-agent/internal/api/rest/health.go
 
 | Сервис | Порт | Описание | Icon |
 |--------|------|----------|------|
-| `odata-adapter` | 8189 | OData CRUD операции | `database` |
 | `designer-agent` | 8190 | 1C Designer через SSH | `tool` |
 
 ### 2. Изменённые связи
@@ -182,7 +177,6 @@ go-services/designer-agent/internal/api/rest/health.go
 |-------|-----|-------------|----------|
 | `worker→redis` (commands) | `streams` | Worker → Redis | XADD commands:* |
 | `redis→ras-adapter` | `streams` | Redis → Adapter | XREADGROUP |
-| `redis→odata-adapter` | `streams` | Redis → Adapter | XREADGROUP |
 | `redis→designer-agent` | `streams` | Redis → Adapter | XREADGROUP |
 | `redis→batch-service` | `streams` | Redis → Adapter | XREADGROUP |
 | `*-adapter→redis` (events) | `streams` | Adapter → Redis | XADD events:* |
@@ -224,7 +218,6 @@ DEFAULT_SERVICE_POSITIONS: {
 
   // Level 4: Execution Layer (адаптеры)
   'ras-adapter': { x: 200, y: 540 },
-  'odata-adapter': { x: 400, y: 540 },
   'designer-agent': { x: 600, y: 540 },
   'batch-service': { x: 800, y: 540 },
 }

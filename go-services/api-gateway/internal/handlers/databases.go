@@ -6,8 +6,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/commandcenter1c/commandcenter/shared/httptrace"
+	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
 var orchestratorURL = getOrchestratorURL()
@@ -84,12 +88,15 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 
 	// Send request
 	client := &http.Client{}
+	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy request to Orchestrator"})
 		return
 	}
 	defer resp.Body.Close()
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	// Copy response headers
 	for key, values := range resp.Header {
@@ -152,12 +159,15 @@ func ProxyToOrchestratorAuth(c *gin.Context) {
 
 	// Send request
 	client := &http.Client{}
+	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy auth request"})
 		return
 	}
 	defer resp.Body.Close()
+	httptrace.LogRequest(logger.GetLogger(), req, resp.StatusCode, time.Since(start))
 
 	// Copy response headers
 	for key, values := range resp.Header {

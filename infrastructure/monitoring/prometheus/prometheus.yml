@@ -39,12 +39,6 @@ scrape_configs:
       - targets: ['host.docker.internal:8187']
     metrics_path: '/metrics'
 
-  # OData Adapter (Go) - порт 8189
-  - job_name: 'odata-adapter'
-    static_configs:
-      - targets: ['host.docker.internal:8189']
-    metrics_path: '/metrics'
-
   # Designer Agent (Go) - порт 8190
   - job_name: 'designer-agent'
     static_configs:

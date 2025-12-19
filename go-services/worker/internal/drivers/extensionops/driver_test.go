@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
@@ -106,49 +105,6 @@ func (m *MockProcessorPublisher) Close() error {
 	defer m.mu.Unlock()
 	m.Closed = true
 	return nil
-}
-
-// ========== Mock EventSubscriber for Processor tests ==========
-
-// MockProcessorSubscriber is a mock implementation of statemachine.EventSubscriber.
-type MockProcessorSubscriber struct {
-	mu       sync.Mutex
-	Handlers map[string]sharedEvents.HandlerFunc
-	Closed   bool
-}
-
-func NewMockProcessorSubscriber() *MockProcessorSubscriber {
-	return &MockProcessorSubscriber{
-		Handlers: make(map[string]sharedEvents.HandlerFunc),
-	}
-}
-
-func (m *MockProcessorSubscriber) Subscribe(channel string, handler sharedEvents.HandlerFunc) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.Handlers[channel] = handler
-	return nil
-}
-
-func (m *MockProcessorSubscriber) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.Closed = true
-	return nil
-}
-
-// SimulateEvent simulates receiving an event.
-func (m *MockProcessorSubscriber) SimulateEvent(ctx context.Context, channel string, envelope *sharedEvents.Envelope) error {
-	m.mu.Lock()
-	handler, exists := m.Handlers[channel]
-	m.mu.Unlock()
-
-	if !exists {
-		return nil
-	}
-
-	return handler(ctx, envelope)
 }
 
 // ========== Test Helper Functions ==========
@@ -555,38 +511,6 @@ func TestPublisherWrapper(t *testing.T) {
 	assert.True(t, mockPub.Closed)
 }
 
-// TestSubscriberWrapper tests subscriberWrapper implementation.
-func TestSubscriberWrapper(t *testing.T) {
-	mockSub := NewMockProcessorSubscriber()
-
-	// Verify interface compliance
-	var _ statemachine.EventSubscriber = (*MockProcessorSubscriber)(nil)
-
-	// Test subscribe
-	handlerCalled := false
-	err := mockSub.Subscribe("test-channel", func(ctx context.Context, envelope *sharedEvents.Envelope) error {
-		handlerCalled = true
-		return nil
-	})
-	require.NoError(t, err)
-
-	// Simulate event
-	ctx := context.Background()
-	envelope := &sharedEvents.Envelope{
-		MessageID:     "msg-1",
-		EventType:     "test.event",
-		CorrelationID: "corr-1",
-	}
-	err = mockSub.SimulateEvent(ctx, "test-channel", envelope)
-	require.NoError(t, err)
-	assert.True(t, handlerCalled)
-
-	// Test close
-	err = mockSub.Close()
-	require.NoError(t, err)
-	assert.True(t, mockSub.Closed)
-}
-
 // TestInstallDriver_GetFeatureFlags tests feature flag retrieval.
 func TestInstallDriver_GetFeatureFlags(t *testing.T) {
 	ff := createTestFeatureFlags(true)
@@ -663,7 +587,7 @@ func BenchmarkValidateExtensionInstallParams(b *testing.B) {
 // ========== Integration-like Tests (with mocks) ==========
 
 // TestProcessEventDriven_ClusterResolutionCalled tests that cluster resolution is called.
-// Note: Full SM flow requires Redis + subscriber, which is tested in integration tests.
+// Note: Full SM flow requires Redis, which is tested in integration tests.
 func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 	t.Run("cluster resolution is called with correct database_id", func(t *testing.T) {
 		resolverCalled := false
@@ -672,7 +596,7 @@ func TestProcessEventDriven_ClusterResolutionCalled(t *testing.T) {
 		mockResolver.ResolveFunc = func(ctx context.Context, databaseID string) (*clusterinfo.ClusterInfo, error) {
 			resolverCalled = true
 			receivedDBID = databaseID
-			// Return error to prevent going to createStateMachine (which needs redis/subscriber)
+			// Return error to prevent going to createStateMachine (which needs redis)
 			return nil, errors.New("test: intentional resolver error")
 		}
 
@@ -726,7 +650,7 @@ func TestProcessEventDriven_MultipleDatabases(t *testing.T) {
 		callCounts[databaseID]++
 		mu.Unlock()
 
-		// Return error to prevent going to createStateMachine (which needs redis/subscriber)
+		// Return error to prevent going to createStateMachine (which needs redis)
 		return nil, fmt.Errorf("test: intentional error for %s", databaseID)
 	}
 
