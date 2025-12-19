@@ -164,6 +164,33 @@ def _format_version_for_filename(version: str) -> str:
     return v if re.fullmatch(r"\d+\.\d+\.\d+", v) else "unknown"
 
 
+_ZERO_WIDTH = (
+    "\u200b"  # ZERO WIDTH SPACE
+    "\u200c"  # ZERO WIDTH NON-JOINER
+    "\u200d"  # ZERO WIDTH JOINER
+    "\ufeff"  # ZERO WIDTH NO-BREAK SPACE / BOM
+)
+
+
+def _sanitize_text(value: str) -> str:
+    """
+    Reduce Unicode confusables/ambiguity in exported text for editors (VS Code).
+
+    - NFKC normalization
+    - NBSP-like spaces -> normal space
+    - remove zero-width chars
+    """
+    s = unicodedata.normalize("NFKC", value)
+    s = (
+        s.replace("\u00a0", " ")  # NO-BREAK SPACE
+        .replace("\u202f", " ")  # NARROW NO-BREAK SPACE
+        .replace("\u2007", " ")  # FIGURE SPACE
+    )
+    for ch in _ZERO_WIDTH:
+        s = s.replace(ch, "")
+    return s
+
+
 def _breadcrumbs_to_path(breadcrumbs: list[dict[str, Any]] | list[str]) -> list[str]:
     out: list[str] = []
     if not breadcrumbs:
@@ -265,6 +292,7 @@ async def _scrape_current_in_session(
     ws,
     page_url: str,
     include_raw_text: bool,
+    sanitize_text: bool,
 ) -> dict[str, Any]:
     outer = await cdp.eval(
         ws,
@@ -440,6 +468,8 @@ async def _scrape_current_in_session(
         end = min(total_len, start + chunk_size)
         chunks.append(await read_frame_text_slice(start, end))
     full_text = "".join(chunks)
+    if sanitize_text:
+        full_text = _sanitize_text(full_text)
 
     frame_anchor_ids = await cdp.eval(
         ws,
@@ -514,6 +544,8 @@ async def _scrape_current_in_session(
             sid = str(t["id"])
             next_id = str(toc_with_anchors[idx + 1]["id"]) if idx + 1 < len(toc_with_anchors) else None
             section_text = await read_section_by_anchor(sid, next_id)
+            if sanitize_text:
+                section_text = _sanitize_text(section_text)
             sections.append(
                 {
                     "id": sid,
@@ -538,6 +570,9 @@ async def _scrape_current_in_session(
     breadcrumbs_raw = outer.get("breadcrumbs") if isinstance(outer, dict) else []
     breadcrumb_path = _breadcrumbs_to_path(breadcrumbs_raw) if isinstance(breadcrumbs_raw, list) else []
     display_name = breadcrumb_path[-1] if breadcrumb_path else (frame_h1 or frame_title.split("::", 1)[0].strip())
+    if sanitize_text:
+        display_name = _sanitize_text(display_name).strip()
+        breadcrumb_path = [_sanitize_text(x).strip() for x in breadcrumb_path]
     version = str(outer.get("version") or "") if isinstance(outer, dict) else ""
 
     doc_url = frame_url.split("#", 1)[0] if frame_url else ""
@@ -594,6 +629,7 @@ async def scrape(
     *,
     include_raw_text: bool,
     name_style: str,
+    sanitize_text: bool,
 ) -> tuple[dict[str, Any], Path]:
     import websockets
 
@@ -609,6 +645,7 @@ async def scrape(
             ws=ws,
             page_url=str(page.get("url") or ""),
             include_raw_text=include_raw_text,
+            sanitize_text=sanitize_text,
         )
 
     if not out_path.name or out_path.name == "last.json":
@@ -628,6 +665,7 @@ async def crawl_toc(
     include_raw_text: bool,
     name_style: str,
     only_unique_docs: bool,
+    sanitize_text: bool,
 ) -> Path:
     """
     Iterate outer TOC items and scrape each visited state.
@@ -758,6 +796,7 @@ async def crawl_toc(
                 ws=ws,
                 page_url=str(page.get("url") or ""),
                 include_raw_text=include_raw_text,
+                sanitize_text=sanitize_text,
             )
 
             if only_unique_docs and payload.get("doc_id"):
@@ -838,6 +877,11 @@ def main() -> int:
         help="Do not include full raw_text in JSON (smaller output, recommended for crawl)",
     )
     parser.add_argument(
+        "--sanitize-text",
+        action="store_true",
+        help="Normalize text (NFKC), replace NBSP with space, remove zero-width chars (cleaner JSON for editors)",
+    )
+    parser.add_argument(
         "--crawl-toc",
         action="store_true",
         help="Iterate TOC items and scrape each visited page into --out-dir",
@@ -861,6 +905,7 @@ def main() -> int:
     args = parser.parse_args()
 
     include_raw_text = not bool(args.no_raw_text)
+    sanitize_text = bool(args.sanitize_text)
 
     if args.crawl_toc:
         try:
@@ -872,6 +917,7 @@ def main() -> int:
                     include_raw_text=include_raw_text,
                     name_style=str(args.name_style),
                     only_unique_docs=bool(args.only_unique_docs),
+                    sanitize_text=sanitize_text,
                 )
             )
         except Exception as e:
@@ -888,6 +934,7 @@ def main() -> int:
                 out_path,
                 include_raw_text=include_raw_text,
                 name_style=str(args.name_style),
+                sanitize_text=sanitize_text,
             )
         )
     except Exception as e:
