@@ -15,13 +15,13 @@ const (
 
 // ValidTransitions defines allowed state transitions
 var ValidTransitions = map[InstallState][]InstallState{
-	StateInit: {StateJobsLocked, StateFailed},
-	StateJobsLocked: {StateSessionsClosed, StateCompensating, StateFailed},
-	StateSessionsClosed: {StateExtensionInstalled, StateCompensating, StateFailed},
+	StateInit:               {StateJobsLocked, StateFailed},
+	StateJobsLocked:         {StateSessionsClosed, StateCompensating, StateFailed},
+	StateSessionsClosed:     {StateExtensionInstalled, StateCompensating, StateFailed},
 	StateExtensionInstalled: {StateCompleted, StateCompensating, StateFailed},
-	StateCompensating: {StateFailed},
-	StateFailed: {},
-	StateCompleted: {},
+	StateCompensating:       {StateFailed},
+	StateFailed:             {},
+	StateCompleted:          {},
 }
 
 // CanTransition checks if transition from current state to new state is valid

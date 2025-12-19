@@ -12,9 +12,9 @@ import (
 func createCircuitBreakers() (clusterServiceBreaker, batchServiceBreaker *gobreaker.CircuitBreaker) {
 	settings := gobreaker.Settings{
 		Name:        "cluster-service",
-		MaxRequests: 3,                      // Max requests in half-open state
-		Interval:    10 * time.Second,       // Reset success/failure counts
-		Timeout:     30 * time.Second,       // Duration in open state before half-open
+		MaxRequests: 3,                // Max requests in half-open state
+		Interval:    10 * time.Second, // Reset success/failure counts
+		Timeout:     30 * time.Second, // Duration in open state before half-open
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
 			return counts.Requests >= 3 && failureRatio >= 0.6

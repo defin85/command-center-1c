@@ -221,6 +221,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		extensionops.NewInstallDriver(
 			featureFlags,
 			processor.clusterResolver,
+			processor.credsClient,
 			redisClient,
 			processor.eventSubscriber,
 			processor.timeline,

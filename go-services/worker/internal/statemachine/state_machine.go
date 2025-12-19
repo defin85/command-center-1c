@@ -22,15 +22,20 @@ type ExtensionInstallStateMachine struct {
 	CorrelationID string
 
 	// State
-	State         InstallState
-	mu            sync.RWMutex
-	lastActivity  time.Time
+	State        InstallState
+	mu           sync.RWMutex
+	lastActivity time.Time
 
 	// Workflow data
 	ClusterID     string
 	InfobaseID    string
 	ExtensionPath string
 	ExtensionName string
+	ServerAddress string
+	ServerPort    int
+	InfobaseName  string
+	Username      string
+	Password      string
 
 	// Event integration (используем Task 1.1!)
 	publisher   EventPublisher
@@ -64,6 +69,9 @@ type ExtensionInstallStateMachine struct {
 
 	// Timeline for operation tracing
 	timeline tracing.TimelineRecorder
+
+	// Optional direct installer (CLI)
+	extensionInstaller ExtensionInstaller
 }
 
 // CompensationAction represents a compensation action
@@ -96,6 +104,13 @@ func WithTimeline(timeline tracing.TimelineRecorder) StateMachineOption {
 	}
 }
 
+// WithExtensionInstaller sets a direct installer to avoid external batch-service.
+func WithExtensionInstaller(installer ExtensionInstaller) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.extensionInstaller = installer
+	}
+}
+
 // NewStateMachine creates new state machine instance
 func NewStateMachine(
 	ctx context.Context,
@@ -124,25 +139,25 @@ func NewStateMachine(
 	clusterBreaker, batchBreaker := createCircuitBreakers()
 
 	sm := &ExtensionInstallStateMachine{
-		ID:            fmt.Sprintf("sm-%s", correlationID),
-		OperationID:   operationID,
-		DatabaseID:    databaseID,
-		CorrelationID: correlationID,
-		State:         StateInit,
-		lastActivity:  time.Now(),
-		publisher:     publisher,
-		subscriber:    subscriber,
-		redisClient:   redisClient,
-		config:        config,
-		eventChan:     make(chan *events.Envelope, 100),
-		eventBuffer:   make([]*events.Envelope, 0, 10),
-		processedEvents: make(map[string]bool),
-		compensationStack: make([]CompensationAction, 0),
+		ID:                    fmt.Sprintf("sm-%s", correlationID),
+		OperationID:           operationID,
+		DatabaseID:            databaseID,
+		CorrelationID:         correlationID,
+		State:                 StateInit,
+		lastActivity:          time.Now(),
+		publisher:             publisher,
+		subscriber:            subscriber,
+		redisClient:           redisClient,
+		config:                config,
+		eventChan:             make(chan *events.Envelope, 100),
+		eventBuffer:           make([]*events.Envelope, 0, 10),
+		processedEvents:       make(map[string]bool),
+		compensationStack:     make([]CompensationAction, 0),
 		clusterServiceBreaker: clusterBreaker,
 		batchServiceBreaker:   batchBreaker,
-		ctx:           smCtx,
-		cancel:        cancel,
-		eventChanDone: make(chan struct{}),
+		ctx:                   smCtx,
+		cancel:                cancel,
+		eventChanDone:         make(chan struct{}),
 	}
 
 	// Apply options

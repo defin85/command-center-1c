@@ -91,8 +91,8 @@ func TestStateMachine_StateTransitions_Invalid(t *testing.T) {
 
 func TestStateMachine_StateIsFinal(t *testing.T) {
 	tests := []struct {
-		state    InstallState
-		isFinal  bool
+		state   InstallState
+		isFinal bool
 	}{
 		{StateInit, false},
 		{StateJobsLocked, false},

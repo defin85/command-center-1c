@@ -157,10 +157,10 @@ func (sm *ExtensionInstallStateMachine) waitForEvent(
 func isFailureEvent(eventType, expectedEventType string) bool {
 	// Map expected events to their failure counterparts
 	failureMap := map[string]string{
-		"cluster.infobase.locked":       "cluster.infobase.lock-failed",
-		"cluster.sessions.closed":       "cluster.sessions.terminate-failed",
-		"cluster.infobase.unlocked":     "cluster.infobase.unlock-failed",
-		"batch.extension.installed":     "batch.extension.install-failed",
+		"cluster.infobase.locked":   "cluster.infobase.lock-failed",
+		"cluster.sessions.closed":   "cluster.sessions.terminate-failed",
+		"cluster.infobase.unlocked": "cluster.infobase.unlock-failed",
+		"batch.extension.installed": "batch.extension.install-failed",
 	}
 
 	if failureType, ok := failureMap[expectedEventType]; ok {

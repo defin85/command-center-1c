@@ -18,11 +18,11 @@ type configLogger interface {
 // Config holds state machine configuration
 type Config struct {
 	// Timeouts for each step
-	TimeoutLockJobs      time.Duration
-	TimeoutTerminate     time.Duration
-	TimeoutInstall       time.Duration
-	TimeoutUnlock        time.Duration
-	TimeoutCompensation  time.Duration
+	TimeoutLockJobs     time.Duration
+	TimeoutTerminate    time.Duration
+	TimeoutInstall      time.Duration
+	TimeoutUnlock       time.Duration
+	TimeoutCompensation time.Duration
 
 	// Retry configuration
 	MaxRetries        int
@@ -31,21 +31,21 @@ type Config struct {
 	RetryMultiplier   float64
 
 	// State persistence
-	StateTTL          time.Duration
+	StateTTL time.Duration
 
 	// Deduplication
-	DeduplicationTTL  time.Duration
+	DeduplicationTTL time.Duration
 }
 
 // DefaultConfig returns default configuration
 func DefaultConfig() *Config {
 	return &Config{
 		// Timeouts
-		TimeoutLockJobs:      30 * time.Second,
-		TimeoutTerminate:     90 * time.Second,
-		TimeoutInstall:       5 * time.Minute,
-		TimeoutUnlock:        30 * time.Second,
-		TimeoutCompensation:  2 * time.Minute,
+		TimeoutLockJobs:     30 * time.Second,
+		TimeoutTerminate:    90 * time.Second,
+		TimeoutInstall:      5 * time.Minute,
+		TimeoutUnlock:       30 * time.Second,
+		TimeoutCompensation: 2 * time.Minute,
 
 		// Retry
 		MaxRetries:        3,
@@ -54,10 +54,10 @@ func DefaultConfig() *Config {
 		RetryMultiplier:   2.0,
 
 		// Persistence
-		StateTTL:          24 * time.Hour,
+		StateTTL: 24 * time.Hour,
 
 		// Deduplication
-		DeduplicationTTL:  10 * time.Minute,
+		DeduplicationTTL: 10 * time.Minute,
 	}
 }
 

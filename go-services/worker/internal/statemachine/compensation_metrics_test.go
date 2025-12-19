@@ -9,11 +9,11 @@ func TestPrometheusMetricsRecorder_RecordCompensation(t *testing.T) {
 	recorder := NewPrometheusMetricsRecorder()
 
 	tests := []struct {
-		name      string
-		compName  string
-		success   bool
-		duration  time.Duration
-		attempts  int
+		name     string
+		compName string
+		success  bool
+		duration time.Duration
+		attempts int
 	}{
 		{
 			name:     "successful compensation",

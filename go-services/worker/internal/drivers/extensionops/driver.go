@@ -4,6 +4,7 @@ package extensionops
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -11,12 +12,14 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	sharedEvents "github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/config"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/cli"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/statemachine"
 )
@@ -33,6 +36,7 @@ type InstallDriver struct {
 	featureFlags    *config.FeatureFlags
 	smConfig        *statemachine.Config
 	clusterResolver clusterinfo.Resolver
+	credsClient     credentials.Fetcher
 	redisClient     *redis.Client
 	eventSubscriber *sharedEvents.Subscriber
 	timeline        tracing.TimelineRecorder
@@ -42,6 +46,7 @@ type InstallDriver struct {
 func NewInstallDriver(
 	featureFlags *config.FeatureFlags,
 	clusterResolver clusterinfo.Resolver,
+	credsClient credentials.Fetcher,
 	redisClient *redis.Client,
 	eventSubscriber *sharedEvents.Subscriber,
 	timeline tracing.TimelineRecorder,
@@ -62,6 +67,7 @@ func NewInstallDriver(
 		featureFlags:    featureFlags,
 		smConfig:        smConfig,
 		clusterResolver: clusterResolver,
+		credsClient:     credsClient,
 		redisClient:     redisClient,
 		eventSubscriber: eventSubscriber,
 		timeline:        timeline,
@@ -223,6 +229,33 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		databaseID, clusterInfo.ClusterID, clusterInfo.InfobaseID, resolveDuration)
 
 	// Step 4: Create State Machine
+	useDirectCLI := os.Getenv("USE_DIRECT_CLI") != "false"
+	installer, installerErr := cli.NewExtensionInstallerFromEnv()
+	if installerErr != nil {
+		log.Warnf("[Event-Driven] CLI installer not configured: %v (fallback to batch-service)", installerErr)
+	}
+
+	var (
+		creds    *credentials.DatabaseCredentials
+		adapter  statemachine.ExtensionInstaller
+		credsErr error
+	)
+	if useDirectCLI && installerErr == nil && installer != nil {
+		creds, credsErr = d.fetchDesignerCredentials(ctx, databaseID)
+		if credsErr != nil {
+			log.Errorf("[Event-Driven] Failed to fetch designer credentials: database_id=%s, error=%v",
+				databaseID, credsErr)
+			return models.DatabaseResultV2{
+				DatabaseID: databaseID,
+				Success:    false,
+				Error:      fmt.Sprintf("failed to fetch designer credentials: %v", credsErr),
+				ErrorCode:  "CREDENTIALS_ERROR",
+				Duration:   time.Since(start).Seconds(),
+			}, fmt.Errorf("failed to fetch designer credentials for database %s: %w", databaseID, credsErr)
+		}
+		adapter = &cliInstallerAdapter{installer: installer}
+	}
+
 	sm, err := d.createStateMachine(
 		ctx,
 		msg.OperationID,
@@ -231,6 +264,8 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		clusterInfo,
 		extensionName,
 		extensionPath,
+		adapter,
+		creds,
 	)
 	if err != nil {
 		metrics.RecordStateMachineCreated(false)
@@ -409,6 +444,8 @@ func (d *InstallDriver) createStateMachine(
 	clusterInfo *clusterinfo.ClusterInfo,
 	extensionName string,
 	extensionPath string,
+	installer statemachine.ExtensionInstaller,
+	creds *credentials.DatabaseCredentials,
 ) (*statemachine.ExtensionInstallStateMachine, error) {
 	log := logger.GetLogger()
 
@@ -447,6 +484,7 @@ func (d *InstallDriver) createStateMachine(
 		d.redisClient,
 		d.smConfig,
 		statemachine.WithTimeline(d.timeline),
+		statemachine.WithExtensionInstaller(installer),
 	)
 	if err != nil {
 		// Clean up publisher on error
@@ -462,9 +500,59 @@ func (d *InstallDriver) createStateMachine(
 	}
 	sm.ExtensionName = extensionName
 	sm.ExtensionPath = extensionPath
+	if creds != nil {
+		sm.ServerAddress = creds.ServerAddress
+		sm.ServerPort = creds.ServerPort
+		sm.InfobaseName = creds.InfobaseName
+		sm.Username = creds.Username
+		sm.Password = creds.Password
+	}
 
 	log.Infof("State Machine created: id=%s, operation_id=%s, database_id=%s, correlation_id=%s",
 		sm.ID, operationID, databaseID, correlationID)
 
 	return sm, nil
+}
+
+func (d *InstallDriver) fetchDesignerCredentials(ctx context.Context, databaseID string) (*credentials.DatabaseCredentials, error) {
+	if d.credsClient == nil {
+		return nil, fmt.Errorf("credentials client not configured")
+	}
+
+	creds, err := d.credsClient.Fetch(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	if creds.ServerAddress == "" || creds.InfobaseName == "" || creds.Username == "" {
+		return nil, fmt.Errorf("designer credentials are incomplete for database %s", databaseID)
+	}
+
+	return creds, nil
+}
+
+type cliInstallerAdapter struct {
+	installer *cli.ExtensionInstaller
+}
+
+func (a *cliInstallerAdapter) InstallExtension(ctx context.Context, req statemachine.ExtensionInstallRequest) (*statemachine.ExtensionInstallResult, error) {
+	if a == nil || a.installer == nil {
+		return nil, fmt.Errorf("cli installer not configured")
+	}
+
+	res, err := a.installer.InstallExtension(ctx, cli.InstallRequest{
+		Server:        req.Server,
+		InfobaseName:  req.InfobaseName,
+		Username:      req.Username,
+		Password:      req.Password,
+		ExtensionName: req.ExtensionName,
+		ExtensionPath: req.ExtensionPath,
+	})
+	if res == nil {
+		return nil, err
+	}
+	return &statemachine.ExtensionInstallResult{
+		Duration: res.Duration,
+		Output:   res.Output,
+	}, err
 }

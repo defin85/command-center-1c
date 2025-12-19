@@ -200,13 +200,13 @@ func (e *CompensationExecutor) recordAndLog(ctx context.Context, operationID str
 
 // CompensationSummary aggregates results of multiple compensation actions
 type CompensationSummary struct {
-	OperationID    string               `json:"operation_id"`
-	TotalActions   int                  `json:"total_actions"`
-	SuccessCount   int                  `json:"success_count"`
-	FailedCount    int                  `json:"failed_count"`
-	TotalDuration  time.Duration        `json:"total_duration"`
-	Results        []*CompensationResult `json:"results"`
-	CompletedAt    time.Time            `json:"completed_at"`
+	OperationID   string                `json:"operation_id"`
+	TotalActions  int                   `json:"total_actions"`
+	SuccessCount  int                   `json:"success_count"`
+	FailedCount   int                   `json:"failed_count"`
+	TotalDuration time.Duration         `json:"total_duration"`
+	Results       []*CompensationResult `json:"results"`
+	CompletedAt   time.Time             `json:"completed_at"`
 }
 
 // AllSucceeded returns true if all compensation actions succeeded
