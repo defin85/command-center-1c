@@ -15,6 +15,9 @@
 - **Worker Driver Framework**: реестр драйверов + метрики драйверов + базовые timeline события.
   - Код: `go-services/worker/internal/drivers/registry.go`
   - Интеграция: `go-services/worker/internal/processor/processor.go`
+- **Extensions driver (install_extension) вынесен из processor**:
+  - Собственный драйвер: `go-services/worker/internal/drivers/extensionops/*`
+  - State Machine использует прямой CLI путь, если доступен `EXE_1CV8_PATH` и `USE_DIRECT_CLI != "false"`
 - **Direct RAS (внутри Worker)**: добавлен прямой RAS client/driver (`rasdirect`) + использование `ras_server` из internal API.
   - Код: `go-services/worker/internal/drivers/rasdirect/client.go`
   - Internal API расширен на `ras_server`/cluster creds (референс в orchestrator).
@@ -28,15 +31,15 @@
 
 ### В работе / ближайшее
 
-- **“Единая точка ответственности по workflow”**: развести `install_extension` и `execute_workflow` (сейчас это ещё общий контур в worker/orchestrator).
+- **“Единая точка ответственности по workflow”**: `install_extension` вынесен в драйвер, `execute_workflow` остаётся отдельным (следом — полная изоляция workflow-логики в driver/engine).
 - **Observability унификация UI**: довести до правила “UI читает только Prometheus” для `/system-status` и `/service-mesh`, включая внешние probes (RAS port / TCP).
-- **CLI/Designer/ibcmd**: начало миграции в драйверы (см. Phase 3/5).
+- **CLI/Designer/ibcmd**: начата миграция (CLI installer для расширений), дальше — remove/config ops и отказ от designer-agent/batch-service.
 
 ### Статус фаз (кратко)
 
 - Phase 1 — Driver Framework в Worker: **DONE**
 - Phase 2 — Migrating RAS operations: **DONE (core)**
-- Phase 3 — Migrating Designer/Extensions: **TODO**
+- Phase 3 — Migrating Designer/Extensions: **IN PROGRESS**
 - Phase 4 — Migrating OData operations: **TODO**
 - Phase 5 — ibcmd/ibsrv integration: **TODO**
 - Phase 6 — Декомиссия сервисов: **TODO**
@@ -193,6 +196,11 @@ Deliverables:
 Acceptance:
 - установка/обновление расширений без Designer Agent/Batch Service как обязательных hop’ов
 - в timeline видно: download → designer apply → publish result
+
+Status: **IN PROGRESS**
+- `install_extension` вынесен в `extensionops` драйвер
+- CLI путь реализован через `internal/drivers/cli` и включается `USE_DIRECT_CLI`
+- State Machine использует direct CLI при наличии `EXE_1CV8_PATH`, иначе fallback на batch-service
 
 ### Phase 4 — Migrating OData operations (2–4 недели)
 
