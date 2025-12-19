@@ -257,6 +257,7 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 	}
 
 	credsProvider := &designerCredsProvider{fetcher: d.credsClient}
+	clusterInfoProvider := &clusterInfoProvider{resolver: d.clusterResolver}
 
 	sm, err := d.createStateMachine(
 		ctx,
@@ -269,6 +270,7 @@ func (d *InstallDriver) processEventDriven(ctx context.Context, msg *models.Oper
 		adapter,
 		creds,
 		credsProvider,
+		clusterInfoProvider,
 	)
 	if err != nil {
 		metrics.RecordStateMachineCreated(false)
@@ -450,6 +452,7 @@ func (d *InstallDriver) createStateMachine(
 	installer statemachine.ExtensionInstaller,
 	creds *credentials.DatabaseCredentials,
 	credsProvider statemachine.DesignerCredentialsProvider,
+	clusterInfoProvider statemachine.ClusterInfoProvider,
 ) (*statemachine.ExtensionInstallStateMachine, error) {
 	log := logger.GetLogger()
 
@@ -490,6 +493,7 @@ func (d *InstallDriver) createStateMachine(
 		statemachine.WithTimeline(d.timeline),
 		statemachine.WithExtensionInstaller(installer),
 		statemachine.WithDesignerCredentialsProvider(credsProvider),
+		statemachine.WithClusterInfoProvider(clusterInfoProvider),
 	)
 	if err != nil {
 		// Clean up publisher on error
@@ -511,6 +515,11 @@ func (d *InstallDriver) createStateMachine(
 		sm.InfobaseName = creds.InfobaseName
 		sm.Username = creds.Username
 		sm.Password = creds.Password
+	}
+	if clusterInfo != nil {
+		sm.RASServer = clusterInfo.RASServer
+		sm.ClusterUser = clusterInfo.ClusterUser
+		sm.ClusterPwd = clusterInfo.ClusterPwd
 	}
 
 	log.Infof("State Machine created: id=%s, operation_id=%s, database_id=%s, correlation_id=%s",
@@ -586,5 +595,31 @@ func (p *designerCredsProvider) Fetch(ctx context.Context, databaseID string) (*
 		InfobaseName:  creds.InfobaseName,
 		Username:      creds.Username,
 		Password:      creds.Password,
+	}, nil
+}
+
+type clusterInfoProvider struct {
+	resolver clusterinfo.Resolver
+}
+
+func (p *clusterInfoProvider) Fetch(ctx context.Context, databaseID string) (*statemachine.ClusterInfo, error) {
+	if p == nil || p.resolver == nil {
+		return nil, fmt.Errorf("cluster info provider not configured")
+	}
+
+	info, err := p.resolver.Resolve(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil || info.ClusterID == "" || info.InfobaseID == "" {
+		return nil, fmt.Errorf("cluster info is incomplete for database %s", databaseID)
+	}
+
+	return &statemachine.ClusterInfo{
+		ClusterID:   info.ClusterID,
+		InfobaseID:  info.InfobaseID,
+		RASServer:   info.RASServer,
+		ClusterUser: info.ClusterUser,
+		ClusterPwd:  info.ClusterPwd,
 	}, nil
 }

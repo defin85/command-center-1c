@@ -37,6 +37,9 @@ type ExtensionInstallStateMachine struct {
 	InfobaseName  string
 	Username      string
 	Password      string
+	RASServer     string
+	ClusterUser   string
+	ClusterPwd    string
 
 	// Event integration (используем Task 1.1!)
 	publisher   EventPublisher
@@ -76,6 +79,9 @@ type ExtensionInstallStateMachine struct {
 
 	// Optional credentials provider (re-init without persisted secrets)
 	credentialsProvider DesignerCredentialsProvider
+
+	// Optional cluster info provider (re-init without persisted secrets)
+	clusterInfoProvider ClusterInfoProvider
 }
 
 // CompensationAction represents a compensation action
@@ -119,6 +125,13 @@ func WithExtensionInstaller(installer ExtensionInstaller) StateMachineOption {
 func WithDesignerCredentialsProvider(provider DesignerCredentialsProvider) StateMachineOption {
 	return func(sm *ExtensionInstallStateMachine) {
 		sm.credentialsProvider = provider
+	}
+}
+
+// WithClusterInfoProvider sets a provider for rehydrating cluster info on resume.
+func WithClusterInfoProvider(provider ClusterInfoProvider) StateMachineOption {
+	return func(sm *ExtensionInstallStateMachine) {
+		sm.clusterInfoProvider = provider
 	}
 }
 
@@ -212,13 +225,6 @@ func (sm *ExtensionInstallStateMachine) registerEventHandlers() {
 	// Subscribe to specific event channels
 	// NOTE: Redis Streams НЕ поддерживают wildcard подписки
 	eventChannels := []string{
-		// cluster-service events
-		"events:cluster-service:infobase:locked",
-		"events:cluster-service:infobase:lock-failed",
-		"events:cluster-service:infobase:unlocked",
-		"events:cluster-service:infobase:unlock-failed",
-		"events:cluster-service:sessions:closed",
-		"events:cluster-service:sessions:terminate-failed",
 		// batch-service events
 		"events:batch-service:extension:installed",
 		"events:batch-service:extension:install-failed",
@@ -248,6 +254,10 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 	// Load state if exists (for recovery)
 	if err := sm.loadState(ctx); err != nil {
 		// Ignore error, start from Init
+	}
+
+	if err := sm.ensureClusterInfo(ctx); err != nil {
+		return err
 	}
 
 	if err := sm.ensureDesignerCredentials(ctx); err != nil {
@@ -374,6 +384,54 @@ func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Co
 
 func (sm *ExtensionInstallStateMachine) clearDesignerCredentials() {
 	sm.Password = ""
+}
+
+func (sm *ExtensionInstallStateMachine) ensureClusterInfo(ctx context.Context) error {
+	if sm.ClusterID == "" || sm.InfobaseID == "" {
+		if sm.clusterInfoProvider == nil {
+			return fmt.Errorf("cluster info provider not configured")
+		}
+	}
+
+	if sm.clusterInfoProvider == nil {
+		return nil
+	}
+
+	if sm.RASServer != "" && sm.ClusterID != "" && sm.InfobaseID != "" {
+		return nil
+	}
+
+	sm.timeline.Record(ctx, sm.OperationID, "clusterinfo.rehydrate.started", map[string]interface{}{
+		"database_id": sm.DatabaseID,
+	})
+
+	info, err := sm.clusterInfoProvider.Fetch(ctx, sm.DatabaseID)
+	if err != nil {
+		sm.timeline.Record(ctx, sm.OperationID, "clusterinfo.rehydrate.failed", map[string]interface{}{
+			"database_id": sm.DatabaseID,
+			"error":       err.Error(),
+		})
+		return fmt.Errorf("failed to fetch cluster info: %w", err)
+	}
+	if info == nil || info.ClusterID == "" || info.InfobaseID == "" {
+		sm.timeline.Record(ctx, sm.OperationID, "clusterinfo.rehydrate.failed", map[string]interface{}{
+			"database_id": sm.DatabaseID,
+			"error":       "cluster info is incomplete",
+		})
+		return fmt.Errorf("cluster info is incomplete")
+	}
+
+	sm.ClusterID = info.ClusterID
+	sm.InfobaseID = info.InfobaseID
+	sm.RASServer = info.RASServer
+	sm.ClusterUser = info.ClusterUser
+	sm.ClusterPwd = info.ClusterPwd
+
+	sm.timeline.Record(ctx, sm.OperationID, "clusterinfo.rehydrated", map[string]interface{}{
+		"database_id": sm.DatabaseID,
+		"source":      "provider",
+	})
+	return nil
 }
 
 // transitionTo transitions to new state

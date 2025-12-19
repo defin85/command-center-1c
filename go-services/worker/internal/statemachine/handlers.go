@@ -9,29 +9,8 @@ import (
 func (sm *ExtensionInstallStateMachine) handleInit(ctx context.Context) error {
 	fmt.Printf("[StateMachine] Handling Init state\n")
 
-	// Publish lock command
-	payload := map[string]interface{}{
-		"cluster_id":  sm.ClusterID,
-		"infobase_id": sm.InfobaseID,
-		"database_id": sm.DatabaseID,
-	}
-
-	err := sm.publishCommand(ctx,
-		"commands:cluster-service:infobase:lock",
-		"cluster.infobase.lock",
-		payload,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to publish lock command: %w", err)
-	}
-
-	// Wait for locked event
-	_, err = sm.waitForEvent(ctx,
-		"cluster.infobase.locked",
-		sm.config.TimeoutLockJobs,
-	)
-	if err != nil {
-		return fmt.Errorf("failed waiting for locked event: %w", err)
+	if err := sm.lockScheduledJobs(ctx); err != nil {
+		return fmt.Errorf("failed to lock scheduled jobs: %w", err)
 	}
 
 	// Add compensation for unlock
@@ -47,28 +26,8 @@ func (sm *ExtensionInstallStateMachine) handleInit(ctx context.Context) error {
 func (sm *ExtensionInstallStateMachine) handleJobsLocked(ctx context.Context) error {
 	fmt.Printf("[StateMachine] Handling JobsLocked state\n")
 
-	// Publish terminate sessions command
-	payload := map[string]interface{}{
-		"cluster_id":  sm.ClusterID,
-		"infobase_id": sm.InfobaseID,
-	}
-
-	err := sm.publishCommand(ctx,
-		"commands:cluster-service:sessions:terminate",
-		"cluster.sessions.terminate",
-		payload,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to publish terminate command: %w", err)
-	}
-
-	// Wait for sessions closed event
-	_, err = sm.waitForEvent(ctx,
-		"cluster.sessions.closed",
-		sm.config.TimeoutTerminate,
-	)
-	if err != nil {
-		return fmt.Errorf("failed waiting for sessions closed: %w", err)
+	if err := sm.terminateSessions(ctx); err != nil {
+		return fmt.Errorf("failed to terminate sessions: %w", err)
 	}
 
 	// Transition to next state
@@ -159,30 +118,10 @@ func (sm *ExtensionInstallStateMachine) handleSessionsClosed(ctx context.Context
 func (sm *ExtensionInstallStateMachine) handleExtensionInstalled(ctx context.Context) error {
 	fmt.Printf("[StateMachine] Handling ExtensionInstalled state\n")
 
-	// Publish unlock command
-	payload := map[string]interface{}{
-		"cluster_id":  sm.ClusterID,
-		"infobase_id": sm.InfobaseID,
-	}
-
-	err := sm.publishCommand(ctx,
-		"commands:cluster-service:infobase:unlock",
-		"cluster.infobase.unlock",
-		payload,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to publish unlock command: %w", err)
-	}
-
-	// Wait for unlocked event
-	_, err = sm.waitForEvent(ctx,
-		"cluster.infobase.unlocked",
-		sm.config.TimeoutUnlock,
-	)
-	if err != nil {
+	if err := sm.unlockScheduledJobs(ctx); err != nil {
 		// Unlock failed - critical, need manual intervention
 		sm.publishManualActionRequired(ctx, "unlock_failed")
-		return fmt.Errorf("failed waiting for unlocked: %w", err)
+		return fmt.Errorf("failed to unlock scheduled jobs: %w", err)
 	}
 
 	// Transition to completed
@@ -191,26 +130,7 @@ func (sm *ExtensionInstallStateMachine) handleExtensionInstalled(ctx context.Con
 
 // unlockInfobase unlocks infobase (compensation action)
 func (sm *ExtensionInstallStateMachine) unlockInfobase(ctx context.Context) error {
-	payload := map[string]interface{}{
-		"cluster_id":  sm.ClusterID,
-		"infobase_id": sm.InfobaseID,
-	}
-
-	err := sm.publishCommand(ctx,
-		"commands:cluster-service:infobase:unlock",
-		"cluster.infobase.unlock",
-		payload,
-	)
-	if err != nil {
-		return err
-	}
-
-	_, err = sm.waitForEvent(ctx,
-		"cluster.infobase.unlocked",
-		sm.config.TimeoutUnlock,
-	)
-
-	return err
+	return sm.unlockScheduledJobs(ctx)
 }
 
 // publishManualActionRequired publishes manual action event
