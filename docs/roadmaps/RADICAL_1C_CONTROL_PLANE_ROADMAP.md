@@ -6,6 +6,41 @@
 
 ---
 
+## Текущий прогресс (implementation status)
+
+Дата актуальности: **2025-12-19**
+
+### Сделано
+
+- **Worker Driver Framework**: реестр драйверов + метрики драйверов + базовые timeline события.
+  - Код: `go-services/worker/internal/drivers/registry.go`
+  - Интеграция: `go-services/worker/internal/processor/processor.go`
+- **Direct RAS (внутри Worker)**: добавлен прямой RAS client/driver (`rasdirect`) + использование `ras_server` из internal API.
+  - Код: `go-services/worker/internal/drivers/rasdirect/client.go`
+  - Internal API расширен на `ras_server`/cluster creds (референс в orchestrator).
+- **Вынесение cluster/infobase info из processor** в отдельный слой `clusterinfo` (единообразный резолвинг данных кластера/ИБ для драйверов).
+  - Код: `go-services/worker/internal/clusterinfo/*`
+- **RAS операции перенесены в driver (`rasops`)**:
+  - meta: `sync_cluster`, `discover_clusters`
+  - db ops: `lock_scheduled_jobs`, `unlock_scheduled_jobs`, `block_sessions`, `unblock_sessions`, `terminate_sessions`
+  - Код: `go-services/worker/internal/drivers/rasops/*`
+  - Удалены старые реализации из `go-services/worker/internal/processor/*` (RAS-специфика больше не живёт в processor).
+
+### В работе / ближайшее
+
+- **“Единая точка ответственности по workflow”**: развести `install_extension` и `execute_workflow` (сейчас это ещё общий контур в worker/orchestrator).
+- **Observability унификация UI**: довести до правила “UI читает только Prometheus” для `/system-status` и `/service-mesh`, включая внешние probes (RAS port / TCP).
+- **CLI/Designer/ibcmd**: начало миграции в драйверы (см. Phase 3/5).
+
+### Статус фаз (кратко)
+
+- Phase 1 — Driver Framework в Worker: **DONE**
+- Phase 2 — Migrating RAS operations: **DONE (core)**
+- Phase 3 — Migrating Designer/Extensions: **TODO**
+- Phase 4 — Migrating OData operations: **TODO**
+- Phase 5 — ibcmd/ibsrv integration: **TODO**
+- Phase 6 — Декомиссия сервисов: **TODO**
+
 ## Принципы
 
 1. **Единая точка ответственности**: каждый `ActionType` принадлежит ровно одному драйверу.
@@ -133,6 +168,8 @@ Deliverables:
 Acceptance:
 - новая операция проходит через driver pipeline end-to-end
 
+Status: **DONE** (реестр драйверов + интеграция в processor + метрики/таймлайн для драйверов)
+
 ### Phase 2 — Migrating RAS operations (2–3 недели)
 
 Deliverables:
@@ -143,6 +180,8 @@ Deliverables:
 Acceptance:
 - `sync_cluster`, sessions, lock/unlock jobs работают напрямую из worker
 - стабильные таймауты и понятные timeline подшаги
+
+Status: **DONE (core)** (RAS операции живут в `internal/drivers/rasops`, direct RAS через `internal/drivers/rasdirect`, fallback через `ras-adapter`)
 
 ### Phase 3 — Migrating Designer/Extensions (3–5 недель)
 
@@ -212,4 +251,3 @@ Acceptance:
 - Удалены `ras-adapter`, `designer-agent`, `batch-service` (после стабилизации)
 - `/system-status` и `/service-mesh` согласованы и показывают одинаковую картину
 - Для каждой операции видны: подшаги + внешние вызовы + длительности
-
