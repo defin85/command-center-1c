@@ -1,11 +1,10 @@
 // Package odata provides types and constants for OData operations.
-// Used by Worker drivers and legacy Redis Streams-based adapters.
+// Used by Worker drivers and OData client code.
 package odata
 
 import (
 	"errors"
 	"strings"
-	"time"
 )
 
 // Command type constants
@@ -63,42 +62,6 @@ var (
 	ErrInvalidEntityIDFormat = errors.New("odata: invalid entity_id format, expected guid'...'")
 )
 
-// ODataCommand represents a command for stream-based OData execution (legacy).
-// Commands are published to Redis Streams by Worker and consumed by an adapter.
-type ODataCommand struct {
-	// OperationID is the unique identifier for the parent batch operation
-	OperationID string `json:"operation_id"`
-
-	// DatabaseID is the internal database identifier in CommandCenter
-	DatabaseID string `json:"database_id"`
-
-	// CommandType specifies the operation: query, create, update, delete, batch
-	CommandType string `json:"command_type"`
-
-	// Credentials contains OData endpoint credentials
-	Credentials ODataCredentials `json:"credentials"`
-
-	// Entity is the OData entity name (e.g., "Catalog_Контрагенты")
-	Entity string `json:"entity,omitempty"`
-
-	// EntityID is the unique identifier of the entity for update/delete operations
-	EntityID string `json:"entity_id,omitempty"`
-
-	// Query contains query parameters for query operations
-	Query *QueryParams `json:"query,omitempty"`
-
-	// Data contains entity data for create/update operations
-	Data map[string]interface{} `json:"data,omitempty"`
-
-	// BatchItems contains items for batch operations
-	BatchItems []BatchItem `json:"batch_items,omitempty"`
-
-	// TimeoutSeconds specifies the operation timeout (0 = default)
-	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
-
-	// CreatedAt is the timestamp when command was created
-	CreatedAt time.Time `json:"created_at"`
-}
 
 // ODataCredentials contains credentials for OData endpoint.
 type ODataCredentials struct {
@@ -278,139 +241,4 @@ func (br *BatchResult) AddFailure(index int, operation, entity, errMsg string, h
 // AllSucceeded returns true if all items in the batch succeeded.
 func (br *BatchResult) AllSucceeded() bool {
 	return br.FailureCount == 0 && br.SuccessCount == br.TotalCount
-}
-
-// ODataResult represents the result of an OData command execution.
-// Legacy adapter uses Redis Streams; direct OData runs inside worker.
-type ODataResult struct {
-	// OperationID is the unique identifier for the parent batch operation
-	OperationID string `json:"operation_id"`
-
-	// DatabaseID is the internal database identifier in CommandCenter
-	DatabaseID string `json:"database_id"`
-
-	// CommandType is the type of command that was executed
-	CommandType string `json:"command_type"`
-
-	// Success indicates whether the command completed successfully
-	Success bool `json:"success"`
-
-	// Error contains the error message if Success is false
-	Error string `json:"error,omitempty"`
-
-	// ErrorCode contains the error code for categorization
-	ErrorCode string `json:"error_code,omitempty"`
-
-	// Data contains the result data (query results, created entity, etc.)
-	Data interface{} `json:"data,omitempty"`
-
-	// AffectedCount is the number of affected records (for batch operations)
-	AffectedCount int `json:"affected_count,omitempty"`
-
-	// Duration is how long the command took to execute
-	Duration time.Duration `json:"duration"`
-
-	// CompletedAt is the timestamp when command completed
-	CompletedAt time.Time `json:"completed_at"`
-}
-
-// Validate checks if the command has all required fields and valid command type.
-func (c *ODataCommand) Validate() error {
-	if c.OperationID == "" {
-		return ErrEmptyOperationID
-	}
-	if c.DatabaseID == "" {
-		return ErrEmptyDatabaseID
-	}
-	if c.CommandType == "" {
-		return ErrEmptyCommandType
-	}
-
-	// Validate command type
-	switch c.CommandType {
-	case CommandTypeQuery, CommandTypeCreate, CommandTypeUpdate, CommandTypeDelete, CommandTypeBatch:
-		// Valid command type
-	default:
-		return ErrInvalidCommandType
-	}
-
-	// Validate credentials
-	if c.Credentials.BaseURL == "" {
-		return ErrEmptyBaseURL
-	}
-
-	// Entity is required for non-batch operations
-	if c.CommandType != CommandTypeBatch && c.Entity == "" {
-		return ErrEmptyEntity
-	}
-
-	// BatchItems required for batch operations
-	if c.CommandType == CommandTypeBatch && len(c.BatchItems) == 0 {
-		return ErrEmptyBatchItems
-	}
-
-	return nil
-}
-
-// Validate checks if the result has all required fields.
-func (r *ODataResult) Validate() error {
-	if r.OperationID == "" {
-		return ErrEmptyOperationID
-	}
-	if r.DatabaseID == "" {
-		return ErrEmptyDatabaseID
-	}
-	if r.CommandType == "" {
-		return ErrEmptyCommandType
-	}
-	return nil
-}
-
-// ValidCommandTypes returns a list of all valid command types.
-func ValidCommandTypes() []string {
-	return []string{
-		CommandTypeQuery,
-		CommandTypeCreate,
-		CommandTypeUpdate,
-		CommandTypeDelete,
-		CommandTypeBatch,
-	}
-}
-
-// NewODataCommand creates a new ODataCommand with the given parameters.
-func NewODataCommand(operationID, databaseID, commandType string, credentials ODataCredentials) *ODataCommand {
-	return &ODataCommand{
-		OperationID: operationID,
-		DatabaseID:  databaseID,
-		CommandType: commandType,
-		Credentials: credentials,
-		CreatedAt:   time.Now(),
-	}
-}
-
-// NewODataResult creates a new successful ODataResult.
-func NewODataResult(operationID, databaseID, commandType string, data interface{}, duration time.Duration) *ODataResult {
-	return &ODataResult{
-		OperationID: operationID,
-		DatabaseID:  databaseID,
-		CommandType: commandType,
-		Success:     true,
-		Data:        data,
-		Duration:    duration,
-		CompletedAt: time.Now(),
-	}
-}
-
-// NewODataErrorResult creates a new failed ODataResult.
-func NewODataErrorResult(operationID, databaseID, commandType, errMsg, errorCode string, duration time.Duration) *ODataResult {
-	return &ODataResult{
-		OperationID: operationID,
-		DatabaseID:  databaseID,
-		CommandType: commandType,
-		Success:     false,
-		Error:       errMsg,
-		ErrorCode:   errorCode,
-		Duration:    duration,
-		CompletedAt: time.Now(),
-	}
 }
