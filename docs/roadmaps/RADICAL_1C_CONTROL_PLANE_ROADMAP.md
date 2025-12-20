@@ -8,7 +8,7 @@
 
 ## Текущий прогресс (implementation status)
 
-Дата актуальности: **2025-12-19**
+Дата актуальности: **2025-12-20**
 
 ### Сделано
 
@@ -49,14 +49,14 @@
 
 - **“Единая точка ответственности по workflow”**: `install_extension` и `execute_workflow` вынесены в драйверы, следующий шаг — унификация внешних HTTP логов по стандарту (path + elapsed + status).
 - **Observability унификация UI**: довести до правила “UI читает только Prometheus” для `/system-status` и `/service-mesh`, включая внешние probes (RAS port / TCP).
-- **CLI/Designer/ibcmd**: migrated core designer ops, дальше — полный отказ от designer-agent/batch-service и покрытие edge-cases.
+- **CLI/Designer/ibcmd**: migrated core designer ops, дальше — покрытие edge-cases и подготовка ibcmd-операций.
 
 ### Статус фаз (кратко)
 
 - Phase 1 — Driver Framework в Worker: **DONE**
 - Phase 2 — Migrating RAS operations: **DONE (core)**
-- Phase 3 — Migrating Designer/Extensions: **IN PROGRESS (core)**
-- Phase 4 — Migrating OData operations: **IN PROGRESS**
+- Phase 3 — Migrating Designer/Extensions: **DONE**
+- Phase 4 — Migrating OData operations: **DONE**
 - Phase 5 — ibcmd/ibsrv integration: **TODO**
 - Phase 6 — Декомиссия сервисов: **TODO**
 
@@ -213,11 +213,12 @@ Acceptance:
 - установка/обновление расширений без Designer Agent/Batch Service как обязательных hop’ов
 - в timeline видно: download → designer apply → publish result
 
-Status: **IN PROGRESS**
+Status: **DONE**
 - `install_extension` вынесен в `extensionops` драйвер
 - CLI путь реализован через `internal/drivers/cli` и включается `USE_DIRECT_CLI`
 - State Machine требует direct CLI (fallback на batch-service удалён)
 - Добавлен `designerops` для `remove_extension` и config ops (Update/Load/Dump)
+- `designer-agent` и `batch-service` удалены из runtime и кодовой базы
 
 ### Phase 4 — Migrating OData operations (2–4 недели)
 
@@ -228,13 +229,14 @@ Deliverables:
 Acceptance:
 - все OData workflows не зависят от внешнего “adapter service”
 
-Status: **IN PROGRESS**
+Status: **DONE**
 - CRUD/query OData операции вынесены в driver `odataops` (worker direct HTTP)
 - template rendering для OData перенесён в driver (Processor больше не содержит OData logic)
 - Batch support перенесён в worker internal OData client (используется для saga workflows)
 - OData client унифицирован: общий пул для driver + saga workflows
 - ODataService внедряется через DI (без default fallback)
 - `odata-adapter` исключён из runtime-мониторинга и UI (service mesh/system status)
+- legacy `odata-adapter` удалён из кодовой базы
 
 ### Phase 5 — ibcmd/ibsrv integration (2–4 недели, optional)
 
