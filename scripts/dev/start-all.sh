@@ -7,7 +7,7 @@
 # - Docker: PostgreSQL, Redis, ClickHouse
 # - 1C Platform: RAS (Remote Administration Server)
 # - Python: Django Orchestrator
-# - Go: API Gateway, Worker, RAS Adapter, Designer Agent, Batch Service
+# - Go: API Gateway, Worker, RAS Adapter
 # - Frontend: React dev server
 ##############################################################################
 
@@ -25,7 +25,7 @@ PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
 # Список Go сервисов (в порядке приоритета)
-GO_SERVICES=("api-gateway" "worker" "ras-adapter" "designer-agent" "batch-service")
+GO_SERVICES=("api-gateway" "worker" "ras-adapter")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
@@ -261,9 +261,9 @@ echo ""
 # Phase 2: Запуск инфраструктуры (PostgreSQL, Redis) - Docker или Native
 ##############################################################################
 if is_native_mode; then
-    echo -e "${BLUE}[1/11] Проверка инфраструктуры (systemd)...${NC}"
+    echo -e "${BLUE}[1/9] Проверка инфраструктуры (systemd)...${NC}"
 else
-    echo -e "${BLUE}[1/11] Запуск инфраструктуры...${NC}"
+    echo -e "${BLUE}[1/9] Запуск инфраструктуры...${NC}"
 fi
 
 # Определить режим запуска (Docker по умолчанию для обратной совместимости)
@@ -393,7 +393,7 @@ echo ""
 ##############################################################################
 # Шаг 2: Django Migrations
 ##############################################################################
-echo -e "${BLUE}[2/11] Применение миграций Django...${NC}"
+echo -e "${BLUE}[2/9] Применение миграций Django...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -435,7 +435,7 @@ echo ""
 ##############################################################################
 # Port 8200 - outside Windows reserved ranges (7913-8012, 8013-8112)
 ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-8200}"
-echo -e "${BLUE}[3/11] Запуск Django Orchestrator (port $ORCHESTRATOR_PORT)...${NC}"
+echo -e "${BLUE}[3/9] Запуск Django Orchestrator (port $ORCHESTRATOR_PORT)...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
@@ -465,7 +465,7 @@ echo ""
 ##############################################################################
 # Шаг 4: Event Subscriber (Redis Streams consumer)
 ##############################################################################
-echo -e "${BLUE}[4/11] Запуск Event Subscriber...${NC}"
+echo -e "${BLUE}[4/9] Запуск Event Subscriber...${NC}"
 
 if ! start_service "event-subscriber"; then
     log_error "Не удалось запустить event-subscriber"
@@ -477,7 +477,7 @@ echo ""
 ##############################################################################
 # Шаг 5: API Gateway (Go)
 ##############################################################################
-echo -e "${BLUE}[5/11] Запуск API Gateway (port 8180)...${NC}"
+echo -e "${BLUE}[5/9] Запуск API Gateway (port 8180)...${NC}"
 
 if ! start_service "api-gateway"; then
     log_error "Не удалось запустить api-gateway"
@@ -489,7 +489,7 @@ echo ""
 ##############################################################################
 # Шаг 6: Go Worker
 ##############################################################################
-echo -e "${BLUE}[6/11] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[6/9] Запуск Go Worker...${NC}"
 
 if ! start_service "worker"; then
     log_error "Не удалось запустить worker"
@@ -500,7 +500,7 @@ echo ""
 
 # Шаг 7: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[7/11] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+echo -e "${BLUE}[7/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
 # Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
@@ -585,7 +585,7 @@ echo ""
 ##############################################################################
 # Шаг 8: RAS Adapter (Go)
 ##############################################################################
-echo -e "${BLUE}[8/11] Запуск RAS Adapter (port 8188)...${NC}"
+echo -e "${BLUE}[8/9] Запуск RAS Adapter (port 8188)...${NC}"
 
 # RAS Adapter is the only RAS service (Week 4+)
 # Бинарник гарантированно существует и актуален после Phase 1
@@ -623,39 +623,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 9: Designer Agent (Go)
+# Шаг 9: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[9/11] Запуск Designer Agent (port 8190)...${NC}"
-
-if ! start_service "designer-agent"; then
-    log_error "Не удалось запустить designer-agent"
-    cat "$LOGS_DIR/designer-agent.log"
-    exit 1
-fi
-echo ""
-
-if curl --noproxy '*' -sf "http://localhost:${DESIGNER_AGENT_PORT:-8190}/health" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Designer Agent health check PASSED${NC}"
-else
-    echo -e "${YELLOW}⚠️  Designer Agent health check FAILED (может потребоваться время для запуска)${NC}"
-fi
-echo ""
-
-##############################################################################
-# Шаг 10: Batch Service (Go)
-##############################################################################
-echo -e "${BLUE}[10/11] Запуск Batch Service (port 8187)...${NC}"
-
-if ! start_service "batch-service"; then
-    log_error "Не удалось запустить batch-service"
-    cat "$LOGS_DIR/batch-service.log"
-    exit 1
-fi
-echo ""
-
-# Шаг 11: Frontend (React)
-##############################################################################
-echo -e "${BLUE}[11/11] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[9/9] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 

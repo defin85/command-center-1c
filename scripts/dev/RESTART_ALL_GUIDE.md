@@ -61,7 +61,6 @@
 - `api-gateway`
 - `worker`
 - `ras-adapter`
-- `batch-service`
 - `frontend`
 
 ### Параллельная пересборка
@@ -126,7 +125,7 @@
 ```
 
 **Результат:**
-- Пересоберутся **ВСЕ 4** Go сервиса (`api-gateway`, `worker`, `ras-adapter`, `batch-service`)
+- Пересоберутся **ВСЕ 3** Go сервиса (`api-gateway`, `worker`, `ras-adapter`)
 - Все сервисы перезапустятся
 
 ### Сценарий 3: Бинарники актуальны
@@ -168,7 +167,6 @@
 
 Пропущенные сервисы (2):
   ℹ ras-adapter (бинарник актуален)
-  ℹ batch-service (бинарник актуален)
 
 Управление:
   Просмотр логов:   ./scripts/dev/logs.sh <service>

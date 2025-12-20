@@ -299,17 +299,6 @@ INSTALLATION_SERVICE_TIMEOUT = int(env(
     default='180'  # 3 minutes
 ))
 
-# Batch Service Configuration
-# Port 8187 - outside Windows reserved range (8013-8112)
-BATCH_SERVICE_URL = env(
-    'BATCH_SERVICE_URL',
-    default='http://localhost:8187'
-)
-BATCH_SERVICE_TIMEOUT = int(env(
-    'BATCH_SERVICE_TIMEOUT',
-    default='60'  # 1 minute
-))
-
 # RAS Adapter Configuration (replaces cluster-service)
 # Port 8188 - outside Windows reserved range (8013-8112)
 RAS_ADAPTER_URL = env(
@@ -323,13 +312,6 @@ RAS_ADAPTER_TIMEOUT = int(env(
 
 # OData Adapter Configuration
 # Port 8189 - outside Windows reserved range (8013-8112)
-
-# Designer Agent Configuration
-# Port 8190 - outside Windows reserved range (8013-8112)
-DESIGNER_AGENT_URL = env(
-    'DESIGNER_AGENT_URL',
-    default='http://localhost:8190'
-)
 
 # Worker Configuration
 # Port 9091 - Go Worker health endpoint
@@ -378,7 +360,7 @@ FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='
 # ========== System Monitoring Configuration ==========
 # Ports outside Windows reserved range (8013-8112)
 API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
-# Note: BATCH_SERVICE_URL and RAS_ADAPTER_URL defined above
+# Note: RAS_ADAPTER_URL defined above
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
 MONITORED_SERVICES = [
@@ -405,18 +387,6 @@ MONITORED_SERVICES = [
         'type': 'backend',
         'health_url': f'{WORKER_URL}/health',
         'critical': True,
-    },
-    {
-        'name': 'batch-service',
-        'type': 'backend',
-        'health_url': f'{BATCH_SERVICE_URL}/health',
-        'critical': False,
-    },
-    {
-        'name': 'designer-agent',
-        'type': 'backend',
-        'health_url': f'{DESIGNER_AGENT_URL}/health',
-        'critical': False,
     },
 ]
 

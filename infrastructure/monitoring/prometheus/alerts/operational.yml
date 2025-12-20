@@ -38,17 +38,6 @@ groups:
           summary: "Orchestrator is down"
           description: "Orchestrator has been unreachable for more than 1 minute."
 
-      # Batch Service down
-      - alert: BatchServiceDown
-        expr: up{job="batch-service"} == 0
-        for: 2m
-        labels:
-          severity: warning
-          component: batch-service
-        annotations:
-          summary: "Batch Service is down"
-          description: "Batch Service has been unreachable for more than 2 minutes."
-
       # RAS Adapter down
       - alert: RASAdapterDown
         expr: up{job="ras-adapter"} == 0
@@ -73,17 +62,6 @@ groups:
         annotations:
           summary: "Scheduler job backlog detected"
           description: "{{ $value }} active scheduler jobs, which may indicate backlog."
-
-      # High batch active operations
-      - alert: BatchOperationsBacklog
-        expr: cc1c_batch_active_operations > 50
-        for: 5m
-        labels:
-          severity: warning
-          component: batch-service
-        annotations:
-          summary: "Batch operations backlog detected"
-          description: "{{ $value }} active batch operations, which may indicate backlog."
 
       # High events processing concurrent handlers
       - alert: HighEventsConcurrency

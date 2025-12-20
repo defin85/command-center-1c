@@ -83,9 +83,6 @@ else
     cd "$PROJECT_ROOT/go-services/ras-adapter"
     go build -o "$PROJECT_ROOT/bin/cc1c-ras-adapter.exe" cmd/main.go
 
-    cd "$PROJECT_ROOT/go-services/batch-service"
-    go build -o "$PROJECT_ROOT/bin/cc1c-batch-service.exe" cmd/main.go
-
     echo -e "${GREEN}✓ All binaries built${NC}"
 fi
 

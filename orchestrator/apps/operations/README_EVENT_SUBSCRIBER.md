@@ -7,7 +7,7 @@ Event Subscriber - это компонент Django Orchestrator, который
 ## Архитектура
 
 ```
-Go Services (batch-service, cluster-service)
+Go Services (worker, cluster-service)
     |
     | Publish events to Redis Streams
     v
@@ -24,12 +24,15 @@ Django ORM (PostgreSQL)
 
 ## Поддерживаемые события
 
-### batch-service
+### worker
 
 | Stream | Событие | Описание |
 |--------|---------|----------|
-| `events:batch-service:extension:installed` | Extension установлено | Успешная установка расширения |
-| `events:batch-service:extension:install-failed` | Ошибка установки | Неудачная установка расширения |
+| `events:worker:completed` | Operation completed | Успешное завершение операции |
+| `events:worker:failed` | Operation failed | Ошибка операции |
+| `events:worker:cluster-synced` | Cluster synced | Синхронизация кластера завершена |
+| `events:worker:clusters-discovered` | Clusters discovered | Обнаружение кластеров завершено |
+| `commands:worker:dlq` | Dead Letter Queue | Ошибочные сообщения |
 
 ### cluster-service
 
@@ -45,36 +48,22 @@ Django ORM (PostgreSQL)
 
 ```json
 {
-  "event_type": "extension.installed",
-  "correlation_id": "batch-batch-123-task-456",
+  "event_type": "worker.completed",
+  "correlation_id": "op-123",
   "timestamp": "2025-11-12T10:30:00Z",
-  "payload": "{\"database_id\":\"db-123\",\"duration_seconds\":45.2}"
+  "payload": "{\"operation_id\":\"op-123\",\"summary\":{},\"results\":[]}"
 }
 ```
 
 ### Payload примеры
 
-#### extension:installed
+#### worker:completed
 
 ```json
 {
-  "database_id": "db-123",
-  "extension_name": "TestExtension",
-  "extension_version": "1.0.0",
-  "duration_seconds": 45.2,
-  "output": "Extension installed successfully"
-}
-```
-
-#### extension:install-failed
-
-```json
-{
-  "database_id": "db-123",
-  "extension_name": "TestExtension",
-  "error": "Connection timeout",
-  "error_code": "TIMEOUT",
-  "duration_seconds": 30.0
+  "operation_id": "op-123",
+  "summary": {},
+  "results": []
 }
 ```
 
@@ -170,8 +159,8 @@ logger = logging.getLogger('apps.operations.event_subscriber')
 
 ```
 INFO EventSubscriber initialized: orchestrator-12345
-INFO Created consumer group 'orchestrator-group' for stream 'events:batch-service:extension:installed'
-INFO Processing event: extension.installed (stream=events:batch-service:extension:installed, correlation_id=batch-batch-123-task-456)
+INFO Created consumer group 'orchestrator-group' for stream 'events:worker:completed'
+INFO Processing event: worker.completed (stream=events:worker:completed, correlation_id=op-123)
 INFO Extension installed: database=db-123, name=TestExtension, duration=45.20s, correlation_id=batch-batch-123-task-456
 INFO Task task-456 marked as completed
 WARNING Task not found: task-999 (correlation_id=batch-batch-123-task-999)
@@ -201,7 +190,7 @@ signal.signal(signal.SIGTERM, subscriber.shutdown)
 ps aux | grep run_event_subscriber
 
 # Проверить Consumer Group в Redis
-redis-cli XINFO GROUPS events:batch-service:extension:installed
+redis-cli XINFO GROUPS events:worker:completed
 ```
 
 ### Метрики
@@ -251,15 +240,15 @@ cat .env.local | grep REDIS
 
 ```bash
 # Проверить что события публикуются
-redis-cli XLEN events:batch-service:extension:installed
+redis-cli XLEN events:worker:completed
 # (integer) 5
 
 # Проверить Consumer Group
-redis-cli XINFO GROUPS events:batch-service:extension:installed
+redis-cli XINFO GROUPS events:worker:completed
 # Должна быть группа "orchestrator-group"
 
 # Проверить pending messages
-redis-cli XPENDING events:batch-service:extension:installed orchestrator-group
+redis-cli XPENDING events:worker:completed orchestrator-group
 ```
 
 ### Task не обновляется

@@ -92,8 +92,6 @@ def validate_schema(config: dict, schema: dict) -> list[str]:
         "api-gateway",
         "orchestrator",
         "ras-adapter",
-        "designer-agent",
-        "batch-service",
         "worker",
     ]
     for svc in required_services:
@@ -267,8 +265,6 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
         "api-gateway",
         "orchestrator",
         "ras-adapter",
-        "designer-agent",
-        "batch-service",
         "worker",
     ]
     for name in default_url_services:
@@ -314,8 +310,6 @@ def generate_ports_go(config: dict, mode: str, timestamp: str) -> str:
         "api-gateway",
         "orchestrator",
         "ras-adapter",
-        "designer-agent",
-        "batch-service",
         "worker",
     ]
     for name in addr_services:

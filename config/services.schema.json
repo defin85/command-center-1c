@@ -25,11 +25,9 @@
         "api-gateway": { "$ref": "#/definitions/service" },
         "orchestrator": { "$ref": "#/definitions/service" },
         "ras-adapter": { "$ref": "#/definitions/service" },
-        "designer-agent": { "$ref": "#/definitions/service" },
-        "batch-service": { "$ref": "#/definitions/service" },
         "worker": { "$ref": "#/definitions/service" }
       },
-      "required": ["frontend", "api-gateway", "orchestrator", "ras-adapter", "designer-agent", "batch-service", "worker"]
+      "required": ["frontend", "api-gateway", "orchestrator", "ras-adapter", "worker"]
     },
     "infrastructure": {
       "type": "object",

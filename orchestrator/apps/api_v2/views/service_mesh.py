@@ -111,7 +111,7 @@ class ServiceHistoryResponseSerializer(serializers.Serializer):
 
 # Service endpoints for metrics collection
 # Ports outside Windows reserved ranges (7913-8012, 8013-8112):
-# API Gateway: 8180, RAS Adapter: 8188, Batch Service: 8187
+# API Gateway: 8180, RAS Adapter: 8188
 MONITORED_SERVICES = [
     {
         'name': 'api-gateway',
@@ -130,12 +130,6 @@ MONITORED_SERVICES = [
         'type': 'backend',
         'health_url': 'http://localhost:9091/health',
         'metrics_url': 'http://localhost:9091/metrics',
-    },
-    {
-        'name': 'batch-service',
-        'type': 'backend',
-        'health_url': 'http://localhost:8187/health',
-        'metrics_url': 'http://localhost:8187/metrics',
     },
 ]
 

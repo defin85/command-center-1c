@@ -58,7 +58,7 @@ type ConfigUpdateInput struct {
 //   - database_id: string - internal database ID
 //   - cluster_id: string - 1C RAS cluster UUID
 //   - infobase_id: string - 1C RAS infobase UUID
-//   - ssh_host: string - SSH host for designer-agent
+//   - ssh_host: string - SSH host for remote Designer access (optional)
 //   - ssh_credentials: map - SSH credentials
 //   - infobase_path: string - path to the infobase
 //   - config_file: string - (optional) path to .cf file to load

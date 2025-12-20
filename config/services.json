@@ -42,26 +42,6 @@
       "env_var": "RAS_ADAPTER_PORT",
       "description": "Go RAS Adapter - 1C cluster management via RAS protocol"
     },
-    "designer-agent": {
-      "port": 8190,
-      "host": {
-        "docker": "designer-agent",
-        "local": "localhost"
-      },
-      "health_path": "/health",
-      "env_var": "DESIGNER_AGENT_PORT",
-      "description": "Go Designer Agent - 1C designer/ssh automation"
-    },
-    "batch-service": {
-      "port": 8187,
-      "host": {
-        "docker": "batch-service",
-        "local": "localhost"
-      },
-      "health_path": "/health",
-      "env_var": "BATCH_SERVICE_PORT",
-      "description": "Go Batch Service - Extension installation via 1cv8.exe"
-    },
     "worker": {
       "port": 9091,
       "host": {

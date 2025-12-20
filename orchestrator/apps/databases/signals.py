@@ -5,7 +5,7 @@ from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import Cluster, Database, BatchService, StatusHistory
+from .models import Cluster, Database, StatusHistory
 
 logger = logging.getLogger(__name__)
 
@@ -77,36 +77,6 @@ def log_database_status_change(sender, instance, **kwargs):
             logger.info(f"Database {instance.name}: status changed {old_status} → {new_status}")
 
     except Database.DoesNotExist:
-        pass
-
-
-@receiver(pre_save, sender=BatchService)
-def log_batch_service_status_change(sender, instance, **kwargs):
-    """Log BatchService status changes to StatusHistory."""
-    if not instance.pk:
-        return
-
-    try:
-        old_instance = BatchService.objects.get(pk=instance.pk)
-        old_status = old_instance.status
-        new_status = instance.status
-
-        if old_status != new_status:
-            StatusHistory.objects.create(
-                content_object=instance,
-                old_status=old_status,
-                new_status=new_status,
-                reason=f"Health check result (consecutive_failures={instance.consecutive_failures})",
-                metadata={
-                    'service_id': str(instance.id),
-                    'consecutive_failures': instance.consecutive_failures,
-                    'last_health_status': instance.last_health_status,
-                    'changed_at': timezone.now().isoformat()
-                }
-            )
-            logger.info(f"BatchService {instance.name}: status changed {old_status} → {new_status}")
-
-    except BatchService.DoesNotExist:
         pass
 
 

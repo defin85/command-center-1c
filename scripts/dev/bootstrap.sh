@@ -73,7 +73,7 @@ GO_SERVICES_DIR="$PROJECT_ROOT/go-services"
 BIN_DIR="$PROJECT_ROOT/bin"
 
 # Список Go сервисов (в порядке приоритета)
-GO_SERVICES=("api-gateway" "worker" "ras-adapter" "designer-agent" "batch-service")
+GO_SERVICES=("api-gateway" "worker" "ras-adapter")
 
 ##############################################################################
 # ERROR HANDLING

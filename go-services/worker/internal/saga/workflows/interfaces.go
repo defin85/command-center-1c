@@ -41,8 +41,7 @@ type SSHCredentials struct {
 	Passphrase string `json:"passphrase,omitempty"`
 }
 
-// DesignerClient sends commands to designer-agent via Redis Streams.
-// Designer-agent executes 1C:Enterprise Designer commands via SSH.
+// DesignerClient executes 1C:Enterprise Designer commands (direct CLI or remote via SSH).
 type DesignerClient interface {
 	// InstallExtension installs a .cfe extension file to an infobase.
 	InstallExtension(ctx context.Context, ssh SSHCredentials, dbPath, extFile, extName string) error
@@ -93,7 +92,7 @@ type DatabaseInfo struct {
 	// Name is the human-readable database name.
 	Name string `json:"name"`
 
-	// SSHHost is the hostname where designer-agent can connect.
+	// SSHHost is the hostname for remote Designer access (optional).
 	SSHHost string `json:"ssh_host,omitempty"`
 
 	// InfobasePath is the path to the infobase on the 1C server.

@@ -2,7 +2,7 @@
 Event Subscriber for Redis Streams from Go services.
 
 This module implements a Consumer Group-based subscriber for Redis Streams,
-allowing Django Orchestrator to receive events from Go services (batch-service, cluster-service).
+allowing Django Orchestrator to receive events from Go services (worker, cluster-service).
 
 Architecture:
 - Uses Redis Streams (NOT Pub/Sub) for guaranteed delivery
@@ -79,7 +79,7 @@ def _default_flow_path(operation_type: str) -> list[str]:
     }:
         return ["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"]
     if operation_type == "install_extension":
-        return ["frontend", "api-gateway", "orchestrator", "worker", "batch-service"]
+        return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type in {"query", "health_check"}:
         return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type == "execute_workflow":
@@ -120,8 +120,6 @@ class EventSubscriber:
     Uses Redis Streams with Consumer Groups for guaranteed delivery of events.
 
     Supported Stream Events:
-    - batch-service:extension:installed
-    - batch-service:extension:install-failed
     - cluster-service:infobase:locked
     - cluster-service:infobase:unlocked
     - cluster-service:sessions:closed
@@ -150,8 +148,6 @@ class EventSubscriber:
         # Streams to subscribe to (stream_name: last_id)
         # '>' means read only new messages
         self.streams = {
-            'events:batch-service:extension:installed': '>',
-            'events:batch-service:extension:install-failed': '>',
             'events:cluster-service:infobase:locked': '>',
             'events:cluster-service:infobase:unlocked': '>',
             'events:cluster-service:sessions:closed': '>',
@@ -256,7 +252,7 @@ class EventSubscriber:
         Process a single message from a stream.
 
         Args:
-            stream: Stream name (e.g., 'events:batch-service:extension:installed')
+            stream: Stream name (e.g., 'events:worker:completed')
             message_id: Redis message ID (e.g., '1234567890123-0')
             data: Message data dict from Redis Stream
 
@@ -296,13 +292,7 @@ class EventSubscriber:
         _record_event_metric(event_type, stream)
 
         # Route to appropriate handler based on stream name
-        if 'extension:installed' in stream:
-            self.handle_extension_installed(payload, correlation_id)
-
-        elif 'extension:install-failed' in stream:
-            self.handle_extension_failed(payload, correlation_id)
-
-        elif 'infobase:locked' in stream:
+        if 'infobase:locked' in stream:
             self.handle_infobase_locked(payload, correlation_id)
 
         elif 'infobase:unlocked' in stream:
@@ -334,67 +324,6 @@ class EventSubscriber:
 
         else:
             logger.warning(f"Unknown stream: {stream}")
-
-    def handle_extension_installed(self, payload: Dict[str, Any], correlation_id: str):
-        """
-        Handle extension installed event from batch-service.
-
-        Payload example:
-            {
-                'database_id': 'db-123',
-                'extension_name': 'TestExtension',
-                'extension_version': '1.0.0',
-                'duration_seconds': 45.2,
-                'output': 'Extension installed successfully'
-            }
-        """
-        database_id = payload.get('database_id')
-        extension_name = payload.get('extension_name', 'unknown')
-        duration = payload.get('duration_seconds', 0)
-
-        logger.info(
-            f"Extension installed: database={database_id}, "
-            f"name={extension_name}, duration={duration:.2f}s, "
-            f"correlation_id={correlation_id}"
-        )
-
-        # Update Task status if we can find it by correlation_id
-        # correlation_id format: "batch-<batch_op_id>-<task_id>"
-        self._update_task_status_from_correlation_id(
-            correlation_id=correlation_id,
-            status=Task.STATUS_COMPLETED,
-            result=payload
-        )
-
-    def handle_extension_failed(self, payload: Dict[str, Any], correlation_id: str):
-        """
-        Handle extension install failed event from batch-service.
-
-        Payload example:
-            {
-                'database_id': 'db-123',
-                'extension_name': 'TestExtension',
-                'error': 'Connection timeout',
-                'error_code': 'TIMEOUT',
-                'duration_seconds': 30.0
-            }
-        """
-        database_id = payload.get('database_id')
-        error = payload.get('error', 'Unknown error')
-        error_code = payload.get('error_code', 'UNKNOWN')
-
-        logger.error(
-            f"Extension install failed: database={database_id}, "
-            f"error={error}, code={error_code}, correlation_id={correlation_id}"
-        )
-
-        # Update Task status
-        self._update_task_status_from_correlation_id(
-            correlation_id=correlation_id,
-            status=Task.STATUS_FAILED,
-            error_message=error,
-            error_code=error_code
-        )
 
     def handle_infobase_locked(self, payload: Dict[str, Any], correlation_id: str):
         """

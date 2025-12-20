@@ -58,8 +58,6 @@ declare -gA SERVICE_CATEGORIES=(
     ["api-gateway"]="go"
     ["worker"]="go"
     ["ras-adapter"]="go"
-    ["designer-agent"]="go"
-    ["batch-service"]="go"
     ["frontend"]="frontend"
     ["ras"]="external"
 )
@@ -71,16 +69,12 @@ declare -ga SERVICE_START_ORDER=(
     api-gateway
     worker
     ras-adapter
-    designer-agent
-    batch-service
     frontend
 )
 
 # Порядок остановки (обратный запуску)
 declare -ga SERVICE_STOP_ORDER=(
     frontend
-    batch-service
-    designer-agent
     ras-adapter
     worker
     api-gateway
@@ -93,8 +87,6 @@ declare -gA SERVICE_PORTS=(
     ["orchestrator"]="${ORCHESTRATOR_PORT:-8200}"
     ["api-gateway"]="${API_GATEWAY_PORT:-8180}"
     ["ras-adapter"]="${RAS_ADAPTER_PORT:-8188}"
-    ["designer-agent"]="${DESIGNER_AGENT_PORT:-8190}"
-    ["batch-service"]="${BATCH_SERVICE_PORT:-8187}"
     ["frontend"]="${FRONTEND_PORT:-5173}"
 )
 
@@ -105,8 +97,6 @@ declare -gA SERVICE_STOP_TIMEOUT=(
     ["api-gateway"]=10
     ["worker"]=15
     ["ras-adapter"]=10
-    ["designer-agent"]=10
-    ["batch-service"]=10
     ["frontend"]=5
     ["ras"]=10
 )

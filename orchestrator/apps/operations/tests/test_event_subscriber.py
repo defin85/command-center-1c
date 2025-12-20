@@ -20,6 +20,17 @@ from apps.databases.models import Database
 class EventSubscriberTest(TestCase):
     """Test suite for EventSubscriber class."""
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._close_patcher = patch('apps.operations.event_subscriber.close_old_connections')
+        cls._close_patcher.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._close_patcher.stop()
+        super().tearDownClass()
+
     def setUp(self):
         """Set up test fixtures."""
         # Create test Database (required for Task foreign key)
@@ -63,9 +74,8 @@ class EventSubscriberTest(TestCase):
         self.assertTrue(subscriber.consumer_name.startswith('orchestrator-'))
 
         # Should subscribe to expected streams
-        self.assertIn('events:batch-service:extension:installed', subscriber.streams)
-        self.assertIn('events:batch-service:extension:install-failed', subscriber.streams)
         self.assertIn('events:cluster-service:infobase:locked', subscriber.streams)
+        self.assertIn('events:worker:completed', subscriber.streams)
 
     @patch('apps.operations.event_subscriber.redis.Redis')
     def test_setup_consumer_groups_creates_groups(self, mock_redis_class):
@@ -115,110 +125,59 @@ class EventSubscriberTest(TestCase):
         subscriber = EventSubscriber()
 
         # Mock handlers
-        subscriber.handle_extension_installed = Mock()
-        subscriber.handle_extension_failed = Mock()
         subscriber.handle_infobase_locked = Mock()
+        subscriber.handle_worker_completed = Mock()
 
-        # Test extension:installed routing
         data = {
-            'event_type': 'extension.installed',
+            'event_type': 'infobase.locked',
             'correlation_id': 'corr-123',
             'timestamp': '2025-11-12T10:30:00Z',
-            'payload': json.dumps({'database_id': 'db-123'})
+            'payload': json.dumps({'infobase_id': 'infobase-123'})
         }
 
         subscriber.process_message(
-            'events:batch-service:extension:installed',
+            'events:cluster-service:infobase:locked',
             '1234567890-0',
             data
         )
 
-        subscriber.handle_extension_installed.assert_called_once()
+        subscriber.handle_infobase_locked.assert_called_once()
 
-        # Test extension:install-failed routing
-        subscriber.handle_extension_failed.reset_mock()
         subscriber.process_message(
-            'events:batch-service:extension:install-failed',
+            'events:worker:completed',
             '1234567891-0',
             data
         )
 
-        subscriber.handle_extension_failed.assert_called_once()
+        subscriber.handle_worker_completed.assert_called_once()
 
     @patch('apps.operations.event_subscriber.redis.Redis')
     def test_process_message_parses_json_payload(self, mock_redis_class):
         """Test JSON payload parsing."""
         subscriber = EventSubscriber()
-        subscriber.handle_extension_installed = Mock()
+        subscriber.handle_infobase_locked = Mock()
 
         payload_dict = {
-            'database_id': 'db-123',
-            'extension_name': 'TestExtension',
-            'duration_seconds': 45.2
+            'cluster_id': 'cluster-uuid',
+            'infobase_id': 'infobase-uuid',
+            'reason': 'maintenance'
         }
 
         data = {
-            'event_type': 'extension.installed',
+            'event_type': 'infobase.locked',
             'correlation_id': 'corr-123',
             'payload': json.dumps(payload_dict)  # JSON string
         }
 
         subscriber.process_message(
-            'events:batch-service:extension:installed',
+            'events:cluster-service:infobase:locked',
             '1234567890-0',
             data
         )
 
         # Handler should receive parsed dict
-        call_args = subscriber.handle_extension_installed.call_args
+        call_args = subscriber.handle_infobase_locked.call_args
         self.assertEqual(call_args[0][0], payload_dict)
-
-    @patch('apps.operations.event_subscriber.redis.Redis')
-    def test_handle_extension_installed(self, mock_redis_class):
-        """Test extension installed event processing."""
-        subscriber = EventSubscriber()
-
-        payload = {
-            'database_id': 'db-123',
-            'extension_name': 'TestExtension',
-            'duration_seconds': 45.2,
-            'output': 'Success'
-        }
-
-        correlation_id = f'batch-{self.batch_op.id}-{self.task.id}'
-
-        # Process event
-        subscriber.handle_extension_installed(payload, correlation_id)
-
-        # Task should be marked as completed
-        self.task.refresh_from_db()
-        self.assertEqual(self.task.status, Task.STATUS_COMPLETED)
-        self.assertIsNotNone(self.task.result)
-        self.assertEqual(self.task.result['database_id'], 'db-123')
-
-    @patch('apps.operations.event_subscriber.redis.Redis')
-    def test_handle_extension_failed(self, mock_redis_class):
-        """Test extension install failed event processing."""
-        subscriber = EventSubscriber()
-
-        payload = {
-            'database_id': 'db-123',
-            'extension_name': 'TestExtension',
-            'error': 'Connection timeout',
-            'error_code': 'TIMEOUT',
-            'duration_seconds': 30.0
-        }
-
-        correlation_id = f'batch-{self.batch_op.id}-{self.task.id}'
-
-        # Process event
-        subscriber.handle_extension_failed(payload, correlation_id)
-
-        # Task should be marked as failed or retry
-        self.task.refresh_from_db()
-        self.assertIn(self.task.status, [Task.STATUS_FAILED, Task.STATUS_RETRY])
-        self.assertEqual(self.task.error_message, 'Connection timeout')
-        self.assertEqual(self.task.error_code, 'TIMEOUT')
 
     @patch('apps.operations.event_subscriber.redis.Redis')
     def test_update_task_status_parses_correlation_id(self, mock_redis_class):
@@ -350,7 +309,7 @@ class EventSubscriberTest(TestCase):
         subscriber = EventSubscriber()
 
         data = {
-            'event_type': 'extension.installed',
+            'event_type': 'infobase.locked',
             'correlation_id': 'corr-123',
             'payload': 'invalid-json{'  # Invalid JSON
         }
@@ -358,7 +317,7 @@ class EventSubscriberTest(TestCase):
         # Should not raise exception
         try:
             subscriber.process_message(
-                'events:batch-service:extension:installed',
+                'events:cluster-service:infobase:locked',
                 '1234567890-0',
                 data
             )
@@ -372,6 +331,17 @@ class EventSubscriberTest(TestCase):
 )
 class EventSubscriberClusterInfoTest(TestCase):
     """Test suite for get-cluster-info handler."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._close_patcher = patch('apps.operations.event_subscriber.close_old_connections')
+        cls._close_patcher.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._close_patcher.stop()
+        super().tearDownClass()
 
     def setUp(self):
         """Set up test fixtures with cluster configuration."""

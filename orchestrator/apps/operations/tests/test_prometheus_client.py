@@ -403,7 +403,8 @@ class TestServiceMetrics:
                     {'data': {'result': [{'value': ['1234567890', '150']}]}},
                     {'data': {'result': [{'value': ['1234567890', '500']}]}},
                     {'data': {'result': [{'value': ['1234567890', '0.005']}]}},
-                    {'data': {'result': [{'value': ['1234567890', '3']}]}}
+                    {'data': {'result': [{'value': ['1234567890', '3']}]}},
+                    {'data': {'result': [{'value': ['1234567890', '1']}]}}
                 ]
 
                 metrics = await client.get_service_metrics('api-gateway')
@@ -428,7 +429,8 @@ class TestServiceMetrics:
                 # Moderate error rate
                 {'data': {'result': [{'value': ['1234567890', '0.02']}]}},
                 # Low active operations
-                {'data': {'result': []}}
+                {'data': {'result': []}},
+                {'data': {'result': [{'value': ['1234567890', '1']}]}}
             ]
 
             metrics = await client.get_service_metrics('worker')
@@ -445,7 +447,8 @@ class TestServiceMetrics:
                 {'data': {'result': [{'value': ['1234567890', 'NaN']}]}},
                 {'data': {'result': [{'value': ['1234567890', 'NaN']}]}},
                 {'data': {'result': [{'value': ['1234567890', 'NaN']}]}},
-                {'data': {'result': []}}
+                {'data': {'result': []}},
+                {'data': {'result': [{'value': ['1234567890', '1']}]}}
             ]
 
             metrics = await client.get_service_metrics('ras-adapter')
@@ -510,7 +513,7 @@ class TestServiceConnections:
     async def test_get_service_connections(self, client):
         """Test retrieving service connections."""
         with patch.object(client, 'query', new_callable=AsyncMock) as mock_query:
-            # SERVICE_TOPOLOGY has 10 connections (after topology fix), each needs 2 queries (rpm + latency)
+            # SERVICE_TOPOLOGY has 10 connections, each needs 2 queries (rpm + latency)
             # Total: 20 query results needed
             mock_query.side_effect = [
                 # For each connection, provide rpm result and latency result
@@ -529,18 +532,21 @@ class TestServiceConnections:
                 # redis->worker
                 {'data': {'result': [{'value': ['1234567890', '800']}]}},  # rpm
                 {'data': {'result': [{'value': ['1234567890', '4']}]}},    # latency
+                # redis->event-subscriber
+                {'data': {'result': [{'value': ['1234567890', '120']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '8']}]}},    # latency
+                # event-subscriber->postgresql
+                {'data': {'result': [{'value': ['1234567890', '140']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '12']}]}},   # latency
                 # worker->ras-adapter
                 {'data': {'result': [{'value': ['1234567890', '150']}]}},  # rpm
                 {'data': {'result': [{'value': ['1234567890', '200']}]}},  # latency
-                # worker->batch-service
-                {'data': {'result': [{'value': ['1234567890', '100']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '80']}]}},   # latency
-                # batch-service->postgresql
-                {'data': {'result': [{'value': ['1234567890', '50']}]}},   # rpm
-                {'data': {'result': [{'value': ['1234567890', '15']}]}},   # latency
-                # ras-adapter->orchestrator
+                # ras-adapter->redis
                 {'data': {'result': [{'value': ['1234567890', '200']}]}},  # rpm
                 {'data': {'result': [{'value': ['1234567890', '180']}]}},  # latency
+                # ras-adapter->ras-server
+                {'data': {'result': [{'value': ['1234567890', '60']}]}},   # rpm
+                {'data': {'result': [{'value': ['1234567890', '25']}]}},   # latency
             ]
 
             connections = await client.get_service_connections()

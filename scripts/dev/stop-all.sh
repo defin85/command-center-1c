@@ -29,7 +29,7 @@ echo ""
 ##############################################################################
 
 # Остановка всех сервисов по SERVICE_STOP_ORDER
-# (frontend, batch-service, ras-adapter, worker, api-gateway, orchestrator)
+# (frontend, ras-adapter, worker, api-gateway, orchestrator)
 stop_services
 
 ##############################################################################
@@ -99,9 +99,7 @@ echo -e "${BLUE}Проверка остаточных процессов...${NC}
 
 # Очистка по портам (на случай если PID файлы потеряны)
 kill_process_on_port 5173 "Frontend" || true
-kill_process_on_port 8187 "Batch Service" || true
 kill_process_on_port 8188 "RAS Adapter" || true
-kill_process_on_port 8190 "Designer Agent" || true
 
 # RAS - пропускаем если работает как Windows служба
 if [ "${RAS_SKIP_START:-false}" != "true" ]; then

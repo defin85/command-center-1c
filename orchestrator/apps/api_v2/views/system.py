@@ -261,8 +261,6 @@ def system_health(request):
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
     ras_adapter_url = getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')
     worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
-    batch_service_url = getattr(settings, 'BATCH_SERVICE_URL', 'http://localhost:8187').rstrip('/')
-    designer_agent_url = getattr(settings, 'DESIGNER_AGENT_URL', 'http://localhost:8190').rstrip('/')
 
     services = [
         ('Frontend', 'frontend', f'{frontend_url}/'),
@@ -270,8 +268,6 @@ def system_health(request):
         ('Orchestrator', 'django', 'http://localhost:8200/health'),
         ('Worker', 'go-service', f'{worker_url}/health'),
         ('RAS Adapter', 'go-service', f'{ras_adapter_url}/health'),
-        ('Designer Agent', 'go-service', f'{designer_agent_url}/health'),
-        ('Batch Service', 'go-service', f'{batch_service_url}/health'),
         ('Prometheus', 'monitoring', 'http://localhost:9090/-/healthy'),
         ('Grafana', 'monitoring', f'http://localhost:{grafana_port}/api/health'),
         ('Jaeger', 'tracing', 'http://localhost:16686/'),

@@ -40,7 +40,6 @@
 - `worker` - Go Worker
 - `ras` - 1C RAS Server (port 1545)
 - `ras-adapter` - Go RAS Adapter (port 8088)
-- `batch-service` - Go Batch Service (port 8087)
 - `frontend` - React Frontend (port 5173)
 
 **Мониторинг и Tracing (Docker, автозапуск):**
@@ -130,7 +129,7 @@ Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
    - **Monitoring: Prometheus, Grafana** ← автоматически!
 3. Применяет Django миграции
 4. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
-5. Запускает Go сервисы (api-gateway, worker, ras, ras-adapter, batch-service)
+5. Запускает Go сервисы (api-gateway, worker, ras, ras-adapter)
 6. Запускает Frontend (React dev server)
 
 **Особенности:**
@@ -167,7 +166,7 @@ Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
 **Порядок остановки:**
 ```
 Application Services:
-  frontend → batch-service → ras-adapter → worker →
+  frontend → ras-adapter → worker →
   api-gateway → celery-beat → celery-worker → orchestrator
 
 Docker Services:
@@ -546,7 +545,7 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 
 | Опция | Описание |
 |-------|----------|
-| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter, batch-service) |
+| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter) |
 | `--os=<os>` | Целевая ОС (linux, windows, darwin). По умолчанию: текущая ОС |
 | `--arch=<arch>` | Целевая архитектура (amd64, arm64). По умолчанию: текущая архитектура |
 | `--parallel` | Собрать все сервисы параллельно (быстрее) |
@@ -592,7 +591,6 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 - `api-gateway` - Go API Gateway
 - `worker` - Go Worker
 - `ras-adapter` - Go RAS Adapter
-- `batch-service` - Go Batch Service
 
 ---
 
@@ -835,7 +833,6 @@ command-center-1c/
 **Важные переменные:**
 - `DB_HOST=localhost` - PostgreSQL host (НЕ `postgres`!)
 - `REDIS_HOST=localhost` - Redis host (НЕ `redis`!)
-- `EXE_1CV8_PATH` - Путь к 1cv8.exe для batch-service
 - `V8_DEFAULT_TIMEOUT` - Таймаут для операций 1С (по умолчанию: 300 секунд)
 
 ### Git Bash совместимость

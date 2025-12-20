@@ -51,18 +51,6 @@ scrape_configs:
       - targets: ['localhost:8188']
     metrics_path: '/metrics'
 
-  # Batch Service (Go) - port 8187
-  - job_name: 'batch-service'
-    static_configs:
-      - targets: ['localhost:8187']
-    metrics_path: '/metrics'
-
-  # Designer Agent (Go) - port 8190
-  - job_name: 'designer-agent'
-    static_configs:
-      - targets: ['localhost:8190']
-    metrics_path: '/metrics'
-
   # Orchestrator (Django) - port 8200
   - job_name: 'orchestrator'
     static_configs:

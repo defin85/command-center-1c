@@ -33,18 +33,6 @@ scrape_configs:
       - targets: ['host.docker.internal:8188']
     metrics_path: '/metrics'
 
-  # Batch Service (Go) - порт 8187
-  - job_name: 'batch-service'
-    static_configs:
-      - targets: ['host.docker.internal:8187']
-    metrics_path: '/metrics'
-
-  # Designer Agent (Go) - порт 8190
-  - job_name: 'designer-agent'
-    static_configs:
-      - targets: ['host.docker.internal:8190']
-    metrics_path: '/metrics'
-
   # Orchestrator (Django) - требует django-prometheus middleware
   - job_name: 'orchestrator'
     static_configs:

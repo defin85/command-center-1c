@@ -57,7 +57,7 @@ type ExtensionInstallInput struct {
 //   - infobase_ids: map[string]string - database_id -> infobase_id mapping
 //   - extension_file: string - path to .cfe file
 //   - extension_name: string - name of the extension
-//   - ssh_host: string - SSH host for designer-agent
+//   - ssh_host: string - SSH host for remote Designer access (optional)
 //   - ssh_credentials: map[string]string - SSH credentials (username, password, key_file)
 //   - infobase_paths: map[string]string - database_id -> infobase_path mapping
 //
@@ -67,7 +67,7 @@ type ExtensionInstallInput struct {
 // 3. block_connections - deny new connections via RAS
 // 4. terminate_sessions - terminate active sessions via RAS
 // 5. wait_sessions_closed - wait for all sessions to close
-// 6. install_extension - install extension via designer-agent
+// 6. install_extension - install extension via Designer CLI
 // 7. unblock_connections - allow connections via RAS
 // 8. unlock_scheduled_jobs - unblock scheduled jobs via RAS
 // 9. release_locks - release distributed locks

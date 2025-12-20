@@ -44,7 +44,7 @@ class ODataBackend(AbstractOperationBackend):
         - update: Update records via OData PATCH
         - delete: Delete records via OData DELETE
         - query: Query records via OData GET
-        - install_extension: Install .cfe extension via batch-service
+        - install_extension: Install .cfe extension via worker direct CLI
     """
 
     # Operation type definitions with full metadata
@@ -123,7 +123,7 @@ class ODataBackend(AbstractOperationBackend):
         OperationType(
             id='install_extension',
             name='Install Extension',
-            description='Install .cfe extension file to 1C database via batch-service.',
+            description='Install .cfe extension file to 1C database via worker direct CLI.',
             backend=BackendType.ODATA,
             target_entity=TargetEntity.INFOBASE,
             required_parameters=[

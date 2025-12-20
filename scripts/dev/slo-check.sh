@@ -70,7 +70,6 @@ declare -a JOBS=(
   "orchestrator"
   "worker"
   "ras_adapter|ras-adapter|rasadapter"
-  "batch_service|batch-service|batchservice"
 )
 
 overall_ok=1

@@ -61,8 +61,6 @@ check_process "worker"
 check_process "ras"
 # Week 4+: RAS Adapter replaces cluster-service
 check_process "ras-adapter"
-check_process "designer-agent"
-check_process "batch-service"
 check_process "frontend"
 
 echo ""
@@ -98,8 +96,6 @@ check_http "API Gateway" "http://localhost:8180/health"
 check_http "Orchestrator" "http://localhost:8200/health"
 # Week 4: Check RAS Adapter (ports outside Windows reserved range 8013-8112)
 check_http "RAS Adapter" "http://localhost:8188/health"
-check_http "Designer Agent" "http://localhost:8190/health"
-check_http "Batch Service" "http://localhost:8187/health"
 
 echo ""
 
@@ -206,8 +202,6 @@ check_port 5173 "Frontend"
 check_port 8180 "API Gateway"
 check_port 8200 "Orchestrator"
 check_port 8188 "RAS Adapter"
-check_port 8187 "Batch Service"
-check_port 8190 "Designer Agent"
 check_port "${RAS_PORT:-1539}" "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
@@ -274,11 +268,11 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Подсчитать количество работающих сервисов
-TOTAL=7
+TOTAL=6
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "batch-service" "frontend")
+SERVICES=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "frontend")
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

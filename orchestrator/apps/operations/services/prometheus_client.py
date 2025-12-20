@@ -100,16 +100,6 @@ SERVICE_CONFIG = {
         'job_patterns': ['frontend', 'react'],
         'namespace': 'frontend',
     },
-    'batch-service': {
-        'display_name': 'Batch Service',
-        'job_patterns': ['batch_service', 'batch-service', 'batchservice'],
-        'namespace': 'cc1c',
-    },
-    'designer-agent': {
-        'display_name': 'Designer Agent',
-        'job_patterns': ['designer_agent', 'designer-agent', 'designeragent'],
-        'namespace': 'cc1c',
-    },
     'postgresql': {
         'display_name': 'PostgreSQL',
         'job_patterns': ['postgresql', 'postgres_exporter', 'postgres'],
@@ -153,14 +143,9 @@ SERVICE_TOPOLOGY = [
 
     # Level 3: Worker → Execution Layer (via Redis Streams)
     ('worker', 'ras-adapter'),
-    ('worker', 'designer-agent'),
-    ('worker', 'batch-service'),
-
     # Level 3.5: Execution Layer → Redis (events back)
     ('ras-adapter', 'redis'),
     ('ras-adapter', 'ras-server'),
-    ('designer-agent', 'redis'),
-    ('batch-service', 'redis'),
 
     # Note: All adapters communicate via Redis Streams (Event-Driven Architecture)
     # Results flow: Adapters → Redis Streams (events:*) → Worker/Event Subscriber → PostgreSQL
@@ -300,10 +285,6 @@ class PrometheusClient:
             return f"{getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')}/health"
         if service == 'ras-adapter':
             return f"{getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')}/health"
-        if service == 'batch-service':
-            return f"{getattr(settings, 'BATCH_SERVICE_URL', 'http://localhost:8187').rstrip('/')}/health"
-        if service == 'designer-agent':
-            return f"{getattr(settings, 'DESIGNER_AGENT_URL', 'http://localhost:8190').rstrip('/')}/health"
         if service == 'orchestrator':
             return 'http://localhost:8200/health'
         if service == 'frontend':
