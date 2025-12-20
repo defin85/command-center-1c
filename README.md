@@ -161,7 +161,7 @@ command-center-1c/
 | **Orchestrator** | Python + Django + DRF | Бизнес-логика, API |
 | **Task Queue** | Celery + Redis | Очереди задач |
 | **Workers** | Go + Goroutines | Массовая обработка 1С |
-| **OData Adapter** | Python/Go | Интеграция с 1С |
+| **OData (direct)** | Go Worker | Интеграция с 1С |
 
 ### Frontend
 

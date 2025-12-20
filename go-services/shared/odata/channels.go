@@ -3,7 +3,7 @@ package odata
 import "fmt"
 
 // Redis Streams channels for OData commands (legacy stream-based execution).
-// Worker publishes commands to these streams, adapters consume them.
+// Kept for odata-adapter compatibility; direct OData now runs in worker.
 const (
 	// StreamCommandsQuery is the stream for query commands
 	StreamCommandsQuery = "commands:odata:query"
@@ -22,7 +22,7 @@ const (
 )
 
 // Redis Streams channels for OData events (results).
-// Adapters publish results to these streams, Worker consumes them.
+// Legacy adapter publishes results to these streams.
 const (
 	// StreamEventsCompleted is the stream for successful command completions
 	StreamEventsCompleted = "events:odata:completed"
@@ -34,7 +34,7 @@ const (
 // Consumer group names for OData stream consumers.
 const (
 	// ConsumerGroupOData is the consumer group name for OData adapter instances.
-	// Multiple adapter instances in this group will load-balance commands.
+	// Multiple adapter instances in this group will load-balance legacy commands.
 	ConsumerGroupOData = "odata-adapter-group"
 
 	// ConsumerGroupWorker is the consumer group name for Worker instances

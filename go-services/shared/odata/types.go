@@ -281,7 +281,7 @@ func (br *BatchResult) AllSucceeded() bool {
 }
 
 // ODataResult represents the result of an OData command execution.
-// Results are published to Redis Streams by odata-adapter and consumed by Worker.
+// Legacy adapter uses Redis Streams; direct OData runs inside worker.
 type ODataResult struct {
 	// OperationID is the unique identifier for the parent batch operation
 	OperationID string `json:"operation_id"`

@@ -47,7 +47,7 @@
   * API Gateway (Go + Gin)
   * Orchestrator (Python + Django)
   * Workers (Go + Goroutines)
-  * OData Adapter
+  * OData (direct, worker)
 - Система шаблонов операций
 - API спецификация с примерами
 - Docker Compose конфигурация

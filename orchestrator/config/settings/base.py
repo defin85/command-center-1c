@@ -310,8 +310,7 @@ RAS_ADAPTER_TIMEOUT = int(env(
     default='180'  # 3 minutes - RAS operations can be slow
 ))
 
-# OData Adapter Configuration
-# Port 8189 - outside Windows reserved range (8013-8112)
+# OData runs inside worker (direct HTTP).
 
 # Worker Configuration
 # Port 9091 - Go Worker health endpoint
