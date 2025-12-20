@@ -321,11 +321,25 @@ class PrometheusClient:
         display_name = config.get('display_name', service.title())
 
         if service == "event-subscriber":
-            up_result = await self.query('max(up{job=~"orchestrator|django"})')
-            if up_result.get("status") == "error" or not self._has_result(up_result):
+            up_result, consumers_result = await self._execute_queries([
+                'min(cc1c_orchestrator_event_subscriber_up{group="orchestrator-group"})',
+                'max(cc1c_orchestrator_event_subscriber_consumers{group="orchestrator-group"})',
+            ])
+            if (
+                up_result.get("status") == "error"
+                or consumers_result.get("status") == "error"
+                or not self._has_result(up_result)
+            ):
                 status = "critical"
             else:
-                status = "healthy" if self._extract_value(up_result) >= 0.5 else "critical"
+                up_value = self._extract_value(up_result)
+                consumers = self._extract_value(consumers_result)
+                if up_value < 0.5:
+                    status = "critical"
+                elif consumers < 1:
+                    status = "degraded"
+                else:
+                    status = "healthy"
 
             return ServiceMetrics(
                 name=service,

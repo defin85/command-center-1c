@@ -20,7 +20,15 @@ Usage:
     # Record Redis event
     record_redis_event_published('operation_completed', 'cc1c:events')
 """
-from prometheus_client import Counter, Histogram, Gauge
+import logging
+import time
+
+import redis
+from django.conf import settings
+from prometheus_client import Counter, Histogram, Gauge, REGISTRY
+from prometheus_client.core import GaugeMetricFamily
+
+logger = logging.getLogger(__name__)
 
 # Namespace: cc1c_orchestrator_
 
@@ -95,6 +103,112 @@ admin_actions_total = Counter(
     'Total operator/admin actions executed via API',
     ['action', 'outcome']
 )
+
+# =============================================================================
+# Event Subscriber (Redis Streams) Metrics
+# =============================================================================
+
+EVENT_SUBSCRIBER_GROUP = "orchestrator-group"
+EVENT_SUBSCRIBER_STREAMS = [
+    'events:cluster-service:infobase:locked',
+    'events:cluster-service:infobase:unlocked',
+    'events:cluster-service:sessions:closed',
+    'events:worker:cluster-synced',
+    'events:worker:clusters-discovered',
+    'events:worker:completed',
+    'events:worker:failed',
+    'commands:worker:dlq',
+    'commands:orchestrator:get-cluster-info',
+    'commands:orchestrator:get-database-credentials',
+]
+
+
+class EventSubscriberCollector:
+    """Collect Redis Streams consumer group stats for Prometheus."""
+
+    def __init__(self):
+        self._cache_ttl = 5
+        self._cache_at = 0.0
+        self._cache = {}
+
+    def collect(self):
+        data = self._get_data()
+
+        up_metric = GaugeMetricFamily(
+            'cc1c_orchestrator_event_subscriber_up',
+            'Event subscriber consumer group exists for stream (1/0)',
+            labels=['stream', 'group']
+        )
+        consumers_metric = GaugeMetricFamily(
+            'cc1c_orchestrator_event_subscriber_consumers',
+            'Event subscriber consumer count per stream/group',
+            labels=['stream', 'group']
+        )
+        pending_metric = GaugeMetricFamily(
+            'cc1c_orchestrator_event_subscriber_pending',
+            'Event subscriber pending messages per stream/group',
+            labels=['stream', 'group']
+        )
+
+        for stream, info in data.items():
+            labels = [stream, EVENT_SUBSCRIBER_GROUP]
+            up_metric.add_metric(labels, info.get('up', 0))
+            consumers_metric.add_metric(labels, info.get('consumers', 0))
+            pending_metric.add_metric(labels, info.get('pending', 0))
+
+        yield up_metric
+        yield consumers_metric
+        yield pending_metric
+
+    def _get_data(self):
+        now = time.time()
+        if now - self._cache_at < self._cache_ttl:
+            return self._cache
+
+        data = {stream: {'up': 0, 'consumers': 0, 'pending': 0} for stream in EVENT_SUBSCRIBER_STREAMS}
+
+        redis_password = getattr(settings, 'REDIS_PASSWORD', None)
+        client = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=int(settings.REDIS_PORT),
+            password=redis_password if redis_password else None,
+            decode_responses=True,
+        )
+
+        try:
+            for stream in EVENT_SUBSCRIBER_STREAMS:
+                try:
+                    groups = client.xinfo_groups(stream)
+                except Exception:
+                    continue
+
+                group_info = next(
+                    (group for group in groups if group.get('name') == EVENT_SUBSCRIBER_GROUP),
+                    None
+                )
+                if not group_info:
+                    continue
+
+                data[stream]['up'] = 1
+                data[stream]['consumers'] = int(group_info.get('consumers', 0) or 0)
+                data[stream]['pending'] = int(group_info.get('pending', 0) or 0)
+        except Exception as exc:
+            logger.debug("Failed to collect event subscriber metrics: %s", exc)
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+        self._cache = data
+        self._cache_at = now
+        return data
+
+
+_EVENT_SUBSCRIBER_COLLECTOR_REGISTERED = False
+if not _EVENT_SUBSCRIBER_COLLECTOR_REGISTERED:
+    REGISTRY.register(EventSubscriberCollector())
+    _EVENT_SUBSCRIBER_COLLECTOR_REGISTERED = True
 
 
 # =============================================================================

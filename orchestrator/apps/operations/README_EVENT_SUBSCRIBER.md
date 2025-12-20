@@ -195,11 +195,11 @@ redis-cli XINFO GROUPS events:worker:completed
 
 ### Метрики
 
-TODO: Добавить Prometheus метрики (Phase 3)
+Prometheus (Django `/metrics`):
 
-- `event_subscriber_messages_processed_total{stream}`
-- `event_subscriber_errors_total{error_type}`
-- `event_subscriber_processing_duration_seconds{stream}`
+- `cc1c_orchestrator_event_subscriber_up{stream,group}` (1/0)
+- `cc1c_orchestrator_event_subscriber_consumers{stream,group}`
+- `cc1c_orchestrator_event_subscriber_pending{stream,group}`
 
 ## Тестирование
 
