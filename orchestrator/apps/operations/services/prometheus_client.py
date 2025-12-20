@@ -10,7 +10,6 @@ import asyncio
 import httpx
 import logging
 import math
-import redis.asyncio as aioredis
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -167,8 +166,6 @@ class PrometheusClient:
             settings, 'PROMETHEUS_URL', 'http://localhost:9090'
         )
         self._client: Optional[httpx.AsyncClient] = None
-        self._health_client: Optional[httpx.AsyncClient] = None
-        self._health_cache: Dict[str, Dict[str, Any]] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -179,20 +176,11 @@ class PrometheusClient:
             )
         return self._client
 
-    async def _get_health_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client for direct service probes."""
-        if self._health_client is None or self._health_client.is_closed:
-            self._health_client = httpx.AsyncClient(timeout=1.5)
-        return self._health_client
-
     async def close(self):
         """Close the HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-        if self._health_client and not self._health_client.is_closed:
-            await self._health_client.aclose()
-            self._health_client = None
 
     async def query(self, promql: str) -> Dict[str, Any]:
         """
@@ -277,54 +265,6 @@ class PrometheusClient:
         except Exception:
             return False
 
-    def _fallback_probe_url(self, service: str) -> Optional[str]:
-        """Best-effort URL to probe when Prometheus has no target for service."""
-        if service == 'api-gateway':
-            return f"{getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')}/health"
-        if service == 'worker':
-            return f"{getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')}/health"
-        if service == 'ras-adapter':
-            return f"{getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')}/health"
-        if service == 'orchestrator':
-            return 'http://localhost:8200/health'
-        if service == 'frontend':
-            return f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')}/"
-        return None
-
-    async def _get_event_subscriber_status(self) -> str:
-        """
-        Event Subscriber is a Django management command, not a separate HTTP service.
-
-        Prometheus usually can't expose it as a distinct target/job, so we derive its
-        health from Redis Streams consumer group state (same signal as /api/v2/system/health).
-        """
-        stream = "events:worker:cluster-synced"
-        group = "orchestrator-group"
-
-        redis_password = getattr(settings, "REDIS_PASSWORD", None)
-        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-        client = aioredis.from_url(
-            redis_url,
-            password=redis_password if redis_password else None,
-            decode_responses=True,
-            socket_timeout=1.5,
-        )
-
-        try:
-            groups = await client.xinfo_groups(stream)
-            group_info = next((g for g in groups if g.get("name") == group), None)
-            if not group_info:
-                return "critical"
-            consumers = int(group_info.get("consumers", 0) or 0)
-            return "healthy" if consumers > 0 else "degraded"
-        except Exception:
-            return "critical"
-        finally:
-            try:
-                await client.aclose()
-            except Exception:
-                pass
-
     async def _get_ras_server_status(self) -> str:
         """
         RAS Server is an external dependency.
@@ -338,31 +278,6 @@ class PrometheusClient:
 
         value = self._extract_value(result)
         return "healthy" if value >= 0.5 else "critical"
-
-    async def _probe_service_health(self, service: str) -> Optional[bool]:
-        """
-        Probe service directly when Prometheus doesn't scrape it.
-
-        Returns:
-            True if reachable, False if unreachable, None if no probe URL.
-        """
-        url = self._fallback_probe_url(service)
-        if not url:
-            return None
-
-        cached = self._health_cache.get(service)
-        if cached and isinstance(cached.get('ts'), datetime) and cached['ts'] > datetime.utcnow() - timedelta(seconds=10):
-            return cached.get('ok')  # type: ignore[return-value]
-
-        try:
-            client = await self._get_health_client()
-            resp = await client.get(url, follow_redirects=True)
-            ok = 200 <= resp.status_code < 400
-        except Exception:
-            ok = False
-
-        self._health_cache[service] = {'ts': datetime.utcnow(), 'ok': ok}
-        return ok
 
     def _determine_status(
         self,
@@ -406,7 +321,12 @@ class PrometheusClient:
         display_name = config.get('display_name', service.title())
 
         if service == "event-subscriber":
-            status = await self._get_event_subscriber_status()
+            up_result = await self.query('max(up{job=~"orchestrator|django"})')
+            if up_result.get("status") == "error" or not self._has_result(up_result):
+                status = "critical"
+            else:
+                status = "healthy" if self._extract_value(up_result) >= 0.5 else "critical"
+
             return ServiceMetrics(
                 name=service,
                 display_name=display_name,
@@ -480,26 +400,12 @@ class PrometheusClient:
                 last_updated=datetime.utcnow(),
             )
 
-        if not self._has_result(up_result):
-            ok = await self._probe_service_health(service)
-            return ServiceMetrics(
-                name=service,
-                display_name=display_name,
-                status='healthy' if ok else 'critical',
-                ops_per_minute=0.0,
-                active_operations=0,
-                p95_latency_ms=0.0,
-                error_rate=0.0,
-                last_updated=datetime.utcnow(),
-            )
-
         up_value = self._extract_value(up_result)
         if up_value < 0.5:
-            ok = await self._probe_service_health(service)
             return ServiceMetrics(
                 name=service,
                 display_name=display_name,
-                status='healthy' if ok else 'critical',
+                status='critical',
                 ops_per_minute=0.0,
                 active_operations=0,
                 p95_latency_ms=0.0,

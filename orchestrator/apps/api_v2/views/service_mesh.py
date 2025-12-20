@@ -4,16 +4,19 @@ Service Mesh monitoring endpoints for API v2.
 Provides metrics and monitoring for the service mesh.
 """
 
+import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import requests
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+
+from apps.operations.services.prometheus_client import (
+    get_prometheus_client,
+    SERVICE_CONFIG,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +84,7 @@ class ServiceMetricsResponseSerializer(serializers.Serializer):
     timestamp = serializers.DateTimeField(help_text="Timestamp of metrics collection")
     prometheus_metrics = PrometheusMetricSerializer(
         many=True, required=False,
-        help_text="Raw Prometheus metrics (only if include_prometheus=true)"
+        help_text="Raw Prometheus metrics (reserved, may be empty even if requested)"
     )
 
 
@@ -109,81 +112,23 @@ class ServiceHistoryResponseSerializer(serializers.Serializer):
     minutes = serializers.IntegerField(help_text="History period in minutes")
     data_points = HistoryDataPointSerializer(many=True, help_text="Historical data points")
 
-# Service endpoints for metrics collection
-# Ports outside Windows reserved ranges (7913-8012, 8013-8112):
-# API Gateway: 8180, RAS Adapter: 8188
-MONITORED_SERVICES = [
-    {
-        'name': 'api-gateway',
-        'type': 'backend',
-        'health_url': 'http://localhost:8180/health',
-        'metrics_url': 'http://localhost:8180/metrics',
-    },
-    {
-        'name': 'ras-adapter',
-        'type': 'backend',
-        'health_url': 'http://localhost:8188/health',
-        'metrics_url': 'http://localhost:8188/metrics',
-    },
-    {
-        'name': 'worker',
-        'type': 'backend',
-        'health_url': 'http://localhost:9091/health',
-        'metrics_url': 'http://localhost:9091/metrics',
-    },
-]
+STATUS_MAP = {
+    "healthy": "healthy",
+    "degraded": "degraded",
+    "critical": "unreachable",
+}
 
-
-def fetch_service_health(service: dict, timeout: float = 2.0) -> dict:
-    """
-    Fetch health status from a service.
-
-    Args:
-        service: Service configuration dict
-        timeout: Request timeout in seconds
-
-    Returns:
-        dict with service health information
-    """
-    result = {
-        'name': service['name'],
-        'type': service['type'],
-        'status': 'unknown',
-        'response_time_ms': None,
-        'error': None,
-    }
-
-    import time
-    start = time.time()
-
-    try:
-        resp = requests.get(service['health_url'], timeout=timeout)
-        response_time = (time.time() - start) * 1000
-
-        result['response_time_ms'] = round(response_time, 2)
-
-        if resp.status_code == 200:
-            result['status'] = 'healthy'
-            # Try to parse health response
-            try:
-                health_data = resp.json()
-                result['details'] = health_data
-            except Exception:
-                pass
-        else:
-            result['status'] = 'degraded'
-
-    except requests.exceptions.Timeout:
-        result['status'] = 'timeout'
-        result['response_time_ms'] = round((time.time() - start) * 1000, 2)
-    except requests.exceptions.ConnectionError:
-        result['status'] = 'unreachable'
-        result['error'] = 'Connection refused'
-    except Exception as e:
-        result['status'] = 'error'
-        result['error'] = str(e)
-
-    return result
+TYPE_MAP = {
+    "frontend": "backend",
+    "api-gateway": "backend",
+    "orchestrator": "backend",
+    "worker": "backend",
+    "ras-adapter": "backend",
+    "postgresql": "internal",
+    "redis": "internal",
+    "event-subscriber": "internal",
+    "ras-server": "external",
+}
 
 
 @extend_schema(
@@ -192,7 +137,7 @@ def fetch_service_health(service: dict, timeout: float = 2.0) -> dict:
     description='Get service mesh metrics and health status for all monitored services including Go services, Redis, and PostgreSQL.',
     parameters=[
         OpenApiParameter(name='service', type=str, required=False, description='Filter by service name (e.g., api-gateway, worker)'),
-        OpenApiParameter(name='include_prometheus', type=bool, required=False, description='Include raw Prometheus metrics (default: false)'),
+        OpenApiParameter(name='include_prometheus', type=bool, required=False, description='Include raw Prometheus metrics (reserved, default: false)'),
     ],
     responses={
         200: ServiceMetricsResponseSerializer,
@@ -237,92 +182,52 @@ def get_metrics(request):
     service_filter = request.query_params.get('service')
     include_prometheus = request.query_params.get('include_prometheus', 'false').lower() == 'true'
 
-    # Filter services if requested
-    services_to_check = MONITORED_SERVICES
-    if service_filter:
-        services_to_check = [s for s in MONITORED_SERVICES if s['name'] == service_filter]
-        if not services_to_check:
-            return Response({
-                'success': False,
-                'error': {
-                    'code': 'UNKNOWN_SERVICE',
-                    'message': f'Unknown service: {service_filter}',
-                    'available_services': [s['name'] for s in MONITORED_SERVICES]
-                }
-            }, status=400)
+    available_services = list(SERVICE_CONFIG.keys())
+    if service_filter and service_filter not in SERVICE_CONFIG:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'UNKNOWN_SERVICE',
+                'message': f'Unknown service: {service_filter}',
+                'available_services': available_services
+            }
+        }, status=400)
 
-    # Fetch health from all services in parallel
-    results = []
-    with ThreadPoolExecutor(max_workers=len(services_to_check)) as executor:
-        futures = {
-            executor.submit(fetch_service_health, svc): svc
-            for svc in services_to_check
-        }
-        for future in as_completed(futures, timeout=5.0):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                svc = futures[future]
-                results.append({
-                    'name': svc['name'],
-                    'type': svc['type'],
-                    'status': 'error',
-                    'error': str(e),
-                })
+    async def _fetch_metrics():
+        client = get_prometheus_client()
+        if service_filter:
+            return [await client.get_service_metrics(service_filter)]
+        return await client.get_all_services_metrics()
 
-    # Add internal infrastructure metrics
-    internal_services = []
-
-    # Check Redis
     try:
-        from django_redis import get_redis_connection
-        redis_conn = get_redis_connection("default")
-        info = redis_conn.info()
-        internal_services.append({
-            'name': 'redis',
-            'type': 'internal',
-            'status': 'healthy',
-            'details': {
-                'connected_clients': info.get('connected_clients'),
-                'used_memory_human': info.get('used_memory_human'),
+        metrics = asyncio.run(_fetch_metrics())
+    except Exception as e:
+        logger.error(f"Prometheus metrics fetch failed: {e}")
+        metrics = []
+
+    all_services = []
+    for item in metrics:
+        status = STATUS_MAP.get(item.status, "unknown")
+        all_services.append({
+            "name": item.name,
+            "type": TYPE_MAP.get(item.name, "backend"),
+            "status": status,
+            "response_time_ms": round(item.p95_latency_ms, 2) if item.p95_latency_ms else None,
+            "details": {
+                "display_name": item.display_name,
+                "ops_per_minute": item.ops_per_minute,
+                "active_operations": item.active_operations,
+                "p95_latency_ms": item.p95_latency_ms,
+                "error_rate": item.error_rate,
             },
         })
-    except Exception as e:
-        internal_services.append({
-            'name': 'redis',
-            'type': 'internal',
-            'status': 'unreachable',
-            'error': str(e),
-        })
-
-    # Check PostgreSQL
-    try:
-        from django.db import connection
-        connection.ensure_connection()
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        internal_services.append({
-            'name': 'postgresql',
-            'type': 'internal',
-            'status': 'healthy',
-        })
-    except Exception as e:
-        internal_services.append({
-            'name': 'postgresql',
-            'type': 'internal',
-            'status': 'unreachable',
-            'error': str(e),
-        })
-
-    # Combine results
-    all_services = results + internal_services
 
     # Calculate summary
     summary = {
         'total': len(all_services),
         'healthy': sum(1 for s in all_services if s['status'] == 'healthy'),
         'degraded': sum(1 for s in all_services if s['status'] == 'degraded'),
-        'unreachable': sum(1 for s in all_services if s['status'] in ['unreachable', 'timeout']),
+        'unreachable': sum(1 for s in all_services if s['status'] == 'unreachable'),
         'error': sum(1 for s in all_services if s['status'] == 'error'),
     }
 
@@ -343,19 +248,7 @@ def get_metrics(request):
 
     # Include Prometheus metrics if requested
     if include_prometheus:
-        prometheus_metrics = []
-        for svc in services_to_check:
-            if svc.get('metrics_url'):
-                try:
-                    resp = requests.get(svc['metrics_url'], timeout=2.0)
-                    if resp.status_code == 200:
-                        prometheus_metrics.append({
-                            'service': svc['name'],
-                            'metrics': resp.text[:50000],  # Increased limit from 5000 to 50000
-                        })
-                except Exception:
-                    pass
-        response_data['prometheus_metrics'] = prometheus_metrics
+        response_data['prometheus_metrics'] = []
 
     return Response(response_data)
 

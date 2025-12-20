@@ -4,8 +4,6 @@ export type ServiceName =
   | 'orchestrator'
   | 'worker'
   | 'ras-adapter'
-  | 'designer-agent'
-  | 'batch-service'
 
 export interface KnownService {
   name: ServiceName
@@ -49,18 +47,6 @@ export const KNOWN_SERVICES: KnownService[] = [
     name: 'ras-adapter',
     title: 'RAS Adapter',
     url: envUrl('VITE_RAS_ADAPTER_URL') ?? 'http://localhost:8188',
-    healthPath: '/health',
-  },
-  {
-    name: 'designer-agent',
-    title: 'Designer Agent',
-    url: envUrl('VITE_DESIGNER_AGENT_URL') ?? 'http://localhost:8190',
-    healthPath: '/health',
-  },
-  {
-    name: 'batch-service',
-    title: 'Batch Service',
-    url: envUrl('VITE_BATCH_SERVICE_URL') ?? 'http://localhost:8187',
     healthPath: '/health',
   },
 ]

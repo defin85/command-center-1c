@@ -5,18 +5,20 @@ Provides comprehensive system health monitoring with parallel service checks
 and system configuration for frontend defaults.
 """
 
+import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import requests
 from django.conf import settings
-from django.db import connection
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
+
+from apps.operations.services.prometheus_client import (
+    get_prometheus_client,
+    SERVICE_CONFIG,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,113 +100,6 @@ def system_me(request):
         'is_superuser': bool(getattr(user, 'is_superuser', False)),
     })
 
-# Health check timeout in seconds
-HEALTH_TIMEOUT = 1.5
-
-
-def _check_ras_via_prometheus() -> dict:
-    """RAS Server health via Prometheus Blackbox probe (single source of truth)."""
-    import time
-
-    start_time = time.time()
-    prom_url = getattr(settings, "PROMETHEUS_URL", "http://localhost:9090").rstrip("/")
-    query = 'max(probe_success{cc1c_service="ras-server"})'
-
-    try:
-        resp = requests.get(f"{prom_url}/api/v1/query", params={"query": query}, timeout=2.0)
-        if resp.status_code != 200:
-            raise RuntimeError(f"prometheus_http_{resp.status_code}")
-
-        data = resp.json()
-        result = (data.get("data") or {}).get("result") or []
-        if not result:
-            status = "offline"
-            details = {"error": "no_probe_data", "query": query}
-        else:
-            value = float(result[0].get("value", [0, "0"])[1])
-            status = "online" if value >= 0.5 else "offline"
-            details = {"query": query, "probe_success": value}
-
-        response_time_ms = (time.time() - start_time) * 1000
-        return {
-            "name": "RAS Server",
-            "type": "external",
-            "status": status,
-            "response_time_ms": round(response_time_ms, 2),
-            "last_check": timezone.now().isoformat(),
-            "details": details,
-        }
-    except Exception as e:
-        return {
-            "name": "RAS Server",
-            "type": "external",
-            "status": "offline",
-            "response_time_ms": None,
-            "last_check": timezone.now().isoformat(),
-            "details": {"error": str(e), "query": query},
-        }
-
-
-def check_service(name: str, service_type: str, url: str) -> dict:
-    """
-    Check health of a single service.
-
-    Args:
-        name: Service display name
-        service_type: Service type (go-service, database, cache)
-        url: Health check endpoint URL
-
-    Returns:
-        dict with service health info in frontend-compatible format
-    """
-    import time
-    start_time = time.time()
-
-    try:
-        resp = requests.get(url, timeout=HEALTH_TIMEOUT)
-        response_time_ms = (time.time() - start_time) * 1000
-        status = 'online' if resp.status_code == 200 else 'degraded'
-        return {
-            'name': name,
-            'type': service_type,
-            'url': url,
-            'status': status,
-            'response_time_ms': round(response_time_ms, 2),
-            'last_check': timezone.now().isoformat(),
-        }
-    except requests.exceptions.Timeout:
-        return {
-            'name': name,
-            'type': service_type,
-            'url': url,
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': 'timeout'},
-        }
-    except requests.exceptions.ConnectionError:
-        return {
-            'name': name,
-            'type': service_type,
-            'url': url,
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': 'connection_refused'},
-        }
-    except Exception as e:
-        logger.warning(f"Health check failed for {name}: {e}")
-        return {
-            'name': name,
-            'type': service_type,
-            'url': url,
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': str(e)},
-        }
-
-
 @extend_schema(
     tags=['v2'],
     summary='Get system health status',
@@ -244,168 +139,69 @@ def system_health(request):
             }
         }
     """
-    import time
-
-    # Services to check: (name, type, url)
-    # Ports outside Windows reserved ranges (7913-8012, 8013-8112):
-    # API Gateway: 8180, Orchestrator: 8200, RAS Adapter: 8188
-    #
-    # Monitoring ports depend on USE_DOCKER mode:
-    # - Native (systemd): Grafana=3000, Jaeger requires manual install
-    # - Docker: Grafana=5000, Jaeger=16686
-    import os
-    use_docker = os.environ.get('USE_DOCKER', 'true').lower() == 'true'
-    grafana_port = '5000' if use_docker else '3000'
+    status_map = {
+        "healthy": "online",
+        "degraded": "degraded",
+        "critical": "offline",
+    }
 
     api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
     ras_adapter_url = getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')
     worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
 
-    services = [
-        ('Frontend', 'frontend', f'{frontend_url}/'),
-        ('API Gateway', 'go-service', f'{api_gateway_url}/health'),
-        ('Orchestrator', 'django', 'http://localhost:8200/health'),
-        ('Worker', 'go-service', f'{worker_url}/health'),
-        ('RAS Adapter', 'go-service', f'{ras_adapter_url}/health'),
-        ('Prometheus', 'monitoring', 'http://localhost:9090/-/healthy'),
-        ('Grafana', 'monitoring', f'http://localhost:{grafana_port}/api/health'),
-        ('Jaeger', 'tracing', 'http://localhost:16686/'),
-    ]
+    url_map = {
+        "frontend": f"{frontend_url}/",
+        "api-gateway": api_gateway_url,
+        "orchestrator": "http://localhost:8200",
+        "worker": worker_url,
+        "ras-adapter": ras_adapter_url,
+    }
+
+    type_map = {
+        "frontend": "frontend",
+        "api-gateway": "go-service",
+        "orchestrator": "django",
+        "worker": "go-service",
+        "ras-adapter": "go-service",
+        "postgresql": "database",
+        "redis": "cache",
+        "event-subscriber": "django",
+        "ras-server": "external",
+    }
+
+    async def _fetch_metrics():
+        client = get_prometheus_client()
+        services_metrics = await client.get_all_services_metrics()
+        overall_health = await client.get_overall_health(services_metrics)
+        return services_metrics, overall_health
+
+    try:
+        services_metrics, overall_health = asyncio.run(_fetch_metrics())
+    except Exception as e:
+        logger.error(f"Prometheus health fetch failed: {e}")
+        services_metrics = []
+        overall_health = "critical"
 
     results = []
-
-    # Check external services in parallel
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {
-            executor.submit(check_service, name, stype, url): name
-            for name, stype, url in services
-        }
-        try:
-            for future in as_completed(futures, timeout=3.0):
-                try:
-                    results.append(future.result())
-                except Exception as e:
-                    service_name = futures[future]
-                    logger.warning(f"Health check failed for {service_name}: {e}")
-                    results.append({
-                        'name': service_name,
-                        'type': 'go-service',
-                        'status': 'offline',
-                        'response_time_ms': None,
-                        'last_check': timezone.now().isoformat(),
-                        'details': {'error': str(e)},
-                    })
-        except TimeoutError:
-            for future, service_name in futures.items():
-                if not future.done():
-                    future.cancel()
-                    results.append({
-                        'name': service_name,
-                        'type': 'go-service',
-                        'status': 'offline',
-                        'response_time_ms': None,
-                        'last_check': timezone.now().isoformat(),
-                        'details': {'error': 'timeout'},
-                    })
-
-    # Check PostgreSQL
-    try:
-        start = time.time()
-        connection.ensure_connection()
-        response_time = (time.time() - start) * 1000
+    for metrics in services_metrics:
+        config = SERVICE_CONFIG.get(metrics.name, {})
+        display_name = config.get("display_name", metrics.name.title())
+        status = status_map.get(metrics.status, "offline")
         results.append({
-            'name': 'PostgreSQL',
-            'type': 'database',
-            'status': 'online',
-            'response_time_ms': round(response_time, 2),
-            'last_check': timezone.now().isoformat(),
-        })
-    except Exception as e:
-        logger.warning(f"PostgreSQL health check failed: {e}")
-        results.append({
-            'name': 'PostgreSQL',
-            'type': 'database',
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': str(e)},
-        })
-
-    # Check Redis (direct connection)
-    redis_client = None
-    try:
-        import redis
-        start = time.time()
-        redis_client = redis.Redis(host='localhost', port=6379, socket_timeout=2)
-        redis_client.ping()
-        response_time = (time.time() - start) * 1000
-        results.append({
-            'name': 'Redis',
-            'type': 'cache',
-            'status': 'online',
-            'response_time_ms': round(response_time, 2),
-            'last_check': timezone.now().isoformat(),
-        })
-    except Exception as e:
-        logger.warning(f"Redis health check failed: {e}")
-        results.append({
-            'name': 'Redis',
-            'type': 'cache',
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': str(e)},
-        })
-
-    # Check RAS Server (1C) - via Prometheus Blackbox probe
-    ras_check = _check_ras_via_prometheus()
-    if ras_check.get("status") != "online":
-        logger.warning(f"RAS Server connectivity check failed: {ras_check.get('details')}")
-    results.append(ras_check)
-
-    # Check Event Subscriber (via Redis consumer group)
-    try:
-        start = time.time()
-        if redis_client is None:
-            import redis
-            redis_client = redis.Redis(host='localhost', port=6379, socket_timeout=2)
-        # Check if orchestrator-group consumer exists on any stream
-        stream = 'events:worker:cluster-synced'
-        groups = redis_client.xinfo_groups(stream)
-        response_time = (time.time() - start) * 1000
-        orchestrator_group = next(
-            (g for g in groups if g.get('name', b'').decode('utf-8') == 'orchestrator-group'),
-            None
-        )
-        if orchestrator_group:
-            consumers = orchestrator_group.get('consumers', 0)
-            results.append({
-                'name': 'Event Subscriber',
-                'type': 'django',
-                'status': 'online' if consumers > 0 else 'degraded',
-                'response_time_ms': round(response_time, 2),
-                'last_check': timezone.now().isoformat(),
-                'details': {'consumers': consumers, 'stream': stream},
-            })
-        else:
-            results.append({
-                'name': 'Event Subscriber',
-                'type': 'django',
-                'status': 'offline',
-                'response_time_ms': None,
-                'last_check': timezone.now().isoformat(),
-                'details': {'error': 'consumer_group_not_found'},
-            })
-    except Exception as e:
-        logger.warning(f"Event Subscriber health check failed: {e}")
-        results.append({
-            'name': 'Event Subscriber',
-            'type': 'django',
-            'status': 'offline',
-            'response_time_ms': None,
-            'last_check': timezone.now().isoformat(),
-            'details': {'error': str(e)},
+            "name": display_name,
+            "type": type_map.get(metrics.name, "go-service"),
+            "url": url_map.get(metrics.name),
+            "status": status,
+            "response_time_ms": None,
+            "last_check": timezone.now().isoformat(),
+            "details": {
+                "source": "prometheus",
+                "ops_per_minute": metrics.ops_per_minute,
+                "active_operations": metrics.active_operations,
+                "p95_latency_ms": metrics.p95_latency_ms,
+                "error_rate": metrics.error_rate,
+            },
         })
 
     # Calculate statistics
@@ -418,27 +214,7 @@ def system_health(request):
     }
 
     # Determine overall status (frontend uses: healthy, degraded, critical)
-    critical_services = {
-        'API Gateway',
-        'Orchestrator',
-        'Worker',
-        'RAS Adapter',
-        'RAS Server',
-        'PostgreSQL',
-        'Redis',
-        'Event Subscriber',
-    }
-    critical_offline = any(
-        (r.get('name') in critical_services) and (r.get('status') != 'online')
-        for r in results
-    )
-
-    if critical_offline:
-        overall = 'critical'
-    elif statistics['offline'] > 0 or statistics['degraded'] > 0:
-        overall = 'degraded'
-    else:
-        overall = 'healthy'
+    overall = overall_health
 
     return Response({
         'timestamp': timezone.now().isoformat(),
