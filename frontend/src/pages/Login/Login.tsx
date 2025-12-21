@@ -4,6 +4,7 @@ import { Form, Input, Button, Card, Typography, App } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { getApiBaseUrl } from '../../api/baseUrl'
+import { setAuthToken } from '../../api/client'
 
 const { Title } = Typography
 
@@ -36,6 +37,7 @@ export const Login = () => {
             // Сохраняем токены
             localStorage.setItem('auth_token', access)
             localStorage.setItem('refresh_token', refresh)
+            setAuthToken(access)
 
             message.success('Успешная авторизация!')
 

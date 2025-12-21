@@ -65,7 +65,11 @@ command-center-1c/
 **Перед отладкой frontend** нужно запустить Chromium с remote debugging:
 
 ```bash
-chromium --remote-debugging-port=9222 --no-first-run http://localhost:5173 &
+nohup setsid chromium --disable-gpu --disable-dev-shm-usage --no-sandbox \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chromium-debug-profile \
+  http://localhost:5173/ \
+  > /tmp/chromium.log 2>&1 &
 ```
 
 > **Важно:** Chromium установлен нативно в WSL (`/usr/sbin/chromium`), НЕ использовать Windows Chrome.

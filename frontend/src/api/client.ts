@@ -32,6 +32,16 @@ export const apiClient = axios.create({
   withCredentials: true,
 })
 
+export const setAuthToken = (token?: string | null) => {
+  if (token) {
+    apiClient.defaults.headers.common.Authorization = `Bearer ${token}`
+  } else {
+    delete apiClient.defaults.headers.common.Authorization
+  }
+}
+
+setAuthToken(localStorage.getItem('auth_token'))
+
 // Token refresh state management
 let isRefreshing = false
 let failedQueue: Array<{
@@ -65,6 +75,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
     const { access, refresh } = response.data
     localStorage.setItem('auth_token', access)
+    setAuthToken(access)
     if (refresh) {
       // Django SimpleJWT rotates refresh tokens
       localStorage.setItem('refresh_token', refresh)
@@ -74,6 +85,7 @@ async function refreshAccessToken(): Promise<string | null> {
     // Refresh failed - clear tokens and redirect to login
     localStorage.removeItem('auth_token')
     localStorage.removeItem('refresh_token')
+    setAuthToken(null)
     return null
   }
 }
@@ -124,6 +136,7 @@ apiClient.interceptors.response.use(
       if (!refreshToken || !isTokenExpired) {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('refresh_token')
+        setAuthToken(null)
 
         // Dispatch error event before redirect
         dispatchApiError({
@@ -161,6 +174,7 @@ apiClient.interceptors.response.use(
           // Success - process queued requests and retry original
           processQueue(null, newToken)
           originalRequest.headers.Authorization = `Bearer ${newToken}`
+          setAuthToken(newToken)
           return apiClient(originalRequest)
         } else {
           // Refresh failed

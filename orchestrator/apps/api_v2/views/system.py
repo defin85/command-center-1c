@@ -5,14 +5,15 @@ Provides comprehensive system health monitoring with parallel service checks
 and system configuration for frontend defaults.
 """
 
-import asyncio
 import logging
 from django.conf import settings
 from django.utils import timezone
+from asgiref.sync import async_to_sync
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from apps.operations.services.prometheus_client import (
@@ -100,125 +101,122 @@ def system_me(request):
         'is_superuser': bool(getattr(user, 'is_superuser', False)),
     })
 
-@extend_schema(
-    tags=['v2'],
-    summary='Get system health status',
-    description='Returns comprehensive system health status with parallel service checks for all monitored services.',
-    responses={
-        200: SystemHealthResponseSerializer,
-        401: OpenApiResponse(description='Unauthorized'),
-    }
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def system_health(request):
-    """
-    GET /api/v2/system/health/
+class SystemHealthView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    Returns comprehensive system health status with parallel service checks.
-
-    Response format matches frontend SystemHealthResponse interface:
-        {
-            "timestamp": "2024-01-01T00:00:00Z",
-            "overall_status": "healthy|degraded|critical",
-            "services": [
-                {
-                    "name": "API Gateway",
-                    "type": "go-service",
-                    "url": "http://localhost:8180/health",
-                    "status": "online|offline|degraded",
-                    "response_time_ms": 12.5,
-                    "last_check": "2024-01-01T00:00:00Z"
-                }
-            ],
-            "statistics": {
-                "total": 4,
-                "online": 3,
-                "offline": 1,
-                "degraded": 0
-            }
+    @extend_schema(
+        tags=['v2'],
+        summary='Get system health status',
+        description='Returns comprehensive system health status with parallel service checks for all monitored services.',
+        responses={
+            200: SystemHealthResponseSerializer,
+            401: OpenApiResponse(description='Unauthorized'),
         }
-    """
-    status_map = {
-        "healthy": "online",
-        "degraded": "degraded",
-        "critical": "offline",
-    }
+    )
+    def get(self, request):
+        """
+        GET /api/v2/system/health/
 
-    api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
-    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
-    worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
+        Returns comprehensive system health status with parallel service checks.
 
-    url_map = {
-        "frontend": f"{frontend_url}/",
-        "api-gateway": api_gateway_url,
-        "orchestrator": "http://localhost:8200",
-        "worker": worker_url,
-    }
+        Response format matches frontend SystemHealthResponse interface:
+            {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "overall_status": "healthy|degraded|critical",
+                "services": [
+                    {
+                        "name": "API Gateway",
+                        "type": "go-service",
+                        "url": "http://localhost:8180/health",
+                        "status": "online|offline|degraded",
+                        "response_time_ms": 12.5,
+                        "last_check": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "statistics": {
+                    "total": 4,
+                    "online": 3,
+                    "offline": 1,
+                    "degraded": 0
+                }
+            }
+        """
+        status_map = {
+            "healthy": "online",
+            "degraded": "degraded",
+            "critical": "offline",
+        }
 
-    type_map = {
-        "frontend": "frontend",
-        "api-gateway": "go-service",
-        "orchestrator": "django",
-        "worker": "go-service",
-        "postgresql": "database",
-        "redis": "cache",
-        "event-subscriber": "django",
-        "ras-server": "external",
-    }
+        api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+        worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
 
-    async def _fetch_metrics():
-        client = get_prometheus_client()
-        services_metrics = await client.get_all_services_metrics()
-        overall_health = await client.get_overall_health(services_metrics)
-        return services_metrics, overall_health
+        url_map = {
+            "frontend": f"{frontend_url}/",
+            "api-gateway": api_gateway_url,
+            "orchestrator": "http://localhost:8200",
+            "worker": worker_url,
+        }
 
-    try:
-        services_metrics, overall_health = asyncio.run(_fetch_metrics())
-    except Exception as e:
-        logger.error(f"Prometheus health fetch failed: {e}")
-        services_metrics = []
-        overall_health = "critical"
+        type_map = {
+            "frontend": "frontend",
+            "api-gateway": "go-service",
+            "orchestrator": "django",
+            "worker": "go-service",
+            "postgresql": "database",
+            "redis": "cache",
+            "event-subscriber": "django",
+            "ras-server": "external",
+        }
 
-    results = []
-    for metrics in services_metrics:
-        config = SERVICE_CONFIG.get(metrics.name, {})
-        display_name = config.get("display_name", metrics.name.title())
-        status = status_map.get(metrics.status, "offline")
-        results.append({
-            "name": display_name,
-            "type": type_map.get(metrics.name, "go-service"),
-            "url": url_map.get(metrics.name),
-            "status": status,
-            "response_time_ms": None,
-            "last_check": timezone.now().isoformat(),
-            "details": {
-                "source": "prometheus",
-                "ops_per_minute": metrics.ops_per_minute,
-                "active_operations": metrics.active_operations,
-                "p95_latency_ms": metrics.p95_latency_ms,
-                "error_rate": metrics.error_rate,
-            },
+        try:
+            client = get_prometheus_client()
+            services_metrics = async_to_sync(client.get_all_services_metrics)()
+            overall_health = async_to_sync(client.get_overall_health)(services_metrics)
+        except Exception as e:
+            logger.error(f"Prometheus health fetch failed: {e}")
+            services_metrics = []
+            overall_health = "critical"
+
+        results = []
+        for metrics in services_metrics:
+            config = SERVICE_CONFIG.get(metrics.name, {})
+            display_name = config.get("display_name", metrics.name.title())
+            status = status_map.get(metrics.status, "offline")
+            results.append({
+                "name": display_name,
+                "type": type_map.get(metrics.name, "go-service"),
+                "url": url_map.get(metrics.name),
+                "status": status,
+                "response_time_ms": None,
+                "last_check": timezone.now().isoformat(),
+                "details": {
+                    "source": "prometheus",
+                    "ops_per_minute": metrics.ops_per_minute,
+                    "active_operations": metrics.active_operations,
+                    "p95_latency_ms": metrics.p95_latency_ms,
+                    "error_rate": metrics.error_rate,
+                },
+            })
+
+        # Calculate statistics
+        statuses = [r['status'] for r in results]
+        statistics = {
+            'total': len(results),
+            'online': sum(1 for s in statuses if s == 'online'),
+            'offline': sum(1 for s in statuses if s == 'offline'),
+            'degraded': sum(1 for s in statuses if s == 'degraded'),
+        }
+
+        # Determine overall status (frontend uses: healthy, degraded, critical)
+        overall = overall_health
+
+        return Response({
+            'timestamp': timezone.now().isoformat(),
+            'overall_status': overall,
+            'services': results,
+            'statistics': statistics,
         })
-
-    # Calculate statistics
-    statuses = [r['status'] for r in results]
-    statistics = {
-        'total': len(results),
-        'online': sum(1 for s in statuses if s == 'online'),
-        'offline': sum(1 for s in statuses if s == 'offline'),
-        'degraded': sum(1 for s in statuses if s == 'degraded'),
-    }
-
-    # Determine overall status (frontend uses: healthy, degraded, critical)
-    overall = overall_health
-
-    return Response({
-        'timestamp': timezone.now().isoformat(),
-        'overall_status': overall,
-        'services': results,
-        'statistics': statistics,
-    })
 
 
 # =============================================================================

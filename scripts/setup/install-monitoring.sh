@@ -208,7 +208,9 @@ Examples:
 Notes:
   - blackbox targets for RAS are generated from .env.local via:
       ./scripts/dev/generate-blackbox-targets.sh
-    and then copied to /etc/prometheus/targets/blackbox_tcp.yml
+    and then copied to:
+      /etc/prometheus/targets/blackbox_tcp.yml
+      /etc/prometheus/targets/blackbox_http.yml
 EOF
 }
 
@@ -444,19 +446,26 @@ configure_blackbox_exporter() {
     local blackbox_config_dest_dir="/etc/blackbox_exporter"
     local blackbox_config_dest="$blackbox_config_dest_dir/config.yml"
 
-    local targets_src="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
+    local targets_tcp_src="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
+    local targets_http_src="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_http.yml"
     local targets_dest_dir="/etc/prometheus/targets"
-    local targets_dest="$targets_dest_dir/blackbox_tcp.yml"
+    local targets_tcp_dest="$targets_dest_dir/blackbox_tcp.yml"
+    local targets_http_dest="$targets_dest_dir/blackbox_http.yml"
 
     if $DRY_RUN; then
         log_info "[DRY-RUN] blackbox config: $blackbox_config_src -> $blackbox_config_dest"
-        log_info "[DRY-RUN] blackbox targets: $targets_src -> $targets_dest"
+        log_info "[DRY-RUN] blackbox targets: $targets_tcp_src -> $targets_tcp_dest"
+        log_info "[DRY-RUN] blackbox targets: $targets_http_src -> $targets_http_dest"
         return 0
     fi
 
     # Ensure dirs
     sudo mkdir -p "$blackbox_config_dest_dir"
     sudo mkdir -p "$targets_dest_dir"
+
+    if [[ -x "$PROJECT_ROOT/scripts/dev/generate-blackbox-targets.sh" ]]; then
+        "$PROJECT_ROOT/scripts/dev/generate-blackbox-targets.sh" || true
+    fi
 
     if [[ -f "$blackbox_config_src" ]]; then
         backup_file "$blackbox_config_dest"
@@ -466,12 +475,20 @@ configure_blackbox_exporter() {
         log_warning "blackbox_exporter config не найден: $blackbox_config_src"
     fi
 
-    if [[ -f "$targets_src" ]]; then
-        backup_file "$targets_dest"
-        sudo cp "$targets_src" "$targets_dest"
-        log_success "blackbox targets установлен: $targets_dest"
+    if [[ -f "$targets_tcp_src" ]]; then
+        backup_file "$targets_tcp_dest"
+        sudo cp "$targets_tcp_src" "$targets_tcp_dest"
+        log_success "blackbox targets установлен: $targets_tcp_dest"
     else
-        log_warning "blackbox targets не найден: $targets_src (сгенерируйте через scripts/dev/generate-blackbox-targets.sh)"
+        log_warning "blackbox targets не найден: $targets_tcp_src (сгенерируйте через scripts/dev/generate-blackbox-targets.sh)"
+    fi
+
+    if [[ -f "$targets_http_src" ]]; then
+        backup_file "$targets_http_dest"
+        sudo cp "$targets_http_src" "$targets_http_dest"
+        log_success "blackbox targets установлен: $targets_http_dest"
+    else
+        log_warning "blackbox targets не найден: $targets_http_src (сгенерируйте через scripts/dev/generate-blackbox-targets.sh)"
     fi
 }
 

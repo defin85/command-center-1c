@@ -7,7 +7,7 @@
 # native mode (USE_DOCKER=false):
 # - Prometheus config (/etc/prometheus/prometheus.yml)
 # - Blackbox exporter config (/etc/blackbox_exporter/config.yml)
-# - Prometheus blackbox targets (/etc/prometheus/targets/blackbox_tcp.yml)
+# - Prometheus blackbox targets (/etc/prometheus/targets/blackbox_tcp.yml, blackbox_http.yml)
 #
 # This exists because native Prometheus reads /etc/*, while docker mode uses
 # bind-mounts from the repo.
@@ -71,7 +71,8 @@ fi
 
 PROM_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/prometheus-native.yml"
 BLACKBOX_SRC="$PROJECT_ROOT/infrastructure/monitoring/blackbox/blackbox.yml"
-TARGETS_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
+TARGETS_TCP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
+TARGETS_HTTP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_http.yml"
 
 if ! sudo -n mkdir -p /etc/prometheus/targets; then
   log_warning "Failed to create /etc/prometheus/targets"
@@ -83,14 +84,25 @@ if ! sudo -n mkdir -p /etc/blackbox_exporter; then
   $STRICT && exit 1 || exit 0
 fi
 
-if [[ -f "$TARGETS_SRC" ]]; then
-  if ! sudo -n cp "$TARGETS_SRC" /etc/prometheus/targets/blackbox_tcp.yml; then
+if [[ -f "$TARGETS_TCP_SRC" ]]; then
+  if ! sudo -n cp "$TARGETS_TCP_SRC" /etc/prometheus/targets/blackbox_tcp.yml; then
     log_warning "Failed to update /etc/prometheus/targets/blackbox_tcp.yml"
     $STRICT && exit 1
   fi
   log_success "Updated /etc/prometheus/targets/blackbox_tcp.yml"
 else
-  log_warning "Missing repo targets file: $TARGETS_SRC"
+  log_warning "Missing repo targets file: $TARGETS_TCP_SRC"
+  $STRICT && exit 1
+fi
+
+if [[ -f "$TARGETS_HTTP_SRC" ]]; then
+  if ! sudo -n cp "$TARGETS_HTTP_SRC" /etc/prometheus/targets/blackbox_http.yml; then
+    log_warning "Failed to update /etc/prometheus/targets/blackbox_http.yml"
+    $STRICT && exit 1
+  fi
+  log_success "Updated /etc/prometheus/targets/blackbox_http.yml"
+else
+  log_warning "Missing repo targets file: $TARGETS_HTTP_SRC"
   $STRICT && exit 1
 fi
 

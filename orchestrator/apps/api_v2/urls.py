@@ -30,7 +30,7 @@ urlpatterns = [
     # ========================================================================
     # System
     # ========================================================================
-    path('system/health/', system.system_health, name='system-health'),
+    path('system/health/', system.SystemHealthView.as_view(), name='system-health'),
     path('system/config/', system.system_config, name='system-config'),
     path('system/me/', system.system_me, name='system-me'),
 

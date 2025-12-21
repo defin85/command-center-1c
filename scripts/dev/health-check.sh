@@ -333,6 +333,29 @@ check_exporter() {
 check_exporter "PostgreSQL Exporter" "prometheus-postgres-exporter"
 check_exporter "Redis Exporter" "prometheus-redis-exporter"
 check_exporter "Node Exporter" "prometheus-node-exporter"
+check_exporter "Blackbox Exporter" "blackbox-exporter"
+
+echo ""
+echo -e "${BLUE}Blackbox Probes (frontend/ras):${NC}"
+echo ""
+if command -v curl &>/dev/null; then
+    if curl -sS "http://localhost:9090/api/v1/query?query=max(probe_success%7Bcc1c_service%3D%22frontend%22%7D)" \
+        | grep -q '"value":[^]]*"1"'; then
+        echo -e "  Frontend probe: ${GREEN}✓ online${NC}"
+    else
+        echo -e "  Frontend probe: ${YELLOW}⚠️  offline${NC}"
+        echo -e "    check: http://localhost:9115/probe?module=http_2xx&target=http://localhost:5173/"
+    fi
+    if curl -sS "http://localhost:9090/api/v1/query?query=max(probe_success%7Bcc1c_service%3D%22ras-server%22%7D)" \
+        | grep -q '"value":[^]]*"1"'; then
+        echo -e "  RAS probe: ${GREEN}✓ online${NC}"
+    else
+        echo -e "  RAS probe: ${YELLOW}⚠️  offline${NC}"
+        echo -e "    check: http://localhost:9115/probe?module=tcp_connect&target=${RAS_SERVER_ADDR:-${RAS_SERVER:-172.24.80.1:1545}}"
+    fi
+else
+    echo -e "  Frontend probe: ${YELLOW}⚠️  curl not found${NC}"
+fi
 
 echo ""
 echo -e "${BLUE}Управление:${NC}"

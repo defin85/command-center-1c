@@ -91,7 +91,7 @@ SERVICE_CONFIG = {
     },
     'frontend': {
         'display_name': 'Frontend',
-        'job_patterns': ['frontend', 'react'],
+        'job_patterns': [],
         'namespace': 'frontend',
     },
     'postgresql': {
@@ -158,21 +158,34 @@ class PrometheusClient:
             settings, 'PROMETHEUS_URL', 'http://localhost:9090'
         )
         self._client: Optional[httpx.AsyncClient] = None
+        self._client_loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
-        if self._client is None or self._client.is_closed:
+        loop = asyncio.get_running_loop()
+        if self._client_loop and self._client_loop.is_closed():
+            self._client = None
+            self._client_loop = None
+        if (
+            self._client is None
+            or self._client.is_closed
+            or self._client_loop is not loop
+        ):
+            if self._client and not self._client.is_closed:
+                await self._client.aclose()
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=10.0,
             )
+            self._client_loop = loop
         return self._client
 
     async def close(self):
         """Close the HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
-            self._client = None
+        self._client = None
+        self._client_loop = None
 
     async def query(self, promql: str) -> Dict[str, Any]:
         """
@@ -344,10 +357,11 @@ class PrometheusClient:
                 last_updated=datetime.utcnow(),
             )
 
-        if service == "ras-server":
+        if service in ("ras-server", "frontend"):
+            service_label = "ras-server" if service == "ras-server" else "frontend"
             success_result, duration_result = await self._execute_queries([
-                'max(probe_success{cc1c_service="ras-server"})',
-                'max(probe_duration_seconds{cc1c_service="ras-server"}) * 1000',
+                f'max(probe_success{{cc1c_service="{service_label}"}})',
+                f'max(probe_duration_seconds{{cc1c_service="{service_label}"}}) * 1000',
             ])
             if success_result.get("status") == "error" or not self._has_result(success_result):
                 status = "critical"
@@ -499,7 +513,10 @@ class PrometheusClient:
 
         for source, target in SERVICE_TOPOLOGY:
             source_config = SERVICE_CONFIG.get(source, {})
-            source_job = source_config.get('job_patterns', [source])[0]
+            job_patterns = source_config.get('job_patterns', [source])
+            if not job_patterns:
+                job_patterns = [source]
+            source_job = job_patterns[0]
 
             rpm_query = f'sum(rate(cc1c_requests_total{{job=~"{source_job}"}}[5m])) * 60'
             latency_query = f'avg(rate(cc1c_request_duration_seconds_sum{{job=~"{source_job}"}}[5m]) / rate(cc1c_request_duration_seconds_count{{job=~"{source_job}"}}[5m])) * 1000'
