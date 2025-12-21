@@ -50,7 +50,7 @@ type ExtensionInstallResult struct {
 	Output   string
 }
 
-// ExtensionInstaller executes extension install directly (without batch-service).
+// ExtensionInstaller executes extension install directly (without legacy batch pipeline).
 type ExtensionInstaller interface {
 	InstallExtension(ctx context.Context, req ExtensionInstallRequest) (*ExtensionInstallResult, error)
 }

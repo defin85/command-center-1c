@@ -224,9 +224,7 @@ Orchestrator → Command: "BatchInstall" (700 баз)
    ↓
 Worker Pool → Events: "Started", "Progress", "Completed"
    ↓
-cluster-service → Events: "SessionsTerminated", "JobsLocked"
-   ↓
-batch-service → Events: "ExtensionInstalled"
+Worker → RAS/CLI Ops: "SessionsTerminated", "JobsLocked", "ExtensionInstalled"
 ```
 
 **Требования:**
@@ -237,11 +235,11 @@ batch-service → Events: "ExtensionInstalled"
 **Redis Lists (current):**
 - ❌ No complex routing (manual queue per service)
 - ⚠️ Ordering: только в рамках одной очереди (достаточно?)
-- **Implementation:** Multiple queues (`cc1c:worker:events`, `cc1c:cluster:events`, `cc1c:batch:events`)
+- **Implementation:** Multiple queues (`cc1c:worker:events`)
 - **Effort:** 2-3 дня (manual routing logic)
 
 **RabbitMQ:**
-- ✅ Topic exchange: `operations.worker.*`, `operations.cluster.*`, `operations.batch.*`
+- ✅ Topic exchange: `operations.worker.*`
 - ✅ Routing keys для automatic delivery
 - ✅ Multiple consumers subscribe по pattern
 - **Effort:** 3-4 дня (exchange setup, routing logic)
@@ -267,7 +265,7 @@ batch-service → Events: "ExtensionInstalled"
 **Architecture:**
 ```
 ┌──────────────┐
-│ Orchestrator │ Django/Celery
+│ Orchestrator │ Django
 │  (Python)    │
 └──────┬───────┘
        │ LPUSH
@@ -283,12 +281,10 @@ batch-service → Events: "ExtensionInstalled"
 │ Go Worker    │ Pool (x2-10 replicas)
 │ (Goroutines) │
 └──────┬───────┘
-       │ HTTP calls
+       │ Direct calls
        ▼
 ┌──────────────────────┐
-│ cluster-service      │ Lock jobs, terminate sessions
-│ batch-service        │ Install extensions
-│ OData endpoints      │ CRUD operations
+│ Worker drivers       │ RAS/CLI/OData operations
 └──────────────────────┘
 ```
 

@@ -56,11 +56,8 @@
 
 **Доступные сервисы:**
 - `orchestrator`
-- `celery-worker`
-- `celery-beat`
 - `api-gateway`
 - `worker`
-- `ras-adapter`
 - `frontend`
 
 ### Параллельная пересборка
@@ -125,7 +122,7 @@
 ```
 
 **Результат:**
-- Пересоберутся **ВСЕ 3** Go сервиса (`api-gateway`, `worker`, `ras-adapter`)
+- Пересоберутся **ВСЕ** Go сервиса (`api-gateway`, `worker`)
 - Все сервисы перезапустятся
 
 ### Сценарий 3: Бинарники актуальны
@@ -165,8 +162,7 @@
   ✓ api-gateway
   ✓ worker
 
-Пропущенные сервисы (2):
-  ℹ ras-adapter (бинарник актуален)
+Пропущенные сервисы (0):
 
 Управление:
   Просмотр логов:   ./scripts/dev/logs.sh <service>

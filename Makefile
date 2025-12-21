@@ -209,12 +209,6 @@ LDFLAGS := -ldflags "\
 	-X main.BuildTime=$(BUILD_TIME)"
 
 
-# Cluster Service uses its own version package
-LDFLAGS_CLUSTER := -ldflags "\
-	-X github.com/command-center-1c/cluster-service/internal/version.Version=$(VERSION) \
-	-X github.com/command-center-1c/cluster-service/internal/version.Commit=$(COMMIT) \
-	-X github.com/command-center-1c/cluster-service/internal/version.BuildTime=$(BUILD_TIME)"
-
 # Platform-specific binary extension
 ifeq ($(GOOS),windows)
 	BIN_EXT := .exe
@@ -225,18 +219,16 @@ endif
 # Binary names
 API_GATEWAY_BIN := cc1c-api-gateway$(BIN_EXT)
 WORKER_BIN := cc1c-worker$(BIN_EXT)
-CLUSTER_SERVICE_BIN := cc1c-cluster-service$(BIN_EXT)
-BATCH_SERVICE_BIN := cc1c-batch-service$(BIN_EXT)
 
 ##############################################################################
 # Build Targets
 ##############################################################################
 
-.PHONY: build-go-all build-api-gateway build-worker build-cluster-service build-batch-service
+.PHONY: build-go-all build-api-gateway build-worker
 .PHONY: clean-binaries build-linux build-windows
 
 ## build-go-all: Собрать все Go сервисы
-build-go-all: build-api-gateway build-worker build-cluster-service build-batch-service
+build-go-all: build-api-gateway build-worker
 	@echo "$(GREEN)✓ All Go binaries built successfully$(NC)"
 	@echo ""
 	@echo "Binaries:"
@@ -244,7 +236,7 @@ build-go-all: build-api-gateway build-worker build-cluster-service build-batch-s
 
 ## build-api-gateway: Собрать cc1c-api-gateway
 build-api-gateway:
-	@echo "$(BLUE)[1/4] Building API Gateway...$(NC)"
+	@echo "$(BLUE)[1/2] Building API Gateway...$(NC)"
 	@mkdir -p $(BIN_DIR)
 	@cd $(GO_SERVICES_DIR)/api-gateway && \
 		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(API_GATEWAY_BIN) cmd/main.go
@@ -252,27 +244,11 @@ build-api-gateway:
 
 ## build-worker: Собрать cc1c-worker
 build-worker:
-	@echo "$(BLUE)[2/4] Building Worker...$(NC)"
+	@echo "$(BLUE)[2/2] Building Worker...$(NC)"
 	@mkdir -p $(BIN_DIR)
 	@cd $(GO_SERVICES_DIR)/worker && \
 		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(WORKER_BIN) cmd/main.go
 	@echo "$(GREEN)✓ $(WORKER_BIN) built$(NC)"
-
-## build-cluster-service: Собрать cc1c-cluster-service
-build-cluster-service:
-	@echo "$(BLUE)[3/4] Building Cluster Service...$(NC)"
-	@mkdir -p $(BIN_DIR)
-	@cd $(GO_SERVICES_DIR)/cluster-service && \
-		go build $(LDFLAGS_CLUSTER) -o ../../$(BIN_DIR)/$(CLUSTER_SERVICE_BIN) cmd/main.go
-	@echo "$(GREEN)✓ $(CLUSTER_SERVICE_BIN) built$(NC)"
-
-## build-batch-service: Собрать cc1c-batch-service
-build-batch-service:
-	@echo "$(BLUE)[4/4] Building Batch Service...$(NC)"
-	@mkdir -p $(BIN_DIR)
-	@cd $(GO_SERVICES_DIR)/batch-service && \
-		go build $(LDFLAGS) -o ../../$(BIN_DIR)/$(BATCH_SERVICE_BIN) cmd/main.go
-	@echo "$(GREEN)✓ $(BATCH_SERVICE_BIN) built$(NC)"
 
 ## clean-binaries: Удалить все собранные бинарники
 clean-binaries:

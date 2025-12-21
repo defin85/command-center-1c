@@ -57,7 +57,6 @@ declare -gA SERVICE_CATEGORIES=(
     ["event-subscriber"]="python"
     ["api-gateway"]="go"
     ["worker"]="go"
-    ["ras-adapter"]="go"
     ["frontend"]="frontend"
     ["ras"]="external"
 )
@@ -68,14 +67,12 @@ declare -ga SERVICE_START_ORDER=(
     event-subscriber
     api-gateway
     worker
-    ras-adapter
     frontend
 )
 
 # Порядок остановки (обратный запуску)
 declare -ga SERVICE_STOP_ORDER=(
     frontend
-    ras-adapter
     worker
     api-gateway
     event-subscriber
@@ -86,7 +83,6 @@ declare -ga SERVICE_STOP_ORDER=(
 declare -gA SERVICE_PORTS=(
     ["orchestrator"]="${ORCHESTRATOR_PORT:-8200}"
     ["api-gateway"]="${API_GATEWAY_PORT:-8180}"
-    ["ras-adapter"]="${RAS_ADAPTER_PORT:-8188}"
     ["frontend"]="${FRONTEND_PORT:-5173}"
 )
 
@@ -96,7 +92,6 @@ declare -gA SERVICE_STOP_TIMEOUT=(
     ["event-subscriber"]=10
     ["api-gateway"]=10
     ["worker"]=15
-    ["ras-adapter"]=10
     ["frontend"]=5
     ["ras"]=10
 )

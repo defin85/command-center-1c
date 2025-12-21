@@ -64,11 +64,6 @@ curl http://localhost:8090/health
 # Worker на порту 2346
 ./scripts/dev/debug-service.sh worker
 
-# RAS Adapter на порту 2347
-./scripts/dev/debug-service.sh ras-adapter
-
-# Batch Service на порту 2348
-./scripts/dev/debug-service.sh batch-service
 ```
 
 **Вариант B: Ручной запуск**
@@ -188,7 +183,6 @@ dlv debug --headless --listen=:2345 --api-version=2 --accept-multiclient cmd/mai
    start_debugger(port=2347)
 
 2. Ставлю breakpoint в getCachedDatabase()...
-   set_breakpoints(file="go-services/ras-adapter/cache.go", lines=[67])
 
 3. Продолжаю и жду срабатывания...
    continue()
@@ -350,8 +344,6 @@ claude mcp add --transport sse mcp-dap-server http://localhost:8090
 |---------|-----------|----------------|---------|
 | **api-gateway** | 2345 | 8080 | ✅ Ready |
 | **worker** | 2346 | - | ✅ Ready |
-| **ras-adapter** | 2347 | 8088 | ✅ Ready |
-| **batch-service** | 2348 | 8087 | ⚠️ In Dev |
 
 **MCP DAP Server:** http://localhost:8090 (SSE)
 

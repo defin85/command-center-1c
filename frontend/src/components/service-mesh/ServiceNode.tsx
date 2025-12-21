@@ -15,10 +15,8 @@ import {
   ApartmentOutlined,
   ThunderboltOutlined,
   ApiOutlined,
-  BuildOutlined,
   DatabaseOutlined,
   CloudServerOutlined,
-  ToolOutlined,
   NotificationOutlined,
 } from '@ant-design/icons'
 import type { ServiceStatus, ServiceNodeData, OperationFlowStatus } from '../../types/serviceMesh'
@@ -33,10 +31,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'api-gateway': <GatewayOutlined />,
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
-  'ras-adapter': <ApiOutlined />,
   'ras-server': <CloudServerOutlined />,
-  'batch-service': <BuildOutlined />,
-  'designer-agent': <ToolOutlined />,
   'event-subscriber': <NotificationOutlined />,
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,

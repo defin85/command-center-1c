@@ -71,19 +71,9 @@ func SetupRouter(cfg *config.Config, m *metrics.Metrics) *gin.Engine {
 	return router
 }
 
-// setupV2Routes configures API v2 routes with RAS Adapter and Jaeger proxies
+// setupV2Routes configures API v2 routes with Jaeger proxy and orchestrator routes
 func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	log := logger.GetLogger()
-
-	// Initialize RAS Adapter proxy with fallback
-	var rasHandler gin.HandlerFunc
-	rasProxy, err := handlers.NewRASProxyHandler(cfg.RASAdapterURL)
-	if err != nil {
-		log.Error("Failed to initialize RAS proxy, using fallback handler", zap.Error(err))
-		rasHandler = serviceUnavailableHandler("RAS Adapter")
-	} else {
-		rasHandler = rasProxy.Handle
-	}
 
 	// Initialize Jaeger proxy with fallback
 	var jaegerHandler gin.HandlerFunc
@@ -107,9 +97,6 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	v2.Use(auth.AuthMiddleware(jwtManager))
 	v2.Use(middleware.RateLimitMiddleware(100, time.Minute)) // 100 req/min
 	{
-		// RAS Adapter routes (infobase, session management, cluster operations)
-		RegisterRASRoutes(v2, rasHandler)
-
 		// Jaeger tracing routes
 		v2.Any("/tracing/*path", jaegerHandler)
 
@@ -119,7 +106,6 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	}
 
 	log.Info("API v2 routes configured",
-		zap.String("ras_adapter", cfg.RASAdapterURL),
 		zap.String("jaeger", cfg.JaegerURL),
 	)
 }

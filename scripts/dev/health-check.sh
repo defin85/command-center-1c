@@ -59,8 +59,6 @@ check_process "event-subscriber"
 check_process "api-gateway"
 check_process "worker"
 check_process "ras"
-# Week 4+: RAS Adapter replaces cluster-service
-check_process "ras-adapter"
 check_process "frontend"
 
 echo ""
@@ -94,8 +92,6 @@ check_http() {
 check_http "Frontend" "http://localhost:5173"
 check_http "API Gateway" "http://localhost:8180/health"
 check_http "Orchestrator" "http://localhost:8200/health"
-# Week 4: Check RAS Adapter (ports outside Windows reserved range 8013-8112)
-check_http "RAS Adapter" "http://localhost:8188/health"
 
 echo ""
 
@@ -272,7 +268,7 @@ TOTAL=6
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "frontend")
+SERVICES=("orchestrator" "api-gateway" "worker" "ras" "frontend")
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

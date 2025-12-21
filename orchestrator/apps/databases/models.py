@@ -48,10 +48,10 @@ class Cluster(models.Model):
         help_text="UUID кластера в RAS (заполняется при первой успешной синхронизации)"
     )
 
-    # Installation Service
+    # Legacy service URL (unused by worker-driven RAS operations)
     cluster_service_url = models.URLField(
         max_length=512,
-        help_text="URL of installation-service managing this cluster"
+        help_text="Legacy URL for cluster integrations (currently unused)"
     )
 
     # Cluster Authentication (optional)

@@ -8,19 +8,18 @@
 
 ---
 
-## 🎯 Выбранное решение: gRPC через ras-grpc-gw
+## 🎯 Выбранное решение: Direct RAS client
 
-CommandCenter1C использует **gRPC подход** через форк [ras-grpc-gw](https://github.com/defin85/ras-grpc-gw):
+CommandCenter1C использует прямой RAS client внутри Go Worker:
 
 ```
-cluster-service (Go) → gRPC → ras-grpc-gw → RAS (1C Server) → Кластеры 1С
+Worker (Go) → RAS (1C Server) → Кластеры 1С
 ```
 
 **Преимущества:**
-- ✅ Типизированные protobuf контракты
-- ✅ Автоматическая генерация Go/Python клиентов
-- ✅ Streaming поддержка для real-time данных
-- ✅ Надёжная сетевая коммуникация
+- ✅ Прямая интеграция без промежуточных сервисов
+- ✅ Низкая задержка и меньше точек отказа
+- ✅ Единый контроль таймаутов и ретраев в worker
 
 **Альтернативы (НЕ используются):**
 - ❌ RAC CLI (text parsing, нестабильный вывод)
@@ -75,7 +74,7 @@ rac infobase summary list --cluster=<cluster-id> localhost:1545
 2. **Информационная база (infobase)** - доступ к конкретной базе данных
 3. **Агент (agent)** - доступ к RAS серверу (опционально)
 
-### Процесс аутентификации в cluster-service
+### Процесс аутентификации в direct RAS client
 
 ```go
 // 1. Аутентификация на кластере
@@ -107,50 +106,7 @@ RAC CLI имеет серьёзные ограничения:
 - ❌ Видны в `ps aux` и логах shell
 - ❌ Нет встроенного шифрования
 
-**Решение в CommandCenter1C:** gRPC с TLS (Phase 3).
-
----
-
-## 📡 ras-grpc-gw: Наш gRPC Gateway
-
-### Форк проекта
-
-**Upstream:** https://github.com/khorevaa/ras-client
-**Наш форк:** https://github.com/defin85/ras-grpc-gw
-
-**Зачем форк:**
-- Исправление endpoint management (Sprint 1.4)
-- Возврат endpoint_id в response headers
-- Поддержка для cluster-service
-
-### Запуск ras-grpc-gw
-
-```bash
-# Скачать релиз
-wget https://github.com/defin85/ras-grpc-gw/releases/download/v0.1.0/ras-grpc-gw.exe
-
-# Запустить
-./ras-grpc-gw.exe --bind 0.0.0.0:9999 localhost:1545
-
-# С health check endpoint
-./ras-grpc-gw.exe --bind 0.0.0.0:9999 --health 0.0.0.0:8081 localhost:1545
-```
-
-**Health Check:**
-```bash
-curl http://localhost:8081/health
-# {"status":"ok"}
-```
-
-### Конфигурация в cluster-service
-
-```yaml
-# configs/config.yaml
-ras_grpc:
-  address: "localhost:9999"
-  timeout: 30s
-  max_retry: 3
-```
+**Решение в CommandCenter1C:** direct RAS с контролем таймаутов и retry.
 
 ---
 
@@ -251,7 +207,7 @@ func (i *EndpointInterceptor) Intercept(
 }
 ```
 
-**См. подробнее:** `docs/ENDPOINT_MANAGEMENT_ARCHITECTURE.md`
+**См. подробнее:** `docs/architecture/REAL_TIME_OPERATION_TRACKING.md`
 
 ---
 
@@ -273,7 +229,7 @@ func (i *EndpointInterceptor) Intercept(
 **Решение:**
 1. Проверить что `EndpointInterceptor` настроен
 2. Проверить логи: `endpoint_id` должен быть одинаковый
-3. Убедиться что ras-grpc-gw возвращает `endpoint_id` в headers
+3. Убедиться что `EndpointInterceptor` корректно переиспользует endpoint
 
 ### RAS не отвечает
 
@@ -288,21 +244,6 @@ killall ras && ras cluster --port=1545 &
 tail -f /var/log/1c/ras.log
 ```
 
-### ras-grpc-gw недоступен
-
-```bash
-# Health check
-curl http://localhost:8081/health
-
-# Логи ras-grpc-gw
-tail -f /tmp/ras-grpc-gw.log
-
-# Перезапустить
-./ras-grpc-gw.exe --bind 0.0.0.0:9999 localhost:1545 > /tmp/ras-grpc-gw.log 2>&1 &
-```
-
----
-
 ## 📚 Справочная информация
 
 ### Детальная документация (архив)
@@ -315,17 +256,14 @@ tail -f /tmp/ras-grpc-gw.log
 
 ### Полезные ссылки
 
-- [ras-grpc-gw (наш форк)](https://github.com/defin85/ras-grpc-gw)
+- [khorevaa/ras-client](https://github.com/khorevaa/ras-client) - Go RAS client
 - [v8platform/protos](https://github.com/v8platform/protos) - protobuf определения
-- [cluster-service README](../go-services/cluster-service/README.md) - наша реализация
 
 ---
 
 ## ✅ Checklist для новых разработчиков
 
 - [ ] RAS запущен на порту 1545
-- [ ] ras-grpc-gw запущен на порту 9999
-- [ ] cluster-service подключается к ras-grpc-gw
 - [ ] `EndpointInterceptor` настроен для переиспользования endpoint
 - [ ] Логи показывают один endpoint ID для всех запросов после AuthenticateCluster
 - [ ] GetShortInfobases возвращает список баз данных
@@ -337,6 +275,4 @@ tail -f /tmp/ras-grpc-gw.log
 **Автор:** Architecture Team
 
 **См. также:**
-- `docs/ENDPOINT_MANAGEMENT_ARCHITECTURE.md` - подробности endpoint management
-- `docs/SPRINT_1_PROGRESS.md` - Sprint 1.4 (RAS integration)
-- `go-services/cluster-service/README.md` - cluster-service документация
+- `docs/architecture/REAL_TIME_OPERATION_TRACKING.md` - мониторинг и трейсинг операций

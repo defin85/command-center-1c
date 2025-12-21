@@ -61,27 +61,22 @@ architecture/
 
 ---
 
-### 2. RAS Adapter - Unified Service Architecture (NEW!)
+### 2. Direct RAS in Worker (IMPLEMENTED!)
 
-**Статус:** 📋 Design Phase (2025-11-19)
+**Статус:** ✅ Done
 
 **Проблема:**
-- cluster-service + ras-grpc-gw (2 сервиса) дублируют функции
-- UpdateInfobase через RAS binary protocol не работает (LockInfobase падает)
-- Смешанные протоколы (REST + gRPC + HTTP) вызывают путаницу
-- Отсутствие distributed tracing (невозможно отследить запрос через 7 сервисов)
+- Лишние сервисные хопы усложняют трассировку и отладку
+- Смешанные протоколы создают дрейф контрактов
 
 **Решение:**
-- **RAS Adapter** - unified service (слияние cluster-service + ras-grpc-gw)
-- **Hybrid Protocol:** gRPC internal, REST external/legacy
-- **New Lock/Unlock:** Используем RAS RegInfoBase вместо UpdateInfobase
+- **Direct RAS** внутри Worker через `ras-client`
+- **Unified Operations:** единые таймауты, метрики, и timeline подшаги
 - **Distributed Tracing:** OpenTelemetry + Jaeger для мониторинга
-- **Debug Tools:** cc1c-debug CLI (ping, trace, health)
-- **Real-Time UI:** Service Mesh Monitor + Operation Trace Viewer
 
 **См.:**
 - **[OBSERVABILITY_QUICKSTART.md](OBSERVABILITY_QUICKSTART.md)** - Quick Start (TL;DR + выбор стратегии) ⭐ START HERE
-- [RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md) - Основной roadmap (Event-Driven v2.0, MVP 5 weeks)
+- [RADICAL_1C_CONTROL_PLANE_ROADMAP.md](../roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md) - Основной roadmap
 - [WHY_EVENT_DRIVEN_NOT_GRPC.md](../archive/roadmap_variants/WHY_EVENT_DRIVEN_NOT_GRPC.md) - Architectural decision
 - [REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md) - Distributed Tracing (10 weeks)
 
@@ -94,8 +89,8 @@ architecture/
 **Implemented (Week 1-2):**
 - ✅ Shared Events Library (Redis Pub/Sub + Watermill)
 - ✅ Worker State Machine (extension install orchestration)
-- ✅ cluster-service Event Handlers (lock/unlock/terminate)
-- ✅ batch-service Event Handlers (install extension)
+- ✅ Direct RAS operations in Worker (lock/unlock/terminate)
+- ✅ Extension install via CLI (no external services)
 - ✅ Orchestrator Event Subscriber (Django + Redis Streams)
 - ✅ 149 unit tests, 5 integration tests (all PASS)
 

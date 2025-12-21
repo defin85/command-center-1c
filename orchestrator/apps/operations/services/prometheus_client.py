@@ -2,7 +2,7 @@
 Prometheus client for fetching service mesh metrics.
 
 Provides real-time and historical metrics for:
-- API Gateway, Worker, RAS Adapter, Orchestrator services
+- API Gateway, Worker, Orchestrator services
 - Request rates, latencies, error rates
 - Active workers and queue depths
 """
@@ -84,11 +84,6 @@ SERVICE_CONFIG = {
             'degraded_p95_ms': 15_000,
         },
     },
-    'ras-adapter': {
-        'display_name': 'RAS Adapter',
-        'job_patterns': ['ras_adapter', 'ras-adapter', 'rasadapter'],
-        'namespace': 'cc1c',
-    },
     'orchestrator': {
         'display_name': 'Orchestrator',
         'job_patterns': ['orchestrator', 'django'],
@@ -140,11 +135,8 @@ SERVICE_TOPOLOGY = [
     ('redis', 'event-subscriber'),  # Event Subscriber consumes Redis Streams
     ('event-subscriber', 'postgresql'),  # Event Subscriber writes to DB
 
-    # Level 3: Worker → Execution Layer (via Redis Streams)
-    ('worker', 'ras-adapter'),
-    # Level 3.5: Execution Layer → Redis (events back)
-    ('ras-adapter', 'redis'),
-    ('ras-adapter', 'ras-server'),
+    # Level 3: Worker → Execution Layer (direct RAS/CLI tools)
+    ('worker', 'ras-server'),
 
     # Note: All adapters communicate via Redis Streams (Event-Driven Architecture)
     # Results flow: Adapters → Redis Streams (events:*) → Worker/Event Subscriber → PostgreSQL

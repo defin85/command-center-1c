@@ -100,7 +100,7 @@ fi
 # ============================
 # Generate Orchestrator proxy routes
 # ============================
-echo -e "${GREEN}[0/3] Orchestrator proxy routes...${NC}"
+echo -e "${GREEN}[1/3] Orchestrator proxy routes...${NC}"
 
 ORCHESTRATOR_SPEC="$CONTRACTS_DIR/orchestrator/openapi.yaml"
 ORCHESTRATOR_ROUTES_OUTPUT="$PROJECT_ROOT/go-services/api-gateway/internal/routes/generated/orchestrator_routes.go"
@@ -144,77 +144,6 @@ else
     else
         echo -e "  ${YELLOW}⊘ Proxy routes unchanged (skip)${NC}"
     fi
-fi
-
-echo ""
-
-# ============================
-# Generate ras-adapter clients
-# ============================
-echo -e "${GREEN}[1/3] ras-adapter API...${NC}"
-
-RAS_SPEC="$CONTRACTS_DIR/ras-adapter/openapi.yaml"
-RAS_GO_OUTPUT="$PROJECT_ROOT/go-services/ras-adapter/internal/api/generated"
-RAS_PY_OUTPUT="$PROJECT_ROOT/orchestrator/apps/databases/clients/generated"
-
-if needs_regeneration "$RAS_SPEC" "$RAS_GO_OUTPUT"; then
-    echo "  -> Generating Go server types..."
-
-    # Check if oapi-codegen is installed
-    if ! command -v oapi-codegen &> /dev/null; then
-        echo -e "${RED}Error: oapi-codegen not found${NC}"
-        echo "Install with: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest"
-        exit 1
-    fi
-
-    # Create output directory if not exists
-    mkdir -p "$RAS_GO_OUTPUT"
-
-    # Generate Go code
-    cd "$CONTRACTS_DIR/ras-adapter"
-    oapi-codegen -config .oapi-codegen.yaml openapi.yaml
-
-    echo -e "  ${GREEN}✓ Go server types generated${NC}"
-else
-    echo -e "  ${YELLOW}⊘ Go code unchanged (skip)${NC}"
-fi
-
-if needs_regeneration "$RAS_SPEC" "$RAS_PY_OUTPUT"; then
-    echo "  -> Generating Python client..."
-
-    # Check if openapi-python-client is installed
-    # Кроссплатформенный путь к activate (Linux: bin, Windows: Scripts)
-    if [[ -f "$PROJECT_ROOT/orchestrator/venv/bin/activate" ]]; then
-        VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/bin/activate"
-    else
-        VENV_ACTIVATE="$PROJECT_ROOT/orchestrator/venv/Scripts/activate"
-    fi
-
-    if [[ ! -f "$VENV_ACTIVATE" ]]; then
-        echo -e "${RED}Error: Django venv not found at $VENV_ACTIVATE${NC}"
-        exit 1
-    fi
-
-    # Activate venv and check for openapi-python-client
-    source "$VENV_ACTIVATE"
-
-    if ! command -v openapi-python-client &> /dev/null; then
-        start_spinner "Installing openapi-python-client..."
-        pip install openapi-python-client -q
-        stop_spinner "success" "openapi-python-client installed"
-    fi
-
-    # Generate Python client
-    cd "$PROJECT_ROOT"
-    start_spinner "Generating Python client..."
-    openapi-python-client generate \
-        --path "$RAS_SPEC" \
-        --output-path "$RAS_PY_OUTPUT" \
-        --overwrite \
-        > /dev/null 2>&1
-    stop_spinner "success" "Python client generated"
-else
-    echo -e "  ${YELLOW}⊘ Python client unchanged (skip)${NC}"
 fi
 
 echo ""
@@ -300,8 +229,6 @@ echo "Generated clients:"
 if [[ -f "$ORCHESTRATOR_ROUTES_OUTPUT" ]]; then
     echo "  * Orchestrator proxy routes: $ORCHESTRATOR_ROUTES_OUTPUT"
 fi
-echo "  * ras-adapter Go server:     $RAS_GO_OUTPUT/server.go"
-echo "  * ras-adapter Python client: $RAS_PY_OUTPUT/ras_adapter_api_client/"
 if [[ -d "$GATEWAY_TS_OUTPUT" ]]; then
     echo "  * api-gateway TypeScript:    $GATEWAY_TS_OUTPUT/"
 fi

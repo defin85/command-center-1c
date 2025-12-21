@@ -14,8 +14,6 @@ type SchedulerConfig struct {
 	// Cron expressions for jobs
 	CleanupHistoryCron string // cleanup_old_status_history
 	CleanupEventsCron  string // cleanup_old_replayed_events
-	BatchHealthCron    string // periodic_batch_service_health
-	ClusterHealthCron  string // periodic_cluster_health_check
 	DatabaseHealthCron string // periodic_database_health_check
 	EventReplayCron    string // replay_failed_events
 
@@ -35,8 +33,6 @@ type SchedulerConfig struct {
 	EventReplayBatchSize int  // Number of events to replay per batch
 	EventReplayEnabled   bool // Feature flag for event replay job
 
-	// RAS Adapter configuration
-	RASAdapterURL string // URL for RAS Adapter service
 }
 
 // DefaultConfig returns scheduler configuration with defaults
@@ -45,8 +41,6 @@ func DefaultConfig() *SchedulerConfig {
 		Enabled:                     false,
 		CleanupHistoryCron:          "0 3 * * *",   // Daily at 3:00 AM
 		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
-		BatchHealthCron:             "@every 30s",  // Every 30 seconds
-		ClusterHealthCron:           "@every 60s",  // Every 60 seconds
 		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
 		EventReplayCron:             "@every 60s",  // Every 60 seconds
 		LockTTL:                     5 * time.Minute,
@@ -57,7 +51,6 @@ func DefaultConfig() *SchedulerConfig {
 		CleanupEventsRetentionDays:  7,
 		EventReplayBatchSize:        100,
 		EventReplayEnabled:          false, // Disabled by default
-		RASAdapterURL:               "http://localhost:8188",
 	}
 }
 
@@ -74,12 +67,6 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := os.Getenv("SCHEDULER_CLEANUP_EVENTS"); v != "" {
 		cfg.CleanupEventsCron = v
-	}
-	if v := os.Getenv("SCHEDULER_BATCH_HEALTH"); v != "" {
-		cfg.BatchHealthCron = v
-	}
-	if v := os.Getenv("SCHEDULER_CLUSTER_HEALTH"); v != "" {
-		cfg.ClusterHealthCron = v
 	}
 	if v := os.Getenv("SCHEDULER_DATABASE_HEALTH"); v != "" {
 		cfg.DatabaseHealthCron = v
@@ -110,11 +97,6 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := getIntEnv("CLEANUP_EVENTS_RETENTION_DAYS", 0); v > 0 {
 		cfg.CleanupEventsRetentionDays = v
-	}
-
-	// RAS Adapter URL
-	if v := os.Getenv("RAS_ADAPTER_URL"); v != "" {
-		cfg.RASAdapterURL = v
 	}
 
 	// Event Replay settings

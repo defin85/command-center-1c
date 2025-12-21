@@ -45,7 +45,7 @@ class TestServiceJWTAuthentication:
         Использует тот же алгоритм что в go-services/shared/auth/service_token.go
 
         Args:
-            service_name: Имя сервиса (worker, api-gateway, batch-service)
+            service_name: Имя сервиса (worker, api-gateway, worker)
             ttl_hours: Время жизни токена в часах
 
         Returns:
@@ -399,9 +399,9 @@ class TestServiceUserBehavior:
 
     def test_service_user_str_representation(self):
         """Проверка строкового представления ServiceUser"""
-        user = ServiceUser("batch-service")
+        user = ServiceUser("worker")
 
-        assert str(user) == "ServiceUser(batch-service)"
+        assert str(user) == "ServiceUser(worker)"
         print(f"[OK] ServiceUser str representation: {str(user)}")
 
 

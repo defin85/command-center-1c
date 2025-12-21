@@ -24,6 +24,31 @@ type publishedEvent struct {
 	correlationID string
 }
 
+type mockClusterInfoProvider struct {
+	info *ClusterInfo
+	err  error
+}
+
+func (p *mockClusterInfoProvider) Fetch(ctx context.Context, databaseID string) (*ClusterInfo, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.info, nil
+}
+
+type mockRasClient struct {
+	unlockCalls int
+}
+
+func (m *mockRasClient) UnlockScheduledJobs(ctx context.Context, clusterID, infobaseID, clusterUser, clusterPwd string) error {
+	m.unlockCalls++
+	return nil
+}
+
+func (m *mockRasClient) Close() error {
+	return nil
+}
+
 func (m *mockPublisher) Publish(ctx context.Context, channel string, eventType string, payload interface{}, correlationID string) error {
 	m.publishedEvents = append(m.publishedEvents, publishedEvent{
 		channel:       channel,
@@ -38,7 +63,7 @@ func (m *mockPublisher) Close() error {
 	return nil
 }
 
-func setupTestWatchdog(t *testing.T) (*Watchdog, *miniredis.Miniredis, *mockPublisher) {
+func setupTestWatchdog(t *testing.T) (*Watchdog, *miniredis.Miniredis, *mockPublisher, *mockRasClient) {
 	// Create miniredis
 	mr, err := miniredis.Run()
 	require.NoError(t, err)
@@ -52,6 +77,20 @@ func setupTestWatchdog(t *testing.T) (*Watchdog, *miniredis.Miniredis, *mockPubl
 	publisher := &mockPublisher{
 		publishedEvents: make([]publishedEvent, 0),
 	}
+	mockRas := &mockRasClient{}
+	infoProvider := &mockClusterInfoProvider{
+		info: &ClusterInfo{
+			ClusterID:   "cluster-1",
+			InfobaseID:  "infobase-1",
+			RASServer:   "localhost:1545",
+			ClusterUser: "admin",
+			ClusterPwd:  "password",
+		},
+	}
+
+	rasFactory := func(server string) (rasClient, error) {
+		return mockRas, nil
+	}
 
 	// Create watchdog with short intervals for testing
 	config := &WatchdogConfig{
@@ -60,9 +99,9 @@ func setupTestWatchdog(t *testing.T) (*Watchdog, *miniredis.Miniredis, *mockPubl
 		MaxRecoveryBatch: 5,
 	}
 
-	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, config)
+	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, config, infoProvider, rasFactory)
 
-	return watchdog, mr, publisher
+	return watchdog, mr, publisher, mockRas
 }
 
 func TestDefaultWatchdogConfig(t *testing.T) {
@@ -74,7 +113,7 @@ func TestDefaultWatchdogConfig(t *testing.T) {
 }
 
 func TestNewWatchdog(t *testing.T) {
-	watchdog, mr, _ := setupTestWatchdog(t)
+	watchdog, mr, _, _ := setupTestWatchdog(t)
 	defer mr.Close()
 
 	assert.NotNil(t, watchdog)
@@ -94,14 +133,14 @@ func TestNewWatchdog_WithNilConfig(t *testing.T) {
 	})
 	publisher := &mockPublisher{}
 
-	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, nil)
+	watchdog := NewWatchdog(redisClient, publisher, "http://localhost:8200", nil, nil, nil, nil)
 
 	assert.NotNil(t, watchdog.config)
 	assert.Equal(t, 5*time.Minute, watchdog.config.CheckInterval)
 }
 
 func TestIsStuck(t *testing.T) {
-	watchdog, mr, _ := setupTestWatchdog(t)
+	watchdog, mr, _, _ := setupTestWatchdog(t)
 	defer mr.Close()
 
 	tests := []struct {
@@ -160,7 +199,7 @@ func TestIsStuck(t *testing.T) {
 }
 
 func TestBuildCompensationStackFromState(t *testing.T) {
-	watchdog, mr, _ := setupTestWatchdog(t)
+	watchdog, mr, _, _ := setupTestWatchdog(t)
 	defer mr.Close()
 
 	tests := []struct {
@@ -225,7 +264,7 @@ func TestBuildCompensationStackFromState(t *testing.T) {
 }
 
 func TestRecoverWorkflow(t *testing.T) {
-	watchdog, mr, publisher := setupTestWatchdog(t)
+	watchdog, mr, publisher, rasClient := setupTestWatchdog(t)
 	defer mr.Close()
 
 	ctx := context.Background()
@@ -255,17 +294,10 @@ func TestRecoverWorkflow(t *testing.T) {
 	exists := mr.Exists(key)
 	assert.False(t, exists)
 
-	// Verify events were published
-	assert.Len(t, publisher.publishedEvents, 2) // unlock command + recovery event
+	// Verify recovery event was published
+	assert.Len(t, publisher.publishedEvents, 1)
 
-	// Check unlock command
-	unlockEvent := publisher.publishedEvents[0]
-	assert.Equal(t, "commands:cluster-service:infobase:unlock", unlockEvent.channel)
-	assert.Equal(t, "cluster.infobase.unlock", unlockEvent.eventType)
-	assert.Equal(t, "corr-789", unlockEvent.correlationID)
-
-	// Check recovery event
-	recoveryEvent := publisher.publishedEvents[1]
+	recoveryEvent := publisher.publishedEvents[0]
 	assert.Equal(t, "events:orchestrator:workflow:recovered", recoveryEvent.channel)
 	assert.Equal(t, "orchestrator.workflow.recovered", recoveryEvent.eventType)
 	assert.Equal(t, "corr-789", recoveryEvent.correlationID)
@@ -275,10 +307,11 @@ func TestRecoverWorkflow(t *testing.T) {
 	assert.Equal(t, "db-456", payload["database_id"])
 	assert.Equal(t, "jobs_locked", payload["recovered_from_state"])
 	assert.True(t, payload["all_succeeded"].(bool))
+	assert.Equal(t, 1, rasClient.unlockCalls)
 }
 
 func TestCheckStuckWorkflows(t *testing.T) {
-	watchdog, mr, publisher := setupTestWatchdog(t)
+	watchdog, mr, publisher, rasClient := setupTestWatchdog(t)
 	defer mr.Close()
 
 	ctx := context.Background()
@@ -331,12 +364,13 @@ func TestCheckStuckWorkflows(t *testing.T) {
 	assert.True(t, mr.Exists("workflow:corr-active:state"))
 	assert.True(t, mr.Exists("workflow:corr-completed:state"))
 
-	// Verify events for stuck workflow
-	assert.Len(t, publisher.publishedEvents, 2) // unlock + recovery for one workflow
+	// Verify recovery event for stuck workflow
+	assert.Len(t, publisher.publishedEvents, 1)
+	assert.Equal(t, 1, rasClient.unlockCalls)
 }
 
 func TestCheckStuckWorkflows_MaxBatch(t *testing.T) {
-	watchdog, mr, publisher := setupTestWatchdog(t)
+	watchdog, mr, publisher, rasClient := setupTestWatchdog(t)
 	defer mr.Close()
 
 	// Set max batch to 2
@@ -365,12 +399,12 @@ func TestCheckStuckWorkflows_MaxBatch(t *testing.T) {
 	watchdog.checkStuckWorkflows(ctx)
 
 	// Verify only MaxRecoveryBatch workflows were recovered
-	// Each recovery publishes 2 events (unlock + recovery)
-	assert.Equal(t, 4, len(publisher.publishedEvents)) // 2 workflows * 2 events
+	assert.Equal(t, 2, len(publisher.publishedEvents))
+	assert.Equal(t, 2, rasClient.unlockCalls)
 }
 
 func TestWatchdogRun_GracefulShutdown(t *testing.T) {
-	watchdog, mr, _ := setupTestWatchdog(t)
+	watchdog, mr, _, _ := setupTestWatchdog(t)
 	defer mr.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())

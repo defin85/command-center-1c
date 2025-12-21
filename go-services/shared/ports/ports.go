@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // =============================================================================
 // Source: config/services.json
-// Generated: 2025-12-20 21:03:45
+// Generated: 2025-12-21 03:20:38
 // Mode: local
 // Generator: scripts/config/generate.py
 // =============================================================================
@@ -17,7 +17,6 @@ const (
 	Frontend = 5173
 	ApiGateway = 8180
 	Orchestrator = 8200
-	RasAdapter = 8188
 	Worker = 9091
 )
 
@@ -37,7 +36,6 @@ const (
 	DefaultFrontendURL = "http://localhost:5173"
 	DefaultApiGatewayURL = "http://localhost:8180"
 	DefaultOrchestratorURL = "http://localhost:8200"
-	DefaultRasAdapterURL = "http://localhost:8188"
 	DefaultWorkerURL = "http://localhost:9091"
 )
 
@@ -46,7 +44,6 @@ var ServiceURLs = map[string]string{
 	"frontend": "http://localhost:5173",
 	"api-gateway": "http://localhost:8180",
 	"orchestrator": "http://localhost:8200",
-	"ras-adapter": "http://localhost:8188",
 	"worker": "http://localhost:9091",
 }
 
@@ -54,7 +51,6 @@ var ServiceURLs = map[string]string{
 var ServiceHealthPaths = map[string]string{
 	"api-gateway": "/health",
 	"orchestrator": "/health",
-	"ras-adapter": "/health",
 	"worker": "/health",
 }
 
@@ -62,5 +58,4 @@ var ServiceHealthPaths = map[string]string{
 func FrontendAddr() string { return fmt.Sprintf(":%d", Frontend) }
 func ApiGatewayAddr() string { return fmt.Sprintf(":%d", ApiGateway) }
 func OrchestratorAddr() string { return fmt.Sprintf(":%d", Orchestrator) }
-func RasAdapterAddr() string { return fmt.Sprintf(":%d", RasAdapter) }
 func WorkerAddr() string { return fmt.Sprintf(":%d", Worker) }

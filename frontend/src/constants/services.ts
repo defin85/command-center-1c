@@ -3,7 +3,6 @@ export type ServiceName =
   | 'api-gateway'
   | 'orchestrator'
   | 'worker'
-  | 'ras-adapter'
 
 export interface KnownService {
   name: ServiceName
@@ -41,12 +40,6 @@ export const KNOWN_SERVICES: KnownService[] = [
     name: 'worker',
     title: 'Worker',
     url: envUrl('VITE_WORKER_URL') ?? 'http://localhost:9091',
-    healthPath: '/health',
-  },
-  {
-    name: 'ras-adapter',
-    title: 'RAS Adapter',
-    url: envUrl('VITE_RAS_ADAPTER_URL') ?? 'http://localhost:8188',
     healthPath: '/health',
   },
 ]

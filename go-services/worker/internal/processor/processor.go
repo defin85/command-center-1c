@@ -20,6 +20,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/designerops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/extensionops"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibcmdops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/odataops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/workflowops"
@@ -160,7 +161,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		workflowops.NewDriver(processor.workerID, processor.eventPublisher, processor.workflowHandler, processor.timeline),
 	)
 	_ = processor.driverRegistry.RegisterMeta(
-		rasops.NewMetaDriver(processor.workerID, redisClient, processor.eventPublisher, processor.timeline, cfg.RASAdapterURL),
+		rasops.NewMetaDriver(processor.workerID, redisClient, processor.eventPublisher, processor.timeline),
 	)
 
 	// Database operations
@@ -180,7 +181,13 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		),
 	)
 	_ = processor.driverRegistry.RegisterDatabase(
-		rasops.NewInfobaseDriver(processor.workerID, processor.clusterResolver, processor.timeline, cfg.RASAdapterURL),
+		ibcmdops.NewDriver(
+			processor.credsClient,
+			processor.timeline,
+		),
+	)
+	_ = processor.driverRegistry.RegisterDatabase(
+		rasops.NewInfobaseDriver(processor.workerID, processor.clusterResolver, processor.timeline),
 	)
 	_ = processor.driverRegistry.RegisterDatabase(
 		odataops.NewDriver(

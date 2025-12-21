@@ -102,12 +102,6 @@ check_spec_breaking_changes() {
 # Check all specs
 FAILED=0
 
-# ras-adapter
-if ! check_spec_breaking_changes "$CONTRACTS_DIR/ras-adapter/openapi.yaml" "ras-adapter"; then
-    FAILED=$((FAILED + 1))
-fi
-echo ""
-
 # api-gateway (if exists)
 if [[ -f "$CONTRACTS_DIR/api-gateway/openapi.yaml" ]]; then
     if ! check_spec_breaking_changes "$CONTRACTS_DIR/api-gateway/openapi.yaml" "api-gateway"; then

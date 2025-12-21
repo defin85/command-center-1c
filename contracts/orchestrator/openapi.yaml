@@ -1965,6 +1965,47 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/execute-ibcmd/:
+    post:
+      operationId: v2_operations_execute_ibcmd_create
+      description: "\n    Queue an IBCMD operation for execution on selected databases.\n\
+        \n    **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n\
+        \    - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`\
+        \ - Replicate infobase to another server\n    - `ibcmd_create` - Create new\
+        \ infobase\n    "
+      summary: Execute IBCMD operation
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteOperationResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/get-operation/:
     get:
       operationId: v2_operations_get_operation_retrieve
@@ -2521,7 +2562,7 @@ paths:
         name: service
         schema:
           type: string
-        description: Service name (e.g., api-gateway, worker, ras-adapter)
+        description: Service name (e.g., api-gateway, worker)
         required: true
       tags:
       - v2
@@ -4422,6 +4463,35 @@ components:
       required:
       - database_ids
       - operation_type
+    ExecuteIbcmdOperationRequest:
+      type: object
+      description: Request body for execute_ibcmd_operation endpoint.
+      properties:
+        operation_type:
+          allOf:
+          - $ref: '#/components/schemas/ExecuteIbcmdOperationRequestOperationTypeEnum'
+          description: |-
+            Type of IBCMD operation to execute
+
+            * `ibcmd_backup` - IBCMD Backup
+            * `ibcmd_restore` - IBCMD Restore
+            * `ibcmd_replicate` - IBCMD Replicate
+            * `ibcmd_create` - IBCMD Create
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of database UUIDs
+          maxItems: 200
+          minItems: 1
+        config:
+          type: object
+          additionalProperties: {}
+          description: Operation-specific configuration (dbms, db_server, db_name, etc.)
+      required:
+      - database_ids
+      - operation_type
     ExecuteOperationRequestOperationTypeEnum:
       enum:
       - lock_scheduled_jobs
@@ -4436,6 +4506,18 @@ components:
         * `block_sessions` - Block Sessions
         * `unblock_sessions` - Unblock Sessions
         * `terminate_sessions` - Terminate Sessions
+    ExecuteIbcmdOperationRequestOperationTypeEnum:
+      enum:
+      - ibcmd_backup
+      - ibcmd_restore
+      - ibcmd_replicate
+      - ibcmd_create
+      type: string
+      description: |-
+        * `ibcmd_backup` - IBCMD Backup
+        * `ibcmd_restore` - IBCMD Restore
+        * `ibcmd_replicate` - IBCMD Replicate
+        * `ibcmd_create` - IBCMD Create
     ExecuteOperationResponse:
       type: object
       description: Response for execute_operation endpoint.

@@ -24,10 +24,9 @@
         "frontend": { "$ref": "#/definitions/service" },
         "api-gateway": { "$ref": "#/definitions/service" },
         "orchestrator": { "$ref": "#/definitions/service" },
-        "ras-adapter": { "$ref": "#/definitions/service" },
         "worker": { "$ref": "#/definitions/service" }
       },
-      "required": ["frontend", "api-gateway", "orchestrator", "ras-adapter", "worker"]
+      "required": ["frontend", "api-gateway", "orchestrator", "worker"]
     },
     "infrastructure": {
       "type": "object",

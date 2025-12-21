@@ -82,7 +82,6 @@ require (
 )
 
 replace (
-	github.com/commandcenter1c/commandcenter/cluster-service => ../../go-services/cluster-service
 	github.com/commandcenter1c/commandcenter/shared => ../../go-services/shared
 	github.com/commandcenter1c/commandcenter/worker => ../../go-services/worker
 )

@@ -34,12 +34,9 @@
 
 **Доступные сервисы:**
 - `orchestrator` - Django Orchestrator (port 8000)
-- `celery-worker` - Celery Worker
-- `celery-beat` - Celery Beat
-- `api-gateway` - Go API Gateway (port 8080)
+- `api-gateway` - Go API Gateway (port 8180)
 - `worker` - Go Worker
 - `ras` - 1C RAS Server (port 1545)
-- `ras-adapter` - Go RAS Adapter (port 8088)
 - `frontend` - React Frontend (port 5173)
 
 **Мониторинг и Tracing (Docker, автозапуск):**
@@ -70,45 +67,6 @@
 
 ---
 
-## RAS Adapter
-
-**Status:** ✅ Production
-
-RAS Adapter provides direct RAS protocol integration (khorevaa/ras-client) для Lock/Unlock operations.
-
-**Commands:**
-```bash
-# Start (included in start-all.sh)
-./bin/cc1c-ras-adapter.exe
-
-# Stop
-./scripts/dev/stop-all.sh  # stops all services including ras-adapter
-
-# Restart (smart rebuild)
-./scripts/dev/restart-all.sh --service=ras-adapter
-
-# Health check
-curl http://localhost:8088/health
-
-# Smoke tests
-./scripts/dev/test-lock-unlock-workflow.sh
-```
-
-**Endpoints:**
-- Health: http://localhost:8088/health
-- Clusters: http://localhost:8088/api/v2/list-clusters?server=localhost:1545
-- Infobases: http://localhost:8088/api/v2/list-infobases?cluster_id={uuid}
-- Lock: POST http://localhost:8088/api/v2/lock-infobase?cluster_id={uuid}&infobase_id={uuid}
-- Unlock: POST http://localhost:8088/api/v2/unlock-infobase?cluster_id={uuid}&infobase_id={uuid}
-
-**Architecture:**
-```
-Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
-                              ↓ khorevaa/ras-client (direct)
-```
-
----
-
 ## Скрипты
 
 ### start-all.sh
@@ -128,8 +86,8 @@ Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
    - Infrastructure: PostgreSQL, Redis, ClickHouse (опционально)
    - **Monitoring: Prometheus, Grafana** ← автоматически!
 3. Применяет Django миграции
-4. Запускает Python сервисы (orchestrator, celery-worker, celery-beat)
-5. Запускает Go сервисы (api-gateway, worker, ras, ras-adapter)
+4. Запускает Python сервис (orchestrator)
+5. Запускает Go сервисы (api-gateway, worker, ras)
 6. Запускает Frontend (React dev server)
 
 **Особенности:**
@@ -166,8 +124,8 @@ Worker → Redis Pub/Sub → RAS Adapter (8088) → RAS (1545)
 **Порядок остановки:**
 ```
 Application Services:
-  frontend → ras-adapter → worker →
-  api-gateway → celery-beat → celery-worker → orchestrator
+  frontend → worker →
+  api-gateway → orchestrator
 
 Docker Services:
   PostgreSQL, Redis → Prometheus, Grafana, Jaeger
@@ -339,10 +297,8 @@ Docker Services:
 
 2. **Проверка HTTP endpoints:**
    - Frontend: `http://localhost:5173`
-   - API Gateway: `http://localhost:8080/health`
-   - Orchestrator: `http://localhost:8000/health`
-   - RAS Adapter: `http://localhost:8088/health`
-   - Batch Service: `http://localhost:8087/health`
+   - API Gateway: `http://localhost:8180/health`
+   - Orchestrator: `http://localhost:8200/health`
 
 3. **Проверка Docker сервисов:**
    - PostgreSQL: проверка контейнера + `pg_isready`
@@ -363,8 +319,7 @@ Docker Services:
 [1] Проверка локальных процессов:
 
   orchestrator: ✓ запущен (PID: 12345)
-  celery-worker: ✓ запущен (PID: 12346)
-  api-gateway: ✓ запущен (PID: 12348)
+  api-gateway: ✓ запущен (PID: 12346)
   ...
 
 [2] Проверка HTTP endpoints:
@@ -522,7 +477,6 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 - Exit code 1 если хотя бы один тест failed
 
 **Важно:**
-- RAS Adapter должен быть запущен
 - RAS сервер должен быть доступен на порту 1545
 - Redis должен быть запущен
 
@@ -545,7 +499,7 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 
 | Опция | Описание |
 |-------|----------|
-| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker, ras-adapter) |
+| `--service=<name>` | Собрать только указанный сервис (api-gateway, worker) |
 | `--os=<os>` | Целевая ОС (linux, windows, darwin). По умолчанию: текущая ОС |
 | `--arch=<arch>` | Целевая архитектура (amd64, arm64). По умолчанию: текущая архитектура |
 | `--parallel` | Собрать все сервисы параллельно (быстрее) |
@@ -590,7 +544,6 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 **Поддерживаемые сервисы:**
 - `api-gateway` - Go API Gateway
 - `worker` - Go Worker
-- `ras-adapter` - Go RAS Adapter
 
 ---
 
@@ -687,40 +640,6 @@ docker-compose -f docker-compose.local.yml down
 ./scripts/dev/start-all.sh
 ```
 
-### 🧪 Тестирование RAS Adapter (Week 4)
-
-```bash
-# 1. Запустить ras-adapter (если не запущен)
-./scripts/dev/start-all.sh
-
-# 2. Smoke tests (автоматические)
-./scripts/dev/test-lock-unlock-workflow.sh
-
-# 3. Проверить health
-curl http://localhost:8088/health
-
-# 4. Получить список кластеров
-curl "http://localhost:8088/api/v2/list-clusters?server=localhost:1545"
-
-# 5. Получить список информационных баз (подставить cluster_id)
-curl "http://localhost:8088/api/v2/list-infobases?cluster_id=<UUID>"
-
-# 6. Manual Lock Test (подставить cluster_id и infobase_id)
-curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>" \
-  -H "Content-Type: application/json" \
-  -d '{"db_user":"admin","db_password":"secret"}'
-
-# 7. Manual Unlock Test
-curl -X POST "http://localhost:8088/api/v2/unlock-infobase?cluster_id=<CLUSTER_ID>&infobase_id=<INFOBASE_ID>" \
-  -H "Content-Type: application/json" \
-  -d '{"db_user":"admin","db_password":"secret"}'
-
-# 8. Просмотр логов
-./scripts/dev/logs.sh ras-adapter
-```
-
----
-
 ## Troubleshooting
 
 ### Проблема: Windows Firewall постоянно спрашивает разрешение
@@ -782,8 +701,8 @@ cat .env.local | grep DB_HOST
 rm -rf pids/*.pid
 
 # 2. Убить процессы вручную по портам
-netstat -ano | findstr :8080  # Windows
-lsof -i :8080  # Linux/Mac
+netstat -ano | findstr :8180  # Windows
+lsof -i :8180  # Linux/Mac
 
 # 3. Запустить всё заново
 ./scripts/dev/start-all.sh
@@ -924,7 +843,6 @@ command-center-1c/
 **Автор:** CommandCenter1C Team
 
 **Изменения v2.2:**
-- Удалён cluster-service (заменён на ras-adapter)
-- Удалён ras-grpc-gw (не используется)
+- Удалены legacy сервисы управления RAS
 - Добавлен Jaeger для distributed tracing
 - Порт Grafana изменён на 5000

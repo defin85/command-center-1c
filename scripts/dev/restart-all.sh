@@ -35,7 +35,7 @@ LOGS_DIR="$PROJECT_ROOT/logs"
 SCRIPTS_DIR="$PROJECT_ROOT/scripts/dev"
 
 # Список Go сервисов (в порядке приоритета)
-GO_SERVICES=("api-gateway" "worker" "ras-adapter")
+GO_SERVICES=("api-gateway" "worker")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
@@ -84,7 +84,7 @@ show_help() {
     echo ""
     echo "Available services:"
     echo "  orchestrator, api-gateway, worker,"
-    echo "  ras-adapter, frontend"
+    echo "  frontend"
     echo ""
 }
 

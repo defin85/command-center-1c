@@ -69,7 +69,6 @@ declare -a JOBS=(
   "api_gateway|api-gateway|apigateway"
   "orchestrator"
   "worker"
-  "ras_adapter|ras-adapter|rasadapter"
 )
 
 overall_ok=1

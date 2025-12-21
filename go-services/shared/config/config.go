@@ -38,15 +38,6 @@ type Config struct {
 	// Used as `X-Internal-Token` header for `/api/v2/internal/*`.
 	InternalAPIToken string
 
-	// Batch Service configuration
-	BatchServiceURL string
-
-	// Cluster Service configuration
-	ClusterServiceURL string
-
-	// RAS Adapter configuration
-	RASAdapterURL string
-
 	// Jaeger configuration
 	JaegerURL string
 
@@ -123,15 +114,6 @@ func LoadFromEnv() *Config {
 		// Orchestrator (Port 8200 - outside Windows reserved ranges 7913-8012, 8013-8112)
 		OrchestratorURL:  getEnv("ORCHESTRATOR_URL", "http://localhost:8200"),
 		InternalAPIToken: getEnv("INTERNAL_API_TOKEN", ""),
-
-		// Batch Service (Port 8187 - outside Windows reserved range 8013-8112)
-		BatchServiceURL: getEnv("BATCH_SERVICE_URL", "http://localhost:8187"),
-
-		// Cluster Service (Port 8188 - outside Windows reserved range 8013-8112)
-		ClusterServiceURL: getEnv("CLUSTER_SERVICE_URL", "http://localhost:8188"),
-
-		// RAS Adapter (Port 8188 - outside Windows reserved range 8013-8112)
-		RASAdapterURL: getEnv("RAS_ADAPTER_URL", "http://localhost:8188"),
 
 		// Jaeger
 		JaegerURL: getEnv("JAEGER_URL", "http://localhost:16686"),

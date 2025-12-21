@@ -110,9 +110,6 @@ admin_actions_total = Counter(
 
 EVENT_SUBSCRIBER_GROUP = "orchestrator-group"
 EVENT_SUBSCRIBER_STREAMS = [
-    'events:cluster-service:infobase:locked',
-    'events:cluster-service:infobase:unlocked',
-    'events:cluster-service:sessions:closed',
     'events:worker:cluster-synced',
     'events:worker:clusters-discovered',
     'events:worker:completed',

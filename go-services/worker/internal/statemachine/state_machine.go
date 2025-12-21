@@ -99,7 +99,7 @@ func WithTimeline(timeline tracing.TimelineRecorder) StateMachineOption {
 	}
 }
 
-// WithExtensionInstaller sets a direct installer to avoid external batch-service.
+// WithExtensionInstaller sets a direct installer to avoid legacy batch pipeline.
 func WithExtensionInstaller(installer ExtensionInstaller) StateMachineOption {
 	return func(sm *ExtensionInstallStateMachine) {
 		sm.extensionInstaller = installer

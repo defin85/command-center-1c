@@ -299,17 +299,6 @@ INSTALLATION_SERVICE_TIMEOUT = int(env(
     default='180'  # 3 minutes
 ))
 
-# RAS Adapter Configuration (replaces cluster-service)
-# Port 8188 - outside Windows reserved range (8013-8112)
-RAS_ADAPTER_URL = env(
-    'RAS_ADAPTER_URL',
-    default='http://localhost:8188'
-)
-RAS_ADAPTER_TIMEOUT = int(env(
-    'RAS_ADAPTER_TIMEOUT',
-    default='180'  # 3 minutes - RAS operations can be slow
-))
-
 # OData runs inside worker (direct HTTP).
 
 # Worker Configuration
@@ -329,8 +318,6 @@ RAS_DEFAULT_SERVER = env(
 # Health Check Settings
 HEALTH_CHECK_CLUSTER_INTERVAL = 60  # секунды
 HEALTH_CHECK_DATABASE_INTERVAL = 30
-HEALTH_CHECK_BATCH_SERVICE_INTERVAL = 30
-
 HEALTH_CHECK_FAILURE_THRESHOLD = 3  # consecutive failures до ERROR
 
 HEALTH_CHECK_DATABASE_BATCH_SIZE = 20  # батч для Database health checks
@@ -341,6 +328,11 @@ STATUS_HISTORY_RETENTION_DAYS = 90
 
 # ========== Extension Storage Configuration ==========
 EXTENSION_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'extensions'
+
+# ========== IBCMD Storage Configuration ==========
+# Backend reserved for future S3 support (local is default).
+IBCMD_STORAGE_BACKEND = env('IBCMD_STORAGE_BACKEND', default='local')
+IBCMD_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'ibcmd'
 
 # ========== File Upload Configuration (Phase 5.1) ==========
 # Base directory for uploaded files
@@ -358,7 +350,6 @@ FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='
 # ========== System Monitoring Configuration ==========
 # Ports outside Windows reserved range (8013-8112)
 API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
-# Note: RAS_ADAPTER_URL defined above
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
 MONITORED_SERVICES = [
@@ -373,12 +364,6 @@ MONITORED_SERVICES = [
         'type': 'frontend',
         'health_url': f'{FRONTEND_URL}/',
         'critical': False,
-    },
-    {
-        'name': 'ras-adapter',
-        'type': 'backend',
-        'health_url': f'{RAS_ADAPTER_URL}/health',
-        'critical': True,
     },
     {
         'name': 'worker',

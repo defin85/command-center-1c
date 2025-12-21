@@ -15,7 +15,7 @@ cd "$PROJECT_ROOT"
 source "$PROJECT_ROOT/scripts/lib/init.sh"
 
 # Константы проекта
-GO_SERVICES=("api-gateway" "worker" "ras-adapter")
+GO_SERVICES=("api-gateway" "worker")
 
 SERVICE=$1
 PORT=${2:-2345}  # Default port 2345
@@ -29,7 +29,6 @@ if [[ -z "$SERVICE" ]]; then
     echo -e "${BLUE}Available services:${NC}"
     echo "  api-gateway   (default port: 2345)"
     echo "  worker        (default port: 2346)"
-    echo "  ras-adapter (default port: 2347)"
     echo ""
     echo -e "${BLUE}Example:${NC}"
     echo "  ./scripts/dev/debug-service.sh api-gateway 2345"
@@ -40,10 +39,9 @@ fi
 case $SERVICE in
     api-gateway)   PORT=${2:-2345} ;;
     worker)        PORT=${2:-2346} ;;
-    ras-adapter)   PORT=${2:-2347} ;;
     *)
         log_error "Неизвестный сервис: $SERVICE"
-        echo "Available: api-gateway, worker, ras-adapter"
+        echo "Available: api-gateway, worker"
         exit 1
         ;;
 esac

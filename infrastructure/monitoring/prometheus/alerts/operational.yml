@@ -38,17 +38,6 @@ groups:
           summary: "Orchestrator is down"
           description: "Orchestrator has been unreachable for more than 1 minute."
 
-      # RAS Adapter down
-      - alert: RASAdapterDown
-        expr: up{job="ras-adapter"} == 0
-        for: 2m
-        labels:
-          severity: warning
-          component: ras-adapter
-        annotations:
-          summary: "RAS Adapter is down"
-          description: "RAS Adapter has been unreachable for more than 2 minutes."
-
   - name: performance_alerts
     interval: 1m
     rules:

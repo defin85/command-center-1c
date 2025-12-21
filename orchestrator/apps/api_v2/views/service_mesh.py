@@ -123,7 +123,6 @@ TYPE_MAP = {
     "api-gateway": "backend",
     "orchestrator": "backend",
     "worker": "backend",
-    "ras-adapter": "backend",
     "postgresql": "internal",
     "redis": "internal",
     "event-subscriber": "internal",
@@ -258,7 +257,7 @@ def get_metrics(request):
     summary='Get service metrics history',
     description='Get historical metrics for a specific service from Prometheus. Returns ops/minute, p95 latency, and error rate over time.',
     parameters=[
-        OpenApiParameter(name='service', type=str, required=True, description='Service name (e.g., api-gateway, worker, ras-adapter)'),
+        OpenApiParameter(name='service', type=str, required=True, description='Service name (e.g., api-gateway, worker)'),
         OpenApiParameter(name='minutes', type=int, required=False, description='History period in minutes (default: 30, max: 1440)'),
     ],
     responses={

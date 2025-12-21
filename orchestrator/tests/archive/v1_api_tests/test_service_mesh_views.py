@@ -502,7 +502,7 @@ class TestServiceMeshOperationsView:
         # Verify services are inferred correctly
         for op_data in data['operations']:
             assert 'service' in op_data
-            assert op_data['service'] in ['worker', 'orchestrator', 'ras-adapter']
+            assert op_data['service'] in ['worker', 'orchestrator', 'worker']
 
     @pytest.mark.django_db
     def test_operations_view_empty_list(self, api_client, authenticated_user):
@@ -576,7 +576,7 @@ class TestServiceInferenceLogic:
         assert service == 'worker'
 
     def test_infer_service_ras_operations(self):
-        """Test inferring 'ras-adapter' service from RAS operations."""
+        """Test inferring 'worker' service from RAS operations."""
         from apps.operations.views.service_mesh import ServiceMeshOperationsView
         view = ServiceMeshOperationsView()
 
@@ -584,7 +584,7 @@ class TestServiceInferenceLogic:
         op.operation_type = 'RAS_LOCK'
 
         service = view._infer_service(op)
-        assert service == 'ras-adapter'
+        assert service == 'worker'
 
     def test_infer_service_query_operations(self):
         """Test inferring 'orchestrator' service from query operations."""
@@ -629,7 +629,7 @@ class TestFallbackBehavior:
 
         # Check fallback services have correct structure
         for service in data['services']:
-            assert service['name'] in ['api-gateway', 'worker', 'ras-adapter', 'orchestrator', 'frontend']
+            assert service['name'] in ['api-gateway', 'worker', 'worker', 'orchestrator', 'frontend']
             assert service['display_name']
             assert service['status'] == 'degraded'
             assert 'ops_per_minute' in service

@@ -20,7 +20,7 @@ import (
 INTEGRATION TESTS: Worker State Machine Failure Scenarios
 
 Эти тесты проверяют реальное поведение State Machine с настоящим Redis,
-но мокируют внешние HTTP-сервисы (cluster-service, batch-service).
+но мокируют внешние HTTP-сервисы (worker, worker).
 
 Покрываемые сценарии:
 1. Lock Failed - RAS возвращает ошибку
@@ -656,7 +656,7 @@ func TestStateMachine_OutOfOrderEvents(t *testing.T) {
 		"database_id": sm.DatabaseID,
 		"status":      "unlocked",
 	}
-	err = publisher.Publish(ctx, "events:cluster-service:infobase:unlocked",
+	err = publisher.Publish(ctx, "events:worker:infobase:unlocked",
 		"cluster.infobase.unlocked", unlockPayload, correlationID)
 	require.NoError(t, err)
 	t.Log("  ❌ Published UNLOCK (invalid transition from Init)")
@@ -669,7 +669,7 @@ func TestStateMachine_OutOfOrderEvents(t *testing.T) {
 		"infobase_id":      sm.InfobaseID,
 		"terminated_count": 0,
 	}
-	err = publisher.Publish(ctx, "events:cluster-service:sessions:closed",
+	err = publisher.Publish(ctx, "events:worker:sessions:closed",
 		"cluster.sessions.closed", terminatePayload, correlationID)
 	require.NoError(t, err)
 	t.Log("  ❌ Published TERMINATE (invalid transition from Init)")
@@ -683,7 +683,7 @@ func TestStateMachine_OutOfOrderEvents(t *testing.T) {
 		"status":           "installed",
 		"duration_seconds": 1.0,
 	}
-	err = publisher.Publish(ctx, "events:batch-service:extension:installed",
+	err = publisher.Publish(ctx, "events:worker:extension:installed",
 		"batch.extension.installed", installPayload, correlationID)
 	require.NoError(t, err)
 	t.Log("  ❌ Published INSTALL (invalid transition from Init)")

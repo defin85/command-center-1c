@@ -288,10 +288,7 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   worker: { x: 600, y: 410 },
 
   // Level 4: Worker children (bottom)
-  'ras-adapter': { x: 200, y: 540 },
-  'ras-server': { x: 60, y: 540 },
-  'designer-agent': { x: 600, y: 540 },
-  'batch-service': { x: 800, y: 540 },
+  'ras-server': { x: 200, y: 540 },
 }
 
 /**
@@ -332,23 +329,11 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     icon: 'thunderbolt',
     description: 'Go parallel task executor',
   },
-  'ras-adapter': {
-    name: 'ras-adapter',
-    displayName: 'RAS Adapter',
-    icon: 'api',
-    description: '1C cluster management',
-  },
   'ras-server': {
     name: 'ras-server',
     displayName: 'RAS Server',
     icon: 'cloud-server',
     description: '1C Remote Administration Server (TCP)',
-  },
-  'batch-service': {
-    name: 'batch-service',
-    displayName: 'Batch Service',
-    icon: 'build',
-    description: 'Extension installation via 1cv8.exe',
   },
   postgresql: {
     name: 'postgresql',
@@ -367,12 +352,6 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'Event Subscriber',
     icon: 'notification',
     description: 'Redis Streams event processor',
-  },
-  'designer-agent': {
-    name: 'designer-agent',
-    displayName: 'Designer Agent',
-    icon: 'tool',
-    description: '1C Designer Agent (SSH)',
   },
 }
 
@@ -457,13 +436,6 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'redis->worker': 'streams',
   'redis->event-subscriber': 'streams',
   'event-subscriber->postgresql': 'database',
-  'worker->ras-adapter': 'streams',
-  'worker->designer-agent': 'streams',
-  'worker->batch-service': 'streams',
-  'ras-adapter->redis': 'streams',
-  'ras-adapter->ras-server': 'tcp',
-  'designer-agent->redis': 'streams',
-  'batch-service->redis': 'streams',
-  // Note: batch-service uses filesystem + 1cv8.exe, no PostgreSQL
+  'worker->ras-server': 'tcp',
   // Results: services → Redis Streams (events:*) → Event Subscriber → PostgreSQL
 }

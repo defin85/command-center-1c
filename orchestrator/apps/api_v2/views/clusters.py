@@ -398,60 +398,20 @@ def sync_cluster(request):
     except Exception as e:
         logger.warning(f"Go Worker unavailable for cluster sync: {e}")
 
-    # Fallback: synchronous execution
-    logger.warning("Async workers unavailable - running sync synchronously")
-
-    # Обновляем BatchOperation - начало синхронной обработки
-    operation.status = BatchOperation.STATUS_PROCESSING
-    operation.started_at = timezone.now()
-    operation.save(update_fields=['status', 'started_at'])
-
-    try:
-        from apps.databases.services import ClusterService
-        result = ClusterService.sync_infobases(cluster)
-
-        # Обновляем BatchOperation - успех
-        operation.status = BatchOperation.STATUS_COMPLETED
-        operation.completed_tasks = 1
-        operation.progress = 100
-        operation.completed_at = timezone.now()
-        operation.metadata = {
-            'created': result['created'],
-            'updated': result['updated'],
-            'errors': result['errors'],
-            'databases_found': result['created'] + result['updated'],
-            'sync_mode': 'synchronous',
-        }
-        operation.save()
-
-        return Response({
-            'cluster_id': str(cluster_id),
-            'operation_id': str(operation.id),
-            'status': 'success',
-            'message': 'Cluster synchronization completed',
-            'databases_found': result['created'] + result['updated'],
-            'created': result['created'],
-            'updated': result['updated'],
-            'errors': result['errors'],
-        })
-    except Exception as sync_error:
-        logger.error(f"Sync failed: {sync_error}")
-
-        # Обновляем BatchOperation - ошибка
         operation.status = BatchOperation.STATUS_FAILED
         operation.failed_tasks = 1
         operation.completed_at = timezone.now()
-        operation.metadata = {'error': str(sync_error), 'sync_mode': 'synchronous'}
+        operation.metadata = {'error': str(e), 'sync_mode': 'worker_unavailable'}
         operation.save()
 
         return Response({
             'success': False,
             'operation_id': str(operation.id),
             'error': {
-                'code': 'SYNC_FAILED',
-                'message': str(sync_error)
+                'code': 'WORKER_UNAVAILABLE',
+                'message': 'Go Worker unavailable for cluster sync'
             }
-        }, status=500)
+        }, status=503)
 
 
 @extend_schema(

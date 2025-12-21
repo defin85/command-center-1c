@@ -58,7 +58,7 @@
 
 1. **Проверка изменений** для каждого Go сервиса:
    ```
-   FOR каждый сервис in (api-gateway, worker, cluster-service, batch-service):
+   FOR каждый сервис in (api-gateway, worker):
        IF бинарник НЕ существует:
            → REBUILD_NEEDED
        ELSE IF самый новый .go файл НОВЕЕ бинарника:
@@ -134,13 +134,8 @@
 
 **Доступные сервисы:**
 - `orchestrator` (Django)
-- `celery-worker` (Celery)
-- `celery-beat` (Celery)
 - `api-gateway` (Go)
 - `worker` (Go)
-- `cluster-service` (Go)
-- `batch-service` (Go)
-- `ras-grpc-gw` (Go, внешний)
 - `frontend` (React)
 
 **Use case:**
@@ -268,7 +263,7 @@
 # ⚠️ Обнаружены изменения в shared/ модулях
 #    Все Go сервисы будут пересобраны
 #
-# Пересборка сервисов: api-gateway worker cluster-service batch-service
+# Пересборка сервисов: api-gateway worker
 # ...
 ```
 
@@ -375,7 +370,7 @@ IF есть изменения в shared/:
 
     IF shared/ НОВЕЕ any_binary:
         # Пересобрать ВСЕ сервисы
-        REBUILD_SERVICES = (api-gateway, worker, cluster-service, batch-service)
+        REBUILD_SERVICES = (api-gateway, worker)
         SKIPPED_SERVICES = ()
 ```
 
@@ -415,7 +410,7 @@ IF есть изменения в shared/:
   ```bash
   ./scripts/dev/restart-all.sh --service=nonexistent
   # Ошибка: Неизвестный сервис 'nonexistent'
-  # Доступные сервисы: orchestrator celery-worker celery-beat api-gateway ...
+  # Доступные сервисы: orchestrator api-gateway worker frontend
   ```
 
 ---
@@ -662,7 +657,7 @@ go build -o ../../bin/cc1c-api-gateway.exe ./cmd/main.go
 - `shared/config` - конфигурация
 - `shared/models` - общие модели данных
 
-Изменение в любом из этих модулей требует пересборки всех зависимых сервисов (api-gateway, worker, cluster-service, batch-service).
+Изменение в любом из этих модулей требует пересборки всех зависимых сервисов (api-gateway, worker).
 
 ---
 

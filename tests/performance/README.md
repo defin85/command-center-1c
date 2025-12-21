@@ -169,7 +169,7 @@ Improvement:  12.5x  ✅
 
 ### Mock Responder Pattern
 
-Performance тесты используют **Mock Responder** для симуляции ответов от cluster-service и batch-service:
+Performance тесты используют **Mock Responder** для симуляции ответов от worker и worker:
 
 ```
 Test → Publish Command → Redis → Mock Responder
@@ -206,19 +206,19 @@ for msg := range pubsub.Channel() {
 
 Каждая тестовая операция выполняет полный Extension Install workflow:
 
-1. **Lock Infobase** (`commands:cluster-service:infobase:lock`)
+1. **Lock Infobase** (`commands:worker:infobase:lock`)
    - Публикация команды
    - Ожидание ответа (max 5s timeout)
 
-2. **Terminate Sessions** (`commands:cluster-service:sessions:terminate`)
+2. **Terminate Sessions** (`commands:worker:sessions:terminate`)
    - Публикация команды
    - Ожидание ответа (max 5s timeout)
 
-3. **Install Extension** (`commands:batch-service:extension:install`)
+3. **Install Extension** (`commands:worker:extension:install`)
    - Публикация команды
    - Ожидание ответа (max 5s timeout)
 
-4. **Unlock Infobase** (`commands:cluster-service:infobase:unlock`)
+4. **Unlock Infobase** (`commands:worker:infobase:unlock`)
    - Публикация команды
    - Ожидание ответа (max 5s timeout)
 
@@ -399,7 +399,7 @@ jobs:
 ## Дальнейшие улучшения
 
 ### Phase 2: Real Service Integration
-- Запускать реальные cluster-service и batch-service
+- Запускать реальные worker и worker
 - Тестировать против реальной 1С базы (если доступна)
 - Проверять real OData latency
 

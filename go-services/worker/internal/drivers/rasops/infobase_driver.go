@@ -3,7 +3,6 @@ package rasops
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -13,22 +12,19 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
-	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
 type InfobaseDriver struct {
 	workerID        string
 	clusterResolver clusterinfo.Resolver
 	timeline        tracing.TimelineRecorder
-	rasAdapterURL   string
 }
 
-func NewInfobaseDriver(workerID string, clusterResolver clusterinfo.Resolver, timeline tracing.TimelineRecorder, rasAdapterURL string) *InfobaseDriver {
+func NewInfobaseDriver(workerID string, clusterResolver clusterinfo.Resolver, timeline tracing.TimelineRecorder) *InfobaseDriver {
 	return &InfobaseDriver{
 		workerID:        workerID,
 		clusterResolver: clusterResolver,
 		timeline:        timeline,
-		rasAdapterURL:   rasAdapterURL,
 	}
 }
 
@@ -68,9 +64,10 @@ func (d *InfobaseDriver) Execute(ctx context.Context, msg *models.OperationMessa
 	infobaseID := clusterInfo.InfobaseID
 	payload := msg.Payload.Data
 
-	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
 	var opErr error
-	if useDirect && clusterInfo.RASServer != "" {
+	if clusterInfo.RASServer == "" {
+		opErr = fmt.Errorf("ras server is required for direct RAS operations")
+	} else {
 		dc, err := rasdirect.NewClient(clusterInfo.RASServer)
 		if err != nil {
 			opErr = err
@@ -105,47 +102,6 @@ func (d *InfobaseDriver) Execute(ctx context.Context, msg *models.OperationMessa
 				opErr = dc.TerminateAllSessions(ctx, clusterID, infobaseID, clusterInfo.ClusterUser, clusterInfo.ClusterPwd)
 			default:
 				opErr = fmt.Errorf("unsupported RAS operation type: %s", msg.OperationType)
-			}
-		}
-	} else {
-		if d.rasAdapterURL == "" {
-			opErr = fmt.Errorf("ras adapter base URL is required (RAS_ADAPTER_URL)")
-		} else {
-			client, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
-				BaseURL:     d.rasAdapterURL,
-				Timeout:     30 * time.Second,
-				MaxRetries:  2,
-				BaseBackoff: 300 * time.Millisecond,
-			})
-			if err != nil {
-				opErr = err
-			} else {
-				switch msg.OperationType {
-				case "lock_scheduled_jobs":
-					_, opErr = client.LockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.LockInfobaseRequest{})
-				case "unlock_scheduled_jobs":
-					_, opErr = client.UnlockScheduledJobs(ctx, clusterID, infobaseID, &rasadapter.UnlockInfobaseRequest{})
-				case "block_sessions":
-					deniedFrom, deniedTo, err := parseDeniedWindow(payload)
-					if err != nil {
-						opErr = err
-						break
-					}
-					req := &rasadapter.BlockSessionsRequest{
-						DeniedFrom:     deniedFrom.UTC().Format(time.RFC3339),
-						DeniedTo:       deniedTo.UTC().Format(time.RFC3339),
-						DeniedMessage:  extractString(payload, "message"),
-						PermissionCode: extractString(payload, "permission_code"),
-						Parameter:      extractString(payload, "parameter"),
-					}
-					_, opErr = client.BlockSessions(ctx, clusterID, infobaseID, req)
-				case "unblock_sessions":
-					_, opErr = client.UnblockSessions(ctx, clusterID, infobaseID, &rasadapter.UnblockSessionsRequest{})
-				case "terminate_sessions":
-					_, opErr = client.TerminateAllSessions(ctx, clusterID, infobaseID)
-				default:
-					opErr = fmt.Errorf("unsupported RAS operation type: %s", msg.OperationType)
-				}
 			}
 		}
 	}

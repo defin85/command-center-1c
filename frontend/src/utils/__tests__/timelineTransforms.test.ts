@@ -267,8 +267,8 @@ describe('timelineTransforms', () => {
       const events: TimelineEvent[] = [
         { timestamp: 1000, event: 'orchestrator.created', service: 'orchestrator', metadata: {} },
         { timestamp: 1100, event: 'worker.command.received', service: 'worker', metadata: {} },
-        { timestamp: 1200, event: 'ras.command.received', service: 'ras-adapter', metadata: {} },
-        { timestamp: 1800, event: 'ras.command.completed', service: 'ras-adapter', metadata: {} },
+        { timestamp: 1200, event: 'ras.command.received', service: 'worker', metadata: {} },
+        { timestamp: 1800, event: 'ras.command.completed', service: 'worker', metadata: {} },
         { timestamp: 1900, event: 'worker.command.completed', service: 'worker', metadata: {} },
         { timestamp: 2000, event: 'orchestrator.completed', service: 'orchestrator', metadata: {} },
       ]

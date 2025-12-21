@@ -16,16 +16,16 @@
 |----------|-------------|
 | `docs/1C_ADMINISTRATION_GUIDE.md` | RAS/RAC, endpoint management |
 | `docs/ODATA_INTEGRATION.md` | Batch operations |
-| `docs/DJANGO_CLUSTER_INTEGRATION.md` | Django ↔ RAS integration |
+| `docs/archive/django_cluster_sync/DJANGO_CLUSTER_INTEGRATION.md` | Django ↔ RAS integration (archive) |
 | `docs/DEBUG_WITH_AI.md` | AI-powered debugging with MCP |
 
-## Event-Driven Architecture
+## Event-Driven Architecture (Archive)
 
 | Document | Description |
 |----------|-------------|
-| `docs/EVENT_DRIVEN_EXECUTIVE_SUMMARY.md` | Executive Summary |
-| `docs/EVENT_DRIVEN_ROADMAP.md` | Detailed roadmap (14 days) |
-| `docs/architecture/EVENT_DRIVEN_ARCHITECTURE.md` | Design (82KB) |
+| `docs/archive/event_driven/EVENT_DRIVEN_EXECUTIVE_SUMMARY.md` | Executive Summary |
+| `docs/archive/event_driven/EVENT_DRIVEN_ROADMAP.md` | Detailed roadmap (14 days) |
+| `docs/archive/architecture/EVENT_DRIVEN_ARCHITECTURE.md` | Design (82KB) |
 
 ## API Roadmaps
 

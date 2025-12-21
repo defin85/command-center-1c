@@ -3,7 +3,6 @@ package rasops
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
-	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
 type MetaDriver struct {
@@ -23,16 +21,14 @@ type MetaDriver struct {
 	redisClient    *redis.Client
 	eventPublisher *events.EventPublisher
 	timeline       tracing.TimelineRecorder
-	rasAdapterURL  string
 }
 
-func NewMetaDriver(workerID string, redisClient *redis.Client, publisher *events.EventPublisher, timeline tracing.TimelineRecorder, rasAdapterURL string) *MetaDriver {
+func NewMetaDriver(workerID string, redisClient *redis.Client, publisher *events.EventPublisher, timeline tracing.TimelineRecorder) *MetaDriver {
 	return &MetaDriver{
 		workerID:       workerID,
 		redisClient:    redisClient,
 		eventPublisher: publisher,
 		timeline:       timeline,
-		rasAdapterURL:  rasAdapterURL,
 	}
 }
 
@@ -81,34 +77,11 @@ func (d *MetaDriver) executeSyncCluster(ctx context.Context, msg *models.Operati
 		"cluster_id": payload.ClusterID,
 	})
 
-	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
-	var directClient *rasdirect.Client
-	var httpClient *rasadapter.Client
-	if useDirect {
-		c, err := rasdirect.NewClient(payload.RASServer)
-		if err != nil {
-			return d.failSyncCluster(result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR"), nil
-		}
-		directClient = c
-		defer directClient.Close()
-	} else {
-		baseURL := payload.ClusterServiceURL
-		if baseURL == "" {
-			baseURL = d.rasAdapterURL
-		}
-		if baseURL == "" {
-			return d.failSyncCluster(result, start, "ras adapter base URL is required (cluster_service_url or RAS_ADAPTER_URL)", "CLIENT_ERROR"), nil
-		}
-		c, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
-			BaseURL:    baseURL,
-			Timeout:    30 * time.Second,
-			MaxRetries: 3,
-		})
-		if err != nil {
-			return d.failSyncCluster(result, start, fmt.Sprintf("failed to create RAS adapter client: %v", err), "CLIENT_ERROR"), nil
-		}
-		httpClient = c
+	directClient, err := rasdirect.NewClient(payload.RASServer)
+	if err != nil {
+		return d.failSyncCluster(result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR"), nil
 	}
+	defer directClient.Close()
 
 	rasClusterUUID := payload.RASClusterUUID
 	if rasClusterUUID == "" {
@@ -123,26 +96,18 @@ func (d *MetaDriver) executeSyncCluster(ctx context.Context, msg *models.Operati
 			return d.failSyncCluster(result, start, "cluster_name is required when ras_cluster_uuid is empty", "VALIDATION_ERROR"), nil
 		}
 
-		if useDirect {
-			list, err := directClient.GetClusters(ctx)
-			if err != nil {
-				return d.failSyncCluster(result, start, fmt.Sprintf("failed to resolve cluster UUID (direct): %v", err), "CLUSTER_LOOKUP_ERROR"), nil
+		list, err := directClient.GetClusters(ctx)
+		if err != nil {
+			return d.failSyncCluster(result, start, fmt.Sprintf("failed to resolve cluster UUID (direct): %v", err), "CLUSTER_LOOKUP_ERROR"), nil
+		}
+		for _, c := range list {
+			if strings.EqualFold(normalizeClusterName(c.Name), clusterName) {
+				rasClusterUUID = c.UUID
+				break
 			}
-			for _, c := range list {
-				if strings.EqualFold(normalizeClusterName(c.Name), clusterName) {
-					rasClusterUUID = c.UUID
-					break
-				}
-			}
-			if rasClusterUUID == "" {
-				return d.failSyncCluster(result, start, fmt.Sprintf("cluster not found by name: %s", payload.ClusterName), "CLUSTER_LOOKUP_ERROR"), nil
-			}
-		} else {
-			resolved, err := resolveClusterUUID(ctx, httpClient, payload.RASServer, clusterName)
-			if err != nil {
-				return d.failSyncCluster(result, start, fmt.Sprintf("failed to resolve cluster UUID: %v", err), "CLUSTER_LOOKUP_ERROR"), nil
-			}
-			rasClusterUUID = resolved
+		}
+		if rasClusterUUID == "" {
+			return d.failSyncCluster(result, start, fmt.Sprintf("cluster not found by name: %s", payload.ClusterName), "CLUSTER_LOOKUP_ERROR"), nil
 		}
 
 		d.timeline.Record(ctx, msg.OperationID, "cluster.sync.resolving.finished", map[string]interface{}{
@@ -158,36 +123,27 @@ func (d *MetaDriver) executeSyncCluster(ctx context.Context, msg *models.Operati
 	fetchStart := time.Now()
 	var infobasesCount int
 	var infobases []map[string]interface{}
-	if useDirect {
-		list, err := directClient.GetInfobases(ctx, rasClusterUUID, payload.ClusterUser, payload.ClusterPwd)
-		if err != nil {
-			return d.failSyncCluster(result, start, fmt.Sprintf("failed to list infobases (direct): %v", err), "RAS_ERROR"), nil
-		}
-		infobasesCount = len(list)
-		infobases = make([]map[string]interface{}, 0, len(list))
-		for _, ib := range list {
-			infobases = append(infobases, map[string]interface{}{
-				"uuid":                ib.UUID,
-				"name":                ib.Name,
-				"dbms":                ib.DBMS,
-				"db_server":           ib.DBServer,
-				"db_name":             ib.DBName,
-				"scheduled_jobs_deny": ib.ScheduledJobsDeny,
-				"sessions_deny":       ib.SessionsDeny,
-				"denied_from":         ib.DeniedFrom,
-				"denied_to":           ib.DeniedTo,
-				"denied_message":      ib.DeniedMessage,
-				"permission_code":     ib.PermissionCode,
-				"denied_parameter":    ib.DeniedParameter,
-			})
-		}
-	} else {
-		resp, err := httpClient.ListInfobases(ctx, payload.RASServer, rasClusterUUID)
-		if err != nil {
-			return d.failSyncCluster(result, start, fmt.Sprintf("failed to list infobases: %v", err), "RAS_ERROR"), nil
-		}
-		infobasesCount = resp.Count
-		infobases = convertInfobasesToMap(resp.Infobases)
+	list, err := directClient.GetInfobases(ctx, rasClusterUUID, payload.ClusterUser, payload.ClusterPwd)
+	if err != nil {
+		return d.failSyncCluster(result, start, fmt.Sprintf("failed to list infobases (direct): %v", err), "RAS_ERROR"), nil
+	}
+	infobasesCount = len(list)
+	infobases = make([]map[string]interface{}, 0, len(list))
+	for _, ib := range list {
+		infobases = append(infobases, map[string]interface{}{
+			"uuid":                ib.UUID,
+			"name":                ib.Name,
+			"dbms":                ib.DBMS,
+			"db_server":           ib.DBServer,
+			"db_name":             ib.DBName,
+			"scheduled_jobs_deny": ib.ScheduledJobsDeny,
+			"sessions_deny":       ib.SessionsDeny,
+			"denied_from":         ib.DeniedFrom,
+			"denied_to":           ib.DeniedTo,
+			"denied_message":      ib.DeniedMessage,
+			"permission_code":     ib.PermissionCode,
+			"denied_parameter":    ib.DeniedParameter,
+		})
 	}
 
 	d.timeline.Record(ctx, msg.OperationID, "cluster.sync.fetching.finished", map[string]interface{}{
@@ -283,54 +239,29 @@ func (d *MetaDriver) executeDiscoverClusters(ctx context.Context, msg *models.Op
 	d.timeline.Record(ctx, msg.OperationID, "clusters.discover.started", map[string]interface{}{
 		"worker_id":   d.workerID,
 		"ras_server":  payload.RASServer,
-		"direct_ras":  os.Getenv("USE_DIRECT_RAS") != "false",
-		"adapter_url": d.rasAdapterURL,
 	})
 
-	useDirect := os.Getenv("USE_DIRECT_RAS") != "false"
 	var clusters []map[string]interface{}
 	var clustersCount int
-	if useDirect {
-		client, err := rasdirect.NewClient(payload.RASServer)
-		if err != nil {
-			return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR"), nil
-		}
-		defer client.Close()
+	client, err := rasdirect.NewClient(payload.RASServer)
+	if err != nil {
+		return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to create direct RAS client: %v", err), "CLIENT_ERROR"), nil
+	}
+	defer client.Close()
 
-		list, err := client.GetClusters(ctx)
-		if err != nil {
-			return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to list clusters (direct RAS): %v", err), "RAS_ERROR"), nil
-		}
-		clustersCount = len(list)
-		clusters = make([]map[string]interface{}, 0, len(list))
-		for _, c := range list {
-			clusters = append(clusters, map[string]interface{}{
-				"uuid": c.UUID,
-				"name": c.Name,
-				"host": c.Host,
-				"port": c.Port,
-			})
-		}
-	} else {
-		baseURL := d.rasAdapterURL
-		if baseURL == "" {
-			return d.failDiscoverClusters(result, start, "ras adapter base URL is required (RAS_ADAPTER_URL)", "CLIENT_ERROR"), nil
-		}
-		rasClient, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
-			BaseURL:    baseURL,
-			Timeout:    30 * time.Second,
-			MaxRetries: 3,
+	list, err := client.GetClusters(ctx)
+	if err != nil {
+		return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to list clusters (direct RAS): %v", err), "RAS_ERROR"), nil
+	}
+	clustersCount = len(list)
+	clusters = make([]map[string]interface{}, 0, len(list))
+	for _, c := range list {
+		clusters = append(clusters, map[string]interface{}{
+			"uuid": c.UUID,
+			"name": c.Name,
+			"host": c.Host,
+			"port": c.Port,
 		})
-		if err != nil {
-			return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to create RAS adapter client: %v", err), "CLIENT_ERROR"), nil
-		}
-
-		resp, err := rasClient.ListClusters(ctx, payload.RASServer)
-		if err != nil {
-			return d.failDiscoverClusters(result, start, fmt.Sprintf("failed to list clusters: %v", err), "RAS_ERROR"), nil
-		}
-		clustersCount = resp.Count
-		clusters = convertClustersToMap(resp.Clusters)
 	}
 
 	discoverResult := DiscoverClustersResult{
@@ -454,55 +385,6 @@ func (d *MetaDriver) failDiscoverClusters(result *models.OperationResultV2, star
 		Succeeded:   0,
 		Failed:      1,
 		AvgDuration: duration,
-	}
-	return result
-}
-
-func resolveClusterUUID(ctx context.Context, client *rasadapter.Client, server, clusterName string) (string, error) {
-	if client == nil {
-		return "", fmt.Errorf("ras adapter client is required")
-	}
-	resp, err := client.ListClusters(ctx, server)
-	if err != nil {
-		return "", fmt.Errorf("failed to list clusters: %w", err)
-	}
-
-	for _, c := range resp.Clusters {
-		if strings.EqualFold(normalizeClusterName(c.Name), clusterName) {
-			return c.UUID, nil
-		}
-	}
-
-	return "", fmt.Errorf("cluster with name '%s' not found on server %s", clusterName, server)
-}
-
-func convertClustersToMap(clusters []*rasadapter.Cluster) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(clusters))
-	for _, c := range clusters {
-		result = append(result, map[string]interface{}{
-			"uuid": c.UUID,
-			"name": c.Name,
-			"host": c.Host,
-			"port": c.Port,
-		})
-	}
-	return result
-}
-
-func convertInfobasesToMap(infobases []*rasadapter.Infobase) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(infobases))
-	for _, ib := range infobases {
-		result = append(result, map[string]interface{}{
-			"uuid":                 ib.UUID,
-			"name":                 ib.Name,
-			"description":          ib.Description,
-			"dbms":                 ib.DBMS,
-			"db_server":            ib.DBServerName,
-			"db_name":              ib.DBName,
-			"sessions_deny":        ib.SessionsDenied,
-			"scheduled_jobs_deny":  ib.ScheduledJobsDenied,
-			"license_distribution": ib.LicenseDistribution,
-		})
 	}
 	return result
 }

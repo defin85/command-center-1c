@@ -221,7 +221,7 @@ func executeEventDrivenOperation(env *BenchEnvironment) error {
 	event := &EventEnvelope{
 		MessageID:     uuid.New().String(),
 		CorrelationID: uuid.New().String(),
-		EventType:     "commands:cluster-service:infobase:lock",
+		EventType:     "commands:worker:infobase:lock",
 		Payload: map[string]interface{}{
 			"cluster_id":  "bench-cluster",
 			"infobase_id": "bench-db-001",
@@ -234,7 +234,7 @@ func executeEventDrivenOperation(env *BenchEnvironment) error {
 	payload, _ := event.ToJSON()
 
 	// Publish (non-blocking)
-	return env.RedisClient.Publish(ctx, "commands:cluster-service:infobase:lock", payload).Err()
+	return env.RedisClient.Publish(ctx, "commands:worker:infobase:lock", payload).Err()
 }
 
 // executeHTTPSyncOperation - выполнить HTTP sync операцию (blocking)

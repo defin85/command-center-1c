@@ -65,8 +65,8 @@ payload := InfobaseLockPayload{
 
 err = publisher.Publish(
     context.Background(),
-    "commands:cluster-service",
-    "commands:cluster-service:infobase:lock",
+    "commands:worker:operations",
+    "commands:worker:operation:execute",
     payload,
     "", // correlation_id will be auto-generated
 )
@@ -94,7 +94,7 @@ logger := watermill.NewStdLogger(false, false)
 // Создать subscriber
 subscriber, err := events.NewSubscriber(
     redisClient,
-    "cluster-service-consumer", // consumer group
+    "worker-consumer", // consumer group
     logger,
 )
 if err != nil {
@@ -103,7 +103,7 @@ if err != nil {
 defer subscriber.Close()
 
 // Зарегистрировать handler
-err = subscriber.Subscribe("commands:cluster-service", func(ctx context.Context, envelope *events.Envelope) error {
+err = subscriber.Subscribe("commands:worker:operations", func(ctx context.Context, envelope *events.Envelope) error {
     log.Printf("Received event: %s (correlation_id: %s)", envelope.EventType, envelope.CorrelationID)
 
     // Parse payload
@@ -263,11 +263,11 @@ subscriber.Run(ctx)
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
   "correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
   "timestamp": "2025-11-12T10:30:00Z",
-  "event_type": "commands:cluster-service:infobase:lock",
-  "service_name": "worker",
+  "event_type": "commands:worker:operation:execute",
+  "service_name": "orchestrator",
   "payload": {
-    "infobase_id": "uuid-123",
-    "reason": "maintenance"
+    "operation_type": "lock_scheduled_jobs",
+    "database_id": "uuid-123"
   },
   "metadata": {
     "retry_count": 0,
@@ -286,9 +286,10 @@ subscriber.Run(ctx)
 ```
 
 **Примеры:**
-- `commands:cluster-service:infobase:lock`
-- `commands:cluster-service:infobase:unlock`
-- `commands:cluster-service:session:terminate`
+- `commands:worker:operation:execute`
+- `events:worker:operation:started`
+- `events:worker:operation:completed`
+- `events:worker:operation:failed`
 - `events:worker:operation:started`
 - `events:worker:operation:completed`
 - `events:worker:operation:failed`

@@ -70,7 +70,7 @@ func TestPubSubIntegration_LockUnlock(t *testing.T) {
 	lockEventReceived := make(chan *events.Envelope, 1)
 
 	// Setup event listener BEFORE publishing command
-	eventSubscriber.Subscribe("events:cluster-service:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
+	eventSubscriber.Subscribe("events:worker:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
 		// Filter by correlation_id
 		if envelope.CorrelationID == correlationID {
 			t.Logf("Received locked event: message_id=%s, correlation_id=%s",
@@ -89,7 +89,7 @@ func TestPubSubIntegration_LockUnlock(t *testing.T) {
 	defer eventSubCancel()
 	go eventSubscriber.Run(eventSubCtx)
 
-	// Setup Mock Responder (simulates cluster-service)
+	// Setup Mock Responder (simulates worker)
 	responder := helpers.NewMockEventResponder(
 		publisher,
 		commandSubscriber,
@@ -119,7 +119,7 @@ func TestPubSubIntegration_LockUnlock(t *testing.T) {
 
 	err := publisher.Publish(
 		ctx,
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		"cluster.infobase.lock",
 		lockPayload,
 		correlationID,
@@ -168,7 +168,7 @@ func TestPubSubIntegration_LockUnlock(t *testing.T) {
 
 	// Add unlock event listener
 	_, unlockEventSub := helpers.SetupEventBus(t, redisClient)
-	unlockEventSub.Subscribe("events:cluster-service:infobase:unlocked", func(ctx context.Context, envelope *events.Envelope) error {
+	unlockEventSub.Subscribe("events:worker:infobase:unlocked", func(ctx context.Context, envelope *events.Envelope) error {
 		if envelope.CorrelationID == correlationID {
 			t.Logf("Received unlocked event: message_id=%s", envelope.MessageID)
 			select {
@@ -193,7 +193,7 @@ func TestPubSubIntegration_LockUnlock(t *testing.T) {
 
 	err = publisher.Publish(
 		ctx,
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		"cluster.infobase.unlock",
 		unlockPayload,
 		correlationID,
@@ -246,7 +246,7 @@ func TestPubSubIntegration_CorrelationFiltering(t *testing.T) {
 	var mu sync.Mutex
 	receivedByCorrelation := make(map[string][]*events.Envelope)
 
-	eventSubscriber.Subscribe("events:cluster-service:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
+	eventSubscriber.Subscribe("events:worker:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
 		mu.Lock()
 		defer mu.Unlock()
 		receivedByCorrelation[envelope.CorrelationID] = append(
@@ -284,7 +284,7 @@ func TestPubSubIntegration_CorrelationFiltering(t *testing.T) {
 	// Publish command 1
 	err := publisher.Publish(
 		ctx,
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		"cluster.infobase.lock",
 		map[string]interface{}{"cluster_id": "cluster-1", "infobase_id": "ib-1"},
 		correlationID1,
@@ -294,7 +294,7 @@ func TestPubSubIntegration_CorrelationFiltering(t *testing.T) {
 	// Publish command 2
 	err = publisher.Publish(
 		ctx,
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		"cluster.infobase.lock",
 		map[string]interface{}{"cluster_id": "cluster-2", "infobase_id": "ib-2"},
 		correlationID2,
@@ -359,7 +359,7 @@ func TestPubSubIntegration_Idempotency(t *testing.T) {
 	// Track event count
 	var eventCount int32
 
-	eventSubscriber.Subscribe("events:cluster-service:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
+	eventSubscriber.Subscribe("events:worker:infobase:locked", func(ctx context.Context, envelope *events.Envelope) error {
 		if envelope.CorrelationID == correlationID {
 			atomic.AddInt32(&eventCount, 1)
 			t.Logf("Received event #%d for correlation_id=%s", atomic.LoadInt32(&eventCount), correlationID)
@@ -404,7 +404,7 @@ func TestPubSubIntegration_Idempotency(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		err := publisher.PublishWithMetadata(
 			ctx,
-			"commands:cluster-service:infobase:lock",
+			"commands:worker:infobase:lock",
 			"cluster.infobase.lock",
 			payload,
 			correlationID,
@@ -429,7 +429,7 @@ func TestPubSubIntegration_Idempotency(t *testing.T) {
 	// Pub/Sub mechanism works correctly. Idempotency should be
 	// implemented in the command handler, not in Pub/Sub itself.
 	//
-	// For true idempotency, the Mock Responder (or real cluster-service)
+	// For true idempotency, the Mock Responder (or real worker)
 	// should check idempotency_key and skip duplicate processing.
 
 	// Current expectation: We receive events for all commands
@@ -562,7 +562,7 @@ func TestPubSubIntegration_SessionTerminate(t *testing.T) {
 	// Channel to receive sessions closed event
 	sessionsClosedReceived := make(chan *events.Envelope, 1)
 
-	eventSubscriber.Subscribe("events:cluster-service:sessions:closed", func(ctx context.Context, envelope *events.Envelope) error {
+	eventSubscriber.Subscribe("events:worker:sessions:closed", func(ctx context.Context, envelope *events.Envelope) error {
 		if envelope.CorrelationID == correlationID {
 			t.Logf("Received sessions:closed event: message_id=%s", envelope.MessageID)
 			select {
@@ -602,7 +602,7 @@ func TestPubSubIntegration_SessionTerminate(t *testing.T) {
 
 	err := publisher.Publish(
 		ctx,
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		"cluster.sessions.terminate",
 		terminatePayload,
 		correlationID,
@@ -659,7 +659,7 @@ func TestPubSubIntegration_ExtensionInstall(t *testing.T) {
 	// Channel to receive extension installed event
 	extensionInstalledReceived := make(chan *events.Envelope, 1)
 
-	eventSubscriber.Subscribe("events:batch-service:extension:installed", func(ctx context.Context, envelope *events.Envelope) error {
+	eventSubscriber.Subscribe("events:worker:extension:installed", func(ctx context.Context, envelope *events.Envelope) error {
 		if envelope.CorrelationID == correlationID {
 			t.Logf("Received extension:installed event: message_id=%s", envelope.MessageID)
 			select {
@@ -699,7 +699,7 @@ func TestPubSubIntegration_ExtensionInstall(t *testing.T) {
 
 	err := publisher.Publish(
 		ctx,
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		"batch.extension.install",
 		installPayload,
 		correlationID,

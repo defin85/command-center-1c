@@ -20,6 +20,7 @@ class BackendType(str, Enum):
     """Backend type identifiers."""
     ODATA = 'odata'
     RAS = 'ras'
+    IBCMD = 'ibcmd'
 
 
 @dataclass

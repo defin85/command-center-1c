@@ -62,6 +62,7 @@ urlpatterns = [
     path('operations/list-operations/', operations.list_operations, name='list-operations'),
     path('operations/get-operation/', operations.get_operation, name='get-operation'),
     path('operations/execute/', operations.execute_operation, name='execute-operation'),
+    path('operations/execute-ibcmd/', operations.execute_ibcmd_operation, name='execute-ibcmd-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream-ticket/', operations.get_stream_ticket, name='stream-ticket'),
     path('operations/stream/', operations.operation_stream, name='operation-stream'),

@@ -451,7 +451,7 @@ class TestServiceMetrics:
                 {'data': {'result': [{'value': ['1234567890', '1']}]}}
             ]
 
-            metrics = await client.get_service_metrics('ras-adapter')
+            metrics = await client.get_service_metrics('worker')
 
             # Should convert NaN to 0
             assert metrics.p95_latency_ms == 0.0
@@ -513,8 +513,8 @@ class TestServiceConnections:
     async def test_get_service_connections(self, client):
         """Test retrieving service connections."""
         with patch.object(client, 'query', new_callable=AsyncMock) as mock_query:
-            # SERVICE_TOPOLOGY has 10 connections, each needs 2 queries (rpm + latency)
-            # Total: 20 query results needed
+            # SERVICE_TOPOLOGY has 8 connections, each needs 2 queries (rpm + latency)
+            # Total: 16 query results needed
             mock_query.side_effect = [
                 # For each connection, provide rpm result and latency result
                 # frontend->api-gateway
@@ -538,13 +538,7 @@ class TestServiceConnections:
                 # event-subscriber->postgresql
                 {'data': {'result': [{'value': ['1234567890', '140']}]}},  # rpm
                 {'data': {'result': [{'value': ['1234567890', '12']}]}},   # latency
-                # worker->ras-adapter
-                {'data': {'result': [{'value': ['1234567890', '150']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '200']}]}},  # latency
-                # ras-adapter->redis
-                {'data': {'result': [{'value': ['1234567890', '200']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '180']}]}},  # latency
-                # ras-adapter->ras-server
+                # worker->ras-server
                 {'data': {'result': [{'value': ['1234567890', '60']}]}},   # rpm
                 {'data': {'result': [{'value': ['1234567890', '25']}]}},   # latency
             ]

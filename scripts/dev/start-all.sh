@@ -25,7 +25,7 @@ PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
 # Список Go сервисов (в порядке приоритета)
-GO_SERVICES=("api-gateway" "worker" "ras-adapter")
+GO_SERVICES=("api-gateway" "worker")
 
 # Изменить рабочую директорию на PROJECT_ROOT
 cd "$PROJECT_ROOT"
@@ -583,49 +583,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 8: RAS Adapter (Go)
+# Шаг 8: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[8/9] Запуск RAS Adapter (port 8188)...${NC}"
-
-# RAS Adapter is the only RAS service (Week 4+)
-# Бинарник гарантированно существует и актуален после Phase 1
-BINARY_PATH=$(get_binary_path "ras-adapter")
-
-# Проверить что бинарник существует
-if [ ! -f "$BINARY_PATH" ]; then
-    echo -e "${RED}✗ RAS Adapter бинарник не найден: $BINARY_PATH${NC}"
-    echo -e "${YELLOW}   Соберите его: cd go-services/ras-adapter && go build -o \$(get_binary_path ras-adapter) cmd/main.go${NC}"
-    exit 1
-fi
-
-# .env.local уже загружен в начале скрипта
-# RAS_ADAPTER_PORT=8188 is set in .env.local (outside Windows reserved range 8013-8112)
-
-nohup "$BINARY_PATH" > "$LOGS_DIR/ras-adapter.log" 2>&1 &
-RAS_ADAPTER_PID=$!
-echo $RAS_ADAPTER_PID > "$PIDS_DIR/ras-adapter.pid"
-
-sleep 2
-if kill -0 $RAS_ADAPTER_PID 2>/dev/null; then
-    echo -e "${GREEN}✓ RAS Adapter запущен (PID: $RAS_ADAPTER_PID)${NC}"
-
-    # Health check
-    if curl --noproxy '*' -sf http://localhost:8188/health > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ RAS Adapter health check PASSED${NC}"
-    else
-        echo -e "${YELLOW}⚠️  RAS Adapter health check FAILED (может потребоваться время для запуска)${NC}"
-    fi
-else
-    echo -e "${RED}✗ Не удалось запустить RAS Adapter${NC}"
-    cat "$LOGS_DIR/ras-adapter.log"
-    exit 1
-fi
-echo ""
-
-##############################################################################
-# Шаг 9: Frontend (React)
-##############################################################################
-echo -e "${BLUE}[9/9] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[8/8] Запуск Frontend (port 5173)...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 

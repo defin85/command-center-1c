@@ -56,7 +56,7 @@
 **Что запустится:**
 - Docker Infrastructure: PostgreSQL, Redis
 - Docker Monitoring: Prometheus, Grafana ← **автоматически!**
-- Application Services: orchestrator, celery-worker, celery-beat, api-gateway, worker, ras, ras-grpc-gw, cluster-service, batch-service, frontend
+- Application Services: orchestrator, api-gateway, worker, ras, frontend
 
 ### Ручной запуск (если нужен контроль)
 
@@ -65,15 +65,10 @@
 # Если нужен только мониторинг отдельно:
 ./scripts/dev/start-monitoring.sh
 
-# 2. RAS gRPC Gateway (если есть 1C RAS)
-cd ../ras-grpc-gw
-go run cmd/main.go localhost:1545 &
-cd ../command-center-1c
-
-# 3. Все сервисы
+# 2. Все сервисы
 ./scripts/dev/start-all.sh
 
-# 4. Проверка
+# 3. Проверка
 ./scripts/dev/health-check.sh
 ```
 

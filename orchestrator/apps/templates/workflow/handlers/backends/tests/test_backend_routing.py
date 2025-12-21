@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from apps.templates.workflow.handlers.operation import OperationHandler
 from apps.templates.workflow.handlers.backends import (
+    IBCMDBackend,
     ODataBackend,
     RASBackend,
     AbstractOperationBackend,
@@ -93,6 +94,13 @@ class TestBackendRouting:
 
         assert isinstance(backend, ODataBackend)
 
+    def test_get_backend_returns_ibcmd_for_backup(self):
+        """Test that ibcmd_backup operation routes to IBCMDBackend."""
+        handler = OperationHandler()
+        backend = handler._get_backend('ibcmd_backup')
+
+        assert isinstance(backend, IBCMDBackend)
+
     def test_get_backend_raises_for_unknown_operation_type(self):
         """Test that unknown operation type raises ValueError."""
         handler = OperationHandler()
@@ -111,22 +119,24 @@ class TestBackendRouting:
         assert 'unknown_operation' in error_msg
         assert 'OData' in error_msg
         assert 'RAS' in error_msg
+        assert 'IBCMD' in error_msg
 
     def test_get_backend_returns_abstract_backend_interface(self):
         """Test that returned backends implement AbstractOperationBackend."""
         handler = OperationHandler()
 
-        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions']:
+        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_backup']:
             backend = handler._get_backend(op_type)
             assert isinstance(backend, AbstractOperationBackend)
 
     def test_backend_priority_ras_before_odata(self):
-        """Test that RASBackend is checked before ODataBackend."""
+        """Test that RASBackend is checked before others."""
         handler = OperationHandler()
 
         # RASBackend should be first in the list
         assert isinstance(handler._backends[0], RASBackend)
-        assert isinstance(handler._backends[1], ODataBackend)
+        assert isinstance(handler._backends[1], IBCMDBackend)
+        assert isinstance(handler._backends[2], ODataBackend)
 
     def test_get_all_supported_types(self):
         """Test get_all_supported_types returns grouped operation types."""
@@ -134,6 +144,7 @@ class TestBackendRouting:
 
         assert 'odata' in all_types
         assert 'ras' in all_types
+        assert 'ibcmd' in all_types
 
         # Check OData types
         odata_types = all_types['odata']
@@ -151,10 +162,18 @@ class TestBackendRouting:
         assert 'block_sessions' in ras_types
         assert 'unblock_sessions' in ras_types
 
+        # Check IBCMD types
+        ibcmd_types = all_types['ibcmd']
+        assert 'ibcmd_backup' in ibcmd_types
+        assert 'ibcmd_restore' in ibcmd_types
+        assert 'ibcmd_replicate' in ibcmd_types
+        assert 'ibcmd_create' in ibcmd_types
+
     def test_backend_supports_operation_type_method(self):
         """Test backend support checking via supports_operation_type."""
         ras_backend = RASBackend()
         odata_backend = ODataBackend()
+        ibcmd_backend = IBCMDBackend()
 
         # RAS should support RAS types
         assert ras_backend.supports_operation_type('lock_scheduled_jobs') is True
@@ -164,19 +183,28 @@ class TestBackendRouting:
         assert odata_backend.supports_operation_type('create') is True
         assert odata_backend.supports_operation_type('lock_scheduled_jobs') is False
 
+        # IBCMD should support ibcmd types
+        assert ibcmd_backend.supports_operation_type('ibcmd_backup') is True
+        assert ibcmd_backend.supports_operation_type('create') is False
+
     def test_backend_get_supported_types_class_method(self):
         """Test get_supported_types class method on backends."""
         ras_types = RASBackend.get_supported_types()
         odata_types = ODataBackend.get_supported_types()
+        ibcmd_types = IBCMDBackend.get_supported_types()
 
         # Both should return non-empty sets
         assert isinstance(ras_types, set)
         assert isinstance(odata_types, set)
+        assert isinstance(ibcmd_types, set)
         assert len(ras_types) > 0
         assert len(odata_types) > 0
+        assert len(ibcmd_types) > 0
 
         # Sets should not overlap
         assert len(ras_types & odata_types) == 0
+        assert len(ras_types & ibcmd_types) == 0
+        assert len(odata_types & ibcmd_types) == 0
 
     def test_backend_instance_caching(self):
         """Test that handler maintains backend instances."""

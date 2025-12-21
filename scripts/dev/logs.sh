@@ -30,7 +30,6 @@ if [ -z "$1" ]; then
     echo -e "  api-gateway       - Go API Gateway"
     echo -e "  worker            - Go Worker"
     echo -e "  ras               - 1C RAS Server"
-    echo -e "  ras-adapter       - RAS Adapter"
     echo -e "  frontend          - React Frontend"
     echo -e "  all               - Все сервисы вместе"
     echo ""
@@ -100,7 +99,7 @@ view_all_logs() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    local services=("orchestrator" "api-gateway" "worker" "ras" "ras-adapter" "frontend")
+    local services=("orchestrator" "api-gateway" "worker" "ras" "frontend")
 
     for service in "${services[@]}"; do
         local log_file="$LOGS_DIR/${service}.log"
@@ -128,7 +127,7 @@ case "$SERVICE_NAME" in
         view_all_logs
         ;;
 
-    orchestrator|api-gateway|worker|ras|ras-adapter|frontend)
+    orchestrator|api-gateway|worker|ras|frontend)
         view_log "$SERVICE_NAME"
         ;;
 
@@ -150,7 +149,7 @@ case "$SERVICE_NAME" in
         echo ""
         echo -e "${BLUE}Available services:${NC}"
         echo -e "  orchestrator, api-gateway, worker, ras,"
-        echo -e "  ras-adapter, frontend, all"
+        echo -e "  frontend, all"
         echo -e "${BLUE}Docker services:${NC}"
         echo -e "  prometheus, grafana, jaeger"
         echo ""

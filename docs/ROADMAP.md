@@ -37,7 +37,7 @@
 |--------|--------|-----------------|-----------|
 | **Sprint 1.1** | ✅ DONE | 2025-01-16 | Monorepo structure, Docker Compose, Infrastructure setup |
 | **Sprint 1.2** | ✅ DONE | 2025-01-17 | Database Models, OData Client, REST API (15+ endpoints), Django Admin |
-| **Sprint 1.3** | ✅ DONE | 2025-10-29 | Docker integration, cluster-service + batch-service в Docker Compose |
+| **Sprint 1.3** | ✅ DONE | 2025-10-29 | Docker integration for core services |
 | **Sprint 1.4** | ✅ DONE | 2025-10-31 | **RAS integration через gRPC** - endpoint management, GetInfobases working |
 | **Sprint 2.1** | ✅ DONE | 2025-11-23 | **Celery ↔ Worker pipeline** - Redis queue (producer + consumer), Real operation execution, 90 tests |
 | **Sprint 2.2** | ✅ DONE | 2025-11-23 | **Template Engine** - Jinja2 rendering, Custom filters, Validation, 217 tests |
@@ -46,10 +46,9 @@
 
 | Метрика | Цель Phase 1 | Текущий результат | Статус |
 |---------|--------------|-------------------|--------|
-| **cluster-service latency** | <100ms | **47ms → 15ms** (with endpoint reuse) | ✅ 3x speedup |
 | **RAS integration** | Working | **3 databases found**, auth working | ✅ Ready |
 | **Success rate** | 95%+ | **100%** | ✅ Превышено |
-| **gRPC communication** | Basic | **Full gRPC stack** (ras-grpc-gw) | ✅ Production-ready |
+| **Direct RAS** | Basic | **Direct RAS client** | ✅ Production-ready |
 | **Template Engine** | Basic | **Full Jinja2 engine** (217 tests) | ✅ Production-ready |
 | **Worker pipeline** | Working | **E2E flow works** (90 tests) | ✅ Production-ready |
 | **Test coverage** | >70% | **217 (Django) + 90 (Go) tests** | ✅ Превышено |
@@ -62,21 +61,12 @@
 - Dev scripts: `scripts/dev/*.sh` с smart rebuild
 - RAS auto-start в start-all.sh
 
-✅ **cluster-service (Go) - 100% готово:**
-- gRPC клиент для ras-grpc-gw
-- Endpoint management с автоматическим переиспользованием
-- Аутентификация на кластере 1С
-- GetInfobases - получение списка баз данных
-- Health check endpoint (HTTP:8088/health)
-- Docker integration
-
-✅ **batch-service (Go) - 100% готово:**
-- Установка расширений через subprocess (1cv8.exe)
-- Batch install API
-- Health check endpoint (HTTP:8087/health)
+✅ **Worker RAS operations - 100% готово:**
+- Прямые RAS операции (lock/unlock/sessions, sync/discover clusters)
+- Direct RAS connection (без внешних адаптеров)
 
 ✅ **RAS Integration - 100% готово:**
-- ras-grpc-gw форк с endpoint_id в headers
+- Direct RAS client в worker
 - RAS server connection (port 1545)
 - Автоматический запуск RAS в dev скриптах
 - Протестировано на real 1C cluster
@@ -211,7 +201,6 @@ Week 5-6: Integration & Testing       ⏳  Ready to start
 | **OData Client** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
 | **REST API** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
 | **RAS Integration** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
-| **batch-service** | Week 1-2 ✅ | Week 1-2 ✅ | 100% |
 | **Go Worker (Unified)** | Week 3-4 ✅ | Week 3-4 ✅ | 100% |
 | **Template Engine** | Week 3-4 ✅ | Week 3-4 ✅ | 100% |
 | **E2E Integration** | Week 3-4 ✅ | Week 3-4 ✅ | 95% |
@@ -294,11 +283,11 @@ Admin Service ----[REST/gRPC]----> Content Service -----> Content DB
 **Наша реализация (проверить!):**
 - ✅ Frontend → API Gateway → Orchestrator (REST)
 - ✅ Orchestrator → Worker (Redis queue, не direct DB access)
-- ✅ Cluster Service → ras-grpc-gw (gRPC, не direct DB)
+- ✅ Worker → RAS (direct, no extra hop)
 - ⚠️ **ПРОВЕРИТЬ:** Extension Storage access (должен быть через API, не filesystem sharing)
 
 **Action Items:**
-- [ ] **Track 3 audit:** Убедиться, что Batch Service НЕ читает напрямую из `storage/extensions/`
+- [ ] **Track 3 audit:** Убедиться, что операции расширений НЕ читают напрямую из `storage/extensions/`
 - [ ] Orchestrator должен предоставлять file path/stream через API
 - [ ] Документировать Data Ownership для каждого сервиса
 
@@ -507,13 +496,12 @@ class AdminUI:
 ✅ Frontend → API Gateway (REST)
 ✅ API Gateway → Orchestrator (REST)
 ✅ Orchestrator → Worker (Redis queue - асинхронный контракт)
-✅ Cluster Service → ras-grpc-gw (gRPC)
+✅ Worker → RAS (direct)
 ```
 
 **Контракты:**
 - Message Protocol v2.0 (Django ↔ Go Worker)
 - REST API (OpenAPI/Swagger документирован)
-- gRPC proto (ras-grpc-gw)
 
 ---
 

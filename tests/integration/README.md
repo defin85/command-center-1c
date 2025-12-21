@@ -73,9 +73,9 @@ docker stop redis-test && docker rm redis-test
 
 **Что проверяет:**
 1. ✅ Публикация lock command в Redis
-2. ✅ cluster-service обрабатывает команду (real event handler)
-3. ✅ cluster-service вызывает LockInfobase (mock RAS)
-4. ✅ cluster-service публикует locked event
+2. ✅ worker обрабатывает команду (real event handler)
+3. ✅ worker вызывает LockInfobase (mock RAS)
+4. ✅ worker публикует locked event
 5. ✅ Проверка correlation_id end-to-end
 6. ✅ Idempotency: duplicate command → skip operation, publish success
 7. ✅ Fail-open: Redis unavailable → operation continues
@@ -83,8 +83,8 @@ docker stop redis-test && docker rm redis-test
 **Пример вывода:**
 ```
 === RUN   TestLockWorkflow_EndToEnd
-    lock_workflow_test.go:105: Publishing lock command to cluster-service...
-    lock_workflow_test.go:109: Waiting for locked event from cluster-service...
+    lock_workflow_test.go:105: Publishing lock command to worker...
+    lock_workflow_test.go:109: Waiting for locked event from worker...
     lock_workflow_test.go:113: ✅ Locked event received successfully
     lock_workflow_test.go:121: Event payload: {ClusterID:cluster-123 InfobaseID:infobase-456 DatabaseID:db-789 Message:Infobase locked successfully}
     lock_workflow_test.go:131: --- Testing Idempotency ---
@@ -251,4 +251,4 @@ case <-time.After(10 * time.Second):  // Было 2 секунды
 - [Event-Driven Roadmap](../../docs/EVENT_DRIVEN_ROADMAP.md)
 - [Event-Driven Architecture](../../docs/architecture/EVENT_DRIVEN_ARCHITECTURE.md)
 - [Shared Events Library](../../go-services/shared/events/)
-- [cluster-service Handlers](../../go-services/cluster-service/internal/eventhandlers/)
+- [worker Handlers](../../go-services/worker/internal/eventhandlers/)

@@ -21,9 +21,6 @@
 ```
 contracts/
 ├── README.md                       # Этот файл
-├── ras-adapter/
-│   ├── openapi.yaml                # OpenAPI 3.0 спецификация
-│   └── .oapi-codegen.yaml          # Конфиг генератора Go
 ├── orchestrator/
 │   └── openapi.yaml                # Public API для Frontend/External clients
 ├── orchestrator-internal/
@@ -231,7 +228,7 @@ git config core.hooksPath .githooks
 ./contracts/scripts/generate-all.sh --force
 
 # Только конкретный сервис (пример)
-cd contracts/ras-adapter
+cd contracts/orchestrator
 oapi-codegen -config .oapi-codegen.yaml openapi.yaml
 ```
 
@@ -328,10 +325,7 @@ git config core.hooksPath .githooks
 
 ### Добавление нового endpoint
 
-См. `contracts/ras-adapter/openapi.yaml` для полных примеров:
-- Health check: `/health`
-- Actions: `/api/v2/list-infobases`
-- Actions: `/api/v2/lock-infobase`
+См. `contracts/orchestrator/openapi.yaml` для полных примеров.
 
 ### Использование сгенерированных типов
 
@@ -345,18 +339,6 @@ response := generated.SuccessResponse{
     Message: "Operation completed",
 }
 c.JSON(200, response)
-```
-
-**Python:**
-```python
-from apps.databases.clients.generated.ras_adapter_api_client import Client
-from apps.databases.clients.generated.ras_adapter_api_client.models import LockInfobaseRequest
-
-request = LockInfobaseRequest(
-    cluster_id="uuid",
-    db_user="admin",
-    db_pwd="password"
-)
 ```
 
 ## Дальнейшее развитие

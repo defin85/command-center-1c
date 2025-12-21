@@ -147,7 +147,6 @@ def system_health(request):
 
     api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
-    ras_adapter_url = getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188').rstrip('/')
     worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
 
     url_map = {
@@ -155,7 +154,6 @@ def system_health(request):
         "api-gateway": api_gateway_url,
         "orchestrator": "http://localhost:8200",
         "worker": worker_url,
-        "ras-adapter": ras_adapter_url,
     }
 
     type_map = {
@@ -163,7 +161,6 @@ def system_health(request):
         "api-gateway": "go-service",
         "orchestrator": "django",
         "worker": "go-service",
-        "ras-adapter": "go-service",
         "postgresql": "database",
         "redis": "cache",
         "event-subscriber": "django",
@@ -233,9 +230,6 @@ class SystemConfigSerializer(serializers.Serializer):
     ras_default_server = serializers.CharField(
         help_text="Default RAS server address for new clusters (e.g., localhost:1545)"
     )
-    ras_adapter_url = serializers.CharField(
-        help_text="RAS Adapter service URL (e.g., http://localhost:8188)"
-    )
 
 
 @extend_schema(
@@ -259,10 +253,9 @@ def system_config(request):
     Response:
         {
             "ras_default_server": "localhost:1539",
-            "ras_adapter_url": "http://localhost:8188"
+            "ras_default_server": "localhost:1539"
         }
     """
     return Response({
         'ras_default_server': getattr(settings, 'RAS_DEFAULT_SERVER', 'localhost:1545'),
-        'ras_adapter_url': getattr(settings, 'RAS_ADAPTER_URL', 'http://localhost:8188'),
     })

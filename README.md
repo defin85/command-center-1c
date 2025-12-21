@@ -40,13 +40,13 @@
 ┌────▼────┐
 │ Go API  │ Gin + JWT + Rate Limiting
 │ Gateway │
-│ (8080)  │
+│ (8180)  │
 └────┬────┘
      │ HTTP
 ┌────▼────────┐
-│ Django      │ DRF + Celery
+│ Django      │ DRF
 │ Orchestr.   │ Business Logic
-│ (8000)      │
+│ (8200)      │
 └──┬────┬─────┘
    │    │
 ┌──▼──┐ │  ┌──────────┐
@@ -58,14 +58,14 @@
 │Go Worker│ Goroutines pool (x2 replicas)
 │Pool     │ Parallel: 100-500 bases
 └────┬────┘
-     │ OData + Redis Pub/Sub
-┌────▼────────┐     ┌──────────────┐
-│ 700+ 1C     │ ←───│ ras-adapter  │ ← Week 4 NEW!
-│ Bases       │     │ (8088)       │   (replaces cluster-service + ras-grpc-gw)
-└─────────────┘     └──────────────┘
-                           │ khorevaa/ras-client (direct)
-                           ▼
-                       RAS (1545)
+     │ OData + RAS (direct)
+┌────▼────────┐
+│ 700+ 1C     │
+│ Bases       │
+└─────────────┘
+     │
+     ▼
+   RAS (1545)
 ```
 
 ---
@@ -112,12 +112,10 @@ cd frontend && npm install && cd ..
 
 Сервисы будут доступны на:
 - **Frontend**: http://localhost:5173
-- **API Gateway**: http://localhost:8080/health
+- **API Gateway**: http://localhost:8180/health
 - **Orchestrator**:
-  - Admin Panel: http://localhost:8000/admin
-  - API Docs (Swagger): http://localhost:8000/api/docs
-- **Cluster Service**: http://localhost:8088/health
-- **Batch Service**: http://localhost:8087/health
+  - Admin Panel: http://localhost:8200/admin
+  - API Docs (Swagger): http://localhost:8200/api/docs
 
 ---
 
@@ -159,7 +157,7 @@ command-center-1c/
 |-----------|-----------|------------|
 | **API Gateway** | Go + Gin | Маршрутизация, аутентификация |
 | **Orchestrator** | Python + Django + DRF | Бизнес-логика, API |
-| **Task Queue** | Celery + Redis | Очереди задач |
+| **Task Queue** | Redis Streams | Очереди задач |
 | **Workers** | Go + Goroutines | Массовая обработка 1С |
 | **OData (direct)** | Go Worker | Интеграция с 1С |
 
@@ -187,10 +185,7 @@ command-center-1c/
 
 ### Phase 1: MVP Foundation (Week 1-6) ✅ Week 1-2 Complete
 - [x] Базовая инфраструктура (Sprint 1.1-1.3)
-- [x] **cluster-service интеграция с RAS** (Sprint 1.4) ← NEW
-  - ✅ gRPC взаимодействие через ras-grpc-gw
-  - ✅ Endpoint management (47ms → 15ms)
-  - ✅ Аутентификация и получение списка баз данных
+- [x] Direct RAS integration in Worker (Phase 2)
 - [ ] Core functionality (Week 3-4)
 - [ ] API & Basic UI (Week 5-6)
 - [ ] Testing & Deployment (Week 5-6)
@@ -260,7 +255,6 @@ make clean
 
 ### Практические гайды ← NEW
 - **[1C Administration Guide](docs/1C_ADMINISTRATION_GUIDE.md)** - RAS/RAC, gRPC, endpoint management
-- **[Django Cluster Integration](docs/DJANGO_CLUSTER_INTEGRATION.md)** - Интеграция cluster-service с Django
 - **[OData Integration](docs/ODATA_INTEGRATION.md)** - Batch операции для массовой обработки данных
 
 ### Техническая документация

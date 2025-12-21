@@ -22,7 +22,7 @@ INTEGRATION TEST: Event Flow End-to-End (Simplified)
 3. Проверяем корректность данных и correlation_id
 4. Проверяем idempotency через Redis SetNX
 
-Это упрощенная версия без cluster-service internal handlers.
+Это упрощенная версия без worker internal handlers.
 Полный E2E тест с реальными сервисами требует запуска HTTP/gRPC endpoints.
 */
 
@@ -329,12 +329,12 @@ SUMMARY:
 ✅ Event fanout to multiple subscribers
 
 Что НЕ покрыто (требуется полный E2E):
-⚠️ Real cluster-service event handlers
+⚠️ Real worker event handlers
 ⚠️ PostgreSQL Task status updates
 ⚠️ Full workflow: command → processing → event → DB update
 
 Для полного E2E теста нужно:
-1. Запустить cluster-service HTTP/gRPC endpoint
+1. Запустить worker HTTP/gRPC endpoint
 2. Запустить Orchestrator Django app
 3. Apply migrations к test PostgreSQL
 4. Тестировать через HTTP API calls

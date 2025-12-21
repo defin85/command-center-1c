@@ -41,6 +41,12 @@ class BatchOperation(models.Model):
     TYPE_SYNC_CLUSTER = 'sync_cluster'
     TYPE_DISCOVER_CLUSTERS = 'discover_clusters'
 
+    # IBCMD operation types
+    TYPE_IBCMD_BACKUP = 'ibcmd_backup'
+    TYPE_IBCMD_RESTORE = 'ibcmd_restore'
+    TYPE_IBCMD_REPLICATE = 'ibcmd_replicate'
+    TYPE_IBCMD_CREATE = 'ibcmd_create'
+
     TYPE_CHOICES = [
         # OData operations
         (TYPE_CREATE, 'Create'),
@@ -57,6 +63,11 @@ class BatchOperation(models.Model):
         # Cluster operations
         (TYPE_SYNC_CLUSTER, 'Sync Cluster'),
         (TYPE_DISCOVER_CLUSTERS, 'Discover Clusters'),
+        # IBCMD operations
+        (TYPE_IBCMD_BACKUP, 'IBCMD Backup'),
+        (TYPE_IBCMD_RESTORE, 'IBCMD Restore'),
+        (TYPE_IBCMD_REPLICATE, 'IBCMD Replicate'),
+        (TYPE_IBCMD_CREATE, 'IBCMD Create'),
     ]
 
     # Identity

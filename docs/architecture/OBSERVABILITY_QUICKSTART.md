@@ -9,7 +9,7 @@
 
 **Решение:** Два связанных roadmap'а:
 
-1. **[RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md)** - MVP 5 weeks: Fix Lock/Unlock + объединение сервисов (Event-Driven v2.0)
+1. **[RADICAL_1C_CONTROL_PLANE_ROADMAP.md](../roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md)** - Direct RAS in Worker + unified drivers
 2. **[REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md)** - 10 weeks: Distributed Tracing + Real-Time UI
 
 **Рекомендация:** Начать с MVP (4 weeks), параллельно стартовать tracing (Week 1-4 из tracking roadmap)
@@ -18,14 +18,13 @@
 
 ## Два Roadmap'а - Как связаны?
 
-### RAS Adapter Roadmap (Основной)
+### Direct RAS in Worker (Основной)
 
 **Фокус:** Унификация архитектуры + исправление RAS integration
 
 **Scope:**
-- Слияние cluster-service + ras-grpc-gw → единый RAS Adapter
+- Direct RAS operations внутри Worker
 - Новая реализация Lock/Unlock (RegInfoBase вместо UpdateInfobase)
-- Hybrid Protocol: gRPC internal, REST external
 - Basic tracing (Phase 1-2)
 
 **Timeline:**
@@ -56,7 +55,7 @@
 ### Вариант A: MVP Only (4 weeks)
 
 **Делаем:**
-- ✅ RAS Adapter unified service
+- ✅ Direct RAS in Worker
 - ✅ New Lock/Unlock implementation
 - ✅ Worker migration to gRPC
 - ❌ No distributed tracing
@@ -79,7 +78,7 @@
 ### Вариант B: MVP + Basic Tracing (6 weeks)
 
 **Делаем:**
-- ✅ RAS Adapter (4 weeks)
+- ✅ Direct RAS (4 weeks)
 - ✅ Jaeger + OpenTelemetry infrastructure (Week 5-6)
 - ✅ Instrument all services
 - ✅ Correlation ID propagation
@@ -102,7 +101,7 @@
 ### Вариант C: Full Stack (12 weeks)
 
 **Делаем:**
-- ✅ RAS Adapter (4 weeks)
+- ✅ Direct RAS (4 weeks)
 - ✅ Distributed Tracing infrastructure (Week 5-6)
 - ✅ Real-Time Metrics + WebSocket (Week 7-8)
 - ✅ Custom UI components (Week 9-12)
@@ -124,9 +123,9 @@
 
 ### Вариант D: Hybrid Approach (8.5 weeks) ⭐ РЕКОМЕНДУЕТСЯ
 
-**Week 1-4: RAS Adapter MVP**
+**Week 1-4: Direct RAS MVP**
 - Focus: Починить extension install
-- Deliverable: RAS Adapter deployed to development
+- Deliverable: Direct RAS deployed to development
 
 **Week 4.5: Manual Endpoint Testing ⭐ CRITICAL GATE**
 - Focus: Comprehensive manual validation ALL endpoints
@@ -188,15 +187,9 @@ curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=...&infobase
 ### After MVP (Week 4)
 
 ```bash
-# Test new RAS Adapter
-curl http://localhost:8088/health
-# Expected: {"status":"healthy","service":"ras-adapter","version":"v2.0.0"}
-
-# Test Lock/Unlock
-curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=...&infobase_id=..." \
-  -H "Content-Type: application/json" \
-  -d '{"db_user":"admin","db_password":"secret"}'
-# Expected: {"success":true,"message":"Locked"}
+# Test Worker health
+curl http://localhost:9091/health
+# Expected: {"status":"ok", ...}
 ```
 
 ### After Basic Tracing (Week 6)
@@ -242,22 +235,21 @@ open http://localhost:5173/monitoring
 
 ### If you choose MVP (5 weeks):
 
-1. Read: [RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md) - Sections: MVP roadmap
-2. Start: Week 1, Day 1 - Create ras-adapter structure
-3. Spike: Week 2, Day 1-2 - Test RegInfoBase with real RAS
+1. Read: [RADICAL_1C_CONTROL_PLANE_ROADMAP.md](../roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md)
+2. Start: Week 1 - Direct RAS operations in Worker
+3. Spike: Week 2 - Test RegInfoBase with real RAS
 
 ### If you choose MVP + Basic Tracing (7 weeks):
 
-1. Read: [RAS_ADAPTER_ROADMAP.md](../roadmaps/RAS_ADAPTER_ROADMAP.md) - Full roadmap
+1. Read: [RADICAL_1C_CONTROL_PLANE_ROADMAP.md](../roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md)
 2. Read: [REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md) - Phase 1-2 only
 3. Start: Week 1-4 MVP, Week 5-6 Tracing
 
 ### If you choose Hybrid (8.5 weeks) ⭐:
 
-1. Read: [RAS_ADAPTER_ROADMAP.md](RAS_ADAPTER_ROADMAP.md) - Full roadmap
+1. Read: [RADICAL_1C_CONTROL_PLANE_ROADMAP.md](../roadmaps/RADICAL_1C_CONTROL_PLANE_ROADMAP.md)
 2. Read: [REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md) - Phase 1-5
-3. Read: [RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md](RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md) - для Week 4.5
-4. Start: Week 1-4 MVP → Week 4.5 Manual Testing → Week 5-8 Tracing+Metrics+UI
+3. Start: Week 1-4 MVP → Week 5-8 Tracing+Metrics+UI
 
 ### If you choose Full (12 weeks):
 

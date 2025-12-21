@@ -8,7 +8,15 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
 )
+
+type rasClient interface {
+	UnlockScheduledJobs(ctx context.Context, clusterID, infobaseID, clusterUser, clusterPwd string) error
+	Close() error
+}
+
+type rasClientFactory func(server string) (rasClient, error)
 
 // WatchdogConfig holds configuration for the watchdog
 type WatchdogConfig struct {
@@ -33,6 +41,8 @@ type Watchdog struct {
 	publisher       EventPublisher
 	orchestratorURL string
 	smConfig        *Config
+	clusterInfo     ClusterInfoProvider
+	rasFactory      rasClientFactory
 }
 
 // NewWatchdog creates a new Watchdog instance
@@ -42,12 +52,19 @@ func NewWatchdog(
 	orchestratorURL string,
 	smConfig *Config,
 	config *WatchdogConfig,
+	clusterInfo ClusterInfoProvider,
+	rasFactory rasClientFactory,
 ) *Watchdog {
 	if config == nil {
 		config = DefaultWatchdogConfig()
 	}
 	if smConfig == nil {
 		smConfig = DefaultConfig()
+	}
+	if rasFactory == nil {
+		rasFactory = func(server string) (rasClient, error) {
+			return rasdirect.NewClient(server)
+		}
 	}
 
 	return &Watchdog{
@@ -56,6 +73,8 @@ func NewWatchdog(
 		publisher:       publisher,
 		orchestratorURL: orchestratorURL,
 		smConfig:        smConfig,
+		clusterInfo:     clusterInfo,
+		rasFactory:      rasFactory,
 	}
 }
 
@@ -230,27 +249,32 @@ func (w *Watchdog) buildCompensationStackFromState(state *stateData) []Compensat
 
 // unlockInfobase sends unlock command for the infobase
 func (w *Watchdog) unlockInfobase(ctx context.Context, state *stateData) error {
-	payload := map[string]interface{}{
-		"cluster_id":  state.ClusterID,
-		"infobase_id": state.InfobaseID,
+	if w.clusterInfo == nil {
+		return fmt.Errorf("cluster info provider is required for unlock compensation")
 	}
 
-	// Publish unlock command
-	err := w.publisher.Publish(ctx,
-		"commands:cluster-service:infobase:unlock",
-		"cluster.infobase.unlock",
-		payload,
-		state.CorrelationID,
-	)
+	info, err := w.clusterInfo.Fetch(ctx, state.DatabaseID)
 	if err != nil {
-		return fmt.Errorf("failed to publish unlock command: %w", err)
+		return fmt.Errorf("failed to resolve cluster info: %w", err)
+	}
+	if info == nil || info.RASServer == "" || info.ClusterID == "" || info.InfobaseID == "" {
+		return fmt.Errorf("cluster info is incomplete for database %s", state.DatabaseID)
 	}
 
-	fmt.Printf("[Watchdog] Unlock command published for infobase: cluster_id=%s, infobase_id=%s\n",
-		state.ClusterID, state.InfobaseID)
+	client, err := w.rasFactory(info.RASServer)
+	if err != nil {
+		return fmt.Errorf("failed to create ras client: %w", err)
+	}
+	defer func() {
+		_ = client.Close()
+	}()
 
-	// Note: We don't wait for the response here - this is fire-and-forget
-	// The unlock event will be handled by normal event processing or next watchdog run
+	if err := client.UnlockScheduledJobs(ctx, info.ClusterID, info.InfobaseID, info.ClusterUser, info.ClusterPwd); err != nil {
+		return fmt.Errorf("failed to unlock scheduled jobs: %w", err)
+	}
+
+	fmt.Printf("[Watchdog] Unlock completed for infobase: cluster_id=%s, infobase_id=%s\n",
+		info.ClusterID, info.InfobaseID)
 
 	return nil
 }

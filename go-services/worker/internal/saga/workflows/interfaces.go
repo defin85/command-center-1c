@@ -9,8 +9,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/odata"
 )
 
-// RASClient sends commands to ras-adapter via Redis Streams.
-// Implementations should publish commands and wait for results.
+// RASClient performs direct RAS operations (no external adapter).
 type RASClient interface {
 	// LockScheduledJobs blocks scheduled jobs (reglamentirovannye zadaniya) for an infobase.
 	LockScheduledJobs(ctx context.Context, clusterID, infobaseID string) error

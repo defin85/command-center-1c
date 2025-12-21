@@ -30,7 +30,7 @@ type Envelope struct {
 	// Timestamp is when the message was created (ISO8601 format)
 	Timestamp time.Time `json:"timestamp"`
 
-	// EventType describes the type of event (e.g., "commands:cluster-service:infobase:lock")
+	// EventType describes the type of event (e.g., "commands:worker:operations")
 	EventType string `json:"event_type"`
 
 	// ServiceName is the name of the service that created this message

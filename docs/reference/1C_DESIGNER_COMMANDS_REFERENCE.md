@@ -1074,9 +1074,9 @@ if %ERRORLEVEL% neq 0 (
 
 ---
 
-## Summary для batch-service
+## Summary для Extension Management
 
-**Команды критичные для batch-service (Extension Management):**
+**Команды критичные для Extension Management:**
 
 | Команда | Назначение | Приоритет |
 |---------|------------|-----------|

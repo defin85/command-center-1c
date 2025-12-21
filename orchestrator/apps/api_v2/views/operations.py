@@ -129,6 +129,38 @@ class ExecuteOperationThrottle(UserRateThrottle):
     scope = 'execute_operation'
 
 
+class ExecuteIbcmdOperationRequestSerializer(serializers.Serializer):
+    """Request body for execute_ibcmd_operation endpoint."""
+    IBCMD_OPERATION_TYPES = [
+        ('ibcmd_backup', 'IBCMD Backup'),
+        ('ibcmd_restore', 'IBCMD Restore'),
+        ('ibcmd_replicate', 'IBCMD Replicate'),
+        ('ibcmd_create', 'IBCMD Create'),
+    ]
+
+    operation_type = serializers.ChoiceField(
+        choices=IBCMD_OPERATION_TYPES,
+        help_text="Type of IBCMD operation to execute"
+    )
+    database_ids = serializers.ListField(
+        child=serializers.UUIDField(format='hex_verbose'),
+        min_length=1,
+        max_length=200,
+        help_text="List of database UUIDs"
+    )
+    config = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text="Operation-specific configuration (dbms, db_server, db_name, etc.)"
+    )
+
+
+class ExecuteIbcmdOperationThrottle(UserRateThrottle):
+    """Rate limit: 10 IBCMD operations per minute per user."""
+    rate = '10/min'
+    scope = 'execute_ibcmd_operation'
+
+
 # =============================================================================
 # SSE Ticket Serializers
 # =============================================================================
@@ -543,6 +575,90 @@ def execute_operation(request):
 
     except Exception as e:
         logger.error(f"Error executing RAS operation: {e}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'INTERNAL_ERROR',
+                'message': 'Failed to queue operation'
+            }
+        }, status=500)
+
+
+# =============================================================================
+# Execute IBCMD Operation
+# =============================================================================
+
+@extend_schema(
+    tags=['v2'],
+    summary='Execute IBCMD operation',
+    description='''
+    Queue an IBCMD operation for execution on selected databases.
+
+    **Supported operation types:**
+    - `ibcmd_backup` - Backup infobase
+    - `ibcmd_restore` - Restore infobase from backup
+    - `ibcmd_replicate` - Replicate infobase to another server
+    - `ibcmd_create` - Create new infobase
+    ''',
+    request=ExecuteIbcmdOperationRequestSerializer,
+    responses={
+        202: ExecuteOperationResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanExecuteOperation])
+@throttle_classes([ExecuteIbcmdOperationThrottle])
+def execute_ibcmd_operation(request):
+    """
+    POST /api/v2/operations/execute-ibcmd/
+
+    Queue an IBCMD operation (backup/restore/replicate/create) for multiple databases.
+    """
+    serializer = ExecuteIbcmdOperationRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    operation_type = serializer.validated_data['operation_type']
+    database_ids = serializer.validated_data['database_ids']
+    config = serializer.validated_data.get('config', {})
+
+    try:
+        batch_operation = OperationsService.enqueue_ibcmd_operation(
+            operation_type=operation_type,
+            database_ids=database_ids,
+            config=config,
+            user=request.user,
+        )
+
+        logger.info(
+            f"IBCMD operation {operation_type} queued",
+            extra={
+                'operation_id': str(batch_operation.id),
+                'operation_type': operation_type,
+                'database_count': len(database_ids),
+                'created_by': request.user.username if request.user else 'anonymous',
+            }
+        )
+
+        return Response({
+            'operation_id': str(batch_operation.id),
+            'status': batch_operation.status,
+            'total_tasks': batch_operation.total_tasks,
+            'message': f'{operation_type} queued for {len(database_ids)} database(s)',
+        }, status=http_status.HTTP_202_ACCEPTED)
+
+    except ValueError as e:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': str(e)
+            }
+        }, status=400)
+
+    except Exception as e:
+        logger.error(f"Error executing IBCMD operation: {e}", exc_info=True)
         return Response({
             'success': False,
             'error': {

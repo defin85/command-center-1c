@@ -2,7 +2,7 @@
 Event Subscriber for Redis Streams from Go services.
 
 This module implements a Consumer Group-based subscriber for Redis Streams,
-allowing Django Orchestrator to receive events from Go services (worker, cluster-service).
+allowing Django Orchestrator to receive events from Go services (worker).
 
 Architecture:
 - Uses Redis Streams (NOT Pub/Sub) for guaranteed delivery
@@ -77,7 +77,7 @@ def _default_flow_path(operation_type: str) -> list[str]:
         "sync_cluster",
         "discover_clusters",
     }:
-        return ["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"]
+        return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type == "install_extension":
         return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type in {"query", "health_check"}:
@@ -120,9 +120,6 @@ class EventSubscriber:
     Uses Redis Streams with Consumer Groups for guaranteed delivery of events.
 
     Supported Stream Events:
-    - cluster-service:infobase:locked
-    - cluster-service:infobase:unlocked
-    - cluster-service:sessions:closed
     - worker:cluster-synced
     - worker:clusters-discovered
     - worker:completed
@@ -148,9 +145,6 @@ class EventSubscriber:
         # Streams to subscribe to (stream_name: last_id)
         # '>' means read only new messages
         self.streams = {
-            'events:cluster-service:infobase:locked': '>',
-            'events:cluster-service:infobase:unlocked': '>',
-            'events:cluster-service:sessions:closed': '>',
             'events:worker:cluster-synced': '>',
             'events:worker:clusters-discovered': '>',
             'events:worker:completed': '>',
@@ -292,16 +286,7 @@ class EventSubscriber:
         _record_event_metric(event_type, stream)
 
         # Route to appropriate handler based on stream name
-        if 'infobase:locked' in stream:
-            self.handle_infobase_locked(payload, correlation_id)
-
-        elif 'infobase:unlocked' in stream:
-            self.handle_infobase_unlocked(payload, correlation_id)
-
-        elif 'sessions:closed' in stream:
-            self.handle_sessions_closed(payload, correlation_id)
-
-        elif 'cluster-synced' in stream:
+        if 'cluster-synced' in stream:
             self.handle_cluster_synced(payload, correlation_id)
 
         elif 'clusters-discovered' in stream:
@@ -324,80 +309,6 @@ class EventSubscriber:
 
         else:
             logger.warning(f"Unknown stream: {stream}")
-
-    def handle_infobase_locked(self, payload: Dict[str, Any], correlation_id: str):
-        """
-        Handle infobase locked event from cluster-service.
-
-        Payload example:
-            {
-                'cluster_id': 'cluster-uuid',
-                'infobase_id': 'infobase-uuid',
-                'reason': 'maintenance'
-            }
-        """
-        infobase_id = payload.get('infobase_id')
-        reason = payload.get('reason', 'unknown')
-
-        logger.info(
-            f"Infobase locked: infobase={infobase_id}, "
-            f"reason={reason}, correlation_id={correlation_id}"
-        )
-
-        # TODO: Update Database model status when implemented
-        # Database.objects.filter(infobase_uuid=infobase_id).update(
-        #     status='locked',
-        #     lock_reason=reason,
-        #     updated_at=timezone.now()
-        # )
-
-    def handle_infobase_unlocked(self, payload: Dict[str, Any], correlation_id: str):
-        """
-        Handle infobase unlocked event from cluster-service.
-
-        Payload example:
-            {
-                'cluster_id': 'cluster-uuid',
-                'infobase_id': 'infobase-uuid'
-            }
-        """
-        infobase_id = payload.get('infobase_id')
-
-        logger.info(
-            f"Infobase unlocked: infobase={infobase_id}, "
-            f"correlation_id={correlation_id}"
-        )
-
-        # TODO: Update Database model status when implemented
-        # Database.objects.filter(infobase_uuid=infobase_id).update(
-        #     status='active',
-        #     lock_reason='',
-        #     updated_at=timezone.now()
-        # )
-
-    def handle_sessions_closed(self, payload: Dict[str, Any], correlation_id: str):
-        """
-        Handle sessions closed event from cluster-service.
-
-        Payload example:
-            {
-                'cluster_id': 'cluster-uuid',
-                'infobase_id': 'infobase-uuid',
-                'sessions_closed': 5,
-                'duration_seconds': 2.3
-            }
-        """
-        infobase_id = payload.get('infobase_id')
-        sessions_closed = payload.get('sessions_closed', 0)
-        duration = payload.get('duration_seconds', 0)
-
-        logger.info(
-            f"Sessions closed: infobase={infobase_id}, "
-            f"count={sessions_closed}, duration={duration:.2f}s, "
-            f"correlation_id={correlation_id}"
-        )
-
-        # TODO: Log to monitoring/audit system when implemented
 
     def handle_cluster_synced(self, payload: Dict[str, Any], correlation_id: str):
         """
@@ -595,17 +506,13 @@ class EventSubscriber:
                         cluster_name = cluster_data.get('name', 'Unknown')
 
                         # Try to find existing cluster by ras_cluster_uuid
-                        # cluster_service_url points to RAS Adapter
-                        from django.conf import settings
-                        adapter_url = getattr(
-                            settings, 'RAS_ADAPTER_URL', 'http://localhost:8188'
-                        )
+                        cluster_service_url = f"http://{ras_server}" if ras_server else "http://localhost"
                         cluster, is_new = Cluster.objects.update_or_create(
                             ras_cluster_uuid=cluster_uuid,
                             defaults={
                                 'name': cluster_name,
                                 'ras_server': ras_server,
-                                'cluster_service_url': adapter_url,
+                                'cluster_service_url': cluster_service_url,
                                 'status': 'active',
                                 'metadata': cluster_data,
                             }

@@ -7,7 +7,7 @@ Event Subscriber - это компонент Django Orchestrator, который
 ## Архитектура
 
 ```
-Go Services (worker, cluster-service)
+Go Services (worker)
     |
     | Publish events to Redis Streams
     v
@@ -33,14 +33,6 @@ Django ORM (PostgreSQL)
 | `events:worker:cluster-synced` | Cluster synced | Синхронизация кластера завершена |
 | `events:worker:clusters-discovered` | Clusters discovered | Обнаружение кластеров завершено |
 | `commands:worker:dlq` | Dead Letter Queue | Ошибочные сообщения |
-
-### cluster-service
-
-| Stream | Событие | Описание |
-|--------|---------|----------|
-| `events:cluster-service:infobase:locked` | Infobase заблокирована | База заблокирована для обслуживания |
-| `events:cluster-service:infobase:unlocked` | Infobase разблокирована | Блокировка снята |
-| `events:cluster-service:sessions:closed` | Сессии закрыты | Все сессии базы завершены |
 
 ## Формат событий
 

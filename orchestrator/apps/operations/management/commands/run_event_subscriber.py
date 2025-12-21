@@ -5,7 +5,7 @@ Usage:
     python manage.py run_event_subscriber
 
 This command starts the Event Subscriber that listens to Redis Streams
-from Go services (worker, cluster-service) and processes events.
+from Go services (worker) and processes events.
 """
 
 from django.core.management.base import BaseCommand

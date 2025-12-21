@@ -46,11 +46,9 @@ BUILD_PARALLEL=false
 SPECIFIC_SERVICE=""
 
 # Список всех сервисов
-# Week 4+: cluster-service удалён (заменён на ras-adapter)
 declare -A SERVICES
 SERVICES[api-gateway]="API Gateway"
 SERVICES[worker]="Worker"
-SERVICES[ras-adapter]="RAS Adapter"
 
 ##############################################################################
 # Функции
@@ -62,7 +60,7 @@ show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --service=<name>    Собрать только указанный сервис (api-gateway, worker, ras-adapter)"
+    echo "  --service=<name>    Собрать только указанный сервис (api-gateway, worker)"
     echo "  --os=<os>           Целевая ОС (linux, windows, darwin). Default: $(go env GOOS)"
     echo "  --arch=<arch>       Целевая архитектура (amd64, arm64). Default: $(go env GOARCH)"
     echo "  --parallel          Собрать все сервисы параллельно"
@@ -124,12 +122,7 @@ build_service() {
     mkdir -p "$BIN_DIR"
 
     # Build с version injection
-    # Some services use internal/version package (not main)
-    if [ "$service" = "ras-adapter" ]; then
-        LDFLAGS="-X github.com/command-center-1c/ras-adapter/internal/version.Version=$VERSION -X github.com/command-center-1c/ras-adapter/internal/version.Commit=$COMMIT -X github.com/command-center-1c/ras-adapter/internal/version.BuildTime=$BUILD_TIME"
-    else
-        LDFLAGS="-X main.Version=$VERSION -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
-    fi
+    LDFLAGS="-X main.Version=$VERSION -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
 
     # Save current directory and return to it after build
     local current_dir=$(pwd)

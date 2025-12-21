@@ -4,12 +4,10 @@ package statemachine
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
-	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 )
 
 func (sm *ExtensionInstallStateMachine) lockScheduledJobs(ctx context.Context) error {
@@ -99,54 +97,37 @@ func (sm *ExtensionInstallStateMachine) unlockScheduledJobs(ctx context.Context)
 }
 
 func (sm *ExtensionInstallStateMachine) executeRasOp(ctx context.Context, op string) error {
-	useDirect := os.Getenv("USE_DIRECT_RAS") != "false" && sm.RASServer != ""
-
-	if useDirect {
-		dc, err := rasdirect.NewClient(sm.RASServer)
-		if err != nil {
-			return err
-		}
-		defer dc.Close()
-
-		switch op {
-		case "lock_scheduled_jobs":
-			return dc.LockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
-		case "unlock_scheduled_jobs":
-			return dc.UnlockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
-		case "terminate_sessions":
-			return dc.TerminateAllSessions(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
-		default:
-			return fmt.Errorf("unsupported ras op: %s", op)
-		}
+	if sm.RASServer == "" {
+		return fmt.Errorf("ras server is required for RAS operations")
 	}
 
-	client, err := rasadapter.NewClient()
+	dc, err := rasdirect.NewClient(sm.RASServer)
 	if err != nil {
 		return err
 	}
+	defer dc.Close()
 
 	switch op {
 	case "lock_scheduled_jobs":
-		_, err = client.LockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, &rasadapter.LockInfobaseRequest{})
+		return dc.LockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
 	case "unlock_scheduled_jobs":
-		_, err = client.UnlockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, &rasadapter.UnlockInfobaseRequest{})
+		return dc.UnlockScheduledJobs(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
 	case "terminate_sessions":
-		_, err = client.TerminateAllSessions(ctx, sm.ClusterID, sm.InfobaseID)
+		return dc.TerminateAllSessions(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
 	default:
 		return fmt.Errorf("unsupported ras op: %s", op)
 	}
-	return err
 }
 
 func (sm *ExtensionInstallStateMachine) waitForSessionsClosed(ctx context.Context, timeout time.Duration) error {
 	if sm.RASServer == "" {
-		return nil
+		return fmt.Errorf("ras server is required for session wait")
 	}
-
-	client, err := rasadapter.NewClient()
+	dc, err := rasdirect.NewClient(sm.RASServer)
 	if err != nil {
-		return nil
+		return err
 	}
+	defer dc.Close()
 
 	deadline := time.Now().Add(timeout)
 	for {
@@ -154,11 +135,11 @@ func (sm *ExtensionInstallStateMachine) waitForSessionsClosed(ctx context.Contex
 			return fmt.Errorf("timeout waiting for sessions to close")
 		}
 
-		resp, err := client.ListSessions(ctx, sm.RASServer, sm.ClusterID, sm.InfobaseID)
+		count, err := dc.ListInfobaseSessions(ctx, sm.ClusterID, sm.InfobaseID, sm.ClusterUser, sm.ClusterPwd)
 		if err != nil {
 			return err
 		}
-		if resp == nil || resp.Count == 0 || len(resp.Sessions) == 0 {
+		if count == 0 {
 			return nil
 		}
 

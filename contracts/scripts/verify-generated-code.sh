@@ -37,33 +37,9 @@ echo ""
 FAILED=0
 
 ##############################################################################
-# 1. Go: Verify ras-adapter generated server.go compiles
+# 1. Go: Verify api-gateway generated routes compile
 ##############################################################################
-echo -e "${BLUE}[1/3] Checking Go generated code (ras-adapter)...${NC}"
-
-RAS_ADAPTER_GENERATED="$PROJECT_ROOT/go-services/ras-adapter/internal/api/generated"
-
-if [[ -d "$RAS_ADAPTER_GENERATED" ]]; then
-    cd "$PROJECT_ROOT/go-services/ras-adapter"
-
-    # Try to build just the generated package (fast check)
-    if go build -o /dev/null ./internal/api/generated/ 2>&1; then
-        echo -e "  ${GREEN}✓ ras-adapter generated code compiles${NC}"
-    else
-        echo -e "  ${RED}✗ ras-adapter generated code has compilation errors:${NC}"
-        go build -o /dev/null ./internal/api/generated/ 2>&1 | head -n 20
-        FAILED=$((FAILED + 1))
-    fi
-else
-    echo -e "  ${YELLOW}⊘ ras-adapter generated directory not found (skipping)${NC}"
-fi
-
-echo ""
-
-##############################################################################
-# 2. Go: Verify api-gateway generated routes compile
-##############################################################################
-echo -e "${BLUE}[2/3] Checking Go generated code (api-gateway)...${NC}"
+echo -e "${BLUE}[1/2] Checking Go generated code (api-gateway)...${NC}"
 
 API_GW_GENERATED="$PROJECT_ROOT/go-services/api-gateway/internal/routes/generated"
 
@@ -85,12 +61,12 @@ fi
 echo ""
 
 ##############################################################################
-# 3. TypeScript: Verify frontend generated types (optional in quick mode)
+# 2. TypeScript: Verify frontend generated types (optional in quick mode)
 ##############################################################################
 if [[ "$QUICK_MODE" == "true" ]]; then
-    echo -e "${BLUE}[3/3] Skipping TypeScript check (--quick mode)${NC}"
+    echo -e "${BLUE}[2/2] Skipping TypeScript check (--quick mode)${NC}"
 else
-    echo -e "${BLUE}[3/3] Checking TypeScript generated code (frontend)...${NC}"
+    echo -e "${BLUE}[2/2] Checking TypeScript generated code (frontend)...${NC}"
 
     FRONTEND_GENERATED="$PROJECT_ROOT/frontend/src/api/generated"
 

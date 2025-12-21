@@ -20,7 +20,6 @@ type SyncClusterPayload struct {
 	ClusterID         string `json:"cluster_id"`          // Django Cluster ID (UUID)
 	RASServer         string `json:"ras_server"`          // RAS server address (host:port)
 	RASClusterUUID    string `json:"ras_cluster_uuid"`    // RAS cluster UUID (may be empty)
-	ClusterServiceURL string `json:"cluster_service_url"` // RAS Adapter URL (fallback path)
 	ClusterName       string `json:"cluster_name"`        // Cluster name for lookup
 	ClusterUser       string `json:"cluster_user"`        // Cluster admin user
 	ClusterPwd        string `json:"cluster_pwd"`         // Cluster admin password

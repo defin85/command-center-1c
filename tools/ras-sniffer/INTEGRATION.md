@@ -32,7 +32,7 @@ rac.exe cluster list localhost:1546
 
 TCP proxy для перехвата и анализа RAS протокола. Используй для:
 - Reverse engineering RAS binary protocol
-- Debugging ras-grpc-gw интеграции
+- Debugging direct RAS integration
 - Анализ message formats
 
 **Quick usage:**
@@ -68,9 +68,7 @@ tail -f ras-protocol-capture.log
 См. [tools/ras-sniffer/README.md](../tools/ras-sniffer/README.md) для деталей.
 ```
 
-### 2. docs/DJANGO_CLUSTER_INTEGRATION.md
-
-Добавить в секцию "Testing cluster-service integration":
+### 2. Worker direct RAS testing
 
 ```markdown
 ### Debug RAS Communication
@@ -81,36 +79,11 @@ tail -f ras-protocol-capture.log
 # Terminal 1: Start sniffer
 cd tools/ras-sniffer && ./start.sh
 
-# Terminal 2: Test cluster-service через proxy
-curl "http://localhost:8088/api/v2/list-clusters?server=localhost:1546"
+# Terminal 2: Point worker to proxy (example)
+export RAS_SERVER=localhost:1546
 
-# Terminal 3: Analyze traffic
+# Terminal 3: Trigger worker operation and analyze traffic
 tail -f tools/ras-sniffer/ras-protocol-capture.log
-```
-
-**Примечание:** Измени `GRPC_GATEWAY_ADDR` в cluster-service на `:1546` для routing через sniffer.
-```
-
-### 3. go-services/cluster-service/README.md
-
-Добавить в секцию "Development":
-
-```markdown
-### Debug RAS Protocol
-
-Для debugging RAS communication используй RAS Protocol Sniffer:
-
-```bash
-# Start sniffer
-cd ../../tools/ras-sniffer && ./start.sh
-
-# Modify cluster-service to use proxy
-export GRPC_GATEWAY_ADDR=localhost:1546
-
-# Start cluster-service
-go run cmd/main.go
-
-# All RAS traffic will be captured to ras-protocol-capture.log
 ```
 ```
 
@@ -140,7 +113,7 @@ Deliverables:
 - tools/ras-sniffer/QUICKSTART.md (2-min start guide)
 - tools/ras-sniffer/DEMO_OUTPUT.txt (example output)
 
-Use case: Reverse engineering для улучшения ras-grpc-gw интеграции
+Use case: Reverse engineering для улучшения direct RAS интеграции
 
 🤖 Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
@@ -153,10 +126,10 @@ Co-Authored-By: Claude <noreply@anthropic.com>
    - Обновить docs/START_HERE.md с ссылкой на tools
 
 2. **Integration:**
-   - Возможно создать wrapper для cluster-service testing
+   - Возможно создать wrapper для worker RAS testing
    - Добавить в CI/CD для automated protocol testing
 
 3. **Enhancement:**
    - Добавить более детальный parser для известных message types
    - Создать Go библиотеку для encoding/decoding RAS messages
-   - Интегрировать с ras-grpc-gw для валидации протокола
+   - Интегрировать с worker direct RAS для валидации протокола

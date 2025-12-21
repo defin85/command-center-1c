@@ -222,7 +222,7 @@ latency                thread      roundtrip
 
 ### Mock Responder Pattern
 
-Performance тесты используют mock responder для симуляции cluster-service и batch-service:
+Performance тесты используют mock responder для симуляции worker и worker:
 
 ```go
 // Subscribe to command channels
@@ -327,7 +327,7 @@ appendonly yes  # AOF for durability
 
 ### Phase 2: Real Service Integration (Week 4)
 
-- [ ] Replace mock responder с реальными cluster-service и batch-service
+- [ ] Replace mock responder с реальными worker и worker
 - [ ] Тестирование против реальной 1С базы
 - [ ] Проверка real OData latency
 - [ ] End-to-end performance validation

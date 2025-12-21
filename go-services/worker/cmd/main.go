@@ -25,7 +25,6 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
-	"github.com/commandcenter1c/commandcenter/worker/internal/rasadapter"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
@@ -280,10 +279,7 @@ func main() {
 			"enabled":              schedConfig.Enabled,
 			"cleanup_history_cron": schedConfig.CleanupHistoryCron,
 			"cleanup_events_cron":  schedConfig.CleanupEventsCron,
-			"batch_health_cron":    schedConfig.BatchHealthCron,
-			"cluster_health_cron":  schedConfig.ClusterHealthCron,
 			"database_health_cron": schedConfig.DatabaseHealthCron,
-			"ras_adapter_url":      schedConfig.RASAdapterURL,
 		}).Info("initializing Go scheduler")
 
 		// Reuse zapLog created above for scheduler
@@ -293,9 +289,6 @@ func main() {
 
 			// Create orchestrator client for cleanup jobs
 			orchClient := jobs.NewHTTPOrchestratorClient(cfg.OrchestratorURL, zapLog)
-
-			// Create batch-service client for health checks
-			batchClient := jobs.NewHTTPBatchServiceClient(cfg.BatchServiceURL, zapLog)
 
 			// Register cleanup jobs
 			cleanupHistoryJob := jobs.NewCleanupStatusHistoryJob(
@@ -309,31 +302,6 @@ func main() {
 
 			// Note: CleanupReplayedEventsJob registration moved after orchestratorClient creation
 			// to use the real EventReplayClient instead of stub HTTPOrchestratorClient
-
-			// Register batch service health check job
-			batchHealthJob := jobs.NewBatchServiceHealthJob(batchClient, zapLog)
-			if err := sched.RegisterJob(schedConfig.BatchHealthCron, batchHealthJob); err != nil {
-				log.WithError(err).Error("failed to register batch_service_health job")
-			}
-
-			// Register cluster health check job
-			rasAdapterClient, err := rasadapter.NewClientWithConfig(rasadapter.ClientConfig{
-				BaseURL: schedConfig.RASAdapterURL,
-			})
-			if err != nil {
-				log.WithError(err).Error("failed to create RAS Adapter client for cluster health")
-			} else {
-				rasClientAdapter := jobs.NewRASClientAdapter(rasAdapterClient)
-				orchHealthClient := jobs.NewHTTPOrchestratorHealthClient(
-					cfg.OrchestratorURL,
-					cfg.InternalAPIToken,
-					zapLog,
-				)
-				clusterHealthJob := jobs.NewClusterHealthJob(rasClientAdapter, orchHealthClient, zapLog)
-				if err := sched.RegisterJob(schedConfig.ClusterHealthCron, clusterHealthJob); err != nil {
-					log.WithError(err).Error("failed to register cluster_health job")
-				}
-			}
 
 			// Register database health check job
 			orchestratorClient, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{

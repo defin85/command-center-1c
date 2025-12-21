@@ -3,7 +3,6 @@ Pytest fixtures for backend tests.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
 from uuid import uuid4
 
 from django.contrib.auth.models import User
@@ -141,38 +140,3 @@ def update_operation_template(db):
             "data": {"status": "{{ status }}"}
         }
     )
-
-
-@pytest.fixture
-def mock_ras_adapter_client():
-    """Create mock RAS adapter client."""
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_success_response():
-    """Create mock successful RAS response."""
-    response = MagicMock()
-    response.success = True
-    response.message = "Operation successful"
-    return response
-
-
-@pytest.fixture
-def mock_error_response():
-    """Create mock error RAS response."""
-    from apps.databases.clients.generated.ras_adapter_api_client.models import ErrorResponse
-    response = Mock(spec=ErrorResponse)
-    response.error = "Operation failed"
-    response.details = "Connection timeout"
-    return response
-
-
-@pytest.fixture
-def mock_terminate_sessions_response():
-    """Create mock terminate sessions response."""
-    response = MagicMock()
-    response.success = True
-    response.message = "Sessions terminated"
-    response.terminated_count = 5
-    return response

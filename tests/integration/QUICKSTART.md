@@ -180,7 +180,7 @@ docker rm cc1c-redis-test cc1c-postgres-test
 - ✅ Event receiving (4 responses)
 - ✅ State transitions (5 transitions)
 - ✅ Compensation stack management
-- ✅ MockEventResponder (эмулирует cluster-service + batch-service)
+- ✅ MockEventResponder (эмулирует worker + worker)
 
 ### test-all (5 тестов, ~6 сек)
 

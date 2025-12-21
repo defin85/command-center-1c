@@ -17,12 +17,9 @@ import {
   GatewayOutlined,
   ApartmentOutlined,
   ThunderboltOutlined,
-  ApiOutlined,
-  BuildOutlined,
   DatabaseOutlined,
   CloudServerOutlined,
   NotificationOutlined,
-  ToolOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons'
 import type { WaterfallItem, EventStatus } from '../../types/operationTimeline'
@@ -60,12 +57,9 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'api-gateway': <GatewayOutlined />,
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
-  'ras-adapter': <ApiOutlined />,
-  'batch-service': <BuildOutlined />,
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,
   'event-subscriber': <NotificationOutlined />,
-  'designer-agent': <ToolOutlined />,
 }
 
 /**

@@ -18,7 +18,7 @@ import (
 INTEGRATION TESTS: Worker State Machine
 
 Эти тесты проверяют реальное поведение State Machine с настоящим Redis,
-но мокируют внешние HTTP-сервисы (cluster-service, batch-service).
+но мокируют внешние HTTP-сервисы (worker, worker).
 
 Покрываемые сценарии:
 1. Lock Failed - RAS возвращает ошибку
@@ -67,7 +67,7 @@ func TestStateMachine_LockFailed(t *testing.T) {
 
 	// Register FAILED lock response
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockFailedResponse("RAS connection refused"),
 	)
 	require.NoError(t, err)
@@ -164,19 +164,19 @@ func TestStateMachine_TerminateTimeout(t *testing.T) {
 	// - Unlock succeeds (compensation)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateTimeoutResponse(), // No response sent!
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -281,25 +281,25 @@ func TestStateMachine_InstallFailed(t *testing.T) {
 	// - Unlock succeeds (compensation)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallFailedResponse("1cv8.exe returned exit code 1"),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -400,26 +400,26 @@ func TestStateMachine_UnlockRetries(t *testing.T) {
 	// - Unlock FAILS 3 times, then succeeds on 4th attempt
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	// Unlock fails 3 times, succeeds on 4th
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockRetriesResponse(3),
 	)
 	require.NoError(t, err)
@@ -522,25 +522,25 @@ func TestStateMachine_CompensationChain(t *testing.T) {
 	// - Unlock succeeds (compensation should execute in LIFO order)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallFailedResponse("Simulated install failure for compensation test"),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -646,7 +646,7 @@ func TestStateMachine_DuplicateEvents(t *testing.T) {
 		go func() {
 			time.Sleep(100 * time.Millisecond)
 			// Publish duplicate manually
-			publisher.Publish(ctx, "events:cluster-service:infobase:locked", "cluster.infobase.locked", map[string]interface{}{
+			publisher.Publish(ctx, "events:worker:infobase:locked", "cluster.infobase.locked", map[string]interface{}{
 				"cluster_id":  "test-cluster",
 				"infobase_id": "test-infobase",
 				"status":      "locked",
@@ -657,25 +657,25 @@ func TestStateMachine_DuplicateEvents(t *testing.T) {
 	}
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		duplicateLockHandler,
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -764,7 +764,7 @@ func TestStateMachine_OutOfOrderEvents(t *testing.T) {
 		// Send WRONG event (extension.installed before sessions.closed)
 		go func() {
 			time.Sleep(100 * time.Millisecond)
-			publisher.Publish(ctx, "events:batch-service:extension:installed", "batch.extension.installed", map[string]interface{}{
+			publisher.Publish(ctx, "events:worker:extension:installed", "batch.extension.installed", map[string]interface{}{
 				"database_id":    "test-database",
 				"extension_name": "TestExtension",
 				"status":         "installed",
@@ -776,25 +776,25 @@ func TestStateMachine_OutOfOrderEvents(t *testing.T) {
 	}
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		outOfOrderHandler,
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -873,13 +873,13 @@ func TestStateMachine_RedisUnavailable(t *testing.T) {
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
@@ -979,25 +979,25 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:lock",
+		"commands:worker:infobase:lock",
 		MockLockSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:sessions:terminate",
+		"commands:worker:sessions:terminate",
 		MockTerminateSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:batch-service:extension:install",
+		"commands:worker:extension:install",
 		MockInstallSuccessResponse(),
 	)
 	require.NoError(t, err)
 
 	err = mockResponder.RegisterHandler(
-		"commands:cluster-service:infobase:unlock",
+		"commands:worker:infobase:unlock",
 		MockUnlockSuccessResponse(),
 	)
 	require.NoError(t, err)

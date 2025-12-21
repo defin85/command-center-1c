@@ -13,7 +13,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/events"
 )
 
-// MockEventResponder mocks external event producers (cluster-service, batch-service)
+// MockEventResponder mocks external event producers (worker, worker)
 type MockEventResponder struct {
 	mu       sync.Mutex
 	handlers map[string]ResponseHandler
@@ -104,14 +104,14 @@ func (m *MockEventResponder) RegisterHandler(commandChannel string, handler Resp
 func (m *MockEventResponder) getResponseChannel(eventType string) string {
 	// Map event types to channels
 	channelMap := map[string]string{
-		"cluster.infobase.locked":           "events:cluster-service:infobase:locked",
-		"cluster.infobase.lock-failed":      "events:cluster-service:infobase:lock-failed",
-		"cluster.infobase.unlocked":         "events:cluster-service:infobase:unlocked",
-		"cluster.infobase.unlock-failed":    "events:cluster-service:infobase:unlock-failed",
-		"cluster.sessions.closed":           "events:cluster-service:sessions:closed",
-		"cluster.sessions.terminate-failed": "events:cluster-service:sessions:terminate-failed",
-		"batch.extension.installed":         "events:batch-service:extension:installed",
-		"batch.extension.install-failed":    "events:batch-service:extension:install-failed",
+		"cluster.infobase.locked":           "events:worker:infobase:locked",
+		"cluster.infobase.lock-failed":      "events:worker:infobase:lock-failed",
+		"cluster.infobase.unlocked":         "events:worker:infobase:unlocked",
+		"cluster.infobase.unlock-failed":    "events:worker:infobase:unlock-failed",
+		"cluster.sessions.closed":           "events:worker:sessions:closed",
+		"cluster.sessions.terminate-failed": "events:worker:sessions:terminate-failed",
+		"batch.extension.installed":         "events:worker:extension:installed",
+		"batch.extension.install-failed":    "events:worker:extension:install-failed",
 	}
 
 	if channel, ok := channelMap[eventType]; ok {

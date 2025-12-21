@@ -30,8 +30,8 @@
 - Медленные циклы разработки
 
 **New approach (Local + Docker Hybrid):**
-- **Infrastructure в Docker:** PostgreSQL, Redis, ClickHouse, ras-grpc-gw
-- **Application services локально:** Django, Celery, Go services, Frontend
+- **Infrastructure в Docker:** PostgreSQL, Redis, ClickHouse
+- **Application services локально:** Django, Go services, Frontend
 - **Преимущества:**
   - Быстрый hot reload для Python/Go/React
   - Нативная производительность
@@ -48,12 +48,9 @@
 ├─────────────────────────────────────────┤
 │                                         │
 │  React Frontend (port 5173)             │
-│  Go API Gateway (port 8080)             │
-│  Go Cluster Service (port 8088)         │
+│  Go API Gateway (port 8180)             │
 │  Go Worker                              │
-│  Django Orchestrator (port 8000)        │
-│  Celery Worker                          │
-│  Celery Beat                            │
+│  Django Orchestrator (port 8200)        │
 │                                         │
 └─────────────┬───────────────────────────┘
               │ localhost
@@ -64,7 +61,6 @@
 │  PostgreSQL (port 5432)                 │
 │  Redis (port 6379)                      │
 │  ClickHouse (ports 8123, 9000)          │
-│  ras-grpc-gw (port 9999)                │
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -74,14 +70,12 @@
 | Service | Port | Protocol | Location |
 |---------|------|----------|----------|
 | Frontend | 5173 | HTTP | Host |
-| API Gateway | 8080 | HTTP | Host |
-| Orchestrator | 8000 | HTTP | Host |
-| Cluster Service | 8088 | HTTP | Host |
+| API Gateway | 8180 | HTTP | Host |
+| Orchestrator | 8200 | HTTP | Host |
 | PostgreSQL | 5432 | TCP | Docker |
 | Redis | 6379 | TCP | Docker |
 | ClickHouse HTTP | 8123 | HTTP | Docker |
 | ClickHouse Native | 9000 | TCP | Docker |
-| ras-grpc-gw | 9999 | gRPC | Docker |
 | Metrics (optional) | 9090 | HTTP | Host |
 
 ---
@@ -225,10 +219,6 @@ cd go-services/worker
 go mod download
 cd ../..
 
-# Cluster Service
-cd go-services/cluster-service
-go mod download
-cd ../..
 ```
 
 ### Step 6: Start All Services
@@ -245,11 +235,9 @@ chmod +x scripts/dev/*.sh
 1. Docker infrastructure (PostgreSQL, Redis)
 2. Django migrations
 3. Django Orchestrator
-4. Celery Worker & Beat
-5. Go API Gateway
-6. Go Worker
-7. Go Cluster Service
-8. React Frontend
+4. Go API Gateway
+5. Go Worker
+6. React Frontend
 
 ### Step 7: Verify Setup
 
@@ -258,9 +246,8 @@ chmod +x scripts/dev/*.sh
 ./scripts/dev/health-check.sh
 
 # Or manually
-curl http://localhost:8080/health  # API Gateway
-curl http://localhost:8000/health  # Orchestrator
-curl http://localhost:8088/health  # Cluster Service
+curl http://localhost:8180/health  # API Gateway
+curl http://localhost:8200/health  # Orchestrator
 curl http://localhost:5173         # Frontend
 ```
 
@@ -274,7 +261,7 @@ cd ..
 ```
 
 **Access Django Admin:**
-- URL: http://localhost:8000/admin
+- URL: http://localhost:8200/admin
 - Login with created credentials
 
 ---
@@ -433,11 +420,8 @@ cd ..
 
 **Available services:**
 - `orchestrator`
-- `celery-worker`
-- `celery-beat`
 - `api-gateway`
 - `worker`
-- `cluster-service`
 - `frontend`
 
 **Example:**
@@ -527,8 +511,7 @@ VITE_WS_URL=ws://localhost:8080/ws
 # Cluster Service
 CLUSTER_SERVICE_URL=http://localhost:8088
 
-# RAS gRPC Gateway
-GRPC_GATEWAY_ADDR=localhost:9999
+# RAS
 RAS_SERVER=host.docker.internal:1545
 ```
 
@@ -538,8 +521,7 @@ RAS_SERVER=host.docker.internal:1545
 |----------|--------------|-------------|
 | DB_HOST | `postgres` | `localhost` |
 | REDIS_HOST | `redis` | `localhost` |
-| ORCHESTRATOR_URL | `http://orchestrator:8000` | `http://localhost:8000` |
-| CLUSTER_SERVICE_URL | `http://cluster-service:8088` | `http://localhost:8088` |
+| ORCHESTRATOR_URL | `http://orchestrator:8200` | `http://localhost:8200` |
 
 ---
 
@@ -549,7 +531,7 @@ RAS_SERVER=host.docker.internal:1545
 
 **Problem:**
 ```
-Error: listen tcp :8080: bind: address already in use
+Error: listen tcp :8180: bind: address already in use
 ```
 
 **Solution:**
@@ -557,7 +539,7 @@ Error: listen tcp :8080: bind: address already in use
 **Windows (GitBash):**
 ```bash
 # Find process on port
-netstat -ano | findstr :8080
+netstat -ano | findstr :8180
 
 # Kill process
 taskkill /PID <pid> /F
@@ -566,7 +548,7 @@ taskkill /PID <pid> /F
 **Linux/Mac:**
 ```bash
 # Find process on port
-lsof -i :8080
+lsof -i :8180
 
 # Kill process
 kill -9 <pid>
@@ -637,7 +619,6 @@ cat .env.local | grep REDIS_HOST
 
 # 5. Restart services
 ./scripts/dev/restart.sh orchestrator
-./scripts/dev/restart.sh celery-worker
 ```
 
 ### Service Won't Start
@@ -655,7 +636,7 @@ cat logs/orchestrator.log
 # 2. Run manually for debugging
 cd orchestrator
 source venv/Scripts/activate
-python manage.py runserver 0.0.0.0:8000
+python manage.py runserver 0.0.0.0:8200
 
 # 3. Check dependencies installed
 pip install -r requirements.txt
@@ -695,30 +676,6 @@ npm run dev
 cat ../logs/frontend.log
 ```
 
-### Celery Tasks Not Processing
-
-**Problem:**
-- Operations stuck in "pending" status
-- No worker activity in logs
-
-**Solution:**
-```bash
-# 1. Check Celery Worker logs
-./scripts/dev/logs.sh celery-worker
-
-# 2. Check Redis queue
-docker-compose -f docker-compose.local.yml exec redis redis-cli
-> LLEN operations_queue
-> LRANGE operations_queue 0 -1
-> exit
-
-# 3. Restart Celery Worker
-./scripts/dev/restart.sh celery-worker
-
-# 4. Check worker is ready
-./scripts/dev/logs.sh celery-worker | grep "ready"
-```
-
 ### PID Files Lost/Corrupted
 
 **Problem:**
@@ -732,9 +689,9 @@ docker-compose -f docker-compose.local.yml exec redis redis-cli
 rm -rf pids/*.pid
 
 # 2. Kill remaining processes by port
-netstat -ano | findstr :8080  # Windows
+netstat -ano | findstr :8180  # Windows
 # or
-lsof -i :8080  # Linux/Mac
+lsof -i :8180  # Linux/Mac
 
 taskkill /PID <pid> /F  # Windows
 # or
@@ -863,16 +820,13 @@ docker-compose -f docker-compose.local.yml down -v
 # 3. Clear logs and PIDs
 rm -rf logs/*.log pids/*.pid
 
-# 4. Clear celerybeat schedule
-rm -f orchestrator/celerybeat-schedule orchestrator/celerybeat-schedule.db
-
-# 5. Start infrastructure
+# 4. Start infrastructure
 docker-compose -f docker-compose.local.yml up -d
 
-# 6. Wait for database
+# 5. Wait for database
 sleep 10
 
-# 7. Run migrations
+# 6. Run migrations
 cd orchestrator
 source venv/Scripts/activate
 python manage.py migrate
@@ -919,18 +873,6 @@ curl http://localhost:8123/ping
 # Connect to ClickHouse
 docker-compose -f docker-compose.local.yml exec clickhouse clickhouse-client
 ```
-
-### Run with ras-grpc-gw (1C RAS)
-
-```bash
-# Start with RAS profile
-docker-compose -f docker-compose.local.yml --profile ras up -d
-
-# Check RAS gateway
-docker-compose -f docker-compose.local.yml logs ras-grpc-gw
-```
-
----
 
 ## FAQ
 

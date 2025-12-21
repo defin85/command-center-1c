@@ -29,7 +29,7 @@ echo ""
 ##############################################################################
 
 # Остановка всех сервисов по SERVICE_STOP_ORDER
-# (frontend, ras-adapter, worker, api-gateway, orchestrator)
+# (frontend, worker, api-gateway, orchestrator)
 stop_services
 
 ##############################################################################

@@ -32,16 +32,6 @@
       "env_var": "ORCHESTRATOR_PORT",
       "description": "Django Orchestrator - Task management, Celery coordination"
     },
-    "ras-adapter": {
-      "port": 8188,
-      "host": {
-        "docker": "ras-adapter",
-        "local": "localhost"
-      },
-      "health_path": "/health",
-      "env_var": "RAS_ADAPTER_PORT",
-      "description": "Go RAS Adapter - 1C cluster management via RAS protocol"
-    },
     "worker": {
       "port": 9091,
       "host": {

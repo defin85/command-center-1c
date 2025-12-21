@@ -74,7 +74,7 @@ class EventSubscriberTest(TestCase):
         self.assertTrue(subscriber.consumer_name.startswith('orchestrator-'))
 
         # Should subscribe to expected streams
-        self.assertIn('events:cluster-service:infobase:locked', subscriber.streams)
+        self.assertIn('events:worker:cluster-synced', subscriber.streams)
         self.assertIn('events:worker:completed', subscriber.streams)
 
     @patch('apps.operations.event_subscriber.redis.Redis')
@@ -125,23 +125,23 @@ class EventSubscriberTest(TestCase):
         subscriber = EventSubscriber()
 
         # Mock handlers
-        subscriber.handle_infobase_locked = Mock()
+        subscriber.handle_cluster_synced = Mock()
         subscriber.handle_worker_completed = Mock()
 
         data = {
-            'event_type': 'infobase.locked',
+            'event_type': 'cluster.synced',
             'correlation_id': 'corr-123',
             'timestamp': '2025-11-12T10:30:00Z',
             'payload': json.dumps({'infobase_id': 'infobase-123'})
         }
 
         subscriber.process_message(
-            'events:cluster-service:infobase:locked',
+            'events:worker:cluster-synced',
             '1234567890-0',
             data
         )
 
-        subscriber.handle_infobase_locked.assert_called_once()
+        subscriber.handle_cluster_synced.assert_called_once()
 
         subscriber.process_message(
             'events:worker:completed',
@@ -155,7 +155,7 @@ class EventSubscriberTest(TestCase):
     def test_process_message_parses_json_payload(self, mock_redis_class):
         """Test JSON payload parsing."""
         subscriber = EventSubscriber()
-        subscriber.handle_infobase_locked = Mock()
+        subscriber.handle_cluster_synced = Mock()
 
         payload_dict = {
             'cluster_id': 'cluster-uuid',
@@ -164,19 +164,19 @@ class EventSubscriberTest(TestCase):
         }
 
         data = {
-            'event_type': 'infobase.locked',
+            'event_type': 'cluster.synced',
             'correlation_id': 'corr-123',
             'payload': json.dumps(payload_dict)  # JSON string
         }
 
         subscriber.process_message(
-            'events:cluster-service:infobase:locked',
+            'events:worker:cluster-synced',
             '1234567890-0',
             data
         )
 
         # Handler should receive parsed dict
-        call_args = subscriber.handle_infobase_locked.call_args
+        call_args = subscriber.handle_cluster_synced.call_args
         self.assertEqual(call_args[0][0], payload_dict)
 
     @patch('apps.operations.event_subscriber.redis.Redis')
@@ -309,7 +309,7 @@ class EventSubscriberTest(TestCase):
         subscriber = EventSubscriber()
 
         data = {
-            'event_type': 'infobase.locked',
+            'event_type': 'cluster.synced',
             'correlation_id': 'corr-123',
             'payload': 'invalid-json{'  # Invalid JSON
         }
@@ -317,7 +317,7 @@ class EventSubscriberTest(TestCase):
         # Should not raise exception
         try:
             subscriber.process_message(
-                'events:cluster-service:infobase:locked',
+                'events:worker:cluster-synced',
                 '1234567890-0',
                 data
             )

@@ -18,30 +18,7 @@ docker-compose down
 
 ## Services
 
-### ras-grpc-gw
-- **Port:** 9999 (gRPC), 8081 (health check)
-- **Health:** http://localhost:8081/health
-- **Image:** ras-grpc-gw:v1.0.0-cc
-
-### cluster-service
-- **Port:** 8088 (HTTP API)
-- **Health:** http://localhost:8088/health
-- **API:** http://localhost:8088/api/v2
-- **Image:** cluster-service:v1.0.0-sprint1
-
-## Testing
-
-```bash
-# Health checks
-curl http://localhost:8081/health  # ras-grpc-gw
-curl http://localhost:8088/health  # cluster-service
-
-# Get clusters (requires RAS server)
-curl "http://localhost:8088/api/v2/list-clusters?server=host.docker.internal:1545"
-
-# Get infobases (requires cluster_id from list-clusters)
-curl "http://localhost:8088/api/v2/list-infobases?cluster_id=<UUID>"
-```
+Список контейнеров см. в `docker-compose.yml`.
 
 ## Troubleshooting
 
@@ -49,8 +26,7 @@ curl "http://localhost:8088/api/v2/list-infobases?cluster_id=<UUID>"
 
 ```bash
 # Check logs
-docker-compose logs ras-grpc-gw
-docker-compose logs cluster-service
+docker-compose logs
 
 # Rebuild images
 docker-compose build --no-cache
@@ -70,9 +46,9 @@ On Windows, use `host.docker.internal:1545` instead of `localhost:1545`.
 
 ```bash
 # Rebuild specific service
-docker-compose build cluster-service
-docker-compose up -d cluster-service
+docker-compose build api-gateway
+docker-compose up -d api-gateway
 
 # View real-time logs
-docker-compose logs -f cluster-service
+docker-compose logs -f api-gateway
 ```

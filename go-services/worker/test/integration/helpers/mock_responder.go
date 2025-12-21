@@ -20,7 +20,7 @@ type EventBehavior struct {
 	TimeoutRate     float64                // 0.0 = never timeout, 1.0 = always timeout (no response)
 }
 
-// MockEventResponder simulates external services (cluster-service, batch-service) via events
+// MockEventResponder simulates external services (worker, worker) via events
 type MockEventResponder struct {
 	publisher  *events.Publisher
 	subscriber *SubscriberAdapter
@@ -52,10 +52,10 @@ func (m *MockEventResponder) SetVerbose(verbose bool) {
 // Run starts the mock responder (blocking, run in goroutine)
 func (m *MockEventResponder) Run(ctx context.Context) error {
 	// Subscribe to all command channels that we want to mock
-	m.subscriber.Subscribe("commands:cluster-service:infobase:lock", m.handleEvent)
-	m.subscriber.Subscribe("commands:cluster-service:sessions:terminate", m.handleEvent)
-	m.subscriber.Subscribe("commands:cluster-service:infobase:unlock", m.handleEvent)
-	m.subscriber.Subscribe("commands:batch-service:extension:install", m.handleEvent)
+	m.subscriber.Subscribe("commands:worker:infobase:lock", m.handleEvent)
+	m.subscriber.Subscribe("commands:worker:sessions:terminate", m.handleEvent)
+	m.subscriber.Subscribe("commands:worker:infobase:unlock", m.handleEvent)
+	m.subscriber.Subscribe("commands:worker:extension:install", m.handleEvent)
 
 	if m.verbose {
 		fmt.Println("[MockResponder] Started, listening for commands...")
@@ -195,10 +195,10 @@ func (m *MockEventResponder) publishFailure(ctx context.Context, original *event
 }
 
 // eventTypeToChannel converts event type to channel name
-// Maps event types to their actual channels as used by cluster-service and batch-service
+// Maps event types to their actual channels as used by worker and worker
 // Examples:
-// - "cluster.infobase.locked" -> "events:cluster-service:infobase:locked"
-// - "batch.extension.installed" -> "events:batch-service:extension:installed"
+// - "cluster.infobase.locked" -> "events:worker:infobase:locked"
+// - "batch.extension.installed" -> "events:worker:extension:installed"
 func (m *MockEventResponder) eventTypeToChannel(eventType string) string {
 	parts := strings.Split(eventType, ".")
 	if len(parts) < 2 {
@@ -212,9 +212,9 @@ func (m *MockEventResponder) eventTypeToChannel(eventType string) string {
 	var serviceName string
 	switch service {
 	case "cluster":
-		serviceName = "cluster-service"
+		serviceName = "worker"
 	case "batch":
-		serviceName = "batch-service"
+		serviceName = "worker"
 	default:
 		serviceName = service
 	}

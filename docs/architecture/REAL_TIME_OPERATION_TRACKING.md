@@ -268,35 +268,9 @@ var (
 )
 ```
 
-#### 5. RAS Adapter Metrics
-```go
-// go-services/cluster-service/internal/metrics/metrics.go
-var (
-	RASRequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "ras_adapter_requests_total",
-			Help: "Total number of RAS requests",
-		},
-		[]string{"operation", "status"},
-	)
+#### 5. RAS Metrics
 
-	RASActiveConnections = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "ras_adapter_active_connections",
-			Help: "Number of active RAS connections",
-		},
-	)
-
-	RASRequestDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name: "ras_adapter_request_duration_seconds",
-			Help: "RAS request duration in seconds",
-			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10},
-		},
-		[]string{"operation"},
-	)
-)
-```
+RAS метрики публикуются самим Worker (direct RAS). См. `go-services/worker/internal/metrics/`.
 
 ### Real-Time Updates via WebSocket
 
@@ -912,13 +886,11 @@ networks:
 
 **Deliverable:** operation_id flows Frontend → API Gateway → Orchestrator
 
-#### Task 2.2: gRPC Metadata Propagation (2 days)
-- [ ] Worker: Add operation_id to gRPC metadata when calling RAS Adapter
-- [ ] RAS Adapter: Extract operation_id from gRPC metadata
-- [ ] cluster-service: Update `infobase_management.go` to accept metadata
+#### Task 2.2: RAS Metadata Propagation (2 days)
+- [ ] Worker: Add operation_id to RAS call context (span attributes)
 - [ ] Add interceptor for automatic metadata extraction
 
-**Deliverable:** operation_id flows Worker → RAS Adapter
+**Deliverable:** operation_id flows Worker → RAS calls
 
 #### Task 2.3: Structured Logging (1 day)
 - [ ] Update all log statements to include:

@@ -440,7 +440,6 @@ class OperationsService:
             Payload includes full cluster data for Go Worker:
             - ras_server: RAS server address (host:port)
             - ras_cluster_uuid: UUID of cluster in RAS (may be empty)
-            - cluster_service_url: URL of RAS Adapter
             - cluster_name: Cluster name
             - cluster_user, cluster_pwd: Credentials (optional)
         """
@@ -484,7 +483,6 @@ class OperationsService:
             "cluster_name": cluster.name,
             "ras_server": cluster.ras_server,
             "ras_cluster_uuid": str(cluster.ras_cluster_uuid) if cluster.ras_cluster_uuid else "",
-            "cluster_service_url": cluster.cluster_service_url,
             "cluster_user": cluster.cluster_user or "",
             "cluster_pwd": cluster.cluster_pwd or "",
         }
@@ -542,7 +540,7 @@ class OperationsService:
                 message=f"Cluster sync queued: {cluster.name}",
                 operation_type="sync_cluster",
                 operation_name=f"Sync {cluster.name}",
-                path=["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"],
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "cluster_id": cluster_id,
                     "cluster_name": cluster.name,
@@ -735,7 +733,6 @@ class OperationsService:
     def enqueue_discover_clusters(
         cls,
         ras_server: str,
-        cluster_service_url: str = "",
         operation_id: Optional[str] = None,
         cluster_user: str = "",
         cluster_pwd: str = "",
@@ -748,7 +745,6 @@ class OperationsService:
 
         Args:
             ras_server: RAS server address (host:port)
-            cluster_service_url: RAS Adapter service URL (for future use)
             operation_id: Optional existing operation ID
             cluster_user: Cluster admin username (optional)
             cluster_pwd: Cluster admin password (optional)
@@ -780,7 +776,6 @@ class OperationsService:
         # Build payload for Worker
         discover_data = {
             "ras_server": ras_server,
-            "cluster_service_url": cluster_service_url,  # For future Worker use
             "cluster_user": cluster_user,
             "cluster_pwd": cluster_pwd,
         }
@@ -838,7 +833,7 @@ class OperationsService:
                 message=f"Discover clusters queued: {ras_server}",
                 operation_type="discover_clusters",
                 operation_name=f"Discover {ras_server}",
-                path=["frontend", "api-gateway", "orchestrator", "worker", "ras-adapter"],
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "ras_server": ras_server,
                     "queue": cls.QUEUE_KEY
@@ -1073,5 +1068,146 @@ class OperationsService:
             batch_operation.status = BatchOperation.STATUS_FAILED
             batch_operation.save(update_fields=['status', 'updated_at'])
             # Record error metric
+            _record_batch_metric(operation_type, 'error')
+            raise
+
+    @classmethod
+    def enqueue_ibcmd_operation(
+        cls,
+        operation_type: str,
+        database_ids: list,
+        config: dict,
+        user,
+    ) -> "BatchOperation":
+        """
+        Create BatchOperation for IBCMD operation and enqueue to Redis.
+
+        Args:
+            operation_type: ibcmd_backup, ibcmd_restore, ibcmd_replicate, ibcmd_create
+            database_ids: List of database UUIDs
+            config: Operation-specific config (dbms, db_server, db_name, etc.)
+            user: User who initiated the operation
+
+        Returns:
+            BatchOperation instance
+
+        Raises:
+            ValueError: If no valid databases found
+        """
+        from apps.databases.models import Database
+        from apps.operations.models import Task
+
+        databases = list(Database.objects.filter(id__in=database_ids))
+        if not databases:
+            raise ValueError("No valid databases found for the provided IDs")
+
+        operation_id = str(uuid.uuid4())
+
+        batch_operation = BatchOperation.objects.create(
+            id=operation_id,
+            name=f"{operation_type} - {len(databases)} databases",
+            operation_type=operation_type,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PENDING,
+            payload={"data": config, "filters": {}, "options": {}},
+            config={
+                "batch_size": 1,
+                "timeout_seconds": 900,
+                "retry_count": 1,
+                "priority": "normal",
+            },
+            total_tasks=len(databases),
+            created_by=user.username if user else "system",
+        )
+        batch_operation.target_databases.set(databases)
+
+        tasks = [
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ]
+        Task.objects.bulk_create(tasks)
+
+        message = {
+            "version": cls.VERSION,
+            "operation_id": operation_id,
+            "batch_id": None,
+            "operation_type": operation_type,
+            "entity": "Infobase",
+            "target_databases": [
+                cls._build_target_database_data(db) for db in databases
+            ],
+            "payload": {
+                "data": config,
+                "filters": {},
+                "options": {}
+            },
+            "execution_config": {
+                "batch_size": 1,
+                "timeout_seconds": 900,
+                "retry_count": 1,
+                "priority": "normal",
+                "idempotency_key": operation_id
+            },
+            "metadata": {
+                "created_by": user.username if user else "system",
+                "created_at": timezone.now().isoformat(),
+                "template_id": None,
+                "tags": ["ibcmd", operation_type]
+            }
+        }
+
+        try:
+            redis_client.acquire_enqueue_lock(
+                task_id=operation_id,
+                ttl_seconds=3600
+            )
+            redis_client.enqueue_operation(message)
+
+            try:
+                redis_client.add_timeline_event(
+                    operation_id,
+                    event="operation.queued",
+                    service="orchestrator",
+                    metadata={"queue": cls.QUEUE_KEY},
+                )
+            except Exception:
+                pass
+
+            event_publisher.publish(
+                operation_id=operation_id,
+                state='QUEUED',
+                microservice='orchestrator',
+                queue=cls.QUEUE_KEY,
+                target_databases_count=len(databases)
+            )
+
+            flow_publisher.publish_flow(
+                operation_id=operation_id,
+                current_service="orchestrator",
+                status="processing",
+                message=f"Operation queued: {operation_type}",
+                operation_type=operation_type,
+                operation_name=batch_operation.name,
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
+                metadata={
+                    "target_databases_count": len(databases),
+                    "queue": cls.QUEUE_KEY
+                }
+            )
+
+            batch_operation.status = BatchOperation.STATUS_QUEUED
+            batch_operation.save(update_fields=['status', 'updated_at'])
+
+            _record_batch_metric(operation_type, 'queued')
+
+            return batch_operation
+
+        except Exception:
+            redis_client.release_enqueue_lock(operation_id)
             _record_batch_metric(operation_type, 'error')
             raise

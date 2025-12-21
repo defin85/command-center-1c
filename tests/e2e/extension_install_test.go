@@ -110,8 +110,8 @@ func TestE2E_ExtensionInstall_InstallFailureWithCompensation(t *testing.T) {
 	// Mock RAS в нормальном режиме (lock успешен)
 	SetMockBehavior(t, env, "success")
 
-	// TODO: Set mock batch-service to fail on install
-	// Это требует дополнительного mock batch-service или контроля поведения
+	// TODO: Set mock worker to fail on install
+	// Это требует дополнительного mock worker или контроля поведения
 
 	// Create test extension
 	extensionPath := CreateTestExtension(t, env)
@@ -129,10 +129,10 @@ func TestE2E_ExtensionInstall_InstallFailureWithCompensation(t *testing.T) {
 		// В mock режиме ожидаем:
 		// 1. Lock успешен
 		// 2. Terminate sessions успешен
-		// 3. Install failed (если мы можем контролировать batch-service)
+		// 3. Install failed (если мы можем контролировать worker)
 		// 4. Compensation: unlock базы
 
-		// NOTE: Для полноценного теста нужен mock batch-service
+		// NOTE: Для полноценного теста нужен mock worker
 		// Пока проверяем базовую структуру ответа
 
 		// Если workflow дошел до install и упал, должен быть compensation
@@ -150,11 +150,11 @@ func TestE2E_ExtensionInstall_InstallFailureWithCompensation(t *testing.T) {
 			//         "Compensation should include unlock")
 			// }
 		} else {
-			t.Log("NOTE: Install failure scenario requires mock batch-service")
+			t.Log("NOTE: Install failure scenario requires mock worker")
 		}
 	} else {
 		t.Log("Real 1C mode: install failure test requires controlled environment")
-		t.Skip("Install failure scenario requires mock batch-service")
+		t.Skip("Install failure scenario requires mock worker")
 	}
 
 	t.Log("✓ Install Failure + Compensation E2E test passed")

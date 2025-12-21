@@ -29,7 +29,7 @@ func TestPerformance_100ParallelOperations(t *testing.T) {
 	env := SetupPerfEnvironment(t)
 	defer env.Cleanup()
 
-	// Start mock responder (симулирует cluster-service responses)
+	// Start mock responder (симулирует worker responses)
 	stopResponder := startMockResponder(t, env)
 	defer stopResponder()
 
@@ -130,7 +130,7 @@ func executeTestOperation(t *testing.T, env *PerfEnvironment, opID int) error {
 	correlationID := fmt.Sprintf("perf-test-%d-%s", opID, uuid.New().String())
 
 	// Step 1: Publish lock command
-	lockEvent := NewCommandEvent(correlationID, "commands:cluster-service:infobase:lock", map[string]interface{}{
+	lockEvent := NewCommandEvent(correlationID, "commands:worker:infobase:lock", map[string]interface{}{
 		"cluster_id":  "test-cluster-001",
 		"infobase_id": fmt.Sprintf("test-db-%03d", opID%10), // 10 unique databases
 		"mode":        "exclusive",
@@ -138,7 +138,7 @@ func executeTestOperation(t *testing.T, env *PerfEnvironment, opID int) error {
 	})
 
 	payload, _ := lockEvent.ToJSON()
-	err := env.RedisClient.Publish(env.Ctx, "commands:cluster-service:infobase:lock", payload).Err()
+	err := env.RedisClient.Publish(env.Ctx, "commands:worker:infobase:lock", payload).Err()
 	if err != nil {
 		return fmt.Errorf("failed to publish lock command: %w", err)
 	}
@@ -153,14 +153,14 @@ func executeTestOperation(t *testing.T, env *PerfEnvironment, opID int) error {
 	}
 
 	// Step 2: Publish terminate sessions command
-	terminateEvent := NewCommandEvent(correlationID, "commands:cluster-service:sessions:terminate", map[string]interface{}{
+	terminateEvent := NewCommandEvent(correlationID, "commands:worker:sessions:terminate", map[string]interface{}{
 		"cluster_id":  "test-cluster-001",
 		"infobase_id": fmt.Sprintf("test-db-%03d", opID%10),
 		"timeout":     30,
 	})
 
 	payload, _ = terminateEvent.ToJSON()
-	err = env.RedisClient.Publish(env.Ctx, "commands:cluster-service:sessions:terminate", payload).Err()
+	err = env.RedisClient.Publish(env.Ctx, "commands:worker:sessions:terminate", payload).Err()
 	if err != nil {
 		return fmt.Errorf("failed to publish terminate command: %w", err)
 	}
@@ -174,15 +174,15 @@ func executeTestOperation(t *testing.T, env *PerfEnvironment, opID int) error {
 		return fmt.Errorf("terminate failed: %v", terminateResponse.Payload["error"])
 	}
 
-	// Step 3: Publish install extension command (mock batch-service)
-	installEvent := NewCommandEvent(correlationID, "commands:batch-service:extension:install", map[string]interface{}{
+	// Step 3: Publish install extension command (mock worker)
+	installEvent := NewCommandEvent(correlationID, "commands:worker:extension:install", map[string]interface{}{
 		"database_id":    fmt.Sprintf("test-db-%03d", opID%10),
 		"extension_path": "/tmp/test-extension.cfe",
 		"extension_name": "TestExtension",
 	})
 
 	payload, _ = installEvent.ToJSON()
-	err = env.RedisClient.Publish(env.Ctx, "commands:batch-service:extension:install", payload).Err()
+	err = env.RedisClient.Publish(env.Ctx, "commands:worker:extension:install", payload).Err()
 	if err != nil {
 		return fmt.Errorf("failed to publish install command: %w", err)
 	}
@@ -197,13 +197,13 @@ func executeTestOperation(t *testing.T, env *PerfEnvironment, opID int) error {
 	}
 
 	// Step 4: Publish unlock command
-	unlockEvent := NewCommandEvent(correlationID, "commands:cluster-service:infobase:unlock", map[string]interface{}{
+	unlockEvent := NewCommandEvent(correlationID, "commands:worker:infobase:unlock", map[string]interface{}{
 		"cluster_id":  "test-cluster-001",
 		"infobase_id": fmt.Sprintf("test-db-%03d", opID%10),
 	})
 
 	payload, _ = unlockEvent.ToJSON()
-	err = env.RedisClient.Publish(env.Ctx, "commands:cluster-service:infobase:unlock", payload).Err()
+	err = env.RedisClient.Publish(env.Ctx, "commands:worker:infobase:unlock", payload).Err()
 	if err != nil {
 		return fmt.Errorf("failed to publish unlock command: %w", err)
 	}
@@ -246,7 +246,7 @@ func waitForResponse(env *PerfEnvironment, correlationID, step string, timeout t
 }
 
 // startMockResponder - запустить mock responder который симулирует ответы сервисов
-// В реальной системе это будут cluster-service и batch-service
+// В реальной системе это будут worker и worker
 // FIXED: Issue #4 - Goroutine leak - use WaitGroup for proper cleanup
 func startMockResponder(t *testing.T, env *PerfEnvironment) func() {
 	t.Helper()

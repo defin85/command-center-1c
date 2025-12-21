@@ -54,6 +54,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/internal/update-database-health", OperationID: "v2_internal_update_database_health_create"},
 	{Method: "POST", Path: "/operations/cancel-operation/", OperationID: "v2_operations_cancel_operation_create"},
 	{Method: "POST", Path: "/operations/execute/", OperationID: "v2_operations_execute_create"},
+	{Method: "POST", Path: "/operations/execute-ibcmd/", OperationID: "v2_operations_execute_ibcmd_create"},
 	{Method: "GET", Path: "/operations/get-operation/", OperationID: "v2_operations_get_operation_retrieve"},
 	{Method: "POST", Path: "/operations/get-operation-timeline/", OperationID: "v2_operations_get_operation_timeline_create"},
 	{Method: "GET", Path: "/operations/list-operations/", OperationID: "v2_operations_list_operations_retrieve"},

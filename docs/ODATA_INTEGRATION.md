@@ -390,7 +390,6 @@ curl -u odata_api:password \
 
 ### Полезные ссылки
 
-- [batch-service README](../go-services/batch-service/README.md) - Go batch обработка
 - [Django Cluster Integration](./DJANGO_CLUSTER_INTEGRATION.md) - интеграция с Django
 
 ---
@@ -423,4 +422,3 @@ curl -u odata_api:password \
 **См. также:**
 - `docs/1C_ADMINISTRATION_GUIDE.md` - работа с RAS/RAC
 - `docs/DJANGO_CLUSTER_INTEGRATION.md` - интеграция Django
-- `go-services/batch-service/README.md` - batch processing в Go

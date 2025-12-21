@@ -20,7 +20,7 @@ from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
-from .backends import AbstractOperationBackend, ODataBackend, RASBackend
+from .backends import AbstractOperationBackend, IBCMDBackend, ODataBackend, RASBackend
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class OperationHandler(BaseNodeHandler):
         # RASBackend checked first (more specific), ODataBackend as fallback
         self._backends: List[AbstractOperationBackend] = [
             RASBackend(),
+            IBCMDBackend(),
             ODataBackend(),
         ]
 
@@ -239,7 +240,8 @@ class OperationHandler(BaseNodeHandler):
         raise ValueError(
             f"No backend supports operation type: {operation_type}. "
             f"Available types: OData={ODataBackend.get_supported_types()}, "
-            f"RAS={RASBackend.get_supported_types()}"
+            f"RAS={RASBackend.get_supported_types()}, "
+            f"IBCMD={IBCMDBackend.get_supported_types()}"
         )
 
     def _get_timeout(self, node: WorkflowNode) -> int:
@@ -349,4 +351,5 @@ class OperationHandler(BaseNodeHandler):
         return {
             'odata': list(ODataBackend.get_supported_types()),
             'ras': list(RASBackend.get_supported_types()),
+            'ibcmd': list(IBCMDBackend.get_supported_types()),
         }

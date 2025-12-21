@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	rclient "github.com/commandcenter1c/commandcenter/ras-adapter/ras-client"
-	"github.com/commandcenter1c/commandcenter/ras-adapter/ras-client/serialize"
+	rclient "github.com/commandcenter1c/commandcenter/ras-client"
+	"github.com/commandcenter1c/commandcenter/ras-client/serialize"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -249,4 +249,23 @@ func (c *Client) TerminateAllSessions(ctx context.Context, clusterID, infobaseID
 		}
 	}
 	return nil
+}
+
+func (c *Client) ListInfobaseSessions(ctx context.Context, clusterID, infobaseID, clusterUser, clusterPwd string) (int, error) {
+	clusterUUID, err := uuid.FromString(clusterID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid cluster UUID: %w", err)
+	}
+	infobaseUUID, err := uuid.FromString(infobaseID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid infobase UUID: %w", err)
+	}
+
+	c.ras.AuthenticateCluster(clusterUUID, clusterUser, clusterPwd)
+
+	sessions, err := c.ras.GetInfobaseSessions(ctx, clusterUUID, infobaseUUID)
+	if err != nil {
+		return 0, fmt.Errorf("ras get infobase sessions: %w", err)
+	}
+	return len(sessions), nil
 }

@@ -7,15 +7,12 @@ from django.shortcuts import render, redirect
 from django.urls import path
 from django.utils.html import format_html
 from django.utils import timezone
-from django.conf import settings
 from django.db.models import Count, Q
 from .models import (
     Cluster, Database, DatabaseGroup, ExtensionInstallation, StatusHistory,
     ClusterPermission, DatabasePermission
 )
-from .services import DatabaseService, ClusterService
-from .clients import RasAdapterClient, RasAdapterError
-from .clients.generated.ras_adapter_api_client.types import UNSET
+from .services import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -69,109 +66,20 @@ def health_check_action(modeladmin, request, queryset):
 @admin.action(description='Check health')
 def check_cluster_service_status_action(modeladmin, request, queryset):
     """
-    Проверить доступность RAS Adapter для выбранных кластеров.
-
-    Каждый кластер имеет свой cluster_service_url (теперь указывает на RAS Adapter).
+    Проверить доступность RAS сервера для выбранных кластеров.
     """
-    import time
-
     if not request.user.is_superuser:
         messages.error(
             request,
-            "Cluster service health check is disabled in Django Admin. Use SPA (/system-status). Superuser-only break-glass.",
+            "Cluster health check is disabled in Django Admin. Use SPA (/system-status). Superuser-only break-glass.",
         )
         return
 
-    if not queryset.exists():
-        modeladmin.message_user(
-            request,
-            'Warning: Выберите хотя бы один кластер для проверки',
-            level=messages.WARNING
-        )
-        return
-
-    # Check each selected cluster
-    for cluster in queryset:
-        service_url = cluster.cluster_service_url
-        service_timeout = getattr(settings, 'RAS_ADAPTER_TIMEOUT', 180)
-
-        logger.info(f"Checking RAS Adapter for cluster {cluster.name}: {service_url}")
-
-        try:
-            start_time = time.time()
-
-            # Use RasAdapterClient instead of ClusterServiceClient
-            with RasAdapterClient(base_url=service_url) as client:
-                is_healthy = client.health_check()
-
-            elapsed_time = time.time() - start_time
-
-            if is_healthy:
-                # Mark successful health check
-                cluster.mark_health_check(success=True)
-
-                modeladmin.message_user(
-                    request,
-                    format_html(
-                        'OK <strong>Cluster "{}" - RAS Adapter: HEALTHY</strong><br>'
-                        'URL: {}<br>'
-                        'Response time: {}s<br>'
-                        'Timeout: {}s',
-                        cluster.name,
-                        service_url,
-                        f'{elapsed_time:.3f}',
-                        service_timeout
-                    ),
-                    level=messages.SUCCESS
-                )
-                logger.info(
-                    f"RAS Adapter for cluster {cluster.name} is healthy "
-                    f"(response time: {elapsed_time:.3f}s)"
-                )
-            else:
-                # Mark failed health check
-                cluster.mark_health_check(success=False)
-
-                modeladmin.message_user(
-                    request,
-                    format_html(
-                        'FAIL <strong>Cluster "{}" - RAS Adapter: UNAVAILABLE</strong><br>'
-                        'URL: {}<br>'
-                        'Response time: {}s<br>'
-                        'Timeout: {}s<br>'
-                        'Hint: Check if ras-adapter service is running',
-                        cluster.name,
-                        service_url,
-                        f'{elapsed_time:.3f}',
-                        service_timeout
-                    ),
-                    level=messages.ERROR
-                )
-                logger.error(
-                    f"RAS Adapter for cluster {cluster.name} is unavailable (URL: {service_url})"
-                )
-
-        except Exception as e:
-            # Mark failed health check on exception
-            cluster.mark_health_check(success=False)
-
-            modeladmin.message_user(
-                request,
-                format_html(
-                    'ERROR <strong>Cluster "{}" - RAS Adapter: ERROR</strong><br>'
-                    'URL: {}<br>'
-                    'Error: {}<br>'
-                    'Hint: Check network connectivity and ras-adapter logs',
-                    cluster.name,
-                    service_url,
-                    str(e)
-                ),
-                level=messages.ERROR
-            )
-            logger.error(
-                f"Failed to check RAS Adapter for cluster {cluster.name}: {e}",
-                exc_info=True
-            )
+    modeladmin.message_user(
+        request,
+        "Cluster health checks are handled by Go Worker operations. Use SPA (/clusters).",
+        level=messages.WARNING,
+    )
 
 
 @admin.action(description='Sync infobases from cluster')
@@ -179,8 +87,7 @@ def sync_infobases_action(modeladmin, request, queryset):
     """
     Синхронизировать инфобазы из выбранных кластеров.
 
-    Для каждого кластера вызывает ClusterService.sync_infobases(),
-    который получает список инфобаз через cluster-service и RAS.
+    Для каждого кластера отправляет sync_cluster в Go Worker.
     """
     if not request.user.is_superuser:
         messages.error(
@@ -197,116 +104,34 @@ def sync_infobases_action(modeladmin, request, queryset):
         )
         return
 
-    total_created = 0
-    total_updated = 0
-    total_errors = 0
-
     for cluster in queryset:
-        logger.info(f"Starting infobase sync for cluster: {cluster.name}")
-
         try:
-            # Вызываем ClusterService.sync_infobases()
-            result = ClusterService.sync_infobases(cluster)
+            from apps.operations.services import OperationsService
 
-            created = result.get('created', 0)
-            updated = result.get('updated', 0)
-            errors = result.get('errors', 0)
+            result = OperationsService.enqueue_cluster_sync(
+                cluster_id=str(cluster.id),
+                created_by=request.user.username or "admin",
+            )
 
-            total_created += created
-            total_updated += updated
-            total_errors += errors
-
-            if errors == 0:
+            if result.success:
                 modeladmin.message_user(
                     request,
-                    format_html(
-                        '✅ <strong>Cluster "{}"</strong><br>'
-                        '📝 Created: {} infobases<br>'
-                        '🔄 Updated: {} infobases<br>'
-                        '⏱️ Sync time: {}',
-                        cluster.name,
-                        created,
-                        updated,
-                        cluster.last_sync.strftime('%Y-%m-%d %H:%M:%S') if cluster.last_sync else 'N/A'
-                    ),
-                    level=messages.SUCCESS
-                )
-                logger.info(
-                    f"Successfully synced cluster {cluster.name}: "
-                    f"created={created}, updated={updated}"
+                    f"✅ Cluster {cluster.name}: Sync queued (operation_id={result.operation_id})",
+                    level=messages.SUCCESS,
                 )
             else:
                 modeladmin.message_user(
                     request,
-                    format_html(
-                        '⚠️ <strong>Cluster "{}"</strong><br>'
-                        '📝 Created: {} infobases<br>'
-                        '🔄 Updated: {} infobases<br>'
-                        '❌ Errors: {} infobases<br>'
-                        '💡 Check logs for details',
-                        cluster.name,
-                        created,
-                        updated,
-                        errors
-                    ),
-                    level=messages.WARNING
-                )
-                logger.warning(
-                    f"Cluster {cluster.name} sync completed with errors: "
-                    f"created={created}, updated={updated}, errors={errors}"
+                    f"❌ Cluster {cluster.name}: Sync enqueue failed - {result.error}",
+                    level=messages.ERROR,
                 )
 
-        except ValueError as e:
-            # Cluster is locked or in invalid state
-            total_errors += 1
+        except Exception as exc:
             modeladmin.message_user(
                 request,
-                format_html(
-                    '🔒 <strong>Cluster "{}"</strong><br>'
-                    '❌ Error: {}<br>'
-                    '💡 {}',
-                    cluster.name,
-                    str(e),
-                    'Cluster may be locked by another sync process'
-                ),
-                level=messages.ERROR
+                f"❌ Cluster {cluster.name}: Sync enqueue failed - {exc}",
+                level=messages.ERROR,
             )
-            logger.error(f"Cluster {cluster.name} sync failed (locked): {e}")
-
-        except Exception as e:
-            # Unexpected error
-            total_errors += 1
-            modeladmin.message_user(
-                request,
-                format_html(
-                    '💥 <strong>Cluster "{}"</strong><br>'
-                    '❌ Unexpected error: {}<br>'
-                    '💡 Check cluster-service and RAS connectivity',
-                    cluster.name,
-                    str(e)
-                ),
-                level=messages.ERROR
-            )
-            logger.error(
-                f"Unexpected error syncing cluster {cluster.name}: {e}",
-                exc_info=True
-            )
-
-    # Final summary
-    if queryset.count() > 1:
-        modeladmin.message_user(
-            request,
-            format_html(
-                '<strong>📊 Sync Summary</strong><br>'
-                '✅ Total created: {} infobases<br>'
-                '🔄 Total updated: {} infobases<br>'
-                '❌ Total errors: {}',
-                total_created,
-                total_updated,
-                total_errors
-            ),
-            level=messages.SUCCESS if total_errors == 0 else messages.WARNING
-        )
 
 
 @admin.action(description='Reset sync status (unlock stuck clusters)')
@@ -584,7 +409,7 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
         Workflow:
         1. GET - show form with cluster connection parameters
-        2. POST step=1 - call cluster-service, show database list
+        2. POST step=1 - enqueue worker sync, show database list
         3. POST step=2 - import selected databases
 
         This is a three-step process:
@@ -626,120 +451,12 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
             return redirect('admin:databases_database_changelist')
 
     def _handle_step1_get_database_list(self, request):
-        """Handle step 1: Get database list from RAS Adapter v2 API."""
-        # Get form parameters
-        server = request.POST.get('server', 'localhost:1545')
-        cluster_user = request.POST.get('cluster_user', '') or None
-        request.POST.get('cluster_pwd', '') or None
-        # Note: 'detailed' parameter is not used in v2 API
-
-        logger.info(
-            f"Step 1: Getting database list from RAS Adapter (server={server}, "
-            f"user={cluster_user or 'None'})"
+        """Handle step 1: Disabled (RAS Adapter removed)."""
+        messages.error(
+            request,
+            'Sync from cluster via Django Admin is disabled. Use SPA (/clusters).'
         )
-
-        try:
-            # Call RAS Adapter v2 API
-            with RasAdapterClient() as client:
-                # Check health first
-                if not client.health_check():
-                    messages.error(
-                        request,
-                        'RAS Adapter is not available. '
-                        'Please ensure ras-adapter service is running.'
-                    )
-                    return redirect('admin:databases_database_sync_from_cluster')
-
-                # Get clusters first to find cluster_id
-                clusters_response = client.list_clusters(server=server)
-                if clusters_response.count == 0:
-                    messages.error(
-                        request,
-                        f'No clusters found on RAS server {server}'
-                    )
-                    return redirect('admin:databases_database_sync_from_cluster')
-
-                # Use first cluster
-                cluster = clusters_response.clusters[0]
-                cluster_id = str(cluster.uuid)
-                cluster_name = cluster.name
-
-                # Get infobases for this cluster
-                infobases_response = client.list_infobases(cluster_id=cluster_id)
-
-                # Convert v2 Infobase objects to dict format for template compatibility
-                infobases_list = []
-                for ib in infobases_response.infobases:
-                    ib_dict = {
-                        'uuid': str(ib.uuid),
-                        'name': ib.name,
-                        'dbms': ib.dbms,
-                        'sessions_deny': ib.sessions_deny,
-                        'scheduled_jobs_deny': ib.scheduled_jobs_deny,
-                    }
-                    # Handle optional fields
-                    if not isinstance(ib.db_server, type(UNSET)):
-                        ib_dict['db_server'] = ib.db_server
-                    if not isinstance(ib.db_name, type(UNSET)):
-                        ib_dict['db_name'] = ib.db_name
-                    if not isinstance(ib.locale, type(UNSET)):
-                        ib_dict['locale'] = ib.locale
-                    infobases_list.append(ib_dict)
-
-            # Store result in session for step 2 with timestamp
-            request.session['cluster_sync_data'] = {
-                'cluster_id': cluster_id,
-                'cluster_name': cluster_name,
-                'total_count': infobases_response.count,
-                'infobases': infobases_list,
-                'duration_ms': 0,  # v2 API doesn't return duration
-                'server': server,
-                'import_timestamp': timezone.now().isoformat(),
-                'api_version': 'v2',
-            }
-
-            # Show database selection page
-            context = {
-                **self.admin_site.each_context(request),
-                'title': 'Select Databases to Import',
-                'opts': self.model._meta,
-                'cluster_id': cluster_id,
-                'cluster_name': cluster_name,
-                'total_count': infobases_response.count,
-                'infobases': infobases_list,
-                'duration_ms': 0,
-            }
-
-            return render(
-                request,
-                'admin/databases/sync_from_cluster_select.html',
-                context
-            )
-
-        except RasAdapterError as e:
-            logger.error(f"RAS Adapter error getting database list: {e}", exc_info=True)
-
-            if 'cluster_sync_data' in request.session:
-                del request.session['cluster_sync_data']
-
-            messages.error(
-                request,
-                f'RAS Adapter error: {str(e)}'
-            )
-            return redirect('admin:databases_database_sync_from_cluster')
-
-        except Exception as e:
-            logger.error(f"Error getting database list: {e}", exc_info=True)
-
-            # CLEANUP: Clear session data on error
-            if 'cluster_sync_data' in request.session:
-                del request.session['cluster_sync_data']
-
-            messages.error(
-                request,
-                f'Failed to retrieve database list: {str(e)}'
-            )
-            return redirect('admin:databases_database_sync_from_cluster')
+        return redirect('admin:databases_database_changelist')
 
     def _handle_step2_import_databases(self, request):
         """Handle step 2: Import selected databases."""
@@ -823,7 +540,7 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
         Import infobases into Database model.
 
         Args:
-            infobases: List of infobase dictionaries from cluster-service
+            infobases: List of infobase dictionaries from worker sync
             server: RAS server address (for building OData URLs)
 
         Returns:

@@ -129,7 +129,7 @@
 **Тест:**
 - Setup E2E environment
 - Mock RAS в normal mode (`lock_behavior = "success"`)
-- TODO: Mock batch-service fail on install
+- TODO: Mock worker fail on install
 - Проверка compensation flow
 
 **Assertions:**
@@ -138,7 +138,7 @@
 - CompensationEvents содержит "unlock"
 
 **Режимы:**
-- ⚠️ Mock Mode: частично (требуется mock batch-service)
+- ⚠️ Mock Mode: частично (требуется mock worker)
 - ❌ Real 1C Mode: N/A
 
 **Примечание:** Для полной реализации требуется Mock Batch Service
@@ -306,7 +306,7 @@ export TEST_1C_PASSWORD=password
 
 ### 2. Scenario 3 - требует Mock Batch Service
 
-**Проблема:** Для полного compensation flow теста нужна возможность контролировать ошибку batch-service
+**Проблема:** Для полного compensation flow теста нужна возможность контролировать ошибку worker
 
 **Решение 1 (будущее):**
 - Создать Mock Batch Service аналогично Mock RAS
