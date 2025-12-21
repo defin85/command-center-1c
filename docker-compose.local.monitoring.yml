@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     extra_hosts:
       # WSL2: хост доступен через gateway IP
-      - "host.docker.internal:172.24.80.1"
+      - "host.docker.internal:${CC1C_BASE_HOST:-172.24.80.1}"
     ports:
       - "9090:9090"
     volumes:

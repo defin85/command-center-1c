@@ -19,6 +19,7 @@
   - [test-lock-unlock-workflow.sh](#test-lock-unlock-workflowsh) - Smoke tests для RAS Adapter (Week 4)
 - [Вспомогательные скрипты](#вспомогательные-скрипты)
   - [../build.sh](#buildsh) - Сборка Go сервисов
+  - [sync-frontend-env.sh](#sync-frontend-envsh) - Синхронизация frontend/.env.local
 - [Типичные сценарии](#типичные-сценарии)
 - [Troubleshooting](#troubleshooting)
 
@@ -538,6 +539,20 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 **Формат бинарников:**
 - Windows: `cc1c-<service>.exe`
 - Linux/macOS: `cc1c-<service>`
+
+---
+
+### sync-frontend-env.sh
+
+**Назначение:** Синхронизирует `frontend/.env.local` из корневого `.env.local` (`CC1C_BASE_HOST`)
+
+**Использование:**
+```bash
+./scripts/dev/sync-frontend-env.sh
+```
+
+**Когда нужно:**
+- Если запускаешь фронт отдельно (`cd frontend && npm run dev`)
 
 **Выходная директория:** `bin/`
 

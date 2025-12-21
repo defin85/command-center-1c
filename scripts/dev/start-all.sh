@@ -147,6 +147,31 @@ set -a
 source "$PROJECT_ROOT/.env.local"
 set +a
 
+# Загрузить frontend env (доп. VITE_* переменные, например Jaeger)
+if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
+    set -a
+    source "$PROJECT_ROOT/frontend/.env.local"
+    set +a
+fi
+
+# Прокинуть VITE_* из CC1C_BASE_HOST если они не заданы
+if [[ -n "${CC1C_BASE_HOST:-}" ]]; then
+    if [[ -z "${VITE_BASE_HOST:-}" ]]; then
+        export VITE_BASE_HOST="$CC1C_BASE_HOST"
+    fi
+    if [[ -z "${VITE_API_URL:-}" ]]; then
+        export VITE_API_URL="http://${VITE_BASE_HOST}:8180/api/v2"
+    fi
+    if [[ -z "${VITE_WS_HOST:-}" ]]; then
+        export VITE_WS_HOST="${VITE_BASE_HOST}:8200"
+    fi
+fi
+
+# Sync frontend/.env.local for standalone runs (keeps VITE_* consistent)
+if [[ -x "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" ]]; then
+    "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" >/dev/null 2>&1 || true
+fi
+
 ##############################################################################
 # Phase 1: Smart Go Rebuild (NEW!)
 ##############################################################################

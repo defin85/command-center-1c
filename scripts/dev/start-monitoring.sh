@@ -25,11 +25,7 @@ source "$PROJECT_ROOT/scripts/lib/init.sh"
 cd "$PROJECT_ROOT"
 
 # Загрузить переменные окружения для определения режима
-if [ -f "$PROJECT_ROOT/.env.local" ]; then
-    set -a
-    source "$PROJECT_ROOT/.env.local"
-    set +a
-fi
+load_env_file
 
 print_header "Starting Monitoring & Observability"
 

@@ -13,6 +13,7 @@
  * ```
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getWsHost } from '../api/baseUrl'
 
 // WebSocket message types (match server-side consumers.py)
 export type WorkflowStatusType = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -126,10 +127,7 @@ export const useWorkflowExecution = (
   // Get WebSocket URL
   const getWebSocketUrl = useCallback((execId: string): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // Connect through API Gateway for production, direct for development
-    const rawHost = import.meta.env.VITE_WS_HOST || window.location.host
-    // Prefer IPv4 localhost to avoid WSL/Chromium attempting ::1 while backend listens on 0.0.0.0
-    const host = rawHost.startsWith('localhost') ? `127.0.0.1${rawHost.slice('localhost'.length)}` : rawHost
+    const host = getWsHost()
     return `${protocol}//${host}/ws/workflow/${execId}/`
   }, [])
 

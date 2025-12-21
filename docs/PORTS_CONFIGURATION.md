@@ -48,6 +48,7 @@ Windows Hyper-V/WSL резервирует динамические порты �
    ORCHESTRATOR_PORT=8200
    RAS_ADAPTER_PORT=8188
    BATCH_SERVICE_PORT=8187
+   CC1C_BASE_HOST=localhost
    ```
 
 2. **`orchestrator/config/settings/base.py`** - Django defaults
@@ -63,18 +64,21 @@ Windows Hyper-V/WSL резервирует динамические порты �
    RASAdapterURL: getEnv("RAS_ADAPTER_URL", "http://localhost:8188"),
    ```
 
-4. **`frontend/.env.local`** - Frontend API URL
+4. **`frontend/.env.local`** - Frontend host (optional, overridden by CC1C_BASE_HOST)
    ```bash
-   VITE_API_URL=http://localhost:8180/api/v2
-   VITE_WS_HOST=localhost:8200
+   VITE_BASE_HOST=localhost
+   VITE_API_URL=http://${VITE_BASE_HOST}:8180/api/v2
+   VITE_WS_HOST=${VITE_BASE_HOST}:8200
    ```
+   Если запускаешь фронт отдельно: `./scripts/dev/sync-frontend-env.sh`
 
 ### Secondary Files (auto-derived)
 
 These files use environment variables or settings from primary sources:
-- `scripts/dev/*.sh` - Use variables from `.env.local`
+- `scripts/dev/*.sh` - Use variables from `.env.local` (including `CC1C_BASE_HOST`)
 - Django views - Use `settings.RAS_ADAPTER_URL` etc.
 - Go services - Use `config.GetConfig()`
+- Monitoring (Docker) - `docker-compose.local.monitoring.yml` uses `VITE_BASE_HOST` for `host.docker.internal`
 
 ## Adding a New Service
 

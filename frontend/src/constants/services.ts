@@ -18,28 +18,32 @@ function envUrl(key: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+import { getBaseHost } from '../api/baseUrl'
+
+const baseHost = getBaseHost()
+
 export const KNOWN_SERVICES: KnownService[] = [
   {
     name: 'frontend',
     title: 'Frontend',
-    url: envUrl('VITE_FRONTEND_URL') ?? 'http://localhost:5173',
+    url: envUrl('VITE_FRONTEND_URL') ?? `http://${baseHost}:5173`,
   },
   {
     name: 'api-gateway',
     title: 'API Gateway',
-    url: envUrl('VITE_API_GATEWAY_URL') ?? 'http://localhost:8180',
+    url: envUrl('VITE_API_GATEWAY_URL') ?? `http://${baseHost}:8180`,
     healthPath: '/health',
   },
   {
     name: 'orchestrator',
     title: 'Orchestrator',
-    url: envUrl('VITE_ORCHESTRATOR_URL') ?? 'http://localhost:8200',
+    url: envUrl('VITE_ORCHESTRATOR_URL') ?? `http://${baseHost}:8200`,
     healthPath: '/health',
   },
   {
     name: 'worker',
     title: 'Worker',
-    url: envUrl('VITE_WORKER_URL') ?? 'http://localhost:9091',
+    url: envUrl('VITE_WORKER_URL') ?? `http://${baseHost}:9091`,
     healthPath: '/health',
   },
 ]

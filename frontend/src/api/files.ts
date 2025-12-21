@@ -7,6 +7,7 @@
 import type { AxiosProgressEvent } from 'axios'
 
 import { getV2 } from './generated'
+import { getApiBaseUrl } from './baseUrl'
 
 const api = getV2()
 
@@ -98,7 +99,7 @@ export const filesApi = {
    * @returns Full download URL
    */
   getDownloadUrl: (fileId: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8180'
+    const baseUrl = getApiBaseUrl()
     return `${baseUrl}/api/v2/files/download/${fileId}/`
   },
 

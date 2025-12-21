@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Form, Input, Button, Card, Typography, App } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import axios from 'axios'
+import { getApiBaseUrl } from '../../api/baseUrl'
 
 const { Title } = Typography
 
@@ -22,7 +23,7 @@ export const Login = () => {
             // Auth endpoint is public (no JWT required), uses /api/token
             // Extract base URL without /api/* suffix
             // Port 8180 - outside Windows reserved range (8013-8112)
-            const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8180/api/v2')
+            const baseUrl = getApiBaseUrl()
                 .replace(/\/api\/v\d+\/?$/, '')
                 .replace(/\/api\/?$/, '')
             const response = await axios.post(`${baseUrl}/api/token`, {

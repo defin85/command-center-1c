@@ -13,6 +13,7 @@
  * ```
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getWsHost } from '../api/baseUrl'
 import type {
   ServiceMetrics,
   ServiceConnection,
@@ -154,11 +155,7 @@ export const useServiceMesh = (): UseServiceMeshResult => {
   const getWebSocketUrl = useCallback((): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     // WebSocket through API Gateway (which proxies to Orchestrator)
-    // Port 8180 - API Gateway service
-    const rawHost = import.meta.env.VITE_WS_HOST || 'localhost:8180'
-    // Prefer IPv4 localhost to avoid WSL/Chromium attempting ::1 while backend listens on 0.0.0.0
-    const host = rawHost.startsWith('localhost') ? `127.0.0.1${rawHost.slice('localhost'.length)}` : rawHost
-    const baseUrl = `${protocol}//${host}/ws/service-mesh/`
+    const baseUrl = `${protocol}//${getWsHost()}/ws/service-mesh/`
 
     // Add JWT token for authentication
     const token = localStorage.getItem('auth_token')

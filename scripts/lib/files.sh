@@ -440,6 +440,19 @@ load_env_file() {
         set +a
         log_verbose "Сгенерированная конфигурация портов загружена"
     fi
+
+    # Derive frontend VITE_* settings from CC1C_BASE_HOST (single source)
+    if [[ -n "${CC1C_BASE_HOST:-}" ]]; then
+        if [[ -z "${VITE_BASE_HOST:-}" ]]; then
+            export VITE_BASE_HOST="$CC1C_BASE_HOST"
+        fi
+        if [[ -z "${VITE_API_URL:-}" ]]; then
+            export VITE_API_URL="http://${VITE_BASE_HOST}:8180/api/v2"
+        fi
+        if [[ -z "${VITE_WS_HOST:-}" ]]; then
+            export VITE_WS_HOST="${VITE_BASE_HOST}:8200"
+        fi
+    fi
 }
 
 ##############################################################################

@@ -18,6 +18,9 @@ cd "$PROJECT_ROOT"
 # Константы проекта
 PIDS_DIR="$PROJECT_ROOT/pids"
 
+# Загрузить переменные окружения (нужно для VITE_BASE_HOST и режимов)
+load_env_file
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Health Check${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -89,7 +92,35 @@ check_http() {
     fi
 }
 
-check_http "Frontend" "http://localhost:5173"
+FRONTEND_URL="http://localhost:5173"
+if [ -n "${VITE_BASE_HOST:-}" ]; then
+    FRONTEND_URL="http://${VITE_BASE_HOST}:5173"
+fi
+if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
+    frontend_dev_url=$(awk -F= '/^VITE_DEV_SERVER_URL=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
+    frontend_dev_host=$(awk -F= '/^VITE_DEV_SERVER_HOST=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
+    frontend_base_host=$(awk -F= '/^VITE_BASE_HOST=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
+    frontend_ws_host=$(awk -F= '/^VITE_WS_HOST=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
+    frontend_api_url=$(awk -F= '/^VITE_API_URL=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
+
+    if [ -n "$frontend_dev_url" ]; then
+        FRONTEND_URL="$frontend_dev_url"
+    elif [ -n "$frontend_dev_host" ]; then
+        FRONTEND_URL="http://${frontend_dev_host}:5173"
+    elif [ -n "$frontend_base_host" ]; then
+        FRONTEND_URL="http://${frontend_base_host}:5173"
+    elif [ -n "$frontend_ws_host" ]; then
+        ws_host=${frontend_ws_host%%:*}
+        FRONTEND_URL="http://${ws_host}:5173"
+    elif [ -n "$frontend_api_url" ]; then
+        api_host=$(echo "$frontend_api_url" | sed -E 's#^[^/]*//##; s#/.*##; s#:.*##')
+        if [ -n "$api_host" ]; then
+            FRONTEND_URL="http://${api_host}:5173"
+        fi
+    fi
+fi
+
+check_http "Frontend" "$FRONTEND_URL"
 check_http "API Gateway" "http://localhost:8180/health"
 check_http "Orchestrator" "http://localhost:8200/health"
 
@@ -100,13 +131,6 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[3] Проверка инфраструктуры:${NC}"
 echo ""
-
-# Загрузить переменные окружения для определения режима
-if [ -f "$PROJECT_ROOT/.env.local" ]; then
-    set -a
-    source "$PROJECT_ROOT/.env.local"
-    set +a
-fi
 
 if is_docker_mode; then
     echo -e "  ${CYAN}Режим: Docker${NC}"
