@@ -170,22 +170,26 @@ export const Databases = () => {
     const chunks: string[][] = []
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50))
 
-    let ok = 0
-    let degraded = 0
-    let down = 0
+    const operationIds: string[] = []
 
     for (let i = 0; i < chunks.length; i++) {
       const res = await bulkHealthCheck.mutateAsync({ databaseIds: chunks[i] })
-      ok += res.summary.healthy
-      degraded += res.summary.degraded
-      down += res.summary.down
+      if (res.operation_id) {
+        operationIds.push(res.operation_id)
+      }
+    }
+
+    if (operationIds.length === 1) {
+      navigate(`/operations?operation=${operationIds[0]}`)
+      return
     }
 
     modal.info({
-      title: 'Health check completed',
-      content: `ok=${ok}, degraded=${degraded}, down=${down}`,
+      title: 'Health check queued',
+      content: `Queued ${operationIds.length} operations. Check Operations for progress.`,
     })
-  }, [bulkHealthCheck, modal])
+    navigate('/operations')
+  }, [bulkHealthCheck, modal, navigate])
 
   const runSetStatus = useCallback(async (ids: string[], status: SetDatabaseStatusValue) => {
     const res = await setDatabaseStatus.mutateAsync({ databaseIds: ids, status })
@@ -261,6 +265,11 @@ export const Databases = () => {
     return parsed.isValid() ? parsed.format('DD.MM.YYYY HH:mm') : value
   }
 
+  type DatabaseHealthMeta = Database & {
+    last_health_error?: string | null
+    last_health_error_code?: string | null
+  }
+
   const columns = [
     {
       title: 'Name',
@@ -319,9 +328,29 @@ export const Databases = () => {
       title: 'Health',
       dataIndex: 'last_check_status',
       key: 'last_check_status',
-      render: (status: string) => {
-        const tag = getHealthTag(status)
-        return <Tag color={tag.color}>{tag.label}</Tag>
+      render: (_status: string, record: Database) => {
+        const tag = getHealthTag(record.last_check_status)
+        const healthMeta = record as DatabaseHealthMeta
+        const errorMessage = healthMeta.last_health_error
+        const errorCode = healthMeta.last_health_error_code
+        const tooltip = errorMessage || errorCode
+          ? (
+            <div>
+              {errorCode && <div>Code: {errorCode}</div>}
+              {errorMessage && <div>Message: {errorMessage}</div>}
+            </div>
+          )
+          : null
+
+        if (!tooltip) {
+          return <Tag color={tag.color}>{tag.label}</Tag>
+        }
+
+        return (
+          <Tooltip title={tooltip}>
+            <Tag color={tag.color}>{tag.label}</Tag>
+          </Tooltip>
+        )
       },
       filters: [
         { text: 'OK', value: 'ok' },
@@ -400,7 +429,10 @@ export const Databases = () => {
             onClick={async () => {
               try {
                 const res = await healthCheck.mutateAsync(record.id)
-                message.success(`${record.name}: ${res.status} (${res.response_time_ms}ms)`)
+                message.success(`${record.name}: health check queued`)
+                if (res.operation_id) {
+                  navigate(`/operations?operation=${res.operation_id}`)
+                }
               } catch (e: unknown) {
                 message.error(`Health check failed: ${getErrorMessage(e)}`)
               }

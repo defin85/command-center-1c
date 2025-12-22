@@ -40,6 +40,7 @@ class BatchOperation(models.Model):
     # Cluster operation types
     TYPE_SYNC_CLUSTER = 'sync_cluster'
     TYPE_DISCOVER_CLUSTERS = 'discover_clusters'
+    TYPE_HEALTH_CHECK = 'health_check'
 
     # IBCMD operation types
     TYPE_IBCMD_BACKUP = 'ibcmd_backup'
@@ -63,6 +64,7 @@ class BatchOperation(models.Model):
         # Cluster operations
         (TYPE_SYNC_CLUSTER, 'Sync Cluster'),
         (TYPE_DISCOVER_CLUSTERS, 'Discover Clusters'),
+        (TYPE_HEALTH_CHECK, 'Health Check'),
         # IBCMD operations
         (TYPE_IBCMD_BACKUP, 'IBCMD Backup'),
         (TYPE_IBCMD_RESTORE, 'IBCMD Restore'),

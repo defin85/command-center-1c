@@ -617,8 +617,8 @@ paths:
   /api/v2/databases/bulk-health-check/:
     post:
       operationId: v2_databases_bulk_health_check_create
-      description: Perform health check on multiple databases in parallel. Provide
-        either database_ids or cluster_id. Max 50 databases per request.
+      description: Queue health check on multiple databases. Provide either database_ids
+        or cluster_id.
       summary: Bulk health check databases
       tags:
       - v2
@@ -637,7 +637,7 @@ paths:
       - bearerAuth: []
       - cookieAuth: []
       responses:
-        '200':
+        '202':
           content:
             application/json:
               schema:
@@ -731,8 +731,7 @@ paths:
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
-      description: Perform OData health check on a specific database. Checks connectivity
-        and response time.
+      description: Queue OData health check for a specific database.
       summary: Health check database
       tags:
       - v2
@@ -752,7 +751,7 @@ paths:
       - bearerAuth: []
       - cookieAuth: []
       responses:
-        '200':
+        '202':
           content:
             application/json:
               schema:
@@ -823,6 +822,92 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/databases/stream-ticket/:
+    post:
+      operationId: v2_databases_stream_ticket_create
+      description: "\n    Obtain a short-lived, single-use ticket for database SSE\n\
+        \    stream authentication.\n\n    The ticket is valid for 30 seconds and can only\n\
+        \    be used once.\n    "
+      summary: Get database SSE stream ticket
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseStreamTicketRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseStreamTicketRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseStreamTicketRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseStreamTicketResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/databases/stream/:
+    get:
+      operationId: v2_databases_stream_retrieve
+      description: "\n    Real-time Server-Sent Events (SSE) stream for database updates.\n\
+        \n    **Authentication:** Use ticket from /databases/stream-ticket/ endpoint.\n\
+        \    "
+      summary: Stream database updates (SSE)
+      parameters:
+      - in: query
+        name: ticket
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /databases/stream-ticket/
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/dlq/get/:
     get:
       operationId: v2_dlq_get_retrieve
@@ -1931,7 +2016,9 @@ paths:
         \ message)\n    - `unblock_sessions` - Unblock sessions\n    - `terminate_sessions`\
         \ - Terminate all active sessions\n\n    **Config options for block_sessions:**\n\
         \    - `message` - Message displayed to users\n    - `permission_code` - Code\
-        \ allowing entry despite block\n    "
+        \ allowing entry despite block\n    - `denied_from` - RFC3339 start time for\
+        \ blocking\n    - `denied_to` - RFC3339 end time for blocking\n    - `parameter`\
+        \ - Additional block parameter\n    "
       summary: Execute RAS operation
       tags:
       - v2
@@ -3630,15 +3717,23 @@ components:
       type: object
       description: Response for bulk_health_check endpoint.
       properties:
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/HealthCheckResult'
-        summary:
-          $ref: '#/components/schemas/HealthCheckSummary'
+        operation_id:
+          type: string
+          description: ID of the created operation
+        status:
+          type: string
+          description: Operation status (queued)
+        total_tasks:
+          type: integer
+          description: Number of tasks created
+        message:
+          type: string
+          description: Status message
       required:
-      - results
-      - summary
+      - message
+      - operation_id
+      - status
+      - total_tasks
     SetDatabaseStatusRequest:
       type: object
       description: Request body for set_status endpoint.
@@ -4201,6 +4296,44 @@ components:
         is_healthy:
           type: boolean
           readOnly: true
+        sessions_deny:
+          type: boolean
+          readOnly: true
+          nullable: true
+        scheduled_jobs_deny:
+          type: boolean
+          readOnly: true
+          nullable: true
+        denied_from:
+          type: string
+          readOnly: true
+          nullable: true
+          description: RFC3339 start time for session blocking
+        denied_to:
+          type: string
+          readOnly: true
+          nullable: true
+          description: RFC3339 end time for session blocking
+        denied_message:
+          type: string
+          readOnly: true
+          nullable: true
+        permission_code:
+          type: string
+          readOnly: true
+          nullable: true
+        denied_parameter:
+          type: string
+          readOnly: true
+          nullable: true
+        last_health_error:
+          type: string
+          readOnly: true
+          nullable: true
+        last_health_error_code:
+          type: string
+          readOnly: true
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -4459,7 +4592,7 @@ components:
         config:
           type: object
           additionalProperties: {}
-          description: Operation-specific configuration (e.g., message for block_sessions)
+          description: Operation-specific configuration (block_sessions supports message, permission_code, denied_from, denied_to, parameter)
       required:
       - database_ids
       - operation_type
@@ -4930,101 +5063,23 @@ components:
       type: object
       description: Response for health_check endpoint.
       properties:
-        database_id:
+        operation_id:
           type: string
-          description: Database UUID
+          description: ID of the created operation
         status:
-          allOf:
-          - $ref: '#/components/schemas/HealthCheckResponseStatusEnum'
-          description: |-
-            Health status: ok, degraded, or down
-
-            * `ok` - ok
-            * `degraded` - degraded
-            * `down` - down
-        response_time_ms:
-          type: number
-          format: double
-          description: Response time in milliseconds
-        checked_at:
           type: string
-          format: date-time
-          description: Timestamp of the health check
+          description: Operation status (queued)
+        total_tasks:
+          type: integer
+          description: Number of tasks created
+        message:
+          type: string
+          description: Status message
       required:
-      - checked_at
-      - database_id
-      - response_time_ms
+      - message
+      - operation_id
       - status
-    HealthCheckResponseStatusEnum:
-      enum:
-      - ok
-      - degraded
-      - down
-      type: string
-      description: |-
-        * `ok` - ok
-        * `degraded` - degraded
-        * `down` - down
-    HealthCheckResult:
-      type: object
-      description: Single result in bulk health check.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID
-        status:
-          allOf:
-          - $ref: '#/components/schemas/HealthCheckResultStatusEnum'
-          description: |-
-            Health status
-
-            * `ok` - ok
-            * `degraded` - degraded
-            * `down` - down
-            * `error` - error
-        response_time_ms:
-          type: number
-          format: double
-          description: Response time in milliseconds
-        error:
-          type: string
-          description: Error message if check failed
-      required:
-      - database_id
-      - status
-    HealthCheckResultStatusEnum:
-      enum:
-      - ok
-      - degraded
-      - down
-      - error
-      type: string
-      description: |-
-        * `ok` - ok
-        * `degraded` - degraded
-        * `down` - down
-        * `error` - error
-    HealthCheckSummary:
-      type: object
-      description: Summary of bulk health check results.
-      properties:
-        total:
-          type: integer
-          description: Total databases checked
-        healthy:
-          type: integer
-          description: Number of healthy databases (status=ok)
-        degraded:
-          type: integer
-          description: Number of degraded databases
-        down:
-          type: integer
-          description: Number of down databases
-      required:
-      - degraded
-      - down
-      - healthy
-      - total
+      - total_tasks
     HistoryDataPoint:
       type: object
       description: Single data point in history.
@@ -5537,6 +5592,32 @@ components:
           type: boolean
       required:
       - deleted
+    DatabaseStreamTicketRequest:
+      type: object
+      description: Request body for database stream ticket endpoint.
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional cluster filter for SSE stream
+    DatabaseStreamTicketResponse:
+      type: object
+      description: Response for database stream ticket endpoint.
+      properties:
+        ticket:
+          type: string
+          description: Short-lived ticket for SSE connection
+        expires_in:
+          type: integer
+          description: Seconds until ticket expires
+        stream_url:
+          type: string
+          description: SSE endpoint URL to connect to
+      required:
+      - expires_in
+      - stream_url
+      - ticket
     SSETicketRequest:
       type: object
       description: Request body for get_stream_ticket endpoint.

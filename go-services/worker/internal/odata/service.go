@@ -3,6 +3,7 @@ package odata
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 )
@@ -79,6 +80,17 @@ func (s *Service) CacheSize() int {
 		return 0
 	}
 	return s.pool.CacheSize()
+}
+
+// HealthCheck checks connectivity for the OData endpoint and returns response time in ms.
+func (s *Service) HealthCheck(ctx context.Context, creds sharedodata.ODataCredentials) (int64, error) {
+	client := s.getClient(creds)
+	if client == nil {
+		return 0, fmt.Errorf("odata service not configured")
+	}
+	start := time.Now()
+	err := client.HealthCheck(ctx)
+	return time.Since(start).Milliseconds(), err
 }
 
 func (s *Service) getClient(creds sharedodata.ODataCredentials) *Client {

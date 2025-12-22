@@ -658,10 +658,61 @@ class OperationsService:
         """
         from apps.databases.models import Database
 
+        from apps.operations.models import Task
+
+        databases = list(Database.objects.filter(id__in=database_ids))
+        if not databases:
+            return EnqueueResult(
+                success=False,
+                operation_id="",
+                status="error",
+                error="No valid databases found for the provided IDs",
+            )
+
         operation_id = str(uuid.uuid4())
 
-        # Load database objects for unified format
-        databases = Database.objects.filter(id__in=database_ids)
+        batch_operation = BatchOperation.objects.create(
+            id=operation_id,
+            name=f"health_check - {len(databases)} databases",
+            operation_type="health_check",
+            target_entity="Database",
+            status=BatchOperation.STATUS_PENDING,
+            payload={"data": {}, "filters": {}, "options": {"check_odata": True}},
+            config={
+                "batch_size": 50,
+                "timeout_seconds": 30,
+                "retry_count": 1,
+                "priority": "low",
+            },
+            total_tasks=len(databases),
+            created_by=created_by,
+        )
+        batch_operation.target_databases.set(databases)
+
+        tasks = [
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ]
+        Task.objects.bulk_create(tasks)
+
+        try:
+            redis_client.add_timeline_event(
+                operation_id,
+                event="operation.created",
+                service="orchestrator",
+                metadata={
+                    "operation_type": "health_check",
+                    "target_databases_count": len(databases),
+                    "created_by": created_by,
+                },
+            )
+        except Exception:
+            pass
 
         message = {
             "version": cls.VERSION,
@@ -693,9 +744,23 @@ class OperationsService:
         }
 
         try:
+            redis_client.acquire_enqueue_lock(
+                task_id=operation_id,
+                ttl_seconds=3600
+            )
             redis_client.enqueue_operation(message)
 
-            database_count = databases.count()
+            try:
+                redis_client.add_timeline_event(
+                    operation_id,
+                    event="operation.queued",
+                    service="orchestrator",
+                    metadata={"queue": cls.QUEUE_KEY},
+                )
+            except Exception:
+                pass
+
+            database_count = len(databases)
 
             event_publisher.publish(
                 operation_id=operation_id,
@@ -705,6 +770,23 @@ class OperationsService:
                 target_databases_count=database_count
             )
 
+            flow_publisher.publish_flow(
+                operation_id=operation_id,
+                current_service="orchestrator",
+                status="processing",
+                message="Health check queued",
+                operation_type="health_check",
+                operation_name=batch_operation.name,
+                path=["frontend", "api-gateway", "orchestrator", "worker"],
+                metadata={
+                    "target_databases_count": database_count,
+                    "queue": cls.QUEUE_KEY
+                }
+            )
+
+            batch_operation.status = BatchOperation.STATUS_QUEUED
+            batch_operation.save(update_fields=['status', 'updated_at'])
+
             logger.info(
                 f"Health check operation {operation_id} enqueued",
                 extra={
@@ -712,6 +794,8 @@ class OperationsService:
                     "database_count": database_count
                 }
             )
+
+            _record_batch_metric("health_check", "queued")
 
             return EnqueueResult(
                 success=True,
@@ -722,6 +806,9 @@ class OperationsService:
 
         except Exception as exc:
             logger.error(f"Error enqueueing health check: {exc}", exc_info=True)
+            batch_operation.status = BatchOperation.STATUS_FAILED
+            batch_operation.save(update_fields=['status', 'updated_at'])
+            _record_batch_metric("health_check", "error")
             return EnqueueResult(
                 success=False,
                 operation_id=operation_id,

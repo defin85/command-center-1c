@@ -16,6 +16,7 @@ import signal
 import sys
 import time
 import os
+import uuid
 from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
@@ -665,6 +666,9 @@ class EventSubscriber:
                 metadata={"summary": summary, "results_count": len(results)},
             )
 
+            self._update_database_restrictions(batch_op, results)
+            self._update_database_health(batch_op, results)
+
         except BatchOperation.DoesNotExist:
             logger.warning(f"BatchOperation not found: {operation_id}")
         except Exception as e:
@@ -746,6 +750,130 @@ class EventSubscriber:
             logger.warning(f"BatchOperation not found: {operation_id}")
         except Exception as e:
             logger.error(f"Error handling worker:failed: {e}", exc_info=True)
+
+    def _update_database_restrictions(self, batch_op, results: list[Dict[str, Any]]) -> None:
+        if batch_op.operation_type not in {
+            "lock_scheduled_jobs",
+            "unlock_scheduled_jobs",
+            "block_sessions",
+            "unblock_sessions",
+        }:
+            return
+
+        config = {}
+        if isinstance(batch_op.payload, dict):
+            config = batch_op.payload.get("data") or {}
+        if not isinstance(config, dict):
+            config = {}
+
+        success_ids = [
+            result.get("database_id")
+            for result in results
+            if result.get("success") and result.get("database_id")
+        ]
+        if not success_ids:
+            return
+
+        def set_metadata_value(metadata: dict, key: str, value: Optional[str]) -> None:
+            if value:
+                metadata[key] = value
+            else:
+                metadata.pop(key, None)
+
+        from apps.databases.models import Database
+
+        for database in Database.objects.filter(id__in=success_ids):
+            metadata = database.metadata or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            if batch_op.operation_type == "lock_scheduled_jobs":
+                metadata["scheduled_jobs_deny"] = True
+            elif batch_op.operation_type == "unlock_scheduled_jobs":
+                metadata["scheduled_jobs_deny"] = False
+            elif batch_op.operation_type == "block_sessions":
+                metadata["sessions_deny"] = True
+                set_metadata_value(metadata, "denied_from", config.get("denied_from"))
+                set_metadata_value(metadata, "denied_to", config.get("denied_to"))
+                set_metadata_value(metadata, "denied_message", config.get("message"))
+                set_metadata_value(metadata, "permission_code", config.get("permission_code"))
+                set_metadata_value(metadata, "denied_parameter", config.get("parameter"))
+            elif batch_op.operation_type == "unblock_sessions":
+                metadata["sessions_deny"] = False
+                for key in (
+                    "denied_from",
+                    "denied_to",
+                    "denied_message",
+                    "permission_code",
+                    "denied_parameter",
+                ):
+                    metadata.pop(key, None)
+
+            database.metadata = metadata
+            database.save(update_fields=["metadata", "updated_at"])
+
+    def _update_database_health(self, batch_op, results: list[Dict[str, Any]]) -> None:
+        if batch_op.operation_type != "health_check":
+            return
+
+        if not results:
+            return
+
+        from apps.databases.models import Database
+
+        def parse_response_time(value: Any) -> Optional[float]:
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        for result in results:
+            database_id = result.get("database_id")
+            if not database_id:
+                continue
+
+            try:
+                database = Database.objects.get(id=database_id)
+            except Database.DoesNotExist:
+                continue
+
+            data = result.get("data") or {}
+            response_time_ms = parse_response_time(data.get("response_time_ms"))
+            success = bool(result.get("success"))
+
+            database.mark_health_check(success=success, response_time=response_time_ms)
+
+            metadata = database.metadata if isinstance(database.metadata, dict) else {}
+            metadata_updated = False
+
+            if success:
+                for key in ("last_health_error", "last_health_error_code"):
+                    if key in metadata:
+                        metadata.pop(key, None)
+                        metadata_updated = True
+            else:
+                error_message = result.get("error")
+                error_code = result.get("error_code")
+
+                if error_message:
+                    metadata["last_health_error"] = error_message
+                    metadata_updated = True
+                elif "last_health_error" in metadata:
+                    metadata.pop("last_health_error", None)
+                    metadata_updated = True
+
+                if error_code:
+                    metadata["last_health_error_code"] = error_code
+                    metadata_updated = True
+                elif "last_health_error_code" in metadata:
+                    metadata.pop("last_health_error_code", None)
+                    metadata_updated = True
+
+            if metadata_updated:
+                database.metadata = metadata
+                database.save(update_fields=["metadata", "updated_at"])
 
     def _update_task_status_from_correlation_id(
         self,
@@ -949,7 +1077,7 @@ class EventSubscriber:
             {
                 'correlation_id': 'uuid',
                 'database_id': '123',
-                'cluster_id': 'uuid',  # Django cluster.id
+                'cluster_id': 'uuid',  # UUID in RAS
                 'ras_server': 'localhost:1545',
                 'ras_cluster_uuid': 'uuid',  # UUID in RAS
                 'infobase_id': 'uuid',  # UUID in RAS
@@ -1006,7 +1134,8 @@ class EventSubscriber:
             cluster = database.cluster
 
             # Check if cluster has RAS configuration
-            if not cluster.ras_cluster_uuid:
+            ras_cluster_uuid = cluster.ras_cluster_uuid or database.ras_cluster_id
+            if not ras_cluster_uuid:
                 response['error'] = (
                     f'Cluster {cluster.name} has no ras_cluster_uuid configured. '
                     f'Run sync_cluster first or set manually in admin.'
@@ -1019,7 +1148,13 @@ class EventSubscriber:
                 return
 
             # Check if database has infobase UUID
-            if not database.ras_infobase_id:
+            infobase_uuid = database.ras_infobase_id
+            if not infobase_uuid:
+                try:
+                    infobase_uuid = uuid.UUID(str(database.id))
+                except (ValueError, TypeError, AttributeError):
+                    infobase_uuid = None
+            if not infobase_uuid:
                 response['error'] = (
                     f'Database {database_id} has no ras_infobase_id configured. '
                     f'Run sync_cluster first.'
@@ -1031,17 +1166,17 @@ class EventSubscriber:
                 return
 
             # Success - populate response
-            response['cluster_id'] = str(cluster.id)
+            response['cluster_id'] = str(ras_cluster_uuid)
             response['ras_server'] = cluster.ras_server or ''
-            response['ras_cluster_uuid'] = str(cluster.ras_cluster_uuid)
-            response['infobase_id'] = str(database.ras_infobase_id)
+            response['ras_cluster_uuid'] = str(ras_cluster_uuid)
+            response['infobase_id'] = str(infobase_uuid)
             response['success'] = 'true'
             response['error'] = ''
 
             logger.info(
                 f"Cluster info resolved: database_id={database_id}, "
-                f"ras_cluster_uuid={cluster.ras_cluster_uuid}, "
-                f"infobase_id={database.ras_infobase_id}"
+                f"ras_cluster_uuid={ras_cluster_uuid}, "
+                f"infobase_id={infobase_uuid}"
             )
 
         except Exception as e:

@@ -16,8 +16,7 @@ import type { ClusterDatabasesResponse } from '../generated/model/clusterDatabas
 import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
-import type { HealthCheckResponse } from '../generated/model/healthCheckResponse'
-import type { BulkHealthCheckResponse } from '../generated/model/bulkHealthCheckResponse'
+import { apiClient } from '../client'
 import type { SetDatabaseStatusRequest } from '../generated/model/setDatabaseStatusRequest'
 import type { SetDatabaseStatusResponse } from '../generated/model/setDatabaseStatusResponse'
 import {
@@ -225,6 +224,13 @@ export interface BulkHealthCheckParams {
   databaseIds: string[]
 }
 
+export interface HealthCheckOperationResponse {
+  operation_id: string
+  status: string
+  total_tasks: number
+  message: string
+}
+
 export interface SetDatabaseStatusParams {
   databaseIds: string[]
   status: SetDatabaseStatusRequest['status']
@@ -286,8 +292,13 @@ export function useHealthCheckDatabase() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (databaseId: string): Promise<HealthCheckResponse> =>
-      api.postDatabasesHealthCheck({ database_id: databaseId }),
+    mutationFn: async (databaseId: string): Promise<HealthCheckOperationResponse> => {
+      const response = await apiClient.post<HealthCheckOperationResponse>(
+        '/api/v2/databases/health-check/',
+        { database_id: databaseId }
+      )
+      return response.data
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },
@@ -298,8 +309,13 @@ export function useBulkHealthCheckDatabases() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (params: BulkHealthCheckParams): Promise<BulkHealthCheckResponse> =>
-      api.postDatabasesBulkHealthCheck({ database_ids: params.databaseIds }),
+    mutationFn: async (params: BulkHealthCheckParams): Promise<HealthCheckOperationResponse> => {
+      const response = await apiClient.post<HealthCheckOperationResponse>(
+        '/api/v2/databases/bulk-health-check/',
+        { database_ids: params.databaseIds }
+      )
+      return response.data
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },

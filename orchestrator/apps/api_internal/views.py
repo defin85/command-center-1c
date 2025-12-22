@@ -8,6 +8,7 @@ URL prefix: /api/v2/internal/
 """
 
 import logging
+import uuid
 from datetime import timedelta
 
 from django.db import models, transaction
@@ -393,30 +394,50 @@ def get_database_cluster_info(request):
         )
 
     try:
-        database = Database.objects.get(id=database_id)
+        database = Database.objects.select_related('cluster').get(id=database_id)
     except Database.DoesNotExist:
         return Response(
             {'success': False, 'error': f'Database {database_id} not found'},
             status=status.HTTP_404_NOT_FOUND
         )
 
-    if not database.ras_cluster_id:
+    if not database.cluster:
         return Response(
-            {'success': False, 'error': {'ras_cluster_id': 'RAS cluster metadata is not configured'}},
+            {'success': False, 'error': {'cluster': 'Database has no cluster configured'}},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    infobase_id = str(database.ras_infobase_id) if database.ras_infobase_id else str(database.id)
-    ras_server = str(database.cluster.ras_server) if database.cluster else ""
-    cluster_user = str(database.cluster.cluster_user) if database.cluster else ""
-    cluster_pwd = str(database.cluster.cluster_pwd) if database.cluster else ""
+    cluster = database.cluster
+    ras_cluster_uuid = cluster.ras_cluster_uuid or database.ras_cluster_id
+    if not ras_cluster_uuid:
+        return Response(
+            {'success': False, 'error': {'ras_cluster_uuid': 'RAS cluster metadata is not configured'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    infobase_uuid = database.ras_infobase_id
+    if not infobase_uuid:
+        try:
+            infobase_uuid = uuid.UUID(str(database.id))
+        except (ValueError, TypeError, AttributeError):
+            infobase_uuid = None
+    if not infobase_uuid:
+        return Response(
+            {'success': False, 'error': {'ras_infobase_id': 'RAS infobase metadata is not configured'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    infobase_id = str(infobase_uuid)
+    ras_server = str(cluster.ras_server) if cluster.ras_server else ""
+    cluster_user = str(cluster.cluster_user) if cluster.cluster_user else ""
+    cluster_pwd = str(cluster.cluster_pwd) if cluster.cluster_pwd else ""
 
     return Response(
         {
             'success': True,
             'cluster_info': {
                 'database_id': str(database.id),
-                'cluster_id': str(database.ras_cluster_id),
+                'cluster_id': str(ras_cluster_uuid),
                 'infobase_id': infobase_id,
                 'ras_server': ras_server,
                 'cluster_user': cluster_user,
@@ -530,18 +551,24 @@ def update_database_health(request):
         response_time=data.get('response_time_ms')
     )
 
-    # Store additional error metadata if provided
-    if not data['healthy']:
-        metadata_updated = False
+    metadata = database.metadata if isinstance(database.metadata, dict) else {}
+    metadata_updated = False
+    if data['healthy']:
+        for key in ('last_health_error', 'last_health_error_code'):
+            if key in metadata:
+                metadata.pop(key, None)
+                metadata_updated = True
+    else:
         if data.get('error_message'):
-            database.metadata['last_health_error'] = data['error_message']
+            metadata['last_health_error'] = data['error_message']
             metadata_updated = True
         if data.get('error_code'):
-            database.metadata['last_health_error_code'] = data['error_code']
+            metadata['last_health_error_code'] = data['error_code']
             metadata_updated = True
 
-        if metadata_updated:
-            database.save(update_fields=['metadata', 'updated_at'])
+    if metadata_updated:
+        database.metadata = metadata
+        database.save(update_fields=['metadata', 'updated_at'])
 
     logger.info(
         f"Database health updated: id={database_id}, healthy={data['healthy']}"

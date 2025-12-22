@@ -10,6 +10,48 @@ class DatabaseSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     is_healthy = serializers.BooleanField(read_only=True)
+    sessions_deny = serializers.SerializerMethodField()
+    scheduled_jobs_deny = serializers.SerializerMethodField()
+    denied_from = serializers.SerializerMethodField()
+    denied_to = serializers.SerializerMethodField()
+    denied_message = serializers.SerializerMethodField()
+    permission_code = serializers.SerializerMethodField()
+    denied_parameter = serializers.SerializerMethodField()
+    last_health_error = serializers.SerializerMethodField()
+    last_health_error_code = serializers.SerializerMethodField()
+
+    def _get_metadata_value(self, obj: Database, key: str):
+        metadata = obj.metadata or {}
+        if isinstance(metadata, dict):
+            return metadata.get(key)
+        return None
+
+    def get_sessions_deny(self, obj: Database):
+        return self._get_metadata_value(obj, 'sessions_deny')
+
+    def get_scheduled_jobs_deny(self, obj: Database):
+        return self._get_metadata_value(obj, 'scheduled_jobs_deny')
+
+    def get_denied_from(self, obj: Database):
+        return self._get_metadata_value(obj, 'denied_from')
+
+    def get_denied_to(self, obj: Database):
+        return self._get_metadata_value(obj, 'denied_to')
+
+    def get_denied_message(self, obj: Database):
+        return self._get_metadata_value(obj, 'denied_message')
+
+    def get_permission_code(self, obj: Database):
+        return self._get_metadata_value(obj, 'permission_code')
+
+    def get_denied_parameter(self, obj: Database):
+        return self._get_metadata_value(obj, 'denied_parameter')
+
+    def get_last_health_error(self, obj: Database):
+        return self._get_metadata_value(obj, 'last_health_error')
+
+    def get_last_health_error_code(self, obj: Database):
+        return self._get_metadata_value(obj, 'last_health_error_code')
 
     class Meta:
         model = Database
@@ -38,6 +80,15 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'health_check_enabled',
             'cluster_id',
             'is_healthy',
+            'sessions_deny',
+            'scheduled_jobs_deny',
+            'denied_from',
+            'denied_to',
+            'denied_message',
+            'permission_code',
+            'denied_parameter',
+            'last_health_error',
+            'last_health_error_code',
             'created_at',
             'updated_at'
         ]
@@ -118,4 +169,3 @@ class ClusterSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
         read_only_fields = ['id', 'last_sync', 'created_at', 'updated_at']
-

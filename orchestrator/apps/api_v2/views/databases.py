@@ -4,20 +4,55 @@ Database endpoints for API v2.
 Provides action-based endpoints for database operations.
 """
 
+import json
 import logging
+import secrets
 
+import redis as redis_module
+from django.conf import settings
 from django.db.models import Q
-from rest_framework import serializers
+from django.http import JsonResponse, StreamingHttpResponse
+from django.utils import timezone
+from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from apps.databases.models import Database
+from apps.databases.models import Cluster, Database
 from apps.databases.serializers import DatabaseSerializer, ClusterSerializer
+from apps.operations.services import OperationsService
 from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
+
+DB_SSE_TICKET_PREFIX = "db_sse_ticket:"
+DB_SSE_TICKET_TTL = 30
+DB_STREAM_NAME = "events:databases"
+
+
+def _get_redis_connection():
+    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    return redis_module.from_url(redis_url, decode_responses=True)
+
+
+def _validate_db_stream_ticket(ticket: str) -> tuple[dict | None, str | None]:
+    redis_conn = _get_redis_connection()
+
+    try:
+        ticket_key = f"{DB_SSE_TICKET_PREFIX}{ticket}"
+        pipe = redis_conn.pipeline()
+        pipe.get(ticket_key)
+        pipe.delete(ticket_key)
+        results = pipe.execute()
+
+        ticket_data_raw = results[0]
+        if not ticket_data_raw:
+            return None, "Invalid or expired ticket"
+
+        return json.loads(ticket_data_raw), None
+    finally:
+        redis_conn.close()
 
 
 # =============================================================================
@@ -58,40 +93,12 @@ class DatabaseDetailResponseSerializer(serializers.Serializer):
     cluster = ClusterSerializer(required=False, allow_null=True, help_text="Cluster info if database belongs to a cluster")
 
 
-class HealthCheckResponseSerializer(serializers.Serializer):
-    """Response for health_check endpoint."""
-    database_id = serializers.CharField(help_text="Database UUID")
-    status = serializers.ChoiceField(
-        choices=['ok', 'degraded', 'down'],
-        help_text="Health status: ok, degraded, or down"
-    )
-    response_time_ms = serializers.FloatField(help_text="Response time in milliseconds")
-    checked_at = serializers.DateTimeField(help_text="Timestamp of the health check")
-
-
-class HealthCheckResultSerializer(serializers.Serializer):
-    """Single result in bulk health check."""
-    database_id = serializers.CharField(help_text="Database UUID")
-    status = serializers.ChoiceField(
-        choices=['ok', 'degraded', 'down', 'error'],
-        help_text="Health status"
-    )
-    response_time_ms = serializers.FloatField(required=False, help_text="Response time in milliseconds")
-    error = serializers.CharField(required=False, help_text="Error message if check failed")
-
-
-class HealthCheckSummarySerializer(serializers.Serializer):
-    """Summary of bulk health check results."""
-    total = serializers.IntegerField(help_text="Total databases checked")
-    healthy = serializers.IntegerField(help_text="Number of healthy databases (status=ok)")
-    degraded = serializers.IntegerField(help_text="Number of degraded databases")
-    down = serializers.IntegerField(help_text="Number of down databases")
-
-
-class BulkHealthCheckResponseSerializer(serializers.Serializer):
-    """Response for bulk_health_check endpoint."""
-    results = HealthCheckResultSerializer(many=True)
-    summary = HealthCheckSummarySerializer()
+class HealthCheckEnqueueResponseSerializer(serializers.Serializer):
+    """Response for health_check endpoints (operation queued)."""
+    operation_id = serializers.CharField(help_text="ID of the created operation")
+    status = serializers.CharField(help_text="Operation status (queued)")
+    total_tasks = serializers.IntegerField(help_text="Number of tasks created")
+    message = serializers.CharField(help_text="Status message")
 
 
 class BulkHealthCheckRequestSerializer(serializers.Serializer):
@@ -138,49 +145,21 @@ class SetDatabaseStatusResponseSerializer(serializers.Serializer):
     updated = serializers.IntegerField()
     not_found = serializers.ListField(child=serializers.CharField())
     status = serializers.CharField()
+
+
+class DatabaseStreamTicketRequestSerializer(serializers.Serializer):
+    """Request body for database stream ticket endpoint."""
+
+    cluster_id = serializers.UUIDField(required=False, allow_null=True)
+
+
+class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
+    """Response for database stream ticket endpoint."""
+
+    ticket = serializers.CharField(help_text="Short-lived ticket for SSE connection")
+    expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
+    stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
     message = serializers.CharField()
-
-
-def _perform_odata_health_check(db, timeout=None):
-    """
-    Helper function to perform OData health check on a database.
-
-    Args:
-        db: Database instance
-        timeout: Optional timeout in seconds
-
-    Returns:
-        tuple: (health_status, response_time)
-    """
-    import time
-    import requests
-
-    start_time = time.time()
-    try:
-        # Simple OData metadata check
-        odata_url = db.odata_url.rstrip('/') + '/$metadata'
-        response = requests.get(
-            odata_url,
-            auth=(db.username, db.password),
-            timeout=timeout or db.connection_timeout or 30,
-        )
-
-        response_time = (time.time() - start_time) * 1000  # ms
-
-        if response.status_code == 200:
-            health_status = 'ok'
-            db.mark_health_check(success=True, response_time=response_time)
-        else:
-            health_status = 'degraded'
-            db.mark_health_check(success=False)
-
-    except Exception as e:
-        response_time = (time.time() - start_time) * 1000
-        health_status = 'down'
-        db.mark_health_check(success=False)
-        logger.warning(f"Health check failed for {db.name}: {e}")
-
-    return health_status, response_time
 
 
 @extend_schema(
@@ -339,10 +318,10 @@ def get_database(request):
 @extend_schema(
     tags=['v2'],
     summary='Health check database',
-    description='Perform OData health check on a specific database. Checks connectivity and response time.',
+    description='Queue OData health check for a specific database.',
     request=HealthCheckRequestSerializer,
     responses={
-        200: HealthCheckResponseSerializer,
+        202: HealthCheckEnqueueResponseSerializer,
         400: ErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
         404: ErrorResponseSerializer,
@@ -354,19 +333,19 @@ def health_check(request):
     """
     POST /api/v2/databases/health-check/
 
-    Perform health check on a specific database.
+    Queue health check for a specific database.
 
     Request Body:
         {
             "database_id": "string"
         }
 
-    Response:
+    Response (202 Accepted):
         {
-            "database_id": "string",
-            "status": "ok|degraded|down",
-            "response_time_ms": 150,
-            "checked_at": "2024-01-01T00:00:00Z"
+            "operation_id": "uuid",
+            "status": "queued",
+            "total_tasks": 1,
+            "message": "health_check queued for 1 database(s)"
         }
     """
     database_id = request.data.get('database_id')
@@ -391,26 +370,34 @@ def health_check(request):
             }
         }, status=404)
 
-    # Perform OData health check using helper function
-    from django.utils import timezone
-
-    health_status, response_time = _perform_odata_health_check(db)
+    enqueue_result = OperationsService.enqueue_health_check(
+        database_ids=[database_id],
+        created_by=request.user.username if request.user else "system",
+    )
+    if not enqueue_result.success:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'INTERNAL_ERROR',
+                'message': enqueue_result.error or 'Failed to queue health check'
+            }
+        }, status=500)
 
     return Response({
-        'database_id': database_id,
-        'status': health_status,
-        'response_time_ms': round(response_time, 2),
-        'checked_at': timezone.now().isoformat(),
-    })
+        'operation_id': enqueue_result.operation_id,
+        'status': enqueue_result.status,
+        'total_tasks': enqueue_result.metadata.get('database_count', 1),
+        'message': 'health_check queued for 1 database(s)',
+    }, status=http_status.HTTP_202_ACCEPTED)
 
 
 @extend_schema(
     tags=['v2'],
     summary='Bulk health check databases',
-    description='Perform health check on multiple databases in parallel. Provide either database_ids or cluster_id. Max 50 databases per request.',
+    description='Queue health check on multiple databases. Provide either database_ids or cluster_id.',
     request=BulkHealthCheckRequestSerializer,
     responses={
-        200: BulkHealthCheckResponseSerializer,
+        202: HealthCheckEnqueueResponseSerializer,
         400: ErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
@@ -421,7 +408,7 @@ def bulk_health_check(request):
     """
     POST /api/v2/databases/bulk-health-check/
 
-    Perform health check on multiple databases.
+    Queue health check on multiple databases.
 
     Request Body:
         {
@@ -429,18 +416,12 @@ def bulk_health_check(request):
             "cluster_id": "optional-cluster-id"
         }
 
-    Response:
+    Response (202 Accepted):
         {
-            "results": [
-                {"database_id": "id1", "status": "ok", "response_time_ms": 100},
-                {"database_id": "id2", "status": "down", "response_time_ms": 5000}
-            ],
-            "summary": {
-                "total": 10,
-                "healthy": 8,
-                "degraded": 1,
-                "down": 1
-            }
+            "operation_id": "uuid",
+            "status": "queued",
+            "total_tasks": 10,
+            "message": "health_check queued for 10 database(s)"
         }
     """
     database_ids = request.data.get('database_ids', [])
@@ -460,45 +441,35 @@ def bulk_health_check(request):
             }
         }, status=400)
 
-    # Limit batch size
-    databases = list(qs[:50])  # Max 50 at once
+    databases = list(qs)
+    if not databases:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'DATABASES_NOT_FOUND',
+                'message': 'No databases found for the request'
+            }
+        }, status=400)
 
-    results = []
-    summary = {'total': len(databases), 'healthy': 0, 'degraded': 0, 'down': 0}
-
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    def check_db(db):
-        # Use helper function with max 10s timeout for bulk operations
-        health_status, response_time = _perform_odata_health_check(db, timeout=10)
-        return {
-            'database_id': str(db.id),
-            'status': health_status,
-            'response_time_ms': round(response_time, 2)
-        }
-
-    # Check in parallel
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(check_db, db): db for db in databases}
-        for future in as_completed(futures, timeout=60):
-            try:
-                result = future.result()
-                results.append(result)
-                if result['status'] == 'ok':
-                    summary['healthy'] += 1
-                elif result['status'] == 'degraded':
-                    summary['degraded'] += 1
-                else:
-                    summary['down'] += 1
-            except Exception as e:
-                db = futures[future]
-                results.append({'database_id': db.id, 'status': 'error', 'error': str(e)})
-                summary['down'] += 1
+    enqueue_result = OperationsService.enqueue_health_check(
+        database_ids=[str(db.id) for db in databases],
+        created_by=request.user.username if request.user else "system",
+    )
+    if not enqueue_result.success:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'INTERNAL_ERROR',
+                'message': enqueue_result.error or 'Failed to queue health check'
+            }
+        }, status=500)
 
     return Response({
-        'results': results,
-        'summary': summary,
-    })
+        'operation_id': enqueue_result.operation_id,
+        'status': enqueue_result.status,
+        'total_tasks': enqueue_result.metadata.get('database_count', len(databases)),
+        'message': f'health_check queued for {len(databases)} database(s)',
+    }, status=http_status.HTTP_202_ACCEPTED)
 
 
 @extend_schema(
@@ -567,3 +538,171 @@ def set_status(request):
             "message": message,
         }
     )
+
+
+# =============================================================================
+# SSE Streaming (Databases)
+# =============================================================================
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get database SSE stream ticket',
+    description='''
+    Obtain a short-lived, single-use ticket for database SSE stream authentication.
+
+    The ticket is valid for 30 seconds and can only be used once.
+    ''',
+    request=DatabaseStreamTicketRequestSerializer,
+    responses={
+        200: DatabaseStreamTicketResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_database_stream_ticket(request):
+    serializer = DatabaseStreamTicketRequestSerializer(data=request.data or {})
+    serializer.is_valid(raise_exception=True)
+
+    cluster_id = serializer.validated_data.get('cluster_id')
+
+    if cluster_id and not Cluster.objects.filter(id=cluster_id).exists():
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'CLUSTER_NOT_FOUND',
+                'message': 'Cluster not found'
+            }
+        }, status=404)
+
+    ticket = secrets.token_urlsafe(32)
+    redis_conn = _get_redis_connection()
+
+    try:
+        ticket_data = {
+            'user_id': request.user.id,
+            'username': request.user.username,
+            'cluster_id': str(cluster_id) if cluster_id else None,
+            'created_at': timezone.now().isoformat(),
+        }
+        redis_conn.setex(
+            f"{DB_SSE_TICKET_PREFIX}{ticket}",
+            DB_SSE_TICKET_TTL,
+            json.dumps(ticket_data),
+        )
+    finally:
+        redis_conn.close()
+
+    return Response({
+        'ticket': ticket,
+        'expires_in': DB_SSE_TICKET_TTL,
+        'stream_url': f'/api/v2/databases/stream/?ticket={ticket}',
+    })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Stream database updates (SSE)',
+    description='''
+    Real-time Server-Sent Events (SSE) stream for database updates.
+
+    **Authentication:** Use ticket from /databases/stream-ticket/ endpoint.
+    ''',
+    parameters=[
+        OpenApiParameter(
+            name='ticket',
+            type=str,
+            required=True,
+            description='Short-lived SSE ticket from /databases/stream-ticket/'
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description='SSE stream (text/event-stream)'),
+        400: ErrorResponseSerializer,
+        401: ErrorResponseSerializer,
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def database_stream(request):
+    ticket = request.query_params.get('ticket')
+
+    if not ticket:
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ticket is required (use /databases/stream-ticket/ to obtain)'
+            }
+        }, status=401)
+
+    ticket_data, error = _validate_db_stream_ticket(ticket)
+    if error:
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'INVALID_TICKET',
+                'message': error
+            }
+        }, status=401)
+
+    cluster_id = ticket_data.get('cluster_id')
+    username = ticket_data.get('username')
+    logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
+
+    def event_generator():
+        logger.info("database_stream: starting event generator")
+        redis_conn = _get_redis_connection()
+        stream_name = DB_STREAM_NAME
+        last_id = '$'
+
+        try:
+            ready_event = {
+                "version": "1.0",
+                "type": "database_stream_connected",
+                "timestamp": timezone.now().isoformat(),
+                "cluster_id": cluster_id,
+            }
+            yield f"data: {json.dumps(ready_event)}\n\n"
+
+            while True:
+                messages = redis_conn.xread({stream_name: last_id}, block=5000, count=10)
+
+                if not messages:
+                    yield ": heartbeat\n\n"
+                    continue
+
+                for _, stream_messages in messages:
+                    for msg_id, fields in stream_messages:
+                        if cluster_id:
+                            event_cluster_id = fields.get('cluster_id') or ''
+                            if event_cluster_id != cluster_id:
+                                last_id = msg_id
+                                continue
+
+                        event_data = fields.get('data', '{}')
+                        yield f"data: {event_data}\n\n"
+                        last_id = msg_id
+
+        except GeneratorExit:
+            logger.info("Client disconnected from database SSE stream")
+        except Exception as exc:
+            logger.error("Database SSE stream error: %s", exc)
+            raise
+        finally:
+            try:
+                redis_conn.close()
+            except Exception:
+                pass
+
+    response = StreamingHttpResponse(
+        event_generator(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
