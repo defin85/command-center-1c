@@ -51,8 +51,9 @@ class TestDatabaseService:
 
                 # Check database updated
                 db.refresh_from_db()
-                assert db.last_check_status == 'success'
+                assert db.last_check_status == Database.HEALTH_OK
                 assert db.consecutive_failures == 0
+                assert db.status == Database.STATUS_ACTIVE
 
     def test_health_check_database_failure(self):
         """Test неудачного health check."""
@@ -79,8 +80,9 @@ class TestDatabaseService:
 
             # Check database updated
             db.refresh_from_db()
-            assert db.last_check_status == 'failed'
+            assert db.last_check_status == Database.HEALTH_DEGRADED
             assert db.consecutive_failures == 1
+            assert db.status == Database.STATUS_ACTIVE
 
     def test_health_check_group(self):
         """Test health check для группы баз."""

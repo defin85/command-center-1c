@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo } from 'react'
-import { App, Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown } from 'antd'
+import { App, Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { getV2 } from '../../api/generated'
 import type { Database } from '../../api/generated/model/database'
 import { SetDatabaseStatusRequestStatus } from '../../api/generated/model/setDatabaseStatusRequestStatus'
@@ -18,6 +19,8 @@ import type { RASOperationType } from '../../api/operations'
 import { queryKeys } from '../../api/queries'
 import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
+import { useDatabaseStreamInvalidation } from '../../hooks/useDatabaseStreamInvalidation'
+import { getHealthTag, getStatusTag, getSummaryTag } from '../../utils/databaseStatus'
 
 // Get generated API functions (for fetchStatus in InstallationProgressModal)
 const api = getV2()
@@ -51,8 +54,13 @@ export const Databases = () => {
 
   // React Query hooks
   const { data: clusters = [], isLoading: clustersLoading } = useClusters()
+  const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamInvalidation({
+    clusterId: selectedClusterId,
+  })
+  const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
   const { data: databases = [], isLoading: databasesLoading } = useDatabases({
     filters: selectedClusterId ? { cluster_id: selectedClusterId } : undefined,
+    refetchInterval: fallbackPollIntervalMs,
   })
 
   // Mutations
@@ -210,7 +218,13 @@ export const Databases = () => {
   }, [selectedDatabases])
 
   // Confirm operation handler
-  const handleConfirmOperation = useCallback(async (config?: { message?: string }) => {
+  const handleConfirmOperation = useCallback(async (config?: {
+    message?: string
+    permission_code?: string
+    denied_from?: string
+    denied_to?: string
+    parameter?: string
+  }) => {
     const operationType = confirmModal.operation as RASOperationType
     const dbs = confirmModal.databases
 
@@ -241,12 +255,39 @@ export const Databases = () => {
     setSelectedDatabases([])
   }, [])
 
+  const formatDeniedTime = (value?: string | null) => {
+    if (!value) return 'n/a'
+    const parsed = dayjs(value)
+    return parsed.isValid() ? parsed.format('DD.MM.YYYY HH:mm') : value
+  }
+
   const columns = [
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
       sorter: (a: Database, b: Database) => a.name.localeCompare(b.name),
+      render: (name: string, record: Database) => {
+        const statusTag = getStatusTag(record.status)
+        const healthTag = getHealthTag(record.last_check_status)
+        const summaryTag = getSummaryTag(record.status, record.last_check_status)
+
+        return (
+          <Space size={8} wrap>
+            <span>{name}</span>
+            <Tooltip
+              title={
+                <div>
+                  <div>Status: {statusTag.label}</div>
+                  <div>Health: {healthTag.label}</div>
+                </div>
+              }
+            >
+              <Tag color={summaryTag.color}>{summaryTag.label}</Tag>
+            </Tooltip>
+          </Space>
+        )
+      },
     },
     {
       title: 'Host',
@@ -262,11 +303,10 @@ export const Databases = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : status === 'maintenance' ? 'orange' : status === 'inactive' ? 'default' : 'red'}>
-          {status}
-        </Tag>
-      ),
+      render: (status: string) => {
+        const tag = getStatusTag(status)
+        return <Tag color={tag.color}>{tag.label}</Tag>
+      },
       filters: [
         { text: 'Active', value: 'active' },
         { text: 'Inactive', value: 'inactive' },
@@ -279,11 +319,10 @@ export const Databases = () => {
       title: 'Health',
       dataIndex: 'last_check_status',
       key: 'last_check_status',
-      render: (status: string) => (
-        <Tag color={status === 'ok' ? 'green' : status === 'degraded' ? 'orange' : status === 'down' ? 'red' : 'default'}>
-          {status}
-        </Tag>
-      ),
+      render: (status: string) => {
+        const tag = getHealthTag(status)
+        return <Tag color={tag.color}>{tag.label}</Tag>
+      },
       filters: [
         { text: 'OK', value: 'ok' },
         { text: 'Degraded', value: 'degraded' },
@@ -292,6 +331,47 @@ export const Databases = () => {
       ],
       onFilter: (value: boolean | React.Key, record: Database) => record.last_check_status === value,
       width: 120,
+    },
+    {
+      title: 'Restrictions',
+      key: 'restrictions',
+      render: (_: unknown, record: Database) => {
+        const jobsDeny = record.scheduled_jobs_deny
+        const sessionsDeny = record.sessions_deny
+        const jobsTag = (
+          <Tag color={jobsDeny === true ? 'red' : jobsDeny === false ? 'green' : 'default'}>
+            {jobsDeny === true ? 'Jobs: Locked' : jobsDeny === false ? 'Jobs: Allowed' : 'Jobs: Unknown'}
+          </Tag>
+        )
+        const sessionsTagBase = (
+          <Tag color={sessionsDeny === true ? 'red' : sessionsDeny === false ? 'green' : 'default'}>
+            {sessionsDeny === true ? 'Sessions: Blocked' : sessionsDeny === false ? 'Sessions: Allowed' : 'Sessions: Unknown'}
+          </Tag>
+        )
+        const sessionsTag = sessionsDeny === true ? (
+          <Tooltip
+            title={
+              <div>
+                <div>From: {formatDeniedTime(record.denied_from)}</div>
+                <div>To: {formatDeniedTime(record.denied_to)}</div>
+                <div>Message: {record.denied_message || 'n/a'}</div>
+                <div>Permission code: {record.permission_code || 'n/a'}</div>
+                <div>Parameter: {record.denied_parameter || 'n/a'}</div>
+              </div>
+            }
+          >
+            {sessionsTagBase}
+          </Tooltip>
+        ) : sessionsTagBase
+
+        return (
+          <Space size="small" wrap>
+            {jobsTag}
+            {sessionsTag}
+          </Space>
+        )
+      },
+      width: 280,
     },
     {
       title: 'Last Check',

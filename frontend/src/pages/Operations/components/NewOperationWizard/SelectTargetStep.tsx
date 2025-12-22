@@ -12,6 +12,7 @@ import { getV2 } from '../../../../api/generated'
 import type { Database } from '../../../../api/generated/model/database'
 import type { Cluster } from '../../../../api/generated/model/cluster'
 import type { SelectTargetStepProps, DatabaseWithCluster, DatabaseFilters } from './types'
+import { getHealthTag, getStatusTag } from '../../../../utils/databaseStatus'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -201,20 +202,20 @@ export const SelectTargetStep = ({
       dataIndex: 'status',
       key: 'status',
       width: 100,
-      render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : status === 'syncing' ? 'blue' : 'default'}>
-          {status || 'unknown'}
-        </Tag>
-      ),
+      render: (status: string) => {
+        const tag = getStatusTag(status)
+        return <Tag color={tag.color}>{tag.label}</Tag>
+      },
     },
     {
       title: 'Health',
-      dataIndex: 'is_healthy',
+      dataIndex: 'last_check_status',
       key: 'health',
       width: 80,
-      render: (isHealthy: boolean) => (
-        <Tag color={isHealthy ? 'green' : 'red'}>{isHealthy ? 'OK' : 'Error'}</Tag>
-      ),
+      render: (status: string) => {
+        const tag = getHealthTag(status)
+        return <Tag color={tag.color}>{tag.label}</Tag>
+      },
     },
   ]
 

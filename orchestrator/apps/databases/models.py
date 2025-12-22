@@ -158,8 +158,7 @@ class Cluster(models.Model):
     def healthy_infobase_count(self) -> int:
         """Get number of healthy infobases."""
         return self.databases.filter(
-            last_check_status='ok',
-            status=Database.STATUS_ACTIVE
+            last_check_status=Database.HEALTH_OK
         ).count()
 
     @property
@@ -382,10 +381,6 @@ class Database(models.Model):
             self.last_check_status = self.HEALTH_OK
             self.consecutive_failures = 0
 
-            # НОВОЕ: Восстановление из ERROR в ACTIVE
-            if self.status == self.STATUS_ERROR:
-                self.status = self.STATUS_ACTIVE
-
             if response_time is not None:
                 # Calculate moving average (simple exponential smoothing)
                 if self.avg_response_time is None:
@@ -397,7 +392,6 @@ class Database(models.Model):
             self.consecutive_failures += 1
             if self.consecutive_failures >= 3:
                 self.last_check_status = self.HEALTH_DOWN
-                self.status = self.STATUS_ERROR
             else:
                 self.last_check_status = self.HEALTH_DEGRADED
 
@@ -406,14 +400,13 @@ class Database(models.Model):
             'last_check_status',
             'consecutive_failures',
             'avg_response_time',
-            'status',
             'updated_at'
         ])
 
     @property
     def is_healthy(self) -> bool:
         """Check if database is healthy."""
-        return self.last_check_status == self.HEALTH_OK and self.status == self.STATUS_ACTIVE
+        return self.last_check_status == self.HEALTH_OK
 
     @property
     def connection_string(self) -> str:
@@ -482,8 +475,7 @@ class DatabaseGroup(models.Model):
     def healthy_count(self) -> int:
         """Get number of healthy databases in group."""
         return self.databases.filter(
-            last_check_status=Database.HEALTH_OK,
-            status=Database.STATUS_ACTIVE
+            last_check_status=Database.HEALTH_OK
         ).count()
 
 
