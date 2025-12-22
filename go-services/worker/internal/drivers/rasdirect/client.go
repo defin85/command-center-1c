@@ -74,6 +74,8 @@ type Infobase struct {
 	DeniedMessage   string
 	DeniedParameter string
 	PermissionCode  string
+	InfoAvailable   bool
+	InfoError       string
 }
 
 func (c *Client) GetInfobases(ctx context.Context, clusterID, clusterUser, clusterPwd string) ([]Infobase, error) {
@@ -94,8 +96,10 @@ func (c *Client) GetInfobases(ctx context.Context, clusterID, clusterUser, clust
 		full, err := c.ras.GetInfobaseInfo(ctx, clusterUUID, s.UUID)
 		if err != nil {
 			out = append(out, Infobase{
-				UUID: s.UUID.String(),
-				Name: s.Name,
+				UUID:          s.UUID.String(),
+				Name:          s.Name,
+				InfoAvailable: false,
+				InfoError:     err.Error(),
 			})
 			continue
 		}
@@ -142,6 +146,7 @@ func fromRASInfobase(ib serialize.InfobaseInfo) Infobase {
 		DeniedMessage:   ib.DeniedMessage,
 		DeniedParameter: ib.DeniedParameter,
 		PermissionCode:  ib.PermissionCode,
+		InfoAvailable:   true,
 	}
 }
 

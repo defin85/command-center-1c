@@ -1,6 +1,7 @@
 """Business logic for databases."""
 
 import logging
+import uuid
 from typing import Dict, List, Any, Tuple, Optional
 from django.db import transaction
 from django.utils import timezone
@@ -512,6 +513,8 @@ class ClusterService:
                     'db_server': 'localhost',
                     'db_name': 'testbase',
                     'locale': 'ru_RU',
+                    'info_available': True,             # optional
+                    'info_error': 'access denied',       # optional
                     'sessions_deny': False,
                     'scheduled_jobs_deny': False,
                     'denied_from': '2025-01-01T00:00:00Z',  # optional
@@ -538,53 +541,109 @@ class ClusterService:
                     error_count += 1
                     continue
 
-                # Parse host from db_server
+                infobase_uuid = None
+                try:
+                    infobase_uuid = uuid.UUID(str(ib_uuid))
+                except (ValueError, TypeError, AttributeError):
+                    infobase_uuid = None
+
+                existing_db = Database.objects.filter(id=ib_uuid).first()
+                existing_metadata: Dict[str, Any] = {}
+                if existing_db and isinstance(existing_db.metadata, dict):
+                    existing_metadata = dict(existing_db.metadata)
+
+                info_available = ib.get('info_available', True)
+                info_error = ib.get('info_error')
+
+                # Parse host from db_server (only when info is available)
                 db_server = ib.get('db_server', '')
-                host = ClusterService._parse_host(db_server)
+                if info_available:
+                    host = ClusterService._parse_host(db_server)
+                    odata_url = ClusterService._build_odata_url(ib, default_host=host)
+                    base_name = ib_name
+                elif existing_db:
+                    host = existing_db.host
+                    odata_url = existing_db.odata_url
+                    base_name = existing_db.base_name
+                    if not db_server:
+                        db_server = existing_metadata.get('db_server', '')
+                else:
+                    host = ClusterService._parse_host(db_server)
+                    odata_url = ClusterService._build_odata_url(ib, default_host=host)
+                    base_name = ib_name
 
-                # Build OData URL
-                odata_url = ClusterService._build_odata_url(ib, default_host=host)
-
-                # Prepare metadata
-                metadata = {
-                    'dbms': ib.get('dbms', ''),
-                    'db_server': db_server,
-                    'db_name': ib.get('db_name', ''),
-                    'locale': ib.get('locale', ''),
-                    'sessions_deny': ib.get('sessions_deny', False),
-                    'scheduled_jobs_deny': ib.get('scheduled_jobs_deny', False),
+                base_metadata = {
                     'imported_from_cluster': True,
                     'import_timestamp': timezone.now().isoformat(),
                     'ras_server': cluster.ras_server,
                     'cluster_id': str(cluster.id),
                     'cluster_name': cluster.name,
                     'api_version': 'worker',
+                    'info_available': bool(info_available),
                 }
+                if info_error:
+                    base_metadata['info_error'] = info_error
 
-                # Add denied_from/denied_to if set
-                if ib.get('denied_from'):
-                    metadata['denied_from'] = ib['denied_from']
-                if ib.get('denied_to'):
-                    metadata['denied_to'] = ib['denied_to']
-                if ib.get('denied_message'):
-                    metadata['denied_message'] = ib['denied_message']
+                # Prepare metadata
+                if info_available:
+                    metadata = {
+                        'dbms': ib.get('dbms', ''),
+                        'db_server': db_server,
+                        'db_name': ib.get('db_name', ''),
+                        'locale': ib.get('locale', ''),
+                        'sessions_deny': ib.get('sessions_deny', False),
+                        'scheduled_jobs_deny': ib.get('scheduled_jobs_deny', False),
+                    }
+                    metadata.update(base_metadata)
+
+                    # Add denied_from/denied_to if set
+                    if ib.get('denied_from'):
+                        metadata['denied_from'] = ib['denied_from']
+                    if ib.get('denied_to'):
+                        metadata['denied_to'] = ib['denied_to']
+                    if ib.get('denied_message'):
+                        metadata['denied_message'] = ib['denied_message']
+                    if ib.get('permission_code'):
+                        metadata['permission_code'] = ib['permission_code']
+                    if ib.get('denied_parameter'):
+                        metadata['denied_parameter'] = ib['denied_parameter']
+                else:
+                    metadata = dict(existing_metadata) if existing_metadata else {}
+                    for key in (
+                        'sessions_deny',
+                        'scheduled_jobs_deny',
+                        'denied_from',
+                        'denied_to',
+                        'denied_message',
+                        'permission_code',
+                        'denied_parameter',
+                        'info_error',
+                    ):
+                        metadata.pop(key, None)
+                    metadata.update(base_metadata)
 
                 # Create or update Database.
                 # IMPORTANT: do not override operator-set status on update.
+                defaults = {
+                    'name': ib_name,
+                    'description': '',
+                    'host': host or 'localhost',
+                    'port': 80,
+                    'base_name': base_name,
+                    'odata_url': odata_url,
+                    'username': '',
+                    'password': '',
+                    'cluster': cluster,
+                    'metadata': metadata,
+                }
+                if cluster.ras_cluster_uuid:
+                    defaults['ras_cluster_id'] = cluster.ras_cluster_uuid
+                if infobase_uuid:
+                    defaults['ras_infobase_id'] = infobase_uuid
+
                 database, created = Database.objects.update_or_create(
                     id=ib_uuid,
-                    defaults={
-                        'name': ib_name,
-                        'description': '',
-                        'host': host or 'localhost',
-                        'port': 80,
-                        'base_name': ib_name,
-                        'odata_url': odata_url,
-                        'username': '',
-                        'password': '',
-                        'cluster': cluster,
-                        'metadata': metadata,
-                    }
+                    defaults=defaults,
                 )
                 if created:
                     database.status = Database.STATUS_INACTIVE

@@ -130,20 +130,39 @@ func (d *MetaDriver) executeSyncCluster(ctx context.Context, msg *models.Operati
 	infobasesCount = len(list)
 	infobases = make([]map[string]interface{}, 0, len(list))
 	for _, ib := range list {
-		infobases = append(infobases, map[string]interface{}{
-			"uuid":                ib.UUID,
-			"name":                ib.Name,
-			"dbms":                ib.DBMS,
-			"db_server":           ib.DBServer,
-			"db_name":             ib.DBName,
-			"scheduled_jobs_deny": ib.ScheduledJobsDeny,
-			"sessions_deny":       ib.SessionsDeny,
-			"denied_from":         ib.DeniedFrom,
-			"denied_to":           ib.DeniedTo,
-			"denied_message":      ib.DeniedMessage,
-			"permission_code":     ib.PermissionCode,
-			"denied_parameter":    ib.DeniedParameter,
-		})
+		ibPayload := map[string]interface{}{
+			"uuid": ib.UUID,
+			"name": ib.Name,
+		}
+		if ib.InfoAvailable {
+			ibPayload["info_available"] = true
+			ibPayload["dbms"] = ib.DBMS
+			ibPayload["db_server"] = ib.DBServer
+			ibPayload["db_name"] = ib.DBName
+			ibPayload["scheduled_jobs_deny"] = ib.ScheduledJobsDeny
+			ibPayload["sessions_deny"] = ib.SessionsDeny
+			if deniedFrom := toRFC3339OrEmpty(ib.DeniedFrom); deniedFrom != "" {
+				ibPayload["denied_from"] = deniedFrom
+			}
+			if deniedTo := toRFC3339OrEmpty(ib.DeniedTo); deniedTo != "" {
+				ibPayload["denied_to"] = deniedTo
+			}
+			if ib.DeniedMessage != "" {
+				ibPayload["denied_message"] = ib.DeniedMessage
+			}
+			if ib.PermissionCode != "" {
+				ibPayload["permission_code"] = ib.PermissionCode
+			}
+			if ib.DeniedParameter != "" {
+				ibPayload["denied_parameter"] = ib.DeniedParameter
+			}
+		} else {
+			ibPayload["info_available"] = false
+			if ib.InfoError != "" {
+				ibPayload["info_error"] = ib.InfoError
+			}
+		}
+		infobases = append(infobases, ibPayload)
 	}
 
 	d.timeline.Record(ctx, msg.OperationID, "cluster.sync.fetching.finished", map[string]interface{}{
