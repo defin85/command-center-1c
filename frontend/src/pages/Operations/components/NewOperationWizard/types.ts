@@ -199,6 +199,9 @@ export interface OperationConfig {
   // RAS - block_sessions
   message?: string
   permission_code?: string
+  denied_from?: string
+  denied_to?: string
+  parameter?: string
   // RAS - terminate_sessions
   filter_by_app?: string
   exclude_admin?: boolean

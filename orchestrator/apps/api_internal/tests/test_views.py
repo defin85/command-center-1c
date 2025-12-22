@@ -353,17 +353,53 @@ class DatabaseEndpointsV2Tests(InternalAPIV2BaseTestCase):
         from apps.databases.models import Database
         from apps.databases.models import Cluster
 
-        ras_cluster_id = uuid.uuid4()
+        ras_cluster_uuid = uuid.uuid4()
         ras_infobase_id = uuid.uuid4()
         cluster = Cluster.objects.create(
             id=uuid.uuid4(),
             name="Cluster For DB Cluster Info",
             ras_server="localhost:1545",
+            ras_cluster_uuid=ras_cluster_uuid,
             cluster_service_url="http://localhost:8188",
         )
         db = Database.objects.create(
             id="db-cluster-info-1",
             name="DB Cluster Info 1",
+            host="localhost",
+            odata_url="http://localhost/odata",
+            username="admin",
+            password="secret",
+            ras_infobase_id=ras_infobase_id,
+            cluster=cluster,
+        )
+
+        response = self.client.get(
+            f'/api/v2/internal/get-database-cluster-info?database_id={db.id}'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['cluster_info']['database_id'], db.id)
+        self.assertEqual(response.data['cluster_info']['cluster_id'], str(ras_cluster_uuid))
+        self.assertEqual(response.data['cluster_info']['infobase_id'], str(ras_infobase_id))
+        self.assertEqual(response.data['cluster_info']['ras_server'], "localhost:1545")
+
+    def test_get_database_cluster_info_fallback_ras_cluster_id(self):
+        """Test fallback to database.ras_cluster_id when cluster UUID missing."""
+        from apps.databases.models import Database
+        from apps.databases.models import Cluster
+
+        ras_cluster_id = uuid.uuid4()
+        ras_infobase_id = uuid.uuid4()
+        cluster = Cluster.objects.create(
+            id=uuid.uuid4(),
+            name="Cluster Without RAS UUID",
+            ras_server="localhost:1545",
+            ras_cluster_uuid=None,
+            cluster_service_url="http://localhost:8188",
+        )
+        db = Database.objects.create(
+            id="db-cluster-info-2",
+            name="DB Cluster Info 2",
             host="localhost",
             odata_url="http://localhost/odata",
             username="admin",
@@ -378,10 +414,8 @@ class DatabaseEndpointsV2Tests(InternalAPIV2BaseTestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
-        self.assertEqual(response.data['cluster_info']['database_id'], db.id)
         self.assertEqual(response.data['cluster_info']['cluster_id'], str(ras_cluster_id))
         self.assertEqual(response.data['cluster_info']['infobase_id'], str(ras_infobase_id))
-        self.assertEqual(response.data['cluster_info']['ras_server'], "localhost:1545")
 
     def test_list_databases_for_health_check(self):
         """Test listing databases for health check."""

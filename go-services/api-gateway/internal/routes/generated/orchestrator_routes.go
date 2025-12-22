@@ -22,6 +22,8 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/databases/get-database/", OperationID: "v2_databases_get_database_retrieve"},
 	{Method: "POST", Path: "/databases/health-check/", OperationID: "v2_databases_health_check_create"},
 	{Method: "GET", Path: "/databases/list-databases/", OperationID: "v2_databases_list_databases_retrieve"},
+	{Method: "POST", Path: "/databases/stream-ticket/", OperationID: "v2_databases_stream_ticket_create"},
+	{Method: "GET", Path: "/databases/stream/", OperationID: "v2_databases_stream_retrieve"},
 	{Method: "GET", Path: "/dlq/get/", OperationID: "v2_dlq_get_retrieve"},
 	{Method: "GET", Path: "/dlq/list/", OperationID: "v2_dlq_list_retrieve"},
 	{Method: "POST", Path: "/dlq/retry/", OperationID: "v2_dlq_retry_create"},

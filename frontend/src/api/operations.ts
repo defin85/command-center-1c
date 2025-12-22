@@ -20,6 +20,7 @@ export interface ExecuteOperationRequest {
     permission_code?: string;
     denied_from?: string;
     denied_to?: string;
+    parameter?: string;
   };
 }
 

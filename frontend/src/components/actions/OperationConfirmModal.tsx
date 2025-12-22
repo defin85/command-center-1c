@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, Typography, List, Alert, Input, Form } from 'antd';
+import { Modal, Typography, List, Alert, Input, Form, DatePicker } from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { getOperationConfig } from './constants';
 
 interface DatabaseInfo {
@@ -12,7 +13,13 @@ export interface OperationConfirmModalProps {
   visible: boolean;
   operation: string;
   databases: DatabaseInfo[];
-  onConfirm: (config?: { message?: string }) => void;
+  onConfirm: (config?: {
+    message?: string;
+    permission_code?: string;
+    denied_from?: string;
+    denied_to?: string;
+    parameter?: string;
+  }) => void;
   onCancel: () => void;
   loading?: boolean;
 }
@@ -37,7 +44,22 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
   const handleOk = async () => {
     if (config.requiresConfig) {
       const values = await form.validateFields();
-      onConfirm(values);
+      const payload = { ...values } as Record<string, unknown>;
+      const deniedFrom = payload.denied_from;
+      const deniedTo = payload.denied_to;
+      if (dayjs.isDayjs(deniedFrom)) {
+        payload.denied_from = deniedFrom.toISOString();
+      }
+      if (dayjs.isDayjs(deniedTo)) {
+        payload.denied_to = deniedTo.toISOString();
+      }
+      onConfirm(payload as {
+        message?: string;
+        permission_code?: string;
+        denied_from?: string;
+        denied_to?: string;
+        parameter?: string;
+      });
     } else {
       onConfirm();
     }
@@ -77,11 +99,53 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
       {config.requiresConfig && (
         <Form form={form} layout="vertical" style={{ marginBottom: 16 }}>
           <Form.Item
+            name="denied_from"
+            label="Block start (optional)"
+            help="Start time for blocking new sessions"
+          >
+            <DatePicker
+              showTime={{ format: 'HH:mm' }}
+              allowClear
+              style={{ width: '100%' }}
+              format="DD.MM.YYYY HH:mm"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="denied_to"
+            label="Block end (optional)"
+            help="End time for blocking new sessions"
+          >
+            <DatePicker
+              showTime={{ format: 'HH:mm' }}
+              allowClear
+              style={{ width: '100%' }}
+              format="DD.MM.YYYY HH:mm"
+            />
+          </Form.Item>
+
+          <Form.Item
             name="message"
             label="Block message (shown to users)"
             rules={[{ required: true, message: 'Please enter a message' }]}
           >
             <Input.TextArea rows={2} placeholder="Maintenance in progress..." />
+          </Form.Item>
+
+          <Form.Item
+            name="permission_code"
+            label="Permission code (optional)"
+            help="Users with this code can still connect"
+          >
+            <Input placeholder="Enter permission code" />
+          </Form.Item>
+
+          <Form.Item
+            name="parameter"
+            label="Block parameter (optional)"
+            help="Additional block parameter for 1C"
+          >
+            <Input placeholder="Enter block parameter" />
           </Form.Item>
         </Form>
       )}

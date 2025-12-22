@@ -135,6 +135,16 @@ describe('timelineTransforms', () => {
       expect(getEventStatus('worker.processing')).toBe('processing')
     })
 
+    it('returns "processing" for transition/step events', () => {
+      expect(getEventStatus('saga.transition')).toBe('processing')
+      expect(getEventStatus('saga.compensation.step')).toBe('processing')
+    })
+
+    it('returns "completed" for rehydrated events', () => {
+      expect(getEventStatus('designer.credentials.rehydrated')).toBe('completed')
+      expect(getEventStatus('clusterinfo.rehydrated')).toBe('completed')
+    })
+
     it('returns "unknown" for events with unrecognized endings', () => {
       expect(getEventStatus('custom.event')).toBe('unknown')
       expect(getEventStatus('database.query.pending')).toBe('unknown')

@@ -9,6 +9,7 @@ import {
   Typography,
   Form,
   Input,
+  DatePicker,
   InputNumber,
   Switch,
   Checkbox,
@@ -25,6 +26,8 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons'
 import type { UploadFile, UploadProps } from 'antd'
+import dayjs from 'dayjs'
+import type { Dayjs } from 'dayjs'
 import type { ConfigureStepProps, OperationType, OperationConfig, DynamicFormValidationError } from './types'
 import { OPERATION_TYPES } from './types'
 import type { ValidationError } from '../../../../components/DynamicForm/types'
@@ -56,33 +59,83 @@ const BlockSessionsForm = ({
 }: {
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
-}) => (
-  <Form layout="vertical">
-    <Form.Item
-      label="Message for users"
-      required
-      help="This message will be shown to users trying to connect"
-    >
-      <TextArea
-        rows={3}
-        placeholder="Technical maintenance. Please wait..."
-        value={config.message || ''}
-        onChange={(e) => onChange({ message: e.target.value })}
-      />
-    </Form.Item>
+}) => {
+  const deniedFromValue = config.denied_from ? dayjs(config.denied_from as string) : null
+  const deniedToValue = config.denied_to ? dayjs(config.denied_to as string) : null
 
-    <Form.Item
-      label="Permission code (optional)"
-      help="Users with this code can still connect"
-    >
-      <Input
-        placeholder="Enter permission code"
-        value={config.permission_code || ''}
-        onChange={(e) => onChange({ permission_code: e.target.value })}
-      />
-    </Form.Item>
-  </Form>
-)
+  const handleDateChange = (field: 'denied_from' | 'denied_to') => (value: Dayjs | null) => {
+    const updates: Partial<OperationConfig> = {}
+    updates[field] = value ? value.toISOString() : undefined
+    onChange(updates)
+  }
+
+  return (
+    <Form layout="vertical">
+      <Form.Item
+        label="Block start (optional)"
+        help="Start time for blocking new sessions"
+      >
+        <DatePicker
+          showTime={{ format: 'HH:mm' }}
+          allowClear
+          style={{ width: '100%' }}
+          format="DD.MM.YYYY HH:mm"
+          value={deniedFromValue}
+          onChange={handleDateChange('denied_from')}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Block end (optional)"
+        help="End time for blocking new sessions"
+      >
+        <DatePicker
+          showTime={{ format: 'HH:mm' }}
+          allowClear
+          style={{ width: '100%' }}
+          format="DD.MM.YYYY HH:mm"
+          value={deniedToValue}
+          onChange={handleDateChange('denied_to')}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Message for users"
+        required
+        help="This message will be shown to users trying to connect"
+      >
+        <TextArea
+          rows={3}
+          placeholder="Technical maintenance. Please wait..."
+          value={config.message || ''}
+          onChange={(e) => onChange({ message: e.target.value })}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Permission code (optional)"
+        help="Users with this code can still connect"
+      >
+        <Input
+          placeholder="Enter permission code"
+          value={config.permission_code || ''}
+          onChange={(e) => onChange({ permission_code: e.target.value })}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Block parameter (optional)"
+        help="Additional block parameter for 1C"
+      >
+        <Input
+          placeholder="Enter block parameter"
+          value={config.parameter || ''}
+          onChange={(e) => onChange({ parameter: e.target.value })}
+        />
+      </Form.Item>
+    </Form>
+  )
+}
 
 /**
  * Form for terminate_sessions operation

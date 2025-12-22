@@ -23,6 +23,7 @@ export const EVENT_LABELS: Record<string, string> = {
   'orchestrator.created': 'Operation Created',
   'orchestrator.completed': 'Operation Completed',
   'orchestrator.failed': 'Operation Failed',
+  'operation.queued': 'Operation Queued',
 
   // Worker events
   'worker.command.received': 'Worker Received',
@@ -84,7 +85,13 @@ export function getEventStatus(event: string): EventStatus {
   if (event.endsWith('.received') || event.endsWith('.created')) {
     return 'received'
   }
-  if (event.endsWith('.started') || event.endsWith('.processing')) {
+  if (
+    event.endsWith('.started') ||
+    event.endsWith('.processing') ||
+    event.endsWith('.queued') ||
+    event.endsWith('.transition') ||
+    event.endsWith('.step')
+  ) {
     return 'processing'
   }
   if (event.endsWith('.completed') || event.endsWith('.finished')) {
@@ -92,6 +99,9 @@ export function getEventStatus(event: string): EventStatus {
   }
   if (event.endsWith('.failed')) {
     return 'failed'
+  }
+  if (event.endsWith('.rehydrated')) {
+    return 'completed'
   }
   return 'unknown'
 }

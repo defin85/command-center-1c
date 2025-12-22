@@ -42,6 +42,8 @@ urlpatterns = [
     path('databases/health-check/', databases.health_check, name='database-health-check'),
     path('databases/bulk-health-check/', databases.bulk_health_check, name='bulk-health-check'),
     path('databases/set-status/', databases.set_status, name='set-status'),
+    path('databases/stream-ticket/', databases.get_database_stream_ticket, name='database-stream-ticket'),
+    path('databases/stream/', databases.database_stream, name='database-stream'),
 
     # ========================================================================
     # Clusters

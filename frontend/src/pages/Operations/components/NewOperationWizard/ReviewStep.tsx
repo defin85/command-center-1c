@@ -22,6 +22,7 @@ import {
 import type { ReviewStepProps, OperationConfig, OperationType } from './types'
 import { OPERATION_TYPES, OPERATION_CATEGORIES } from './types'
 import { formatFileSize } from '../../../../utils/formatters'
+import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
 
@@ -49,6 +50,11 @@ const categoryColors: Record<string, string> = {
   system: 'orange',
 }
 
+const formatDateTime = (value: string) => {
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('DD.MM.YYYY HH:mm') : value
+}
+
 /**
  * Format configuration for display based on operation type
  */
@@ -62,11 +68,20 @@ const formatConfigForDisplay = (
 
   switch (operationType) {
     case 'block_sessions':
+      if (config.denied_from) {
+        items.push({ label: 'Block Start', value: formatDateTime(config.denied_from) })
+      }
+      if (config.denied_to) {
+        items.push({ label: 'Block End', value: formatDateTime(config.denied_to) })
+      }
       if (config.message) {
         items.push({ label: 'Message', value: config.message })
       }
       if (config.permission_code) {
         items.push({ label: 'Permission Code', value: config.permission_code })
+      }
+      if (config.parameter) {
+        items.push({ label: 'Block Parameter', value: config.parameter })
       }
       break
 

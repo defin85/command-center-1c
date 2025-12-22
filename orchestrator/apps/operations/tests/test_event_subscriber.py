@@ -7,6 +7,7 @@ Tests Redis Streams integration, event processing, and Task status updates.
 from unittest.mock import Mock, patch, MagicMock
 from django.test import TestCase, override_settings
 import json
+import uuid
 
 from apps.operations.event_subscriber import EventSubscriber
 from apps.operations.models import BatchOperation, Task
@@ -265,6 +266,70 @@ class EventSubscriberTest(TestCase):
         except Exception as e:
             self.fail(f"handle_sessions_closed raised exception: {e}")
 
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_completed_updates_restrictions(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        block_op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Block Sessions',
+            operation_type=BatchOperation.TYPE_BLOCK_SESSIONS,
+            target_entity='Infobase',
+            status=BatchOperation.STATUS_PROCESSING,
+            payload={
+                'data': {
+                    'message': 'Maintenance',
+                    'permission_code': 'ALLOW',
+                    'denied_from': '2025-01-01T00:00:00Z',
+                    'denied_to': '2025-01-02T00:00:00Z',
+                    'parameter': 'param',
+                }
+            },
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': block_op.id,
+                'results': [{'database_id': self.database.id, 'success': True}],
+                'summary': {},
+            },
+            'corr-123',
+        )
+
+        self.database.refresh_from_db()
+        self.assertTrue(self.database.metadata['sessions_deny'])
+        self.assertEqual(self.database.metadata['denied_message'], 'Maintenance')
+        self.assertEqual(self.database.metadata['permission_code'], 'ALLOW')
+        self.assertEqual(self.database.metadata['denied_from'], '2025-01-01T00:00:00Z')
+        self.assertEqual(self.database.metadata['denied_to'], '2025-01-02T00:00:00Z')
+        self.assertEqual(self.database.metadata['denied_parameter'], 'param')
+
+        unblock_op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Unblock Sessions',
+            operation_type=BatchOperation.TYPE_UNBLOCK_SESSIONS,
+            target_entity='Infobase',
+            status=BatchOperation.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': unblock_op.id,
+                'results': [{'database_id': self.database.id, 'success': True}],
+                'summary': {},
+            },
+            'corr-456',
+        )
+
+        self.database.refresh_from_db()
+        self.assertFalse(self.database.metadata['sessions_deny'])
+        self.assertNotIn('denied_message', self.database.metadata)
+        self.assertNotIn('permission_code', self.database.metadata)
+        self.assertNotIn('denied_from', self.database.metadata)
+        self.assertNotIn('denied_to', self.database.metadata)
+        self.assertNotIn('denied_parameter', self.database.metadata)
+
     @patch('apps.operations.event_subscriber.redis.Redis')
     @patch('apps.operations.event_subscriber.time.sleep')
     def test_run_forever_handles_connection_error(self, mock_sleep, mock_redis_class):
@@ -346,7 +411,6 @@ class EventSubscriberClusterInfoTest(TestCase):
     def setUp(self):
         """Set up test fixtures with cluster configuration."""
         from apps.databases.models import Cluster
-        import uuid
 
         # Create test Cluster with RAS configuration
         self.cluster = Cluster.objects.create(
@@ -533,7 +597,6 @@ class EventSubscriberClusterInfoTest(TestCase):
     def test_handle_get_cluster_info_no_ras_cluster_uuid(self, mock_redis_class):
         """Test cluster info for cluster without ras_cluster_uuid."""
         from apps.databases.models import Cluster
-        import uuid
 
         # Create cluster without ras_cluster_uuid
         cluster_no_uuid = Cluster.objects.create(
@@ -575,7 +638,6 @@ class EventSubscriberClusterInfoTest(TestCase):
     def test_handle_get_cluster_info_no_infobase_id(self, mock_redis_class):
         """Test cluster info for database without ras_infobase_id."""
         from apps.databases.models import Cluster
-        import uuid
 
         # Create cluster with UUID
         cluster = Cluster.objects.create(
@@ -613,6 +675,52 @@ class EventSubscriberClusterInfoTest(TestCase):
         response = mock_redis.xadd.call_args[0][1]
         self.assertEqual(response['success'], 'false')
         self.assertIn('ras_infobase_id', response['error'])
+
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_get_cluster_info_success(self, mock_redis_class):
+        """Test successful cluster info response."""
+        from apps.databases.models import Cluster
+
+        cluster_uuid = uuid.uuid4()
+        infobase_uuid = uuid.uuid4()
+
+        cluster = Cluster.objects.create(
+            id=uuid.uuid4(),
+            name='Cluster Success',
+            ras_server='localhost:1545',
+            ras_cluster_uuid=cluster_uuid,
+            cluster_service_url='http://localhost:8188',
+        )
+
+        database = Database.objects.create(
+            id='db-success',
+            name='DB Success',
+            host='localhost',
+            port=80,
+            odata_url='http://localhost/odata',
+            username='admin',
+            password='password',
+            cluster=cluster,
+            ras_infobase_id=infobase_uuid,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        data = {
+            'correlation_id': 'test-corr-success',
+            'database_id': database.id,
+        }
+
+        subscriber.handle_get_cluster_info(data, 'test-corr-success')
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response['success'], 'true')
+        self.assertEqual(response['cluster_id'], str(cluster_uuid))
+        self.assertEqual(response['ras_cluster_uuid'], str(cluster_uuid))
+        self.assertEqual(response['infobase_id'], str(infobase_uuid))
 
     @patch('apps.operations.event_subscriber.redis.Redis')
     def test_process_message_routes_to_get_cluster_info(self, mock_redis_class):
