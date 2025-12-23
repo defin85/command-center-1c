@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import { getApiBaseUrl } from './baseUrl'
+import { buildStreamUrl } from './sse'
 
 export interface DatabaseStreamTicketResponse {
   ticket: string
@@ -19,9 +19,5 @@ export const getDatabaseStreamTicket = async (
 }
 
 export const buildDatabaseStreamUrl = (streamUrl: string): string => {
-  if (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) {
-    return streamUrl
-  }
-  const baseUrl = getApiBaseUrl()
-  return `${baseUrl}${streamUrl}`
+  return buildStreamUrl(streamUrl)
 }

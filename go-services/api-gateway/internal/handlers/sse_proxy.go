@@ -12,18 +12,15 @@ import (
 	"go.uber.org/zap"
 )
 
-// SSEOperationStreamProxy proxies SSE stream for operations to Django Orchestrator
-// GET /api/v2/operations/stream/?operation_id=xxx&token=xxx
+// SSEOperationStreamProxy proxies SSE streams to Django Orchestrator.
+// Supports ticket-based auth for /api/v2/*/stream/ endpoints.
 func SSEOperationStreamProxy(c *gin.Context) {
 	log := logger.GetLogger()
 
 	operationID := c.Query("operation_id")
-	token := c.Query("token")
-
-	if operationID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "operation_id is required"})
-		return
-	}
+	hasTicket := c.Query("ticket") != ""
+	targetPath := c.Request.URL.Path
+	rawQuery := c.Request.URL.RawQuery
 
 	// Build upstream URL
 	target, err := url.Parse(orchestratorURL)
@@ -36,19 +33,12 @@ func SSEOperationStreamProxy(c *gin.Context) {
 		return
 	}
 
-	// Build query string
-	queryParams := url.Values{}
-	queryParams.Set("operation_id", operationID)
-	if token != "" {
-		queryParams.Set("token", token)
-	}
-
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
-			req.URL.Path = "/api/v2/operations/stream/"
-			req.URL.RawQuery = queryParams.Encode()
+			req.URL.Path = targetPath
+			req.URL.RawQuery = rawQuery
 			req.Host = target.Host
 
 			// Forward X-Forwarded-For header
@@ -67,13 +57,22 @@ func SSEOperationStreamProxy(c *gin.Context) {
 			}
 
 			log.Debug("SSE proxy request",
+				zap.String("path", targetPath),
 				zap.String("operation_id", operationID),
+				zap.Bool("has_ticket", hasTicket),
 				zap.String("target", req.URL.String()),
 			)
 		},
 		// CRITICAL: FlushInterval enables streaming for SSE
 		FlushInterval: 100 * time.Millisecond,
 		ModifyResponse: func(resp *http.Response) error {
+			// Prevent duplicate CORS headers from upstream
+			resp.Header.Del("Access-Control-Allow-Origin")
+			resp.Header.Del("Access-Control-Allow-Credentials")
+			resp.Header.Del("Access-Control-Allow-Headers")
+			resp.Header.Del("Access-Control-Allow-Methods")
+			resp.Header.Del("Access-Control-Max-Age")
+
 			// Disable buffering for SSE
 			resp.Header.Set("X-Accel-Buffering", "no")
 			resp.Header.Set("Cache-Control", "no-cache")

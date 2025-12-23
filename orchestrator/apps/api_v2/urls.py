@@ -43,7 +43,7 @@ urlpatterns = [
     path('databases/bulk-health-check/', databases.bulk_health_check, name='bulk-health-check'),
     path('databases/set-status/', databases.set_status, name='set-status'),
     path('databases/stream-ticket/', databases.get_database_stream_ticket, name='database-stream-ticket'),
-    path('databases/stream/', databases.database_stream, name='database-stream'),
+    path('databases/stream/', databases.DatabaseStreamView.as_view(), name='database-stream'),
 
     # ========================================================================
     # Clusters
@@ -67,7 +67,7 @@ urlpatterns = [
     path('operations/execute-ibcmd/', operations.execute_ibcmd_operation, name='execute-ibcmd-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream-ticket/', operations.get_stream_ticket, name='stream-ticket'),
-    path('operations/stream/', operations.operation_stream, name='operation-stream'),
+    path('operations/stream/', operations.OperationStreamView.as_view(), name='operation-stream'),
     path('operations/get-operation-timeline/', timeline.get_operation_timeline, name='get-operation-timeline'),
 
     # ========================================================================

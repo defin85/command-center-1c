@@ -59,6 +59,52 @@ websocket_connections = Gauge(
 )
 
 # =============================================================================
+# SSE Metrics
+# =============================================================================
+
+sse_connections = Gauge(
+    'cc1c_orchestrator_sse_connections_active',
+    'Number of active SSE connections',
+    ['stream']
+)
+
+sse_tickets_total = Counter(
+    'cc1c_orchestrator_sse_tickets_total',
+    'Total SSE tickets issued',
+    ['stream', 'status']
+)
+
+sse_stream_errors_total = Counter(
+    'cc1c_orchestrator_sse_stream_errors_total',
+    'Total SSE stream errors',
+    ['stream', 'stage']
+)
+
+sse_stream_loop_duration = Histogram(
+    'cc1c_orchestrator_sse_stream_loop_duration_seconds',
+    'SSE loop iteration duration',
+    ['stream'],
+    buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10]
+)
+
+# =============================================================================
+# API v2 Metrics
+# =============================================================================
+
+api_v2_duration = Histogram(
+    'cc1c_orchestrator_api_v2_duration_seconds',
+    'API v2 endpoint duration',
+    ['endpoint', 'status'],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10]
+)
+
+api_v2_errors_total = Counter(
+    'cc1c_orchestrator_api_v2_errors_total',
+    'API v2 endpoint errors',
+    ['endpoint', 'error']
+)
+
+# =============================================================================
 # Redis Events Metrics
 # =============================================================================
 
@@ -288,3 +334,38 @@ def record_admin_action(action: str, outcome: str) -> None:
         outcome: 'success' | 'error'
     """
     admin_actions_total.labels(action=action, outcome=outcome).inc()
+
+
+def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:
+    """Record API v2 endpoint duration."""
+    api_v2_duration.labels(endpoint=endpoint, status=status).observe(duration)
+
+
+def record_api_v2_error(endpoint: str, error: str) -> None:
+    """Record API v2 endpoint error."""
+    api_v2_errors_total.labels(endpoint=endpoint, error=error).inc()
+
+
+def record_sse_ticket(stream: str, status: str) -> None:
+    """Record SSE ticket issuance result."""
+    sse_tickets_total.labels(stream=stream, status=status).inc()
+
+
+def sse_connection_open(stream: str) -> None:
+    """Increment active SSE connection gauge."""
+    sse_connections.labels(stream=stream).inc()
+
+
+def sse_connection_close(stream: str) -> None:
+    """Decrement active SSE connection gauge."""
+    sse_connections.labels(stream=stream).dec()
+
+
+def record_sse_stream_error(stream: str, stage: str) -> None:
+    """Record SSE stream error with stage label."""
+    sse_stream_errors_total.labels(stream=stream, stage=stage).inc()
+
+
+def record_sse_loop_duration(stream: str, duration: float) -> None:
+    """Record SSE loop iteration duration."""
+    sse_stream_loop_duration.labels(stream=stream).observe(duration)

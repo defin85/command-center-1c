@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getStreamTicket } from '../api/operations'
+import { buildStreamUrl, openSseStream } from '../api/sse'
 
 export interface WorkflowEvent {
   version: string
@@ -17,6 +19,9 @@ export interface UseOperationStreamResult {
   isConnected: boolean
 }
 
+const RECONNECT_INITIAL_DELAY = 1000
+const RECONNECT_MAX_DELAY = 30000
+
 export const useOperationStream = (
   operationId: string | null
 ): UseOperationStreamResult => {
@@ -26,81 +31,195 @@ export const useOperationStream = (
   const [isConnected, setIsConnected] = useState<boolean>(false)
 
   const MAX_EVENTS = 1000
+  const streamCloseRef = useRef<(() => void) | null>(null)
+  const reconnectDelayRef = useRef(RECONNECT_INITIAL_DELAY)
+  const lastEventIdRef = useRef<string | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cooldownUntilRef = useRef<number>(0)
+  const isActiveRef = useRef(false)
+  const isConnectingRef = useRef(false)
+  const connectRef = useRef<() => void>(() => {})
+
+  const scheduleReconnect = useCallback(() => {
+    if (!isActiveRef.current || reconnectTimeoutRef.current) {
+      return
+    }
+
+    const baseDelay = reconnectDelayRef.current
+    const jitter = Math.floor(Math.random() * 250)
+    const delay = Math.min(baseDelay + jitter, RECONNECT_MAX_DELAY)
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectTimeoutRef.current = null
+      reconnectDelayRef.current = Math.min(
+        reconnectDelayRef.current * 2,
+        RECONNECT_MAX_DELAY
+      )
+      connectRef.current()
+    }, delay)
+  }, [])
+
+  const connect = useCallback(async () => {
+    if (!operationId || !isActiveRef.current) {
+      return
+    }
+    if (isConnectingRef.current) {
+      return
+    }
+    const now = Date.now()
+    if (now < cooldownUntilRef.current) {
+      const remaining = cooldownUntilRef.current - now
+      if (!reconnectTimeoutRef.current) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = null
+          connectRef.current()
+        }, remaining)
+      }
+      return
+    }
+    isConnectingRef.current = true
+
+    try {
+      if (streamCloseRef.current) {
+        streamCloseRef.current()
+        streamCloseRef.current = null
+      }
+
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        setIsConnected(false)
+        setError('Authentication required')
+        scheduleReconnect()
+        return
+      }
+
+      const { stream_url } = await getStreamTicket(operationId)
+      const url = buildStreamUrl(stream_url)
+      const lastEventId = lastEventIdRef.current
+      const closeStream = openSseStream(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+        },
+        connectTimeoutMs: 10000,
+        onOpen: () => {
+          setIsConnected(true)
+          setError(null)
+          reconnectDelayRef.current = RECONNECT_INITIAL_DELAY
+          isConnectingRef.current = false
+        },
+        onMessage: (message) => {
+          try {
+            if (message.id) {
+              lastEventIdRef.current = message.id
+            }
+            const data: WorkflowEvent = JSON.parse(message.data)
+
+            if ('error' in data) {
+              setError((data as any).error)
+              return
+            }
+
+            setEvents((prev) => {
+              const updated = [...prev, data]
+              return updated.length > MAX_EVENTS
+                ? updated.slice(-MAX_EVENTS)
+                : updated
+            })
+            setCurrentState(data.state)
+            setError(null)
+          } catch (err) {
+            console.error('Failed to parse SSE event:', err)
+            setError('Failed to parse event data')
+          }
+        },
+        onError: (err) => {
+          const errorStatus = (err as { status?: number } | undefined)?.status
+          if (errorStatus === 429) {
+            const cooldownMs = 60_000
+            cooldownUntilRef.current = Date.now() + cooldownMs
+            setError(`Stream busy. Retry in ~${Math.ceil(cooldownMs / 1000)}s`)
+            if (streamCloseRef.current) {
+              streamCloseRef.current()
+              streamCloseRef.current = null
+            }
+            isConnectingRef.current = false
+            scheduleReconnect()
+            return
+          }
+          setIsConnected(false)
+          setError('Connection lost. Reconnecting...')
+          if (streamCloseRef.current) {
+            streamCloseRef.current()
+            streamCloseRef.current = null
+          }
+          isConnectingRef.current = false
+          scheduleReconnect()
+        },
+      })
+
+      streamCloseRef.current = closeStream
+    } catch (err) {
+      const status = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response?.status
+      if (status === 429) {
+        const retryAfterHeader = (err as { response?: { headers?: Record<string, string> } })?.response?.headers?.['retry-after']
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN
+        const cooldownMs = Number.isFinite(retryAfterSeconds) ? retryAfterSeconds * 1000 : 60_000
+        cooldownUntilRef.current = Date.now() + cooldownMs
+        setError(`Stream busy. Retry in ~${Math.ceil(cooldownMs / 1000)}s`)
+        isConnectingRef.current = false
+        scheduleReconnect()
+        return
+      }
+      setIsConnected(false)
+      setError('Failed to connect to operation stream')
+      isConnectingRef.current = false
+      scheduleReconnect()
+    }
+  }, [operationId, scheduleReconnect])
 
   useEffect(() => {
+    connectRef.current = () => {
+      void connect()
+    }
+  }, [connect])
+
+  useEffect(() => {
+    isActiveRef.current = true
+
     // Reset state when operationId changes
     setEvents([])
     setCurrentState('PENDING')
     setError(null)
+    reconnectDelayRef.current = RECONNECT_INITIAL_DELAY
+    lastEventIdRef.current = null
+    cooldownUntilRef.current = 0
 
     if (!operationId) {
-      return
-    }
-
-    let eventSource: EventSource | null = null
-
-    const connect = () => {
-      // Get JWT token from localStorage
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        setError('Authentication required')
-        return
-      }
-
-      // EventSource doesn't support custom headers, so we pass token via query parameter
-      // v2 endpoint uses query params for both operation_id and token
-      const url = `/api/v2/operations/stream/?operation_id=${operationId}&token=${token}`
-      eventSource = new EventSource(url)
-
-      eventSource.onopen = () => {
-        setIsConnected(true)
-        setError(null)
-        console.log('SSE connection established')
-      }
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data: WorkflowEvent = JSON.parse(event.data)
-
-          // Check for error
-          if ('error' in data) {
-            setError((data as any).error)
-            eventSource?.close()
-            return
-          }
-
-          setEvents((prev) => {
-            const updated = [...prev, data]
-            return updated.length > MAX_EVENTS
-              ? updated.slice(-MAX_EVENTS)
-              : updated
-          })
-          setCurrentState(data.state)
-          setError(null)
-        } catch (err) {
-          console.error('Failed to parse SSE event:', err)
-          setError('Failed to parse event data')
-        }
-      }
-
-      eventSource.onerror = (err) => {
-        console.error('SSE connection error:', err)
-        setIsConnected(false)
-        setError('Connection lost. Reconnecting...')
-        // Browser will auto-reconnect
+      setIsConnected(false)
+      return () => {
+        isActiveRef.current = false
       }
     }
 
-    connect()
+    void connect()
 
     // Cleanup
     return () => {
-      if (eventSource) {
-        eventSource.close()
-        setIsConnected(false)
+      isActiveRef.current = false
+      if (streamCloseRef.current) {
+        streamCloseRef.current()
+        streamCloseRef.current = null
       }
+      lastEventIdRef.current = null
+      cooldownUntilRef.current = 0
+      isConnectingRef.current = false
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      setIsConnected(false)
     }
-  }, [operationId])
+  }, [connect, operationId])
 
   return {
     events,

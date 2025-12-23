@@ -9,6 +9,7 @@ import (
 // SSE routes that require special streaming proxy (FlushInterval for Server-Sent Events)
 var sseRoutes = map[string]bool{
 	"/operations/stream/": true,
+	"/databases/stream/":  true,
 }
 
 // RegisterOrchestratorRoutes registers routes to proxy to Django Orchestrator.

@@ -199,12 +199,20 @@ apiClient.interceptors.response.use(
     }
 
     const status = error.response?.status
-    const errorData = error.response?.data as { error?: string; message?: string; detail?: string } | undefined
+    const errorData = error.response?.data as {
+      error?: string | { message?: string }
+      message?: string
+      detail?: string
+    } | undefined
 
     // Build user-friendly error message
     let message = 'An error occurred'
     if (errorData?.error) {
-      message = errorData.error
+      if (typeof errorData.error === 'string') {
+        message = errorData.error
+      } else if (typeof errorData.error === 'object' && errorData.error.message) {
+        message = errorData.error.message
+      }
     } else if (errorData?.message) {
       message = errorData.message
     } else if (errorData?.detail) {

@@ -7,11 +7,14 @@ Provides action-based endpoints for batch operations management.
 import json
 import logging
 import secrets
+import time
 
 import redis as redis_module
+import redis.asyncio as redis_async
 from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+from asgiref.sync import sync_to_async
 from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -20,12 +23,22 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
 from apps.databases.permissions import CanExecuteOperation
+from apps.operations.prometheus_metrics import (
+    record_api_v2_duration,
+    record_api_v2_error,
+    record_sse_ticket,
+    sse_connection_open,
+    sse_connection_close,
+    record_sse_stream_error,
+    record_sse_loop_duration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +47,10 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 SSE_TICKET_TTL = 30  # seconds
 SSE_TICKET_PREFIX = "sse_ticket:"
+SSE_BLOCK_MS = 1000
+SSE_HEARTBEAT_INTERVAL_SECONDS = 10
+OP_SSE_ACTIVE_PREFIX = "op_sse_active:"
+OP_SSE_ACTIVE_TTL = 120
 
 
 # =============================================================================
@@ -679,33 +696,33 @@ def _get_redis_connection():
     return redis_module.from_url(redis_url, decode_responses=True)
 
 
-def _validate_sse_ticket(ticket: str) -> tuple:
+def _get_async_redis_connection():
+    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    return redis_async.from_url(redis_url, decode_responses=True)
+
+
+async def _validate_sse_ticket_async(ticket: str) -> tuple:
     """
-    Validate and consume SSE ticket.
+    Validate and consume SSE ticket (async).
 
     Returns:
         (ticket_data, error_message) - ticket_data is None if validation failed
     """
-    redis_conn = _get_redis_connection()
-
+    redis_conn = _get_async_redis_connection()
     try:
         ticket_key = f"{SSE_TICKET_PREFIX}{ticket}"
-
-        # Atomic get-and-delete to prevent reuse
         pipe = redis_conn.pipeline()
         pipe.get(ticket_key)
         pipe.delete(ticket_key)
-        results = pipe.execute()
+        results = await pipe.execute()
 
         ticket_data_raw = results[0]
-
         if not ticket_data_raw:
             return None, "Invalid or expired ticket"
 
         return json.loads(ticket_data_raw), None
-
     finally:
-        redis_conn.close()
+        await redis_conn.close()
 
 
 @extend_schema(
@@ -743,6 +760,8 @@ def get_stream_ticket(request):
             "stream_url": "/api/v2/operations/stream/?ticket=..."
         }
     """
+    start_time = time.monotonic()
+    endpoint = "operations.stream_ticket"
     serializer = SSETicketRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -751,6 +770,8 @@ def get_stream_ticket(request):
     # Verify operation exists and user has permission
     operation = BatchOperation.objects.filter(id=operation_id).first()
     if not operation:
+        record_api_v2_duration(endpoint, "not_found", time.monotonic() - start_time)
+        record_sse_ticket("operations", "not_found")
         return Response({
             'success': False,
             'error': {
@@ -761,6 +782,8 @@ def get_stream_ticket(request):
 
     # Authorization check: user must own the operation or be superuser
     if operation.created_by != request.user.username and not request.user.is_superuser:
+        record_api_v2_duration(endpoint, "forbidden", time.monotonic() - start_time)
+        record_sse_ticket("operations", "forbidden")
         return Response({
             'success': False,
             'error': {
@@ -769,13 +792,28 @@ def get_stream_ticket(request):
             }
         }, status=403)
 
-    # Generate secure random ticket
-    ticket = secrets.token_urlsafe(32)
-
-    # Store ticket in Redis with metadata
     redis_conn = _get_redis_connection()
+    active_key = f"{OP_SSE_ACTIVE_PREFIX}{request.user.id}:{operation_id}"
 
     try:
+        ttl = redis_conn.ttl(active_key)
+        if ttl and ttl > 0:
+            record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+            record_sse_ticket("operations", "conflict")
+            response = Response({
+                'success': False,
+                'error': {
+                    'code': 'STREAM_ALREADY_ACTIVE',
+                    'message': 'Operation stream already active for this user',
+                    'retry_after': ttl,
+                }
+            }, status=429)
+            response['Retry-After'] = str(ttl)
+            return response
+
+        # Generate secure random ticket
+        ticket = secrets.token_urlsafe(32)
+
         ticket_data = {
             'user_id': request.user.id,
             'username': request.user.username,
@@ -788,6 +826,13 @@ def get_stream_ticket(request):
             SSE_TICKET_TTL,
             json.dumps(ticket_data)
         )
+        record_api_v2_duration(endpoint, "ok", time.monotonic() - start_time)
+        record_sse_ticket("operations", "ok")
+    except Exception as exc:
+        record_api_v2_duration(endpoint, "error", time.monotonic() - start_time)
+        record_api_v2_error(endpoint, exc.__class__.__name__)
+        record_sse_ticket("operations", "error")
+        raise
     finally:
         redis_conn.close()
 
@@ -798,203 +843,273 @@ def get_stream_ticket(request):
     })
 
 
-@extend_schema(
-    tags=['v2'],
-    summary='Stream operation events (SSE)',
-    description='''
-    Real-time Server-Sent Events (SSE) stream for operation progress updates.
+class OperationStreamView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
-    **Authentication:** Use ticket from /stream-ticket/ endpoint (preferred) or
-    legacy token via query parameter.
+    @extend_schema(
+        tags=['v2'],
+        summary='Stream operation events (SSE)',
+        description='''
+        Real-time Server-Sent Events (SSE) stream for operation progress updates.
 
-    **Event format:**
-    ```
-    data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
-    ```
+        **Authentication:** Use ticket from /stream-ticket/ endpoint (preferred) or
+        legacy token via query parameter.
 
-    **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING -> VERIFYING -> SUCCESS/FAILED
-    ''',
-    parameters=[
-        OpenApiParameter(
-            name='ticket',
-            type=str,
-            required=False,
-            description='Short-lived SSE ticket from /stream-ticket/ (preferred)'
-        ),
-        OpenApiParameter(
-            name='token',
-            type=str,
-            required=False,
-            description='JWT access token (deprecated, use ticket instead)'
-        ),
-        OpenApiParameter(
-            name='operation_id',
-            type=str,
-            required=False,
-            description='Operation ID (only needed with token auth, not with ticket)'
-        ),
-    ],
-    responses={
-        200: OpenApiResponse(description='SSE stream (text/event-stream)'),
-        400: ErrorResponseSerializer,
-        401: ErrorResponseSerializer,
-        404: ErrorResponseSerializer,
-    }
-)
-@api_view(['GET'])
-@permission_classes([AllowAny])  # Auth via ticket or token query param
-def operation_stream(request):
-    """
-    GET /api/v2/operations/stream/?ticket=xxx
-    GET /api/v2/operations/stream/?operation_id=xxx&token=xxx (deprecated)
+        **Event format:**
+        ```
+        data: {"state": "PROCESSING", "microservice": "worker", "message": "...", "timestamp": "..."}
+        ```
 
-    SSE endpoint for real-time operation updates.
+        **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING -> VERIFYING -> SUCCESS/FAILED
+        ''',
+        parameters=[
+            OpenApiParameter(
+                name='ticket',
+                type=str,
+                required=False,
+                description='Short-lived SSE ticket from /stream-ticket/ (preferred)'
+            ),
+            OpenApiParameter(
+                name='token',
+                type=str,
+                required=False,
+                description='JWT access token (deprecated, use ticket instead)'
+            ),
+            OpenApiParameter(
+                name='operation_id',
+                type=str,
+                required=False,
+                description='Operation ID (only needed with token auth, not with ticket)'
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(description='SSE stream (text/event-stream)'),
+            400: ErrorResponseSerializer,
+            401: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        }
+    )
+    async def get(self, request):
+        """
+        GET /api/v2/operations/stream/?ticket=xxx
+        GET /api/v2/operations/stream/?operation_id=xxx&token=xxx (deprecated)
 
-    Prefer ticket-based auth via /stream-ticket/ endpoint for security.
-    """
-    ticket = request.query_params.get('ticket')
-    token = request.query_params.get('token')
-    operation_id = request.query_params.get('operation_id')
+        SSE endpoint for real-time operation updates.
 
-    # Validate: need either ticket or (token + operation_id)
-    if not ticket and not token:
-        return JsonResponse({
-            'success': False,
-            'error': {
-                'code': 'MISSING_PARAMETER',
-                'message': 'ticket is required (use /stream-ticket/ to obtain)'
-            }
-        }, status=401)
+        Prefer ticket-based auth via /stream-ticket/ endpoint for security.
+        """
+        start_time = time.monotonic()
+        endpoint = "operations.stream"
+        ticket = request.query_params.get('ticket')
+        token = request.query_params.get('token')
+        operation_id = request.query_params.get('operation_id')
 
-    # Prefer ticket-based auth (secure)
-    if ticket:
-        ticket_data, error = _validate_sse_ticket(ticket)
-        if error:
-            return JsonResponse({
-                'success': False,
-                'error': {
-                    'code': 'INVALID_TICKET',
-                    'message': error
-                }
-            }, status=401)
-
-        operation_id = ticket_data['operation_id']
-        username = ticket_data['username']
-
-    else:
-        # Legacy token auth (deprecated - log warning)
-        logger.warning(
-            "SSE stream using deprecated token auth. "
-            "Please migrate to ticket-based auth via /stream-ticket/"
-        )
-
-        if not operation_id:
+        # Validate: need either ticket or (token + operation_id)
+        if not ticket and not token:
+            record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
             return JsonResponse({
                 'success': False,
                 'error': {
                     'code': 'MISSING_PARAMETER',
-                    'message': 'operation_id is required with token auth'
-                }
-            }, status=400)
-
-        # Manual JWT authentication
-        try:
-            jwt_auth = JWTAuthentication()
-            validated_token = jwt_auth.get_validated_token(token)
-            user = jwt_auth.get_user(validated_token)
-            if not user:
-                raise AuthenticationFailed('User not found')
-            username = user.username
-        except Exception as e:
-            logger.error(f"SSE authentication failed: {e}")
-            return JsonResponse({
-                'success': False,
-                'error': {
-                    'code': 'INVALID_TOKEN',
-                    'message': 'Invalid or expired token'
+                    'message': 'ticket is required (use /stream-ticket/ to obtain)'
                 }
             }, status=401)
 
-    logger.info(f"SSE stream started for operation {operation_id} by user {username}")
+        # Prefer ticket-based auth (secure)
+        if ticket:
+            ticket_data, error = await _validate_sse_ticket_async(ticket)
+            if error:
+                record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_TICKET',
+                        'message': error
+                    }
+                }, status=401)
 
-    def event_generator():
-        """Generator for SSE events using Redis Streams (XREAD)."""
-        logger.info(f"event_generator: Starting for operation {operation_id}")
+            operation_id = ticket_data['operation_id']
+            username = ticket_data['username']
 
-        # Connect to Redis
-        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-        redis_conn = redis_module.from_url(redis_url, decode_responses=True)
-        stream_name = f"events:operation:{operation_id}"
-        logger.info(f"event_generator: Will read from stream {stream_name}")
+        else:
+            # Legacy token auth (deprecated - log warning)
+            logger.warning(
+                "SSE stream using deprecated token auth. "
+                "Please migrate to ticket-based auth via /stream-ticket/"
+            )
 
-        # Send initial state
-        try:
-            operation = BatchOperation.objects.get(id=operation_id)
-            logger.info(f"event_generator: Found operation with status {operation.status}")
-            initial_event = {
-                "version": "1.0",
-                "operation_id": str(operation_id),
-                "timestamp": timezone.now().isoformat(),
-                "state": operation.status.upper(),
-                "microservice": "orchestrator",
-                "message": f"Operation status: {operation.status}",
-                "metadata": {
-                    "operation_type": operation.operation_type,
-                    "created_at": operation.created_at.isoformat()
-                }
-            }
-            logger.info("event_generator: Sending initial event")
-            yield f"data: {json.dumps(initial_event)}\n\n"
-            logger.info("event_generator: Initial event sent")
-        except BatchOperation.DoesNotExist:
-            error_event = {
-                "error": "Operation not found",
-                "operation_id": str(operation_id)
-            }
-            yield f"data: {json.dumps(error_event)}\n\n"
-            redis_conn.close()
-            return
+            if not operation_id:
+                record_api_v2_duration(endpoint, "bad_request", time.monotonic() - start_time)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'MISSING_PARAMETER',
+                        'message': 'operation_id is required with token auth'
+                    }
+                }, status=400)
 
-        # Read events from Redis Stream using XREAD
-        # Start with '0-0' to read from beginning for complete operation history
-        # (MAXLEN=1000 ensures all events of typical operation are preserved)
-        last_id = '0-0'
+            # Manual JWT authentication
+            async def _authenticate_legacy_token(raw_token: str):
+                def _sync_auth():
+                    jwt_auth = JWTAuthentication()
+                    validated_token = jwt_auth.get_validated_token(raw_token)
+                    user = jwt_auth.get_user(validated_token)
+                    if not user:
+                        raise AuthenticationFailed('User not found')
+                    return user
 
-        try:
-            while True:
-                # XREAD with 5 second block timeout
-                # Returns: [(stream_name, [(msg_id, {fields}), ...])] or None on timeout
-                messages = redis_conn.xread({stream_name: last_id}, block=5000, count=10)
+                return await sync_to_async(_sync_auth, thread_sensitive=True)()
 
-                if not messages:
-                    # Timeout - send heartbeat comment to keep connection alive
-                    yield ": heartbeat\n\n"
-                    continue
-
-                for stream, stream_messages in messages:
-                    for msg_id, fields in stream_messages:
-                        # Extract event data from stream message
-                        # Format: {"event_type": "...", "data": "json_string", "operation_id": "..."}
-                        event_data = fields.get('data', '{}')
-                        yield f"data: {event_data}\n\n"
-                        last_id = msg_id
-
-        except GeneratorExit:
-            # Client disconnected
-            logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
-        except Exception as e:
-            logger.error(f"SSE stream error: {e}")
-            raise
-        finally:
             try:
-                redis_conn.close()
-            except Exception:
-                pass  # Игнорируем ошибки при закрытии
+                user = await _authenticate_legacy_token(token)
+                username = user.username
+            except Exception as e:
+                logger.error(f"SSE authentication failed: {e}")
+                record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+                record_api_v2_error(endpoint, e.__class__.__name__)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_TOKEN',
+                        'message': 'Invalid or expired token'
+                    }
+                }, status=401)
 
-    response = StreamingHttpResponse(
-        event_generator(),
-        content_type='text/event-stream'
-    )
-    response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
-    return response
+        logger.info(f"SSE stream started for operation {operation_id} by user {username}")
+
+        active_key = None
+        active_value = None
+        if ticket:
+            user_id = ticket_data.get("user_id")
+            if user_id:
+                active_key = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:{operation_id}"
+                active_value = secrets.token_urlsafe(12)
+                active_conn = _get_async_redis_connection()
+                try:
+                    if not await active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
+                        record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+                        return JsonResponse({
+                            'success': False,
+                            'error': {
+                                'code': 'STREAM_ALREADY_ACTIVE',
+                                'message': 'Operation stream already active for this user'
+                            }
+                        }, status=429)
+                finally:
+                    await active_conn.close()
+
+        async def event_generator():
+            """Generator for SSE events using Redis Streams (XREAD)."""
+            logger.info(f"event_generator: Starting for operation {operation_id}")
+            sse_connection_open("operations")
+
+            # Connect to Redis
+            redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+            redis_conn = redis_async.from_url(redis_url, decode_responses=True)
+            stream_name = f"events:operation:{operation_id}"
+            logger.info(f"event_generator: Will read from stream {stream_name}")
+
+            # Send initial state
+            try:
+                operation = await sync_to_async(BatchOperation.objects.get, thread_sensitive=True)(id=operation_id)
+                logger.info(f"event_generator: Found operation with status {operation.status}")
+                initial_event = {
+                    "version": "1.0",
+                    "operation_id": str(operation_id),
+                    "timestamp": timezone.now().isoformat(),
+                    "state": operation.status.upper(),
+                    "microservice": "orchestrator",
+                    "message": f"Operation status: {operation.status}",
+                    "metadata": {
+                        "operation_type": operation.operation_type,
+                        "created_at": operation.created_at.isoformat()
+                    }
+                }
+                logger.info("event_generator: Sending initial event")
+                yield f"data: {json.dumps(initial_event)}\n\n"
+                logger.info("event_generator: Initial event sent")
+            except BatchOperation.DoesNotExist:
+                error_event = {
+                    "error": "Operation not found",
+                    "operation_id": str(operation_id)
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+                await redis_conn.close()
+                record_sse_stream_error("operations", "missing_operation")
+                return
+
+            # Read events from Redis Stream using XREAD
+            # Start with '0-0' to read from beginning for complete operation history
+            # (MAXLEN=1000 ensures all events of typical operation are preserved)
+            last_event_id = request.headers.get("Last-Event-ID")
+            last_id = last_event_id or '0-0'
+            last_heartbeat = time.monotonic()
+
+            try:
+                while True:
+                    loop_start = time.monotonic()
+                    # XREAD with short block timeout
+                    # Returns: [(stream_name, [(msg_id, {fields}), ...])] or None on timeout
+                    messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
+
+                    if not messages:
+                        # Timeout - send heartbeat comment to keep connection alive
+                        now = time.monotonic()
+                        if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                            if active_key:
+                                try:
+                                    await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                except Exception:
+                                    pass
+                            yield ": heartbeat\n\n"
+                            last_heartbeat = now
+                        record_sse_loop_duration("operations", time.monotonic() - loop_start)
+                        continue
+
+                    for stream, stream_messages in messages:
+                        for msg_id, fields in stream_messages:
+                            # Extract event data from stream message
+                            # Format: {"event_type": "...", "data": "json_string", "operation_id": "..."}
+                            event_data = fields.get('data', '{}')
+                            event_type = fields.get('event_type') or 'message'
+                            if active_key:
+                                try:
+                                    await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                except Exception:
+                                    pass
+                            yield f"event: {event_type}\n"
+                            yield f"id: {msg_id}\n"
+                            yield f"data: {event_data}\n\n"
+                            last_id = msg_id
+                    loop_duration = time.monotonic() - loop_start
+                    record_sse_loop_duration("operations", loop_duration)
+                    if loop_duration > 5:
+                        logger.warning("operation_stream: slow loop %.2fs (operation_id=%s)", loop_duration, operation_id)
+
+            except GeneratorExit:
+                # Client disconnected
+                logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
+            except Exception as e:
+                logger.error(f"SSE stream error: {e}")
+                record_sse_stream_error("operations", "event_loop")
+                raise
+            finally:
+                try:
+                    if active_key and active_value:
+                        current_value = await redis_conn.get(active_key)
+                        if current_value == active_value:
+                            await redis_conn.delete(active_key)
+                    await redis_conn.close()
+                except Exception:
+                    pass  # Игнорируем ошибки при закрытии
+                sse_connection_close("operations")
+
+        record_api_v2_duration(endpoint, "stream_start", time.monotonic() - start_time)
+        response = StreamingHttpResponse(
+            event_generator(),
+            content_type='text/event-stream'
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+        return response

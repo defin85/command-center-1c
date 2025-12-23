@@ -68,6 +68,12 @@ SERVICE_CONFIG = {
         'display_name': 'API Gateway',
         'job_patterns': ['api_gateway', 'api-gateway', 'apigateway'],
         'namespace': 'cc1c',
+        'thresholds': {
+            'critical_error_rate': 0.20,
+            'degraded_error_rate': 0.02,
+            'critical_p95_ms': 30000,
+            'degraded_p95_ms': 5000,
+        },
     },
     'worker': {
         'display_name': 'Worker',
@@ -472,15 +478,15 @@ class PrometheusClient:
             List of ServiceMetrics for all services
         """
         services = list(SERVICE_CONFIG.keys())
-        metrics = []
+        results = await asyncio.gather(
+            *[self.get_service_metrics(service) for service in services],
+            return_exceptions=True,
+        )
 
-        for service in services:
-            try:
-                service_metrics = await self.get_service_metrics(service)
-                metrics.append(service_metrics)
-            except Exception as e:
-                logger.error(f"Error fetching metrics for {service}: {e}")
-                # Return degraded metrics on error
+        metrics = []
+        for service, result in zip(services, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error fetching metrics for {service}: {result}")
                 config = SERVICE_CONFIG.get(service, {})
                 metrics.append(ServiceMetrics(
                     name=service,
@@ -492,6 +498,9 @@ class PrometheusClient:
                     error_rate=0.0,
                     last_updated=datetime.utcnow(),
                 ))
+                continue
+
+            metrics.append(result)
 
         return metrics
 

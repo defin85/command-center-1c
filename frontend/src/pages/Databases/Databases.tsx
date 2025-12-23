@@ -20,7 +20,7 @@ import { queryKeys } from '../../api/queries'
 import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabaseStreamInvalidation } from '../../hooks/useDatabaseStreamInvalidation'
-import { getHealthTag, getStatusTag, getSummaryTag } from '../../utils/databaseStatus'
+import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 
 // Get generated API functions (for fetchStatus in InstallationProgressModal)
 const api = getV2()
@@ -44,6 +44,7 @@ export const Databases = () => {
   // Row selection state
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [selectedDatabases, setSelectedDatabases] = useState<Database[]>([])
+  const [healthCheckPendingIds, setHealthCheckPendingIds] = useState<Set<string>>(new Set())
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -196,6 +197,18 @@ export const Databases = () => {
     message.success(res.message)
   }, [setDatabaseStatus, message])
 
+  const markHealthCheckPending = useCallback((databaseId: string, pending: boolean) => {
+    setHealthCheckPendingIds((prev) => {
+      const next = new Set(prev)
+      if (pending) {
+        next.add(databaseId)
+      } else {
+        next.delete(databaseId)
+      }
+      return next
+    })
+  }, [])
+
   // Handler for single database action (context menu)
   const handleSingleAction = useCallback((action: DatabaseActionKey, database: Database) => {
     if (action === 'more') {
@@ -277,25 +290,7 @@ export const Databases = () => {
       key: 'name',
       sorter: (a: Database, b: Database) => a.name.localeCompare(b.name),
       render: (name: string, record: Database) => {
-        const statusTag = getStatusTag(record.status)
-        const healthTag = getHealthTag(record.last_check_status)
-        const summaryTag = getSummaryTag(record.status, record.last_check_status)
-
-        return (
-          <Space size={8} wrap>
-            <span>{name}</span>
-            <Tooltip
-              title={
-                <div>
-                  <div>Status: {statusTag.label}</div>
-                  <div>Health: {healthTag.label}</div>
-                </div>
-              }
-            >
-              <Tag color={summaryTag.color}>{summaryTag.label}</Tag>
-            </Tooltip>
-          </Space>
-        )
+        return <span>{name}</span>
       },
     },
     {
@@ -427,17 +422,25 @@ export const Databases = () => {
             size="small"
             icon={<HeartOutlined />}
             onClick={async () => {
+              if (healthCheckPendingIds.has(record.id)) {
+                return
+              }
+              markHealthCheckPending(record.id, true)
               try {
                 const res = await healthCheck.mutateAsync(record.id)
                 message.success(`${record.name}: health check queued`)
                 if (res.operation_id) {
-                  navigate(`/operations?operation=${res.operation_id}`)
+                  message.info(`Operation ${res.operation_id} queued`)
                 }
               } catch (e: unknown) {
-                message.error(`Health check failed: ${getErrorMessage(e)}`)
+                const status = getErrorStatus(e)
+                const statusLabel = status ? ` (status ${status})` : ''
+                message.error(`Health check failed: ${getErrorMessage(e)}${statusLabel}`)
+              } finally {
+                markHealthCheckPending(record.id, false)
               }
             }}
-            loading={healthCheck.isPending}
+            loading={healthCheckPendingIds.has(record.id)}
           >
             Check
           </Button>

@@ -3,6 +3,7 @@
  */
 
 import { apiClient } from './client';
+import { buildStreamUrl, openSseStream } from './sse';
 
 export type RASOperationType =
   | 'lock_scheduled_jobs'
@@ -86,33 +87,37 @@ export const getStreamTicket = async (
 export const subscribeToOperation = async (
   operationId: string,
   onEvent: (event: OperationEvent) => void,
-  onError?: (error: Event) => void
+  onError?: (error: unknown) => void
 ): Promise<() => void> => {
   // Get short-lived ticket first
   const { stream_url } = await getStreamTicket(operationId);
 
-  // Connect to SSE using ticket
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const eventSource = new EventSource(`${baseUrl}${stream_url}`);
+  const token = localStorage.getItem('auth_token');
+  if (!token) {
+    throw new Error('Authentication required');
+  }
 
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data) as OperationEvent;
-      onEvent(data);
-    } catch (e) {
-      console.error('Failed to parse SSE event:', e);
-    }
-  };
+  const url = buildStreamUrl(stream_url);
+  const closeStream = openSseStream(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    onMessage: (message) => {
+      try {
+        const data = JSON.parse(message.data) as OperationEvent;
+        onEvent(data);
+      } catch (e) {
+        console.error('Failed to parse SSE event:', e);
+      }
+    },
+    onError: (error) => {
+      if (onError) {
+        onError(error);
+      }
+    },
+  });
 
-  eventSource.onerror = (error) => {
-    if (onError) {
-      onError(error);
-    }
-    eventSource.close();
-  };
-
-  // Return cleanup function
-  return () => eventSource.close();
+  return closeStream;
 };
 
 export const operationsApi = {

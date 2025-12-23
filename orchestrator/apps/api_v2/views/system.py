@@ -5,8 +5,11 @@ Provides comprehensive system health monitoring with parallel service checks
 and system configuration for frontend defaults.
 """
 
+import asyncio
 import logging
+import time
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 from asgiref.sync import async_to_sync
 from rest_framework import serializers
@@ -20,8 +23,15 @@ from apps.operations.services.prometheus_client import (
     get_prometheus_client,
     SERVICE_CONFIG,
 )
+from apps.operations.prometheus_metrics import (
+    record_api_v2_duration,
+    record_api_v2_error,
+)
 
 logger = logging.getLogger(__name__)
+SYSTEM_HEALTH_CACHE_KEY = "system:health:prometheus"
+SYSTEM_HEALTH_CACHE_TTL = getattr(settings, "SYSTEM_HEALTH_CACHE_TTL", 10)
+SYSTEM_HEALTH_PROM_TIMEOUT = getattr(settings, "SYSTEM_HEALTH_PROM_TIMEOUT", 5)
 
 
 # =============================================================================
@@ -141,6 +151,8 @@ class SystemHealthView(APIView):
                 }
             }
         """
+        start_time = time.monotonic()
+        endpoint = "system.health"
         status_map = {
             "healthy": "online",
             "degraded": "degraded",
@@ -169,12 +181,30 @@ class SystemHealthView(APIView):
             "ras-server": "external",
         }
 
+        cached_payload = cache.get(SYSTEM_HEALTH_CACHE_KEY)
+        if cached_payload:
+            record_api_v2_duration(endpoint, "cached", time.monotonic() - start_time)
+            return Response(cached_payload)
+
         try:
             client = get_prometheus_client()
-            services_metrics = async_to_sync(client.get_all_services_metrics)()
+
+            async def _fetch_metrics():
+                return await asyncio.wait_for(
+                    client.get_all_services_metrics(),
+                    timeout=SYSTEM_HEALTH_PROM_TIMEOUT,
+                )
+
+            services_metrics = async_to_sync(_fetch_metrics)()
             overall_health = async_to_sync(client.get_overall_health)(services_metrics)
+        except asyncio.TimeoutError:
+            logger.warning("Prometheus health fetch timed out")
+            record_api_v2_error(endpoint, "prometheus_timeout")
+            services_metrics = []
+            overall_health = "critical"
         except Exception as e:
             logger.error(f"Prometheus health fetch failed: {e}")
+            record_api_v2_error(endpoint, e.__class__.__name__)
             services_metrics = []
             overall_health = "critical"
 
@@ -211,12 +241,19 @@ class SystemHealthView(APIView):
         # Determine overall status (frontend uses: healthy, degraded, critical)
         overall = overall_health
 
-        return Response({
+        payload = {
             'timestamp': timezone.now().isoformat(),
             'overall_status': overall,
             'services': results,
             'statistics': statistics,
-        })
+        }
+        if services_metrics:
+            cache.set(SYSTEM_HEALTH_CACHE_KEY, payload, SYSTEM_HEALTH_CACHE_TTL)
+        duration = time.monotonic() - start_time
+        record_api_v2_duration(endpoint, "ok", duration)
+        if duration > 2:
+            logger.warning("system.health slow response %.2fs", duration)
+        return Response(payload)
 
 
 # =============================================================================
