@@ -19,7 +19,6 @@ from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.databases.models import Cluster, Database
@@ -651,163 +650,136 @@ def get_database_stream_ticket(request):
     })
 
 
-class DatabaseStreamView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+async def database_stream(request):
+    start_time = time.monotonic()
+    endpoint = "databases.stream"
+    ticket = request.GET.get('ticket')
 
-    @extend_schema(
-        tags=['v2'],
-        summary='Stream database updates (SSE)',
-        description='''
-        Real-time Server-Sent Events (SSE) stream for database updates.
+    if not ticket:
+        record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ticket is required (use /databases/stream-ticket/ to obtain)'
+            }
+        }, status=401)
 
-        **Authentication:** Use ticket from /databases/stream-ticket/ endpoint.
-        ''',
-        parameters=[
-            OpenApiParameter(
-                name='ticket',
-                type=str,
-                required=True,
-                description='Short-lived SSE ticket from /databases/stream-ticket/'
-            ),
-        ],
-        responses={
-            200: OpenApiResponse(description='SSE stream (text/event-stream)'),
-            400: ErrorResponseSerializer,
-            401: ErrorResponseSerializer,
-            404: ErrorResponseSerializer,
-        }
-    )
-    async def get(self, request):
-        start_time = time.monotonic()
-        endpoint = "databases.stream"
-        ticket = request.query_params.get('ticket')
+    ticket_data, error = await _validate_db_stream_ticket(ticket)
+    if error:
+        record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'INVALID_TICKET',
+                'message': error
+            }
+        }, status=401)
 
-        if not ticket:
-            record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+    cluster_id = ticket_data.get('cluster_id')
+    username = ticket_data.get('username')
+    user_id = ticket_data.get('user_id')
+    logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
+
+    active_key = f"{DB_SSE_ACTIVE_PREFIX}{user_id}"
+    active_value = secrets.token_urlsafe(12)
+    active_conn = _get_async_redis_connection()
+    try:
+        if not await active_conn.set(active_key, active_value, nx=True, ex=DB_SSE_ACTIVE_TTL):
+            record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
             return JsonResponse({
                 'success': False,
                 'error': {
-                    'code': 'MISSING_PARAMETER',
-                    'message': 'ticket is required (use /databases/stream-ticket/ to obtain)'
+                    'code': 'STREAM_ALREADY_ACTIVE',
+                    'message': 'Database stream already active for this user'
                 }
-            }, status=401)
+            }, status=429)
+    finally:
+        await active_conn.close()
 
-        ticket_data, error = await _validate_db_stream_ticket(ticket)
-        if error:
-            record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
-            return JsonResponse({
-                'success': False,
-                'error': {
-                    'code': 'INVALID_TICKET',
-                    'message': error
-                }
-            }, status=401)
+    async def event_generator():
+        logger.info("database_stream: starting event generator")
+        sse_connection_open("databases")
+        redis_conn = _get_async_redis_connection()
+        stream_name = DB_STREAM_NAME
+        last_event_id = request.headers.get("Last-Event-ID")
+        last_id = last_event_id or '$'
+        last_heartbeat = time.monotonic()
 
-        cluster_id = ticket_data.get('cluster_id')
-        username = ticket_data.get('username')
-        user_id = ticket_data.get('user_id')
-        logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
-
-        active_key = f"{DB_SSE_ACTIVE_PREFIX}{user_id}"
-        active_value = secrets.token_urlsafe(12)
-        active_conn = _get_async_redis_connection()
         try:
-            if not await active_conn.set(active_key, active_value, nx=True, ex=DB_SSE_ACTIVE_TTL):
-                record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
-                return JsonResponse({
-                    'success': False,
-                    'error': {
-                        'code': 'STREAM_ALREADY_ACTIVE',
-                        'message': 'Database stream already active for this user'
-                    }
-                }, status=429)
+            ready_event = {
+                "version": "1.0",
+                "type": "database_stream_connected",
+                "timestamp": timezone.now().isoformat(),
+                "cluster_id": cluster_id,
+            }
+            yield "event: database_stream_connected\n"
+            yield f"data: {json.dumps(ready_event)}\n\n"
+
+            while True:
+                loop_start = time.monotonic()
+                messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
+
+                if not messages:
+                    now = time.monotonic()
+                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        try:
+                            await redis_conn.expire(active_key, DB_SSE_ACTIVE_TTL)
+                        except Exception:
+                            pass
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = now
+                    record_sse_loop_duration("databases", time.monotonic() - loop_start)
+                    continue
+
+                for _, stream_messages in messages:
+                    for msg_id, fields in stream_messages:
+                        if cluster_id:
+                            event_cluster_id = fields.get('cluster_id') or ''
+                            if event_cluster_id != cluster_id:
+                                last_id = msg_id
+                                continue
+
+                        event_data = fields.get('data', '{}')
+                        event_type = fields.get('event_type') or 'database_update'
+                        try:
+                            await redis_conn.expire(active_key, DB_SSE_ACTIVE_TTL)
+                        except Exception:
+                            pass
+                        yield f"event: {event_type}\n"
+                        yield f"id: {msg_id}\n"
+                        yield f"data: {event_data}\n\n"
+                        last_id = msg_id
+                loop_duration = time.monotonic() - loop_start
+                record_sse_loop_duration("databases", loop_duration)
+                if loop_duration > 5:
+                    logger.warning(
+                        "database_stream: slow loop %.2fs (cluster=%s)",
+                        loop_duration,
+                        cluster_id or "all",
+                    )
+
+        except GeneratorExit:
+            logger.info("Client disconnected from database SSE stream")
+        except Exception as exc:
+            logger.error("Database SSE stream error: %s", exc)
+            record_sse_stream_error("databases", "event_loop")
+            raise
         finally:
-            await active_conn.close()
-
-        async def event_generator():
-            logger.info("database_stream: starting event generator")
-            sse_connection_open("databases")
-            redis_conn = _get_async_redis_connection()
-            stream_name = DB_STREAM_NAME
-            last_event_id = request.headers.get("Last-Event-ID")
-            last_id = last_event_id or '$'
-            last_heartbeat = time.monotonic()
-
             try:
-                ready_event = {
-                    "version": "1.0",
-                    "type": "database_stream_connected",
-                    "timestamp": timezone.now().isoformat(),
-                    "cluster_id": cluster_id,
-                }
-                yield "event: database_stream_connected\n"
-                yield f"data: {json.dumps(ready_event)}\n\n"
+                current_value = await redis_conn.get(active_key)
+                if current_value == active_value:
+                    await redis_conn.delete(active_key)
+                await redis_conn.close()
+            except Exception:
+                pass
+            sse_connection_close("databases")
 
-                while True:
-                    loop_start = time.monotonic()
-                    messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
-
-                    if not messages:
-                        now = time.monotonic()
-                        if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
-                            try:
-                                await redis_conn.expire(active_key, DB_SSE_ACTIVE_TTL)
-                            except Exception:
-                                pass
-                            yield ": heartbeat\n\n"
-                            last_heartbeat = now
-                        record_sse_loop_duration("databases", time.monotonic() - loop_start)
-                        continue
-
-                    for _, stream_messages in messages:
-                        for msg_id, fields in stream_messages:
-                            if cluster_id:
-                                event_cluster_id = fields.get('cluster_id') or ''
-                                if event_cluster_id != cluster_id:
-                                    last_id = msg_id
-                                    continue
-
-                            event_data = fields.get('data', '{}')
-                            event_type = fields.get('event_type') or 'database_update'
-                            try:
-                                await redis_conn.expire(active_key, DB_SSE_ACTIVE_TTL)
-                            except Exception:
-                                pass
-                            yield f"event: {event_type}\n"
-                            yield f"id: {msg_id}\n"
-                            yield f"data: {event_data}\n\n"
-                            last_id = msg_id
-                    loop_duration = time.monotonic() - loop_start
-                    record_sse_loop_duration("databases", loop_duration)
-                    if loop_duration > 5:
-                        logger.warning(
-                            "database_stream: slow loop %.2fs (cluster=%s)",
-                            loop_duration,
-                            cluster_id or "all",
-                        )
-
-            except GeneratorExit:
-                logger.info("Client disconnected from database SSE stream")
-            except Exception as exc:
-                logger.error("Database SSE stream error: %s", exc)
-                record_sse_stream_error("databases", "event_loop")
-                raise
-            finally:
-                try:
-                    current_value = await redis_conn.get(active_key)
-                    if current_value == active_value:
-                        await redis_conn.delete(active_key)
-                    await redis_conn.close()
-                except Exception:
-                    pass
-                sse_connection_close("databases")
-
-        record_api_v2_duration(endpoint, "stream_start", time.monotonic() - start_time)
-        response = StreamingHttpResponse(
-            event_generator(),
-            content_type='text/event-stream'
-        )
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'
-        return response
+    record_api_v2_duration(endpoint, "stream_start", time.monotonic() - start_time)
+    response = StreamingHttpResponse(
+        event_generator(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
