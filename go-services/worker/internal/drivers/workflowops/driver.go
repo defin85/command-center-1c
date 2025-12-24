@@ -35,6 +35,7 @@ func (d *Driver) OperationTypes() []string { return []string{"execute_workflow"}
 
 func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage) (*models.OperationResultV2, error) {
 	start := time.Now()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	result := &models.OperationResultV2{
 		OperationID: msg.OperationID,
@@ -45,9 +46,9 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage) (*mo
 
 	log := logger.GetLogger()
 
-	d.timeline.Record(ctx, msg.OperationID, "workflow.driver.started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, "workflow.driver.started", appendWorkflowMetadata(map[string]interface{}{
 		"operation_type": msg.OperationType,
-	})
+	}, workflowMetadata))
 
 	if d.handler == nil {
 		log.Errorf("workflow handler not initialized, cannot execute workflow: operation_id=%s", msg.OperationID)
@@ -65,16 +66,16 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage) (*mo
 			Failed:      1,
 			AvgDuration: time.Since(start).Seconds(),
 		}
-		d.timeline.Record(ctx, msg.OperationID, "workflow.driver.failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, "workflow.driver.failed", appendWorkflowMetadata(map[string]interface{}{
 			"operation_type": msg.OperationType,
 			"error":          "workflow handler not configured",
 			"duration_ms":    time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
 	if d.eventPublisher != nil {
-		if err := d.eventPublisher.PublishProcessing(ctx, msg.OperationID, "workflow", d.workerID); err != nil {
+		if err := d.eventPublisher.PublishProcessingWithMetadata(ctx, msg.OperationID, "workflow", d.workerID, workflowMetadata); err != nil {
 			log.Errorf("failed to publish PROCESSING event: %v", err)
 		}
 	}
@@ -92,14 +93,14 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage) (*mo
 			AvgDuration: dbResult.Duration,
 		}
 		if d.eventPublisher != nil {
-			if err := d.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+			if err := d.eventPublisher.PublishSuccessWithMetadata(ctx, msg.OperationID, workflowMetadata); err != nil {
 				log.Errorf("failed to publish SUCCESS event: %v", err)
 			}
 		}
-		d.timeline.Record(ctx, msg.OperationID, "workflow.driver.completed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, "workflow.driver.completed", appendWorkflowMetadata(map[string]interface{}{
 			"operation_type": msg.OperationType,
 			"duration_ms":    time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
@@ -111,16 +112,32 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage) (*mo
 		AvgDuration: dbResult.Duration,
 	}
 	if d.eventPublisher != nil {
-		if err := d.eventPublisher.PublishFailed(ctx, msg.OperationID, dbResult.Error); err != nil {
+		if err := d.eventPublisher.PublishFailedWithMetadata(ctx, msg.OperationID, dbResult.Error, workflowMetadata); err != nil {
 			log.Errorf("failed to publish FAILED event: %v", err)
 		}
 	}
 
-	d.timeline.Record(ctx, msg.OperationID, "workflow.driver.failed", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, "workflow.driver.failed", appendWorkflowMetadata(map[string]interface{}{
 		"operation_type": msg.OperationType,
 		"error":          dbResult.Error,
 		"duration_ms":    time.Since(start).Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	return result, nil
+}
+
+func appendWorkflowMetadata(
+	base map[string]interface{},
+	workflowMetadata map[string]interface{},
+) map[string]interface{} {
+	if len(workflowMetadata) == 0 {
+		return base
+	}
+	if base == nil {
+		base = map[string]interface{}{}
+	}
+	for key, value := range workflowMetadata {
+		base[key] = value
+	}
+	return base
 }

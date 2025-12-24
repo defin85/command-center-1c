@@ -15,6 +15,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	workerodata "github.com/commandcenter1c/commandcenter/worker/internal/odata"
 )
 
@@ -44,10 +45,11 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	start := time.Now()
 	log := logger.GetLogger()
 	eventBase := "health_check"
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
-	})
+	}, workflowMetadata))
 
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
@@ -102,26 +104,26 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			zap.String("error_code", errorCode),
 			zap.Error(err),
 		)
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id":     databaseID,
 			"error":           result.Error,
 			"error_code":      errorCode,
 			"response_time":   responseTimeMs,
 			"duration_ms":     time.Since(start).Milliseconds(),
 			"operation_type":  msg.OperationType,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
 	result.Success = true
 	result.Duration = time.Since(start).Seconds()
 
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
 		"database_id":     databaseID,
 		"response_time":   responseTimeMs,
 		"duration_ms":     time.Since(start).Milliseconds(),
 		"operation_type":  msg.OperationType,
-	})
+	}, workflowMetadata))
 
 	return result, nil
 }

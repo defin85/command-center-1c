@@ -216,13 +216,14 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessage) *models.OperationResultV2 {
 	log := logger.GetLogger()
 	taskStart := time.Now()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	// Record operation start in timeline
-	p.timeline.Record(ctx, msg.OperationID, "operation.started", map[string]interface{}{
+	p.timeline.Record(ctx, msg.OperationID, "operation.started", appendWorkflowMetadata(map[string]interface{}{
 		"operation_type": msg.OperationType,
 		"worker_id":      p.workerID,
 		"databases":      len(msg.TargetDatabases),
-	})
+	}, workflowMetadata))
 
 	result := &models.OperationResultV2{
 		OperationID: msg.OperationID,
@@ -234,10 +235,10 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	// Meta-operations (not per-database) via drivers registry
 	if metaDriver, ok := p.driverRegistry.LookupMeta(msg.OperationType); ok {
 		driverStart := time.Now()
-		p.timeline.Record(ctx, msg.OperationID, "driver.started", map[string]interface{}{
+		p.timeline.Record(ctx, msg.OperationID, "driver.started", appendWorkflowMetadata(map[string]interface{}{
 			"driver":         metaDriver.Name(),
 			"operation_type": msg.OperationType,
-		})
+		}, workflowMetadata))
 		metaResult, err := metaDriver.Execute(ctx, msg)
 		if err != nil {
 			metaResult = &models.OperationResultV2{
@@ -249,18 +250,18 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 				Summary:     models.ResultSummary{Total: 0, Succeeded: 0, Failed: 0, AvgDuration: 0},
 			}
 			// Preserve error in timeline (OperationResultV2 has no top-level error field)
-			p.timeline.Record(ctx, msg.OperationID, "driver.failed", map[string]interface{}{
+			p.timeline.Record(ctx, msg.OperationID, "driver.failed", appendWorkflowMetadata(map[string]interface{}{
 				"driver":         metaDriver.Name(),
 				"operation_type": msg.OperationType,
 				"error":          err.Error(),
-			})
+			}, workflowMetadata))
 		}
-		p.timeline.Record(ctx, msg.OperationID, "driver.finished", map[string]interface{}{
+		p.timeline.Record(ctx, msg.OperationID, "driver.finished", appendWorkflowMetadata(map[string]interface{}{
 			"driver":         metaDriver.Name(),
 			"operation_type": msg.OperationType,
 			"status":         metaResult.Status,
 			"duration_ms":    time.Since(driverStart).Milliseconds(),
-		})
+		}, workflowMetadata))
 		p.recordDriverMetrics(metaDriver.Name(), msg.OperationType, metaResult.Status, time.Since(driverStart).Seconds())
 		p.recordTaskMetrics(msg.OperationType, metaResult.Status, time.Since(taskStart).Seconds())
 		return metaResult
@@ -313,12 +314,12 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	p.recordTaskMetrics(msg.OperationType, result.Status, time.Since(taskStart).Seconds())
 
 	// Record operation completion in timeline
-	p.timeline.Record(ctx, msg.OperationID, "operation.completed", map[string]interface{}{
+	p.timeline.Record(ctx, msg.OperationID, "operation.completed", appendWorkflowMetadata(map[string]interface{}{
 		"status":      result.Status,
 		"succeeded":   succeeded,
 		"failed":      failed,
 		"duration_ms": time.Since(taskStart).Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	return result
 }
@@ -360,19 +361,20 @@ func (p *TaskProcessor) recordDriverMetrics(driverName, operationType, status st
 func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.OperationMessage, databaseID string) models.DatabaseResultV2 {
 	start := time.Now()
 	log := logger.GetLogger()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	// Record database processing start in timeline
-	p.timeline.Record(ctx, msg.OperationID, "database.processing", map[string]interface{}{
+	p.timeline.Record(ctx, msg.OperationID, "database.processing", appendWorkflowMetadata(map[string]interface{}{
 		"database_id":    databaseID,
 		"operation_type": msg.OperationType,
-	})
+	}, workflowMetadata))
 
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
 	}
 
 	// Publish PROCESSING event
-	if err := p.eventPublisher.PublishProcessing(ctx, msg.OperationID, databaseID, p.workerID); err != nil {
+	if err := p.eventPublisher.PublishProcessingWithMetadata(ctx, msg.OperationID, databaseID, p.workerID, workflowMetadata); err != nil {
 		log.Error("failed to publish PROCESSING event", zap.Error(err))
 	}
 
@@ -383,23 +385,23 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 		result.ErrorCode = "INVALID_OPERATION"
 		result.Duration = time.Since(start).Seconds()
 
-		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]interface{}{
+		p.timeline.Record(ctx, msg.OperationID, "database.failed", appendWorkflowMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error_code":  result.ErrorCode,
 			"error":       result.Error,
-		})
-		if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+		}, workflowMetadata))
+		if err := p.eventPublisher.PublishFailedWithMetadata(ctx, msg.OperationID, result.Error, workflowMetadata); err != nil {
 			log.Error("failed to publish FAILED event", zap.Error(err))
 		}
 		return result
 	}
 
 	driverStart := time.Now()
-	p.timeline.Record(ctx, msg.OperationID, "driver.started", map[string]interface{}{
+	p.timeline.Record(ctx, msg.OperationID, "driver.started", appendWorkflowMetadata(map[string]interface{}{
 		"driver":         dbDriver.Name(),
 		"operation_type": msg.OperationType,
 		"database_id":    databaseID,
-	})
+	}, workflowMetadata))
 
 	dbRes, err := dbDriver.Execute(ctx, msg, databaseID)
 	if err != nil {
@@ -417,37 +419,37 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 
 	// Record database result in timeline
 	if result.Success {
-		p.timeline.Record(ctx, msg.OperationID, "database.completed", map[string]interface{}{
+		p.timeline.Record(ctx, msg.OperationID, "database.completed", appendWorkflowMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"duration_ms": int64(result.Duration * 1000),
-		})
+		}, workflowMetadata))
 	} else {
-		p.timeline.Record(ctx, msg.OperationID, "database.failed", map[string]interface{}{
+		p.timeline.Record(ctx, msg.OperationID, "database.failed", appendWorkflowMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error_code":  result.ErrorCode,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 	}
 
 	// Publish SUCCESS/FAILED event for OData operations
 	if result.Success {
-		if err := p.eventPublisher.PublishSuccess(ctx, msg.OperationID); err != nil {
+		if err := p.eventPublisher.PublishSuccessWithMetadata(ctx, msg.OperationID, workflowMetadata); err != nil {
 			log.Error("failed to publish SUCCESS event", zap.Error(err))
 		}
 	} else {
-		if err := p.eventPublisher.PublishFailed(ctx, msg.OperationID, result.Error); err != nil {
+		if err := p.eventPublisher.PublishFailedWithMetadata(ctx, msg.OperationID, result.Error, workflowMetadata); err != nil {
 			log.Error("failed to publish FAILED event", zap.Error(err))
 		}
 	}
 
-	p.timeline.Record(ctx, msg.OperationID, "driver.finished", map[string]interface{}{
+	p.timeline.Record(ctx, msg.OperationID, "driver.finished", appendWorkflowMetadata(map[string]interface{}{
 		"driver":         dbDriver.Name(),
 		"operation_type": msg.OperationType,
 		"database_id":    databaseID,
 		"success":        result.Success,
 		"error_code":     result.ErrorCode,
 		"duration_ms":    time.Since(driverStart).Milliseconds(),
-	})
+	}, workflowMetadata))
 	status := "success"
 	if !result.Success {
 		status = "failed"
@@ -455,6 +457,22 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 	p.recordDriverMetrics(dbDriver.Name(), msg.OperationType, status, time.Since(driverStart).Seconds())
 
 	return result
+}
+
+func appendWorkflowMetadata(
+	base map[string]interface{},
+	workflowMetadata map[string]interface{},
+) map[string]interface{} {
+	if len(workflowMetadata) == 0 {
+		return base
+	}
+	if base == nil {
+		base = map[string]interface{}{}
+	}
+	for key, value := range workflowMetadata {
+		base[key] = value
+	}
+	return base
 }
 
 // GetFeatureFlags returns current feature flags configuration

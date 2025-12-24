@@ -17,6 +17,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibcmd"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibsrv"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 )
 
 const (
@@ -51,11 +52,12 @@ func (d *Driver) OperationTypes() []string {
 func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	start := time.Now()
 	log := logger.GetLogger()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	eventBase := fmt.Sprintf("ibcmd.%s", msg.OperationType)
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
-	})
+	}, workflowMetadata))
 
 	if os.Getenv("USE_DIRECT_IBCMD") == "false" {
 		return d.failResult(msg, databaseID, start, "direct ibcmd disabled (USE_DIRECT_IBCMD=false)", "IBCMD_DISABLED"), nil
@@ -108,10 +110,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	}
 
 	externalStart := time.Now()
-	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.started", events.MergeMetadata(map[string]interface{}{
 		"database_id":    databaseID,
 		"operation_type": msg.OperationType,
-	})
+	}, workflowMetadata))
 
 	if request.inputCleanup != nil {
 		defer request.inputCleanup()
@@ -135,23 +137,23 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			zap.String("database_id", databaseID),
 			zap.Error(err),
 		)
-		d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.failed", events.MergeMetadata(map[string]interface{}{
 			"database_id":    databaseID,
 			"operation_type": msg.OperationType,
 			"duration_ms":    externalDuration.Milliseconds(),
 			"error":          err.Error(),
-		})
+		}, workflowMetadata))
 		return d.failResult(msg, databaseID, start, err.Error(), "IBCMD_ERROR"), nil
 	}
 
 	result := d.buildResult(msg, databaseID, start, res, request.ArtifactPath)
 
-	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.finished", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.finished", events.MergeMetadata(map[string]interface{}{
 		"database_id":    databaseID,
 		"operation_type": msg.OperationType,
 		"duration_ms":    externalDuration.Milliseconds(),
 		"exit_code":      result.Data["exit_code"],
-	})
+	}, workflowMetadata))
 
 	return result, nil
 }
@@ -172,10 +174,10 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 		data["artifact_path"] = artifactPath
 	}
 
-	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".completed", map[string]interface{}{
+	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 		"duration_ms": duration.Milliseconds(),
-	})
+	}, events.WorkflowMetadataFromMessage(msg)))
 
 	return models.DatabaseResultV2{
 		DatabaseID: databaseID,
@@ -188,11 +190,11 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 func (d *Driver) failResult(msg *models.OperationMessage, databaseID string, start time.Time, message, code string) models.DatabaseResultV2 {
 	duration := time.Since(start)
 	eventBase := fmt.Sprintf("ibcmd.%s", msg.OperationType)
-	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", map[string]interface{}{
+	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 		"error":       message,
 		"duration_ms": duration.Milliseconds(),
-	})
+	}, events.WorkflowMetadataFromMessage(msg)))
 	return models.DatabaseResultV2{
 		DatabaseID: databaseID,
 		Success:    false,

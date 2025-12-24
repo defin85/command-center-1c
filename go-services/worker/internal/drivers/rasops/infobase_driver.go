@@ -12,6 +12,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/clusterinfo"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/rasdirect"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 )
 
 type InfobaseDriver struct {
@@ -37,20 +38,21 @@ func (d *InfobaseDriver) OperationTypes() []string {
 func (d *InfobaseDriver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	start := time.Now()
 	log := logger.GetLogger()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	eventBase := fmt.Sprintf("ras.%s", msg.OperationType)
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
-	})
+	}, workflowMetadata))
 
 	clusterInfo, err := d.clusterResolver.Resolve(ctx, databaseID)
 	if err != nil {
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id":  databaseID,
 			"error":        err.Error(),
 			"duration_ms":  time.Since(start).Milliseconds(),
 			"error_source": "cluster_info",
-		})
+		}, workflowMetadata))
 		return models.DatabaseResultV2{
 			DatabaseID: databaseID,
 			Success:    false,
@@ -116,13 +118,13 @@ func (d *InfobaseDriver) Execute(ctx context.Context, msg *models.OperationMessa
 			zap.String("infobase_id", infobaseID),
 			zap.Error(opErr),
 		)
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"cluster_id":  clusterID,
 			"infobase_id": infobaseID,
 			"error":       opErr.Error(),
 			"duration_ms": duration.Milliseconds(),
-		})
+		}, workflowMetadata))
 		return models.DatabaseResultV2{
 			DatabaseID: databaseID,
 			Success:    false,
@@ -132,12 +134,12 @@ func (d *InfobaseDriver) Execute(ctx context.Context, msg *models.OperationMessa
 		}, nil
 	}
 
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 		"cluster_id":  clusterID,
 		"infobase_id": infobaseID,
 		"duration_ms": duration.Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	return models.DatabaseResultV2{
 		DatabaseID: databaseID,

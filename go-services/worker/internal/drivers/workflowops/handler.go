@@ -12,6 +12,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/engine"
 )
@@ -68,6 +69,7 @@ func NewWorkflowHandler(
 // The execution_id references an existing WorkflowExecution in Orchestrator.
 func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.OperationMessage) models.DatabaseResultV2 {
 	start := time.Now()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 	if h.logger == nil {
 		h.logger = zap.NewNop()
 	}
@@ -86,9 +88,9 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 		}
 	}
 
-	h.timeline.Record(ctx, msg.OperationID, "workflow.execute.started", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "workflow.execute.started", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
-	})
+	}, workflowMetadata))
 
 	h.logger.Info("executing workflow",
 		zap.String("execution_id", executionID),
@@ -96,18 +98,18 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	)
 
 	// Fetch workflow execution from Orchestrator
-	h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.started", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.started", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
-	})
+	}, workflowMetadata))
 	fetchStart := time.Now()
 	execution, err := h.workflowClient.GetWorkflowExecution(ctx, executionID)
 	if err != nil {
-		h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.failed", map[string]interface{}{
+		h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"duration_ms":  time.Since(fetchStart).Milliseconds(),
 			"error":        err.Error(),
-		})
-		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error())
+		}, workflowMetadata))
+		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error(), workflowMetadata)
 		h.logger.Error("failed to fetch workflow execution",
 			zap.String("execution_id", executionID),
 			zap.Error(err),
@@ -119,19 +121,19 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 			Duration:  time.Since(start).Seconds(),
 		}
 	}
-	h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.completed", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "external.orchestrator.get_workflow_execution.completed", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
 		"duration_ms":  time.Since(fetchStart).Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	// Validate workflow template
 	if !execution.WorkflowTemplate.IsValid {
-		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", "workflow template is not valid")
-		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", map[string]interface{}{
+		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", "workflow template is not valid", workflowMetadata)
+		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"error":        "workflow template is not valid",
 			"duration_ms":  time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 		return models.DatabaseResultV2{
 			Success:   false,
 			Error:     "workflow template is not valid",
@@ -141,12 +143,12 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	}
 
 	if !execution.WorkflowTemplate.IsActive {
-		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", "workflow template is not active")
-		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", map[string]interface{}{
+		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", "workflow template is not active", workflowMetadata)
+		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"error":        "workflow template is not active",
 			"duration_ms":  time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 		return models.DatabaseResultV2{
 			Success:   false,
 			Error:     "workflow template is not active",
@@ -158,12 +160,12 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	// Convert DAG structure to JSON for Go Workflow Engine
 	dagJSON, err := json.Marshal(h.convertDAGToEngineFormat(execution))
 	if err != nil {
-		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error())
-		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", map[string]interface{}{
+		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error(), workflowMetadata)
+		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"error":        err.Error(),
 			"duration_ms":  time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 		h.logger.Error("failed to marshal DAG structure",
 			zap.String("execution_id", executionID),
 			zap.Error(err),
@@ -190,30 +192,30 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	inputVars["target_database_ids"] = msg.GetTargetDatabaseIDs()
 
 	// Execute workflow synchronously
-	h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.started", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.started", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
-	})
+	}, workflowMetadata))
 	execStart := time.Now()
 	result, err := h.engine.ExecuteWorkflowSync(ctx, dagJSON, inputVars)
 	if err != nil {
-		h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.failed", map[string]interface{}{
+		h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"duration_ms":  time.Since(execStart).Milliseconds(),
 			"error":        err.Error(),
-		})
+		}, workflowMetadata))
 		h.logger.Error("workflow execution failed",
 			zap.String("execution_id", executionID),
 			zap.Error(err),
 		)
 
 		// Update status in Orchestrator
-		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error())
+		h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "failed", err.Error(), workflowMetadata)
 
-		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", map[string]interface{}{
+		h.timeline.Record(ctx, msg.OperationID, "workflow.execute.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"error":        err.Error(),
 			"duration_ms":  time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 
 		return models.DatabaseResultV2{
 			Success:   false,
@@ -222,10 +224,10 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 			Duration:  time.Since(start).Seconds(),
 		}
 	}
-	h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.completed", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.completed", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
 		"duration_ms":  time.Since(execStart).Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	h.logger.Info("workflow execution completed",
 		zap.String("execution_id", executionID),
@@ -235,12 +237,12 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	)
 
 	// Update status in Orchestrator
-	h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "completed", "")
+	h.updateStatusWithRetry(ctx, msg.OperationID, executionID, "completed", "", workflowMetadata)
 
-	h.timeline.Record(ctx, msg.OperationID, "workflow.execute.completed", map[string]interface{}{
+	h.timeline.Record(ctx, msg.OperationID, "workflow.execute.completed", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
 		"duration_ms":  time.Since(start).Milliseconds(),
-	})
+	}, workflowMetadata))
 
 	return models.DatabaseResultV2{
 		Success: true,
@@ -272,7 +274,11 @@ func (h *WorkflowHandler) convertDAGToEngineFormat(execution *orchestrator.Workf
 	return dag
 }
 
-func (h *WorkflowHandler) updateStatusWithRetry(ctx context.Context, operationID, executionID, status, errorMessage string) {
+func (h *WorkflowHandler) updateStatusWithRetry(
+	ctx context.Context,
+	operationID, executionID, status, errorMessage string,
+	workflowMetadata map[string]interface{},
+) {
 	if h.workflowClient == nil {
 		return
 	}
@@ -288,31 +294,31 @@ func (h *WorkflowHandler) updateStatusWithRetry(ctx context.Context, operationID
 		default:
 		}
 
-		h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.started", map[string]interface{}{
+		h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.started", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"status":       status,
 			"attempt":      attempt,
-		})
+		}, workflowMetadata))
 		start := time.Now()
 		err := h.workflowClient.UpdateWorkflowExecutionStatus(ctx, executionID, status, errorMessage)
 		if err == nil {
-			h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.completed", map[string]interface{}{
+			h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.completed", events.MergeMetadata(map[string]interface{}{
 				"execution_id": executionID,
 				"status":       status,
 				"attempt":      attempt,
 				"duration_ms":  time.Since(start).Milliseconds(),
-			})
+			}, workflowMetadata))
 			return
 		}
 
 		lastErr = err
-		h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.failed", map[string]interface{}{
+		h.timeline.Record(ctx, operationID, "external.orchestrator.update_workflow_status.failed", events.MergeMetadata(map[string]interface{}{
 			"execution_id": executionID,
 			"status":       status,
 			"attempt":      attempt,
 			"duration_ms":  time.Since(start).Milliseconds(),
 			"error":        err.Error(),
-		})
+		}, workflowMetadata))
 		h.logger.Warn("failed to update workflow status",
 			zap.String("execution_id", executionID),
 			zap.String("status", status),

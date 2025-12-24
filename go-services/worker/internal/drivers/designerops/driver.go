@@ -14,6 +14,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/cli"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 )
 
 // Driver executes designer operations via direct CLI.
@@ -41,11 +42,12 @@ func (d *Driver) OperationTypes() []string {
 
 func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	start := time.Now()
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
 	eventBase := fmt.Sprintf("cli.%s", msg.OperationType)
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
-	})
+	}, workflowMetadata))
 
 	if os.Getenv("USE_DIRECT_CLI") == "false" {
 		return d.failResult(msg, databaseID, start, "direct CLI disabled (USE_DIRECT_CLI=false)", "CLI_DISABLED"), nil
@@ -112,11 +114,11 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 			zap.String("database_id", databaseID),
 			zap.Error(err),
 		)
-		d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       err.Error(),
 			"duration_ms": duration.Milliseconds(),
-		})
+		}, events.WorkflowMetadataFromMessage(msg)))
 		return models.DatabaseResultV2{
 			DatabaseID: databaseID,
 			Success:    false,
@@ -142,21 +144,21 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 		Data:       data,
 	}
 
-	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".completed", map[string]interface{}{
+	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 		"duration_ms": duration.Milliseconds(),
-	})
+	}, events.WorkflowMetadataFromMessage(msg)))
 	return result
 }
 
 func (d *Driver) failResult(msg *models.OperationMessage, databaseID string, start time.Time, message, code string) models.DatabaseResultV2 {
 	duration := time.Since(start)
 	eventBase := fmt.Sprintf("cli.%s", msg.OperationType)
-	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", map[string]interface{}{
+	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 		"error":       message,
 		"duration_ms": duration.Milliseconds(),
-	})
+	}, events.WorkflowMetadataFromMessage(msg)))
 	return models.DatabaseResultV2{
 		DatabaseID: databaseID,
 		Success:    false,

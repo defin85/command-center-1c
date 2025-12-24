@@ -14,6 +14,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/commandcenter1c/commandcenter/worker/internal/odata"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
@@ -70,12 +71,13 @@ func (d *Driver) OperationTypes() []string {
 func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	start := time.Now()
 	eventBase := fmt.Sprintf("odata.%s", msg.OperationType)
+	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
-	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", map[string]interface{}{
+	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id":    databaseID,
 		"operation_type": msg.OperationType,
 		"entity":         msg.Entity,
-	})
+	}, workflowMetadata))
 
 	if d.credsClient == nil {
 		result := models.DatabaseResultV2{
@@ -84,10 +86,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			Error:      "credentials client not configured",
 			ErrorCode:  "CREDENTIALS_ERROR",
 		}
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
@@ -99,10 +101,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			Error:      fmt.Sprintf("failed to fetch credentials: %v", err),
 			ErrorCode:  "CREDENTIALS_ERROR",
 		}
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 	if creds == nil {
@@ -112,10 +114,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			Error:      "credentials not found",
 			ErrorCode:  "CREDENTIALS_ERROR",
 		}
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 	if d.service == nil {
@@ -125,10 +127,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			Error:      "odata service not configured",
 			ErrorCode:  "SERVICE_NOT_CONFIGURED",
 		}
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
@@ -139,19 +141,19 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			Error:      "odata_url and username are required",
 			ErrorCode:  "VALIDATION_ERROR",
 		}
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
-		})
+		}, workflowMetadata))
 		return result, nil
 	}
 
 	if msg.Metadata.TemplateID != "" {
 		renderStart := time.Now()
-		d.timeline.Record(ctx, msg.OperationID, "template.render.started", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, "template.render.started", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"template_id": msg.Metadata.TemplateID,
-		})
+		}, workflowMetadata))
 		renderedPayload, err := d.renderTemplatePayload(ctx, msg, databaseID, creds)
 		if err != nil {
 			result := models.DatabaseResultV2{
@@ -160,23 +162,23 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 				Error:      fmt.Sprintf("template rendering failed: %v", err),
 				ErrorCode:  "TEMPLATE_ERROR",
 			}
-			d.timeline.Record(ctx, msg.OperationID, "template.render.failed", map[string]interface{}{
+			d.timeline.Record(ctx, msg.OperationID, "template.render.failed", events.MergeMetadata(map[string]interface{}{
 				"database_id": databaseID,
 				"template_id": msg.Metadata.TemplateID,
 				"error":       result.Error,
-			})
-			d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+			}, workflowMetadata))
+			d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 				"database_id": databaseID,
 				"error":       result.Error,
-			})
+			}, workflowMetadata))
 			return result, nil
 		}
 		msg.Payload.Data = renderedPayload
-		d.timeline.Record(ctx, msg.OperationID, "template.render.completed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, "template.render.completed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"template_id": msg.Metadata.TemplateID,
 			"duration_ms": time.Since(renderStart).Milliseconds(),
-		})
+		}, workflowMetadata))
 	}
 
 	var result models.DatabaseResultV2
@@ -199,16 +201,16 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	}
 
 	if result.Success {
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"duration_ms": time.Since(start).Milliseconds(),
-		})
+		}, workflowMetadata))
 	} else {
-		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", map[string]interface{}{
+		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 			"database_id": databaseID,
 			"error":       result.Error,
 			"error_code":  result.ErrorCode,
-		})
+		}, workflowMetadata))
 	}
 
 	return result, nil

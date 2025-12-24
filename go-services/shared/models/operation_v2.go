@@ -55,10 +55,13 @@ type ExecutionConfig struct {
 }
 
 type MessageMetadata struct {
-	CreatedBy  string    `json:"created_by"`
-	CreatedAt  time.Time `json:"created_at"`
-	TemplateID string    `json:"template_id,omitempty"`
-	Tags       []string  `json:"tags,omitempty"`
+	CreatedBy            string    `json:"created_by"`
+	CreatedAt            time.Time `json:"created_at"`
+	TemplateID           string    `json:"template_id,omitempty"`
+	Tags                 []string  `json:"tags,omitempty"`
+	WorkflowExecutionID  string    `json:"workflow_execution_id,omitempty"`
+	NodeID               string    `json:"node_id,omitempty"`
+	TraceID              string    `json:"trace_id,omitempty"`
 }
 
 // OperationResultV2 - Worker response to Orchestrator (v2.0)
