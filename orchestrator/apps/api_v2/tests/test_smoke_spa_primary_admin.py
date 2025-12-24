@@ -66,7 +66,7 @@ def test_spa_primary_admin_smoke(staff_client, monkeypatch):
     assert ops_filter.status_code == 200
 
     ops_id_filter = staff_client.get(
-        f"/api/v2/operations/list-operations/?operation_id={operation.id}"
+        f"/api/v2/operations/list-operations/?operation_id={str(operation.id).upper()}"
     )
     assert ops_id_filter.status_code == 200
 

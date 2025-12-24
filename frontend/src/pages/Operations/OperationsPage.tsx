@@ -32,7 +32,7 @@ export const OperationsPage = () => {
   const [timelineOperationId, setTimelineOperationId] = useState<string | undefined>()
 
   const operationIdFromUrl = searchParams.get('operation') || undefined
-  const operationIdFilter = searchParams.get('operation_id') || undefined
+  const operationIdFilter = (searchParams.get('operation_id') || '').trim() || undefined
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
 
@@ -203,7 +203,7 @@ export const OperationsPage = () => {
         }}
         onChange={(next) => {
           updateSearchParams({
-            operation_id: next.operation_id || null,
+            operation_id: next.operation_id?.trim() || null,
             workflow_execution_id: next.workflow_execution_id || null,
             node_id: next.node_id || null,
           })

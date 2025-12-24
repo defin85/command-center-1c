@@ -306,7 +306,9 @@ def list_operations(request):
     if created_by:
         qs = qs.filter(created_by=created_by)
     if operation_id:
-        qs = qs.filter(id=operation_id)
+        operation_id = operation_id.strip()
+    if operation_id:
+        qs = qs.filter(id__iexact=operation_id)
     if workflow_execution_id:
         qs = qs.filter(metadata__workflow_execution_id=workflow_execution_id)
     if node_id:
