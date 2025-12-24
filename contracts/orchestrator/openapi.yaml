@@ -2290,6 +2290,11 @@ paths:
       summary: List batch operations
       parameters:
       - in: query
+        name: operation_id
+        schema:
+          type: string
+        description: Filter by operation ID
+      - in: query
         name: created_by
         schema:
           type: string

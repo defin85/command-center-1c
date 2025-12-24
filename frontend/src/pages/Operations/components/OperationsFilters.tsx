@@ -10,6 +10,13 @@ export const OperationsFilters = ({ filters, onChange }: OperationsFiltersProps)
   return (
     <Space size="middle" wrap>
       <Input
+        placeholder="Operation ID"
+        value={filters.operation_id || ''}
+        onChange={(event) => onChange({ ...filters, operation_id: event.target.value })}
+        style={{ width: 260 }}
+        allowClear
+      />
+      <Input
         placeholder="Workflow execution ID"
         value={filters.workflow_execution_id || ''}
         onChange={(event) => onChange({ ...filters, workflow_execution_id: event.target.value })}

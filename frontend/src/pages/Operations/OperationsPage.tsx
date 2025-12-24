@@ -32,6 +32,7 @@ export const OperationsPage = () => {
   const [timelineOperationId, setTimelineOperationId] = useState<string | undefined>()
 
   const operationIdFromUrl = searchParams.get('operation') || undefined
+  const operationIdFilter = searchParams.get('operation_id') || undefined
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
 
@@ -43,7 +44,11 @@ export const OperationsPage = () => {
     refetch,
   } = useOperations({
     refetchInterval: 5000,
-    filters: { workflow_execution_id: workflowExecutionId, node_id: nodeId },
+    filters: {
+      operation_id: operationIdFilter,
+      workflow_execution_id: workflowExecutionId,
+      node_id: nodeId,
+    },
   })
 
   // React Query: cancel mutation
@@ -179,6 +184,11 @@ export const OperationsPage = () => {
           Workflow: {workflowExecutionId}
         </Tag>
       )}
+      {operationIdFilter && (
+        <Tag closable onClose={() => updateSearchParams({ operation_id: null })}>
+          Operation: {operationIdFilter}
+        </Tag>
+      )}
       {nodeId && (
         <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
           Node: {nodeId}
@@ -186,9 +196,14 @@ export const OperationsPage = () => {
       )}
 
       <OperationsFilters
-        filters={{ workflow_execution_id: workflowExecutionId, node_id: nodeId }}
+        filters={{
+          operation_id: operationIdFilter,
+          workflow_execution_id: workflowExecutionId,
+          node_id: nodeId,
+        }}
         onChange={(next) => {
           updateSearchParams({
+            operation_id: next.operation_id || null,
             workflow_execution_id: next.workflow_execution_id || null,
             node_id: next.node_id || null,
           })

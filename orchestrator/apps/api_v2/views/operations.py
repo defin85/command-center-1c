@@ -199,6 +199,12 @@ class SSETicketResponseSerializer(serializers.Serializer):
     description='List all batch operations with optional filtering by status, type, and creator.',
     parameters=[
         OpenApiParameter(
+            name='operation_id',
+            type=str,
+            required=False,
+            description='Filter by operation ID'
+        ),
+        OpenApiParameter(
             name='status',
             type=str,
             required=False,
@@ -255,6 +261,7 @@ def list_operations(request):
     List all batch operations with optional filtering.
 
     Query Parameters:
+        - operation_id: Filter by operation ID
         - status: Filter by status (pending, queued, processing, completed, failed, cancelled)
         - operation_type: Filter by type (create, update, delete, query, install_extension)
         - created_by: Filter by creator username
@@ -273,6 +280,7 @@ def list_operations(request):
     status = request.query_params.get('status')
     operation_type = request.query_params.get('operation_type')
     created_by = request.query_params.get('created_by')
+    operation_id = request.query_params.get('operation_id')
     workflow_execution_id = request.query_params.get('workflow_execution_id')
     node_id = request.query_params.get('node_id')
 
@@ -297,6 +305,8 @@ def list_operations(request):
         qs = qs.filter(operation_type=operation_type)
     if created_by:
         qs = qs.filter(created_by=created_by)
+    if operation_id:
+        qs = qs.filter(id=operation_id)
     if workflow_execution_id:
         qs = qs.filter(metadata__workflow_execution_id=workflow_execution_id)
     if node_id:
