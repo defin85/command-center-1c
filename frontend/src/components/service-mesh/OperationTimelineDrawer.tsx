@@ -9,11 +9,12 @@
  * POST /api/v2/operations/get-operation-timeline/
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Drawer, Spin, Empty, Statistic, Row, Col, Alert, Tag } from 'antd'
+import { Drawer, Spin, Empty, Statistic, Row, Col, Alert, Tag, Typography, Space, Button } from 'antd'
 import {
   ClockCircleOutlined,
   NodeIndexOutlined,
   FieldTimeOutlined,
+  LinkOutlined,
 } from '@ant-design/icons'
 import axios from 'axios'
 import { apiClient } from '../../api/client'
@@ -133,6 +134,19 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
     return { traceId: undefined, workflowExecutionId: undefined, nodeId: undefined }
   }, [timelineData])
 
+  const operationsLink = useMemo(() => {
+    if (!operationId) return ''
+    const params = new URLSearchParams()
+    params.set('operation', operationId)
+    if (timelineMeta.workflowExecutionId) {
+      params.set('workflow_execution_id', timelineMeta.workflowExecutionId)
+    }
+    if (timelineMeta.nodeId) {
+      params.set('node_id', timelineMeta.nodeId)
+    }
+    return `/operations?${params.toString()}`
+  }, [operationId, timelineMeta.workflowExecutionId, timelineMeta.nodeId])
+
   /**
    * Format operation ID for display (truncate if needed)
    */
@@ -183,6 +197,30 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       {/* Content */}
       {!loading && !error && timelineData && (
         <>
+          <div style={{ marginBottom: 12 }}>
+            <Space size="middle" wrap>
+              <Typography.Text type="secondary">Operation ID:</Typography.Text>
+              {operationId && (
+                <Typography.Text
+                  code
+                  copyable={{ text: operationId }}
+                >
+                  {operationId}
+                </Typography.Text>
+              )}
+              {operationsLink && (
+                <Button
+                  type="link"
+                  icon={<LinkOutlined />}
+                  href={operationsLink}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Operations
+                </Button>
+              )}
+            </Space>
+          </div>
           {/* Summary statistics */}
           <div className="operation-timeline-drawer__summary">
             <Row gutter={16}>
