@@ -132,7 +132,7 @@ else
   $STRICT && exit 1
 fi
 
-if systemctl list-unit-files | grep -q '^blackbox-exporter\\.service'; then
+if systemctl show -p LoadState blackbox-exporter.service 2>/dev/null | grep -q 'LoadState=loaded'; then
   sudo -n systemctl daemon-reload || true
   sudo -n systemctl restart blackbox-exporter || true
 else
