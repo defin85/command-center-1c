@@ -4,6 +4,7 @@ from typing import Any, Optional
 from django.utils import timezone
 from django.conf import settings
 import redis
+from apps.templates.tracing import get_current_trace_id
 
 
 class OperationEventPublisher:
@@ -43,6 +44,7 @@ class OperationEventPublisher:
         state: str,
         microservice: str,
         message: Optional[str] = None,
+        trace_id: Optional[str] = None,
         **metadata: Any
     ) -> None:
         """Публикует событие workflow в Redis Stream.
@@ -54,10 +56,16 @@ class OperationEventPublisher:
             message: Опциональное сообщение (по умолчанию из STATES)
             **metadata: Дополнительные данные
         """
+        trace_id_value = trace_id or metadata.get("trace_id") or get_current_trace_id()
+        workflow_execution_id = metadata.get("workflow_execution_id")
+        node_id = metadata.get("node_id")
         event = {
             "version": "1.0",
             "operation_id": operation_id,
             "timestamp": timezone.now().isoformat(),
+            "trace_id": trace_id_value,
+            "workflow_execution_id": workflow_execution_id,
+            "node_id": node_id,
             "state": state,
             "microservice": microservice,
             "message": message or self.STATES.get(state, ""),
@@ -139,7 +147,8 @@ class OperationFlowPublisher:
         operation_type: str = "",
         operation_name: str = "",
         path: list = None,
-        metadata: dict = None
+        metadata: dict = None,
+        trace_id: Optional[str] = None
     ) -> None:
         """Публикует событие flow в Redis для Service Mesh визуализации.
 
@@ -159,6 +168,9 @@ class OperationFlowPublisher:
 
         path = path or []
         metadata = metadata or {}
+        trace_id_value = trace_id or metadata.get("trace_id") or get_current_trace_id()
+        workflow_execution_id = metadata.get("workflow_execution_id")
+        node_id = metadata.get("node_id")
 
         # Строим path с статусами для каждого узла
         current_idx = -1
@@ -236,6 +248,9 @@ class OperationFlowPublisher:
             "type": "operation_flow_update",
             "operation_id": operation_id,
             "timestamp": timestamp.isoformat(),
+            "trace_id": trace_id_value,
+            "workflow_execution_id": workflow_execution_id,
+            "node_id": node_id,
             "flow": {
                 "current_service": current_service,
                 "path": path_with_status,

@@ -113,6 +113,20 @@ class DatabaseDetailResponseSerializer(serializers.Serializer):
     cluster = ClusterSerializer(required=False, allow_null=True, help_text="Cluster info if database belongs to a cluster")
 
 
+class DatabaseCredentialsUpdateRequestSerializer(serializers.Serializer):
+    """Request body for update_database_credentials endpoint."""
+    database_id = serializers.CharField(help_text="Database ID to update")
+    username = serializers.CharField(required=False, allow_blank=True)
+    password = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    reset = serializers.BooleanField(required=False, default=False)
+
+
+class DatabaseCredentialsUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_database_credentials endpoint."""
+    database = DatabaseSerializer()
+    message = serializers.CharField()
+
+
 class HealthCheckEnqueueResponseSerializer(serializers.Serializer):
     """Response for health_check endpoints (operation queued)."""
     operation_id = serializers.CharField(help_text="ID of the created operation")
@@ -171,6 +185,7 @@ class DatabaseStreamTicketRequestSerializer(serializers.Serializer):
     """Request body for database stream ticket endpoint."""
 
     cluster_id = serializers.UUIDField(required=False, allow_null=True)
+    force = serializers.BooleanField(required=False, default=False)
 
 
 class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
@@ -332,6 +347,130 @@ def get_database(request):
     return Response({
         'database': serializer.data,
         'cluster': cluster_info,
+    })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Update database credentials',
+    description='Set or reset database OData credentials.',
+    request=DatabaseCredentialsUpdateRequestSerializer,
+    responses={
+        200: DatabaseCredentialsUpdateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_database_credentials(request):
+    """
+    POST /api/v2/databases/update-credentials/
+
+    Update or reset database credentials.
+
+    Request Body:
+        {
+            "database_id": "db-123",
+            "username": "odata_user",   // optional
+            "password": "secret",       // optional
+            "reset": false              // optional, default: false
+        }
+
+    Response (200):
+        {
+            "database": {...},
+            "message": "Database credentials updated"
+        }
+    """
+    serializer = DatabaseCredentialsUpdateRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': 'Invalid credentials payload',
+                'details': serializer.errors
+            }
+        }, status=400)
+
+    data = serializer.validated_data
+    database_id = data['database_id']
+
+    try:
+        db = Database.objects.get(id=database_id)
+    except Database.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'DATABASE_NOT_FOUND',
+                'message': 'Database not found'
+            }
+        }, status=404)
+
+    reset = data.get('reset', False)
+    updated_fields = []
+
+    if reset:
+        db.username = ''
+        db.password = ''
+        updated_fields.extend(['username', 'password'])
+    else:
+        username_provided = 'username' in data
+        password_provided = 'password' in data
+
+        if not username_provided and not password_provided:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'MISSING_PARAMETER',
+                    'message': 'username or password is required unless reset=true'
+                }
+            }, status=400)
+
+        if username_provided:
+            if data['username'] == '':
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_PARAMETER',
+                        'message': 'username cannot be empty (use reset=true to clear)'
+                    }
+                }, status=400)
+            db.username = data['username']
+            updated_fields.append('username')
+
+        if password_provided:
+            if data['password'] == '':
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_PARAMETER',
+                        'message': 'password cannot be empty (use reset=true to clear)'
+                    }
+                }, status=400)
+            db.password = data['password']
+            updated_fields.append('password')
+
+    db.save(update_fields=[*updated_fields, 'updated_at'])
+
+    log_admin_action(
+        request,
+        action='database.credentials.update',
+        outcome='success',
+        target_type='database',
+        target_id=str(db.id),
+        metadata={
+            'reset': reset,
+            'updated_fields': updated_fields,
+            'configured': bool(db.password),
+        },
+    )
+
+    return Response({
+        'database': DatabaseSerializer(db).data,
+        'message': 'Database credentials updated'
     })
 
 
@@ -590,6 +729,7 @@ def get_database_stream_ticket(request):
     serializer.is_valid(raise_exception=True)
 
     cluster_id = serializer.validated_data.get('cluster_id')
+    force = serializer.validated_data.get('force', False)
 
     if cluster_id and not Cluster.objects.filter(id=cluster_id).exists():
         record_api_v2_duration(endpoint, "not_found", time.monotonic() - start_time)
@@ -607,7 +747,7 @@ def get_database_stream_ticket(request):
 
     try:
         ttl = redis_conn.ttl(active_key)
-        if ttl and ttl > 0:
+        if ttl and ttl > 0 and not force:
             record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
             record_sse_ticket("databases", "conflict")
             response = Response({
@@ -627,6 +767,7 @@ def get_database_stream_ticket(request):
             'username': request.user.username,
             'cluster_id': str(cluster_id) if cluster_id else None,
             'created_at': timezone.now().isoformat(),
+            'force': force,
         }
         redis_conn.setex(
             f"{DB_SSE_TICKET_PREFIX}{ticket}",
@@ -679,21 +820,25 @@ async def database_stream(request):
     cluster_id = ticket_data.get('cluster_id')
     username = ticket_data.get('username')
     user_id = ticket_data.get('user_id')
+    force = bool(ticket_data.get('force'))
     logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
 
     active_key = f"{DB_SSE_ACTIVE_PREFIX}{user_id}"
     active_value = secrets.token_urlsafe(12)
     active_conn = _get_async_redis_connection()
     try:
-        if not await active_conn.set(active_key, active_value, nx=True, ex=DB_SSE_ACTIVE_TTL):
-            record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
-            return JsonResponse({
-                'success': False,
-                'error': {
-                    'code': 'STREAM_ALREADY_ACTIVE',
-                    'message': 'Database stream already active for this user'
-                }
-            }, status=429)
+        if force:
+            await active_conn.set(active_key, active_value, ex=DB_SSE_ACTIVE_TTL)
+        else:
+            if not await active_conn.set(active_key, active_value, nx=True, ex=DB_SSE_ACTIVE_TTL):
+                record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_ALREADY_ACTIVE',
+                        'message': 'Database stream already active for this user'
+                    }
+                }, status=429)
     finally:
         await active_conn.close()
 
@@ -718,6 +863,15 @@ async def database_stream(request):
 
             while True:
                 loop_start = time.monotonic()
+                try:
+                    current_value = await redis_conn.get(active_key)
+                    if current_value and current_value != active_value:
+                        logger.info("database_stream: replaced by new stream (user=%s)", username)
+                        break
+                    if current_value is None:
+                        await redis_conn.set(active_key, active_value, ex=DB_SSE_ACTIVE_TTL)
+                except Exception:
+                    pass
                 messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
 
                 if not messages:

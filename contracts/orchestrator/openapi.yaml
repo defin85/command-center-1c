@@ -614,6 +614,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/clusters/update-credentials/:
+    post:
+      operationId: v2_clusters_update_credentials_create
+      description: Set or reset cluster admin credentials.
+      summary: Update cluster credentials
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterCredentialsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClusterCredentialsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClusterCredentialsUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterCredentialsUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/databases/bulk-health-check/:
     post:
       operationId: v2_databases_bulk_health_check_create
@@ -713,6 +756,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DatabaseDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/databases/update-credentials/:
+    post:
+      operationId: v2_databases_update_credentials_create
+      description: Set or reset database OData credentials.
+      summary: Update database credentials
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseCredentialsUpdateResponse'
           description: ''
         '400':
           content:
@@ -1636,6 +1722,9 @@ paths:
                     "timestamp": 1734567890123,
                     "event": "operation.started",
                     "service": "worker",
+                    "trace_id": "0123abcd...",
+                    "workflow_execution_id": "wf-exec-123",
+                    "node_id": "node-1",
                     "metadata": {}
                 }
             ],
@@ -2221,6 +2310,16 @@ paths:
           type: string
         description: Filter by type (create, update, delete, query, install_extension)
       - in: query
+        name: workflow_execution_id
+        schema:
+          type: string
+        description: Filter by workflow execution ID
+      - in: query
+        name: node_id
+        schema:
+          type: string
+        description: Filter by workflow node ID
+      - in: query
         name: status
         schema:
           type: string
@@ -2247,7 +2346,8 @@ paths:
         \ progress updates.\n\n    **Authentication:** Use ticket from /stream-ticket/\
         \ endpoint (preferred) or\n    legacy token via query parameter.\n\n    **Event\
         \ format:**\n    ```\n    data: {\"state\": \"PROCESSING\", \"microservice\"\
-        : \"worker\", \"message\": \"...\", \"timestamp\": \"...\"}\n    ```\n\n \
+        : \"worker\", \"message\": \"...\", \"timestamp\": \"...\", \"trace_id\": \"...\",\
+        \ \"workflow_execution_id\": \"...\", \"node_id\": \"...\"}\n    ```\n\n \
         \   **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING\
         \ -> VERIFYING -> SUCCESS/FAILED\n    "
       summary: Stream operation events (SSE)
@@ -3828,6 +3928,9 @@ components:
         cluster_pwd:
           type: string
           writeOnly: true
+        cluster_pwd_configured:
+          type: boolean
+          readOnly: true
         status:
           $ref: '#/components/schemas/StatusD4eEnum'
         status_display:
@@ -4066,6 +4169,34 @@ components:
       required:
       - cluster
       - message
+    ClusterCredentialsUpdateRequest:
+      type: object
+      description: Request body for update-credentials endpoint (cluster).
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        reset:
+          type: boolean
+          default: false
+      required:
+      - cluster_id
+    ClusterCredentialsUpdateResponse:
+      type: object
+      description: Response for update-credentials endpoint (cluster).
+      properties:
+        cluster:
+          $ref: '#/components/schemas/Cluster'
+        message:
+          type: string
+      required:
+      - cluster
+      - message
     CreateWorkflowRequest:
       type: object
       description: Request for create_workflow endpoint.
@@ -4236,6 +4367,9 @@ components:
         password:
           type: string
           writeOnly: true
+        password_configured:
+          type: boolean
+          readOnly: true
         server_address:
           type: string
           description: 'Адрес сервера 1С (например: localhost, srv1c, 192.168.1.100)'
@@ -4371,6 +4505,33 @@ components:
           description: Cluster info if database belongs to a cluster
       required:
       - database
+    DatabaseCredentialsUpdateRequest:
+      type: object
+      description: Request body for update-credentials endpoint (database).
+      properties:
+        database_id:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        reset:
+          type: boolean
+          default: false
+      required:
+      - database_id
+    DatabaseCredentialsUpdateResponse:
+      type: object
+      description: Response for update-credentials endpoint (database).
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        message:
+          type: string
+      required:
+      - database
+      - message
     DatabaseListResponse:
       type: object
       description: Response for list_databases endpoint.
@@ -5601,6 +5762,9 @@ components:
           format: uuid
           nullable: true
           description: Optional cluster filter for SSE stream
+        force:
+          type: boolean
+          description: Replace an existing active stream for the same user
     DatabaseStreamTicketResponse:
       type: object
       description: Response for database stream ticket endpoint.
@@ -6144,6 +6308,18 @@ components:
         service:
           type: string
           description: Service that emitted the event
+        trace_id:
+          type: string
+          nullable: true
+          description: OpenTelemetry trace ID
+        workflow_execution_id:
+          type: string
+          nullable: true
+          description: Workflow execution ID
+        node_id:
+          type: string
+          nullable: true
+          description: Workflow node ID
         metadata:
           type: object
           additionalProperties: {}

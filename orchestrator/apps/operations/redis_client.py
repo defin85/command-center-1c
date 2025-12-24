@@ -220,6 +220,9 @@ class RedisClient:
         event: str,
         service: str,
         metadata: Optional[Dict[str, Any]] = None,
+        trace_id: Optional[str] = None,
+        workflow_execution_id: Optional[str] = None,
+        node_id: Optional[str] = None,
         timestamp_ms: Optional[int] = None,
     ) -> None:
         """
@@ -231,12 +234,19 @@ class RedisClient:
         """
         key = f"{self.TIMELINE_KEY_PREFIX}{operation_id}"
         ts_ms = timestamp_ms if timestamp_ms is not None else int(timezone.now().timestamp() * 1000)
+        metadata = metadata or {}
+        trace_id_value = trace_id or metadata.get("trace_id")
+        workflow_execution_id_value = workflow_execution_id or metadata.get("workflow_execution_id")
+        node_id_value = node_id or metadata.get("node_id")
         member = json.dumps(
             {
                 "id": str(uuid.uuid4()),
                 "event": event,
                 "service": service,
-                "metadata": metadata or {},
+                "trace_id": trace_id_value,
+                "workflow_execution_id": workflow_execution_id_value,
+                "node_id": node_id_value,
+                "metadata": metadata,
             }
         )
 
@@ -287,6 +297,9 @@ class RedisClient:
                     "timestamp": int(score),
                     "event": data.get("event", ""),
                     "service": data.get("service", ""),
+                    "trace_id": data.get("trace_id") or data.get("metadata", {}).get("trace_id"),
+                    "workflow_execution_id": data.get("workflow_execution_id") or data.get("metadata", {}).get("workflow_execution_id"),
+                    "node_id": data.get("node_id") or data.get("metadata", {}).get("node_id"),
                     "metadata": data.get("metadata", {})
                 })
             except json.JSONDecodeError as e:

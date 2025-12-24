@@ -50,9 +50,9 @@ class TestRedisClientTimeline:
 
         # Mock Redis ZRANGE returns events with scores (timestamp is score)
         mock_events = [
-            (json.dumps({"event": "operation.started", "service": "worker", "metadata": {}}), 1734567890123),
-            (json.dumps({"event": "batch.created", "service": "worker", "metadata": {"batch_size": 100}}), 1734567890456),
-            (json.dumps({"event": "operation.completed", "service": "worker", "metadata": {}}), 1734567891234),
+            (json.dumps({"event": "operation.started", "service": "worker", "metadata": {}, "trace_id": "trace-1"}), 1734567890123),
+            (json.dumps({"event": "batch.created", "service": "worker", "metadata": {"batch_size": 100}, "workflow_execution_id": "wf-1"}), 1734567890456),
+            (json.dumps({"event": "operation.completed", "service": "worker", "metadata": {"node_id": "node-1"}}), 1734567891234),
         ]
         redis_client.client.zrange.return_value = mock_events
 
@@ -64,13 +64,16 @@ class TestRedisClientTimeline:
         assert events[0]['event'] == 'operation.started'
         assert events[0]['service'] == 'worker'
         assert events[0]['metadata'] == {}
+        assert events[0]['trace_id'] == "trace-1"
 
         assert events[1]['timestamp'] == 1734567890456
         assert events[1]['event'] == 'batch.created'
         assert events[1]['metadata'] == {"batch_size": 100}
+        assert events[1]['workflow_execution_id'] == "wf-1"
 
         assert events[2]['timestamp'] == 1734567891234
         assert events[2]['event'] == 'operation.completed'
+        assert events[2]['node_id'] == "node-1"
 
     def test_get_timeline_pagination_limit(self, redis_client):
         """Test get_timeline respects limit parameter."""

@@ -60,14 +60,31 @@ def test_spa_primary_admin_smoke(staff_client, monkeypatch):
     ops_list = staff_client.get("/api/v2/operations/list-operations/?limit=10")
     assert ops_list.status_code == 200
 
+    ops_filter = staff_client.get(
+        f"/api/v2/operations/list-operations/?workflow_execution_id=wf-1&node_id=node-1"
+    )
+    assert ops_filter.status_code == 200
+
     ops_get = staff_client.get(f"/api/v2/operations/get-operation/?operation_id={operation.id}")
     assert ops_get.status_code == 200
     assert ops_get.json()["operation"]["id"] == str(operation.id)
 
     with patch("apps.operations.services.timeline_service.TimelineService._fetch_timeline_from_redis") as mock_fetch:
-        mock_fetch.return_value = ([], 0, None)
+        mock_fetch.return_value = ([
+            {
+                "timestamp": 1734567890123,
+                "event": "operation.started",
+                "service": "worker",
+                "trace_id": "trace-1",
+                "workflow_execution_id": "wf-1",
+                "node_id": "node-1",
+                "metadata": {},
+            }
+        ], 1, 0)
         timeline = staff_client.post("/api/v2/operations/get-operation-timeline/", {"operation_id": operation.id}, format="json")
         assert timeline.status_code == 200
+        timeline_data = timeline.json()
+        assert timeline_data["timeline"][0]["trace_id"] == "trace-1"
 
     registry = get_registry()
     previous = registry.get_all()

@@ -26,6 +26,9 @@ class TimelineEventSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField(help_text="Unix timestamp in milliseconds")
     event = serializers.CharField(help_text="Event name (e.g., operation.started)")
     service = serializers.CharField(help_text="Service that emitted the event")
+    trace_id = serializers.CharField(required=False, allow_null=True, help_text="OpenTelemetry trace ID")
+    workflow_execution_id = serializers.CharField(required=False, allow_null=True, help_text="Workflow execution ID")
+    node_id = serializers.CharField(required=False, allow_null=True, help_text="Workflow node ID")
     metadata = serializers.DictField(required=False, help_text="Additional event metadata")
 
 
@@ -128,6 +131,9 @@ def get_operation_timeline(request):
                     "timestamp": 1734567890123,
                     "event": "operation.started",
                     "service": "worker",
+                    "trace_id": "0123abcd...",
+                    "workflow_execution_id": "wf-exec-123",
+                    "node_id": "node-1",
                     "metadata": {}
                 },
                 ...

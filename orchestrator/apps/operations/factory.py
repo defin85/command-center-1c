@@ -12,6 +12,7 @@ from django.db import transaction
 from apps.databases.models import Database
 from apps.operations.models import BatchOperation, Task
 from apps.templates.models import OperationTemplate
+from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +77,13 @@ class BatchOperationFactory:
         target_entity = rendered_data.get('entity', template.name)
 
         # Формируем метаданные
+        trace_id = get_current_trace_id()
         metadata = {
             'workflow_execution_id': workflow_execution_id,
             'node_id': node_id,
         }
+        if trace_id:
+            metadata['trace_id'] = trace_id
 
         logger.info(
             f"Creating BatchOperation: id={operation_id}, "

@@ -114,6 +114,16 @@ def _publish_completion_flow(
         pass
 
 
+def _get_workflow_metadata(batch_op) -> Dict[str, Any]:
+    metadata = batch_op.metadata or {}
+    result: Dict[str, Any] = {}
+    for key in ("workflow_execution_id", "node_id", "trace_id"):
+        value = metadata.get(key)
+        if value:
+            result[key] = value
+    return result
+
+
 class EventSubscriber:
     """
     Subscribes to Redis Streams from Go services.
@@ -414,6 +424,7 @@ class EventSubscriber:
                             batch_op.status = BatchOperation.STATUS_FAILED
                             batch_op.metadata['error'] = error
                         batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        workflow_metadata = _get_workflow_metadata(batch_op)
                         try:
                             operations_redis_client.add_timeline_event(
                                 operation_id,
@@ -423,10 +434,23 @@ class EventSubscriber:
                                     "status": batch_op.status,
                                     "cluster_id": str(cluster_id),
                                     "error": error if not success else None,
+                                    **workflow_metadata,
                                 },
                             )
                         except Exception:
                             pass
+                        _publish_completion_flow(
+                            operation_id=operation_id,
+                            operation_type=batch_op.operation_type,
+                            operation_name=batch_op.name,
+                            status="completed" if success else "failed",
+                            message="Cluster sync completed" if success else "Cluster sync failed",
+                            metadata={
+                                "cluster_id": str(cluster_id),
+                                "error": error if not success else None,
+                                **workflow_metadata,
+                            },
+                        )
                         logger.info(
                             f"Updated BatchOperation {operation_id} status: {batch_op.status}"
                         )
@@ -547,6 +571,7 @@ class EventSubscriber:
                             batch_op.status = BatchOperation.STATUS_FAILED
                             batch_op.metadata['error'] = error
                         batch_op.save(update_fields=['status', 'metadata', 'updated_at'])
+                        workflow_metadata = _get_workflow_metadata(batch_op)
                         try:
                             operations_redis_client.add_timeline_event(
                                 operation_id,
@@ -559,10 +584,24 @@ class EventSubscriber:
                                     "created": created,
                                     "updated": updated,
                                     "error": error if not success else None,
+                                    **workflow_metadata,
                                 },
                             )
                         except Exception:
                             pass
+                        _publish_completion_flow(
+                            operation_id=operation_id,
+                            operation_type=batch_op.operation_type,
+                            operation_name=batch_op.name,
+                            status="completed" if success else "failed",
+                            message="Clusters discovery completed" if success else "Clusters discovery failed",
+                            metadata={
+                                "ras_server": ras_server,
+                                "clusters_found": len(clusters_data),
+                                "error": error if not success else None,
+                                **workflow_metadata,
+                            },
+                        )
                         logger.info(
                             f"Updated BatchOperation {operation_id} status: {batch_op.status}"
                         )
@@ -630,6 +669,7 @@ class EventSubscriber:
             # Extract summary from payload
             summary = payload.get('summary', {})
             results = payload.get('results', [])
+            workflow_metadata = _get_workflow_metadata(batch_op)
 
             batch_op.status = BatchOperation.STATUS_COMPLETED
             batch_op.progress = 100
@@ -647,7 +687,11 @@ class EventSubscriber:
                     operation_id,
                     event="operation.completed",
                     service="event-subscriber",
-                    metadata={"status": batch_op.status, "results_count": len(results)},
+                    metadata={
+                        "status": batch_op.status,
+                        "results_count": len(results),
+                        **workflow_metadata,
+                    },
                 )
             except Exception:
                 pass
@@ -663,7 +707,7 @@ class EventSubscriber:
                 operation_name=batch_op.name,
                 status="completed",
                 message="Worker completed",
-                metadata={"summary": summary, "results_count": len(results)},
+                metadata={"summary": summary, "results_count": len(results), **workflow_metadata},
             )
 
             self._update_database_restrictions(batch_op, results)
@@ -722,12 +766,17 @@ class EventSubscriber:
 
             batch_op.metadata['error'] = error_msg
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+            workflow_metadata = _get_workflow_metadata(batch_op)
             try:
                 operations_redis_client.add_timeline_event(
                     operation_id,
                     event="operation.failed",
                     service="event-subscriber",
-                    metadata={"status": batch_op.status, "error": error_msg},
+                    metadata={
+                        "status": batch_op.status,
+                        "error": error_msg,
+                        **workflow_metadata,
+                    },
                 )
             except Exception:
                 pass
@@ -743,7 +792,7 @@ class EventSubscriber:
                 operation_name=batch_op.name,
                 status="failed",
                 message=error_msg or "Worker failed",
-                metadata={"error": error_msg},
+                metadata={"error": error_msg, **workflow_metadata},
             )
 
         except BatchOperation.DoesNotExist:

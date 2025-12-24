@@ -73,6 +73,20 @@ class ClusterUpdateResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class ClusterCredentialsUpdateRequestSerializer(serializers.Serializer):
+    """Request body for update_cluster_credentials endpoint."""
+    cluster_id = serializers.UUIDField()
+    username = serializers.CharField(required=False, allow_blank=True)
+    password = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    reset = serializers.BooleanField(required=False, default=False)
+
+
+class ClusterCredentialsUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_cluster_credentials endpoint."""
+    cluster = ClusterSerializer()
+    message = serializers.CharField()
+
+
 class ClusterDeleteResponseSerializer(serializers.Serializer):
     """Response for delete_cluster endpoint."""
     message = serializers.CharField()
@@ -624,6 +638,130 @@ def update_cluster(request):
                 'message': 'Cluster with this ras_server and name already exists'
             }
         }, status=409)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Update cluster credentials',
+    description='Set or reset cluster admin credentials.',
+    request=ClusterCredentialsUpdateRequestSerializer,
+    responses={
+        200: ClusterCredentialsUpdateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        404: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_cluster_credentials(request):
+    """
+    POST /api/v2/clusters/update-credentials/
+
+    Update or reset cluster credentials.
+
+    Request Body:
+        {
+            "cluster_id": "uuid",
+            "username": "admin",        // optional
+            "password": "secret",       // optional
+            "reset": false              // optional, default: false
+        }
+
+    Response (200):
+        {
+            "cluster": {...},
+            "message": "Cluster credentials updated"
+        }
+    """
+    serializer = ClusterCredentialsUpdateRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': 'Invalid credentials payload',
+                'details': serializer.errors
+            }
+        }, status=400)
+
+    data = serializer.validated_data
+    cluster_id = data['cluster_id']
+
+    try:
+        cluster = Cluster.objects.get(id=cluster_id)
+    except Cluster.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'CLUSTER_NOT_FOUND',
+                'message': 'Cluster not found'
+            }
+        }, status=404)
+
+    reset = data.get('reset', False)
+    updated_fields = []
+
+    if reset:
+        cluster.cluster_user = ''
+        cluster.cluster_pwd = ''
+        updated_fields.extend(['cluster_user', 'cluster_pwd'])
+    else:
+        username_provided = 'username' in data
+        password_provided = 'password' in data
+
+        if not username_provided and not password_provided:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'MISSING_PARAMETER',
+                    'message': 'username or password is required unless reset=true'
+                }
+            }, status=400)
+
+        if username_provided:
+            if data['username'] == '':
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_PARAMETER',
+                        'message': 'username cannot be empty (use reset=true to clear)'
+                    }
+                }, status=400)
+            cluster.cluster_user = data['username']
+            updated_fields.append('cluster_user')
+
+        if password_provided:
+            if data['password'] == '':
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 'INVALID_PARAMETER',
+                        'message': 'password cannot be empty (use reset=true to clear)'
+                    }
+                }, status=400)
+            cluster.cluster_pwd = data['password']
+            updated_fields.append('cluster_pwd')
+
+    cluster.save(update_fields=[*updated_fields, 'updated_at'])
+
+    log_admin_action(
+        request,
+        action='cluster.credentials.update',
+        outcome='success',
+        target_type='cluster',
+        target_id=str(cluster.id),
+        metadata={
+            'reset': reset,
+            'updated_fields': updated_fields,
+            'configured': bool(cluster.cluster_pwd),
+        },
+    )
+
+    return Response({
+        'cluster': ClusterSerializer(cluster).data,
+        'message': 'Cluster credentials updated'
+    })
 
 
 @extend_schema(

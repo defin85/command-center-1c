@@ -74,6 +74,16 @@ class OperationsService:
         'terminate_sessions': ['terminate_sessions'],
     }
 
+    @staticmethod
+    def _get_workflow_metadata(operation: BatchOperation) -> dict[str, Any]:
+        metadata = operation.metadata or {}
+        result: dict[str, Any] = {}
+        for key in ("workflow_execution_id", "node_id", "trace_id"):
+            value = metadata.get(key)
+            if value:
+                result[key] = value
+        return result
+
     @classmethod
     def check_conflicting_operations(
         cls,
@@ -163,6 +173,8 @@ class OperationsService:
                     error="Operation already in progress"
                 )
 
+            workflow_metadata = cls._get_workflow_metadata(operation)
+
             # 3. Build Message Protocol v2.0 message
             message = cls._build_message(operation)
 
@@ -175,7 +187,8 @@ class OperationsService:
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=len(message["target_databases"])
+                target_databases_count=len(message["target_databases"]),
+                **workflow_metadata
             )
 
             # 6. Update operation status
@@ -205,7 +218,8 @@ class OperationsService:
                 path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "target_databases_count": len(message["target_databases"]),
-                    "queue": cls.QUEUE_KEY
+                    "queue": cls.QUEUE_KEY,
+                    **workflow_metadata
                 }
             )
 
@@ -636,7 +650,10 @@ class OperationsService:
                 "created_by": operation.created_by or "system",
                 "created_at": operation.created_at.isoformat(),
                 "template_id": str(operation.template.id) if operation.template else None,
-                "tags": operation.metadata.get("tags", [])
+                "tags": operation.metadata.get("tags", []),
+                "workflow_execution_id": operation.metadata.get("workflow_execution_id"),
+                "node_id": operation.metadata.get("node_id"),
+                "trace_id": operation.metadata.get("trace_id"),
             }
         }
 
@@ -688,6 +705,9 @@ class OperationsService:
             created_by=created_by,
         )
         batch_operation.target_databases.set(databases)
+        workflow_metadata = cls._get_workflow_metadata(batch_operation)
+        workflow_metadata = cls._get_workflow_metadata(batch_operation)
+        workflow_metadata = cls._get_workflow_metadata(batch_operation)
 
         tasks = [
             Task(
@@ -709,6 +729,7 @@ class OperationsService:
                     "operation_type": "health_check",
                     "target_databases_count": len(databases),
                     "created_by": created_by,
+                    **workflow_metadata,
                 },
             )
         except Exception:
@@ -755,7 +776,7 @@ class OperationsService:
                     operation_id,
                     event="operation.queued",
                     service="orchestrator",
-                    metadata={"queue": cls.QUEUE_KEY},
+                    metadata={"queue": cls.QUEUE_KEY, **workflow_metadata},
                 )
             except Exception:
                 pass
@@ -767,7 +788,8 @@ class OperationsService:
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=database_count
+                target_databases_count=database_count,
+                **workflow_metadata
             )
 
             flow_publisher.publish_flow(
@@ -780,7 +802,8 @@ class OperationsService:
                 path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "target_databases_count": database_count,
-                    "queue": cls.QUEUE_KEY
+                    "queue": cls.QUEUE_KEY,
+                    **workflow_metadata
                 }
             )
 
@@ -1038,6 +1061,7 @@ class OperationsService:
                     "operation_type": operation_type,
                     "target_databases_count": len(databases),
                     "created_by": user.username if user else "system",
+                    **workflow_metadata,
                 },
             )
         except Exception:
@@ -1102,7 +1126,7 @@ class OperationsService:
                     operation_id,
                     event="operation.queued",
                     service="orchestrator",
-                    metadata={"queue": cls.QUEUE_KEY},
+                    metadata={"queue": cls.QUEUE_KEY, **workflow_metadata},
                 )
             except Exception:
                 pass
@@ -1113,7 +1137,8 @@ class OperationsService:
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=len(databases)
+                target_databases_count=len(databases),
+                **workflow_metadata
             )
 
             # Publish flow event for Service Mesh visualization
@@ -1127,7 +1152,8 @@ class OperationsService:
                 path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "target_databases_count": len(databases),
-                    "queue": cls.QUEUE_KEY
+                    "queue": cls.QUEUE_KEY,
+                    **workflow_metadata
                 }
             )
 
@@ -1260,7 +1286,7 @@ class OperationsService:
                     operation_id,
                     event="operation.queued",
                     service="orchestrator",
-                    metadata={"queue": cls.QUEUE_KEY},
+                    metadata={"queue": cls.QUEUE_KEY, **workflow_metadata},
                 )
             except Exception:
                 pass
@@ -1270,7 +1296,8 @@ class OperationsService:
                 state='QUEUED',
                 microservice='orchestrator',
                 queue=cls.QUEUE_KEY,
-                target_databases_count=len(databases)
+                target_databases_count=len(databases),
+                **workflow_metadata
             )
 
             flow_publisher.publish_flow(
@@ -1283,7 +1310,8 @@ class OperationsService:
                 path=["frontend", "api-gateway", "orchestrator", "worker"],
                 metadata={
                     "target_databases_count": len(databases),
-                    "queue": cls.QUEUE_KEY
+                    "queue": cls.QUEUE_KEY,
+                    **workflow_metadata
                 }
             )
 

@@ -39,6 +39,7 @@ urlpatterns = [
     # ========================================================================
     path('databases/list-databases/', databases.list_databases, name='list-databases'),
     path('databases/get-database/', databases.get_database, name='get-database'),
+    path('databases/update-credentials/', databases.update_database_credentials, name='update-database-credentials'),
     path('databases/health-check/', databases.health_check, name='database-health-check'),
     path('databases/bulk-health-check/', databases.bulk_health_check, name='bulk-health-check'),
     path('databases/set-status/', databases.set_status, name='set-status'),
@@ -53,6 +54,7 @@ urlpatterns = [
     path('clusters/sync-cluster/', clusters.sync_cluster, name='sync-cluster'),
     path('clusters/create-cluster/', clusters.create_cluster, name='create-cluster'),
     path('clusters/update-cluster/', clusters.update_cluster, name='update-cluster'),
+    path('clusters/update-credentials/', clusters.update_cluster_credentials, name='update-cluster-credentials'),
     path('clusters/delete-cluster/', clusters.delete_cluster, name='delete-cluster'),
     path('clusters/get-cluster-databases/', clusters.get_cluster_databases, name='get-cluster-databases'),
     path('clusters/reset-sync-status/', clusters.reset_sync_status, name='reset-sync-status'),

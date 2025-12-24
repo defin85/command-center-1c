@@ -217,6 +217,18 @@ class SSETicketResponseSerializer(serializers.Serializer):
             description='Filter by creator username'
         ),
         OpenApiParameter(
+            name='workflow_execution_id',
+            type=str,
+            required=False,
+            description='Filter by workflow execution ID'
+        ),
+        OpenApiParameter(
+            name='node_id',
+            type=str,
+            required=False,
+            description='Filter by workflow node ID'
+        ),
+        OpenApiParameter(
             name='limit',
             type=int,
             required=False,
@@ -246,6 +258,8 @@ def list_operations(request):
         - status: Filter by status (pending, queued, processing, completed, failed, cancelled)
         - operation_type: Filter by type (create, update, delete, query, install_extension)
         - created_by: Filter by creator username
+        - workflow_execution_id: Filter by workflow execution ID
+        - node_id: Filter by workflow node ID
         - limit: Maximum results (default: 50)
         - offset: Pagination offset (default: 0)
 
@@ -259,6 +273,8 @@ def list_operations(request):
     status = request.query_params.get('status')
     operation_type = request.query_params.get('operation_type')
     created_by = request.query_params.get('created_by')
+    workflow_execution_id = request.query_params.get('workflow_execution_id')
+    node_id = request.query_params.get('node_id')
 
     # Safely parse integer parameters with validation
     try:
@@ -281,6 +297,10 @@ def list_operations(request):
         qs = qs.filter(operation_type=operation_type)
     if created_by:
         qs = qs.filter(created_by=created_by)
+    if workflow_execution_id:
+        qs = qs.filter(metadata__workflow_execution_id=workflow_execution_id)
+    if node_id:
+        qs = qs.filter(metadata__node_id=node_id)
 
     # Order by most recent first
     qs = qs.order_by('-created_at')
@@ -966,6 +986,7 @@ async def operation_stream(request):
         try:
             operation = await sync_to_async(BatchOperation.objects.get, thread_sensitive=True)(id=operation_id)
             logger.info(f"event_generator: Found operation with status {operation.status}")
+            operation_metadata = operation.metadata or {}
             initial_event = {
                 "version": "1.0",
                 "operation_id": str(operation_id),
@@ -973,9 +994,12 @@ async def operation_stream(request):
                 "state": operation.status.upper(),
                 "microservice": "orchestrator",
                 "message": f"Operation status: {operation.status}",
+                "trace_id": operation_metadata.get("trace_id"),
+                "workflow_execution_id": operation_metadata.get("workflow_execution_id"),
+                "node_id": operation_metadata.get("node_id"),
                 "metadata": {
                     "operation_type": operation.operation_type,
-                    "created_at": operation.created_at.isoformat()
+                    "created_at": operation.created_at.isoformat(),
                 }
             }
             logger.info("event_generator: Sending initial event")
