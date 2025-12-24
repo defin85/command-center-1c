@@ -8,12 +8,20 @@ export interface DatabaseStreamTicketResponse {
 }
 
 export const getDatabaseStreamTicket = async (
-  clusterId?: string | null
+  clusterId?: string | null,
+  force?: boolean
 ): Promise<DatabaseStreamTicketResponse> => {
-  const payload = clusterId ? { cluster_id: clusterId } : {}
+  const payload: { cluster_id?: string | null; force?: boolean } = {}
+  if (clusterId) {
+    payload.cluster_id = clusterId
+  }
+  if (force) {
+    payload.force = true
+  }
   const response = await apiClient.post<DatabaseStreamTicketResponse>(
     '/api/v2/databases/stream-ticket/',
-    payload
+    payload,
+    { skipGlobalError: true }
   )
   return response.data
 }

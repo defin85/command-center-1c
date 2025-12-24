@@ -9,7 +9,7 @@
  * POST /api/v2/operations/get-operation-timeline/
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Drawer, Spin, Empty, Statistic, Row, Col, Alert } from 'antd'
+import { Drawer, Spin, Empty, Statistic, Row, Col, Alert, Tag } from 'antd'
 import {
   ClockCircleOutlined,
   NodeIndexOutlined,
@@ -100,11 +100,38 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
     [timelineData]
   )
 
+  const highlightThresholdMs = useMemo(() => {
+    if (!waterfallItems.length) return undefined
+    const durations = waterfallItems
+      .map((item) => item.duration)
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b)
+    if (durations.length === 0) return undefined
+    const index = Math.floor(durations.length * 0.9)
+    return durations[Math.min(index, durations.length - 1)]
+  }, [waterfallItems])
+
   // Memoize unique services count
   const uniqueServicesCount = useMemo(
     () => timelineData ? new Set(timelineData.timeline.map((e) => e.service)).size : 0,
     [timelineData]
   )
+
+  const timelineMeta = useMemo(() => {
+    if (!timelineData?.timeline?.length) {
+      return { traceId: undefined, workflowExecutionId: undefined, nodeId: undefined }
+    }
+    for (const event of timelineData.timeline) {
+      if (event.trace_id || event.workflow_execution_id || event.node_id) {
+        return {
+          traceId: event.trace_id || undefined,
+          workflowExecutionId: event.workflow_execution_id || undefined,
+          nodeId: event.node_id || undefined,
+        }
+      }
+    }
+    return { traceId: undefined, workflowExecutionId: undefined, nodeId: undefined }
+  }, [timelineData])
 
   /**
    * Format operation ID for display (truncate if needed)
@@ -188,12 +215,21 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                 />
               </Col>
             </Row>
+            {(timelineMeta.traceId || timelineMeta.workflowExecutionId || timelineMeta.nodeId) && (
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {timelineMeta.traceId && <Tag>Trace: {timelineMeta.traceId.slice(0, 8)}...</Tag>}
+                {timelineMeta.workflowExecutionId && (
+                  <Tag>Workflow: {timelineMeta.workflowExecutionId.slice(0, 8)}...</Tag>
+                )}
+                {timelineMeta.nodeId && <Tag>Node: {timelineMeta.nodeId}</Tag>}
+              </div>
+            )}
           </div>
 
           {/* Waterfall timeline */}
           {waterfallItems.length > 0 ? (
             <div className="operation-timeline-drawer__timeline">
-              <WaterfallTimeline items={waterfallItems} />
+              <WaterfallTimeline items={waterfallItems} highlightThresholdMs={highlightThresholdMs} />
             </div>
           ) : (
             <Empty

@@ -138,6 +138,18 @@ export interface UseDatabaseOptions {
   enabled?: boolean
 }
 
+export type DatabaseCredentialsUpdateRequest = {
+  database_id: string
+  username?: string
+  password?: string
+  reset?: boolean
+}
+
+export type DatabaseCredentialsUpdateResponse = {
+  database: Database
+  message: string
+}
+
 /**
  * React Query hook for fetching single database details.
  */
@@ -202,6 +214,23 @@ export function useExecuteRasOperation() {
     },
     onError: (error: Error) => {
       message.error(error.message || 'Operation failed')
+    },
+  })
+}
+
+/**
+ * Update database OData credentials or reset them.
+ */
+export function useUpdateDatabaseCredentials() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: DatabaseCredentialsUpdateRequest): Promise<DatabaseCredentialsUpdateResponse> => {
+      const response = await apiClient.post('/api/v2/databases/update-credentials/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },
   })
 }

@@ -43,9 +43,10 @@ export const Login = () => {
 
             // Перенаправляем на главную
             navigate('/')
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Login error:', error)
-            if (error.response?.status === 401) {
+            const status = (error as { response?: { status?: number } } | null)?.response?.status
+            if (status === 401) {
                 message.error('Неверный логин или пароль')
             } else {
                 message.error('Ошибка авторизации')

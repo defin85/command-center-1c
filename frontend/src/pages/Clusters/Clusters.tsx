@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
-import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined } from '@ant-design/icons'
+import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
@@ -12,6 +12,7 @@ import {
     useDeleteCluster,
     useSyncCluster,
     useResetClusterSyncStatus,
+    useUpdateClusterCredentials,
 } from '../../api/queries/clusters'
 import { useMe } from '../../api/queries'
 
@@ -25,15 +26,22 @@ export const Clusters = () => {
     const [modalVisible, setModalVisible] = useState(false)
     const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
     const [discoverModalVisible, setDiscoverModalVisible] = useState(false)
+    const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
+    const [credentialsCluster, setCredentialsCluster] = useState<Cluster | null>(null)
     const [selectedClusterIds, setSelectedClusterIds] = useState<string[]>([])
     const [resettingClusterId, setResettingClusterId] = useState<string | null>(null)
     const [form] = Form.useForm()
+    const [credentialsForm] = Form.useForm()
 
     // React Query hooks
     const { data: clusters = [], isLoading } = useClusters()
     const { data: systemConfig } = useSystemConfig()
     const meQuery = useMe()
     const canResetSync = Boolean(meQuery.data?.is_staff)
+    const getErrorStatus = (error: unknown): number | undefined => {
+        const maybe = error as { response?: { status?: number } } | null
+        return maybe?.response?.status
+    }
 
     // Mutations
     const createCluster = useCreateCluster()
@@ -41,6 +49,7 @@ export const Clusters = () => {
     const deleteCluster = useDeleteCluster()
     const syncCluster = useSyncCluster()
     const resetSyncStatus = useResetClusterSyncStatus()
+    const updateClusterCredentials = useUpdateClusterCredentials()
 
     const handleCreate = () => {
         setEditingCluster(null)
@@ -55,8 +64,78 @@ export const Clusters = () => {
 
     const handleEdit = (cluster: Cluster) => {
         setEditingCluster(cluster)
-        form.setFieldsValue(cluster)
+        form.resetFields()
+        form.setFieldsValue({ ...cluster, cluster_pwd: '' })
         setModalVisible(true)
+    }
+
+    const openCredentialsModal = (cluster: Cluster) => {
+        setCredentialsCluster(cluster)
+        credentialsForm.setFieldsValue({
+            username: cluster.cluster_user ?? '',
+            password: '',
+        })
+        setCredentialsModalVisible(true)
+    }
+
+    const handleCredentialsSave = async () => {
+        if (!credentialsCluster) return
+
+        const values = await credentialsForm.validateFields()
+        const username = (values.username ?? '').trim()
+        const password = values.password ?? ''
+
+        const payload: { cluster_id: string; username?: string; password?: string } = {
+            cluster_id: credentialsCluster.id,
+        }
+
+        if (username) payload.username = username
+        if (password) payload.password = password
+
+        if (!payload.username && !payload.password) {
+            message.info('Нет изменений для сохранения')
+            return
+        }
+
+        updateClusterCredentials.mutate(payload, {
+            onSuccess: (response) => {
+                message.success(response.message || 'Креды кластера обновлены')
+                setCredentialsModalVisible(false)
+                setCredentialsCluster(null)
+                credentialsForm.resetFields()
+            },
+            onError: (error: Error) => {
+                message.error('Не удалось обновить креды: ' + error.message)
+            },
+        })
+    }
+
+    const handleCredentialsReset = () => {
+        if (!credentialsCluster) return
+
+        modal.confirm({
+            title: 'Сбросить креды кластера?',
+            content: 'Логин и пароль будут очищены.',
+            okText: 'Сбросить',
+            cancelText: 'Отмена',
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                updateClusterCredentials.mutate(
+                    { cluster_id: credentialsCluster.id, reset: true },
+                    {
+                        onSuccess: (response) => {
+                            message.success(response.message || 'Креды кластера сброшены')
+                            setCredentialsModalVisible(false)
+                            setCredentialsCluster(null)
+                            credentialsForm.resetFields()
+                        },
+                        onError: (error: Error) => {
+                            message.error('Не удалось сбросить креды: ' + error.message)
+                        },
+                    }
+                )
+            },
+        })
     }
 
     const handleDelete = (id: string) => {
@@ -95,13 +174,14 @@ export const Clusters = () => {
             setResettingClusterId(clusterId)
             const result = await resetSyncStatus.mutateAsync({ cluster_id: clusterId })
             message.success(result.message || `Reset sync status for ${clusterName ?? clusterId}`)
-        } catch (error: any) {
-            const status = error?.response?.status
+        } catch (error: unknown) {
+            const status = getErrorStatus(error)
             if (status === 403) {
                 message.error('Reset sync status requires staff access')
                 return
             }
-            message.error(`Reset sync status failed: ${error?.message ?? 'unknown error'}`)
+            const errorMessage = error instanceof Error ? error.message : 'unknown error'
+            message.error(`Reset sync status failed: ${errorMessage}`)
         } finally {
             setResettingClusterId(null)
         }
@@ -217,7 +297,7 @@ export const Clusters = () => {
                 { text: 'Error', value: 'error' },
                 { text: 'Maintenance', value: 'maintenance' },
             ],
-            onFilter: (value: any, record: Cluster) => record.status === value,
+            onFilter: (value: string | number | boolean, record: Cluster) => record.status === value,
         },
         {
             title: 'Databases',
@@ -233,9 +313,18 @@ export const Clusters = () => {
             render: (date: string) => (date ? new Date(date).toLocaleString() : 'Never'),
         },
         {
+            title: 'Credentials',
+            key: 'credentials',
+            render: (_: unknown, record: Cluster) => (
+                <Tag color={record.cluster_pwd_configured ? 'green' : 'default'}>
+                    {record.cluster_pwd_configured ? 'Configured' : 'Missing'}
+                </Tag>
+            ),
+        },
+        {
             title: 'Actions',
             key: 'actions',
-            render: (_: any, record: Cluster) => (
+            render: (_: unknown, record: Cluster) => (
                 <Space size="small">
                     <Button
                         size="small"
@@ -268,6 +357,12 @@ export const Clusters = () => {
                             />
                         </Popconfirm>
                     )}
+                    <Button
+                        size="small"
+                        icon={<KeyOutlined />}
+                        onClick={() => openCredentialsModal(record)}
+                        title="Credentials"
+                    />
                     <Button
                         size="small"
                         icon={<EditOutlined />}
@@ -373,13 +468,31 @@ export const Clusters = () => {
                         <Input placeholder={systemConfig?.ras_adapter_url ?? 'http://localhost:8188'} />
                     </Form.Item>
 
-                    <Form.Item label="Cluster Admin User" name="cluster_user">
-                        <Input placeholder="Optional cluster admin username" />
-                    </Form.Item>
-
-                    <Form.Item label="Cluster Admin Password" name="cluster_pwd">
-                        <Input.Password placeholder="Optional cluster admin password" />
-                    </Form.Item>
+                    {editingCluster ? (
+                        <Form.Item
+                            label="Cluster Credentials"
+                            extra="Use Credentials to update or reset username/password."
+                        >
+                            <Button
+                                icon={<KeyOutlined />}
+                                onClick={() => editingCluster && openCredentialsModal(editingCluster)}
+                            >
+                                Open Credentials
+                            </Button>
+                        </Form.Item>
+                    ) : (
+                        <>
+                            <Form.Item label="Cluster Admin User" name="cluster_user">
+                                <Input placeholder="Optional cluster admin username" />
+                            </Form.Item>
+                            <Form.Item label="Cluster Admin Password" name="cluster_pwd">
+                                <Input.Password
+                                    placeholder="Optional cluster admin password"
+                                    autoComplete="new-password"
+                                />
+                            </Form.Item>
+                        </>
+                    )}
 
                     <Form.Item label="Status" name="status">
                         <Select>
@@ -388,6 +501,55 @@ export const Clusters = () => {
                             <Select.Option value="maintenance">Maintenance</Select.Option>
                             <Select.Option value="error">Error</Select.Option>
                         </Select>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title={credentialsCluster ? `Credentials: ${credentialsCluster.name}` : 'Credentials'}
+                open={credentialsModalVisible}
+                onCancel={() => {
+                    setCredentialsModalVisible(false)
+                    setCredentialsCluster(null)
+                    credentialsForm.resetFields()
+                }}
+                footer={[
+                    <Button
+                        key="reset"
+                        danger
+                        onClick={handleCredentialsReset}
+                        disabled={!credentialsCluster?.cluster_pwd_configured}
+                    >
+                        Reset
+                    </Button>,
+                    <Button
+                        key="cancel"
+                        onClick={() => {
+                            setCredentialsModalVisible(false)
+                            setCredentialsCluster(null)
+                            credentialsForm.resetFields()
+                        }}
+                    >
+                        Cancel
+                    </Button>,
+                    <Button
+                        key="save"
+                        type="primary"
+                        onClick={handleCredentialsSave}
+                        loading={updateClusterCredentials.isPending}
+                    >
+                        Save
+                    </Button>,
+                ]}
+            >
+                <Form form={credentialsForm} layout="vertical">
+                    <Form.Item label="Cluster Admin User" name="username">
+                        <Input placeholder="Optional cluster admin username" />
+                    </Form.Item>
+                    <Form.Item label="Cluster Admin Password" name="password">
+                        <Input.Password
+                            placeholder={credentialsCluster?.cluster_pwd_configured ? 'Configured' : 'Enter password'}
+                        />
                     </Form.Item>
                 </Form>
             </Modal>

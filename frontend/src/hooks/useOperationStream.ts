@@ -9,7 +9,7 @@ export interface WorkflowEvent {
   state: string
   microservice: string
   message: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface UseOperationStreamResult {
@@ -21,6 +21,22 @@ export interface UseOperationStreamResult {
 
 const RECONNECT_INITIAL_DELAY = 1000
 const RECONNECT_MAX_DELAY = 30000
+
+type StreamErrorPayload = {
+  error?: string
+}
+
+const isWorkflowEvent = (data: unknown): data is WorkflowEvent => {
+  if (typeof data !== 'object' || data === null) return false
+  const record = data as Record<string, unknown>
+  return typeof record.operation_id === 'string' && typeof record.state === 'string'
+}
+
+const getErrorMessage = (data: unknown): string | null => {
+  if (typeof data !== 'object' || data === null) return null
+  const record = data as StreamErrorPayload
+  return typeof record.error === 'string' ? record.error : null
+}
 
 export const useOperationStream = (
   operationId: string | null
@@ -112,10 +128,15 @@ export const useOperationStream = (
             if (message.id) {
               lastEventIdRef.current = message.id
             }
-            const data: WorkflowEvent = JSON.parse(message.data)
+            const data: unknown = JSON.parse(message.data)
 
-            if ('error' in data) {
-              setError((data as any).error)
+            const streamError = getErrorMessage(data)
+            if (streamError) {
+              setError(streamError)
+              return
+            }
+
+            if (!isWorkflowEvent(data)) {
               return
             }
 

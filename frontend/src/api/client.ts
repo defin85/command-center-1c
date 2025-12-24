@@ -122,6 +122,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const skipGlobalError = Boolean((originalRequest as { skipGlobalError?: boolean } | undefined)?.skipGlobalError)
 
     // Handle 401 Unauthorized with token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -234,13 +235,15 @@ apiClient.interceptors.response.use(
       message = 'Network error. Please check your connection.'
     }
 
-    // Dispatch error event for global handling
-    dispatchApiError({
-      message,
-      status,
-      code: (errorData as { code?: string })?.code,
-      details: errorData,
-    })
+    if (!skipGlobalError) {
+      // Dispatch error event for global handling
+      dispatchApiError({
+        message,
+        status,
+        code: (errorData as { code?: string })?.code,
+        details: errorData,
+      })
+    }
 
     return Promise.reject(error)
   }

@@ -1,6 +1,8 @@
 export interface OperationFilters {
   status?: string
   operation_type?: string
+  workflow_execution_id?: string
+  node_id?: string
   limit?: number
 }
 

@@ -126,7 +126,7 @@ const WorkflowDesigner = () => {
     }
 
     loadTemplate()
-  }, [templateId, form])
+  }, [templateId, form, message])
 
   // Load operation templates
   useEffect(() => {

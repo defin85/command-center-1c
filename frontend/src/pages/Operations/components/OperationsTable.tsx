@@ -3,8 +3,8 @@
  * Extracted from Operations.tsx for reusability.
  */
 
-import { Table, Button, Space, Tag, Progress, Typography } from 'antd'
-import { EyeOutlined, StopOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Tag, Progress, Typography, Tooltip } from 'antd'
+import { EyeOutlined, StopOutlined, LinkOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { OperationsTableProps, UIBatchOperation } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
@@ -19,6 +19,8 @@ export const OperationsTable = ({
   loading,
   onViewDetails,
   onCancel,
+  onFilterWorkflow,
+  onFilterNode,
 }: OperationsTableProps) => {
   const columns: ColumnsType<UIBatchOperation> = [
     {
@@ -39,6 +41,39 @@ export const OperationsTable = ({
         >
           <code>{id.substring(0, 8)}...</code>
         </Paragraph>
+      ),
+    },
+    {
+      title: 'Workflow',
+      dataIndex: 'workflow_execution_id',
+      key: 'workflow_execution_id',
+      width: 160,
+      render: (_, record) => (
+        record.workflow_execution_id ? (
+          <Space size={4}>
+            <Tag>{record.workflow_execution_id.substring(0, 8)}...</Tag>
+            {onFilterWorkflow && (
+              <Tooltip title="Filter by workflow">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<LinkOutlined />}
+                  onClick={() => onFilterWorkflow(record.workflow_execution_id as string)}
+                />
+              </Tooltip>
+            )}
+            {record.node_id && onFilterNode && (
+              <Tooltip title="Filter by node">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<LinkOutlined rotate={90} />}
+                  onClick={() => onFilterNode(record.node_id as string)}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        ) : '-'
       ),
     },
     {

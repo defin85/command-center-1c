@@ -2,7 +2,7 @@
  * Extension file selector component with storage support
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { App, Form, Select, Upload, Button, Space, Spin } from 'antd';
 import { UploadOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
@@ -23,7 +23,7 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
     const [uploading, setUploading] = useState(false);
     const [fileList, setFileList] = useState<UploadFile[]>([]);
 
-    const fetchExtensions = async () => {
+    const fetchExtensions = useCallback(async () => {
         try {
             setLoading(true);
             const data = await extensionStorageApi.list();
@@ -34,11 +34,11 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
         } finally {
             setLoading(false);
         }
-    };
+    }, [message]);
 
     useEffect(() => {
         fetchExtensions();
-    }, []);
+    }, [fetchExtensions]);
 
     const handleUpload = async () => {
         if (fileList.length === 0) {

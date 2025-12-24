@@ -7,7 +7,7 @@
  * - Historical chart (30 min)
  * - Recent operations for this service
  */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Drawer, Card, Statistic, Row, Col, Spin, Empty, Button } from 'antd'
 import {
@@ -73,14 +73,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
   const [loading, setLoading] = useState(false)
   const [selectedMinutes, setSelectedMinutes] = useState(30)
 
-  // Fetch historical data when service changes
-  useEffect(() => {
-    if (service && visible) {
-      fetchHistoricalData()
-    }
-  }, [service, visible, selectedMinutes])
-
-  const fetchHistoricalData = async () => {
+  const fetchHistoricalData = useCallback(async () => {
     if (!service) return
 
     setLoading(true)
@@ -97,7 +90,14 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
     } finally {
       setLoading(false)
     }
-  }
+  }, [service, selectedMinutes])
+
+  // Fetch historical data when service changes
+  useEffect(() => {
+    if (service && visible) {
+      fetchHistoricalData()
+    }
+  }, [service, visible, fetchHistoricalData])
 
   if (!service) {
     return null

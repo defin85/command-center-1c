@@ -72,8 +72,8 @@ export function TemplatesPage() {
     try {
       const result = await syncMutation.mutateAsync({ dry_run: dryRun })
       message.success(`${result.message}: created=${result.created}, updated=${result.updated}, unchanged=${result.unchanged}`)
-    } catch (e: any) {
-      const status = e?.response?.status
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } } | null)?.response?.status
       if (status === 403) {
         message.error('Sync requires staff access')
         return
@@ -82,7 +82,8 @@ export function TemplatesPage() {
     }
   }
 
-  const showStaffWarning = templatesQuery.error && (templatesQuery as any).error?.response?.status === 403
+  const showStaffWarning = templatesQuery.error
+    && (templatesQuery.error as { response?: { status?: number } } | null)?.response?.status === 403
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>

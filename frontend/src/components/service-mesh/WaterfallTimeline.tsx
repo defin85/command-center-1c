@@ -78,6 +78,7 @@ function getServiceDisplayName(service: string): string {
 
 interface WaterfallTimelineProps {
   items: WaterfallItem[]
+  highlightThresholdMs?: number
   className?: string
 }
 
@@ -104,7 +105,11 @@ function formatMetadata(metadata: Record<string, unknown>): React.ReactNode {
   )
 }
 
-const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({ items, className }) => {
+const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
+  items,
+  highlightThresholdMs,
+  className,
+}) => {
   const [expandedItems, setExpandedItems] = useState<string[]>([])
 
   // Calculate total duration for scale
@@ -149,6 +154,11 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({ items, className 
           <span className="waterfall-time-marker waterfall-time-end">
             {formatDuration(totalDuration)}
           </span>
+          {highlightThresholdMs !== undefined && (
+            <span className="waterfall-time-marker waterfall-time-threshold">
+              slow ≥ {formatDuration(highlightThresholdMs)}
+            </span>
+          )}
         </div>
       </div>
 
@@ -161,11 +171,12 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({ items, className 
           const barOffset = getBarOffset(item.startOffset)
           const isExpanded = expandedItems.includes(item.id)
           const hasMetadata = item.metadata && Object.keys(item.metadata).length > 0
+          const isSlow = highlightThresholdMs !== undefined && item.duration >= highlightThresholdMs
 
           return (
             <div key={item.id} className="waterfall-row-wrapper">
               <div
-                className={`waterfall-row ${isExpanded ? 'waterfall-row-expanded' : ''}`}
+                className={`waterfall-row ${isExpanded ? 'waterfall-row-expanded' : ''} ${isSlow ? 'waterfall-row-slow' : ''}`}
                 onClick={() => hasMetadata && handleToggleExpand(item.id)}
                 style={{ cursor: hasMetadata ? 'pointer' : 'default' }}
               >
@@ -197,6 +208,9 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({ items, className 
                         <div>Time: {formatTimestamp(item.timestamp)}</div>
                         <div>Duration: {formatDuration(item.duration)}</div>
                         <div>Offset: +{formatDuration(item.startOffset)}</div>
+                        {isSlow && highlightThresholdMs !== undefined && (
+                          <div>Slow threshold: {formatDuration(highlightThresholdMs)}</div>
+                        )}
                       </div>
                     }
                   >
@@ -215,6 +229,11 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({ items, className 
                 <div className="waterfall-duration">
                   {item.duration > 0 ? formatDuration(item.duration) : '-'}
                 </div>
+                {isSlow && (
+                  <Tag color="orange" className="waterfall-slow-tag">
+                    slow
+                  </Tag>
+                )}
               </div>
 
               {/* Expanded metadata */}

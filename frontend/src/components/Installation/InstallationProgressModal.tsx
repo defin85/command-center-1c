@@ -44,8 +44,9 @@ export const InstallationProgressModal: React.FC<InstallationProgressModalProps>
                 if (data && (data.status === 'completed' || data.status === 'failed')) {
                     clearInterval(intervalId)
                 }
-            } catch (err: any) {
-                setError(err.message || 'Failed to fetch installation status')
+            } catch (err: unknown) {
+                const errorMessage = err instanceof Error ? err.message : 'Failed to fetch installation status'
+                setError(errorMessage)
             } finally {
                 setLoading(false)
             }

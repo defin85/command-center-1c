@@ -8,7 +8,7 @@
  * - Clone/Delete workflows
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   App,
@@ -67,7 +67,7 @@ const WorkflowList = () => {
   const [searchValue, setSearchValue] = useState('')
 
   // Load templates
-  const loadTemplates = async (page = 1) => {
+  const loadTemplates = useCallback(async (page = 1) => {
     setLoading(true)
     try {
       const response = await api.getWorkflowsListWorkflows({
@@ -88,11 +88,11 @@ const WorkflowList = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters.is_active, filters.search, filters.workflow_type, pagination.pageSize, message])
 
   useEffect(() => {
     loadTemplates()
-  }, [filters])
+  }, [filters, loadTemplates])
 
   // Handle delete
   const handleDelete = async (id: string) => {

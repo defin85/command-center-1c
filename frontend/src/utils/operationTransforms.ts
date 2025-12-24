@@ -62,6 +62,9 @@ export interface UIBatchOperation {
   success_rate: number | null
   created_by: string
   metadata: unknown
+  workflow_execution_id?: string
+  node_id?: string
+  trace_id?: string
   created_at: string
   updated_at: string
   database_names: string[]
@@ -124,6 +127,20 @@ export function transformTask(task: GeneratedTask): UITask {
  * Convert generated BatchOperation to UI BatchOperation format.
  */
 export function transformBatchOperation(op: GeneratedBatchOperation): UIBatchOperation {
+  const metadata = op.metadata as Record<string, unknown> | null
+  const workflowExecutionId =
+    metadata && typeof metadata === 'object'
+      ? (metadata.workflow_execution_id as string | undefined)
+      : undefined
+  const nodeId =
+    metadata && typeof metadata === 'object'
+      ? (metadata.node_id as string | undefined)
+      : undefined
+  const traceId =
+    metadata && typeof metadata === 'object'
+      ? (metadata.trace_id as string | undefined)
+      : undefined
+
   return {
     id: op.id,
     name: op.name,
@@ -144,6 +161,9 @@ export function transformBatchOperation(op: GeneratedBatchOperation): UIBatchOpe
     success_rate: parseNumericField(op.success_rate),
     created_by: op.created_by ?? '',
     metadata: op.metadata,
+    workflow_execution_id: workflowExecutionId,
+    node_id: nodeId,
+    trace_id: traceId,
     created_at: op.created_at,
     updated_at: op.updated_at,
     database_names: parseDatabaseNames(op.database_names),

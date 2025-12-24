@@ -16,6 +16,7 @@ import { DLQPage } from './pages/DLQ'
 import { Login } from './pages/Login/Login'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
+import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -88,8 +89,9 @@ function App() {
       }}>
         <AntApp>
           <GlobalApiErrorHandler />
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <Routes>
+          <DatabaseStreamProvider>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />
 
@@ -184,8 +186,9 @@ function App() {
               </MainLayout>
             </ProtectedRoute>
           } />
-            </Routes>
-          </BrowserRouter>
+              </Routes>
+            </BrowserRouter>
+          </DatabaseStreamProvider>
         </AntApp>
       </ConfigProvider>
     </ErrorBoundary>

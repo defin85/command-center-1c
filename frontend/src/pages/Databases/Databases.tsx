@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
-import { App, Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip } from 'antd'
+import { App, Table, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
+import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -17,9 +17,9 @@ import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
 import { queryKeys } from '../../api/queries'
-import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus } from '../../api/queries/databases'
+import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus, useUpdateDatabaseCredentials } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
-import { useDatabaseStreamInvalidation } from '../../hooks/useDatabaseStreamInvalidation'
+import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 
 // Get generated API functions (for fetchStatus in InstallationProgressModal)
@@ -39,7 +39,10 @@ export const Databases = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [progressModalVisible, setProgressModalVisible] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null)
+  const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
+  const [credentialsDatabase, setCredentialsDatabase] = useState<Database | null>(null)
   const [form] = Form.useForm()
+  const [credentialsForm] = Form.useForm()
 
   // Row selection state
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -55,9 +58,7 @@ export const Databases = () => {
 
   // React Query hooks
   const { data: clusters = [], isLoading: clustersLoading } = useClusters()
-  const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamInvalidation({
-    clusterId: selectedClusterId,
-  })
+  const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamStatus()
   const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
   const { data: databases = [], isLoading: databasesLoading } = useDatabases({
     filters: selectedClusterId ? { cluster_id: selectedClusterId } : undefined,
@@ -70,6 +71,7 @@ export const Databases = () => {
   const healthCheck = useHealthCheckDatabase()
   const bulkHealthCheck = useBulkHealthCheckDatabases()
   const setDatabaseStatus = useSetDatabaseStatus()
+  const updateDatabaseCredentials = useUpdateDatabaseCredentials()
 
   // Derived state: selected cluster object
   const selectedCluster = useMemo(() => {
@@ -103,6 +105,75 @@ export const Databases = () => {
   const handleInstallExtension = (database: Database) => {
     setSelectedDatabase(database)
     setModalVisible(true)
+  }
+
+  const openCredentialsModal = (database: Database) => {
+    setCredentialsDatabase(database)
+    credentialsForm.setFieldsValue({
+      username: database.username ?? '',
+      password: '',
+    })
+    setCredentialsModalVisible(true)
+  }
+
+  const handleCredentialsSave = async () => {
+    if (!credentialsDatabase) return
+
+    const values = await credentialsForm.validateFields()
+    const username = (values.username ?? '').trim()
+    const password = values.password ?? ''
+
+    const payload: { database_id: string; username?: string; password?: string } = {
+      database_id: credentialsDatabase.id,
+    }
+
+    if (username) payload.username = username
+    if (password) payload.password = password
+
+    if (!payload.username && !payload.password) {
+      message.info('Нет изменений для сохранения')
+      return
+    }
+
+    updateDatabaseCredentials.mutate(payload, {
+      onSuccess: (response) => {
+        message.success(response.message || 'Креды базы обновлены')
+        setCredentialsModalVisible(false)
+        setCredentialsDatabase(null)
+        credentialsForm.resetFields()
+      },
+      onError: (error: Error) => {
+        message.error('Не удалось обновить креды: ' + error.message)
+      },
+    })
+  }
+
+  const handleCredentialsReset = () => {
+    if (!credentialsDatabase) return
+
+    modal.confirm({
+      title: 'Сбросить креды базы?',
+      content: 'Логин и пароль будут очищены.',
+      okText: 'Сбросить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        updateDatabaseCredentials.mutate(
+          { database_id: credentialsDatabase.id, reset: true },
+          {
+            onSuccess: (response) => {
+              message.success(response.message || 'Креды базы сброшены')
+              setCredentialsModalVisible(false)
+              setCredentialsDatabase(null)
+              credentialsForm.resetFields()
+            },
+            onError: (error: Error) => {
+              message.error('Не удалось сбросить креды: ' + error.message)
+            },
+          }
+        )
+      },
+    })
   }
 
   const handleConfirmInstall = async () => {
@@ -289,7 +360,7 @@ export const Databases = () => {
       dataIndex: 'name',
       key: 'name',
       sorter: (a: Database, b: Database) => a.name.localeCompare(b.name),
-      render: (name: string, record: Database) => {
+      render: (name: string) => {
         return <span>{name}</span>
       },
     },
@@ -355,6 +426,16 @@ export const Databases = () => {
       ],
       onFilter: (value: boolean | React.Key, record: Database) => record.last_check_status === value,
       width: 120,
+    },
+    {
+      title: 'Credentials',
+      key: 'credentials',
+      render: (_: unknown, record: Database) => (
+        <Tag color={record.password_configured ? 'green' : 'default'}>
+          {record.password_configured ? 'Configured' : 'Missing'}
+        </Tag>
+      ),
+      width: 140,
     },
     {
       title: 'Restrictions',
@@ -470,6 +551,12 @@ export const Databases = () => {
               Status <DownOutlined />
             </Button>
           </Dropdown>
+          <Button
+            size="small"
+            icon={<KeyOutlined />}
+            onClick={() => openCredentialsModal(record)}
+            title="Credentials"
+          />
           <DatabaseActionsMenu
             databaseId={record.id}
             databaseStatus={record.status}
@@ -597,6 +684,55 @@ export const Databases = () => {
             rules={[{ required: true, message: 'Выберите файл расширения' }]}
           >
             <ExtensionFileSelector />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={credentialsDatabase ? `Credentials: ${credentialsDatabase.name}` : 'Credentials'}
+        open={credentialsModalVisible}
+        onCancel={() => {
+          setCredentialsModalVisible(false)
+          setCredentialsDatabase(null)
+          credentialsForm.resetFields()
+        }}
+        footer={[
+          <Button
+            key="reset"
+            danger
+            onClick={handleCredentialsReset}
+            disabled={!credentialsDatabase?.password_configured && !credentialsDatabase?.username}
+          >
+            Reset
+          </Button>,
+          <Button
+            key="cancel"
+            onClick={() => {
+              setCredentialsModalVisible(false)
+              setCredentialsDatabase(null)
+              credentialsForm.resetFields()
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            onClick={handleCredentialsSave}
+            loading={updateDatabaseCredentials.isPending}
+          >
+            Save
+          </Button>,
+        ]}
+      >
+        <Form form={credentialsForm} layout="vertical">
+          <Form.Item label="OData Username" name="username">
+            <Input placeholder="Optional OData username" />
+          </Form.Item>
+          <Form.Item label="OData Password" name="password">
+            <Input.Password
+              placeholder={credentialsDatabase?.password_configured ? 'Configured' : 'Enter password'}
+            />
           </Form.Item>
         </Form>
       </Modal>

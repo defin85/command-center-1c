@@ -274,15 +274,17 @@ export const TraceViewerModal = ({
           </Card>
         )}
 
-        <Button
-          type="link"
-          icon={<ExportOutlined />}
-          href={getJaegerSpanUrl(trace!.traceId, selectedSpan.spanId)}
-          target="_blank"
-          className="view-in-jaeger"
-        >
-          View in Jaeger
-        </Button>
+        {trace && (
+          <Button
+            type="link"
+            icon={<ExportOutlined />}
+            href={getJaegerSpanUrl(trace.traceId, selectedSpan.spanId)}
+            target="_blank"
+            className="view-in-jaeger"
+          >
+            View in Jaeger
+          </Button>
+        )}
       </div>
     )
   }

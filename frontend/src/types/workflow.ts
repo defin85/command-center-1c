@@ -134,8 +134,8 @@ export interface NodeStepResult {
   id: string
   node_id: string
   status: StepStatus
-  input_data?: Record<string, any>
-  output_data?: Record<string, any>
+  input_data?: Record<string, unknown>
+  output_data?: Record<string, unknown>
   error_message?: string
   started_at?: string
   completed_at?: string
@@ -148,13 +148,13 @@ export interface WorkflowExecution {
   id: string
   workflow_template: string
   workflow_template_name?: string
-  input_context: Record<string, any>
+  input_context: Record<string, unknown>
   status: ExecutionStatus
   progress_percent: number
   current_node_id?: string
   completed_nodes: string[]
   failed_nodes: string[]
-  final_result?: Record<string, any>
+  final_result?: Record<string, unknown>
   error_message?: string
   error_node_id?: string
   trace_id?: string
@@ -166,7 +166,7 @@ export interface WorkflowExecution {
 }
 
 export interface WorkflowExecutionCreate {
-  input_context: Record<string, any>
+  input_context: Record<string, unknown>
   async?: boolean
 }
 
@@ -180,7 +180,7 @@ export interface ValidationIssue {
   severity: ValidationSeverity
   message: string
   node_ids?: string[]
-  details?: Record<string, any>
+  details?: Record<string, unknown>
 }
 
 export interface ValidationResult {
@@ -202,7 +202,7 @@ export interface WorkflowNodeData {
   templateId?: string
   config?: NodeConfig
   status?: StepStatus          // For monitor mode
-  output?: Record<string, any>
+  output?: Record<string, unknown>
   error?: string
   durationMs?: number
 }

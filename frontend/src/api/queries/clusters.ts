@@ -16,6 +16,7 @@ import type { ResetSyncStatusRequest } from '../generated/model/resetSyncStatusR
 import type { ResetSyncStatusResponse } from '../generated/model/resetSyncStatusResponse'
 import type { SystemConfig } from '../generated/model/systemConfig'
 
+import { apiClient } from '../client'
 import { queryKeys } from './index'
 
 // Initialize API client
@@ -26,7 +27,21 @@ const api = getV2()
 // =============================================================================
 
 // Cluster create/update uses the Cluster type without readonly fields
-export type ClusterInput = Omit<Cluster, 'id' | 'status_display' | 'last_sync' | 'databases_count' | 'created_at' | 'updated_at'>
+export type ClusterInput = Omit<
+  Cluster,
+  'id' | 'status_display' | 'last_sync' | 'databases_count' | 'created_at' | 'updated_at' | 'cluster_pwd_configured'
+>
+export type ClusterCredentialsUpdateRequest = {
+  cluster_id: string
+  username?: string
+  password?: string
+  reset?: boolean
+}
+
+export type ClusterCredentialsUpdateResponse = {
+  cluster: Cluster
+  message: string
+}
 
 // =============================================================================
 // Fetch Functions
@@ -178,6 +193,23 @@ export function useDiscoverClusters() {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
       }, 2000)
+    },
+  })
+}
+
+/**
+ * Update cluster credentials (username/password) or reset them.
+ */
+export function useUpdateClusterCredentials() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: ClusterCredentialsUpdateRequest): Promise<ClusterCredentialsUpdateResponse> => {
+      const response = await apiClient.post('/api/v2/clusters/update-credentials/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
     },
   })
 }

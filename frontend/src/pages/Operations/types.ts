@@ -17,6 +17,8 @@ export interface OperationsTableProps {
   onRefresh: () => void
   onViewDetails: (operation: UIBatchOperation) => void
   onCancel: (operationId: string) => void
+  onFilterWorkflow?: (workflowExecutionId: string) => void
+  onFilterNode?: (nodeId: string) => void
 }
 
 /**
@@ -26,17 +28,5 @@ export interface OperationDetailsModalProps {
   operation: UIBatchOperation | null
   visible: boolean
   onClose: () => void
-  onMonitor: (operationId: string) => void
+  onTimeline: (operationId: string) => void
 }
-
-/**
- * Props for LiveMonitorTab component (placeholder)
- */
-export interface LiveMonitorTabProps {
-  operationId?: string
-}
-
-/**
- * Tab keys for OperationsPage
- */
-export type OperationsTabKey = 'list' | 'monitor'

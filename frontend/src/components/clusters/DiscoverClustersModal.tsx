@@ -39,12 +39,22 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                     form.resetFields()
                     onClose()
                 },
-                onError: (error: any) => {
-                    const errorMessage =
-                        error.response?.data?.error?.message ||
-                        error.response?.data?.message ||
-                        error.message
-                    message.error('Discovery failed: ' + errorMessage)
+                onError: (error: unknown) => {
+                    const errorMessage = (() => {
+                        if (typeof error === 'object' && error !== null) {
+                            const maybe = error as {
+                                response?: { data?: { error?: { message?: string }; message?: string } }
+                                message?: string
+                            }
+                            return (
+                                maybe.response?.data?.error?.message ||
+                                maybe.response?.data?.message ||
+                                maybe.message
+                            )
+                        }
+                        return undefined
+                    })()
+                    message.error('Discovery failed: ' + (errorMessage || 'unknown error'))
                 },
             })
         } catch {

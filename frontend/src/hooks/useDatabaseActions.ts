@@ -65,7 +65,7 @@ export const useDatabaseActions = (): UseDatabaseActionsResult => {
         setLoading(false);
       }
     },
-    []
+    [message]
   );
 
   return { execute, loading, error };

@@ -137,8 +137,9 @@ const WorkflowMonitor = () => {
         setDagStructure(convertDAGToLegacy(templateResponse.workflow.dag_structure))
 
         setError(null)
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Failed to load execution data')
+      } catch (err: unknown) {
+        const message = (err as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
+        setError(message || 'Failed to load execution data')
       } finally {
         setIsLoading(false)
       }
@@ -179,7 +180,7 @@ const WorkflowMonitor = () => {
       setIsCancelling(true)
       // Use generated API directly
       await api.postWorkflowsCancelExecution({ execution_id: executionId })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to cancel execution:', err)
     } finally {
       setIsCancelling(false)
@@ -194,7 +195,7 @@ const WorkflowMonitor = () => {
       // Use generated API directly with transforms
       const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
       setExecution(convertExecutionToLegacy(execResponse.execution))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to refresh:', err)
     }
   }

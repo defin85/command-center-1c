@@ -53,7 +53,7 @@ interface WorkflowCanvasProps {
   // Node statuses for monitor mode
   nodeStatuses?: Record<string, {
     status: string
-    output?: Record<string, any>
+    output?: Record<string, unknown>
     error?: string
     durationMs?: number
   }>
@@ -134,7 +134,7 @@ const WorkflowCanvasInner = ({
       return dagToReactFlow(dagStructure)
     }
     return { nodes: [], edges: [] }
-  }, []) // Empty deps - only for initial render
+  }, [dagStructure])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialData.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialData.edges)

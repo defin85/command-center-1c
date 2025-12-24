@@ -145,7 +145,7 @@ export const InstallationStatusTable: React.FC = () => {
       title: 'Action',
       key: 'action',
       width: 180,
-      render: (_: any, record: ExtensionInstallation) => (
+      render: (_: unknown, record: ExtensionInstallation) => (
         <Space>
           {record.status === 'failed' && (
             <Button

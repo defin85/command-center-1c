@@ -1,10 +1,11 @@
-import { Layout, Menu, Button, Dropdown } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined } from '@ant-design/icons'
+import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
+import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 
 const { Header, Content, Sider } = Layout
 
@@ -16,6 +17,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const navigate = useNavigate()
   const location = useLocation()
   const meQuery = useMe()
+  const {
+    isConnected: isDatabaseStreamConnected,
+    isConnecting: isDatabaseStreamConnecting,
+    error: databaseStreamError,
+    cooldownSeconds: databaseStreamCooldownSeconds,
+    reconnect: reconnectDatabaseStream,
+  } = useDatabaseStreamStatus()
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -88,9 +96,46 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
-          CommandCenter1C
-        </div>
+        <Space size="middle">
+          <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
+            CommandCenter1C
+          </div>
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            content={(
+              <Space direction="vertical" size={4}>
+                <Typography.Text strong>Database stream</Typography.Text>
+                <Tag color={isDatabaseStreamConnected ? 'green' : 'default'}>
+                  {isDatabaseStreamConnecting
+                    ? 'Connecting...'
+                    : isDatabaseStreamConnected
+                      ? 'Connected'
+                      : 'Fallback'}
+                </Tag>
+                {databaseStreamError && (
+                  <Typography.Text type="secondary">{databaseStreamError}</Typography.Text>
+                )}
+                <Button
+                  size="small"
+                  onClick={reconnectDatabaseStream}
+                  disabled={isDatabaseStreamConnecting || databaseStreamCooldownSeconds > 0}
+                >
+                  {databaseStreamCooldownSeconds > 0
+                    ? `Retry in ${databaseStreamCooldownSeconds}s`
+                    : 'Reconnect'}
+                </Button>
+              </Space>
+            )}
+          >
+            <Tooltip title={isDatabaseStreamConnected ? 'Live updates enabled' : (databaseStreamError || 'Live stream unavailable')}>
+              <Tag color={isDatabaseStreamConnected ? 'green' : 'default'} style={{ cursor: 'pointer' }}>
+                {isDatabaseStreamConnecting && <LoadingOutlined style={{ marginRight: 6 }} spin />}
+                Stream: {isDatabaseStreamConnected ? 'Connected' : 'Fallback'}
+              </Tag>
+            </Tooltip>
+          </Popover>
+        </Space>
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
             {meQuery.data?.username ?? '...'}

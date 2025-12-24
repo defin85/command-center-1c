@@ -3,11 +3,13 @@
  * Re-exports OperationsPage as Operations for backward compatibility.
  */
 
+/* eslint-disable react-refresh/only-export-components */
+
 export { OperationsPage as Operations } from './OperationsPage'
 export { OperationsPage } from './OperationsPage'
 export { OperationsTable } from './components/OperationsTable'
 export { OperationDetailsModal } from './components/OperationDetailsModal'
-export { LiveMonitorTab } from './components/LiveMonitorTab'
+export { OperationsFilters } from './components/OperationsFilters'
 export { NewOperationWizard } from './components/NewOperationWizard'
 export { getStatusColor, getOperationTypeLabel } from './utils'
 export type {
@@ -15,8 +17,6 @@ export type {
   UITask,
   OperationsTableProps,
   OperationDetailsModalProps,
-  LiveMonitorTabProps,
-  OperationsTabKey,
 } from './types'
 export type {
   NewOperationWizardProps,

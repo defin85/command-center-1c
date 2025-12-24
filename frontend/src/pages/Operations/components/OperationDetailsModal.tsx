@@ -3,13 +3,13 @@
  * Extracted from Operations.tsx.
  */
 
-import { Modal, Space, Table, Tag, Progress, Alert, Typography, Button } from 'antd'
-import { MonitorOutlined } from '@ant-design/icons'
+import { Modal, Space, Table, Tag, Progress, Alert, Typography, Button, Tooltip } from 'antd'
+import { MonitorOutlined, BranchesOutlined, FilterOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { OperationDetailsModalProps, UITask } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
 
-const { Paragraph } = Typography
+const { Paragraph, Link } = Typography
 
 /**
  * OperationDetailsModal - Shows detailed operation info with task breakdown
@@ -18,8 +18,15 @@ export const OperationDetailsModal = ({
   operation,
   visible,
   onClose,
-  onMonitor,
+  onTimeline,
 }: OperationDetailsModalProps) => {
+  const applyFilter = (key: 'workflow_execution_id' | 'node_id', value?: string) => {
+    if (!value) return
+    const params = new URLSearchParams(window.location.search)
+    params.set(key, value)
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
   const taskColumns: ColumnsType<UITask> = [
     {
       title: 'Database',
@@ -64,7 +71,7 @@ export const OperationDetailsModal = ({
       {operation && (
         <div>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {/* Operation ID with Monitor Workflow button */}
+            {/* Operation ID with Timeline button */}
             <div
               style={{
                 padding: '12px',
@@ -87,11 +94,61 @@ export const OperationDetailsModal = ({
               <Button
                 type="primary"
                 icon={<MonitorOutlined />}
-                onClick={() => onMonitor(operation.id)}
+                onClick={() => onTimeline(operation.id)}
               >
-                Monitor Workflow
+                Timeline
               </Button>
             </div>
+
+            {operation.workflow_execution_id && (
+              <div>
+                <strong>Workflow Execution:</strong>{' '}
+                <Link href={`/workflows/executions/${operation.workflow_execution_id}`}>
+                  {operation.workflow_execution_id}
+                </Link>
+                {operation.node_id && (
+                  <Paragraph
+                    copyable={{ text: operation.node_id }}
+                    style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
+                  >
+                    <BranchesOutlined style={{ marginRight: 6 }} />
+                    <code>{operation.node_id}</code>
+                  </Paragraph>
+                )}
+                <Button
+                  size="small"
+                  icon={<FilterOutlined />}
+                  style={{ marginLeft: 8 }}
+                  onClick={() => applyFilter('workflow_execution_id', operation.workflow_execution_id)}
+                >
+                  Filter
+                </Button>
+                {operation.node_id && (
+                  <Button
+                    size="small"
+                    icon={<FilterOutlined />}
+                    style={{ marginLeft: 8 }}
+                    onClick={() => applyFilter('node_id', operation.node_id)}
+                  >
+                    Node
+                  </Button>
+                )}
+              </div>
+            )}
+            {operation.trace_id && (
+              <div>
+                <strong>Trace:</strong>{' '}
+                <Tooltip title="Открыть trace через API Gateway">
+                  <Link
+                    href={`/api/v2/tracing/traces/${operation.trace_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {operation.trace_id}
+                  </Link>
+                </Tooltip>
+              </div>
+            )}
 
             <div>
               <strong>Description:</strong> {operation.description || '-'}

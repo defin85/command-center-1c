@@ -21,7 +21,17 @@ import {
   cleanValues,
   coerceValues,
 } from '../utils/defaults'
-import type { ExtendedSchemaProperty } from '../types'
+import type { ExtendedSchemaProperty, FieldConfig } from '../types'
+
+const makeFieldConfig = (overrides: Partial<FieldConfig>): FieldConfig => ({
+  name: 'field',
+  type: 'text',
+  schema: { type: 'string' } as ExtendedSchemaProperty,
+  order: 0,
+  required: false,
+  label: 'Field',
+  ...overrides,
+})
 
 describe('schemaParser', () => {
   describe('inferFieldType', () => {
@@ -294,9 +304,9 @@ describe('schemaParser', () => {
   describe('sortFieldsByOrder', () => {
     it('sorts fields by order property', () => {
       const fields = [
-        { name: 'c', order: 3 } as any,
-        { name: 'a', order: 1 } as any,
-        { name: 'b', order: 2 } as any,
+        makeFieldConfig({ name: 'c', order: 3 }),
+        makeFieldConfig({ name: 'a', order: 1 }),
+        makeFieldConfig({ name: 'b', order: 2 }),
       ]
 
       const sorted = sortFieldsByOrder(fields)
@@ -306,8 +316,8 @@ describe('schemaParser', () => {
 
     it('does not mutate original array', () => {
       const fields = [
-        { name: 'c', order: 3 } as any,
-        { name: 'a', order: 1 } as any,
+        makeFieldConfig({ name: 'c', order: 3 }),
+        makeFieldConfig({ name: 'a', order: 1 }),
       ]
 
       const original = [...fields]
@@ -319,12 +329,12 @@ describe('schemaParser', () => {
 
   describe('getValidationRules', () => {
     it('creates required rule', () => {
-      const fieldConfig = {
+      const fieldConfig = makeFieldConfig({
         name: 'name',
         required: true,
         label: 'Name',
         schema: { type: 'string' },
-      } as any
+      })
 
       const rules = getValidationRules(fieldConfig)
 
@@ -335,12 +345,12 @@ describe('schemaParser', () => {
     })
 
     it('creates minLength rule', () => {
-      const fieldConfig = {
+      const fieldConfig = makeFieldConfig({
         name: 'username',
         required: false,
         label: 'Username',
         schema: { type: 'string', minLength: 3 },
-      } as any
+      })
 
       const rules = getValidationRules(fieldConfig)
 
@@ -351,12 +361,12 @@ describe('schemaParser', () => {
     })
 
     it('creates number range rules', () => {
-      const fieldConfig = {
+      const fieldConfig = makeFieldConfig({
         name: 'age',
         required: false,
         label: 'Age',
         schema: { type: 'number', minimum: 18, maximum: 100 },
-      } as any
+      })
 
       const rules = getValidationRules(fieldConfig)
 
@@ -373,12 +383,12 @@ describe('schemaParser', () => {
     })
 
     it('creates email format rule', () => {
-      const fieldConfig = {
+      const fieldConfig = makeFieldConfig({
         name: 'email',
         required: false,
         label: 'Email',
         schema: { type: 'string', format: 'email' },
-      } as any
+      })
 
       const rules = getValidationRules(fieldConfig)
 

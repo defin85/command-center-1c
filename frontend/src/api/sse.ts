@@ -161,8 +161,10 @@ export const openSseStream = (url: string, options: SSEOptions): (() => void) =>
       const decoder = new TextDecoder()
       let buffer = ''
 
-      while (true) {
+      let doneReading = false
+      while (!doneReading && !controller.signal.aborted) {
         const { value, done } = await reader.read()
+        doneReading = done
         if (done) {
           break
         }

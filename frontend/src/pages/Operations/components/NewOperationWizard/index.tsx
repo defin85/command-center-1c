@@ -226,7 +226,7 @@ export const NewOperationWizard = ({
       ...prev,
       currentStep: Math.min(prev.currentStep + 1, STEPS.length - 1),
     }))
-  }, [canProceed, state.currentStep])
+  }, [canProceed, state.currentStep, message])
 
   const handlePrevious = useCallback(() => {
     setState((prev) => ({
@@ -283,6 +283,7 @@ export const NewOperationWizard = ({
     state.uploadedFiles,
     onSubmit,
     onClose,
+    message,
   ])
 
   const handleClose = useCallback(() => {

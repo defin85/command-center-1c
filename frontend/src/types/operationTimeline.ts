@@ -16,6 +16,9 @@ export interface TimelineEvent {
   timestamp: number
   event: string
   service: string
+  trace_id?: string | null
+  workflow_execution_id?: string | null
+  node_id?: string | null
   metadata: Record<string, unknown>
 }
 

@@ -22,7 +22,7 @@ export type NodeStatusType = 'pending' | 'running' | 'completed' | 'failed' | 's
 export interface NodeStatus {
   nodeId: string
   status: NodeStatusType
-  output?: Record<string, any>
+  output?: Record<string, unknown>
   error?: string
   durationMs?: number
   spanId?: string
@@ -46,7 +46,7 @@ export interface WorkflowStatus {
 export interface WorkflowCompletedEvent {
   executionId: string
   status: WorkflowStatusType
-  result?: Record<string, any>
+  result?: Record<string, unknown>
   errorMessage?: string
   durationMs?: number
   completedAt?: string
@@ -59,7 +59,7 @@ export interface UseWorkflowExecutionResult {
   currentNodeId?: string
   traceId?: string
   errorMessage?: string
-  result?: Record<string, any>
+  result?: Record<string, unknown>
 
   // Node statuses (nodeId -> status)
   nodeStatuses: Record<string, NodeStatus>
@@ -83,19 +83,29 @@ interface WebSocketMessage {
   current_node_id?: string
   trace_id?: string
   error_message?: string
-  node_statuses?: Record<string, any>
+  node_statuses?: Record<string, NodeStatusPayload>
   node_id?: string
-  output?: Record<string, any>
+  output?: Record<string, unknown>
   error?: string
   duration_ms?: number
   span_id?: string
   started_at?: string
   completed_at?: string
-  result?: Record<string, any>
+  result?: Record<string, unknown>
   code?: string
   message?: string
   created_at?: string
   updated_at?: string
+}
+
+interface NodeStatusPayload {
+  status?: string
+  output?: Record<string, unknown>
+  error?: string
+  duration_ms?: number
+  span_id?: string
+  started_at?: string
+  completed_at?: string
 }
 
 // Reconnection settings
@@ -112,7 +122,7 @@ export const useWorkflowExecution = (
   const [currentNodeId, setCurrentNodeId] = useState<string | undefined>()
   const [traceId, setTraceId] = useState<string | undefined>()
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
-  const [result, setResult] = useState<Record<string, any> | undefined>()
+  const [result, setResult] = useState<Record<string, unknown> | undefined>()
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, NodeStatus>>({})
 
   // Connection state
@@ -156,15 +166,16 @@ export const useWorkflowExecution = (
           const converted: Record<string, NodeStatus> = {}
           for (const [nodeId, nodeData] of Object.entries(message.node_statuses)) {
             if (typeof nodeData === 'object' && nodeData !== null) {
+              const payload = nodeData as NodeStatusPayload
               converted[nodeId] = {
                 nodeId,
-                status: (nodeData as any).status || 'pending',
-                output: (nodeData as any).output,
-                error: (nodeData as any).error,
-                durationMs: (nodeData as any).duration_ms,
-                spanId: (nodeData as any).span_id,
-                startedAt: (nodeData as any).started_at,
-                completedAt: (nodeData as any).completed_at,
+                status: (payload.status as NodeStatusType) || 'pending',
+                output: payload.output,
+                error: payload.error,
+                durationMs: payload.duration_ms,
+                spanId: payload.span_id,
+                startedAt: payload.started_at,
+                completedAt: payload.completed_at,
               }
             }
           }
@@ -175,10 +186,11 @@ export const useWorkflowExecution = (
       case 'node_status':
         // Individual node update
         if (message.node_id) {
+          const nodeId = message.node_id
           setNodeStatuses((prev) => ({
             ...prev,
-            [message.node_id!]: {
-              nodeId: message.node_id!,
+            [nodeId]: {
+              nodeId,
               status: (message.status as NodeStatusType) || 'pending',
               output: message.output,
               error: message.error,

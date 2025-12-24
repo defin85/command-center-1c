@@ -65,6 +65,16 @@ export interface JaegerResponse {
   errors: string[] | null
 }
 
+type ApiErrorLike = {
+  code?: string
+  message?: string
+  response?: { status?: number }
+}
+
+const isApiErrorLike = (error: unknown): error is ApiErrorLike => {
+  return typeof error === 'object' && error !== null
+}
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -83,12 +93,12 @@ export const getTraceById = async (traceId: string, timeoutMs: number = 10000): 
     }
 
     return null
-  } catch (error: any) {
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+  } catch (error: unknown) {
+    if (isApiErrorLike(error) && (error.code === 'ECONNABORTED' || error.message?.includes('timeout'))) {
       console.error(`Jaeger request timed out after ${timeoutMs}ms`)
       throw new Error(`Jaeger request timed out after ${timeoutMs}ms`)
     }
-    if (error.response?.status === 404) {
+    if (isApiErrorLike(error) && error.response?.status === 404) {
       return null
     }
     console.error('Failed to fetch trace from Jaeger:', error)
@@ -218,8 +228,8 @@ export const searchTraces = async (
     )
 
     return (response?.data || []) as unknown as JaegerTrace[]
-  } catch (error: any) {
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+  } catch (error: unknown) {
+    if (isApiErrorLike(error) && (error.code === 'ECONNABORTED' || error.message?.includes('timeout'))) {
       console.error(`Jaeger search timed out after ${timeoutMs}ms`)
       throw new Error(`Jaeger search timed out after ${timeoutMs}ms`)
     }

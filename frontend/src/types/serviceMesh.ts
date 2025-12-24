@@ -155,6 +155,9 @@ export interface ServiceMeshWSMessage {
 
   // Operation flow fields (for operation_flow_update)
   operation_id?: string
+  trace_id?: string
+  workflow_execution_id?: string
+  node_id?: string
   flow?: {
     current_service: string
     path: Array<{ service: string; status: string; timestamp: string }>
@@ -241,6 +244,9 @@ export interface OperationFlowEvent {
   type: 'operation_flow_update'
   operation_id: string
   timestamp: string
+  trace_id?: string
+  workflow_execution_id?: string
+  node_id?: string
   flow: OperationFlowData
   operation: OperationFlowOperation
 }
