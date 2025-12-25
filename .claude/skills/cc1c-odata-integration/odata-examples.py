@@ -171,7 +171,7 @@ def example_batch_create_users(count=10):
         batch_body.append("Content-Type: application/http")
         batch_body.append("Content-Transfer-Encoding: binary")
         batch_body.append("")
-        batch_body.append(f"POST Catalog_Users HTTP/1.1")
+        batch_body.append("POST Catalog_Users HTTP/1.1")
         batch_body.append("Content-Type: application/json")
         batch_body.append("")
 

@@ -677,8 +677,8 @@ class EventSubscriberClusterInfoTest(TestCase):
         self.assertIn('ras_infobase_id', response['error'])
 
     @patch('apps.operations.event_subscriber.redis.Redis')
-    def test_handle_get_cluster_info_success(self, mock_redis_class):
-        """Test successful cluster info response."""
+    def test_handle_get_cluster_info_success_with_ids(self, mock_redis_class):
+        """Test successful cluster info response with IDs."""
         from apps.databases.models import Cluster
 
         cluster_uuid = uuid.uuid4()

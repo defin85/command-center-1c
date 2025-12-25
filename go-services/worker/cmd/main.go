@@ -25,6 +25,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
 	"github.com/commandcenter1c/commandcenter/worker/internal/processor"
 	"github.com/commandcenter1c/commandcenter/worker/internal/queue"
+	workerRuntimeSettings "github.com/commandcenter1c/commandcenter/worker/internal/runtime_settings"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler"
 	"github.com/commandcenter1c/commandcenter/worker/internal/scheduler/jobs"
 	"github.com/commandcenter1c/commandcenter/worker/internal/template"
@@ -172,11 +173,41 @@ func main() {
 
 	// Initialize TimelineRecorder for operation tracing
 	timelineCfg := tracing.DefaultTimelineConfig("worker")
+	timelineCfg.StreamEnabled = true
+	timelineCfg.QueueSize = cfg.TimelineQueueSize
+	timelineCfg.WorkerCount = cfg.TimelineWorkerCount
+	timelineCfg.DropOnFull = cfg.TimelineDropOnFull
 	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
+	var timelineSyncer *workerRuntimeSettings.TimelineSettingsSyncer
+	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
+		runtimeClient, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
+			BaseURL: cfg.OrchestratorURL,
+			Token:   cfg.InternalAPIToken,
+		})
+		if err != nil {
+			log.Warn("failed to create orchestrator client for runtime settings",
+				zap.Error(err),
+			)
+		} else {
+			timelineSyncer = workerRuntimeSettings.NewTimelineSettingsSyncer(
+				runtimeClient,
+				rt,
+				zapLog,
+				timelineCfg.QueueSize,
+				timelineCfg.WorkerCount,
+				timelineCfg.DropOnFull,
+				time.Minute,
+			)
+			go timelineSyncer.Start(ctx)
+		}
+	}
 	log.Info("timeline recorder initialized",
 		zap.String("service", "worker"),
 		zap.Duration("ttl", timelineCfg.TTL),
 		zap.Int("max_entries", timelineCfg.MaxEntries),
+		zap.Int("queue_size", timelineCfg.QueueSize),
+		zap.Int("worker_count", timelineCfg.WorkerCount),
+		zap.Bool("drop_on_full", timelineCfg.DropOnFull),
 	)
 
 	// Shared OData service for drivers and workflows.
@@ -444,6 +475,17 @@ func main() {
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	resetChan := make(chan os.Signal, 1)
+	signal.Notify(resetChan, syscall.SIGUSR1)
+	go func() {
+		for range resetChan {
+			if timelineSyncer != nil {
+				log.Info("received SIGUSR1, resetting timeline queue")
+				timelineSyncer.ResetQueue()
+			}
+		}
+	}()
 
 	<-sigChan
 	log.Info("shutting down worker service")

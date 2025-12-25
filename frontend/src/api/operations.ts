@@ -49,6 +49,55 @@ export interface OperationEvent {
   error?: string;
 }
 
+export interface StreamStatus {
+  active_streams: number;
+  max_streams: number;
+}
+
+export interface StreamMuxStatus {
+  active_streams: number;
+  max_streams: number;
+  active_subscriptions: number;
+  max_subscriptions: number;
+}
+
+export interface StreamMuxTicketResponse {
+  ticket: string;
+  expires_in: number;
+  stream_url: string;
+}
+
+export interface StreamMuxSubscriptionResponse {
+  subscribed?: string[];
+  denied?: string[];
+  missing?: string[];
+  unsubscribed?: string[];
+  active_subscriptions: number;
+  max_subscriptions: number;
+}
+
+export interface OperationCatalogItem {
+  id: string;
+  kind: 'operation' | 'template';
+  operation_type?: string | null;
+  template_id?: string | null;
+  label: string;
+  description: string;
+  driver: string;
+  category: string;
+  tags?: string[];
+  requires_config: boolean;
+  has_ui_form: boolean;
+  icon?: string | null;
+  deprecated: boolean;
+  deprecated_message?: string | null;
+}
+
+export interface OperationCatalogResponse {
+  items: OperationCatalogItem[];
+  count: number;
+}
+
 /**
  * Execute RAS operation on selected databases
  */
@@ -69,11 +118,70 @@ export const executeOperation = async (
  * This is more secure than passing JWT tokens in URLs.
  */
 export const getStreamTicket = async (
-  operationId: string
+  operationId: string,
+  clientId?: string
 ): Promise<SSETicketResponse> => {
   const response = await apiClient.post<SSETicketResponse>(
     '/api/v2/operations/stream-ticket/',
-    { operation_id: operationId }
+    { operation_id: operationId, client_id: clientId },
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const getStreamStatus = async (): Promise<StreamStatus> => {
+  const response = await apiClient.get<StreamStatus>(
+    '/api/v2/operations/stream-status/',
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const getStreamMuxStatus = async (): Promise<StreamMuxStatus> => {
+  const response = await apiClient.get<StreamMuxStatus>(
+    '/api/v2/operations/stream-mux-status/',
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const getStreamMuxTicket = async (
+  clientId?: string
+): Promise<StreamMuxTicketResponse> => {
+  const response = await apiClient.post<StreamMuxTicketResponse>(
+    '/api/v2/operations/stream-mux-ticket/',
+    { client_id: clientId },
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const getOperationCatalog = async (): Promise<OperationCatalogResponse> => {
+  const response = await apiClient.get<OperationCatalogResponse>(
+    '/api/v2/operations/catalog/',
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const subscribeOperationStreams = async (
+  operationIds: string[]
+): Promise<StreamMuxSubscriptionResponse> => {
+  const response = await apiClient.post<StreamMuxSubscriptionResponse>(
+    '/api/v2/operations/stream-subscribe/',
+    { operation_ids: operationIds },
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const unsubscribeOperationStreams = async (
+  operationIds: string[]
+): Promise<StreamMuxSubscriptionResponse> => {
+  const response = await apiClient.post<StreamMuxSubscriptionResponse>(
+    '/api/v2/operations/stream-unsubscribe/',
+    { operation_ids: operationIds },
+    { skipGlobalError: true }
   );
   return response.data;
 };
@@ -87,10 +195,11 @@ export const getStreamTicket = async (
 export const subscribeToOperation = async (
   operationId: string,
   onEvent: (event: OperationEvent) => void,
-  onError?: (error: unknown) => void
+  onError?: (error: unknown) => void,
+  clientId?: string
 ): Promise<() => void> => {
   // Get short-lived ticket first
-  const { stream_url } = await getStreamTicket(operationId);
+  const { stream_url } = await getStreamTicket(operationId, clientId);
 
   const token = localStorage.getItem('auth_token');
   if (!token) {
@@ -123,6 +232,12 @@ export const subscribeToOperation = async (
 export const operationsApi = {
   execute: executeOperation,
   getStreamTicket,
+  getStreamStatus,
+  getStreamMuxStatus,
+  getOperationCatalog,
+  getStreamMuxTicket,
+  subscribeOperationStreams,
+  unsubscribeOperationStreams,
   subscribeToOperation,
 };
 

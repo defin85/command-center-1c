@@ -21,6 +21,7 @@ from typing import Dict, Any, Optional
 import redis
 from django.conf import settings
 from django.db import transaction, close_old_connections
+from django.utils import timezone
 import logging
 
 from apps.operations.models import Task
@@ -670,18 +671,77 @@ class EventSubscriber:
             summary = payload.get('summary', {})
             results = payload.get('results', [])
             workflow_metadata = _get_workflow_metadata(batch_op)
+            now = timezone.now()
 
-            batch_op.status = BatchOperation.STATUS_COMPLETED
+            completed_tasks = summary.get("succeeded", 0)
+            failed_tasks = summary.get("failed", 0)
+            if results:
+                for result in results:
+                    database_id = result.get("database_id")
+                    if not database_id:
+                        continue
+
+                    status = Task.STATUS_COMPLETED if result.get("success") else Task.STATUS_FAILED
+                    duration_seconds = result.get("duration_seconds")
+                    update_fields = {
+                        "status": status,
+                        "completed_at": now,
+                        "updated_at": now,
+                        "duration_seconds": duration_seconds,
+                    }
+                    if status == Task.STATUS_COMPLETED:
+                        update_fields["result"] = result.get("data")
+                        update_fields["error_message"] = ""
+                        update_fields["error_code"] = ""
+                    else:
+                        update_fields["error_message"] = result.get("error") or "Unknown error"
+                        update_fields["error_code"] = result.get("error_code") or "UNKNOWN_ERROR"
+                        update_fields["result"] = None
+
+                    Task.objects.filter(
+                        batch_operation=batch_op,
+                        database_id=database_id
+                    ).update(**update_fields)
+
+                successful = sum(1 for result in results if result.get("success"))
+                failed = len(results) - successful
+                total = summary.get("total") or batch_op.total_tasks or len(results)
+                completed_tasks = summary.get("succeeded", successful)
+                failed_tasks = summary.get("failed", failed)
+                batch_op.total_tasks = total
+                batch_op.completed_tasks = completed_tasks
+                batch_op.failed_tasks = failed_tasks
+
+            payload_status = str(payload.get("status") or "").lower()
+            if payload_status == "failed":
+                batch_op.status = BatchOperation.STATUS_FAILED
+            elif payload_status == "timeout":
+                batch_op.status = BatchOperation.STATUS_FAILED
+            elif summary:
+                if failed_tasks > 0 and completed_tasks == 0:
+                    batch_op.status = BatchOperation.STATUS_FAILED
+                else:
+                    batch_op.status = BatchOperation.STATUS_COMPLETED
+            else:
+                batch_op.status = BatchOperation.STATUS_COMPLETED
             batch_op.progress = 100
             if not batch_op.completed_at:
-                from django.utils import timezone
-                batch_op.completed_at = timezone.now()
+                batch_op.completed_at = now
 
             batch_op.metadata['worker_result'] = {
                 'summary': summary,
                 'results_count': len(results),
             }
-            batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+            batch_op.save(update_fields=[
+                'status',
+                'progress',
+                'completed_at',
+                'metadata',
+                'total_tasks',
+                'completed_tasks',
+                'failed_tasks',
+                'updated_at',
+            ])
             try:
                 operations_redis_client.add_timeline_event(
                     operation_id,

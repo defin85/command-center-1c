@@ -26,7 +26,8 @@ const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelC
 ]
 
 export function RBACPage() {
-  const { data: clusters = [] } = useClusters()
+  const { data: clustersResponse } = useClusters()
+  const clusters = clustersResponse?.clusters ?? []
 
   const [clusterFilterUserId, setClusterFilterUserId] = useState<number | undefined>(undefined)
   const [clusterFilterSearch, setClusterFilterSearch] = useState<string>('')

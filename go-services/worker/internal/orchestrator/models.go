@@ -110,6 +110,27 @@ type HealthUpdateResponse struct {
 	Healthy    bool   `json:"healthy"`
 }
 
+// =============================================================================
+// Runtime Settings Schemas
+// =============================================================================
+
+// RuntimeSetting represents a runtime-configurable setting.
+type RuntimeSetting struct {
+	Key         string      `json:"key"`
+	Value       interface{} `json:"value"`
+	ValueType   string      `json:"value_type"`
+	Description string      `json:"description,omitempty"`
+	MinValue    *int        `json:"min_value,omitempty"`
+	MaxValue    *int        `json:"max_value,omitempty"`
+	Default     interface{} `json:"default,omitempty"`
+}
+
+// RuntimeSettingsResponse represents response from runtime settings endpoint.
+type RuntimeSettingsResponse struct {
+	Success  bool             `json:"success,omitempty"`
+	Settings []RuntimeSetting `json:"settings"`
+}
+
 // ============================================================================
 // Template Schemas (Sprint 2.2)
 // ============================================================================

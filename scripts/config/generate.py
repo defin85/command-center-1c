@@ -19,13 +19,10 @@ Requirements:
 
 import argparse
 import json
-import os
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
 
 # =============================================================================
 # Constants
@@ -376,7 +373,7 @@ def generate_docker_compose_ports(config: dict, mode: str, timestamp: str) -> st
         port = svc["port"]
         docker_name = name
         lines.append(f"  {docker_name}:")
-        lines.append(f"    ports:")
+        lines.append("    ports:")
         lines.append(f'      - "{port}:{port}"')
         lines.append("")
 
@@ -385,7 +382,7 @@ def generate_docker_compose_ports(config: dict, mode: str, timestamp: str) -> st
         port = infra["port"]
         docker_name = infra["host"]["docker"]
         lines.append(f"  {docker_name}:")
-        lines.append(f"    ports:")
+        lines.append("    ports:")
         lines.append(f'      - "{port}:{port}"')
         lines.append("")
 
@@ -398,7 +395,7 @@ def generate_ports_md(config: dict, mode: str, timestamp: str) -> str:
         "# CommandCenter1C - Port Configuration",
         "",
         "> **AUTO-GENERATED FILE - DO NOT EDIT MANUALLY**",
-        f"> Source: `config/services.json`",
+        "> Source: `config/services.json`",
         f"> Generated: {timestamp}",
         "",
         "## Application Services",

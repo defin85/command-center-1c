@@ -272,9 +272,45 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	succeeded := 0
 	failed := 0
 	totalDuration := 0.0
+	buildProgressMetadata := func(
+		processingCount int,
+		completedCount int,
+		failedCount int,
+		databaseID string,
+		taskStatus string,
+		durationSeconds float64,
+	) map[string]interface{} {
+		queued := totalDatabases - completedCount - failedCount - processingCount
+		processed := completedCount + failedCount
+		progressPercent := 0
+		if totalDatabases > 0 {
+			progressPercent = int(float64(processed) / float64(totalDatabases) * 100)
+		}
+		metadata := map[string]interface{}{
+			"database_id":     databaseID,
+			"task_status":     taskStatus,
+			"total_tasks":     totalDatabases,
+			"completed_tasks": completedCount,
+			"failed_tasks":    failedCount,
+			"processing_tasks": processingCount,
+			"queued_tasks":    queued,
+			"progress_percent": progressPercent,
+		}
+		if durationSeconds > 0 {
+			metadata["duration_seconds"] = durationSeconds
+		}
+		return metadata
+	}
 
 	for i, dbTarget := range msg.TargetDatabases {
 		log.Infof("processing database %s, progress: %d%%", dbTarget.ID, (i+1)*100/totalDatabases)
+
+		processingMetadata := buildProgressMetadata(1, succeeded, failed, dbTarget.ID, "processing", 0)
+		processingMetadata["operation_type"] = msg.OperationType
+		p.timeline.Record(ctx, msg.OperationID, "database.processing", appendWorkflowMetadata(
+			processingMetadata,
+			workflowMetadata,
+		))
 
 		dbResult := p.processSingleDatabase(ctx, msg, dbTarget.ID)
 		result.Results = append(result.Results, dbResult)
@@ -286,6 +322,21 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		}
 
 		totalDuration += dbResult.Duration
+
+		taskStatus := "failed"
+		eventName := "database.failed"
+		if dbResult.Success {
+			taskStatus = "completed"
+			eventName = "database.completed"
+		}
+		progressMetadata := buildProgressMetadata(0, succeeded, failed, dbTarget.ID, taskStatus, dbResult.Duration)
+		progressMetadata["duration_ms"] = int64(dbResult.Duration * 1000)
+		progressMetadata["error_code"] = dbResult.ErrorCode
+		progressMetadata["error"] = dbResult.Error
+		p.timeline.Record(ctx, msg.OperationID, eventName, appendWorkflowMetadata(
+			progressMetadata,
+			workflowMetadata,
+		))
 	}
 
 	// Calculate summary
@@ -363,12 +414,6 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 	log := logger.GetLogger()
 	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
 
-	// Record database processing start in timeline
-	p.timeline.Record(ctx, msg.OperationID, "database.processing", appendWorkflowMetadata(map[string]interface{}{
-		"database_id":    databaseID,
-		"operation_type": msg.OperationType,
-	}, workflowMetadata))
-
 	result := models.DatabaseResultV2{
 		DatabaseID: databaseID,
 	}
@@ -416,20 +461,6 @@ func (p *TaskProcessor) processSingleDatabase(ctx context.Context, msg *models.O
 
 	result.DatabaseID = databaseID
 	result.Duration = time.Since(start).Seconds()
-
-	// Record database result in timeline
-	if result.Success {
-		p.timeline.Record(ctx, msg.OperationID, "database.completed", appendWorkflowMetadata(map[string]interface{}{
-			"database_id": databaseID,
-			"duration_ms": int64(result.Duration * 1000),
-		}, workflowMetadata))
-	} else {
-		p.timeline.Record(ctx, msg.OperationID, "database.failed", appendWorkflowMetadata(map[string]interface{}{
-			"database_id": databaseID,
-			"error_code":  result.ErrorCode,
-			"error":       result.Error,
-		}, workflowMetadata))
-	}
 
 	// Publish SUCCESS/FAILED event for OData operations
 	if result.Success {

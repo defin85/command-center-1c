@@ -4,13 +4,15 @@ Cluster endpoints for API v2.
 Provides action-based endpoints for cluster operations.
 """
 
+import json
 import logging
 import uuid
+from datetime import date
 
 from django.db import IntegrityError
 from django.db.models import Count, Q
 from django.utils import timezone
-from rest_framework import serializers
+from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +24,150 @@ from apps.operations.models import BatchOperation
 from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
+
+CLUSTER_FILTER_FIELDS = {
+    "name": {"field": "name", "type": "text"},
+    "ras_server": {"field": "ras_server", "type": "text"},
+    "status": {"field": "status", "type": "enum"},
+    "databases_count": {"field": "databases_count", "type": "number"},
+    "last_sync": {"field": "last_sync", "type": "datetime"},
+    "credentials": {"field": "cluster_pwd", "type": "credentials"},
+}
+
+CLUSTER_SORT_FIELDS = {
+    "name": "name",
+    "ras_server": "ras_server",
+    "status": "status",
+    "databases_count": "databases_count",
+    "last_sync": "last_sync",
+}
+
+
+def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
+    if not raw_filters:
+        return {}, None
+    try:
+        payload = json.loads(raw_filters)
+    except json.JSONDecodeError:
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be a JSON object",
+        }
+    return payload, None
+
+
+def _parse_sort(raw_sort: str | None) -> tuple[dict | None, dict | None]:
+    if not raw_sort:
+        return None, None
+    try:
+        payload = json.loads(raw_sort)
+    except json.JSONDecodeError:
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be a JSON object",
+        }
+    return payload, None
+
+
+def _apply_text_filter(qs, field: str, op: str, value: str):
+    if op == "contains":
+        return qs.filter(**{f"{field}__icontains": value})
+    if op == "eq":
+        return qs.filter(**{field: value})
+    return qs
+
+
+def _apply_number_filter(qs, field: str, op: str, value: int | float):
+    if op == "eq":
+        return qs.filter(**{field: value})
+    if op == "gt":
+        return qs.filter(**{f"{field}__gt": value})
+    if op == "gte":
+        return qs.filter(**{f"{field}__gte": value})
+    if op == "lt":
+        return qs.filter(**{f"{field}__lt": value})
+    if op == "lte":
+        return qs.filter(**{f"{field}__lte": value})
+    return qs
+
+
+def _apply_datetime_filter(qs, field: str, op: str, value: str):
+    parsed_date = None
+    try:
+        parsed_date = date.fromisoformat(value)
+    except (ValueError, TypeError):
+        parsed_date = None
+    if op in ("contains", "eq") and parsed_date is None:
+        return qs.filter(**{f"{field}__icontains": value})
+    if parsed_date:
+        if op == "eq":
+            return qs.filter(**{f"{field}__date": parsed_date})
+        if op == "before":
+            return qs.filter(**{f"{field}__date__lt": parsed_date})
+        if op == "after":
+            return qs.filter(**{f"{field}__date__gt": parsed_date})
+    return qs
+
+
+def _apply_enum_filter(qs, field: str, op: str, value):
+    if op == "in" and isinstance(value, list):
+        return qs.filter(**{f"{field}__in": value})
+    return qs.filter(**{field: value})
+
+
+def _apply_credentials_filter(qs, value: str):
+    if value == "configured":
+        return qs.exclude(Q(cluster_pwd__isnull=True) | Q(cluster_pwd=""))
+    if value == "missing":
+        return qs.filter(Q(cluster_pwd__isnull=True) | Q(cluster_pwd=""))
+    return qs
+
+
+def _apply_filters(qs, filters: dict) -> tuple:
+    for key, payload in filters.items():
+        if key not in CLUSTER_FILTER_FIELDS:
+            return qs, {
+                "code": "UNKNOWN_FILTER",
+                "message": f"Unknown filter key: {key}",
+            }
+        value = payload
+        op = "eq"
+        if isinstance(payload, dict):
+            op = payload.get("op", "eq")
+            value = payload.get("value")
+        if value in (None, ""):
+            continue
+        config = CLUSTER_FILTER_FIELDS[key]
+        field_type = config["type"]
+        field = config["field"]
+        if field_type == "text":
+            qs = _apply_text_filter(qs, field, op, str(value))
+        elif field_type == "number":
+            try:
+                num = int(value)
+            except (ValueError, TypeError):
+                return qs, {
+                    "code": "INVALID_FILTER_VALUE",
+                    "message": f"Invalid numeric value for {key}",
+                }
+            qs = _apply_number_filter(qs, field, op, num)
+        elif field_type == "datetime":
+            qs = _apply_datetime_filter(qs, field, op, str(value))
+        elif field_type == "enum":
+            qs = _apply_enum_filter(qs, field, op, value)
+        elif field_type == "credentials":
+            qs = _apply_credentials_filter(qs, str(value))
+    return qs, None
 
 
 # =============================================================================
@@ -44,7 +190,8 @@ class ErrorResponseSerializer(serializers.Serializer):
 class ClusterListResponseSerializer(serializers.Serializer):
     """Response for list_clusters endpoint."""
     clusters = ClusterSerializer(many=True)
-    count = serializers.IntegerField(help_text="Total number of clusters")
+    count = serializers.IntegerField(help_text="Number of clusters in current page")
+    total = serializers.IntegerField(help_text="Total number of clusters matching filters")
 
 
 class ClusterStatisticsSerializer(serializers.Serializer):
@@ -165,6 +312,11 @@ class ResetSyncStatusResponseSerializer(serializers.Serializer):
     parameters=[
         OpenApiParameter(name='status', type=str, required=False, description='Filter by status (active, inactive, error, maintenance)'),
         OpenApiParameter(name='ras_server', type=str, required=False, description='Filter by RAS server address'),
+        OpenApiParameter(name='search', type=str, required=False, description='Search by name or RAS server'),
+        OpenApiParameter(name='filters', type=str, required=False, description='JSON object with filter conditions'),
+        OpenApiParameter(name='sort', type=str, required=False, description='JSON object with sort configuration'),
+        OpenApiParameter(name='limit', type=int, required=False, description='Maximum results (default: 100, max: 1000)'),
+        OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
     ],
     responses={
         200: ClusterListResponseSerializer,
@@ -182,6 +334,11 @@ def list_clusters(request):
     Query Parameters:
         - status: Filter by status (active, inactive, error, maintenance)
         - ras_server: Filter by RAS server address
+        - search: Search by name or RAS server
+        - filters: JSON object with filter conditions
+        - sort: JSON object with sort configuration
+        - limit: Maximum results (default: 100)
+        - offset: Pagination offset (default: 0)
 
     Response:
         {
@@ -200,6 +357,21 @@ def list_clusters(request):
     """
     status = request.query_params.get('status')
     ras_server = request.query_params.get('ras_server')
+    search = request.query_params.get('search')
+    raw_filters = request.query_params.get('filters')
+    raw_sort = request.query_params.get('sort')
+
+    try:
+        limit = int(request.query_params.get('limit', 100))
+        limit = max(1, min(limit, 1000))
+    except (ValueError, TypeError):
+        limit = 100
+
+    try:
+        offset = int(request.query_params.get('offset', 0))
+        offset = max(0, offset)
+    except (ValueError, TypeError):
+        offset = 0
 
     qs = Cluster.objects.annotate(
         databases_count=Count('databases'),
@@ -213,6 +385,50 @@ def list_clusters(request):
         qs = qs.filter(status=status)
     if ras_server:
         qs = qs.filter(ras_server=ras_server)
+    if search:
+        qs = qs.filter(Q(name__icontains=search) | Q(ras_server__icontains=search))
+
+    filters_payload, filters_error = _parse_filters(raw_filters)
+    if filters_error:
+        return Response(
+            {"success": False, "error": filters_error},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if filters_payload:
+        qs, apply_error = _apply_filters(qs, filters_payload)
+        if apply_error:
+            return Response(
+                {"success": False, "error": apply_error},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+    sort_payload, sort_error = _parse_sort(raw_sort)
+    if sort_error:
+        return Response(
+            {"success": False, "error": sort_error},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if sort_payload:
+        sort_key = sort_payload.get('key')
+        sort_order = sort_payload.get('order', 'asc')
+        if sort_key not in CLUSTER_SORT_FIELDS:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "UNKNOWN_SORT",
+                        "message": f"Unknown sort key: {sort_key}",
+                    },
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        order_field = CLUSTER_SORT_FIELDS[sort_key]
+        if sort_order == 'desc':
+            order_field = f"-{order_field}"
+        qs = qs.order_by(order_field)
+
+    total = qs.count()
+    qs = qs[offset:offset + limit]
 
     serializer = ClusterSerializer(qs, many=True)
 
@@ -224,6 +440,7 @@ def list_clusters(request):
     return Response({
         'clusters': clusters_data,
         'count': len(clusters_data),
+        'total': total,
     })
 
 

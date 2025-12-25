@@ -35,9 +35,9 @@ def get_pages() -> list[dict]:
     try:
         with urlopen(f"{CDP_URL}/json", timeout=2) as resp:
             return json.loads(resp.read())
-    except Exception as e:
+    except Exception:
         print(f"Error: Cannot connect to Chrome at {CDP_URL}")
-        print(f"Make sure Chromium is running with: chromium --remote-debugging-port=9222 --no-first-run &")
+        print("Make sure Chromium is running with: chromium --remote-debugging-port=9222 --no-first-run &")
         sys.exit(1)
 
 

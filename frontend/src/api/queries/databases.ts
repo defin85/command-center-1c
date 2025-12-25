@@ -12,7 +12,6 @@ import { App } from 'antd'
 
 import { getV2 } from '../generated'
 import type { BatchInstallResponse } from '../generated/model/batchInstallResponse'
-import type { ClusterDatabasesResponse } from '../generated/model/clusterDatabasesResponse'
 import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
@@ -31,39 +30,6 @@ import { queryKeys, type DatabaseFilters } from './index'
 // Initialize API client (generated)
 const api = getV2()
 
-async function fetchAllDatabases(
-  filters?: DatabaseFilters,
-  signal?: AbortSignal
-): Promise<Database[]> {
-  const limit = 1000
-  let offset = 0
-  const databases: Database[] = []
-  let total: number | null = null
-
-  while (total === null || databases.length < total) {
-    const res: DatabaseListResponse = await api.getDatabasesListDatabases(
-      {
-        limit,
-        offset,
-        status: filters?.status,
-      },
-      { signal }
-    )
-    const page = res.databases ?? []
-    databases.push(...page)
-
-    total = typeof res.total === 'number' ? res.total : databases.length
-    const pageCount = typeof res.count === 'number' ? res.count : page.length
-    offset += pageCount
-
-    if (page.length === 0) return databases
-    if (databases.length >= total) return databases
-    if (page.length < limit) return databases
-  }
-
-  return databases
-}
-
 // =============================================================================
 // Fetch Functions
 // =============================================================================
@@ -74,17 +40,21 @@ async function fetchAllDatabases(
 export async function fetchDatabases(
   filters?: DatabaseFilters,
   signal?: AbortSignal
-): Promise<Database[]> {
-  if (filters?.cluster_id) {
-    // Fetch databases for a specific cluster
-    const response: ClusterDatabasesResponse = await api.getClustersGetClusterDatabases(
-      { cluster_id: filters.cluster_id, status: filters?.status },
-      { signal }
-    )
-    return response.databases || []
-  }
+): Promise<DatabaseListResponse> {
+  const filtersParam = filters?.filters ? JSON.stringify(filters.filters) : undefined
+  const sortParam = filters?.sort ? JSON.stringify(filters.sort) : undefined
 
-  return fetchAllDatabases(filters, signal)
+  return api.getDatabasesListDatabases(
+    {
+      cluster_id: filters?.cluster_id,
+      search: filters?.search,
+      limit: filters?.limit,
+      offset: filters?.offset,
+      filters: filtersParam,
+      sort: sortParam,
+    },
+    { signal }
+  )
 }
 
 /**

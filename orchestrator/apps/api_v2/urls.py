@@ -22,6 +22,8 @@ from .views import (
     files,
     timeline,
     dlq,
+    runtime_settings,
+    ui,
 )
 
 app_name = 'api_v2'
@@ -33,6 +35,11 @@ urlpatterns = [
     path('system/health/', system.SystemHealthView.as_view(), name='system-health'),
     path('system/config/', system.system_config, name='system-config'),
     path('system/me/', system.system_me, name='system-me'),
+
+    # ========================================================================
+    # UI Metadata
+    # ========================================================================
+    path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
 
     # ========================================================================
     # Databases
@@ -65,10 +72,17 @@ urlpatterns = [
     # ========================================================================
     path('operations/list-operations/', operations.list_operations, name='list-operations'),
     path('operations/get-operation/', operations.get_operation, name='get-operation'),
+    path('operations/catalog/', operations.get_operation_catalog, name='operations-catalog'),
     path('operations/execute/', operations.execute_operation, name='execute-operation'),
     path('operations/execute-ibcmd/', operations.execute_ibcmd_operation, name='execute-ibcmd-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream-ticket/', operations.get_stream_ticket, name='stream-ticket'),
+    path('operations/stream-status/', operations.get_stream_status, name='stream-status'),
+    path('operations/stream-mux-status/', operations.get_stream_mux_status, name='stream-mux-status'),
+    path('operations/stream-subscribe/', operations.subscribe_operation_streams, name='stream-subscribe'),
+    path('operations/stream-unsubscribe/', operations.unsubscribe_operation_streams, name='stream-unsubscribe'),
+    path('operations/stream-mux-ticket/', operations.get_mux_stream_ticket, name='stream-mux-ticket'),
+    path('operations/stream-mux/', operations.operation_stream_mux, name='stream-mux'),
     path('operations/stream/', operations.operation_stream, name='operation-stream'),
     path('operations/get-operation-timeline/', timeline.get_operation_timeline, name='get-operation-timeline'),
 
@@ -154,4 +168,10 @@ urlpatterns = [
     path('dlq/list/', dlq.list_dlq, name='dlq-list'),
     path('dlq/get/', dlq.get_dlq, name='dlq-get'),
     path('dlq/retry/', dlq.retry_dlq, name='dlq-retry'),
+
+    # ========================================================================
+    # Runtime Settings (SPA-primary administration)
+    # ========================================================================
+    path('settings/runtime/', runtime_settings.list_runtime_settings, name='runtime-settings'),
+    path('settings/runtime/<str:key>/', runtime_settings.update_runtime_setting, name='runtime-settings-update'),
 ]

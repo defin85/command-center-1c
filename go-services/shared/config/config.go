@@ -83,6 +83,11 @@ type Config struct {
 
 	// StreamsCredentialsTimeout is the timeout for Streams-based credentials requests.
 	StreamsCredentialsTimeout time.Duration
+
+	// Timeline recorder configuration
+	TimelineQueueSize   int
+	TimelineWorkerCount int
+	TimelineDropOnFull  bool
 }
 
 // LoadFromEnv loads configuration from environment variables
@@ -155,6 +160,11 @@ func LoadFromEnv() *Config {
 		UseStreamsClusterInfo:     getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
 		StreamsClusterInfoTimeout: getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
 		StreamsCredentialsTimeout: getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
+
+		// Timeline recorder
+		TimelineQueueSize:   getIntEnv("TIMELINE_QUEUE_SIZE", 10000),
+		TimelineWorkerCount: getIntEnv("TIMELINE_WORKER_COUNT", 4),
+		TimelineDropOnFull:  getBoolEnv("TIMELINE_DROP_ON_FULL", true),
 	}
 }
 

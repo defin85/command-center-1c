@@ -17,7 +17,7 @@ import type { ResetSyncStatusResponse } from '../generated/model/resetSyncStatus
 import type { SystemConfig } from '../generated/model/systemConfig'
 
 import { apiClient } from '../client'
-import { queryKeys } from './index'
+import { queryKeys, type ClusterFilters } from './index'
 
 // Initialize API client
 const api = getV2()
@@ -47,8 +47,17 @@ export type ClusterCredentialsUpdateResponse = {
 // Fetch Functions
 // =============================================================================
 
-async function fetchClusters(): Promise<ClusterListResponse> {
-  return api.getClustersListClusters()
+async function fetchClusters(filters?: ClusterFilters): Promise<ClusterListResponse> {
+  const filtersParam = filters?.filters ? JSON.stringify(filters.filters) : undefined
+  const sortParam = filters?.sort ? JSON.stringify(filters.sort) : undefined
+
+  return api.getClustersListClusters({
+    search: filters?.search,
+    limit: filters?.limit,
+    offset: filters?.offset,
+    filters: filtersParam,
+    sort: sortParam,
+  })
 }
 
 async function fetchSystemConfig(): Promise<SystemConfig> {
@@ -72,11 +81,10 @@ async function fetchSystemConfig(): Promise<SystemConfig> {
  * Fetch all clusters.
  * Auto-refetches on window focus and provides caching.
  */
-export function useClusters() {
+export function useClusters(filters?: ClusterFilters) {
   return useQuery({
-    queryKey: queryKeys.clusters.list(),
-    queryFn: fetchClusters,
-    select: (data) => data.clusters ?? [],
+    queryKey: queryKeys.clusters.list(filters),
+    queryFn: () => fetchClusters(filters),
   })
 }
 

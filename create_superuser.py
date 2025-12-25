@@ -4,23 +4,29 @@
 import os
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-django.setup()
 
-from django.contrib.auth import get_user_model
+def main() -> None:
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+    django.setup()
 
-User = get_user_model()
+    from django.contrib.auth import get_user_model
 
-username = 'admin'
-email = 'admin@example.com'
-password = 'admin123'
+    User = get_user_model()
 
-if not User.objects.filter(username=username).exists():
-    User.objects.create_superuser(username=username, email=email, password=password)
-    print(f"✅ Суперпользователь создан!")
-    print(f"   Логин: {username}")
-    print(f"   Пароль: {password}")
-else:
-    print(f"ℹ️  Суперпользователь '{username}' уже существует")
-    print(f"   Логин: {username}")
-    print(f"   Пароль: {password}")
+    username = 'admin'
+    email = 'admin@example.com'
+    password = 'admin123'
+
+    if not User.objects.filter(username=username).exists():
+        User.objects.create_superuser(username=username, email=email, password=password)
+        print("✅ Суперпользователь создан!")
+        print(f"   Логин: {username}")
+        print(f"   Пароль: {password}")
+    else:
+        print(f"ℹ️  Суперпользователь '{username}' уже существует")
+        print(f"   Логин: {username}")
+        print(f"   Пароль: {password}")
+
+
+if __name__ == '__main__':
+    main()

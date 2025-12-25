@@ -4,6 +4,7 @@
  */
 
 import type { UIBatchOperation, UITask } from '../../utils/operationTransforms'
+import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 
 // Re-export for convenience
 export type { UIBatchOperation, UITask }
@@ -29,4 +30,5 @@ export interface OperationDetailsModalProps {
   visible: boolean
   onClose: () => void
   onTimeline: (operationId: string) => void
+  liveEvent?: TimelineStreamEvent | null
 }

@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined } from '@ant-design/icons'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
@@ -90,6 +90,16 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       key: '/dlq',
       icon: <WarningOutlined />,
       label: 'DLQ',
+    },
+    {
+      key: '/settings/runtime',
+      icon: <SettingOutlined />,
+      label: 'Runtime Settings',
+    },
+    {
+      key: '/settings/timeline',
+      icon: <SettingOutlined />,
+      label: 'Timeline Settings',
     },
   ]
 

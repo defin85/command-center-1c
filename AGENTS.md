@@ -53,6 +53,28 @@ Detailed rules in `.claude/rules/`:
 | `setup.md` | Setup & troubleshooting |
 | `documentation.md` | Documentation links |
 
+## LSP Tool (lspctl)
+
+CLI for LSP JSON-RPC with JSON output: `tools/lspctl/lspctl.py`.
+
+One-shot:
+
+```bash
+python tools/lspctl/lspctl.py definition --file path/to/file.go --line 10 --col 5
+```
+
+Daemon (recommended):
+
+```bash
+python tools/lspctl/lspctl.py serve --socket /tmp/lspctl.sock
+python tools/lspctl/lspctl.py call hover --file path/to/file.go --line 10 --col 5 --socket /tmp/lspctl.sock
+python tools/lspctl/lspctl.py shutdown --socket /tmp/lspctl.sock
+```
+
+Notes:
+- All commands return JSON: `{"result": ...}` or `{"error": "..."}`.
+- Use `--lang` if file extension is not supported or when using `workspaceSymbol`.
+
 ---
 
 **Version:** 4.0

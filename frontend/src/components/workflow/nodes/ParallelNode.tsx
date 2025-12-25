@@ -26,12 +26,24 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
   skipped: { color: 'warning', icon: <MinusCircleOutlined /> }
 }
 
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
 const ParallelNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
   const parallelNodes = data.config?.parallel_nodes || []
   const waitFor = data.config?.wait_for || 'all'
+  const completedCount = toNumber(data.output?.completed_count)
 
   return (
     <div className={`workflow-node parallel-node ${selected ? 'selected' : ''}`}>
@@ -67,11 +79,11 @@ const ParallelNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
             <Tag color="blue">{waitFor}</Tag>
           </div>
 
-          {status === 'running' && data.output?.completed_count !== undefined && (
+          {status === 'running' && completedCount !== null && parallelNodes.length > 0 && (
             <div className="node-progress">
               <Progress
                 percent={Math.round(
-                  (data.output.completed_count / parallelNodes.length) * 100
+                  (completedCount / parallelNodes.length) * 100
                 )}
                 size="small"
                 status="active"

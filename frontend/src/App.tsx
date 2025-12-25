@@ -13,6 +13,7 @@ import { ServiceMeshPage } from './pages/ServiceMesh'
 import { RBACPage } from './pages/RBAC/RBACPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
 import { DLQPage } from './pages/DLQ'
+import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
@@ -183,6 +184,20 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <DLQPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/settings/runtime" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <RuntimeSettingsPage />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/settings/timeline" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <TimelineSettingsPage />
               </MainLayout>
             </ProtectedRoute>
           } />

@@ -10,6 +10,9 @@ import { Button, Space, Alert, Tag } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import { useOperations, useCancelOperation } from '../../api/queries/operations'
+import { getRuntimeSettings } from '../../api/runtimeSettings'
+import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
+import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
 import { OperationsTable } from './components/OperationsTable'
 import { OperationDetailsModal } from './components/OperationDetailsModal'
 import { OperationsFilters } from './components/OperationsFilters'
@@ -17,6 +20,25 @@ import { NewOperationWizard } from './components/NewOperationWizard'
 import OperationTimelineDrawer from '../../components/service-mesh/OperationTimelineDrawer'
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+const DEFAULT_MAX_LIVE_STREAMS = 10
+const DEFAULT_MAX_SUBSCRIPTIONS = 200
+const ACTIVE_STATUSES = ['pending', 'queued', 'processing'] as const
+const isActiveStatus = (
+  status: UIBatchOperation['status']
+): status is (typeof ACTIVE_STATUSES)[number] =>
+  (ACTIVE_STATUSES as readonly string[]).includes(status)
 
 /**
  * OperationsPage - Main page with tabs for operations list and live monitor
@@ -30,6 +52,10 @@ export const OperationsPage = () => {
   const [wizardVisible, setWizardVisible] = useState(false)
   const [timelineVisible, setTimelineVisible] = useState(false)
   const [timelineOperationId, setTimelineOperationId] = useState<string | undefined>()
+  const [operationsState, setOperationsState] = useState<UIBatchOperation[]>([])
+  const [liveEvents, setLiveEvents] = useState<Record<string, TimelineStreamEvent>>({})
+  const [maxLiveStreams, setMaxLiveStreams] = useState(DEFAULT_MAX_LIVE_STREAMS)
+  const [maxSubscriptions, setMaxSubscriptions] = useState(DEFAULT_MAX_SUBSCRIPTIONS)
 
   const operationIdFromUrl = searchParams.get('operation') || undefined
   const operationIdFilter = (searchParams.get('operation_id') || '').trim() || undefined
@@ -63,6 +89,50 @@ export const OperationsPage = () => {
   const handleRefresh = useCallback(() => {
     refetch()
   }, [refetch])
+
+  const applyTimelineUpdate = useCallback(
+    (current: UIBatchOperation, event: TimelineStreamEvent): UIBatchOperation => {
+      if (current.id !== event.operation_id) {
+        return current
+      }
+
+      const metadata = (event.metadata ?? {}) as Record<string, unknown>
+      const totalTasks = toNumber(metadata.total_tasks)
+      const completedTasks = toNumber(metadata.completed_tasks)
+      const failedTasks = toNumber(metadata.failed_tasks)
+      const progressPercent = toNumber(metadata.progress_percent)
+
+      const updated = { ...current }
+      if (totalTasks !== null) {
+        updated.total_tasks = totalTasks
+      }
+      if (completedTasks !== null) {
+        updated.completed_tasks = completedTasks
+      }
+      if (failedTasks !== null) {
+        updated.failed_tasks = failedTasks
+      }
+      if (progressPercent !== null) {
+        updated.progress = Math.min(100, Math.max(0, Math.round(progressPercent)))
+      } else if (
+        totalTasks !== null &&
+        completedTasks !== null &&
+        failedTasks !== null &&
+        totalTasks > 0
+      ) {
+        const processed = completedTasks + failedTasks
+        updated.progress = Math.round((processed / totalTasks) * 100)
+      }
+
+      if (event.event === 'operation.completed' || event.event === 'operation.failed') {
+        updated.status = event.event === 'operation.failed' ? 'failed' : 'completed'
+        updated.progress = 100
+      }
+
+      return updated
+    },
+    []
+  )
 
   // Handle cancel operation
   const handleCancel = useCallback(
@@ -130,6 +200,57 @@ export const OperationsPage = () => {
     }
   }, [operationIdFromUrl])
 
+  useEffect(() => {
+    let isActive = true
+    void (async () => {
+      try {
+        const settings = await getRuntimeSettings()
+        const entry = settings.find((item) => item.key === 'ui.operations.max_live_streams')
+        const value = toNumber(entry?.value)
+        if (isActive && value !== null && value > 0) {
+          setMaxLiveStreams(value)
+        }
+        const muxEntry = settings.find((item) => item.key === 'observability.operations.max_subscriptions')
+        const muxValue = toNumber(muxEntry?.value)
+        if (isActive && muxValue !== null && muxValue > 0) {
+          setMaxSubscriptions(muxValue)
+        }
+      } catch (_error) {
+        // Use default if settings are unavailable.
+      }
+    })()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    setOperationsState((current) => {
+      if (current.length === 0) {
+        return operations
+      }
+      const currentMap = new Map(current.map((item) => [item.id, item]))
+      return operations.map((item) => {
+        const existing = currentMap.get(item.id)
+        if (!existing) {
+          return item
+        }
+        const isExistingActive = isActiveStatus(existing.status)
+        const isIncomingActive = isActiveStatus(item.status)
+        if (isExistingActive && isIncomingActive) {
+          const merged = { ...item }
+          merged.total_tasks = item.total_tasks || existing.total_tasks
+          merged.completed_tasks = Math.max(item.completed_tasks, existing.completed_tasks)
+          merged.failed_tasks = Math.max(item.failed_tasks, existing.failed_tasks)
+          merged.progress = Math.max(item.progress, existing.progress)
+          return merged
+        }
+        return item
+      })
+    })
+  }, [operations])
+
   // Handle new operation wizard submit
   const handleWizardSubmit = useCallback(
     async (data: NewOperationData) => {
@@ -145,6 +266,24 @@ export const OperationsPage = () => {
     },
     [handleRefresh]
   )
+
+  const activeOperationIds = operationsState
+    .filter((operation) => isActiveStatus(operation.status))
+    .slice(0, Math.min(maxLiveStreams, maxSubscriptions))
+    .map((operation) => operation.id)
+
+  const { lastEvent: muxEvent } = useOperationsMuxStream(activeOperationIds)
+
+  useEffect(() => {
+    if (!muxEvent) return
+    setOperationsState((current) =>
+      current.map((operation) => applyTimelineUpdate(operation, muxEvent))
+    )
+    setLiveEvents((current) => ({
+      ...current,
+      [muxEvent.operation_id]: muxEvent,
+    }))
+  }, [muxEvent, applyTimelineUpdate])
 
   return (
     <div>
@@ -212,7 +351,7 @@ export const OperationsPage = () => {
 
       <div style={{ marginTop: 12 }}>
       <OperationsTable
-        operations={operations}
+        operations={operationsState}
         loading={loading}
         onRefresh={handleRefresh}
         onViewDetails={handleViewDetails}
@@ -228,6 +367,7 @@ export const OperationsPage = () => {
         visible={detailsVisible}
         onClose={() => setDetailsVisible(false)}
         onTimeline={handleTimelineOpen}
+        liveEvent={selectedOperation ? liveEvents[selectedOperation.id] ?? null : null}
       />
 
       <OperationTimelineDrawer

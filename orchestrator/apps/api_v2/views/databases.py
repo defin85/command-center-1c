@@ -8,6 +8,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import date
 
 import redis as redis_module
 import redis.asyncio as redis_async
@@ -17,7 +18,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
@@ -44,6 +45,171 @@ SSE_BLOCK_MS = 1000
 SSE_HEARTBEAT_INTERVAL_SECONDS = 10
 DB_SSE_ACTIVE_PREFIX = "db_sse_active:"
 DB_SSE_ACTIVE_TTL = 60
+
+DATABASE_FILTER_FIELDS = {
+    "name": {"field": "name", "type": "text"},
+    "host": {"field": "host", "type": "text"},
+    "port": {"field": "port", "type": "number"},
+    "status": {"field": "status", "type": "enum"},
+    "last_check_status": {"field": "last_check_status", "type": "enum"},
+    "last_check": {"field": "last_check", "type": "datetime"},
+    "credentials": {"field": "password", "type": "credentials"},
+    "restrictions": {"field": "metadata", "type": "restrictions"},
+}
+
+DATABASE_SORT_FIELDS = {
+    "name": "name",
+    "host": "host",
+    "port": "port",
+    "status": "status",
+    "last_check_status": "last_check_status",
+    "last_check": "last_check",
+}
+
+
+def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
+    if not raw_filters:
+        return {}, None
+    try:
+        payload = json.loads(raw_filters)
+    except json.JSONDecodeError:
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be a JSON object",
+        }
+    return payload, None
+
+
+def _parse_sort(raw_sort: str | None) -> tuple[dict | None, dict | None]:
+    if not raw_sort:
+        return None, None
+    try:
+        payload = json.loads(raw_sort)
+    except json.JSONDecodeError:
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be a JSON object",
+        }
+    return payload, None
+
+
+def _apply_text_filter(qs, field: str, op: str, value: str):
+    if op == "contains":
+        return qs.filter(**{f"{field}__icontains": value})
+    if op == "eq":
+        return qs.filter(**{field: value})
+    return qs
+
+
+def _apply_number_filter(qs, field: str, op: str, value: int | float):
+    if op == "eq":
+        return qs.filter(**{field: value})
+    if op == "gt":
+        return qs.filter(**{f"{field}__gt": value})
+    if op == "gte":
+        return qs.filter(**{f"{field}__gte": value})
+    if op == "lt":
+        return qs.filter(**{f"{field}__lt": value})
+    if op == "lte":
+        return qs.filter(**{f"{field}__lte": value})
+    return qs
+
+
+def _apply_datetime_filter(qs, field: str, op: str, value: str):
+    parsed_date = None
+    try:
+        parsed_date = date.fromisoformat(value)
+    except (ValueError, TypeError):
+        parsed_date = None
+    if op in ("contains", "eq") and parsed_date is None:
+        return qs.filter(**{f"{field}__icontains": value})
+    if parsed_date:
+        if op == "eq":
+            return qs.filter(**{f"{field}__date": parsed_date})
+        if op == "before":
+            return qs.filter(**{f"{field}__date__lt": parsed_date})
+        if op == "after":
+            return qs.filter(**{f"{field}__date__gt": parsed_date})
+    return qs
+
+
+def _apply_enum_filter(qs, field: str, op: str, value):
+    if op == "in" and isinstance(value, list):
+        return qs.filter(**{f"{field}__in": value})
+    return qs.filter(**{field: value})
+
+
+def _apply_credentials_filter(qs, value: str):
+    if value == "configured":
+        return qs.exclude(Q(password__isnull=True) | Q(password=""))
+    if value == "missing":
+        return qs.filter(Q(password__isnull=True) | Q(password=""))
+    return qs
+
+
+def _apply_restrictions_filter(qs, value: str):
+    if value == "jobs_locked":
+        return qs.filter(metadata__scheduled_jobs_deny=True)
+    if value == "jobs_allowed":
+        return qs.filter(metadata__scheduled_jobs_deny=False)
+    if value == "jobs_unknown":
+        return qs.filter(Q(metadata__scheduled_jobs_deny__isnull=True) | Q(metadata__scheduled_jobs_deny=None))
+    if value == "sessions_blocked":
+        return qs.filter(metadata__sessions_deny=True)
+    if value == "sessions_allowed":
+        return qs.filter(metadata__sessions_deny=False)
+    if value == "sessions_unknown":
+        return qs.filter(Q(metadata__sessions_deny__isnull=True) | Q(metadata__sessions_deny=None))
+    return qs
+
+
+def _apply_filters(qs, filters: dict) -> tuple:
+    for key, payload in filters.items():
+        if key not in DATABASE_FILTER_FIELDS:
+            return qs, {
+                "code": "UNKNOWN_FILTER",
+                "message": f"Unknown filter key: {key}",
+            }
+        value = payload
+        op = "eq"
+        if isinstance(payload, dict):
+            op = payload.get("op", "eq")
+            value = payload.get("value")
+        if value in (None, ""):
+            continue
+        config = DATABASE_FILTER_FIELDS[key]
+        field_type = config["type"]
+        field = config["field"]
+        if field_type == "text":
+            qs = _apply_text_filter(qs, field, op, str(value))
+        elif field_type == "number":
+            try:
+                num = int(value)
+            except (ValueError, TypeError):
+                return qs, {
+                    "code": "INVALID_FILTER_VALUE",
+                    "message": f"Invalid numeric value for {key}",
+                }
+            qs = _apply_number_filter(qs, field, op, num)
+        elif field_type == "datetime":
+            qs = _apply_datetime_filter(qs, field, op, str(value))
+        elif field_type == "enum":
+            qs = _apply_enum_filter(qs, field, op, value)
+        elif field_type == "credentials":
+            qs = _apply_credentials_filter(qs, str(value))
+        elif field_type == "restrictions":
+            qs = _apply_restrictions_filter(qs, str(value))
+    return qs, None
 
 
 def _get_redis_connection():
@@ -206,6 +372,8 @@ class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
         OpenApiParameter(name='status', type=str, required=False, description='Filter by status (active, inactive, error, maintenance)'),
         OpenApiParameter(name='health_status', type=str, required=False, description='Filter by health status (ok, degraded, down, unknown)'),
         OpenApiParameter(name='search', type=str, required=False, description='Search by name or description'),
+        OpenApiParameter(name='filters', type=str, required=False, description='JSON object with filter conditions'),
+        OpenApiParameter(name='sort', type=str, required=False, description='JSON object with sort configuration'),
         OpenApiParameter(name='limit', type=int, required=False, description='Maximum results (default: 100, max: 1000)'),
         OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
     ],
@@ -241,6 +409,8 @@ def list_databases(request):
     status = request.query_params.get('status')
     health_status = request.query_params.get('health_status')
     search = request.query_params.get('search')
+    raw_filters = request.query_params.get('filters')
+    raw_sort = request.query_params.get('sort')
 
     # Safely parse integer parameters with validation
     try:
@@ -264,9 +434,48 @@ def list_databases(request):
         qs = qs.filter(status=status)
     if health_status:
         qs = qs.filter(last_check_status=health_status)
+
+    filters_payload, filters_error = _parse_filters(raw_filters)
+    if filters_error:
+        return Response(
+            {"success": False, "error": filters_error},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if filters_payload:
+        qs, apply_error = _apply_filters(qs, filters_payload)
+        if apply_error:
+            return Response(
+                {"success": False, "error": apply_error},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+    sort_payload, sort_error = _parse_sort(raw_sort)
+    if sort_error:
+        return Response(
+            {"success": False, "error": sort_error},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if sort_payload:
+        sort_key = sort_payload.get('key')
+        sort_order = sort_payload.get('order', 'asc')
+        if sort_key not in DATABASE_SORT_FIELDS:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "UNKNOWN_SORT",
+                        "message": f"Unknown sort key: {sort_key}",
+                    },
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        order_field = DATABASE_SORT_FIELDS[sort_key]
+        if sort_order == 'desc':
+            order_field = f"-{order_field}"
+        qs = qs.order_by(order_field)
     if search:
         qs = qs.filter(
-            Q(name__icontains=search) | Q(description__icontains=search)
+            Q(name__icontains=search) | Q(description__icontains=search) | Q(host__icontains=search)
         )
 
     # Get total count before pagination
@@ -519,7 +728,7 @@ def health_check(request):
         }, status=400)
 
     try:
-        db = Database.objects.get(id=database_id)
+        Database.objects.get(id=database_id)
     except Database.DoesNotExist:
         return Response({
             'success': False,

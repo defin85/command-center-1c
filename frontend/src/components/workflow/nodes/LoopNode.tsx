@@ -32,6 +32,17 @@ const loopModeLabels: Record<string, string> = {
   foreach: 'For Each'
 }
 
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
 const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
@@ -39,6 +50,8 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const loopMode = data.config?.loop_mode || 'count'
   const loopCount = data.config?.loop_count || 0
   const maxIterations = data.config?.max_iterations || 100
+  const currentIteration = toNumber(data.output?.current_iteration)
+  const totalIterations = toNumber(data.output?.total_iterations)
 
   return (
     <div className={`workflow-node loop-node ${selected ? 'selected' : ''}`}>
@@ -91,15 +104,15 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
             </div>
           )}
 
-          {status === 'running' && data.output?.current_iteration !== undefined && (
+          {status === 'running' && currentIteration !== null && (
             <div className="node-progress">
               <span className="iteration-counter">
-                Iteration {data.output.current_iteration + 1}
+                Iteration {currentIteration + 1}
                 {loopMode === 'count' ? ` / ${loopCount}` : ` (max ${maxIterations})`}
               </span>
-              {loopMode === 'count' && (
+              {loopMode === 'count' && loopCount > 0 && (
                 <Progress
-                  percent={Math.round(((data.output.current_iteration + 1) / loopCount) * 100)}
+                  percent={Math.round(((currentIteration + 1) / loopCount) * 100)}
                   size="small"
                   status="active"
                 />
@@ -107,10 +120,10 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
             </div>
           )}
 
-          {data.output?.total_iterations !== undefined && status !== 'running' && (
+          {totalIterations !== null && status !== 'running' && (
             <div className="node-field">
               <span className="field-label">Iterations:</span>
-              <span className="field-value">{data.output.total_iterations}</span>
+              <span className="field-value">{totalIterations}</span>
             </div>
           )}
         </div>

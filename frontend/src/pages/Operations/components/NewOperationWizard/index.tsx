@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { App, Modal, Steps, Button, Space } from 'antd'
+import { App, Modal, Steps, Button, Space, Card, Tag, Typography } from 'antd'
 import { getV2 } from '../../../../api/generated'
 import type { Database } from '../../../../api/generated/model/database'
 import { SelectTypeStep } from './SelectTypeStep'
@@ -24,6 +24,7 @@ import { REQUIRED_CONFIG_FIELDS } from './types'
 
 // Initialize API
 const api = getV2()
+const { Text } = Typography
 
 /**
  * Step configuration
@@ -66,6 +67,39 @@ export const NewOperationWizard = ({
   const [submitting, setSubmitting] = useState(false)
   const [databases, setDatabases] = useState<Database[]>([])
   const [templateValidationErrors, setTemplateValidationErrors] = useState<DynamicFormValidationError[]>([])
+
+  const selectedTypeLabel = state.operationType ?? null
+  const selectedTemplateLabel = state.selectedTemplateId ?? null
+
+  const configSummary = useMemo(() => {
+    const entries = Object.entries(state.config).filter(([, value]) => {
+      if (value === undefined || value === null) return false
+      if (typeof value === 'string' && value.trim() === '') return false
+      if (Array.isArray(value) && value.length === 0) return false
+      return true
+    })
+    return entries.map(([key, value]) => {
+      if (value instanceof File) {
+        return `${key}: ${value.name}`
+      }
+      if (typeof value === 'object') {
+        try {
+          return `${key}: ${JSON.stringify(value)}`
+        } catch {
+          return `${key}: [object]`
+        }
+      }
+      return `${key}: ${String(value)}`
+    })
+  }, [state.config])
+
+  const databaseSummary = useMemo(() => {
+    const ids = state.selectedDatabases
+    if (ids.length === 0) return []
+    const preview = ids.slice(0, 3)
+    const suffix = ids.length > preview.length ? ` +${ids.length - preview.length}` : ''
+    return preview.map((id) => `${id}${suffix && id === preview[preview.length - 1] ? suffix : ''}`)
+  }, [state.selectedDatabases])
 
   // Reset state when modal opens
   useEffect(() => {
@@ -384,6 +418,43 @@ export const NewOperationWizard = ({
       maskClosable={!submitting}
     >
       {/* Steps indicator */}
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div>
+            <Text strong>Type:</Text>{' '}
+            {selectedTemplateLabel
+              ? <Tag color="blue">Template: {selectedTemplateLabel}</Tag>
+              : selectedTypeLabel
+                ? <Tag color="green">{selectedTypeLabel}</Tag>
+                : <Text type="secondary">Not selected</Text>}
+          </div>
+          <div>
+            <Text strong>Databases:</Text>{' '}
+            {state.selectedDatabases.length > 0
+              ? (
+                <Space size={4} wrap>
+                  {databaseSummary.map((id) => (
+                    <Tag key={id}>{id}</Tag>
+                  ))}
+                </Space>
+              )
+              : <Text type="secondary">Not selected</Text>}
+          </div>
+          <div>
+            <Text strong>Config:</Text>{' '}
+            {configSummary.length > 0
+              ? (
+                <Space size={4} wrap>
+                  {configSummary.map((entry) => (
+                    <Tag key={entry}>{entry}</Tag>
+                  ))}
+                </Space>
+              )
+              : <Text type="secondary">Not set</Text>}
+          </div>
+        </Space>
+      </Card>
+
       <Steps
         current={state.currentStep}
         items={STEPS.map((step, index) => ({

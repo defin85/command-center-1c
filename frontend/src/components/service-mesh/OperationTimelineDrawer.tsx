@@ -47,7 +47,8 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
     try {
       const response = await apiClient.post<OperationTimelineResponse>(
         '/api/v2/operations/get-operation-timeline/',
-        { operation_id: opId }
+        { operation_id: opId },
+        { skipGlobalError: true }
       )
 
       setTimelineData(response.data)

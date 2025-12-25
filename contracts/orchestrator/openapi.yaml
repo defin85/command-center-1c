@@ -398,10 +398,35 @@ paths:
           type: string
         description: Filter by RAS server address
       - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or RAS server
+      - in: query
         name: status
         schema:
           type: string
         description: Filter by status (active, inactive, error, maintenance)
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
       tags:
       - v2
       security:
@@ -870,6 +895,11 @@ paths:
           type: string
         description: Filter by cluster UUID
       - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
         name: health_status
         schema:
           type: string
@@ -889,6 +919,11 @@ paths:
         schema:
           type: string
         description: Search by name or description
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
       - in: query
         name: status
         schema:
@@ -2344,6 +2379,25 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/catalog/:
+    get:
+      operationId: v2_operations_catalog_retrieve
+      description: List available operation types and workflow templates for Operations Center.
+      summary: Get operations catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/stream/:
     get:
       operationId: v2_operations_stream_retrieve
@@ -2444,6 +2498,162 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/operations/stream-subscribe/:
+    post:
+      operationId: v2_operations_stream_subscribe_create
+      description: Subscribe to multiplex SSE stream for operations.
+      summary: Subscribe to multiplex stream
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationMuxSubscribeRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationMuxSubscribeResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/operations/stream-unsubscribe/:
+    post:
+      operationId: v2_operations_stream_unsubscribe_create
+      description: Unsubscribe from multiplex SSE stream for operations.
+      summary: Unsubscribe from multiplex stream
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationMuxSubscribeRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationMuxSubscribeResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/operations/stream-mux-ticket/:
+    post:
+      operationId: v2_operations_stream_mux_ticket_create
+      description: Obtain a ticket for multiplex SSE stream authentication.
+      summary: Get multiplex SSE stream ticket
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationMuxTicketRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSETicketResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/operations/stream-mux/:
+    get:
+      operationId: v2_operations_stream_mux_retrieve
+      description: Multiplex SSE stream for operation updates.
+      summary: Stream multiplex operation events (SSE)
+      parameters:
+      - in: query
+        name: ticket
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /stream-mux-ticket/
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/operations/stream-status/:
+    get:
+      operationId: v2_operations_stream_status_retrieve
+      description: Get active SSE stream count for current user.
+      summary: Get SSE stream status
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStreamStatus'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/operations/stream-mux-status/:
+    get:
+      operationId: v2_operations_stream_mux_status_retrieve
+      description: Get active multiplex SSE stream count for current user.
+      summary: Get multiplex SSE stream status
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationMuxStreamStatus'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/rbac/get-effective-access/:
     get:
       operationId: v2_rbac_get_effective_access_retrieve
@@ -2872,6 +3082,106 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/ui/table-metadata/:
+    get:
+      operationId: v2_ui_table_metadata_retrieve
+      description: Returns metadata for server-driven table configuration.
+      summary: Get table metadata
+      parameters:
+      - in: query
+        name: table
+        schema:
+          type: string
+        required: true
+        description: Table identifier
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableMetadataResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/settings/runtime/:
+    get:
+      operationId: v2_settings_runtime_list
+      description: |-
+        GET /api/v2/settings/runtime/
+
+        List runtime-configurable settings.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSettingsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/settings/runtime/{key}/:
+    patch:
+      operationId: v2_settings_runtime_update
+      description: |-
+        PATCH /api/v2/settings/runtime/{key}/
+
+        Update runtime-configurable setting.
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+        description: Setting key
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSettingUpdate'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSetting'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
@@ -4051,10 +4361,14 @@ components:
             $ref: '#/components/schemas/Cluster'
         count:
           type: integer
-          description: Total number of clusters
+          description: Number of clusters in current page
+        total:
+          type: integer
+          description: Total number of clusters matching filters
       required:
       - clusters
       - count
+      - total
     ClusterPermission:
       type: object
       properties:
@@ -4242,6 +4556,50 @@ components:
       - is_staff
       - is_superuser
       - username
+    RuntimeSetting:
+      type: object
+      description: Runtime setting descriptor.
+      properties:
+        key:
+          type: string
+        value:
+          type: object
+        value_type:
+          type: string
+        description:
+          type: string
+        min_value:
+          type: integer
+          nullable: true
+        max_value:
+          type: integer
+          nullable: true
+        default:
+          type: object
+      required:
+      - key
+      - value
+      - value_type
+      - description
+      - default
+    RuntimeSettingUpdate:
+      type: object
+      description: Update runtime setting request.
+      properties:
+        value:
+          type: object
+      required:
+      - value
+    RuntimeSettingsResponse:
+      type: object
+      description: Response with runtime settings list.
+      properties:
+        settings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeSetting'
+      required:
+      - settings
     CustomTokenObtainPair:
       type: object
       description: |-
@@ -4732,6 +5090,73 @@ components:
           $ref: '#/components/schemas/ErrorDetail'
       required:
       - error
+    TableFilterOption:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+      - value
+      - label
+    TableFilterMetadata:
+      type: object
+      properties:
+        type:
+          type: string
+        operators:
+          type: array
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableFilterOption'
+        placeholder:
+          type: string
+      required:
+      - type
+    TableColumnMetadata:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        group_key:
+          type: string
+          nullable: true
+        group_label:
+          type: string
+          nullable: true
+        sortable:
+          type: boolean
+        data_type:
+          type: string
+        filter:
+          $ref: '#/components/schemas/TableFilterMetadata'
+        server_field:
+          type: string
+      required:
+      - key
+      - label
+    TableMetadataResponse:
+      type: object
+      description: Table metadata for server-driven UI configuration.
+      properties:
+        table_id:
+          type: string
+        version:
+          type: string
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableColumnMetadata'
+      required:
+      - table_id
+      - version
+      - columns
     ExecuteOperationRequest:
       type: object
       description: Request body for execute_operation endpoint.
@@ -5467,6 +5892,99 @@ components:
       - cancelled
       - message
       - operation_id
+    OperationStreamStatus:
+      type: object
+      description: Operation SSE stream status for current user.
+      properties:
+        active_streams:
+          type: integer
+        max_streams:
+          type: integer
+      required:
+      - active_streams
+      - max_streams
+    OperationMuxStreamStatus:
+      type: object
+      description: Operation multiplex SSE stream status for current user.
+      properties:
+        active_streams:
+          type: integer
+        max_streams:
+          type: integer
+        active_subscriptions:
+          type: integer
+        max_subscriptions:
+          type: integer
+      required:
+      - active_streams
+      - max_streams
+      - active_subscriptions
+      - max_subscriptions
+    OperationCatalogItem:
+      type: object
+      description: Operation catalog entry for Operations Center.
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - operation
+          - template
+        operation_type:
+          type: string
+          nullable: true
+        template_id:
+          type: string
+          nullable: true
+        label:
+          type: string
+        description:
+          type: string
+        driver:
+          type: string
+          description: Driver group (ras/odata/cli/ibcmd/workflow)
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        requires_config:
+          type: boolean
+        has_ui_form:
+          type: boolean
+        icon:
+          type: string
+          nullable: true
+        deprecated:
+          type: boolean
+        deprecated_message:
+          type: string
+          nullable: true
+      required:
+      - id
+      - kind
+      - label
+      - description
+      - driver
+      - category
+      - requires_config
+      - has_ui_form
+      - deprecated
+    OperationCatalogResponse:
+      type: object
+      description: Response for operations catalog endpoint.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogItem'
+        count:
+          type: integer
+      required:
+      - items
+      - count
     OperationDetailResponse:
       type: object
       description: Response for get_operation endpoint.
@@ -5794,8 +6312,55 @@ components:
         operation_id:
           type: string
           description: Operation ID to subscribe to
+        client_id:
+          type: string
+          description: Optional client identifier
       required:
       - operation_id
+    OperationMuxTicketRequest:
+      type: object
+      description: Request body for multiplex stream ticket.
+      properties:
+        client_id:
+          type: string
+          description: Optional client identifier
+    OperationMuxSubscribeRequest:
+      type: object
+      description: Request body for multiplex stream subscribe/unsubscribe.
+      properties:
+        operation_ids:
+          type: array
+          items:
+            type: string
+      required:
+      - operation_ids
+    OperationMuxSubscribeResponse:
+      type: object
+      description: Response for multiplex stream subscribe/unsubscribe.
+      properties:
+        subscribed:
+          type: array
+          items:
+            type: string
+        denied:
+          type: array
+          items:
+            type: string
+        missing:
+          type: array
+          items:
+            type: string
+        unsubscribed:
+          type: array
+          items:
+            type: string
+        active_subscriptions:
+          type: integer
+        max_subscriptions:
+          type: integer
+      required:
+      - active_subscriptions
+      - max_subscriptions
     SSETicketResponse:
       type: object
       description: Response for get_stream_ticket endpoint.

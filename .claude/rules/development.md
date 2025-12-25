@@ -60,6 +60,28 @@ command-center-1c/
 - `mcp-dap-server` - Go debugging via Delve (SSE transport)
 - `chrome-devtools` - Browser control for web debugging (альтернатива chrome-debug.py)
 
+## LSP Tool (lspctl)
+
+CLI for LSP JSON-RPC with JSON output: `tools/lspctl/lspctl.py`.
+
+One-shot:
+
+```bash
+python tools/lspctl/lspctl.py definition --file path/to/file.go --line 10 --col 5
+```
+
+Daemon (recommended):
+
+```bash
+python tools/lspctl/lspctl.py serve --socket /tmp/lspctl.sock
+python tools/lspctl/lspctl.py call hover --file path/to/file.go --line 10 --col 5 --socket /tmp/lspctl.sock
+python tools/lspctl/lspctl.py shutdown --socket /tmp/lspctl.sock
+```
+
+Notes:
+- All commands return JSON: `{"result": ...}` or `{"error": "..."}`.
+- Use `--lang` if file extension is not supported or when using `workspaceSymbol`.
+
 ### Chrome DevTools Setup
 
 **Перед отладкой frontend** нужно запустить Chromium с remote debugging:

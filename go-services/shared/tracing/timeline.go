@@ -21,10 +21,18 @@ var (
 		},
 		[]string{"service", "error_type"},
 	)
+	timelineDroppedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cc1c_timeline_dropped_total",
+			Help: "Total timeline events dropped before enqueue",
+		},
+		[]string{"service", "reason"},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(timelineErrorsTotal)
+	prometheus.MustRegister(timelineDroppedTotal)
 }
 
 // TimelineRecorder defines the interface for recording operation timeline events.
@@ -58,6 +66,16 @@ type TimelineConfig struct {
 	TTL         time.Duration // TTL for timeline data (default: 24h)
 	ServiceName string        // Service name for events
 	MaxEntries  int           // Max events per operation (default: 1000)
+	// StreamEnabled publishes timeline events to Redis Streams for live updates.
+	StreamEnabled bool
+	// StreamMaxLen caps stream length when StreamEnabled is true.
+	StreamMaxLen int
+	// QueueSize bounds the number of pending timeline events.
+	QueueSize int
+	// WorkerCount controls concurrent Redis writers.
+	WorkerCount int
+	// DropOnFull drops events when queue is full to keep Record non-blocking.
+	DropOnFull bool
 }
 
 // DefaultTimelineConfig returns a TimelineConfig with default values.
@@ -67,7 +85,19 @@ func DefaultTimelineConfig(serviceName string) TimelineConfig {
 		TTL:         24 * time.Hour,
 		ServiceName: serviceName,
 		MaxEntries:  1000,
+		StreamEnabled: false,
+		StreamMaxLen:  1000,
+		QueueSize:     10000,
+		WorkerCount:   4,
+		DropOnFull:    true,
 	}
+}
+
+type timelineRecord struct {
+	ctx         context.Context
+	operationID string
+	event       string
+	metadata    map[string]interface{}
 }
 
 // RedisTimeline implements TimelineRecorder using Redis ZSET.
@@ -75,7 +105,10 @@ type RedisTimeline struct {
 	client *redis.Client
 	cfg    TimelineConfig
 	logger *logrus.Logger
-	wg     sync.WaitGroup
+	recordWG   sync.WaitGroup
+	queue      chan timelineRecord
+	workerCount int
+	mu         sync.RWMutex
 }
 
 // NewRedisTimeline creates a new RedisTimeline instance.
@@ -92,12 +125,23 @@ func NewRedisTimeline(client *redis.Client, cfg TimelineConfig) TimelineRecorder
 	if cfg.MaxEntries == 0 {
 		cfg.MaxEntries = 1000
 	}
+	if cfg.StreamMaxLen == 0 {
+		cfg.StreamMaxLen = cfg.MaxEntries
+	}
+	if cfg.QueueSize == 0 {
+		cfg.QueueSize = 10000
+	}
+	if cfg.WorkerCount == 0 {
+		cfg.WorkerCount = 4
+	}
 
-	return &RedisTimeline{
+	timeline := &RedisTimeline{
 		client: client,
 		cfg:    cfg,
 		logger: logrus.StandardLogger(),
 	}
+	timeline.startWorkers()
+	return timeline
 }
 
 // NewRedisTimelineWithLogger creates a RedisTimeline with a custom logger.
@@ -113,12 +157,23 @@ func NewRedisTimelineWithLogger(client *redis.Client, cfg TimelineConfig, logger
 	if cfg.MaxEntries == 0 {
 		cfg.MaxEntries = 1000
 	}
+	if cfg.StreamMaxLen == 0 {
+		cfg.StreamMaxLen = cfg.MaxEntries
+	}
+	if cfg.QueueSize == 0 {
+		cfg.QueueSize = 10000
+	}
+	if cfg.WorkerCount == 0 {
+		cfg.WorkerCount = 4
+	}
 
-	return &RedisTimeline{
+	timeline := &RedisTimeline{
 		client: client,
 		cfg:    cfg,
 		logger: logger,
 	}
+	timeline.startWorkers()
+	return timeline
 }
 
 // timelineKey generates the Redis key for an operation's timeline.
@@ -129,9 +184,35 @@ func timelineKey(operationID string) string {
 // Record adds a timeline event asynchronously (fire-and-forget).
 // Errors are logged but not returned to avoid blocking the caller.
 func (rt *RedisTimeline) Record(ctx context.Context, operationID, event string, metadata map[string]interface{}) {
-	rt.wg.Add(1)
+	record := timelineRecord{
+		ctx:         ctx,
+		operationID: operationID,
+		event:       event,
+		metadata:    metadata,
+	}
+	rt.mu.RLock()
+	queue := rt.queue
+	dropOnFull := rt.cfg.DropOnFull
+	if queue != nil {
+		rt.recordWG.Add(1)
+		select {
+		case queue <- record:
+			rt.mu.RUnlock()
+			return
+		default:
+			rt.recordWG.Done()
+			rt.mu.RUnlock()
+			if dropOnFull {
+				timelineDroppedTotal.WithLabelValues(rt.cfg.ServiceName, "queue_full").Inc()
+				return
+			}
+		}
+	} else {
+		rt.mu.RUnlock()
+	}
+	rt.recordWG.Add(1)
 	go func() {
-		defer rt.wg.Done()
+		defer rt.recordWG.Done()
 		rt.recordSync(ctx, operationID, event, metadata)
 	}()
 }
@@ -188,6 +269,59 @@ func (rt *RedisTimeline) recordSync(ctx context.Context, operationID, event stri
 			"event":        event,
 		}).Warn("timeline: failed to record event")
 	}
+
+	if rt.cfg.StreamEnabled {
+		rt.publishToStream(ctx, operationID, entry, score)
+	}
+}
+
+func (rt *RedisTimeline) publishToStream(
+	ctx context.Context,
+	operationID string,
+	entry timelineEntryStorage,
+	timestampMs float64,
+) {
+	payload := map[string]interface{}{
+		"operation_id": operationID,
+		"timestamp":    int64(timestampMs),
+		"event":        entry.Event,
+		"service":      entry.Service,
+		"metadata":     entry.Metadata,
+	}
+	if traceID, ok := entry.Metadata["trace_id"]; ok {
+		payload["trace_id"] = traceID
+	}
+	if workflowID, ok := entry.Metadata["workflow_execution_id"]; ok {
+		payload["workflow_execution_id"] = workflowID
+	}
+	if nodeID, ok := entry.Metadata["node_id"]; ok {
+		payload["node_id"] = nodeID
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		rt.logger.WithError(err).WithField("operation_id", operationID).
+			Warn("timeline: failed to marshal stream event")
+		return
+	}
+
+	stream := fmt.Sprintf("events:operation:%s", operationID)
+	if err := rt.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: stream,
+		MaxLen: int64(rt.cfg.StreamMaxLen),
+		Approx: true,
+		Values: map[string]interface{}{
+			"event_type":   entry.Event,
+			"data":         string(data),
+			"operation_id": operationID,
+		},
+	}).Err(); err != nil {
+		timelineErrorsTotal.WithLabelValues(rt.cfg.ServiceName, "stream_write").Inc()
+		rt.logger.WithError(err).WithFields(logrus.Fields{
+			"operation_id": operationID,
+			"event":        entry.Event,
+		}).Warn("timeline: failed to publish stream event")
+	}
 }
 
 // GetTimeline retrieves all timeline events for an operation, sorted by timestamp.
@@ -234,7 +368,76 @@ func (rt *RedisTimeline) GetTimeline(ctx context.Context, operationID string) ([
 // Wait waits for all pending Record operations to complete.
 // Useful for graceful shutdown or testing.
 func (rt *RedisTimeline) Wait() {
-	rt.wg.Wait()
+	rt.recordWG.Wait()
+}
+
+func (rt *RedisTimeline) startWorkers() {
+	if rt.cfg.QueueSize <= 0 || rt.cfg.WorkerCount <= 0 {
+		return
+	}
+	rt.queue = make(chan timelineRecord, rt.cfg.QueueSize)
+	rt.workerCount = rt.cfg.WorkerCount
+	for i := 0; i < rt.cfg.WorkerCount; i++ {
+		rt.startWorker(rt.queue)
+	}
+}
+
+func (rt *RedisTimeline) startWorker(queue chan timelineRecord) {
+	if queue == nil {
+		return
+	}
+	go func() {
+		for record := range queue {
+			rt.recordSync(record.ctx, record.operationID, record.event, record.metadata)
+			rt.recordWG.Done()
+		}
+	}()
+}
+
+func (rt *RedisTimeline) UpdateWorkerCount(count int) {
+	if count <= 0 {
+		return
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.cfg.WorkerCount = count
+	if rt.queue == nil {
+		rt.workerCount = count
+		return
+	}
+	if count <= rt.workerCount {
+		return
+	}
+	for i := rt.workerCount; i < count; i++ {
+		rt.startWorker(rt.queue)
+	}
+	rt.workerCount = count
+}
+
+func (rt *RedisTimeline) UpdateDropOnFull(dropOnFull bool) {
+	rt.mu.Lock()
+	rt.cfg.DropOnFull = dropOnFull
+	rt.mu.Unlock()
+}
+
+func (rt *RedisTimeline) ResetQueue(queueSize int, workerCount int) {
+	if queueSize <= 0 || workerCount <= 0 {
+		return
+	}
+	rt.mu.Lock()
+	oldQueue := rt.queue
+	rt.cfg.QueueSize = queueSize
+	rt.cfg.WorkerCount = workerCount
+	rt.queue = make(chan timelineRecord, queueSize)
+	rt.workerCount = workerCount
+	for i := 0; i < workerCount; i++ {
+		rt.startWorker(rt.queue)
+	}
+	rt.mu.Unlock()
+
+	if oldQueue != nil {
+		close(oldQueue)
+	}
 }
 
 // NoopTimeline is a no-op implementation of TimelineRecorder.

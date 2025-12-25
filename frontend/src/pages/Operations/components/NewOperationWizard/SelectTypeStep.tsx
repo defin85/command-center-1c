@@ -4,8 +4,8 @@
  * Supports both built-in operations and custom workflow templates.
  */
 
-import { useMemo, useCallback } from 'react'
-import { Card, Row, Col, Typography, Badge, Spin, Alert, Empty } from 'antd'
+import { useMemo, useCallback, useEffect, useState } from 'react'
+import { Card, Row, Col, Typography, Badge, Spin, Alert, Empty, Input, Select, Space, Collapse, Tooltip, Tag } from 'antd'
 import {
   LockOutlined,
   UnlockOutlined,
@@ -24,10 +24,11 @@ import {
   SettingOutlined,
   AppstoreOutlined,
   ThunderboltOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons'
-import type { SelectTypeStepProps, OperationCategory, OperationTypeConfig } from './types'
-import { OPERATION_TYPES, OPERATION_CATEGORIES } from './types'
-import { useWorkflowTemplates } from '../../../../hooks/useWorkflowTemplates'
+import type { SelectTypeStepProps, OperationType } from './types'
+import { useOperationCatalog } from '../../../../hooks/useOperationCatalog'
+import type { OperationCatalogItem } from '../../../../api/operations'
 
 const { Title, Text } = Typography
 
@@ -54,6 +55,7 @@ const iconMap: Record<string, React.ReactNode> = {
   SettingOutlined: <SettingOutlined style={{ fontSize: 24 }} />,
   AppstoreOutlined: <AppstoreOutlined style={{ fontSize: 24 }} />,
   ThunderboltOutlined: <ThunderboltOutlined style={{ fontSize: 24 }} />,
+  PlayCircleOutlined: <PlayCircleOutlined style={{ fontSize: 24 }} />,
 }
 
 /**
@@ -68,22 +70,20 @@ function getIcon(iconName: string): React.ReactNode {
   return iconMap[iconName] || defaultIcon
 }
 
-/**
- * Unified item type for both built-in operations and custom templates
- */
-interface OperationItem {
-  id: string
-  label: string
-  description: string
-  icon: string
-  category: OperationCategory
-  isCustomTemplate: boolean
-  /** Original type for built-in operations */
-  operationType?: OperationTypeConfig['type']
-  /** Template ID for custom templates */
-  templateId?: string
-  /** Whether the template requires configuration */
-  requiresConfig: boolean
+const DRIVER_LABELS: Record<string, string> = {
+  ras: 'RAS',
+  odata: 'OData',
+  cli: 'CLI',
+  ibcmd: 'IBCMD',
+  workflow: 'Workflow',
+}
+
+const DRIVER_ORDER: Record<string, number> = {
+  ras: 1,
+  odata: 2,
+  cli: 3,
+  ibcmd: 4,
+  workflow: 5,
 }
 
 /**
@@ -97,81 +97,72 @@ export const SelectTypeStep = ({
   onSelect,
   onSelectTemplate,
 }: SelectTypeStepProps) => {
-  // Fetch custom templates
-  const { templates, loading, error } = useWorkflowTemplates({
-    is_template: true,
-    is_active: true,
-  })
+  const { items, loading, error } = useOperationCatalog()
+  const [searchValue, setSearchValue] = useState('')
+  const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
+  const [driversInitialized, setDriversInitialized] = useState(false)
 
-  // Combine built-in operations with custom templates
-  const allOperations: OperationItem[] = useMemo(() => {
-    // Convert built-in operations to unified format
-    const builtInOperations: OperationItem[] = OPERATION_TYPES.map((op) => ({
-      id: op.type,
-      label: op.label,
-      description: op.description,
-      icon: op.icon,
-      category: op.category,
-      isCustomTemplate: false,
-      operationType: op.type,
-      requiresConfig: op.requiresConfig,
-    }))
+  const availableDrivers = useMemo(() => {
+    const unique = new Set(items.map((item) => item.driver))
+    return Array.from(unique).sort((a, b) => (DRIVER_ORDER[a] ?? 99) - (DRIVER_ORDER[b] ?? 99))
+  }, [items])
 
-    // Convert custom templates to unified format
-    const customOperations: OperationItem[] = templates.map((template) => ({
-      id: `template:${template.id}`,
-      label: template.name,
-      description: template.description || 'Custom workflow template',
-      icon: template.icon || 'AppstoreOutlined',
-      category: 'custom' as OperationCategory,
-      isCustomTemplate: true,
-      templateId: template.id,
-      // Custom templates always require configuration (via DynamicForm)
-      requiresConfig: template.input_schema !== null,
-    }))
+  useEffect(() => {
+    if (!driversInitialized && availableDrivers.length > 0) {
+      setSelectedDrivers(availableDrivers)
+      setDriversInitialized(true)
+    }
+  }, [availableDrivers, driversInitialized])
 
-    return [...builtInOperations, ...customOperations]
-  }, [templates])
+  const filteredItems = useMemo(() => {
+    const query = searchValue.trim().toLowerCase()
+    return items.filter((item) => {
+      if (selectedDrivers.length > 0 && !selectedDrivers.includes(item.driver)) {
+        return false
+      }
+      if (!query) return true
+      const tags = item.tags?.join(' ') ?? ''
+      const haystack = `${item.label} ${item.description} ${tags} ${item.driver}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [items, searchValue, selectedDrivers])
 
-  // Group operations by category
-  const operationsByCategory = useMemo(() => {
-    return allOperations.reduce(
-      (acc, op) => {
-        if (!acc[op.category]) {
-          acc[op.category] = []
-        }
-        acc[op.category].push(op)
-        return acc
-      },
-      {} as Record<OperationCategory, OperationItem[]>
-    )
-  }, [allOperations])
+  const itemsByDriver = useMemo(() => {
+    return filteredItems.reduce((acc, item) => {
+      const driver = item.driver
+      if (!acc[driver]) {
+        acc[driver] = []
+      }
+      acc[driver].push(item)
+      return acc
+    }, {} as Record<string, OperationCatalogItem[]>)
+  }, [filteredItems])
 
-  // Sort categories by order (only include categories that have items)
-  const sortedCategories = useMemo(() => {
-    return (Object.keys(operationsByCategory) as OperationCategory[]).sort(
-      (a, b) => OPERATION_CATEGORIES[a].order - OPERATION_CATEGORIES[b].order
-    )
-  }, [operationsByCategory])
+  const sortedDrivers = useMemo(
+    () => Object.keys(itemsByDriver).sort((a, b) => (DRIVER_ORDER[a] ?? 99) - (DRIVER_ORDER[b] ?? 99)),
+    [itemsByDriver]
+  )
 
   // Handle card click
-  const handleClick = useCallback((item: OperationItem) => {
-    if (item.isCustomTemplate && item.templateId) {
-      // Custom template selected - clear operation type and set template
-      onSelectTemplate(item.templateId)
-    } else if (item.operationType) {
-      // Built-in operation selected - set operation type and clear template
-      onSelect(item.operationType)
-      onSelectTemplate(null)
+  const handleClick = useCallback((item: OperationCatalogItem) => {
+    if (!item.has_ui_form || item.deprecated) {
+      return
+    }
+    if (item.kind === 'template' && item.template_id) {
+      onSelectTemplate(item.template_id)
+      return
+    }
+    if (item.kind === 'operation' && item.operation_type) {
+      onSelect(item.operation_type as OperationType)
     }
   }, [onSelect, onSelectTemplate])
 
   // Check if an item is selected
-  const isSelected = (item: OperationItem): boolean => {
-    if (item.isCustomTemplate && item.templateId) {
-      return selectedTemplateId === item.templateId
+  const isSelected = (item: OperationCatalogItem): boolean => {
+    if (item.kind === 'template' && item.template_id) {
+      return selectedTemplateId === item.template_id
     }
-    return selectedType === item.operationType && selectedTemplateId === null
+    return selectedType === item.operation_type && selectedTemplateId === null
   }
 
   return (
@@ -180,19 +171,41 @@ export const SelectTypeStep = ({
         Select Operation Type
       </Title>
 
-      {/* Loading state for custom templates */}
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input
+          allowClear
+          placeholder="Search operations"
+          prefix={<SearchOutlined />}
+          value={searchValue}
+          onChange={(event) => setSearchValue(event.target.value)}
+          style={{ width: 280 }}
+        />
+        <Select
+          mode="multiple"
+          placeholder="Filter by driver"
+          value={selectedDrivers}
+          onChange={(value) => setSelectedDrivers(value)}
+          options={availableDrivers.map((driver) => ({
+            value: driver,
+            label: DRIVER_LABELS[driver] ?? driver,
+          }))}
+          style={{ minWidth: 260 }}
+        />
+      </Space>
+
+      {/* Loading state for catalog */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
           <Spin />
-          <div style={{ marginTop: 8, color: '#595959' }}>Loading custom templates...</div>
+          <div style={{ marginTop: 8, color: '#595959' }}>Loading operation catalog...</div>
         </div>
       )}
 
-      {/* Error state for custom templates - only show for real errors, not 404/empty */}
-      {error && !error.includes('404') && !error.includes('Not Found') && (
+      {/* Error state for catalog */}
+      {error && (
         <Alert
-          message="Could not load custom templates"
-          description="Built-in operations are still available."
+          message="Could not load operation catalog"
+          description="Try again later or check API status."
           type="info"
           showIcon
           style={{ marginBottom: 24 }}
@@ -201,35 +214,45 @@ export const SelectTypeStep = ({
       )}
 
       {/* Render categories */}
-      {sortedCategories.map((category) => {
-        const items = operationsByCategory[category]
-        if (!items || items.length === 0) return null
-
-        return (
-          <div key={category} style={{ marginBottom: 32 }}>
-            <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 16 }}>
-              {OPERATION_CATEGORIES[category].label}
-            </Text>
-
-            <Row gutter={[16, 16]}>
-              {items.map((item) => {
-                const selected = isSelected(item)
-                return (
-                  <Col key={item.id} xs={24} sm={12} md={8} lg={6}>
-                    <Badge.Ribbon
-                      text="Custom"
-                      color="purple"
-                      style={{ display: item.isCustomTemplate ? 'block' : 'none' }}
-                    >
+      {!loading && sortedDrivers.length > 0 && (
+        <Collapse
+          defaultActiveKey={sortedDrivers}
+          style={{ background: 'transparent' }}
+          items={sortedDrivers.map((driver) => {
+            const driverItems = itemsByDriver[driver] || []
+            return {
+              key: driver,
+              label: (
+                <Space>
+                  <Text strong style={{ fontSize: 16 }}>
+                    {DRIVER_LABELS[driver] ?? driver}
+                  </Text>
+                  <Tag>{driverItems.length}</Tag>
+                </Space>
+              ),
+              children: (
+                <Row gutter={[16, 16]}>
+                  {driverItems.map((item) => {
+                    const selected = isSelected(item)
+                    const hasUiForm = item.has_ui_form ?? true
+                    const disabled = !hasUiForm || item.deprecated
+                    const disabledReason = item.deprecated
+                      ? (item.deprecated_message || 'Deprecated')
+                      : item.has_ui_form === false
+                        ? 'Not available in UI yet'
+                        : null
+                    const iconName = item.icon || 'AppstoreOutlined'
+                    const card = (
                       <Card
-                        hoverable
+                        hoverable={!disabled}
                         onClick={() => handleClick(item)}
                         style={{
-                          cursor: 'pointer',
+                          cursor: disabled ? 'not-allowed' : 'pointer',
                           border: selected ? '2px solid #1890ff' : '1px solid #d9d9d9',
                           backgroundColor: selected ? '#e6f7ff' : undefined,
                           transition: 'all 0.2s ease',
                           height: '100%',
+                          opacity: disabled ? 0.6 : 1,
                         }}
                         styles={{
                           body: {
@@ -244,7 +267,7 @@ export const SelectTypeStep = ({
                             marginBottom: 8,
                           }}
                         >
-                          {getIcon(item.icon)}
+                          {getIcon(iconName)}
                         </div>
                         <Text
                           strong
@@ -265,18 +288,39 @@ export const SelectTypeStep = ({
                         >
                           {item.description}
                         </Text>
+                        <Space size={4} style={{ marginTop: 8 }} wrap>
+                          {item.deprecated && <Tag color="red">Deprecated</Tag>}
+                          {item.has_ui_form === false && <Tag>UI form not available</Tag>}
+                        </Space>
                       </Card>
-                    </Badge.Ribbon>
-                  </Col>
-                )
-              })}
-            </Row>
-          </div>
-        )
-      })}
+                    )
+                    const wrappedCard = item.kind === 'template' ? (
+                      <Badge.Ribbon text="Template" color="blue">
+                        {card}
+                      </Badge.Ribbon>
+                    ) : card
+
+                    return (
+                      <Col key={item.id} xs={24} sm={12} md={8} lg={6}>
+                        {disabledReason ? (
+                          <Tooltip title={disabledReason}>
+                            <div>{wrappedCard}</div>
+                          </Tooltip>
+                        ) : (
+                          wrappedCard
+                        )}
+                      </Col>
+                    )
+                  })}
+                </Row>
+              ),
+            }
+          })}
+        />
+      )}
 
       {/* Empty state when no operations available */}
-      {sortedCategories.length === 0 && !loading && (
+      {sortedDrivers.length === 0 && !loading && (
         <Empty
           description="No operations available"
           style={{ marginTop: 48 }}

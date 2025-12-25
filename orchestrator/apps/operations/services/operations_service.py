@@ -1050,6 +1050,7 @@ class OperationsService:
             created_by=user.username if user else "system",
         )
         batch_operation.target_databases.set(databases)
+        workflow_metadata = cls._get_workflow_metadata(batch_operation)
 
         # Timeline: operation created (best-effort)
         try:
@@ -1233,6 +1234,7 @@ class OperationsService:
             created_by=user.username if user else "system",
         )
         batch_operation.target_databases.set(databases)
+        workflow_metadata = cls._get_workflow_metadata(batch_operation)
 
         tasks = [
             Task(

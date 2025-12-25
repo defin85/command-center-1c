@@ -15,9 +15,9 @@ def generate_key():
     print("=" * 70)
     print("🔐 ENCRYPTION KEY GENERATED")
     print("=" * 70)
-    print(f"\nAdd this to your .env file:\n")
+    print("\nAdd this to your .env file:\n")
     print(f"DB_ENCRYPTION_KEY={key.decode()}")
-    print(f"\n⚠️  IMPORTANT: Keep this key secure and never commit it to git!")
+    print("\n⚠️  IMPORTANT: Keep this key secure and never commit it to git!")
     print("=" * 70)
 
 

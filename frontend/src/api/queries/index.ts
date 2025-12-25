@@ -1,4 +1,4 @@
-import type { OperationFilters, DatabaseFilters } from './types'
+import type { OperationFilters, DatabaseFilters, ClusterFilters } from './types'
 
 export const queryKeys = {
   operations: {
@@ -13,7 +13,7 @@ export const queryKeys = {
   },
   clusters: {
     all: ['clusters'] as const,
-    list: () => [...queryKeys.clusters.all, 'list'] as const,
+    list: (filters?: ClusterFilters) => [...queryKeys.clusters.all, 'list', filters] as const,
     detail: (id: string) => [...queryKeys.clusters.all, 'detail', id] as const,
   },
   rbac: {
@@ -39,7 +39,7 @@ export const queryKeys = {
   },
 } as const
 
-export type { OperationFilters, DatabaseFilters } from './types'
+export type { OperationFilters, DatabaseFilters, ClusterFilters } from './types'
 
 // Re-export hooks for convenience
 export { useDashboardQuery } from './dashboard'
@@ -55,3 +55,4 @@ export {
 export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates'
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
+export { useTableMetadata } from './ui'

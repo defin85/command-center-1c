@@ -116,4 +116,13 @@ urlpatterns = [
         views.get_operation_timeline,
         name='get-operation-timeline'
     ),
+
+    # ========================================================================
+    # Runtime Settings
+    # ========================================================================
+    path(
+        'runtime-settings',
+        views.list_runtime_settings,
+        name='runtime-settings'
+    ),
 ]

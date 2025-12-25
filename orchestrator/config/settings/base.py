@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'apps.templates',
     'apps.monitoring',
     'apps.files',  # File storage (Phase 5.1)
+    'apps.runtime_settings',
     'apps.api_v2',  # API v2 with action-based routing
     'apps.api_internal',  # Internal API for Go Worker
 ]

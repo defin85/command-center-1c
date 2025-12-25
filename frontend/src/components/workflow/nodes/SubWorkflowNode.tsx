@@ -27,6 +27,16 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
   skipped: { color: 'warning', icon: <MinusCircleOutlined /> }
 }
 
+const toStringValue = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (typeof value === 'number') {
+    return `${value}`
+  }
+  return null
+}
+
 const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
@@ -34,6 +44,7 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const subworkflowId = data.config?.subworkflow_id
   const inputMapping = data.config?.input_mapping || {}
   const outputMapping = data.config?.output_mapping || {}
+  const subExecutionId = toStringValue(data.output?.sub_execution_id)
 
   const handleOpenSubWorkflow = () => {
     if (subworkflowId) {
@@ -101,10 +112,10 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
             </Tooltip>
           )}
 
-          {status === 'running' && data.output?.sub_execution_id && (
+          {status === 'running' && subExecutionId && (
             <div className="node-field">
               <span className="field-label">Execution:</span>
-              <span className="field-value mono">{data.output.sub_execution_id.slice(0, 8)}...</span>
+              <span className="field-value mono">{subExecutionId.slice(0, 8)}...</span>
             </div>
           )}
 

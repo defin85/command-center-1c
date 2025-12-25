@@ -8,6 +8,7 @@ import json
 import logging
 import secrets
 import time
+import asyncio
 
 import redis as redis_module
 import redis.asyncio as redis_async
@@ -19,7 +20,7 @@ from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.throttling import UserRateThrottle
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -29,6 +30,12 @@ from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
 from apps.databases.permissions import CanExecuteOperation
+from apps.databases.services import PermissionService
+from apps.databases.models import Database, PermissionLevel
+from apps.runtime_settings.models import RuntimeSetting
+from apps.runtime_settings.registry import RUNTIME_SETTINGS
+from apps.templates.registry import get_registry, BackendType
+from apps.templates.workflow.models import WorkflowTemplate
 from apps.operations.prometheus_metrics import (
     record_api_v2_duration,
     record_api_v2_error,
@@ -46,10 +53,162 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 SSE_TICKET_TTL = 30  # seconds
 SSE_TICKET_PREFIX = "sse_ticket:"
+SSE_MUX_TICKET_PREFIX = "sse_mux_ticket:"
 SSE_BLOCK_MS = 1000
 SSE_HEARTBEAT_INTERVAL_SECONDS = 10
 OP_SSE_ACTIVE_PREFIX = "op_sse_active:"
 OP_SSE_ACTIVE_TTL = 120
+OP_SSE_MAX_STREAMS_KEY = "ui.operations.max_live_streams"
+OP_SSE_MAX_STREAMS_DEFAULT = (
+    RUNTIME_SETTINGS.get(OP_SSE_MAX_STREAMS_KEY).default
+    if RUNTIME_SETTINGS.get(OP_SSE_MAX_STREAMS_KEY)
+    else 10
+)
+OP_MUX_ACTIVE_PREFIX = "op_mux_active:"
+OP_MUX_ACTIVE_TTL = 120
+OP_MUX_MAX_STREAMS_KEY = "observability.operations.max_mux_streams"
+OP_MUX_MAX_STREAMS_DEFAULT = (
+    RUNTIME_SETTINGS.get(OP_MUX_MAX_STREAMS_KEY).default
+    if RUNTIME_SETTINGS.get(OP_MUX_MAX_STREAMS_KEY)
+    else 1
+)
+OP_MUX_MAX_SUBSCRIPTIONS_KEY = "observability.operations.max_subscriptions"
+OP_MUX_MAX_SUBSCRIPTIONS_DEFAULT = (
+    RUNTIME_SETTINGS.get(OP_MUX_MAX_SUBSCRIPTIONS_KEY).default
+    if RUNTIME_SETTINGS.get(OP_MUX_MAX_SUBSCRIPTIONS_KEY)
+    else 200
+)
+OP_MUX_SUB_PREFIX = "op_mux_sub:"
+OP_MUX_LAST_PREFIX = "op_mux_last:"
+
+# =============================================================================
+# Operation Catalog Constants
+# =============================================================================
+OPERATION_CATALOG_DRIVER_ORDER = {
+    "ras": 1,
+    "odata": 2,
+    "cli": 3,
+    "ibcmd": 4,
+    "workflow": 5,
+}
+
+OPERATION_CATALOG_UI_META = {
+    "lock_scheduled_jobs": {
+        "icon": "LockOutlined",
+        "requires_config": False,
+    },
+    "unlock_scheduled_jobs": {
+        "icon": "UnlockOutlined",
+        "requires_config": False,
+    },
+    "block_sessions": {
+        "icon": "StopOutlined",
+        "requires_config": True,
+    },
+    "unblock_sessions": {
+        "icon": "CheckCircleOutlined",
+        "requires_config": False,
+    },
+    "terminate_sessions": {
+        "icon": "CloseCircleOutlined",
+        "requires_config": True,
+    },
+    "install_extension": {
+        "icon": "RocketOutlined",
+        "requires_config": True,
+    },
+    "query": {
+        "icon": "SearchOutlined",
+        "requires_config": True,
+    },
+    "sync_cluster": {
+        "icon": "SyncOutlined",
+        "requires_config": False,
+    },
+    "health_check": {
+        "icon": "HeartOutlined",
+        "requires_config": False,
+    },
+}
+
+CLI_OPERATION_IDS = {
+    "install_extension",
+    "remove_extension",
+    "config_update",
+    "config_load",
+    "config_dump",
+}
+
+EXTRA_OPERATION_CATALOG = [
+    {
+        "id": "sync_cluster",
+        "label": "Sync Cluster",
+        "description": "Synchronize cluster data with RAS.",
+        "driver": "ras",
+        "category": "ras",
+        "tags": ["cluster", "sync"],
+        "requires_config": False,
+        "has_ui_form": True,
+        "icon": "SyncOutlined",
+    },
+    {
+        "id": "health_check",
+        "label": "Health Check",
+        "description": "Check database connectivity via OData.",
+        "driver": "odata",
+        "category": "odata",
+        "tags": ["health", "odata"],
+        "requires_config": False,
+        "has_ui_form": True,
+        "icon": "HeartOutlined",
+    },
+    {
+        "id": "remove_extension",
+        "label": "Remove Extension",
+        "description": "Remove installed extension via CLI.",
+        "driver": "cli",
+        "category": "cli",
+        "tags": ["cli", "extension"],
+        "requires_config": True,
+        "has_ui_form": False,
+        "icon": "ToolOutlined",
+    },
+    {
+        "id": "config_update",
+        "label": "Update Configuration",
+        "description": "Update database configuration via CLI.",
+        "driver": "cli",
+        "category": "cli",
+        "tags": ["cli", "configuration"],
+        "requires_config": True,
+        "has_ui_form": False,
+        "icon": "SettingOutlined",
+    },
+    {
+        "id": "config_load",
+        "label": "Load Configuration",
+        "description": "Load configuration from file via CLI.",
+        "driver": "cli",
+        "category": "cli",
+        "tags": ["cli", "configuration"],
+        "requires_config": True,
+        "has_ui_form": False,
+        "icon": "FileOutlined",
+    },
+    {
+        "id": "config_dump",
+        "label": "Dump Configuration",
+        "description": "Dump configuration to file via CLI.",
+        "driver": "cli",
+        "category": "cli",
+        "tags": ["cli", "configuration"],
+        "requires_config": True,
+        "has_ui_form": False,
+        "icon": "FileOutlined",
+    },
+]
+
+DEPRECATED_OPERATIONS = {}
 
 
 # =============================================================================
@@ -98,6 +257,44 @@ class OperationCancelResponseSerializer(serializers.Serializer):
     operation_id = serializers.CharField(help_text="ID of the cancelled operation")
     cancelled = serializers.BooleanField(help_text="Whether cancellation was successful")
     message = serializers.CharField(help_text="Status message")
+
+
+class OperationStreamStatusSerializer(serializers.Serializer):
+    """Response for operation stream status."""
+    active_streams = serializers.IntegerField(help_text="Active SSE streams for current user")
+    max_streams = serializers.IntegerField(help_text="Maximum allowed SSE streams")
+
+
+class OperationMuxStreamStatusSerializer(serializers.Serializer):
+    """Response for multiplex stream status."""
+    active_streams = serializers.IntegerField(help_text="Active multiplex SSE streams for current user")
+    max_streams = serializers.IntegerField(help_text="Maximum allowed multiplex SSE streams")
+    active_subscriptions = serializers.IntegerField(help_text="Active operation subscriptions for user")
+    max_subscriptions = serializers.IntegerField(help_text="Maximum allowed subscriptions")
+
+
+class OperationCatalogItemSerializer(serializers.Serializer):
+    """Operation catalog entry for Operations Center."""
+    id = serializers.CharField(help_text="Catalog item identifier")
+    kind = serializers.ChoiceField(choices=["operation", "template"])
+    operation_type = serializers.CharField(required=False, allow_null=True)
+    template_id = serializers.CharField(required=False, allow_null=True)
+    label = serializers.CharField()
+    description = serializers.CharField()
+    driver = serializers.CharField(help_text="Driver group (ras/odata/cli/ibcmd/workflow)")
+    category = serializers.CharField()
+    tags = serializers.ListField(child=serializers.CharField(), required=False)
+    requires_config = serializers.BooleanField()
+    has_ui_form = serializers.BooleanField()
+    icon = serializers.CharField(required=False, allow_null=True)
+    deprecated = serializers.BooleanField()
+    deprecated_message = serializers.CharField(required=False, allow_null=True)
+
+
+class OperationCatalogResponseSerializer(serializers.Serializer):
+    """Response for operation catalog endpoint."""
+    items = OperationCatalogItemSerializer(many=True)
+    count = serializers.IntegerField()
 
 
 # =============================================================================
@@ -184,6 +381,7 @@ class ExecuteIbcmdOperationThrottle(UserRateThrottle):
 class SSETicketRequestSerializer(serializers.Serializer):
     """Request body for get_stream_ticket endpoint."""
     operation_id = serializers.CharField(help_text="Operation ID to subscribe to")
+    client_id = serializers.CharField(required=False, help_text="Optional client identifier")
 
 
 class SSETicketResponseSerializer(serializers.Serializer):
@@ -191,6 +389,29 @@ class SSETicketResponseSerializer(serializers.Serializer):
     ticket = serializers.CharField(help_text="Short-lived ticket for SSE connection")
     expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
     stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
+
+
+class OperationMuxSubscribeSerializer(serializers.Serializer):
+    """Request body for multiplex stream subscribe."""
+    operation_ids = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=False,
+        help_text="Operation IDs to subscribe to",
+    )
+
+
+class OperationMuxUnsubscribeSerializer(serializers.Serializer):
+    """Request body for multiplex stream unsubscribe."""
+    operation_ids = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=False,
+        help_text="Operation IDs to unsubscribe from",
+    )
+
+
+class OperationMuxTicketRequestSerializer(serializers.Serializer):
+    """Request body for multiplex stream ticket."""
+    client_id = serializers.CharField(required=False, help_text="Optional client identifier")
 
 
 @extend_schema(
@@ -732,6 +953,88 @@ def _get_async_redis_connection():
     return redis_async.from_url(redis_url, decode_responses=True)
 
 
+def _get_max_live_streams() -> int:
+    setting = RuntimeSetting.objects.filter(key=OP_SSE_MAX_STREAMS_KEY).first()
+    value = setting.value if setting else OP_SSE_MAX_STREAMS_DEFAULT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return OP_SSE_MAX_STREAMS_DEFAULT
+    return parsed if parsed > 0 else OP_SSE_MAX_STREAMS_DEFAULT
+
+
+async def _get_max_live_streams_async() -> int:
+    return await sync_to_async(_get_max_live_streams, thread_sensitive=True)()
+
+
+def _get_max_mux_streams() -> int:
+    setting = RuntimeSetting.objects.filter(key=OP_MUX_MAX_STREAMS_KEY).first()
+    value = setting.value if setting else OP_MUX_MAX_STREAMS_DEFAULT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return OP_MUX_MAX_STREAMS_DEFAULT
+    return parsed if parsed > 0 else OP_MUX_MAX_STREAMS_DEFAULT
+
+
+async def _get_max_mux_streams_async() -> int:
+    return await sync_to_async(_get_max_mux_streams, thread_sensitive=True)()
+
+
+def _get_max_mux_subscriptions() -> int:
+    setting = RuntimeSetting.objects.filter(key=OP_MUX_MAX_SUBSCRIPTIONS_KEY).first()
+    value = setting.value if setting else OP_MUX_MAX_SUBSCRIPTIONS_DEFAULT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return OP_MUX_MAX_SUBSCRIPTIONS_DEFAULT
+    return parsed if parsed > 0 else OP_MUX_MAX_SUBSCRIPTIONS_DEFAULT
+
+
+async def _get_max_mux_subscriptions_async() -> int:
+    return await sync_to_async(_get_max_mux_subscriptions, thread_sensitive=True)()
+
+
+def _count_active_streams(redis_conn, user_id: int) -> int:
+    pattern = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:*"
+    count = 0
+    for _ in redis_conn.scan_iter(match=pattern, count=100):
+        count += 1
+    return count
+
+
+def _count_active_mux_streams(redis_conn, user_id: int) -> int:
+    pattern = f"{OP_MUX_ACTIVE_PREFIX}{user_id}:*"
+    count = 0
+    for _ in redis_conn.scan_iter(match=pattern, count=100):
+        count += 1
+    return count
+
+
+async def _count_active_streams_async(redis_conn, user_id: int) -> int:
+    pattern = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:*"
+    count = 0
+    cursor = 0
+    while True:
+        cursor, keys = await redis_conn.scan(cursor=cursor, match=pattern, count=100)
+        count += len(keys)
+        if cursor == 0:
+            break
+    return count
+
+
+async def _count_active_mux_streams_async(redis_conn, user_id: int) -> int:
+    pattern = f"{OP_MUX_ACTIVE_PREFIX}{user_id}:*"
+    count = 0
+    cursor = 0
+    while True:
+        cursor, keys = await redis_conn.scan(cursor=cursor, match=pattern, count=100)
+        count += len(keys)
+        if cursor == 0:
+            break
+    return count
+
+
 async def _validate_sse_ticket_async(ticket: str) -> tuple:
     """
     Validate and consume SSE ticket (async).
@@ -756,6 +1059,28 @@ async def _validate_sse_ticket_async(ticket: str) -> tuple:
         await redis_conn.close()
 
 
+async def _validate_mux_ticket_async(ticket: str) -> tuple:
+    """
+    Validate and consume multiplex SSE ticket (async).
+
+    Returns:
+        (ticket_data, error_message) - ticket_data is None if validation failed
+    """
+    redis_conn = _get_async_redis_connection()
+    try:
+        ticket_key = f"{SSE_MUX_TICKET_PREFIX}{ticket}"
+        pipe = redis_conn.pipeline()
+        pipe.get(ticket_key)
+        pipe.delete(ticket_key)
+        results = await pipe.execute()
+
+        ticket_data_raw = results[0]
+        if not ticket_data_raw:
+            return None, "Invalid or expired ticket"
+
+        return json.loads(ticket_data_raw), None
+    finally:
+        await redis_conn.close()
 @extend_schema(
     tags=['v2'],
     summary='Get SSE stream ticket',
@@ -797,6 +1122,7 @@ def get_stream_ticket(request):
     serializer.is_valid(raise_exception=True)
 
     operation_id = serializer.validated_data['operation_id']
+    client_id = serializer.validated_data.get('client_id')
 
     # Verify operation exists and user has permission
     operation = BatchOperation.objects.filter(id=operation_id).first()
@@ -827,8 +1153,48 @@ def get_stream_ticket(request):
     active_key = f"{OP_SSE_ACTIVE_PREFIX}{request.user.id}:{operation_id}"
 
     try:
+        max_live_streams = _get_max_live_streams()
+        if max_live_streams > 0:
+            active_count = _count_active_streams(redis_conn, request.user.id)
+            if active_count >= max_live_streams:
+                record_api_v2_duration(endpoint, "limit", time.monotonic() - start_time)
+                record_sse_ticket("operations", "limit")
+                response = Response({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_LIMIT_EXCEEDED',
+                        'message': 'Too many active streams',
+                        'max_streams': max_live_streams,
+                    }
+                }, status=429)
+                response['Retry-After'] = "60"
+                return response
+
         ttl = redis_conn.ttl(active_key)
         if ttl and ttl > 0:
+            if client_id:
+                current_value = redis_conn.get(active_key)
+                if current_value == client_id:
+                    record_api_v2_duration(endpoint, "ok", time.monotonic() - start_time)
+                    record_sse_ticket("operations", "ok")
+                    ticket = secrets.token_urlsafe(32)
+                    ticket_data = {
+                        'user_id': request.user.id,
+                        'username': request.user.username,
+                        'operation_id': operation_id,
+                        'client_id': client_id,
+                        'created_at': timezone.now().isoformat(),
+                    }
+                    redis_conn.setex(
+                        f"{SSE_TICKET_PREFIX}{ticket}",
+                        SSE_TICKET_TTL,
+                        json.dumps(ticket_data)
+                    )
+                    return Response({
+                        'ticket': ticket,
+                        'expires_in': SSE_TICKET_TTL,
+                        'stream_url': f'/api/v2/operations/stream/?ticket={ticket}'
+                    })
             record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
             record_sse_ticket("operations", "conflict")
             response = Response({
@@ -849,6 +1215,7 @@ def get_stream_ticket(request):
             'user_id': request.user.id,
             'username': request.user.username,
             'operation_id': operation_id,
+            'client_id': client_id,
             'created_at': timezone.now().isoformat(),
         }
 
@@ -872,6 +1239,631 @@ def get_stream_ticket(request):
         'expires_in': SSE_TICKET_TTL,
         'stream_url': f'/api/v2/operations/stream/?ticket={ticket}'
     })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get SSE stream status',
+    description='Get active SSE stream count for current user.',
+    responses={
+        200: OperationStreamStatusSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_stream_status(request):
+    redis_conn = _get_redis_connection()
+    try:
+        active_count = _count_active_streams(redis_conn, request.user.id)
+    finally:
+        redis_conn.close()
+
+    return Response({
+        "active_streams": active_count,
+        "max_streams": _get_max_live_streams(),
+    })
+
+
+def _resolve_catalog_driver(operation_id: str, backend: BackendType | None) -> str:
+    if operation_id in CLI_OPERATION_IDS:
+        return "cli"
+    if backend == BackendType.RAS:
+        return "ras"
+    if backend == BackendType.ODATA:
+        return "odata"
+    if backend == BackendType.IBCMD:
+        return "ibcmd"
+    if backend is None:
+        return "workflow"
+    return str(backend.value)
+
+
+def _get_deprecated_meta(operation_id: str) -> tuple[bool, str | None]:
+    deprecated_message = DEPRECATED_OPERATIONS.get(operation_id)
+    if deprecated_message:
+        return True, deprecated_message
+    return False, None
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get operations catalog',
+    description='List available operation types and workflow templates for Operations Center.',
+    responses={
+        200: OperationCatalogResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_operation_catalog(request):
+    if not request.user.is_superuser:
+        accessible = PermissionService.filter_accessible_databases(
+            request.user,
+            Database.objects.all(),
+            PermissionLevel.OPERATE,
+        )
+        if not accessible.exists():
+            return Response({
+                "items": [],
+                "count": 0,
+            })
+
+    registry = get_registry()
+    items = []
+    seen_ids: set[str] = set()
+
+    for op in registry.get_all():
+        op_id = op.id
+        seen_ids.add(op_id)
+        ui_meta = OPERATION_CATALOG_UI_META.get(op_id, {})
+        requires_config = ui_meta.get(
+            "requires_config",
+            bool(op.required_parameters or op.optional_parameters),
+        )
+        has_ui_form = op_id in OPERATION_CATALOG_UI_META
+        driver = _resolve_catalog_driver(op_id, op.backend)
+        tags = list(op.tags) if op.tags else []
+        if driver and driver not in tags:
+            tags.insert(0, driver)
+        if op.category and op.category not in tags:
+            tags.insert(0, op.category)
+        deprecated, deprecated_message = _get_deprecated_meta(op_id)
+
+        items.append({
+            "id": op_id,
+            "kind": "operation",
+            "operation_type": op_id,
+            "template_id": None,
+            "label": op.name,
+            "description": op.description,
+            "driver": driver,
+            "category": driver,
+            "tags": tags,
+            "requires_config": requires_config,
+            "has_ui_form": has_ui_form,
+            "icon": ui_meta.get("icon"),
+            "deprecated": deprecated,
+            "deprecated_message": deprecated_message,
+        })
+
+    for extra in EXTRA_OPERATION_CATALOG:
+        op_id = extra["id"]
+        if op_id in seen_ids:
+            continue
+        deprecated, deprecated_message = _get_deprecated_meta(op_id)
+        extra_tags = list(extra.get("tags", []))
+        driver_tag = extra.get("driver")
+        if driver_tag and driver_tag not in extra_tags:
+            extra_tags.insert(0, driver_tag)
+        items.append({
+            "id": op_id,
+            "kind": "operation",
+            "operation_type": op_id,
+            "template_id": None,
+            "label": extra["label"],
+            "description": extra["description"],
+            "driver": extra["driver"],
+            "category": extra.get("category", extra["driver"]),
+            "tags": extra_tags,
+            "requires_config": extra["requires_config"],
+            "has_ui_form": extra["has_ui_form"],
+            "icon": extra.get("icon"),
+            "deprecated": deprecated,
+            "deprecated_message": deprecated_message,
+        })
+
+    templates = WorkflowTemplate.objects.filter(
+        is_template=True,
+        is_active=True,
+        is_valid=True,
+    ).order_by("name")
+    for template in templates:
+        tags = []
+        if template.category:
+            tags.append(template.category)
+        if "workflow" not in tags:
+            tags.insert(0, "workflow")
+        items.append({
+            "id": str(template.id),
+            "kind": "template",
+            "operation_type": None,
+            "template_id": str(template.id),
+            "label": template.name,
+            "description": template.description,
+            "driver": "workflow",
+            "category": "workflow",
+            "tags": tags,
+            "requires_config": template.input_schema is not None,
+            "has_ui_form": True,
+            "icon": template.icon or None,
+            "deprecated": False,
+            "deprecated_message": None,
+        })
+
+    items.sort(
+        key=lambda item: (
+            OPERATION_CATALOG_DRIVER_ORDER.get(item["driver"], 99),
+            item["label"].lower(),
+        )
+    )
+
+    for item in items:
+        if item.get("kind") == "operation" and not item.get("operation_type"):
+            logger.error(
+                "Operation catalog item missing operation_type",
+                extra={"item": item, "user": request.user.username},
+            )
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "CATALOG_ITEM_INVALID",
+                    "message": "Operation catalog item missing operation_type",
+                },
+            }, status=500)
+        if item.get("kind") == "template" and not item.get("template_id"):
+            logger.error(
+                "Operation catalog item missing template_id",
+                extra={"item": item, "user": request.user.username},
+            )
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "CATALOG_ITEM_INVALID",
+                    "message": "Operation catalog item missing template_id",
+                },
+            }, status=500)
+
+    return Response({
+        "items": items,
+        "count": len(items),
+    })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get multiplex SSE stream status',
+    description='Get active multiplex SSE stream count for current user.',
+    responses={
+        200: OperationMuxStreamStatusSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_stream_mux_status(request):
+    redis_conn = _get_redis_connection()
+    try:
+        active_count = _count_active_mux_streams(redis_conn, request.user.id)
+        sub_key = f"{OP_MUX_SUB_PREFIX}{request.user.id}"
+        active_subscriptions = redis_conn.scard(sub_key)
+    finally:
+        redis_conn.close()
+
+    return Response({
+        "active_streams": active_count,
+        "max_streams": _get_max_mux_streams(),
+        "active_subscriptions": active_subscriptions,
+        "max_subscriptions": _get_max_mux_subscriptions(),
+    })
+
+
+def _resolve_operation_access(user, operations):
+    allowed = []
+    denied = []
+
+    if user.is_superuser:
+        return [str(op.id) for op in operations], denied
+
+    op_db_ids: dict[str, list[str]] = {}
+    all_db_ids: set[str] = set()
+    for op in operations:
+        db_ids = [str(db.id) for db in op.target_databases.all()]
+        op_db_ids[str(op.id)] = db_ids
+        all_db_ids.update(db_ids)
+
+    databases = list(
+        Database.objects.filter(id__in=all_db_ids)
+        .select_related('cluster')
+        .only('id', 'cluster_id')
+    )
+    levels = PermissionService.get_user_levels_for_databases_bulk(user, databases)
+
+    for op in operations:
+        op_id = str(op.id)
+        db_ids = op_db_ids.get(op_id, [])
+        if not db_ids:
+            if op.created_by == user.username:
+                allowed.append(op_id)
+            else:
+                denied.append(op_id)
+            continue
+
+        has_access = True
+        for db_id in db_ids:
+            level = levels.get(db_id)
+            if level is None or level < PermissionLevel.VIEW:
+                has_access = False
+                break
+        if has_access:
+            allowed.append(op_id)
+        else:
+            denied.append(op_id)
+
+    return allowed, denied
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Subscribe to multiplex stream operations',
+    request=OperationMuxSubscribeSerializer,
+    responses={
+        200: OpenApiResponse(description='Subscription updated'),
+        401: OpenApiResponse(description='Unauthorized'),
+        429: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def subscribe_operation_streams(request):
+    serializer = OperationMuxSubscribeSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    operation_ids = list({str(op_id) for op_id in serializer.validated_data['operation_ids']})
+
+    operations = list(
+        BatchOperation.objects.filter(id__in=operation_ids).prefetch_related('target_databases')
+    )
+    found_ids = {str(op.id) for op in operations}
+    missing = [op_id for op_id in operation_ids if op_id not in found_ids]
+
+    allowed, denied = _resolve_operation_access(request.user, operations)
+
+    redis_conn = _get_redis_connection()
+    try:
+        sub_key = f"{OP_MUX_SUB_PREFIX}{request.user.id}"
+        last_key = f"{OP_MUX_LAST_PREFIX}{request.user.id}"
+        existing = redis_conn.smembers(sub_key)
+
+        allowed_new = [op_id for op_id in allowed if op_id not in existing]
+        max_subscriptions = _get_max_mux_subscriptions()
+        if len(existing) + len(allowed_new) > max_subscriptions:
+            response = Response({
+                'success': False,
+                'error': {
+                    'code': 'STREAM_SUBSCRIPTION_LIMIT',
+                    'message': 'Too many subscribed operations',
+                    'max_subscriptions': max_subscriptions,
+                    'current_subscriptions': len(existing),
+                    'requested': len(allowed_new),
+                }
+            }, status=429)
+            response['Retry-After'] = "60"
+            return response
+
+        if allowed_new:
+            redis_conn.sadd(sub_key, *allowed_new)
+            mapping = {op_id: '$' for op_id in allowed_new}
+            redis_conn.hset(last_key, mapping=mapping)
+
+        return Response({
+            "subscribed": allowed,
+            "denied": denied,
+            "missing": missing,
+            "active_subscriptions": len(existing) + len(allowed_new),
+            "max_subscriptions": max_subscriptions,
+        })
+    finally:
+        redis_conn.close()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Unsubscribe from multiplex stream operations',
+    request=OperationMuxUnsubscribeSerializer,
+    responses={
+        200: OpenApiResponse(description='Subscription updated'),
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unsubscribe_operation_streams(request):
+    serializer = OperationMuxUnsubscribeSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    operation_ids = list({str(op_id) for op_id in serializer.validated_data['operation_ids']})
+
+    redis_conn = _get_redis_connection()
+    try:
+        sub_key = f"{OP_MUX_SUB_PREFIX}{request.user.id}"
+        last_key = f"{OP_MUX_LAST_PREFIX}{request.user.id}"
+        if operation_ids:
+            redis_conn.srem(sub_key, *operation_ids)
+            redis_conn.hdel(last_key, *operation_ids)
+        active_count = redis_conn.scard(sub_key)
+        return Response({
+            "unsubscribed": operation_ids,
+            "active_subscriptions": active_count,
+            "max_subscriptions": _get_max_mux_subscriptions(),
+        })
+    finally:
+        redis_conn.close()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get multiplex SSE stream ticket',
+    request=OperationMuxTicketRequestSerializer,
+    responses={
+        200: SSETicketResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        429: ErrorResponseSerializer,
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_mux_stream_ticket(request):
+    serializer = OperationMuxTicketRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    client_id = serializer.validated_data.get('client_id')
+
+    redis_conn = _get_redis_connection()
+    active_key = f"{OP_MUX_ACTIVE_PREFIX}{request.user.id}"
+
+    try:
+        max_streams = _get_max_mux_streams()
+        if max_streams > 0:
+            active_count = _count_active_mux_streams(redis_conn, request.user.id)
+            if active_count >= max_streams:
+                response = Response({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_LIMIT_EXCEEDED',
+                        'message': 'Too many active streams',
+                        'max_streams': max_streams,
+                    }
+                }, status=429)
+                response['Retry-After'] = "60"
+                return response
+
+        ttl = redis_conn.ttl(active_key)
+        if ttl and ttl > 0:
+            if client_id:
+                current_value = redis_conn.get(active_key)
+                if current_value == client_id:
+                    ticket = secrets.token_urlsafe(32)
+                    ticket_data = {
+                        'user_id': request.user.id,
+                        'username': request.user.username,
+                        'client_id': client_id,
+                        'created_at': timezone.now().isoformat(),
+                    }
+                    redis_conn.setex(
+                        f"{SSE_MUX_TICKET_PREFIX}{ticket}",
+                        SSE_TICKET_TTL,
+                        json.dumps(ticket_data)
+                    )
+                    return Response({
+                        'ticket': ticket,
+                        'expires_in': SSE_TICKET_TTL,
+                        'stream_url': f'/api/v2/operations/stream-mux/?ticket={ticket}'
+                    })
+            response = Response({
+                'success': False,
+                'error': {
+                    'code': 'STREAM_ALREADY_ACTIVE',
+                    'message': 'Operation stream already active for this user',
+                    'retry_after': ttl,
+                }
+            }, status=429)
+            response['Retry-After'] = str(ttl)
+            return response
+
+        ticket = secrets.token_urlsafe(32)
+        ticket_data = {
+            'user_id': request.user.id,
+            'username': request.user.username,
+            'client_id': client_id,
+            'created_at': timezone.now().isoformat(),
+        }
+        redis_conn.setex(
+            f"{SSE_MUX_TICKET_PREFIX}{ticket}",
+            SSE_TICKET_TTL,
+            json.dumps(ticket_data)
+        )
+    finally:
+        redis_conn.close()
+
+    return Response({
+        'ticket': ticket,
+        'expires_in': SSE_TICKET_TTL,
+        'stream_url': f'/api/v2/operations/stream-mux/?ticket={ticket}'
+    })
+
+
+async def operation_stream_mux(request):
+    """
+    GET /api/v2/operations/stream-mux/?ticket=xxx
+
+    SSE endpoint for multiplex operation updates.
+    """
+    start_time = time.monotonic()
+    endpoint = "operations.stream_mux"
+    ticket = request.GET.get('ticket')
+
+    if not ticket:
+        record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ticket is required'
+            }
+        }, status=401)
+
+    ticket_data, error = await _validate_mux_ticket_async(ticket)
+    if error:
+        record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'INVALID_TICKET',
+                'message': error
+            }
+        }, status=401)
+
+    user_id = ticket_data.get('user_id')
+    username = ticket_data.get('username')
+    client_id = ticket_data.get('client_id')
+    if not user_id:
+        return JsonResponse({
+            'success': False,
+            'error': {
+                'code': 'INVALID_TICKET',
+                'message': 'Missing user_id'
+            }
+        }, status=401)
+
+    active_key = f"{OP_MUX_ACTIVE_PREFIX}{user_id}"
+    active_value = client_id or secrets.token_urlsafe(12)
+    active_conn = _get_async_redis_connection()
+    try:
+        max_streams = await _get_max_mux_streams_async()
+        if max_streams > 0:
+            active_count = await _count_active_mux_streams_async(active_conn, user_id)
+            if active_count >= max_streams:
+                record_api_v2_duration(endpoint, "limit", time.monotonic() - start_time)
+                response = JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_LIMIT_EXCEEDED',
+                        'message': 'Too many active streams',
+                        'max_streams': max_streams,
+                    }
+                }, status=429)
+                response['Retry-After'] = "60"
+                return response
+
+        if not await active_conn.set(active_key, active_value, nx=True, ex=OP_MUX_ACTIVE_TTL):
+            current_value = await active_conn.get(active_key)
+            if current_value != active_value:
+                record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_ALREADY_ACTIVE',
+                        'message': 'Operation stream already active for this user'
+                    }
+                }, status=429)
+            await active_conn.expire(active_key, OP_MUX_ACTIVE_TTL)
+    finally:
+        await active_conn.close()
+
+    async def event_generator():
+        logger.info(f"operation_stream_mux: Starting for user {username}")
+        sse_connection_open("operations_mux")
+
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+        redis_conn = redis_async.from_url(redis_url, decode_responses=True)
+        sub_key = f"{OP_MUX_SUB_PREFIX}{user_id}"
+        last_key = f"{OP_MUX_LAST_PREFIX}{user_id}"
+        last_heartbeat = time.monotonic()
+
+        try:
+            while True:
+                loop_start = time.monotonic()
+                subscriptions = await redis_conn.smembers(sub_key)
+                if not subscriptions:
+                    now = time.monotonic()
+                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        try:
+                            await redis_conn.expire(active_key, OP_MUX_ACTIVE_TTL)
+                        except Exception:
+                            pass
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = now
+                    record_sse_loop_duration("operations_mux", time.monotonic() - loop_start)
+                    await asyncio.sleep(0.5)
+                    continue
+
+                last_ids = await redis_conn.hmget(last_key, *subscriptions)
+                stream_map = {}
+                for op_id, last_id in zip(subscriptions, last_ids):
+                    stream_map[f"events:operation:{op_id}"] = last_id or '$'
+
+                messages = await redis_conn.xread(stream_map, block=SSE_BLOCK_MS, count=10)
+                if not messages:
+                    now = time.monotonic()
+                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        try:
+                            await redis_conn.expire(active_key, OP_MUX_ACTIVE_TTL)
+                        except Exception:
+                            pass
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = now
+                    record_sse_loop_duration("operations_mux", time.monotonic() - loop_start)
+                    continue
+
+                for stream, stream_messages in messages:
+                    op_id = stream.split(":")[-1]
+                    for msg_id, fields in stream_messages:
+                        event_data = fields.get('data', '{}')
+                        event_type = fields.get('event_type') or 'message'
+                        try:
+                            await redis_conn.hset(last_key, op_id, msg_id)
+                            await redis_conn.expire(active_key, OP_MUX_ACTIVE_TTL)
+                        except Exception:
+                            pass
+                        yield f"event: {event_type}\n"
+                        yield f"id: {msg_id}\n"
+                        yield f"data: {event_data}\n\n"
+
+                record_sse_loop_duration("operations_mux", time.monotonic() - loop_start)
+
+        except GeneratorExit:
+            logger.info(f"operation_stream_mux: client disconnected user={username}")
+        except Exception as e:
+            logger.error(f"operation_stream_mux error: {e}")
+            record_sse_stream_error("operations_mux", "event_loop")
+            raise
+        finally:
+            try:
+                current_value = await redis_conn.get(active_key)
+                if current_value == active_value:
+                    await redis_conn.delete(active_key)
+                await redis_conn.close()
+            except Exception:
+                pass
+            sse_connection_close("operations_mux")
+
+    record_api_v2_duration(endpoint, "stream_start", time.monotonic() - start_time)
+    response = StreamingHttpResponse(
+        event_generator(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 async def operation_stream(request):
@@ -901,6 +1893,7 @@ async def operation_stream(request):
         }, status=401)
 
         # Prefer ticket-based auth (secure)
+    user_id = None
     if ticket:
         ticket_data, error = await _validate_sse_ticket_async(ticket)
         if error:
@@ -915,6 +1908,7 @@ async def operation_stream(request):
 
         operation_id = ticket_data['operation_id']
         username = ticket_data['username']
+        user_id = ticket_data.get("user_id")
 
     else:
         # Legacy token auth (deprecated - log warning)
@@ -948,6 +1942,7 @@ async def operation_stream(request):
         try:
             user = await _authenticate_legacy_token(token)
             username = user.username
+            user_id = user.id
         except Exception as e:
             logger.error(f"SSE authentication failed: {e}")
             record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
@@ -964,24 +1959,40 @@ async def operation_stream(request):
 
     active_key = None
     active_value = None
-    if ticket:
-        user_id = ticket_data.get("user_id")
-        if user_id:
-            active_key = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:{operation_id}"
+    if user_id:
+        active_key = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:{operation_id}"
+        active_value = ticket_data.get("client_id") if ticket else None
+        if not active_value:
             active_value = secrets.token_urlsafe(12)
-            active_conn = _get_async_redis_connection()
-            try:
-                if not await active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
-                    record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
-                    return JsonResponse({
+        active_conn = _get_async_redis_connection()
+        try:
+            max_live_streams = await _get_max_live_streams_async()
+            if max_live_streams > 0:
+                active_count = await _count_active_streams_async(active_conn, user_id)
+                if active_count >= max_live_streams:
+                    record_api_v2_duration(endpoint, "limit", time.monotonic() - start_time)
+                    response = JsonResponse({
                         'success': False,
                         'error': {
-                            'code': 'STREAM_ALREADY_ACTIVE',
-                            'message': 'Operation stream already active for this user'
+                            'code': 'STREAM_LIMIT_EXCEEDED',
+                            'message': 'Too many active streams',
+                            'max_streams': max_live_streams,
                         }
                     }, status=429)
-            finally:
-                await active_conn.close()
+                    response['Retry-After'] = "60"
+                    return response
+
+            if not await active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
+                record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+                return JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_ALREADY_ACTIVE',
+                        'message': 'Operation stream already active for this user'
+                    }
+                }, status=429)
+        finally:
+            await active_conn.close()
 
     async def event_generator():
         """Generator for SSE events using Redis Streams (XREAD)."""
