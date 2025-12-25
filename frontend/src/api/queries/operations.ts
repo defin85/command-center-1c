@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { getV2 } from '../generated'
 import type { OperationListResponse } from '../generated/model/operationListResponse'
-import { transformBatchOperation } from '../../utils/operationTransforms'
+import { transformBatchOperation, transformTask } from '../../utils/operationTransforms'
 import type { UIBatchOperation } from '../../utils/operationTransforms'
 
 import { queryKeys, type OperationFilters } from './index'
@@ -25,26 +25,73 @@ const api = getV2()
  * Fetch operations list from API.
  * Transforms results to UI format.
  */
+export interface OperationListResult {
+  operations: UIBatchOperation[]
+  count: number
+  total: number
+}
+
 export async function fetchOperations(
   filters?: OperationFilters,
   signal?: AbortSignal
-): Promise<UIBatchOperation[]> {
-  const response: OperationListResponse = await api.getOperationsListOperations(filters, { signal })
-  return response.operations.map(transformBatchOperation)
+): Promise<OperationListResult> {
+  const filtersParam = filters?.filters ? JSON.stringify(filters.filters) : undefined
+  const sortParam = filters?.sort ? JSON.stringify(filters.sort) : undefined
+  const response: OperationListResponse = await api.getOperationsListOperations(
+    {
+      operation_id: filters?.operation_id,
+      created_by: filters?.created_by,
+      operation_type: filters?.operation_type,
+      workflow_execution_id: filters?.workflow_execution_id,
+      node_id: filters?.node_id,
+      status: filters?.status,
+      search: filters?.search,
+      filters: filtersParam,
+      sort: sortParam,
+      limit: filters?.limit,
+      offset: filters?.offset,
+    },
+    { signal }
+  )
+  return {
+    ...response,
+    operations: response.operations.map(transformBatchOperation),
+  }
 }
 
 /**
  * Fetch single operation by ID.
  */
+export interface TaskQueryParams {
+  limit?: number
+  offset?: number
+  filters?: Record<string, { op?: string; value?: unknown } | unknown>
+  sort?: { key: string; order: 'asc' | 'desc' }
+}
+
 export async function fetchOperation(
   id: string,
+  taskParams?: TaskQueryParams,
   signal?: AbortSignal
 ): Promise<UIBatchOperation> {
+  const filtersParam = taskParams?.filters ? JSON.stringify(taskParams.filters) : undefined
+  const sortParam = taskParams?.sort ? JSON.stringify(taskParams.sort) : undefined
   const response = await api.getOperationsGetOperation(
-    { operation_id: id, include_tasks: true },
+    {
+      operation_id: id,
+      include_tasks: true,
+      task_limit: taskParams?.limit,
+      task_offset: taskParams?.offset,
+      task_filters: filtersParam,
+      task_sort: sortParam,
+    },
     { signal }
   )
-  return transformBatchOperation(response.operation)
+  const operation = transformBatchOperation(response.operation)
+  return {
+    ...operation,
+    tasks: response.tasks ? response.tasks.map(transformTask) : operation.tasks,
+  }
 }
 
 /**
@@ -99,17 +146,19 @@ export interface UseOperationOptions {
   enabled?: boolean
   /** Refetch interval in milliseconds (default: none) */
   refetchInterval?: number
+  /** Task query params */
+  taskParams?: TaskQueryParams
 }
 
 /**
  * React Query hook for single operation details.
  */
 export function useOperation(id: string, options: UseOperationOptions = {}) {
-  const { enabled = true, refetchInterval } = options
+  const { enabled = true, refetchInterval, taskParams } = options
 
   return useQuery({
-    queryKey: queryKeys.operations.detail(id),
-    queryFn: ({ signal }) => fetchOperation(id, signal),
+    queryKey: [...queryKeys.operations.detail(id), taskParams],
+    queryFn: ({ signal }) => fetchOperation(id, taskParams, signal),
     enabled: enabled && !!id,
     refetchInterval,
     retry: 1,

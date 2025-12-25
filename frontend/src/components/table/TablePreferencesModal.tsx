@@ -1,4 +1,5 @@
-import { Button, Checkbox, Col, Divider, Input, Modal, Row, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
+import { Button, Checkbox, Col, DatePicker, Divider, Input, InputNumber, Modal, Row, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
+import dayjs from 'dayjs'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import type { TableFilterConfig, TableFilters } from './types'
 import type { TableColumnConfig, TableViewPreset } from './hooks/useTablePreferences'
@@ -16,6 +17,8 @@ interface TablePreferencesModalProps {
   onUpdatePreset: (preset: TableViewPreset) => void
   onCreatePreset: (preset: TableViewPreset) => void
   onDeletePreset: (presetId: string) => void
+  canToggleFilter?: (key: string) => boolean
+  onToggleFilter?: (key: string, visible: boolean) => void
 }
 
 interface ColumnsTabProps {
@@ -249,6 +252,7 @@ interface FiltersTabProps {
   onReorder: (fromKey: string, toKey: string) => void
   onMove: (key: string, direction: -1 | 1) => void
   onToggleVisible: (key: string, checked: boolean) => void
+  canToggleVisible?: (key: string) => boolean
 }
 
 const FiltersTab = memo(({
@@ -260,6 +264,7 @@ const FiltersTab = memo(({
   onReorder,
   onMove,
   onToggleVisible,
+  canToggleVisible,
 }: FiltersTabProps) => {
   const [draggingKey, setDraggingKey] = useState<string | null>(null)
   const query = search.trim().toLowerCase()
@@ -319,6 +324,7 @@ const FiltersTab = memo(({
               <Text type="secondary">Visible</Text>
               <Switch
                 checked={filterVisibility[key] !== false}
+                disabled={canToggleVisible ? !canToggleVisible(key) : false}
                 onChange={(checked) => onToggleVisible(key, checked)}
               />
             </Space>
@@ -343,14 +349,26 @@ const DefaultsTab = memo(({
   <Space direction="vertical" style={{ width: '100%' }}>
     {filters.map((filter) => {
       if (filter.type === 'select') {
+        const value = values[filter.key]
+        const selectValue = filter.multiple
+          ? (Array.isArray(value) ? value : [])
+          : (value as string | null) ?? undefined
         return (
           <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text>{filter.label}</Text>
             <Select
               allowClear
               placeholder="Any"
-              value={(values[filter.key] as string | null) ?? undefined}
-              onChange={(value) => onChange(filter.key, value ?? null)}
+              mode={filter.multiple ? 'multiple' : undefined}
+              value={selectValue}
+              onChange={(value) => {
+                if (filter.multiple) {
+                  const list = Array.isArray(value) ? value : []
+                  onChange(filter.key, list.length > 0 ? list : null)
+                  return
+                }
+                onChange(filter.key, value ?? null)
+              }}
               options={filter.options || []}
               style={{ width: 180 }}
             />
@@ -380,6 +398,40 @@ const DefaultsTab = memo(({
                 { value: 'true', label: 'Yes' },
                 { value: 'false', label: 'No' },
               ]}
+              style={{ width: 180 }}
+            />
+          </Space>
+        )
+      }
+      if (filter.type === 'number') {
+        const numericValue = typeof values[filter.key] === 'number'
+          ? (values[filter.key] as number)
+          : typeof values[filter.key] === 'string'
+            ? Number.parseFloat(values[filter.key] as string)
+            : null
+        return (
+          <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Text>{filter.label}</Text>
+            <InputNumber
+              value={Number.isFinite(numericValue) ? numericValue : undefined}
+              onChange={(value) => onChange(filter.key, value ?? null)}
+              style={{ width: 180 }}
+            />
+          </Space>
+        )
+      }
+      if (filter.type === 'date') {
+        const dateValue = typeof values[filter.key] === 'string' && values[filter.key]
+          ? dayjs(values[filter.key] as string)
+          : null
+        return (
+          <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Text>{filter.label}</Text>
+            <DatePicker
+              allowClear
+              showTime
+              value={dateValue && dateValue.isValid() ? dateValue : null}
+              onChange={(value) => onChange(filter.key, value ? value.toISOString() : null)}
               style={{ width: 180 }}
             />
           </Space>
@@ -439,6 +491,8 @@ export const TablePreferencesModal = ({
   onUpdatePreset,
   onCreatePreset,
   onDeletePreset,
+  canToggleFilter,
+  onToggleFilter,
 }: TablePreferencesModalProps) => {
   const activePreset = presets.find((preset) => preset.id === activePresetId) || presets[0]
   const [draft, setDraft] = useState<TableViewPreset>(activePreset)
@@ -626,6 +680,13 @@ export const TablePreferencesModal = ({
   }, [])
 
   const handleToggleFilter = useCallback((key: string, checked: boolean) => {
+    if (canToggleFilter && !canToggleFilter(key)) {
+      return
+    }
+    if (onToggleFilter) {
+      onToggleFilter(key, checked)
+      return
+    }
     setDraft((prev) => ({
       ...prev,
       filterVisibility: {
@@ -633,7 +694,7 @@ export const TablePreferencesModal = ({
         [key]: checked,
       },
     }))
-  }, [])
+  }, [canToggleFilter, onToggleFilter])
 
   const handleToggleSortable = useCallback((key: string, checked: boolean) => {
     setDraft((prev) => ({
@@ -691,6 +752,7 @@ export const TablePreferencesModal = ({
           onReorder={handleReorderFilter}
           onMove={handleMoveFilter}
           onToggleVisible={handleToggleFilter}
+          canToggleVisible={canToggleFilter}
         />
       ),
     },

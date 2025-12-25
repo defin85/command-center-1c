@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Table, Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
-import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined, KeyOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons'
+import { useState, useMemo } from 'react'
+import { Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
+import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
@@ -14,14 +14,9 @@ import {
     useResetClusterSyncStatus,
     useUpdateClusterCredentials,
 } from '../../api/queries/clusters'
-import { useMe, useTableMetadata } from '../../api/queries'
-import { TableToolbar } from '../../components/table/TableToolbar'
-import { TablePagination } from '../../components/table/TablePagination'
-import { TableFiltersRow } from '../../components/table/TableFiltersRow'
-import { useTableState } from '../../components/table/hooks/useTableState'
-import type { TableFilterConfig, TableFilterValue, TableFilters } from '../../components/table/types'
-import { TablePreferencesModal } from '../../components/table/TablePreferencesModal'
-import { useTablePreferences } from '../../components/table/hooks/useTablePreferences'
+import { useMe } from '../../api/queries'
+import { TableToolkit } from '../../components/table/TableToolkit'
+import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
 const { TextArea } = Input
 
@@ -39,25 +34,7 @@ export const Clusters = () => {
     const [resettingClusterId, setResettingClusterId] = useState<string | null>(null)
     const [form] = Form.useForm()
     const [credentialsForm] = Form.useForm()
-    const [preferencesOpen, setPreferencesOpen] = useState(false)
-
     // React Query hooks
-    const { data: tableMetadata } = useTableMetadata('clusters')
-    const {
-        search,
-        setSearch,
-        filters,
-        setFilter,
-        setFilters,
-        sort,
-        setSort,
-        pagination,
-        setPage,
-        setPageSize,
-    } = useTableState<TableFilters>({
-        initialFilters: {},
-        initialPageSize: 20,
-    })
     const { data: systemConfig } = useSystemConfig()
     const meQuery = useMe()
     const canResetSync = Boolean(meQuery.data?.is_staff)
@@ -75,190 +52,6 @@ export const Clusters = () => {
         { key: 'credentials', label: 'Credentials', groupKey: 'access', groupLabel: 'Access' },
         { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
     ], [])
-
-    const columnConfigs = useMemo(() => {
-        const metadataColumns = tableMetadata?.columns ?? []
-        if (metadataColumns.length === 0) {
-            return fallbackColumnConfigs
-        }
-        return metadataColumns.map((col) => ({
-            key: col.key,
-            label: col.label,
-            sortable: col.sortable ?? false,
-            groupKey: col.group_key ?? undefined,
-            groupLabel: col.group_label ?? undefined,
-        }))
-    }, [fallbackColumnConfigs, tableMetadata?.columns])
-
-    const filterConfigs = useMemo<TableFilterConfig[]>(() => {
-        const metadataColumns = tableMetadata?.columns ?? []
-        if (metadataColumns.length === 0) {
-            return columnConfigs
-                .filter((col) => col.key !== 'actions')
-                .map((col) => ({
-                    key: col.key,
-                    label: col.label,
-                    type: 'text',
-                    placeholder: col.label,
-                }))
-        }
-        return metadataColumns
-            .filter((col) => col.filter && col.key !== 'actions')
-            .map((col) => ({
-                key: col.key,
-                label: col.label,
-                type: col.filter?.type === 'select' || col.filter?.type === 'boolean'
-                    ? col.filter.type
-                    : 'text',
-                options: col.filter?.options,
-                placeholder: col.filter?.placeholder ?? col.label,
-            }))
-    }, [columnConfigs, tableMetadata?.columns])
-
-    const filterConfigByKey = useMemo(() => {
-        return new Map(filterConfigs.map((config) => [config.key, config]))
-    }, [filterConfigs])
-
-    const defaultFilterState = useMemo<TableFilters>(() => {
-        const state: Record<string, TableFilterValue> = {}
-        filterConfigs.forEach((config) => {
-            state[config.key] = null
-        })
-        return state
-    }, [filterConfigs])
-
-    const hasFilterValue = useCallback((value: TableFilterValue) => {
-        if (value === null || value === undefined) return false
-        if (typeof value === 'string') return value.trim().length > 0
-        if (Array.isArray(value)) return value.length > 0
-        return true
-    }, [])
-
-    useEffect(() => {
-        setFilters(defaultFilterState)
-    }, [defaultFilterState, setFilters])
-
-    const {
-        preferences,
-        activePreset,
-        setActivePreset,
-        updatePreset,
-        createPreset,
-        deletePreset,
-    } = useTablePreferences('clusters', columnConfigs, filterConfigs)
-
-    const visibleColumns = useMemo(() => new Set(activePreset.visibleColumns), [activePreset.visibleColumns])
-    const sortableColumns = useMemo(() => new Set(activePreset.sortableColumns), [activePreset.sortableColumns])
-
-    const orderedFilters = useMemo(() => {
-        const configs = filterConfigs.filter((filter) => activePreset.filterVisibility[filter.key] !== false)
-        const order = activePreset.filterOrder
-        return configs.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
-    }, [activePreset.filterOrder, activePreset.filterVisibility, filterConfigs])
-
-    useEffect(() => {
-        const defaults = activePreset.defaultFilters || {}
-        const nextFilters: TableFilters = { ...defaultFilterState }
-        Object.entries(defaults).forEach(([key, value]) => {
-            if (key in nextFilters) {
-                nextFilters[key] = value
-            }
-        })
-        setFilters(nextFilters)
-        if (activePreset.defaultSort?.key && activePreset.defaultSort.order) {
-            setSort(activePreset.defaultSort.key, activePreset.defaultSort.order)
-        } else {
-            setSort(null, null)
-        }
-        setPage(1)
-    }, [activePreset.defaultFilters, activePreset.defaultSort, defaultFilterState, setFilters, setPage, setSort])
-
-    const filterOperatorsByKey = useMemo<Record<string, string>>(() => {
-        const metadataColumns = tableMetadata?.columns ?? []
-        if (metadataColumns.length === 0) {
-            return {}
-        }
-        const map: Record<string, string> = {}
-        metadataColumns.forEach((col) => {
-            if (!col.filter) return
-            if (col.filter.operators?.includes('contains')) {
-                map[col.key] = 'contains'
-                return
-            }
-            map[col.key] = col.filter.operators?.[0] || 'eq'
-        })
-        return map
-    }, [tableMetadata?.columns])
-
-    const filtersPayload = useMemo(() => {
-        const payload: Record<string, { op: string; value: TableFilterValue }> = {}
-        filterConfigs.forEach((config) => {
-            const value = filters[config.key]
-            if (value === null || value === undefined || value === '') {
-                return
-            }
-            const operator = filterOperatorsByKey[config.key]
-                || (config.type === 'text' ? 'contains' : 'eq')
-            payload[config.key] = { op: operator, value }
-        })
-        return Object.keys(payload).length > 0 ? payload : undefined
-    }, [filterConfigs, filterOperatorsByKey, filters])
-
-    const sortPayload = useMemo(() => {
-        if (!sort.key || !sort.order) return undefined
-        return { key: sort.key, order: sort.order }
-    }, [sort.key, sort.order])
-
-    const handleToggleFilterVisibility = useCallback((key: string, visible: boolean) => {
-        if (!visible && hasFilterValue(filters[key])) {
-            return
-        }
-        updatePreset({
-            ...activePreset,
-            filterVisibility: {
-                ...activePreset.filterVisibility,
-                [key]: visible,
-            },
-        })
-    }, [activePreset, filters, hasFilterValue, updatePreset])
-
-    const renderFilterTitle = useCallback((key: string, label: string) => {
-        if (!filterConfigByKey.has(key)) {
-            return label
-        }
-        const isVisible = activePreset.filterVisibility[key] !== false
-        const disableHide = isVisible && hasFilterValue(filters[key])
-        return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span>{label}</span>
-                <Button
-                    type="text"
-                    size="small"
-                    icon={isVisible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                    disabled={disableHide}
-                    onClick={(event) => {
-                        event.stopPropagation()
-                        handleToggleFilterVisibility(key, !isVisible)
-                    }}
-                />
-            </span>
-        )
-    }, [activePreset.filterVisibility, filterConfigByKey, filters, handleToggleFilterVisibility, hasFilterValue])
-
-    const pageStart = (pagination.page - 1) * pagination.pageSize
-
-    const { data: clustersResponse, isLoading } = useClusters({
-        search,
-        filters: filtersPayload,
-        sort: sortPayload,
-        limit: pagination.pageSize,
-        offset: pageStart,
-    })
-    const clusters = clustersResponse?.clusters ?? []
-    const totalClusters = typeof clustersResponse?.total === 'number'
-        ? clustersResponse.total
-        : clusters.length
-
     // Mutations
     const createCluster = useCreateCluster()
     const updateCluster = useUpdateCluster()
@@ -490,47 +283,42 @@ export const Clusters = () => {
 
     const columns = [
         {
-            title: renderFilterTitle('name', 'Name'),
+            title: 'Name',
             dataIndex: 'name',
             key: 'name',
             width: 200,
-            sorter: sortableColumns.has('name'),
         },
         {
-            title: renderFilterTitle('ras_server', 'RAS Server'),
+            title: 'RAS Server',
             dataIndex: 'ras_server',
             key: 'ras_server',
             width: 180,
-            sorter: sortableColumns.has('ras_server'),
         },
         {
-            title: renderFilterTitle('status', 'Status'),
+            title: 'Status',
             dataIndex: 'status',
             key: 'status',
             width: 120,
             render: (status: string, record: Cluster) => (
                 <Tag color={getStatusColor(status)}>{record.status_display}</Tag>
             ),
-            sorter: sortableColumns.has('status'),
         },
         {
-            title: renderFilterTitle('databases_count', 'Databases'),
+            title: 'Databases',
             dataIndex: 'databases_count',
             key: 'databases_count',
             width: 120,
             render: (count: number) => count || 0,
-            sorter: sortableColumns.has('databases_count'),
         },
         {
-            title: renderFilterTitle('last_sync', 'Last Sync'),
+            title: 'Last Sync',
             dataIndex: 'last_sync',
             key: 'last_sync',
             width: 170,
             render: (date: string) => (date ? new Date(date).toLocaleString() : 'Never'),
-            sorter: sortableColumns.has('last_sync'),
         },
         {
-            title: renderFilterTitle('credentials', 'Credentials'),
+            title: 'Credentials',
             key: 'credentials',
             width: 130,
             render: (_: unknown, record: Cluster) => (
@@ -540,7 +328,7 @@ export const Clusters = () => {
             ),
         },
         {
-            title: renderFilterTitle('actions', 'Actions'),
+            title: 'Actions',
             key: 'actions',
             width: 260,
             render: (_: unknown, record: Cluster) => (
@@ -608,50 +396,28 @@ export const Clusters = () => {
         },
     ]
 
-    const columnsByKey = useMemo(() => {
-        const map = new Map<string, (typeof columns)[number]>()
-        columns.forEach((col) => {
-            map.set(col.key, col)
-        })
-        return map
-    }, [columns])
+    const table = useTableToolkit({
+        tableId: 'clusters',
+        columns,
+        fallbackColumns: fallbackColumnConfigs,
+        initialPageSize: 20,
+    })
 
-    const groupedTableColumns = useMemo(() => {
-        const groups: Array<{ key: string; title: string; children: (typeof columns)[number][] }> = []
-        const seen = new Map<string, number>()
+    const totalColumnsWidth = table.totalColumnsWidth
 
-        activePreset.columnOrder.forEach((key) => {
-            if (!visibleColumns.has(key)) return
-            const column = columnsByKey.get(key)
-            if (!column) return
-            const config = columnConfigs.find((item) => item.key === key)
-            const groupKey = config?.groupKey || 'general'
-            const groupLabel = config?.groupLabel || config?.groupKey || 'General'
-            if (!seen.has(groupKey)) {
-                seen.set(groupKey, groups.length)
-                groups.push({ key: groupKey, title: groupLabel, children: [column] })
-                return
-            }
-            const index = seen.get(groupKey) as number
-            groups[index].children.push(column)
-        })
+    const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
 
-        return groups.map((group) => ({
-            title: group.title,
-            key: group.key,
-            children: group.children,
-        }))
-    }, [activePreset.columnOrder, columnConfigs, columnsByKey, visibleColumns])
-
-    const filterColumns = useMemo(() => {
-        return activePreset.columnOrder
-            .filter((key) => visibleColumns.has(key))
-            .map((key) => ({ key, width: columnsByKey.get(key)?.width }))
-    }, [activePreset.columnOrder, columnsByKey, visibleColumns])
-
-    const totalColumnsWidth = useMemo(() => {
-        return filterColumns.reduce((sum, col) => sum + (col.width ?? 160), 0)
-    }, [filterColumns])
+    const { data: clustersResponse, isLoading } = useClusters({
+        search: table.search,
+        filters: table.filtersPayload,
+        sort: table.sortPayload,
+        limit: table.pagination.pageSize,
+        offset: pageStart,
+    })
+    const clusters = clustersResponse?.clusters ?? []
+    const totalClusters = typeof clustersResponse?.total === 'number'
+        ? clustersResponse.total
+        : clusters.length
 
     return (
         <div>
@@ -679,76 +445,20 @@ export const Clusters = () => {
                 </Space>
             </Space>
 
-            <TableToolbar
-                searchValue={search}
-                searchPlaceholder="Search clusters"
-                onSearchChange={setSearch}
-                onReset={() => {
-                    setSearch('')
-                    const defaults = activePreset.defaultFilters || {}
-                    const nextFilters: TableFilters = { ...defaultFilterState }
-                    Object.entries(defaults).forEach(([key, value]) => {
-                        if (key in nextFilters) {
-                            nextFilters[key] = value
-                        }
-                    })
-                    setFilters(nextFilters)
-                }}
-                actions={(
-                    <Button onClick={() => setPreferencesOpen(true)}>Table settings</Button>
-                )}
-            />
-
-            <TableFiltersRow
-                columns={filterColumns}
-                configs={orderedFilters}
-                values={filters}
-                visibility={activePreset.filterVisibility}
-                onChange={setFilter}
-            />
-
-            <Table
-                columns={groupedTableColumns}
-                dataSource={clusters}
+            <TableToolkit
+                table={table}
+                data={clusters}
+                total={totalClusters}
                 loading={isLoading}
                 rowKey="id"
-                pagination={false}
-                tableLayout="fixed"
-                scroll={{ x: totalColumnsWidth }}
+                columns={columns}
                 rowSelection={{
                     selectedRowKeys: selectedClusterIds,
-                    onChange: (keys) => setSelectedClusterIds(keys as string[]),
+                    onChange: (keys: React.Key[]) => setSelectedClusterIds(keys as string[]),
                 }}
-                onChange={(_, __, sorter) => {
-                    if (Array.isArray(sorter)) {
-                        setSort(null, null)
-                        return
-                    }
-                    const key = sorter?.field ? String(sorter.field) : null
-                    if (key && !sortableColumns.has(key)) {
-                        setSort(null, null)
-                        return
-                    }
-                    const order = sorter?.order === 'ascend'
-                        ? 'asc'
-                        : sorter?.order === 'descend'
-                            ? 'desc'
-                            : null
-                    setSort(key, order)
-                }}
-            />
-
-            <TablePagination
-                total={totalClusters}
-                page={pagination.page}
-                pageSize={pagination.pageSize}
-                onChange={(page, pageSize) => {
-                    if (pageSize !== pagination.pageSize) {
-                        setPageSize(pageSize)
-                        return
-                    }
-                    setPage(page)
-                }}
+                tableLayout="fixed"
+                scroll={{ x: totalColumnsWidth }}
+                searchPlaceholder="Search clusters"
             />
 
             <Modal
@@ -883,18 +593,6 @@ export const Clusters = () => {
                 onClose={() => setDiscoverModalVisible(false)}
             />
 
-            <TablePreferencesModal
-                open={preferencesOpen}
-                onClose={() => setPreferencesOpen(false)}
-                columns={columnConfigs}
-                filters={filterConfigs}
-                presets={preferences.presets}
-                activePresetId={preferences.activePresetId}
-                onSelectPreset={setActivePreset}
-                onUpdatePreset={updatePreset}
-                onCreatePreset={createPreset}
-                onDeletePreset={deletePreset}
-            />
         </div>
     )
 }

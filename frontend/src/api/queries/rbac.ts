@@ -36,7 +36,6 @@ export function useClusterPermissions(filters?: ClusterPermissionFilters) {
   return useQuery({
     queryKey: queryKeys.rbac.clusterPermissions(filters),
     queryFn: (): Promise<ClusterPermissionListResponse> => api.getRbacListClusterPermissions(filters),
-    select: (data) => data.permissions ?? [],
   })
 }
 
@@ -44,7 +43,6 @@ export function useDatabasePermissions(filters?: DatabasePermissionFilters) {
   return useQuery({
     queryKey: queryKeys.rbac.databasePermissions(filters),
     queryFn: (): Promise<DatabasePermissionListResponse> => api.getRbacListDatabasePermissions(filters),
-    select: (data) => data.permissions ?? [],
   })
 }
 
@@ -99,4 +97,3 @@ export function useRevokeDatabasePermission() {
     },
   })
 }
-

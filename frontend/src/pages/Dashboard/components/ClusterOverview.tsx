@@ -4,11 +4,14 @@
  * Displays a compact table of clusters with health status.
  */
 
-import { Card, Table, Tag, Progress, Empty, Skeleton } from 'antd'
+import { Card, Tag, Progress, Skeleton } from 'antd'
 import { ClusterOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { ColumnsType } from 'antd/es/table'
 import type { ClusterStats } from '../types'
+import { TableToolkit } from '../../../components/table/TableToolkit'
+import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
+import { useMemo } from 'react'
 
 export interface ClusterOverviewProps {
   /** Cluster statistics */
@@ -50,7 +53,13 @@ export const ClusterOverview = ({
 }: ClusterOverviewProps) => {
   const navigate = useNavigate()
 
-  const columns: ColumnsType<ClusterStats> = [
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'databases', label: 'Databases', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
+  ], [])
+
+  const columns: ColumnsType<ClusterStats> = useMemo(() => ([
     {
       title: 'Name',
       dataIndex: 'name',
@@ -61,7 +70,7 @@ export const ClusterOverview = ({
       title: 'Databases',
       key: 'databases',
       width: 150,
-      render: (_, record) => {
+      render: (_value, record) => {
         const percent = record.totalDatabases > 0
           ? Math.round((record.healthyDatabases / record.totalDatabases) * 100)
           : 0
@@ -84,7 +93,101 @@ export const ClusterOverview = ({
         <Tag color={getStatusColor(status)}>{getStatusLabel(status)}</Tag>
       ),
     },
-  ]
+  ]), [])
+
+  const table = useTableToolkit({
+    tableId: 'dashboard_clusters',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 5,
+  })
+
+  const filteredClusters = useMemo(() => {
+    const searchValue = table.search.trim().toLowerCase()
+    return clusters.filter((item) => {
+      if (searchValue) {
+        const matchesSearch = [
+          item.name,
+          item.status,
+          String(item.totalDatabases),
+          String(item.healthyDatabases),
+        ].some((value) => String(value || '').toLowerCase().includes(searchValue))
+        if (!matchesSearch) return false
+      }
+
+      for (const [key, value] of Object.entries(table.filters)) {
+        if (value === null || value === undefined || value === '') {
+          continue
+        }
+        const recordValue = (() => {
+          switch (key) {
+            case 'name':
+              return item.name
+            case 'status':
+              return item.status
+            case 'databases':
+              return `${item.healthyDatabases}/${item.totalDatabases}`
+            default:
+              return null
+          }
+        })()
+
+        if (Array.isArray(value)) {
+          if (!value.map(String).includes(String(recordValue ?? ''))) {
+            return false
+          }
+          continue
+        }
+
+        if (typeof value === 'boolean') {
+          if (Boolean(recordValue) !== value) return false
+          continue
+        }
+
+        if (typeof value === 'number') {
+          if (Number(recordValue) !== value) return false
+          continue
+        }
+
+        const needle = String(value).toLowerCase()
+        const haystack = String(recordValue ?? '').toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+
+      return true
+    })
+  }, [clusters, table.filters, table.search])
+
+  const sortedClusters = useMemo(() => {
+    if (!table.sort.key || !table.sort.order) {
+      return filteredClusters
+    }
+    const key = table.sort.key
+    const direction = table.sort.order === 'asc' ? 1 : -1
+    const getValue = (item: ClusterStats) => {
+      switch (key) {
+        case 'name':
+          return item.name
+        case 'status':
+          return item.status
+        case 'databases':
+          return item.totalDatabases
+        default:
+          return ''
+      }
+    }
+    return [...filteredClusters].sort((a, b) => {
+      const left = getValue(a)
+      const right = getValue(b)
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * direction
+      }
+      return String(left).localeCompare(String(right)) * direction
+    })
+  }, [filteredClusters, table.sort.key, table.sort.order])
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const pageItems = sortedClusters.slice(pageStart, pageStart + table.pagination.pageSize)
 
   if (loading) {
     return (
@@ -112,24 +215,19 @@ export const ClusterOverview = ({
       }
       size="small"
     >
-      {clusters.length === 0 ? (
-        <Empty
-          description="No clusters configured"
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-        />
-      ) : (
-        <Table
-          columns={columns}
-          dataSource={clusters}
-          rowKey="id"
-          size="small"
-          pagination={false}
-          onRow={(record) => ({
-            onClick: () => navigate(`/clusters?id=${record.id}`),
-            style: { cursor: 'pointer' },
-          })}
-        />
-      )}
+      <TableToolkit
+        table={table}
+        data={pageItems}
+        total={sortedClusters.length}
+        rowKey="id"
+        columns={columns}
+        size="small"
+        searchPlaceholder="Search clusters"
+        onRow={(record) => ({
+          onClick: () => navigate(`/clusters?id=${record.id}`),
+          style: { cursor: 'pointer' },
+        })}
+      />
     </Card>
   )
 }

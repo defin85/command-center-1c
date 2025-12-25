@@ -4,9 +4,10 @@ Workflow endpoints for API v2.
 Provides action-based endpoints for workflow management.
 """
 
+import json
 import logging
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -26,6 +27,144 @@ from apps.templates.workflow.serializers import (
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
+
+WORKFLOW_FILTER_FIELDS = {
+    "name": {"field": "name", "type": "text"},
+    "workflow_type": {"field": "workflow_type", "type": "enum"},
+    "is_active": {"field": "is_active", "type": "bool"},
+    "is_valid": {"field": "is_valid", "type": "bool"},
+    "updated_at": {"field": "updated_at", "type": "datetime"},
+}
+
+WORKFLOW_SORT_FIELDS = {
+    "name": "name",
+    "workflow_type": "workflow_type",
+    "is_active": "is_active",
+    "updated_at": "updated_at",
+    "created_at": "created_at",
+}
+
+
+def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
+    if not raw_filters:
+        return {}, None
+    try:
+        payload = json.loads(raw_filters)
+    except json.JSONDecodeError:
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be a JSON object",
+        }
+    return payload, None
+
+
+def _parse_sort(raw_sort: str | None) -> tuple[dict | None, dict | None]:
+    if not raw_sort:
+        return None, None
+    try:
+        payload = json.loads(raw_sort)
+    except json.JSONDecodeError:
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be a JSON object",
+        }
+    return payload, None
+
+
+def _apply_text_filter(qs, field: str, op: str, value: str):
+    if op == "contains":
+        return qs.filter(**{f"{field}__icontains": value})
+    if op == "eq":
+        return qs.filter(**{field: value})
+    return qs
+
+
+def _apply_datetime_filter(qs, field: str, op: str, value: str):
+    from django.utils.dateparse import parse_datetime
+    parsed = parse_datetime(value)
+    if op in ("contains", "eq") and parsed is None:
+        return qs.filter(**{f"{field}__icontains": value})
+    if parsed:
+        if op == "eq":
+            return qs.filter(**{f"{field}__date": parsed.date()})
+        if op == "before":
+            return qs.filter(**{f"{field}__date__lt": parsed.date()})
+        if op == "after":
+            return qs.filter(**{f"{field}__date__gt": parsed.date()})
+    return qs
+
+
+def _apply_enum_filter(qs, field: str, op: str, value):
+    if op == "in" and isinstance(value, list):
+        return qs.filter(**{f"{field}__in": value})
+    return qs.filter(**{field: value})
+
+
+def _apply_bool_filter(qs, field: str, value):
+    if isinstance(value, bool):
+        return qs.filter(**{field: value})
+    if isinstance(value, str):
+        return qs.filter(**{field: value.lower() in ("true", "1", "yes")})
+    return qs
+
+
+def _apply_filters(qs, filters: dict) -> tuple:
+    for key, payload in filters.items():
+        if key not in WORKFLOW_FILTER_FIELDS:
+            return qs, {
+                "code": "UNKNOWN_FILTER",
+                "message": f"Unknown filter key: {key}",
+            }
+        value = payload
+        op = "eq"
+        if isinstance(payload, dict):
+            op = payload.get("op", "eq")
+            value = payload.get("value")
+        if value in (None, ""):
+            continue
+        config = WORKFLOW_FILTER_FIELDS[key]
+        field = config["field"]
+        field_type = config["type"]
+        if field_type == "text":
+            qs = _apply_text_filter(qs, field, op, str(value))
+        elif field_type == "enum":
+            qs = _apply_enum_filter(qs, field, op, value)
+        elif field_type == "bool":
+            qs = _apply_bool_filter(qs, field, value)
+        elif field_type == "datetime":
+            qs = _apply_datetime_filter(qs, field, op, str(value))
+    return qs, None
+
+
+def _apply_sort(qs, sort_payload: dict | None) -> tuple:
+    if not sort_payload:
+        return qs, None
+    key = sort_payload.get("key")
+    order = sort_payload.get("order")
+    if key not in WORKFLOW_SORT_FIELDS:
+        return qs, {
+            "code": "UNKNOWN_SORT",
+            "message": f"Unknown sort key: {key}",
+        }
+    field = WORKFLOW_SORT_FIELDS[key]
+    if order == "desc":
+        return qs.order_by(f"-{field}"), None
+    if order == "asc":
+        return qs.order_by(field), None
+    return qs, {
+        "code": "INVALID_SORT",
+        "message": "sort order must be 'asc' or 'desc'",
+    }
 
 
 # --- Workflow Template Response Serializers ---
@@ -219,6 +358,14 @@ class CloneWorkflowRequestSerializer(serializers.Serializer):
             description='Search by name or description'
         ),
         OpenApiParameter(
+            name='filters', type=str, required=False,
+            description='JSON object with filter conditions'
+        ),
+        OpenApiParameter(
+            name='sort', type=str, required=False,
+            description='JSON object with sort configuration'
+        ),
+        OpenApiParameter(
             name='limit', type=int, required=False,
             description='Maximum results (default: 50, max: 1000)'
         ),
@@ -229,6 +376,7 @@ class CloneWorkflowRequestSerializer(serializers.Serializer):
     ],
     responses={
         200: WorkflowListResponseSerializer,
+        400: ErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -245,6 +393,8 @@ def list_workflows(request):
         - is_active: Filter by active status (true/false)
         - is_valid: Filter by valid status (true/false)
         - search: Search by name or description
+        - filters: JSON object with filter conditions
+        - sort: JSON object with sort configuration
         - limit: Maximum results (default: 50)
         - offset: Pagination offset (default: 0)
 
@@ -259,6 +409,8 @@ def list_workflows(request):
     is_active = request.query_params.get('is_active')
     is_valid = request.query_params.get('is_valid')
     search = request.query_params.get('search')
+    raw_filters = request.query_params.get('filters')
+    raw_sort = request.query_params.get('sort')
 
     # Safely parse integer parameters with validation
     try:
@@ -284,12 +436,25 @@ def list_workflows(request):
     if is_valid is not None:
         qs = qs.filter(is_valid=is_valid.lower() == 'true')
     if search:
-        from django.db.models import Q
-        qs = qs.filter(
-            Q(name__icontains=search) | Q(description__icontains=search)
-        )
+        qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search))
 
-    qs = qs.order_by('-created_at')
+    filters_payload, filters_error = _parse_filters(raw_filters)
+    if filters_error:
+        return Response({"success": False, "error": filters_error}, status=400)
+    if filters_payload:
+        qs, apply_error = _apply_filters(qs, filters_payload)
+        if apply_error:
+            return Response({"success": False, "error": apply_error}, status=400)
+
+    sort_payload, sort_error = _parse_sort(raw_sort)
+    if sort_error:
+        return Response({"success": False, "error": sort_error}, status=400)
+    if sort_payload:
+        qs, apply_sort_error = _apply_sort(qs, sort_payload)
+        if apply_sort_error:
+            return Response({"success": False, "error": apply_sort_error}, status=400)
+    else:
+        qs = qs.order_by('-created_at')
 
     total = qs.count()
     qs = qs[offset:offset + limit]

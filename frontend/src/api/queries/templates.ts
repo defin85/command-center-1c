@@ -10,15 +10,29 @@ import { queryKeys } from './index'
 
 const api = getV2()
 
-async function fetchOperationTemplates(params?: GetTemplatesListTemplatesParams): Promise<OperationTemplateListResponse> {
-  return api.getTemplatesListTemplates(params)
+export interface OperationTemplateFilters extends Omit<GetTemplatesListTemplatesParams, 'filters' | 'sort'> {
+  filters?: Record<string, { op?: string; value?: unknown } | unknown> | string
+  sort?: { key: string; order: 'asc' | 'desc' } | string
 }
 
-export function useOperationTemplates(params?: GetTemplatesListTemplatesParams) {
+async function fetchOperationTemplates(params?: OperationTemplateFilters): Promise<OperationTemplateListResponse> {
+  const filtersParam = params?.filters
+    ? (typeof params.filters === 'string' ? params.filters : JSON.stringify(params.filters))
+    : undefined
+  const sortParam = params?.sort
+    ? (typeof params.sort === 'string' ? params.sort : JSON.stringify(params.sort))
+    : undefined
+  return api.getTemplatesListTemplates({
+    ...params,
+    filters: filtersParam,
+    sort: sortParam,
+  })
+}
+
+export function useOperationTemplates(params?: OperationTemplateFilters) {
   return useQuery({
     queryKey: queryKeys.templates.list(params),
     queryFn: () => fetchOperationTemplates(params),
-    select: (data) => data.templates ?? [],
   })
 }
 
@@ -33,4 +47,3 @@ export function useSyncTemplatesFromRegistry() {
     },
   })
 }
-

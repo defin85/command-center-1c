@@ -13,8 +13,10 @@ import asyncio
 import redis as redis_module
 import redis.asyncio as redis_async
 from django.conf import settings
+from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from asgiref.sync import sync_to_async
 from rest_framework import serializers
 from rest_framework import status as http_status
@@ -252,6 +254,184 @@ class OperationDetailResponseSerializer(serializers.Serializer):
     progress = OperationProgressSerializer()
 
 
+# =============================================================================
+# Filters & Sorting
+# =============================================================================
+
+OPERATION_FILTER_FIELDS = {
+    "name": {"field": "name", "type": "text"},
+    "id": {"field": "id", "type": "text"},
+    "status": {"field": "status", "type": "enum"},
+    "operation_type": {"field": "operation_type", "type": "enum"},
+    "created_by": {"field": "created_by", "type": "text"},
+    "created_at": {"field": "created_at", "type": "datetime"},
+    "duration_seconds": {"field": "duration_seconds", "type": "number"},
+    "workflow_execution_id": {"field": "metadata__workflow_execution_id", "type": "text"},
+    "node_id": {"field": "metadata__node_id", "type": "text"},
+}
+
+OPERATION_SORT_FIELDS = {
+    "created_at": "created_at",
+    "name": "name",
+    "status": "status",
+    "operation_type": "operation_type",
+    "duration_seconds": "duration_seconds",
+}
+
+TASK_FILTER_FIELDS = {
+    "database_name": {"field": "database_name", "type": "text"},
+    "status": {"field": "status", "type": "enum"},
+    "worker_id": {"field": "worker_id", "type": "text"},
+    "error_message": {"field": "error_message", "type": "text"},
+    "started_at": {"field": "started_at", "type": "datetime"},
+    "completed_at": {"field": "completed_at", "type": "datetime"},
+    "duration_seconds": {"field": "duration_seconds", "type": "number"},
+}
+
+TASK_SORT_FIELDS = {
+    "database_name": "database_name",
+    "status": "status",
+    "worker_id": "worker_id",
+    "started_at": "started_at",
+    "completed_at": "completed_at",
+    "duration_seconds": "duration_seconds",
+}
+
+
+def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
+    if not raw_filters:
+        return {}, None
+    try:
+        payload = json.loads(raw_filters)
+    except json.JSONDecodeError:
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return {}, {
+            "code": "INVALID_FILTERS",
+            "message": "filters must be a JSON object",
+        }
+    return payload, None
+
+
+def _parse_sort(raw_sort: str | None) -> tuple[dict | None, dict | None]:
+    if not raw_sort:
+        return None, None
+    try:
+        payload = json.loads(raw_sort)
+    except json.JSONDecodeError:
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be valid JSON object",
+        }
+    if not isinstance(payload, dict):
+        return None, {
+            "code": "INVALID_SORT",
+            "message": "sort must be a JSON object",
+        }
+    return payload, None
+
+
+def _apply_text_filter(qs, field: str, op: str, value: str):
+    if op == "contains":
+        return qs.filter(**{f"{field}__icontains": value})
+    if op == "eq":
+        return qs.filter(**{field: value})
+    return qs
+
+
+def _apply_number_filter(qs, field: str, op: str, value: int | float):
+    if op == "eq":
+        return qs.filter(**{field: value})
+    if op == "gt":
+        return qs.filter(**{f"{field}__gt": value})
+    if op == "gte":
+        return qs.filter(**{f"{field}__gte": value})
+    if op == "lt":
+        return qs.filter(**{f"{field}__lt": value})
+    if op == "lte":
+        return qs.filter(**{f"{field}__lte": value})
+    return qs
+
+
+def _apply_datetime_filter(qs, field: str, op: str, value: str):
+    parsed = parse_datetime(value)
+    if op in ("contains", "eq") and parsed is None:
+        return qs.filter(**{f"{field}__icontains": value})
+    if parsed:
+        if op == "eq":
+            return qs.filter(**{f"{field}__date": parsed.date()})
+        if op == "before":
+            return qs.filter(**{f"{field}__date__lt": parsed.date()})
+        if op == "after":
+            return qs.filter(**{f"{field}__date__gt": parsed.date()})
+    return qs
+
+
+def _apply_enum_filter(qs, field: str, op: str, value):
+    if op == "in" and isinstance(value, list):
+        return qs.filter(**{f"{field}__in": value})
+    return qs.filter(**{field: value})
+
+
+def _apply_filters(qs, filters: dict, config: dict) -> tuple:
+    for key, payload in filters.items():
+        if key not in config:
+            return qs, {
+                "code": "UNKNOWN_FILTER",
+                "message": f"Unknown filter key: {key}",
+            }
+        value = payload
+        op = "eq"
+        if isinstance(payload, dict):
+            op = payload.get("op", "eq")
+            value = payload.get("value")
+        if value in (None, ""):
+            continue
+        field_meta = config[key]
+        field = field_meta["field"]
+        field_type = field_meta["type"]
+        if field_type == "text":
+            qs = _apply_text_filter(qs, field, op, str(value))
+        elif field_type == "number":
+            try:
+                num = float(value)
+            except (ValueError, TypeError):
+                return qs, {
+                    "code": "INVALID_FILTER_VALUE",
+                    "message": f"Invalid numeric value for {key}",
+                }
+            qs = _apply_number_filter(qs, field, op, num)
+        elif field_type == "datetime":
+            qs = _apply_datetime_filter(qs, field, op, str(value))
+        elif field_type == "enum":
+            qs = _apply_enum_filter(qs, field, op, value)
+    return qs, None
+
+
+def _apply_sort(qs, sort_payload: dict | None, config: dict) -> tuple:
+    if not sort_payload:
+        return qs, None
+    key = sort_payload.get("key")
+    order = sort_payload.get("order")
+    if key not in config:
+        return qs, {
+            "code": "UNKNOWN_SORT",
+            "message": f"Unknown sort key: {key}",
+        }
+    field = config[key]
+    if order == "desc":
+        return qs.order_by(f"-{field}"), None
+    if order == "asc":
+        return qs.order_by(field), None
+    return qs, {
+        "code": "INVALID_SORT",
+        "message": "sort order must be 'asc' or 'desc'",
+    }
+
+
 class OperationCancelResponseSerializer(serializers.Serializer):
     """Response for cancel_operation endpoint."""
     operation_id = serializers.CharField(help_text="ID of the cancelled operation")
@@ -444,6 +624,24 @@ class OperationMuxTicketRequestSerializer(serializers.Serializer):
             description='Filter by creator username'
         ),
         OpenApiParameter(
+            name='search',
+            type=str,
+            required=False,
+            description='Search by name, description, or ID'
+        ),
+        OpenApiParameter(
+            name='filters',
+            type=str,
+            required=False,
+            description='JSON object with filter conditions'
+        ),
+        OpenApiParameter(
+            name='sort',
+            type=str,
+            required=False,
+            description='JSON object with sort configuration'
+        ),
+        OpenApiParameter(
             name='workflow_execution_id',
             type=str,
             required=False,
@@ -470,6 +668,7 @@ class OperationMuxTicketRequestSerializer(serializers.Serializer):
     ],
     responses={
         200: OperationListResponseSerializer,
+        400: ErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -486,6 +685,9 @@ def list_operations(request):
         - status: Filter by status (pending, queued, processing, completed, failed, cancelled)
         - operation_type: Filter by type (create, update, delete, query, install_extension)
         - created_by: Filter by creator username
+        - search: Search by name, description, or ID
+        - filters: JSON object with filter conditions
+        - sort: JSON object with sort configuration
         - workflow_execution_id: Filter by workflow execution ID
         - node_id: Filter by workflow node ID
         - limit: Maximum results (default: 50)
@@ -504,6 +706,9 @@ def list_operations(request):
     operation_id = request.query_params.get('operation_id')
     workflow_execution_id = request.query_params.get('workflow_execution_id')
     node_id = request.query_params.get('node_id')
+    search = request.query_params.get('search')
+    raw_filters = request.query_params.get('filters')
+    raw_sort = request.query_params.get('sort')
 
     # Safely parse integer parameters with validation
     try:
@@ -535,8 +740,32 @@ def list_operations(request):
     if node_id:
         qs = qs.filter(metadata__node_id=node_id)
 
-    # Order by most recent first
-    qs = qs.order_by('-created_at')
+    if search:
+        qs = qs.filter(
+            Q(name__icontains=search)
+            | Q(description__icontains=search)
+            | Q(id__icontains=search)
+            | Q(created_by__icontains=search)
+        )
+
+    filters_payload, filters_error = _parse_filters(raw_filters)
+    if filters_error:
+        return Response({"success": False, "error": filters_error}, status=400)
+    if filters_payload:
+        qs, apply_error = _apply_filters(qs, filters_payload, OPERATION_FILTER_FIELDS)
+        if apply_error:
+            return Response({"success": False, "error": apply_error}, status=400)
+
+    sort_payload, sort_error = _parse_sort(raw_sort)
+    if sort_error:
+        return Response({"success": False, "error": sort_error}, status=400)
+    if sort_payload:
+        qs, apply_sort_error = _apply_sort(qs, sort_payload, OPERATION_SORT_FIELDS)
+        if apply_sort_error:
+            return Response({"success": False, "error": apply_sort_error}, status=400)
+    else:
+        # Order by most recent first
+        qs = qs.order_by('-created_at')
 
     total = qs.count()
     qs = qs[offset:offset + limit]
@@ -565,7 +794,31 @@ def list_operations(request):
             name='include_tasks',
             type=bool,
             required=False,
-            description='Include task details (default: true, max 100 tasks)'
+            description='Include task details (default: true)'
+        ),
+        OpenApiParameter(
+            name='task_limit',
+            type=int,
+            required=False,
+            description='Maximum tasks returned (default: 100)'
+        ),
+        OpenApiParameter(
+            name='task_offset',
+            type=int,
+            required=False,
+            description='Task pagination offset (default: 0)'
+        ),
+        OpenApiParameter(
+            name='task_filters',
+            type=str,
+            required=False,
+            description='JSON object with task filter conditions'
+        ),
+        OpenApiParameter(
+            name='task_sort',
+            type=str,
+            required=False,
+            description='JSON object with task sort configuration'
         ),
     ],
     responses={
@@ -586,6 +839,10 @@ def get_operation(request):
     Query Parameters:
         - operation_id: Operation ID (required)
         - include_tasks: Include task details (default: true)
+        - task_limit: Maximum tasks returned (default: 100)
+        - task_offset: Task pagination offset (default: 0)
+        - task_filters: JSON object with task filter conditions
+        - task_sort: JSON object with task sort configuration
 
     Response:
         {
@@ -602,6 +859,20 @@ def get_operation(request):
     """
     operation_id = request.query_params.get('operation_id')
     include_tasks = request.query_params.get('include_tasks', 'true').lower() == 'true'
+    raw_task_filters = request.query_params.get('task_filters')
+    raw_task_sort = request.query_params.get('task_sort')
+
+    try:
+        task_limit = int(request.query_params.get('task_limit', 100))
+    except (TypeError, ValueError):
+        task_limit = 100
+    task_limit = max(1, min(task_limit, 500))
+
+    try:
+        task_offset = int(request.query_params.get('task_offset', 0))
+    except (TypeError, ValueError):
+        task_offset = 0
+    task_offset = max(0, task_offset)
 
     if not operation_id:
         return Response({
@@ -644,7 +915,25 @@ def get_operation(request):
     }
 
     if include_tasks:
-        task_serializer = TaskSerializer(tasks[:100], many=True)  # Limit to 100 tasks
+        tasks_qs = tasks
+
+        task_filters_payload, task_filters_error = _parse_filters(raw_task_filters)
+        if task_filters_error:
+            return Response({"success": False, "error": task_filters_error}, status=400)
+        if task_filters_payload:
+            tasks_qs, apply_error = _apply_filters(tasks_qs, task_filters_payload, TASK_FILTER_FIELDS)
+            if apply_error:
+                return Response({"success": False, "error": apply_error}, status=400)
+
+        task_sort_payload, task_sort_error = _parse_sort(raw_task_sort)
+        if task_sort_error:
+            return Response({"success": False, "error": task_sort_error}, status=400)
+        if task_sort_payload:
+            tasks_qs, apply_sort_error = _apply_sort(tasks_qs, task_sort_payload, TASK_SORT_FIELDS)
+            if apply_sort_error:
+                return Response({"success": False, "error": apply_sort_error}, status=400)
+
+        task_serializer = TaskSerializer(tasks_qs[task_offset:task_offset + task_limit], many=True)
         response_data['tasks'] = task_serializer.data
 
     return Response(response_data)

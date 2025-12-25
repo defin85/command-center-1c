@@ -5,6 +5,7 @@
 
 import type { UIBatchOperation, UITask } from '../../utils/operationTransforms'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
+import type { TableToolkitState } from '../../components/table/hooks/useTableToolkit'
 
 // Re-export for convenience
 export type { UIBatchOperation, UITask }
@@ -13,9 +14,12 @@ export type { UIBatchOperation, UITask }
  * Props for OperationsTable component
  */
 export interface OperationsTableProps {
+  table: TableToolkitState<UIBatchOperation>
   operations: UIBatchOperation[]
+  total: number
   loading: boolean
-  onRefresh: () => void
+  toolbarActions?: React.ReactNode
+  columns: import('antd/es/table').ColumnsType<UIBatchOperation>
   onViewDetails: (operation: UIBatchOperation) => void
   onCancel: (operationId: string) => void
   onFilterWorkflow?: (workflowExecutionId: string) => void

@@ -1086,6 +1086,21 @@ paths:
         schema:
           type: string
       - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by operation ID or error message
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
+      - in: query
         name: limit
         schema:
           type: integer
@@ -2228,13 +2243,33 @@ paths:
         name: include_tasks
         schema:
           type: boolean
-        description: 'Include task details (default: true, max 100 tasks)'
+        description: 'Include task details (default: true)'
       - in: query
         name: operation_id
         schema:
           type: string
         description: Operation ID (UUID)
         required: true
+      - in: query
+        name: task_limit
+        schema:
+          type: integer
+        description: 'Maximum tasks returned (default: 100)'
+      - in: query
+        name: task_offset
+        schema:
+          type: integer
+        description: 'Task pagination offset (default: 0)'
+      - in: query
+        name: task_filters
+        schema:
+          type: string
+        description: JSON object with task filter conditions
+      - in: query
+        name: task_sort
+        schema:
+          type: string
+        description: JSON object with task sort configuration
       tags:
       - v2
       security:
@@ -2334,6 +2369,21 @@ paths:
         schema:
           type: string
         description: Filter by creator username
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name, description, or ID
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
       - in: query
         name: limit
         schema:
@@ -3195,6 +3245,21 @@ paths:
           type: boolean
         description: Filter by active status (true/false)
       - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or description
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
+      - in: query
         name: limit
         schema:
           type: integer
@@ -3786,6 +3851,16 @@ paths:
         schema:
           type: string
         description: Search by name or description
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
       - in: query
         name: workflow_type
         schema:
@@ -6097,10 +6172,14 @@ components:
           description: List of operation templates
         count:
           type: integer
-          description: Total number of templates (before pagination)
+          description: Number of templates in current page
+        total:
+          type: integer
+          description: Total number of templates matching filters
       required:
       - count
       - templates
+      - total
     OperationTemplateSyncRequest:
       type: object
       properties:

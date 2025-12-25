@@ -4,13 +4,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Space, Table, Tag, Progress, Alert, Typography, Button, Tooltip } from 'antd'
+import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip } from 'antd'
 import { MonitorOutlined, BranchesOutlined, FilterOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { OperationDetailsModalProps, UITask } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
 import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
+import { TableToolkit } from '../../../components/table/TableToolkit'
+import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 
 const { Paragraph, Link } = Typography
 
@@ -109,10 +111,6 @@ export const OperationDetailsModal = ({
   const operationId = operation?.id ?? null
   const [operationState, setOperationState] = useState(operation)
 
-  const { data: freshOperation } = useOperation(operationId ?? '', {
-    enabled: visible && !!operationId,
-  })
-
   useEffect(() => {
     if (!operationId) {
       setOperationState(null)
@@ -120,12 +118,6 @@ export const OperationDetailsModal = ({
     }
     setOperationState(operation)
   }, [operation, operationId])
-
-  useEffect(() => {
-    if (freshOperation) {
-      setOperationState(freshOperation)
-    }
-  }, [freshOperation])
 
   useEffect(() => {
     if (!liveEvent) return
@@ -145,6 +137,14 @@ export const OperationDetailsModal = ({
     window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
   }
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'database_name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
+    { key: 'duration_seconds', label: 'Duration', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
+    { key: 'retry_count', label: 'Retries', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
+    { key: 'error_message', label: 'Error', groupKey: 'details', groupLabel: 'Details' },
+  ], [])
+
   const taskColumns: ColumnsType<UITask> = [
     {
       title: 'Database',
@@ -160,7 +160,7 @@ export const OperationDetailsModal = ({
     {
       title: 'Duration',
       dataIndex: 'duration_seconds',
-      key: 'duration',
+      key: 'duration_seconds',
       render: (seconds: number | null) => (seconds ? `${seconds.toFixed(2)}s` : '-'),
     },
     {
@@ -172,11 +172,36 @@ export const OperationDetailsModal = ({
     {
       title: 'Error',
       dataIndex: 'error_message',
-      key: 'error',
+      key: 'error_message',
       render: (error: string) =>
         error ? <span style={{ color: 'red' }}>{error}</span> : '-',
     },
   ]
+
+  const taskTable = useTableToolkit({
+    tableId: 'operation_tasks',
+    columns: taskColumns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 25,
+  })
+
+  const taskPageStart = (taskTable.pagination.page - 1) * taskTable.pagination.pageSize
+
+  const { data: freshOperation, isFetching: tasksLoading } = useOperation(operationId ?? '', {
+    enabled: visible && !!operationId,
+    taskParams: {
+      limit: taskTable.pagination.pageSize,
+      offset: taskPageStart,
+      filters: taskTable.filtersPayload,
+      sort: taskTable.sortPayload,
+    },
+  })
+
+  useEffect(() => {
+    if (freshOperation) {
+      setOperationState(freshOperation)
+    }
+  }, [freshOperation])
 
   return (
     <Modal
@@ -300,12 +325,17 @@ export const OperationDetailsModal = ({
             ) : null}
 
             <h3>Tasks</h3>
-            <Table
-              columns={taskColumns}
-              dataSource={operationState.tasks}
+            <TableToolkit
+              table={taskTable}
+              data={operationState.tasks}
+              total={operationState.total_tasks ?? operationState.tasks.length}
+              loading={tasksLoading}
               rowKey="id"
-              pagination={false}
+              columns={taskColumns}
               size="small"
+              tableLayout="fixed"
+              scroll={{ x: taskTable.totalColumnsWidth }}
+              searchPlaceholder="Search tasks"
             />
           </Space>
         </div>

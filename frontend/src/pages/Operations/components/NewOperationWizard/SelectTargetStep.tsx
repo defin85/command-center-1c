@@ -1,70 +1,39 @@
 /**
  * SelectTargetStep - Step 2 of NewOperationWizard
- * Displays databases table with filters and checkbox selection.
+ * Displays databases table with server-side filters and checkbox selection.
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Table, Input, Select, Space, Typography, Tag, Checkbox } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
+import { Checkbox, Space, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Key } from 'react'
-import { getV2 } from '../../../../api/generated'
 import type { Database } from '../../../../api/generated/model/database'
-import type { Cluster } from '../../../../api/generated/model/cluster'
-import type { SelectTargetStepProps, DatabaseWithCluster, DatabaseFilters } from './types'
+import { useDatabases } from '../../../../api/queries/databases'
+import { useClusters } from '../../../../api/queries/clusters'
+import type { SelectTargetStepProps } from './types'
 import { getHealthTag, getStatusTag } from '../../../../utils/databaseStatus'
+import { TableToolkit } from '../../../../components/table/TableToolkit'
+import { useTableToolkit } from '../../../../components/table/hooks/useTableToolkit'
 
 const { Title, Text } = Typography
-const { Option } = Select
 
-// Initialize API
-const api = getV2()
-
-/**
- * SelectTargetStep component
- * Renders a filterable table of databases with checkbox selection
- */
 export const SelectTargetStep = ({
   selectedDatabases,
   onSelectionChange,
   preselectedDatabases,
 }: SelectTargetStepProps) => {
-  // Data state
-  const [databases, setDatabases] = useState<Database[]>([])
-  const [clusters, setClusters] = useState<Cluster[]>([])
-  const [loading, setLoading] = useState(false)
-
-  // Track if preselection has been applied
   const hasAppliedPreselection = useRef(false)
 
-  // Filter state
-  const [filters, setFilters] = useState<DatabaseFilters>({
-    search: '',
-    clusterId: null,
-    status: null,
-  })
+  const clustersQuery = useClusters()
+  const clusters = clustersQuery.data?.clusters ?? []
+  const clusterNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    clusters.forEach((cluster) => {
+      map.set(cluster.id, cluster.name)
+    })
+    return map
+  }, [clusters])
 
-  // Load databases and clusters on mount
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const [dbResponse, clusterResponse] = await Promise.all([
-          api.getDatabasesListDatabases(),
-          api.getClustersListClusters(),
-        ])
-        setDatabases(dbResponse.databases ?? [])
-        setClusters(clusterResponse.clusters ?? [])
-      } catch (error) {
-        console.error('Failed to load data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
-  }, [])
-
-  // Apply preselected databases only once on initial load
   useEffect(() => {
     if (!hasAppliedPreselection.current && preselectedDatabases && preselectedDatabases.length > 0) {
       hasAppliedPreselection.current = true
@@ -72,113 +41,18 @@ export const SelectTargetStep = ({
     }
   }, [preselectedDatabases, onSelectionChange])
 
-  // Enhance databases with cluster info
-  const databasesWithCluster: DatabaseWithCluster[] = useMemo(() => {
-    return databases.map((db) => {
-      // Try to find cluster by matching host/server address
-      // This is a heuristic - in production you might have a cluster_id field
-      let matchedCluster: Cluster | undefined
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'cluster', label: 'Cluster', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
+    { key: 'last_check_status', label: 'Health', sortable: true, groupKey: 'status', groupLabel: 'Status' },
+  ], [])
 
-      // Check if database has cluster reference in its properties
-      // For now, we'll group by similar host patterns
-      for (const cluster of clusters) {
-        if (cluster.ras_server && db.host && cluster.ras_server.includes(db.host.split(':')[0])) {
-          matchedCluster = cluster
-          break
-        }
-      }
-
-      return {
-        ...db,
-        clusterName: matchedCluster?.name,
-        clusterId: matchedCluster?.id,
-      }
-    })
-  }, [databases, clusters])
-
-  // Filter databases
-  const filteredDatabases = useMemo(() => {
-    return databasesWithCluster.filter((db) => {
-      // Search filter
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase()
-        const matchName = db.name.toLowerCase().includes(searchLower)
-        const matchHost = db.host?.toLowerCase().includes(searchLower)
-        const matchCluster = db.clusterName?.toLowerCase().includes(searchLower)
-        if (!matchName && !matchHost && !matchCluster) {
-          return false
-        }
-      }
-
-      // Cluster filter
-      if (filters.clusterId && db.clusterId !== filters.clusterId) {
-        return false
-      }
-
-      // Status filter
-      if (filters.status && db.status !== filters.status) {
-        return false
-      }
-
-      return true
-    })
-  }, [databasesWithCluster, filters])
-
-  // Handle filter changes
-  const handleSearchChange = useCallback((value: string) => {
-    setFilters((prev) => ({ ...prev, search: value }))
-  }, [])
-
-  const handleClusterChange = useCallback((value: string | null) => {
-    setFilters((prev) => ({ ...prev, clusterId: value }))
-  }, [])
-
-  const handleStatusChange = useCallback((value: string | null) => {
-    setFilters((prev) => ({ ...prev, status: value }))
-  }, [])
-
-  // Handle row selection
-  const handleSelectionChange = useCallback(
-    (selectedRowKeys: Key[]) => {
-      onSelectionChange(selectedRowKeys as string[])
-    },
-    [onSelectionChange]
-  )
-
-  // Handle select all filtered
-  const handleSelectAllFiltered = useCallback(
-    (checked: boolean) => {
-      if (checked) {
-        const filteredIds = filteredDatabases.map((db) => db.id)
-        // Merge with existing selection (databases not in current filter)
-        const existingNotInFilter = selectedDatabases.filter(
-          (id) => !filteredDatabases.some((db) => db.id === id)
-        )
-        onSelectionChange([...existingNotInFilter, ...filteredIds])
-      } else {
-        // Remove only filtered databases from selection
-        const filteredIds = new Set(filteredDatabases.map((db) => db.id))
-        onSelectionChange(selectedDatabases.filter((id) => !filteredIds.has(id)))
-      }
-    },
-    [filteredDatabases, selectedDatabases, onSelectionChange]
-  )
-
-  // Check if all filtered are selected
-  const allFilteredSelected =
-    filteredDatabases.length > 0 &&
-    filteredDatabases.every((db) => selectedDatabases.includes(db.id))
-
-  const someFilteredSelected =
-    filteredDatabases.some((db) => selectedDatabases.includes(db.id)) && !allFilteredSelected
-
-  // Table columns
-  const columns: ColumnsType<DatabaseWithCluster> = [
+  const columns: ColumnsType<Database> = useMemo(() => ([
     {
       title: 'Database',
       dataIndex: 'name',
       key: 'name',
-      sorter: (a, b) => a.name.localeCompare(b.name),
       render: (name: string, record) => (
         <div>
           <Text strong>{name}</Text>
@@ -192,10 +66,12 @@ export const SelectTargetStep = ({
     },
     {
       title: 'Cluster',
-      dataIndex: 'clusterName',
+      dataIndex: 'cluster_id',
       key: 'cluster',
-      render: (clusterName: string | undefined) =>
-        clusterName ? <Tag>{clusterName}</Tag> : <Text type="secondary">-</Text>,
+      render: (clusterId: string | null) => {
+        const name = clusterId ? clusterNameById.get(clusterId) : undefined
+        return name ? <Tag>{name}</Tag> : <Text type="secondary">-</Text>
+      },
     },
     {
       title: 'Status',
@@ -210,112 +86,97 @@ export const SelectTargetStep = ({
     {
       title: 'Health',
       dataIndex: 'last_check_status',
-      key: 'health',
+      key: 'last_check_status',
       width: 80,
       render: (status: string) => {
         const tag = getHealthTag(status)
         return <Tag color={tag.color}>{tag.label}</Tag>
       },
     },
-  ]
+  ]), [clusterNameById])
 
-  // Row selection config
+  const table = useTableToolkit({
+    tableId: 'operation_targets',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 50,
+  })
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const { data: databasesResponse, isLoading } = useDatabases({
+    filters: {
+      search: table.search,
+      filters: table.filtersPayload,
+      sort: table.sortPayload,
+      limit: table.pagination.pageSize,
+      offset: pageStart,
+    },
+  })
+  const databases = databasesResponse?.databases ?? []
+  const totalDatabases = typeof databasesResponse?.total === 'number'
+    ? databasesResponse.total
+    : databases.length
+
+  const handleSelectionChange = useCallback(
+    (selectedRowKeys: Key[]) => {
+      onSelectionChange(selectedRowKeys as string[])
+    },
+    [onSelectionChange]
+  )
+
+  const handleSelectPage = useCallback((checked: boolean) => {
+    const pageIds = databases.map((db) => db.id)
+    if (checked) {
+      const combined = new Set([...selectedDatabases, ...pageIds])
+      onSelectionChange(Array.from(combined))
+      return
+    }
+    const pageIdSet = new Set(pageIds)
+    onSelectionChange(selectedDatabases.filter((id) => !pageIdSet.has(id)))
+  }, [databases, onSelectionChange, selectedDatabases])
+
+  const allPageSelected =
+    databases.length > 0 && databases.every((db) => selectedDatabases.includes(db.id))
+  const somePageSelected =
+    databases.some((db) => selectedDatabases.includes(db.id)) && !allPageSelected
+
   const rowSelection = {
     selectedRowKeys: selectedDatabases,
     onChange: handleSelectionChange,
-    getCheckboxProps: (record: DatabaseWithCluster) => ({
-      // Disable selection for databases in maintenance mode
+    getCheckboxProps: (record: Database) => ({
       disabled: record.status === 'maintenance',
     }),
   }
 
-  // Get unique statuses for filter
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set<string>()
-    databases.forEach((db) => {
-      if (db.status) statuses.add(db.status)
-    })
-    return Array.from(statuses)
-  }, [databases])
-
   return (
-    <div style={{ padding: '16px 0' }}>
-      <Title level={4} style={{ marginBottom: 24 }}>
-        Select Target Databases
-      </Title>
-
-      {/* Filters */}
-      <Space style={{ marginBottom: 16, width: '100%' }} wrap>
-        <Input
-          placeholder="Search databases..."
-          prefix={<SearchOutlined />}
-          value={filters.search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          style={{ width: 250 }}
-          allowClear
-        />
-        <Select
-          placeholder="All Clusters"
-          value={filters.clusterId}
-          onChange={handleClusterChange}
-          style={{ width: 200 }}
-          allowClear
+    <div>
+      <Space style={{ marginBottom: 16 }} align="center">
+        <Title level={4} style={{ margin: 0 }}>Select Databases</Title>
+        <Checkbox
+          indeterminate={somePageSelected}
+          checked={allPageSelected}
+          onChange={(event) => handleSelectPage(event.target.checked)}
         >
-          {clusters.map((cluster) => (
-            <Option key={cluster.id} value={cluster.id}>
-              {cluster.name}
-            </Option>
-          ))}
-        </Select>
-        <Select
-          placeholder="All Statuses"
-          value={filters.status}
-          onChange={handleStatusChange}
-          style={{ width: 150 }}
-          allowClear
-        >
-          {uniqueStatuses.map((status) => (
-            <Option key={status} value={status}>
-              {status}
-            </Option>
-          ))}
-        </Select>
+          Select page ({databases.length})
+        </Checkbox>
+        <Text type="secondary">
+          {selectedDatabases.length} selected
+        </Text>
       </Space>
 
-      {/* Select all filtered checkbox */}
-      <div style={{ marginBottom: 8 }}>
-        <Checkbox
-          checked={allFilteredSelected}
-          indeterminate={someFilteredSelected}
-          onChange={(e) => handleSelectAllFiltered(e.target.checked)}
-          disabled={filteredDatabases.length === 0}
-        >
-          Select all filtered ({filteredDatabases.length} databases)
-        </Checkbox>
-      </div>
-
-      {/* Table */}
-      <Table
-        rowSelection={rowSelection}
-        columns={columns}
-        dataSource={filteredDatabases}
+      <TableToolkit
+        table={table}
+        data={databases}
+        total={totalDatabases}
+        loading={isLoading}
         rowKey="id"
-        loading={loading}
-        pagination={{
-          pageSize: 10,
-          showSizeChanger: true,
-          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} databases`,
-        }}
-        size="middle"
+        columns={columns}
+        rowSelection={rowSelection}
+        size="small"
+        tableLayout="fixed"
+        scroll={{ x: table.totalColumnsWidth }}
+        searchPlaceholder="Search databases"
       />
-
-      {/* Selection summary */}
-      <div style={{ marginTop: 16 }}>
-        <Text strong>
-          Selected: {selectedDatabases.length} database
-          {selectedDatabases.length !== 1 ? 's' : ''}
-        </Text>
-      </div>
     </div>
   )
 }

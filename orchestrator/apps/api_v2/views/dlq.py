@@ -8,6 +8,7 @@ DLQ source: Redis Stream `commands:worker:dlq`
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -80,16 +81,59 @@ class _DLQFilters:
     operation_id: Optional[str]
     error_code: Optional[str]
     since: Optional[datetime]
+    search: Optional[str]
+    filters: Dict[str, Any]
+    sort: Optional[Dict[str, Any]]
     limit: int
     offset: int
 
 
-def _parse_filters(request) -> _DLQFilters:
+DLQ_FILTER_FIELDS = {
+    "operation_id",
+    "error_code",
+    "error_message",
+    "worker_id",
+    "event_type",
+    "failed_at",
+}
+
+DLQ_SORT_FIELDS = {
+    "failed_at",
+    "operation_id",
+    "error_code",
+    "worker_id",
+}
+
+
+def _parse_filters(request) -> tuple[_DLQFilters | None, Dict[str, Any] | None]:
     operation_id = (request.query_params.get("operation_id") or "").strip() or None
     error_code = (request.query_params.get("error_code") or "").strip() or None
 
     since_raw = (request.query_params.get("since") or "").strip()
     since = parse_datetime(since_raw) if since_raw else None
+    search = (request.query_params.get("search") or "").strip() or None
+
+    raw_filters = request.query_params.get("filters")
+    filters_payload: Dict[str, Any] = {}
+    if raw_filters:
+        try:
+            parsed = json.loads(raw_filters)
+        except json.JSONDecodeError:
+            return None, {"code": "INVALID_FILTERS", "message": "filters must be valid JSON object"}
+        if not isinstance(parsed, dict):
+            return None, {"code": "INVALID_FILTERS", "message": "filters must be a JSON object"}
+        filters_payload = parsed
+
+    raw_sort = request.query_params.get("sort")
+    sort_payload: Optional[Dict[str, Any]] = None
+    if raw_sort:
+        try:
+            parsed = json.loads(raw_sort)
+        except json.JSONDecodeError:
+            return None, {"code": "INVALID_SORT", "message": "sort must be valid JSON object"}
+        if not isinstance(parsed, dict):
+            return None, {"code": "INVALID_SORT", "message": "sort must be a JSON object"}
+        sort_payload = parsed
 
     try:
         limit = int(request.query_params.get("limit", 50))
@@ -103,7 +147,16 @@ def _parse_filters(request) -> _DLQFilters:
         offset = 0
     offset = max(0, offset)
 
-    return _DLQFilters(operation_id=operation_id, error_code=error_code, since=since, limit=limit, offset=offset)
+    return _DLQFilters(
+        operation_id=operation_id,
+        error_code=error_code,
+        since=since,
+        search=search,
+        filters=filters_payload,
+        sort=sort_payload,
+        limit=limit,
+        offset=offset,
+    ), None
 
 
 def _normalize_dlq_entry(entry_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
@@ -130,6 +183,49 @@ def _passes_filters(entry: Dict[str, Any], filters: _DLQFilters) -> bool:
         failed_at = parse_datetime(failed_at_raw)
         if failed_at and failed_at < filters.since:
             return False
+    if filters.search:
+        haystack = " ".join([
+            entry.get("operation_id", ""),
+            entry.get("error_code", ""),
+            entry.get("error_message", ""),
+            entry.get("worker_id", ""),
+            entry.get("event_type", ""),
+        ]).lower()
+        if filters.search.lower() not in haystack:
+            return False
+    for key, payload in filters.filters.items():
+        if key not in DLQ_FILTER_FIELDS:
+            return False
+        value = payload
+        op = "eq"
+        if isinstance(payload, dict):
+            op = payload.get("op", "eq")
+            value = payload.get("value")
+        if value in (None, ""):
+            continue
+        entry_value = entry.get(key)
+        if key == "failed_at":
+            entry_dt = parse_datetime(entry_value or "")
+            filter_dt = parse_datetime(str(value))
+            if not entry_dt or not filter_dt:
+                return False
+            if op == "before" and not (entry_dt < filter_dt):
+                return False
+            if op == "after" and not (entry_dt > filter_dt):
+                return False
+            if op in ("eq", "contains") and entry_dt.date() != filter_dt.date():
+                return False
+            continue
+        if op == "contains":
+            if str(value).lower() not in str(entry_value or "").lower():
+                return False
+            continue
+        if op == "in" and isinstance(value, list):
+            if str(entry_value) not in [str(v) for v in value]:
+                return False
+            continue
+        if str(entry_value) != str(value):
+            return False
     return True
 
 
@@ -140,12 +236,16 @@ def _passes_filters(entry: Dict[str, Any], filters: _DLQFilters) -> bool:
     parameters=[
         OpenApiParameter(name="operation_id", type=str, required=False),
         OpenApiParameter(name="error_code", type=str, required=False),
+        OpenApiParameter(name="search", type=str, required=False, description="Search by operation ID or error message"),
+        OpenApiParameter(name="filters", type=str, required=False, description="JSON object with filter conditions"),
+        OpenApiParameter(name="sort", type=str, required=False, description="JSON object with sort configuration"),
         OpenApiParameter(name="since", type=str, required=False, description="RFC3339 timestamp filter"),
         OpenApiParameter(name="limit", type=int, required=False, description="1..200 (default 50)"),
         OpenApiParameter(name="offset", type=int, required=False, description="Offset within the fetched window"),
     ],
     responses={
         200: DLQListResponseSerializer,
+        400: ErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
     },
@@ -153,7 +253,16 @@ def _passes_filters(entry: Dict[str, Any], filters: _DLQFilters) -> bool:
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def list_dlq(request):
-    filters = _parse_filters(request)
+    filters, filters_error = _parse_filters(request)
+    if filters_error:
+        return Response({"success": False, "error": filters_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    unknown_filter_keys = [key for key in filters.filters.keys() if key not in DLQ_FILTER_FIELDS]
+    if unknown_filter_keys:
+        return Response(
+            {"success": False, "error": {"code": "UNKNOWN_FILTER", "message": f"Unknown filter key: {unknown_filter_keys[0]}"}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     client = _get_redis_client()
     fetch_count = filters.limit + filters.offset
@@ -173,6 +282,26 @@ def list_dlq(request):
         entry = _normalize_dlq_entry(entry_id, fields)
         if _passes_filters(entry, filters):
             items.append(entry)
+
+    if filters.sort:
+        sort_key = filters.sort.get("key")
+        sort_order = filters.sort.get("order")
+        if sort_key not in DLQ_SORT_FIELDS:
+            return Response(
+                {"success": False, "error": {"code": "UNKNOWN_SORT", "message": f"Unknown sort key: {sort_key}"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reverse = sort_order == "desc"
+        if sort_order not in ("asc", "desc"):
+            return Response(
+                {"success": False, "error": {"code": "INVALID_SORT", "message": "sort order must be 'asc' or 'desc'"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        def _sort_value(entry: Dict[str, Any]):
+            if sort_key == "failed_at":
+                return parse_datetime(entry.get("failed_at") or "") or datetime.min
+            return entry.get(sort_key) or ""
+        items.sort(key=_sort_value, reverse=reverse)
 
     sliced = items[filters.offset:filters.offset + filters.limit]
 

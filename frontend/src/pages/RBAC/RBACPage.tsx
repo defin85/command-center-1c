@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Table, Tabs, Typography } from 'antd'
+import { useMemo } from 'react'
+import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Tabs, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
@@ -13,6 +13,8 @@ import {
   useRevokeClusterPermission,
   useRevokeDatabasePermission,
 } from '../../api/queries/rbac'
+import { TableToolkit } from '../../components/table/TableToolkit'
+import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
 const { Title, Text } = Typography
 
@@ -28,21 +30,6 @@ const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelC
 export function RBACPage() {
   const { data: clustersResponse } = useClusters()
   const clusters = clustersResponse?.clusters ?? []
-
-  const [clusterFilterUserId, setClusterFilterUserId] = useState<number | undefined>(undefined)
-  const [clusterFilterSearch, setClusterFilterSearch] = useState<string>('')
-
-  const [dbFilterUserId, setDbFilterUserId] = useState<number | undefined>(undefined)
-  const [dbFilterSearch, setDbFilterSearch] = useState<string>('')
-
-  const clusterPermissionsQuery = useClusterPermissions({
-    user_id: clusterFilterUserId,
-    search: clusterFilterSearch || undefined,
-  })
-  const databasePermissionsQuery = useDatabasePermissions({
-    user_id: dbFilterUserId,
-    search: dbFilterSearch || undefined,
-  })
 
   const grantCluster = useGrantClusterPermission()
   const revokeCluster = useRevokeClusterPermission()
@@ -63,11 +50,45 @@ export function RBACPage() {
     notes?: string
   }>()
 
+  const parseUserId = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value !== 'string') return undefined
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
+
+  const normalizeString = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined
+    const trimmed = value.trim()
+    return trimmed ? trimmed : undefined
+  }
+
+  const clusterFallbackColumns = useMemo(() => [
+    { key: 'user_id', label: 'User', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'cluster', label: 'Cluster', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'level', label: 'Level', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'granted_at', label: 'Granted At', groupKey: 'time', groupLabel: 'Time' },
+    { key: 'granted_by', label: 'Granted By', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'notes', label: 'Notes', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
+
+  const databaseFallbackColumns = useMemo(() => [
+    { key: 'user_id', label: 'User', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'database', label: 'Database', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'database_id', label: 'Database ID', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'level', label: 'Level', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'granted_at', label: 'Granted At', groupKey: 'time', groupLabel: 'Time' },
+    { key: 'granted_by', label: 'Granted By', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'notes', label: 'Notes', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
+
   const clusterColumns: ColumnsType<ClusterPermission> = useMemo(
     () => [
       {
         title: 'User',
-        key: 'user',
+        key: 'user_id',
         render: (_, row) => (
           <span>
             {row.user?.username} <Text type="secondary">#{row.user?.id}</Text>
@@ -85,7 +106,7 @@ export function RBACPage() {
       { title: 'Notes', dataIndex: 'notes', key: 'notes' },
       {
         title: 'Action',
-        key: 'action',
+        key: 'actions',
         render: (_, row) => (
           <Button
             danger
@@ -108,7 +129,7 @@ export function RBACPage() {
     () => [
       {
         title: 'User',
-        key: 'user',
+        key: 'user_id',
         render: (_, row) => (
           <span>
             {row.user?.username} <Text type="secondary">#{row.user?.id}</Text>
@@ -127,7 +148,7 @@ export function RBACPage() {
       { title: 'Notes', dataIndex: 'notes', key: 'notes' },
       {
         title: 'Action',
-        key: 'action',
+        key: 'actions',
         render: (_, row) => (
           <Button
             danger
@@ -145,6 +166,49 @@ export function RBACPage() {
     ],
     [revokeDatabase]
   )
+
+  const clusterTable = useTableToolkit({
+    tableId: 'rbac_clusters',
+    columns: clusterColumns,
+    fallbackColumns: clusterFallbackColumns,
+    initialPageSize: 50,
+  })
+
+  const databaseTable = useTableToolkit({
+    tableId: 'rbac_databases',
+    columns: databaseColumns,
+    fallbackColumns: databaseFallbackColumns,
+    initialPageSize: 50,
+  })
+
+  const clusterPageStart = (clusterTable.pagination.page - 1) * clusterTable.pagination.pageSize
+  const databasePageStart = (databaseTable.pagination.page - 1) * databaseTable.pagination.pageSize
+
+  const clusterPermissionsQuery = useClusterPermissions({
+    user_id: parseUserId(clusterTable.filters.user_id),
+    level: normalizeString(clusterTable.filters.level) as PermissionLevelCode | undefined,
+    search: clusterTable.search || undefined,
+    limit: clusterTable.pagination.pageSize,
+    offset: clusterPageStart,
+  })
+  const databasePermissionsQuery = useDatabasePermissions({
+    user_id: parseUserId(databaseTable.filters.user_id),
+    database_id: normalizeString(databaseTable.filters.database_id),
+    level: normalizeString(databaseTable.filters.level) as PermissionLevelCode | undefined,
+    search: databaseTable.search || undefined,
+    limit: databaseTable.pagination.pageSize,
+    offset: databasePageStart,
+  })
+
+  const clusterPermissions = clusterPermissionsQuery.data?.permissions ?? []
+  const totalClusterPermissions = typeof clusterPermissionsQuery.data?.total === 'number'
+    ? clusterPermissionsQuery.data.total
+    : clusterPermissions.length
+
+  const databasePermissions = databasePermissionsQuery.data?.permissions ?? []
+  const totalDatabasePermissions = typeof databasePermissionsQuery.data?.total === 'number'
+    ? databasePermissionsQuery.data.total
+    : databasePermissions.length
 
   return (
     <div>
@@ -193,25 +257,6 @@ export function RBACPage() {
                 </Card>
 
                 <Card title="Cluster Permissions" size="small">
-                  <Space style={{ marginBottom: 12 }}>
-                    <InputNumber
-                      min={1}
-                      placeholder="Filter: User ID"
-                      value={clusterFilterUserId}
-                      onChange={(v) => setClusterFilterUserId(v ?? undefined)}
-                    />
-                    <Input
-                      placeholder="Search (user/cluster)"
-                      value={clusterFilterSearch}
-                      onChange={(e) => setClusterFilterSearch(e.target.value)}
-                      style={{ width: 260 }}
-                      allowClear
-                    />
-                    <Button onClick={() => clusterPermissionsQuery.refetch()} loading={clusterPermissionsQuery.isFetching}>
-                      Refresh
-                    </Button>
-                  </Space>
-
                   {clusterPermissionsQuery.error && (
                     <Alert
                       type="warning"
@@ -221,12 +266,19 @@ export function RBACPage() {
                     />
                   )}
 
-                  <Table
-                    rowKey={(row) => `${row.user?.id}:${row.cluster?.id}`}
+                  <TableToolkit
+                    table={clusterTable}
+                    data={clusterPermissions}
+                    total={totalClusterPermissions}
                     loading={clusterPermissionsQuery.isLoading}
-                    dataSource={clusterPermissionsQuery.data ?? []}
+                    rowKey={(row) => `${row.user?.id}:${row.cluster?.id}`}
                     columns={clusterColumns}
-                    pagination={{ pageSize: 50 }}
+                    searchPlaceholder="Search cluster permissions"
+                    toolbarActions={(
+                      <Button onClick={() => clusterPermissionsQuery.refetch()} loading={clusterPermissionsQuery.isFetching}>
+                        Refresh
+                      </Button>
+                    )}
                   />
                 </Card>
               </Space>
@@ -268,25 +320,6 @@ export function RBACPage() {
                 </Card>
 
                 <Card title="Database Permissions" size="small">
-                  <Space style={{ marginBottom: 12 }}>
-                    <InputNumber
-                      min={1}
-                      placeholder="Filter: User ID"
-                      value={dbFilterUserId}
-                      onChange={(v) => setDbFilterUserId(v ?? undefined)}
-                    />
-                    <Input
-                      placeholder="Search (user/database)"
-                      value={dbFilterSearch}
-                      onChange={(e) => setDbFilterSearch(e.target.value)}
-                      style={{ width: 260 }}
-                      allowClear
-                    />
-                    <Button onClick={() => databasePermissionsQuery.refetch()} loading={databasePermissionsQuery.isFetching}>
-                      Refresh
-                    </Button>
-                  </Space>
-
                   {databasePermissionsQuery.error && (
                     <Alert
                       type="warning"
@@ -296,12 +329,19 @@ export function RBACPage() {
                     />
                   )}
 
-                  <Table
-                    rowKey={(row) => `${row.user?.id}:${row.database?.id}`}
+                  <TableToolkit
+                    table={databaseTable}
+                    data={databasePermissions}
+                    total={totalDatabasePermissions}
                     loading={databasePermissionsQuery.isLoading}
-                    dataSource={databasePermissionsQuery.data ?? []}
+                    rowKey={(row) => `${row.user?.id}:${row.database?.id}`}
                     columns={databaseColumns}
-                    pagination={{ pageSize: 50 }}
+                    searchPlaceholder="Search database permissions"
+                    toolbarActions={(
+                      <Button onClick={() => databasePermissionsQuery.refetch()} loading={databasePermissionsQuery.isFetching}>
+                        Refresh
+                      </Button>
+                    )}
                   />
                 </Card>
               </Space>

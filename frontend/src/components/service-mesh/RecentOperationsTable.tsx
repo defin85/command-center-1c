@@ -9,13 +9,15 @@
  * Uses shared utilities from Operations page for consistency.
  */
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Table, Tag, Tooltip, Button, Empty, Select } from 'antd'
+import { Tag, Tooltip, Button, Select } from 'antd'
 import { ReloadOutlined, EyeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { ServiceOperation } from '../../types/serviceMesh'
 import { getV2 } from '../../api/generated'
 import { transformOperationListResponse } from '../../utils/serviceMeshTransforms'
 import { getStatusColor } from '../../pages/Operations'
+import { TableToolkit } from '../table/TableToolkit'
+import { useTableToolkit } from '../table/hooks/useTableToolkit'
 import './RecentOperationsTable.css'
 
 const api = getV2()
@@ -110,49 +112,18 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Client-side filtering with useMemo (single source of truth)
-  const allFilteredOperations = useMemo(() => {
-    let result = operations
-    if (selectedService) {
-      result = result.filter(op => op.service === selectedService)
-    }
-    if (statusFilter.length > 0) {
-      result = result.filter(op => statusFilter.includes(op.status))
-    }
-    return result
-  }, [operations, selectedService, statusFilter])
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'id', label: 'ID', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'service', label: 'Service', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'progress', label: 'Progress', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'durationSeconds', label: 'Duration', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+    { key: 'createdAt', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
 
-  // Limited operations for display
-  const filteredOperations = useMemo(
-    () => allFilteredOperations.slice(0, DISPLAY_LIMIT),
-    [allFilteredOperations]
-  )
-
-  // Total count from filtered operations
-  const displayTotal = allFilteredOperations.length
-
-  // Build empty message based on active filters
-  const emptyMessage = useMemo(() => {
-    if (!selectedService && statusFilter.length === 0) {
-      return 'No recent operations'
-    }
-    // For multiple statuses, show count instead of listing all
-    const statusText = statusFilter.length > 2
-      ? `with ${statusFilter.length} selected statuses`
-      : statusFilter.length > 0
-        ? `with status: ${statusFilter.join(', ')}`
-        : ''
-    if (selectedService && statusFilter.length > 0) {
-      return `No operations for ${selectedService} ${statusText}`
-    }
-    if (selectedService) {
-      return `No operations for ${selectedService}`
-    }
-    return `No operations ${statusText}`
-  }, [selectedService, statusFilter])
-
-  // Table columns
-  const columns: ColumnsType<ServiceOperation> = [
+  const columns: ColumnsType<ServiceOperation> = useMemo(() => ([
     {
       title: 'ID',
       dataIndex: 'id',
@@ -222,7 +193,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       title: '',
       key: 'actions',
       width: 40,
-      render: (_, record: ServiceOperation) => (
+      render: (_value, record: ServiceOperation) => (
         <Tooltip title="View details">
           <Button
             type="text"
@@ -233,7 +204,127 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
         </Tooltip>
       ),
     },
-  ]
+  ]), [onOperationClick])
+
+  const table = useTableToolkit({
+    tableId: 'operations_recent',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: DISPLAY_LIMIT,
+  })
+
+  // Client-side filtering with useMemo (single source of truth)
+  const allFilteredOperations = useMemo(() => {
+    const searchValue = table.search.trim().toLowerCase()
+    return operations.filter((op) => {
+      if (selectedService && op.service !== selectedService) {
+        return false
+      }
+      if (statusFilter.length > 0 && !statusFilter.includes(op.status)) {
+        return false
+      }
+      if (searchValue) {
+        const matchesSearch = [
+          op.id,
+          op.name,
+          op.service,
+          op.status,
+        ].some((value) => String(value || '').toLowerCase().includes(searchValue))
+        if (!matchesSearch) return false
+      }
+
+      for (const [key, value] of Object.entries(table.filters)) {
+        if (value === null || value === undefined || value === '') {
+          continue
+        }
+        const recordValue = (() => {
+          switch (key) {
+            case 'id':
+              return op.id
+            case 'name':
+              return op.name
+            case 'service':
+              return op.service
+            case 'status':
+              return op.status
+            case 'progress':
+              return `${op.completedTasks}/${op.totalTasks}`
+            case 'durationSeconds':
+              return op.durationSeconds
+            case 'createdAt':
+              return op.createdAt
+            default:
+              return null
+          }
+        })()
+
+        if (Array.isArray(value)) {
+          if (!value.map(String).includes(String(recordValue ?? ''))) {
+            return false
+          }
+          continue
+        }
+
+        if (typeof value === 'boolean') {
+          if (Boolean(recordValue) !== value) return false
+          continue
+        }
+
+        if (typeof value === 'number') {
+          if (Number(recordValue) !== value) return false
+          continue
+        }
+
+        const needle = String(value).toLowerCase()
+        const haystack = String(recordValue ?? '').toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+
+      return true
+    })
+  }, [operations, selectedService, statusFilter, table.filters, table.search])
+
+  const sortedOperations = useMemo(() => {
+    if (!table.sort.key || !table.sort.order) {
+      return allFilteredOperations
+    }
+    const key = table.sort.key
+    const direction = table.sort.order === 'asc' ? 1 : -1
+    const getValue = (op: ServiceOperation) => {
+      switch (key) {
+        case 'id':
+          return op.id
+        case 'name':
+          return op.name
+        case 'service':
+          return op.service
+        case 'status':
+          return op.status
+        case 'progress':
+          return op.completedTasks
+        case 'durationSeconds':
+          return op.durationSeconds ?? -1
+        case 'createdAt':
+          return op.createdAt ? Date.parse(op.createdAt) : -1
+        default:
+          return ''
+      }
+    }
+    return [...allFilteredOperations].sort((a, b) => {
+      const left = getValue(a)
+      const right = getValue(b)
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * direction
+      }
+      return String(left).localeCompare(String(right)) * direction
+    })
+  }, [allFilteredOperations, table.sort.key, table.sort.order])
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const pageItems = sortedOperations.slice(pageStart, pageStart + table.pagination.pageSize)
+
+  // Total count from filtered operations
+  const displayTotal = allFilteredOperations.length
 
   return (
     <div className="recent-operations-table">
@@ -246,49 +337,45 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
             </Tag>
           )}
         </div>
-        <div className="recent-operations-table__actions">
-          <Select
-            mode="multiple"
-            placeholder="Filter by status"
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUS_OPTIONS}
-            allowClear
-            style={{ width: 200 }}
-            size="small"
-            maxTagCount="responsive"
-          />
-          <span className="recent-operations-table__total">
-            {displayTotal} total
-          </span>
-          <Button
-            type="text"
-            size="small"
-            icon={<ReloadOutlined />}
-            onClick={fetchOperations}
-            loading={loading}
-          >
-            Refresh
-          </Button>
-        </div>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={filteredOperations}
-        rowKey="id"
+      <TableToolkit
+        table={table}
+        data={pageItems}
+        total={sortedOperations.length}
         loading={loading}
+        rowKey="id"
+        columns={columns}
         size="small"
-        pagination={false}
         scroll={{ y: 240 }}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={emptyMessage}
+        searchPlaceholder="Search operations"
+        toolbarActions={(
+          <>
+            <Select
+              mode="multiple"
+              placeholder="Filter by status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={STATUS_OPTIONS}
+              allowClear
+              style={{ width: 200 }}
+              size="small"
+              maxTagCount="responsive"
             />
-          ),
-        }}
+            <span className="recent-operations-table__total">
+              {displayTotal} total
+            </span>
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={fetchOperations}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          </>
+        )}
         onRow={(record) => ({
           onClick: () => onOperationClick?.(record.id),
           style: { cursor: 'pointer' },

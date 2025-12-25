@@ -5,7 +5,7 @@
  * Uses React Query for data fetching with automatic polling.
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button, Space, Alert, Tag } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
@@ -13,13 +13,13 @@ import { useOperations, useCancelOperation } from '../../api/queries/operations'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
-import { OperationsTable } from './components/OperationsTable'
+import { OperationsTable, buildOperationsColumns } from './components/OperationsTable'
 import { OperationDetailsModal } from './components/OperationDetailsModal'
-import { OperationsFilters } from './components/OperationsFilters'
 import { NewOperationWizard } from './components/NewOperationWizard'
 import OperationTimelineDrawer from '../../components/service-mesh/OperationTimelineDrawer'
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
+import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -62,33 +62,8 @@ export const OperationsPage = () => {
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
 
-  // React Query: operations list with 5s polling
-  const {
-    data: operations = [],
-    isLoading: loading,
-    error: queryError,
-    refetch,
-  } = useOperations({
-    refetchInterval: 5000,
-    filters: {
-      operation_id: operationIdFilter,
-      workflow_execution_id: workflowExecutionId,
-      node_id: nodeId,
-    },
-  })
-
   // React Query: cancel mutation
   const cancelMutation = useCancelOperation()
-
-  // Derive error message from query error
-  const error = queryError
-    ? 'Failed to load operations. Please try again.'
-    : null
-
-  // Manual refresh handler
-  const handleRefresh = useCallback(() => {
-    refetch()
-  }, [refetch])
 
   const applyTimelineUpdate = useCallback(
     (current: UIBatchOperation, event: TimelineStreamEvent): UIBatchOperation => {
@@ -192,6 +167,73 @@ export const OperationsPage = () => {
     },
     [updateSearchParams]
   )
+
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'id', label: 'Operation ID', groupKey: 'core', groupLabel: 'Core' },
+    { key: 'workflow_execution_id', label: 'Workflow', groupKey: 'workflow', groupLabel: 'Workflow' },
+    { key: 'operation_type', label: 'Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'progress', label: 'Progress', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'databases', label: 'Databases', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'created_at', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+    { key: 'duration_seconds', label: 'Duration', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
+
+  const operationsColumns = useMemo(
+    () => buildOperationsColumns({
+      onViewDetails: handleViewDetails,
+      onCancel: handleCancel,
+      onFilterWorkflow: handleFilterWorkflow,
+      onFilterNode: handleFilterNode,
+    }),
+    [handleCancel, handleFilterNode, handleFilterWorkflow, handleViewDetails]
+  )
+
+  const table = useTableToolkit({
+    tableId: 'operations',
+    columns: operationsColumns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 50,
+  })
+
+  useEffect(() => {
+    table.setFilter('id', operationIdFilter ?? null)
+    table.setFilter('workflow_execution_id', workflowExecutionId ?? null)
+  }, [operationIdFilter, table.setFilter, workflowExecutionId])
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+
+  const {
+    data: operationsResponse,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useOperations({
+    refetchInterval: 5000,
+    filters: {
+      search: table.search,
+      filters: table.filtersPayload,
+      sort: table.sortPayload,
+      node_id: nodeId,
+      limit: table.pagination.pageSize,
+      offset: pageStart,
+    },
+  })
+
+  const operations = operationsResponse?.operations ?? []
+  const totalOperations = typeof operationsResponse?.total === 'number'
+    ? operationsResponse.total
+    : operations.length
+
+  const error = queryError
+    ? 'Failed to load operations. Please try again.'
+    : null
+
+  const handleRefresh = useCallback(() => {
+    refetch()
+  }, [refetch])
 
   useEffect(() => {
     if (operationIdFromUrl) {
@@ -298,13 +340,6 @@ export const OperationsPage = () => {
           >
             New Operation
           </Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleRefresh}
-            loading={loading}
-          >
-            Refresh
-          </Button>
         </Space>
       </Space>
 
@@ -334,26 +369,22 @@ export const OperationsPage = () => {
         </Tag>
       )}
 
-      <OperationsFilters
-        filters={{
-          operation_id: operationIdFilter,
-          workflow_execution_id: workflowExecutionId,
-          node_id: nodeId,
-        }}
-        onChange={(next) => {
-          updateSearchParams({
-            operation_id: next.operation_id?.trim() || null,
-            workflow_execution_id: next.workflow_execution_id || null,
-            node_id: next.node_id || null,
-          })
-        }}
-      />
-
       <div style={{ marginTop: 12 }}>
       <OperationsTable
+        table={table}
         operations={operationsState}
+        total={totalOperations}
         loading={loading}
-        onRefresh={handleRefresh}
+        columns={operationsColumns}
+        toolbarActions={(
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={handleRefresh}
+            loading={loading}
+          >
+            Refresh
+          </Button>
+        )}
         onViewDetails={handleViewDetails}
         onCancel={handleCancel}
         onFilterWorkflow={handleFilterWorkflow}

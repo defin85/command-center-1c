@@ -10,11 +10,29 @@ import { queryKeys } from './index'
 
 const api = getV2()
 
-async function fetchDlqMessages(params?: GetDlqListParams, signal?: AbortSignal): Promise<DLQListResponse> {
-  return api.getDlqList(params, { signal })
+export interface DlqListFilters extends Omit<GetDlqListParams, 'filters' | 'sort'> {
+  filters?: Record<string, { op?: string; value?: unknown } | unknown> | string
+  sort?: { key: string; order: 'asc' | 'desc' } | string
 }
 
-export function useDlqMessages(params?: GetDlqListParams) {
+async function fetchDlqMessages(params?: DlqListFilters, signal?: AbortSignal): Promise<DLQListResponse> {
+  const filtersParam = params?.filters
+    ? (typeof params.filters === 'string' ? params.filters : JSON.stringify(params.filters))
+    : undefined
+  const sortParam = params?.sort
+    ? (typeof params.sort === 'string' ? params.sort : JSON.stringify(params.sort))
+    : undefined
+  return api.getDlqList(
+    {
+      ...params,
+      filters: filtersParam,
+      sort: sortParam,
+    },
+    { signal }
+  )
+}
+
+export function useDlqMessages(params?: DlqListFilters) {
   return useQuery({
     queryKey: queryKeys.dlq.list(params),
     queryFn: ({ signal }) => fetchDlqMessages(params, signal),

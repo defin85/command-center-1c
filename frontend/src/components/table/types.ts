@@ -7,7 +7,7 @@ export interface TablePaginationState {
   pageSize: number
 }
 
-export type TableFilterType = 'select' | 'text' | 'boolean'
+export type TableFilterType = 'select' | 'text' | 'boolean' | 'date' | 'number'
 
 export interface TableFilterOption {
   value: string
@@ -20,6 +20,7 @@ export interface TableFilterConfig {
   type: TableFilterType
   options?: TableFilterOption[]
   placeholder?: string
+  multiple?: boolean
 }
 
 export type TableSortOrder = 'asc' | 'desc'

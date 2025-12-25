@@ -1,30 +1,24 @@
 import { useMemo, useState } from 'react'
-import { Alert, App, Button, Card, Form, Input, Select, Space, Switch, Table, Typography } from 'antd'
+import { Alert, App, Button, Space, Switch, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { OperationTemplate } from '../../api/generated/model/operationTemplate'
 import { useOperationTemplates, useSyncTemplatesFromRegistry } from '../../api/queries/templates'
+import { TableToolkit } from '../../components/table/TableToolkit'
+import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
 const { Title, Text } = Typography
-
-type TargetEntity = 'infobase' | 'cluster' | 'entity'
 
 export function TemplatesPage() {
   const { message } = App.useApp()
   const [dryRun, setDryRun] = useState<boolean>(false)
-  const [filters, setFilters] = useState<{
-    operation_type?: string
-    target_entity?: TargetEntity
-    is_active?: boolean
-  }>({})
-
-  const templatesQuery = useOperationTemplates({
-    operation_type: filters.operation_type,
-    target_entity: filters.target_entity,
-    is_active: filters.is_active,
-    limit: 1000,
-    offset: 0,
-  })
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'operation_type', label: 'Operation Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'target_entity', label: 'Target', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'is_active', label: 'Active', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+  ], [])
 
   const syncMutation = useSyncTemplatesFromRegistry()
 
@@ -67,6 +61,30 @@ export function TemplatesPage() {
       render: (v: string) => (v ? new Date(v).toLocaleString() : ''),
     },
   ]), [])
+
+  const table = useTableToolkit({
+    tableId: 'templates',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 50,
+  })
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+
+  const templatesQuery = useOperationTemplates({
+    search: table.search,
+    filters: table.filtersPayload,
+    sort: table.sortPayload,
+    limit: table.pagination.pageSize,
+    offset: pageStart,
+  })
+
+  const templates = templatesQuery.data?.templates ?? []
+  const totalTemplates = typeof templatesQuery.data?.total === 'number'
+    ? templatesQuery.data.total
+    : typeof templatesQuery.data?.count === 'number'
+      ? templatesQuery.data.count
+      : templates.length
 
   const onSync = async () => {
     try {
@@ -112,50 +130,14 @@ export function TemplatesPage() {
         />
       )}
 
-      <Card>
-        <Form
-          layout="inline"
-          onValuesChange={(_, values) => {
-            setFilters({
-              operation_type: values.operation_type || undefined,
-              target_entity: values.target_entity || undefined,
-              is_active: typeof values.is_active === 'boolean' ? values.is_active : undefined,
-            })
-          }}
-        >
-          <Form.Item label="Operation type" name="operation_type">
-            <Input placeholder="e.g., lock_scheduled_jobs" allowClear style={{ width: 260 }} />
-          </Form.Item>
-          <Form.Item label="Target" name="target_entity">
-            <Select
-              allowClear
-              style={{ width: 160 }}
-              options={[
-                { label: 'infobase', value: 'infobase' },
-                { label: 'cluster', value: 'cluster' },
-                { label: 'entity', value: 'entity' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item label="Active" name="is_active">
-            <Select
-              allowClear
-              style={{ width: 120 }}
-              options={[
-                { label: 'yes', value: true },
-                { label: 'no', value: false },
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Card>
-
-      <Table
-        rowKey="id"
+      <TableToolkit
+        table={table}
+        data={templates}
+        total={totalTemplates}
         loading={templatesQuery.isLoading}
-        dataSource={templatesQuery.data ?? []}
+        rowKey="id"
         columns={columns}
-        pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: [25, 50, 100, 200] }}
+        searchPlaceholder="Search templates"
       />
     </Space>
   )

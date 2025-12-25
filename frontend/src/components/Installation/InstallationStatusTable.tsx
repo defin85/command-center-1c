@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react'
-import { App, Table, Tag, Button, Input, Select, Space, Modal, Form } from 'antd'
-import { ReloadOutlined, SearchOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import React, { useMemo, useState, useEffect } from 'react'
+import { App, Tag, Button, Space, Modal, Form, Input } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { ReloadOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { ExtensionInstallation } from '../../types/installation'
 import { getV2 } from '../../api/generated'
 import { convertInstallationsToLegacy } from '../../utils/installationTransforms'
 import { ExtensionFileSelector } from './ExtensionFileSelector'
-
-const { Option } = Select
+import { TableToolkit } from '../table/TableToolkit'
+import { useTableToolkit } from '../table/hooks/useTableToolkit'
 
 // Get generated API functions
 const api = getV2()
@@ -15,8 +16,6 @@ export const InstallationStatusTable: React.FC = () => {
   const { message } = App.useApp()
   const [installations, setInstallations] = useState<ExtensionInstallation[]>([])
   const [loading, setLoading] = useState(false)
-  const [filter, setFilter] = useState<string>('all')
-  const [searchText, setSearchText] = useState('')
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<{ id: string; name: string } | null>(null)
   const [form] = Form.useForm()
@@ -91,14 +90,17 @@ export const InstallationStatusTable: React.FC = () => {
     }
   }
 
-  const filteredData = installations.filter((item) => {
-    if (filter !== 'all' && item.status !== filter) return false
-    if (searchText && !item.database_name.toLowerCase().includes(searchText.toLowerCase()))
-      return false
-    return true
-  })
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'database_id', label: 'Database ID', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'database_name', label: 'Database Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
+    { key: 'duration_seconds', label: 'Duration', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
+    { key: 'started_at', label: 'Started At', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
+    { key: 'error_message', label: 'Error', groupKey: 'details', groupLabel: 'Details' },
+    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
 
-  const columns = [
+  const columns: ColumnsType<ExtensionInstallation> = useMemo(() => ([
     {
       title: 'Database ID',
       dataIndex: 'database_id',
@@ -143,7 +145,7 @@ export const InstallationStatusTable: React.FC = () => {
     },
     {
       title: 'Action',
-      key: 'action',
+      key: 'actions',
       width: 180,
       render: (_: unknown, record: ExtensionInstallation) => (
         <Space>
@@ -169,36 +171,129 @@ export const InstallationStatusTable: React.FC = () => {
         </Space>
       ),
     },
-  ]
+  ]), [handleInstallSingle, handleRetry])
+
+  const table = useTableToolkit({
+    tableId: 'extensions_installations',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 50,
+  })
+
+  const filteredInstallations = useMemo(() => {
+    const searchValue = table.search.trim().toLowerCase()
+    return installations.filter((item) => {
+      if (searchValue) {
+        const matchesSearch = [
+          item.database_name,
+          item.database_id,
+          item.status,
+          item.error_message ?? '',
+        ].some((value) => String(value || '').toLowerCase().includes(searchValue))
+        if (!matchesSearch) return false
+      }
+
+      for (const [key, value] of Object.entries(table.filters)) {
+        if (value === null || value === undefined || value === '') {
+          continue
+        }
+        const recordValue = (() => {
+          switch (key) {
+            case 'database_id':
+              return item.database_id
+            case 'database_name':
+              return item.database_name
+            case 'status':
+              return item.status
+            case 'duration_seconds':
+              return item.duration_seconds
+            case 'started_at':
+              return item.started_at
+            case 'error_message':
+              return item.error_message
+            default:
+              return null
+          }
+        })()
+
+        if (Array.isArray(value)) {
+          if (!value.map(String).includes(String(recordValue ?? ''))) {
+            return false
+          }
+          continue
+        }
+
+        if (typeof value === 'boolean') {
+          if (Boolean(recordValue) !== value) return false
+          continue
+        }
+
+        if (typeof value === 'number') {
+          if (Number(recordValue) !== value) return false
+          continue
+        }
+
+        const needle = String(value).toLowerCase()
+        const haystack = String(recordValue ?? '').toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+
+      return true
+    })
+  }, [installations, table.filters, table.search])
+
+  const sortedInstallations = useMemo(() => {
+    if (!table.sort.key || !table.sort.order) {
+      return filteredInstallations
+    }
+    const key = table.sort.key
+    const direction = table.sort.order === 'asc' ? 1 : -1
+    const getValue = (item: ExtensionInstallation) => {
+      switch (key) {
+        case 'database_id':
+          return item.database_id
+        case 'database_name':
+          return item.database_name
+        case 'status':
+          return item.status
+        case 'duration_seconds':
+          return item.duration_seconds ?? -1
+        case 'started_at':
+          return item.started_at ? Date.parse(item.started_at) : -1
+        case 'error_message':
+          return item.error_message ?? ''
+        default:
+          return ''
+      }
+    }
+    return [...filteredInstallations].sort((a, b) => {
+      const left = getValue(a)
+      const right = getValue(b)
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * direction
+      }
+      return String(left).localeCompare(String(right)) * direction
+    })
+  }, [filteredInstallations, table.sort.key, table.sort.order])
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const pageItems = sortedInstallations.slice(pageStart, pageStart + table.pagination.pageSize)
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Input
-          placeholder="Search database name"
-          prefix={<SearchOutlined />}
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ width: 300 }}
-        />
-        <Select value={filter} onChange={setFilter} style={{ width: 150 }}>
-          <Option value="all">All</Option>
-          <Option value="completed">Completed</Option>
-          <Option value="failed">Failed</Option>
-          <Option value="in_progress">In Progress</Option>
-          <Option value="pending">Pending</Option>
-        </Select>
-        <Button icon={<ReloadOutlined />} onClick={fetchInstallations}>
-          Refresh
-        </Button>
-      </Space>
-
-      <Table
-        columns={columns}
-        dataSource={filteredData}
-        rowKey="id"
+      <TableToolkit
+        table={table}
+        data={pageItems}
+        total={sortedInstallations.length}
         loading={loading}
-        pagination={{ pageSize: 50 }}
+        rowKey="id"
+        columns={columns}
+        searchPlaceholder="Search installations"
+        toolbarActions={(
+          <Button icon={<ReloadOutlined />} onClick={fetchInstallations}>
+            Refresh
+          </Button>
+        )}
       />
 
       <Modal

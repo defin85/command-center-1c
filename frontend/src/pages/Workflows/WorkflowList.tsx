@@ -8,18 +8,14 @@
  * - Clone/Delete workflows
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   App,
-  Table,
   Button,
   Space,
   Tag,
   Typography,
-  Card,
-  Input,
-  Select,
   Popconfirm,
   Tooltip
 } from 'antd'
@@ -31,11 +27,13 @@ import {
   PlayCircleOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  SearchOutlined
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getV2 } from '../../api/generated'
 import type { WorkflowTemplateList } from '../../api/generated/model'
+import { TableToolkit } from '../../components/table/TableToolkit'
+import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import './WorkflowList.css'
 
 const api = getV2()
@@ -52,61 +50,27 @@ const workflowTypeColors: Record<string, string> = {
 const WorkflowList = () => {
   const navigate = useNavigate()
   const { message } = App.useApp()
-  const [templates, setTemplates] = useState<WorkflowTemplateList[]>([])
-  const [loading, setLoading] = useState(true)
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10,
-    total: 0
-  })
-  const [filters, setFilters] = useState({
-    search: '',
-    workflow_type: '',
-    is_active: undefined as boolean | undefined
-  })
-  const [searchValue, setSearchValue] = useState('')
+  const queryClient = useQueryClient()
+  const fallbackColumnConfigs = useMemo(() => [
+    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'workflow_type', label: 'Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'is_active', label: 'Status', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'node_count', label: 'Nodes', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
+    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
+  ], [])
 
-  // Load templates
-  const loadTemplates = useCallback(async (page = 1) => {
-    setLoading(true)
-    try {
-      const response = await api.getWorkflowsListWorkflows({
-        limit: pagination.pageSize,
-        offset: (page - 1) * pagination.pageSize,
-        search: filters.search || undefined,
-        workflow_type: filters.workflow_type || undefined,
-        is_active: filters.is_active !== undefined ? String(filters.is_active) : undefined
-      })
-      setTemplates(response.workflows ?? [])
-      setPagination((prev) => ({
-        ...prev,
-        current: page,
-        total: response.total ?? 0
-      }))
-    } catch (_error) {
-      message.error('Failed to load workflow templates')
-    } finally {
-      setLoading(false)
-    }
-  }, [filters.is_active, filters.search, filters.workflow_type, pagination.pageSize, message])
-
-  useEffect(() => {
-    loadTemplates()
-  }, [filters, loadTemplates])
-
-  // Handle delete
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     try {
       await api.postWorkflowsDeleteWorkflow({ workflow_id: id })
       message.success('Workflow deleted')
-      loadTemplates(pagination.current)
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
     } catch (_error) {
       message.error('Failed to delete workflow')
     }
-  }
+  }, [message, queryClient])
 
-  // Handle clone
-  const handleClone = async (id: string, name: string) => {
+  const handleClone = useCallback(async (id: string, name: string) => {
     try {
       const cloned = await api.postWorkflowsCloneWorkflow({
         workflow_id: id,
@@ -117,9 +81,9 @@ const WorkflowList = () => {
     } catch (_error) {
       message.error('Failed to clone workflow')
     }
-  }
+  }, [message, navigate])
 
-  const columns: ColumnsType<WorkflowTemplateList> = [
+  const columns: ColumnsType<WorkflowTemplateList> = useMemo(() => ([
     {
       title: 'Name',
       dataIndex: 'name',
@@ -138,8 +102,9 @@ const WorkflowList = () => {
     },
     {
       title: 'Status',
-      key: 'status',
-      render: (_, record) => (
+      dataIndex: 'is_active',
+      key: 'is_active',
+      render: (_value, record) => (
         <Space>
           {record.is_valid ? (
             <Tooltip title="Valid">
@@ -158,7 +123,7 @@ const WorkflowList = () => {
     },
     {
       title: 'Nodes',
-      key: 'nodes',
+      key: 'node_count',
       dataIndex: 'node_count',
       render: (count) => count ?? 0
     },
@@ -171,7 +136,7 @@ const WorkflowList = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) => (
+      render: (_value, record) => (
         <Space>
           <Tooltip title="Edit">
             <Button
@@ -209,7 +174,41 @@ const WorkflowList = () => {
         </Space>
       )
     }
-  ]
+  ]), [handleClone, handleDelete, navigate])
+
+  const table = useTableToolkit({
+    tableId: 'workflows',
+    columns,
+    fallbackColumns: fallbackColumnConfigs,
+    initialPageSize: 50,
+  })
+
+  const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const filtersParam = table.filtersPayload ? JSON.stringify(table.filtersPayload) : undefined
+  const sortParam = table.sortPayload ? JSON.stringify(table.sortPayload) : undefined
+
+  const workflowsQuery = useQuery({
+    queryKey: [
+      'workflows',
+      table.search,
+      table.filtersPayload,
+      table.sortPayload,
+      table.pagination.page,
+      table.pagination.pageSize
+    ],
+    queryFn: () => api.getWorkflowsListWorkflows({
+      search: table.search || undefined,
+      filters: filtersParam,
+      sort: sortParam,
+      limit: table.pagination.pageSize,
+      offset: pageStart,
+    }),
+  })
+
+  const workflows = workflowsQuery.data?.workflows ?? []
+  const totalWorkflows = typeof workflowsQuery.data?.total === 'number'
+    ? workflowsQuery.data.total
+    : workflows.length
 
   return (
     <div className="workflow-list-page">
@@ -224,59 +223,15 @@ const WorkflowList = () => {
         </Button>
       </div>
 
-      <Card className="filters-card">
-        <Space wrap>
-          <Space.Compact>
-            <Input
-              placeholder="Search workflows..."
-              allowClear
-              style={{ width: 200 }}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              onPressEnter={() => setFilters((prev) => ({ ...prev, search: searchValue }))}
-            />
-            <Button
-              icon={<SearchOutlined />}
-              onClick={() => setFilters((prev) => ({ ...prev, search: searchValue }))}
-            />
-          </Space.Compact>
-          <Select
-            placeholder="Workflow Type"
-            allowClear
-            style={{ width: 150 }}
-            onChange={(value) => setFilters((prev) => ({ ...prev, workflow_type: value }))}
-            options={[
-              { value: 'sequential', label: 'Sequential' },
-              { value: 'parallel', label: 'Parallel' },
-              { value: 'conditional', label: 'Conditional' },
-              { value: 'complex', label: 'Complex' }
-            ]}
-          />
-          <Select
-            placeholder="Status"
-            allowClear
-            style={{ width: 120 }}
-            onChange={(value) => setFilters((prev) => ({ ...prev, is_active: value }))}
-            options={[
-              { value: true, label: 'Active' },
-              { value: false, label: 'Inactive' }
-            ]}
-          />
-        </Space>
-      </Card>
-
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={templates}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            ...pagination,
-            onChange: (page) => loadTemplates(page)
-          }}
-        />
-      </Card>
+      <TableToolkit
+        table={table}
+        data={workflows}
+        total={totalWorkflows}
+        loading={workflowsQuery.isLoading}
+        rowKey="id"
+        columns={columns}
+        searchPlaceholder="Search workflows"
+      />
     </div>
   )
 }
