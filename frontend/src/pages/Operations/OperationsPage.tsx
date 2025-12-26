@@ -10,6 +10,9 @@ import { Button, Space, Alert, Tag } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import { useOperations, useCancelOperation } from '../../api/queries/operations'
+import { getV2 } from '../../api/generated'
+import { executeOperation, type RASOperationType } from '../../api/operations'
+import { apiClient } from '../../api/client'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
@@ -20,6 +23,8 @@ import OperationTimelineDrawer from '../../components/service-mesh/OperationTime
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+
+const api = getV2()
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -296,17 +301,127 @@ export const OperationsPage = () => {
   // Handle new operation wizard submit
   const handleWizardSubmit = useCallback(
     async (data: NewOperationData) => {
-      // TODO: Implement actual API call to create operation
-      // For now, just log and close
-      console.log('Creating operation:', data)
+      if (data.templateId) {
+        await api.postWorkflowsExecuteWorkflow({
+          workflow_id: data.templateId,
+          input_context: {
+            ...data.config,
+            database_ids: data.databaseIds,
+            uploaded_files: data.uploadedFiles,
+          },
+          mode: 'async',
+        })
+        handleRefresh()
+        return
+      }
 
-      // Placeholder: In future phases, this will call the appropriate API
-      // based on data.operationType (e.g., batch lock, batch health check, etc.)
+      if (!data.operationType) {
+        throw new Error('operation_type is required')
+      }
 
-      // Refresh operations list after creation
-      handleRefresh()
+      const normalizeSelect = (value: unknown): string[] | undefined => {
+        if (Array.isArray(value)) {
+          const list = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          return list.length > 0 ? list : undefined
+        }
+        if (typeof value === 'string') {
+          const list = value
+            .split(',')
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)
+          return list.length > 0 ? list : undefined
+        }
+        return undefined
+      }
+
+      const rasOperations: Set<NewOperationData['operationType']> = new Set([
+        'lock_scheduled_jobs',
+        'unlock_scheduled_jobs',
+        'block_sessions',
+        'unblock_sessions',
+        'terminate_sessions',
+      ])
+
+      if (rasOperations.has(data.operationType)) {
+        await executeOperation({
+          operation_type: data.operationType as RASOperationType,
+          database_ids: data.databaseIds,
+          config: data.config,
+        })
+        handleRefresh()
+        return
+      }
+
+      if (data.operationType === 'install_extension') {
+        const filename = data.config.extension_filename
+        if (!filename) {
+          throw new Error('extension file is not uploaded')
+        }
+
+        await apiClient.post('/api/v2/operations/execute/', {
+          operation_type: 'install_extension',
+          database_ids: data.databaseIds,
+          config: {
+            extension_filename: filename,
+            safe_mode: Boolean(data.config.safe_mode),
+          },
+        })
+        handleRefresh()
+        return
+      }
+
+      if (data.operationType === 'query') {
+        const select = normalizeSelect(data.config.select)
+        await apiClient.post('/api/v2/operations/execute/', {
+          operation_type: 'query',
+          database_ids: data.databaseIds,
+          config: {
+            entity: data.config.entity,
+            filter: data.config.filter,
+            select,
+            top: data.config.top,
+          },
+        })
+        handleRefresh()
+        return
+      }
+
+      if (data.operationType === 'health_check') {
+        await api.postDatabasesBulkHealthCheck({
+          database_ids: data.databaseIds,
+        })
+        handleRefresh()
+        return
+      }
+
+      if (String(data.operationType).startsWith('ibcmd_')) {
+        await api.postOperationsExecuteIbcmd({
+          operation_type: data.operationType as 'ibcmd_backup' | 'ibcmd_restore' | 'ibcmd_replicate' | 'ibcmd_create',
+          database_ids: data.databaseIds,
+          config: data.config,
+        })
+        handleRefresh()
+        return
+      }
+
+      if (
+        data.operationType === 'remove_extension'
+        || data.operationType === 'config_update'
+        || data.operationType === 'config_load'
+        || data.operationType === 'config_dump'
+      ) {
+        await apiClient.post('/api/v2/operations/execute/', {
+          operation_type: data.operationType,
+          database_ids: data.databaseIds,
+          config: data.config,
+        })
+        handleRefresh()
+        return
+      }
+
+      throw new Error(`Operation type ${data.operationType} is not supported in wizard`)
     },
-    [handleRefresh]
+    [api, handleRefresh]
   )
 
   const activeOperationIds = operationsState

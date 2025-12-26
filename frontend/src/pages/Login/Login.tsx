@@ -83,6 +83,7 @@ export const Login = () => {
                         rules={[{ required: true, message: 'Введите имя пользователя' }]}
                     >
                         <Input
+                            id="login-username"
                             prefix={<UserOutlined />}
                             placeholder="Имя пользователя"
                         />
@@ -93,6 +94,7 @@ export const Login = () => {
                         rules={[{ required: true, message: 'Введите пароль' }]}
                     >
                         <Input.Password
+                            id="login-password"
                             prefix={<LockOutlined />}
                             placeholder="Пароль"
                         />

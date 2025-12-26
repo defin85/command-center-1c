@@ -1,6 +1,6 @@
 import { Button, Table } from 'antd'
 import type { ColumnsType, TableProps } from 'antd/es/table'
-import { useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons'
 import { TableFiltersRow } from './TableFiltersRow'
 import { TablePagination } from './TablePagination'
@@ -69,6 +69,14 @@ export const TableToolkit = <T,>({
   size,
 }: TableToolkitProps<T>) => {
   const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const filtersScrollRef = useRef<HTMLDivElement>(null)
+  const tableWrapperRef = useRef<HTMLDivElement>(null)
+  const syncingScrollRef = useRef(false)
+  const rawId = useId()
+  const idPrefix = useMemo(
+    () => `table-toolkit-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
+    [rawId]
+  )
   const filterConfigByKey = useMemo(
     () => new Map(table.filterConfigs.map((config) => [config.key, config])),
     [table.filterConfigs]
@@ -141,6 +149,32 @@ export const TableToolkit = <T,>({
     })
   }, [decoratedColumns, table.groupedColumns])
 
+  useEffect(() => {
+    const wrapper = tableWrapperRef.current
+    const filtersEl = filtersScrollRef.current
+    if (!wrapper || !filtersEl) return
+    const tableBody = wrapper.querySelector('.ant-table-body') as HTMLDivElement | null
+    if (!tableBody) return
+
+    const syncScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
+      if (syncingScrollRef.current) return
+      syncingScrollRef.current = true
+      target.scrollLeft = source.scrollLeft
+      syncingScrollRef.current = false
+    }
+
+    const onTableScroll = () => syncScroll(tableBody, filtersEl)
+    const onFiltersScroll = () => syncScroll(filtersEl, tableBody)
+
+    tableBody.addEventListener('scroll', onTableScroll)
+    filtersEl.addEventListener('scroll', onFiltersScroll)
+
+    return () => {
+      tableBody.removeEventListener('scroll', onTableScroll)
+      filtersEl.removeEventListener('scroll', onFiltersScroll)
+    }
+  }, [tableColumns, data.length])
+
   return (
     <div>
       <TableToolbar
@@ -148,6 +182,7 @@ export const TableToolkit = <T,>({
         searchPlaceholder={searchPlaceholder}
         onSearchChange={table.setSearch}
         onReset={table.resetToDefaults}
+        idPrefix={idPrefix}
         actions={
           <>
             {toolbarActions}
@@ -157,42 +192,46 @@ export const TableToolkit = <T,>({
       />
 
       <TableFiltersRow
+        scrollRef={filtersScrollRef}
         columns={table.filterColumns}
         configs={table.orderedFilters}
         values={table.filters}
         visibility={table.filterVisibility}
         onChange={table.setFilter}
+        idPrefix={idPrefix}
       />
 
-      <Table
-        rowSelection={rowSelection}
-        columns={tableColumns}
-        dataSource={data}
-        loading={loading}
-        rowKey={rowKey}
-        pagination={false}
-        tableLayout={tableLayout}
-        scroll={scroll}
-        size={size}
-        onRow={onRow}
-        onChange={(_, __, sorter) => {
-          if (Array.isArray(sorter)) {
-            table.setSort(null, null)
-            return
-          }
-          const key = sorter?.field ? String(sorter.field) : null
-          if (key && !table.sortableColumns.has(key)) {
-            table.setSort(null, null)
-            return
-          }
-          const order = sorter?.order === 'ascend'
-            ? 'asc'
-            : sorter?.order === 'descend'
-              ? 'desc'
-              : null
-          table.setSort(key, order)
-        }}
-      />
+      <div ref={tableWrapperRef}>
+        <Table
+          rowSelection={rowSelection}
+          columns={tableColumns}
+          dataSource={data}
+          loading={loading}
+          rowKey={rowKey}
+          pagination={false}
+          tableLayout={tableLayout}
+          scroll={scroll}
+          size={size}
+          onRow={onRow}
+          onChange={(_, __, sorter) => {
+            if (Array.isArray(sorter)) {
+              table.setSort(null, null)
+              return
+            }
+            const key = sorter?.field ? String(sorter.field) : null
+            if (key && !table.sortableColumns.has(key)) {
+              table.setSort(null, null)
+              return
+            }
+            const order = sorter?.order === 'ascend'
+              ? 'asc'
+              : sorter?.order === 'descend'
+                ? 'desc'
+                : null
+            table.setSort(key, order)
+          }}
+        />
+      </div>
 
       <TablePagination
         total={total}
@@ -220,6 +259,7 @@ export const TableToolkit = <T,>({
         onDeletePreset={table.deletePreset}
         canToggleFilter={(key) => table.canHideFilter(key)}
         onToggleFilter={(key, visible) => table.toggleFilterVisibility(key, visible)}
+        idPrefix={idPrefix}
       />
     </div>
   )

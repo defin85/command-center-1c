@@ -542,6 +542,16 @@ install_project_deps() {
         fi
 
         log_success "Node.js зависимости установлены"
+        if command -v npx &>/dev/null; then
+            log_info "Установка браузеров Playwright..."
+            if npx playwright install >/dev/null 2>&1; then
+                log_success "Playwright браузеры установлены"
+            else
+                log_warning "Не удалось установить Playwright браузеры"
+            fi
+        else
+            log_warning "npx не найден, пропуск установки Playwright браузеров"
+        fi
         cd "$PROJECT_ROOT"
     fi
 

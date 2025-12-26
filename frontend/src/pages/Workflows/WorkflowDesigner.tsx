@@ -470,11 +470,12 @@ const WorkflowDesigner = () => {
             name="name"
             label="Workflow Name"
             rules={[{ required: true, message: 'Please enter a name' }]}
+            htmlFor="workflow-name"
           >
-            <Input placeholder="My Workflow" />
+            <Input id="workflow-name" placeholder="My Workflow" />
           </Form.Item>
-          <Form.Item name="description" label="Description">
-            <Input.TextArea rows={3} placeholder="Optional description" />
+          <Form.Item name="description" label="Description" htmlFor="workflow-description">
+            <Input.TextArea id="workflow-description" rows={3} placeholder="Optional description" />
           </Form.Item>
         </Form>
       </Modal>
@@ -488,9 +489,12 @@ const WorkflowDesigner = () => {
         okText="Execute"
       >
         <div style={{ marginBottom: 8 }}>
-          <label style={{ fontWeight: 500 }}>Input Context (JSON)</label>
+          <label htmlFor="workflow-execute-input" style={{ fontWeight: 500 }}>
+            Input Context (JSON)
+          </label>
         </div>
         <Input.TextArea
+          id="workflow-execute-input"
           rows={6}
           value={executeInput}
           onChange={(e) => setExecuteInput(e.target.value)}

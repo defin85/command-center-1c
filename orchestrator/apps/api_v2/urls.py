@@ -20,6 +20,7 @@ from .views import (
     rbac,
     templates,
     files,
+    artifacts,
     timeline,
     dlq,
     runtime_settings,
@@ -120,6 +121,17 @@ urlpatterns = [
     path('extensions/list-storage/', extensions.list_extension_storage, name='list-extension-storage'),
     path('extensions/upload-extension/', extensions.upload_extension, name='upload-extension'),
     path('extensions/delete-extension/', extensions.delete_extension_storage, name='delete-extension-storage'),
+
+    # ========================================================================
+    # Artifacts (v2 storage)
+    # ========================================================================
+    path('artifacts/', artifacts.list_artifacts, name='list-artifacts'),
+    path('artifacts/create/', artifacts.create_artifact, name='create-artifact'),
+    path('artifacts/<uuid:artifact_id>/versions/', artifacts.list_artifact_versions, name='list-artifact-versions'),
+    path('artifacts/<uuid:artifact_id>/versions/upload/', artifacts.upload_artifact_version, name='upload-artifact-version'),
+    path('artifacts/<uuid:artifact_id>/versions/<str:version>/download/', artifacts.download_artifact_version, name='download-artifact-version'),
+    path('artifacts/<uuid:artifact_id>/aliases/', artifacts.list_artifact_aliases, name='list-artifact-aliases'),
+    path('artifacts/<uuid:artifact_id>/aliases/upsert/', artifacts.upsert_artifact_alias, name='upsert-artifact-alias'),
 
     # ========================================================================
     # RBAC (SPA-primary administration)

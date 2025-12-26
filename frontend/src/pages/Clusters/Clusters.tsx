@@ -478,36 +478,41 @@ export const Clusters = () => {
                         label="Cluster Name"
                         name="name"
                         rules={[{ required: true, message: 'Please enter cluster name' }]}
+                        htmlFor="cluster-name"
                     >
-                        <Input placeholder="Production Cluster" />
+                        <Input id="cluster-name" placeholder="Production Cluster" />
                     </Form.Item>
 
-                    <Form.Item label="Description" name="description">
-                        <TextArea rows={3} placeholder="Optional description" />
+                    <Form.Item label="Description" name="description" htmlFor="cluster-description">
+                        <TextArea id="cluster-description" rows={3} placeholder="Optional description" />
                     </Form.Item>
 
                     <Form.Item
                         label="RAS Server"
                         name="ras_server"
                         rules={[{ required: true, message: 'Please enter RAS server address' }]}
+                        htmlFor="cluster-ras-server"
                     >
-                        <Input placeholder={systemConfig?.ras_default_server ?? 'localhost:1545'} />
+                        <Input id="cluster-ras-server" placeholder={systemConfig?.ras_default_server ?? 'localhost:1545'} />
                     </Form.Item>
 
                     <Form.Item
                         label="Cluster Service URL"
                         name="cluster_service_url"
                         rules={[{ required: true, message: 'Please enter cluster service URL' }]}
+                        htmlFor="cluster-service-url"
                     >
-                        <Input placeholder={systemConfig?.ras_adapter_url ?? 'http://localhost:8188'} />
+                        <Input id="cluster-service-url" placeholder={systemConfig?.ras_adapter_url ?? 'http://localhost:8188'} />
                     </Form.Item>
 
                     {editingCluster ? (
                         <Form.Item
                             label="Cluster Credentials"
+                            htmlFor="cluster-credentials-button"
                             extra="Use Credentials to update or reset username/password."
                         >
                             <Button
+                                id="cluster-credentials-button"
                                 icon={<KeyOutlined />}
                                 onClick={() => editingCluster && openCredentialsModal(editingCluster)}
                             >
@@ -516,11 +521,12 @@ export const Clusters = () => {
                         </Form.Item>
                     ) : (
                         <>
-                            <Form.Item label="Cluster Admin User" name="cluster_user">
-                                <Input placeholder="Optional cluster admin username" />
+                            <Form.Item label="Cluster Admin User" name="cluster_user" htmlFor="cluster-admin-user">
+                                <Input id="cluster-admin-user" placeholder="Optional cluster admin username" />
                             </Form.Item>
-                            <Form.Item label="Cluster Admin Password" name="cluster_pwd">
+                            <Form.Item label="Cluster Admin Password" name="cluster_pwd" htmlFor="cluster-admin-password">
                                 <Input.Password
+                                    id="cluster-admin-password"
                                     placeholder="Optional cluster admin password"
                                     autoComplete="new-password"
                                 />
@@ -528,8 +534,8 @@ export const Clusters = () => {
                         </>
                     )}
 
-                    <Form.Item label="Status" name="status">
-                        <Select>
+                    <Form.Item label="Status" name="status" htmlFor="cluster-status">
+                        <Select id="cluster-status">
                             <Select.Option value="active">Active</Select.Option>
                             <Select.Option value="inactive">Inactive</Select.Option>
                             <Select.Option value="maintenance">Maintenance</Select.Option>
@@ -577,11 +583,12 @@ export const Clusters = () => {
                 ]}
             >
                 <Form form={credentialsForm} layout="vertical">
-                    <Form.Item label="Cluster Admin User" name="username">
-                        <Input placeholder="Optional cluster admin username" />
+                    <Form.Item label="Cluster Admin User" name="username" htmlFor="cluster-credentials-username">
+                        <Input id="cluster-credentials-username" placeholder="Optional cluster admin username" />
                     </Form.Item>
-                    <Form.Item label="Cluster Admin Password" name="password">
+                    <Form.Item label="Cluster Admin Password" name="password" htmlFor="cluster-credentials-password">
                         <Input.Password
+                            id="cluster-credentials-password"
                             placeholder={credentialsCluster?.cluster_pwd_configured ? 'Configured' : 'Enter password'}
                         />
                     </Form.Item>

@@ -17,7 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django_fsm import FSMField, transition
 from django_pydantic_field import SchemaField
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 try:
     from opentelemetry import trace
@@ -51,8 +51,8 @@ class NodeConfig(BaseModel):
         default=None, description="Jinja2 boolean expression for Condition nodes"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "timeout_seconds": 300,
                 "max_retries": 2,
@@ -60,6 +60,7 @@ class NodeConfig(BaseModel):
                 "expression": "{{ node_1.output.success }}",
             }
         }
+    )
 
 
 class ParallelConfig(BaseModel):
@@ -69,14 +70,15 @@ class ParallelConfig(BaseModel):
     wait_for: str = Field(default="all", pattern="^(all|any|\\d+)$")
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "parallel_nodes": ["node_1", "node_2", "node_3"],
                 "wait_for": "all",
                 "timeout_seconds": 300,
             }
         }
+    )
 
 
 class LoopConfig(BaseModel):
@@ -100,8 +102,8 @@ class LoopConfig(BaseModel):
             raise ValueError("items is required for mode='foreach'")
         return self
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "mode": "count",
                 "count": 10,
@@ -109,6 +111,7 @@ class LoopConfig(BaseModel):
                 "max_iterations": 100,
             }
         }
+    )
 
 
 class SubWorkflowConfig(BaseModel):
@@ -119,8 +122,8 @@ class SubWorkflowConfig(BaseModel):
     output_mapping: Dict[str, str] = Field(default_factory=dict)
     max_depth: int = Field(default=10, ge=1, le=20)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "subworkflow_id": "sub_workflow_v1",
                 "input_mapping": {"database.id": "target_db_id"},
@@ -128,6 +131,7 @@ class SubWorkflowConfig(BaseModel):
                 "max_depth": 10,
             }
         }
+    )
 
 
 class WorkflowNode(BaseModel):
@@ -226,8 +230,8 @@ class WorkflowNode(BaseModel):
 
         return self
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "node_1",
                 "name": "Block Users",
@@ -236,6 +240,7 @@ class WorkflowNode(BaseModel):
                 "config": {"timeout_seconds": 300, "max_retries": 2},
             }
         }
+    )
 
 
 class WorkflowEdge(BaseModel):
@@ -247,15 +252,16 @@ class WorkflowEdge(BaseModel):
         default=None, description="Jinja2 expression for conditional edges"
     )
 
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "from": "node_1",
                 "to": "node_2",
                 "condition": "{{ node_1.output.success }}",
             }
-        }
+        },
+    )
 
 
 class DAGStructure(BaseModel):
@@ -273,8 +279,8 @@ class DAGStructure(BaseModel):
             raise ValueError("Node IDs must be unique within the workflow")
         return v
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "nodes": [
                     {"id": "start", "name": "Start", "type": "operation", "template_id": "init"},
@@ -283,6 +289,7 @@ class DAGStructure(BaseModel):
                 "edges": [{"from": "start", "to": "end"}],
             }
         }
+    )
 
 
 class WorkflowConfig(BaseModel):
@@ -295,13 +302,14 @@ class WorkflowConfig(BaseModel):
         default=0, ge=0, le=3, description="Workflow-level retry attempts"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "timeout_seconds": 3600,
                 "max_retries": 1,
             }
         }
+    )
 
 
 # ============================================================================

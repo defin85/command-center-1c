@@ -14,6 +14,9 @@ urllib3==2.1.0
 tenacity==8.2.3  # Для retry logic в OData client
 aiohttp>=3.9.0  # Async HTTP client for monitoring
 
+# Object storage (MinIO)
+minio>=7.2.0
+
 # PostgreSQL
 psycopg2-binary==2.9.9
 

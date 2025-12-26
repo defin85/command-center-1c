@@ -154,6 +154,8 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '409':
           content:
             application/json:
@@ -192,6 +194,8 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '404':
           content:
             application/json:
@@ -235,6 +239,8 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '404':
           content:
             application/json:
@@ -1445,6 +1451,8 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '500':
           content:
             application/json:
@@ -1489,6 +1497,8 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '404':
           content:
             application/json:
@@ -1520,12 +1530,250 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
         '500':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/artifacts/:
+    get:
+      operationId: v2_artifacts_list
+      description: List artifacts (optionally filter by kind/name/tag).
+      summary: List artifacts
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+        required: false
+      - in: query
+        name: name
+        schema:
+          type: string
+        required: false
+      - in: query
+        name: tag
+        schema:
+          type: string
+        required: false
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/create/:
+    post:
+      operationId: v2_artifacts_create
+      description: Create artifact.
+      summary: Create artifact
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/artifacts/{artifact_id}/versions/:
+    get:
+      operationId: v2_artifacts_versions_list
+      description: List artifact versions.
+      summary: List artifact versions
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactVersionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/artifacts/{artifact_id}/versions/upload/:
+    post:
+      operationId: v2_artifacts_versions_upload
+      description: Upload artifact version.
+      summary: Upload artifact version
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactVersionUploadRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactVersion'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/artifacts/{artifact_id}/versions/{version}/download/:
+    get:
+      operationId: v2_artifacts_versions_download
+      description: Download artifact version.
+      summary: Download artifact version
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: version
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: File content
+        '401':
+          description: Unauthorized
+  /api/v2/artifacts/{artifact_id}/aliases/:
+    get:
+      operationId: v2_artifacts_aliases_list
+      description: List artifact aliases.
+      summary: List artifact aliases
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactAliasListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/artifacts/{artifact_id}/aliases/upsert/:
+    post:
+      operationId: v2_artifacts_aliases_upsert
+      description: Upsert artifact alias.
+      summary: Upsert artifact alias
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactAlias'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/files/delete/{file_id}/:
     delete:
       operationId: v2_files_delete_destroy
@@ -2148,17 +2396,19 @@ paths:
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
-      description: "\n    Queue a RAS operation for execution on selected databases.\n\
-        \n    **Supported operation types:**\n    - `lock_scheduled_jobs` - Lock scheduled\
-        \ jobs on databases\n    - `unlock_scheduled_jobs` - Unlock scheduled jobs\
-        \ on databases\n    - `block_sessions` - Block new sessions (with optional\
-        \ message)\n    - `unblock_sessions` - Unblock sessions\n    - `terminate_sessions`\
-        \ - Terminate all active sessions\n\n    **Config options for block_sessions:**\n\
-        \    - `message` - Message displayed to users\n    - `permission_code` - Code\
-        \ allowing entry despite block\n    - `denied_from` - RFC3339 start time for\
-        \ blocking\n    - `denied_to` - RFC3339 end time for blocking\n    - `parameter`\
-        \ - Additional block parameter\n    "
-      summary: Execute RAS operation
+      description: "\n    Queue an operation for execution on selected databases.\n\
+        \n    **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,\
+        \ `block_sessions`, `unblock_sessions`, `terminate_sessions`\n    - OData:\
+        \ `create`, `update`, `delete`, `query`\n    - CLI: `install_extension`, `remove_extension`,\
+        \ `config_update`, `config_load`, `config_dump`\n    - IBCMD: `ibcmd_backup`,\
+        \ `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\n    **Config notes:**\n\
+        \    - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`,\
+        \ `parameter`\n    - OData query: `entity`, `filter`, `select`, `top`, `skip`\n\
+        \    - OData update/delete: `entity`, `entity_id`\n    - CLI install_extension:\
+        \ `artifact_id` + (`artifact_version` or `artifact_alias`) or legacy `extension_filename` / `extension_path` + `extension_name`\n    - CLI operations:\
+        \ driver-specific fields (e.g. `extension_name`, `source_path`, `target_path`)\n\
+        \    "
+      summary: Execute operation
       tags:
       - v2
       requestBody:
@@ -5240,13 +5490,26 @@ components:
           allOf:
           - $ref: '#/components/schemas/ExecuteOperationRequestOperationTypeEnum'
           description: |-
-            Type of RAS operation to execute
+            Operation type to execute
 
             * `lock_scheduled_jobs` - Lock Scheduled Jobs
             * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
             * `block_sessions` - Block Sessions
             * `unblock_sessions` - Unblock Sessions
             * `terminate_sessions` - Terminate Sessions
+            * `create` - Create Records
+            * `update` - Update Records
+            * `delete` - Delete Records
+            * `query` - Query Records
+            * `install_extension` - Install Extension
+            * `remove_extension` - Remove Extension
+            * `config_update` - Update Configuration
+            * `config_load` - Load Configuration
+            * `config_dump` - Dump Configuration
+            * `ibcmd_backup` - IBCMD Backup
+            * `ibcmd_restore` - IBCMD Restore
+            * `ibcmd_replicate` - IBCMD Replicate
+            * `ibcmd_create` - IBCMD Create
         database_ids:
           type: array
           items:
@@ -5258,7 +5521,7 @@ components:
         config:
           type: object
           additionalProperties: {}
-          description: Operation-specific configuration (block_sessions supports message, permission_code, denied_from, denied_to, parameter)
+          description: Operation-specific configuration (fields depend on operation_type)
       required:
       - database_ids
       - operation_type
@@ -5298,6 +5561,19 @@ components:
       - block_sessions
       - unblock_sessions
       - terminate_sessions
+      - create
+      - update
+      - delete
+      - query
+      - install_extension
+      - remove_extension
+      - config_update
+      - config_load
+      - config_dump
+      - ibcmd_backup
+      - ibcmd_restore
+      - ibcmd_replicate
+      - ibcmd_create
       type: string
       description: |-
         * `lock_scheduled_jobs` - Lock Scheduled Jobs
@@ -5305,6 +5581,19 @@ components:
         * `block_sessions` - Block Sessions
         * `unblock_sessions` - Unblock Sessions
         * `terminate_sessions` - Terminate Sessions
+        * `create` - Create Records
+        * `update` - Update Records
+        * `delete` - Delete Records
+        * `query` - Query Records
+        * `install_extension` - Install Extension
+        * `remove_extension` - Remove Extension
+        * `config_update` - Update Configuration
+        * `config_load` - Load Configuration
+        * `config_dump` - Dump Configuration
+        * `ibcmd_backup` - IBCMD Backup
+        * `ibcmd_restore` - IBCMD Restore
+        * `ibcmd_replicate` - IBCMD Replicate
+        * `ibcmd_create` - IBCMD Create
     ExecuteIbcmdOperationRequestOperationTypeEnum:
       enum:
       - ibcmd_backup
@@ -7805,6 +8094,181 @@ components:
             type: string
       required:
       - valid
+    ArtifactKindEnum:
+      enum:
+      - extension
+      - config_xml
+      - dt_backup
+      - epf
+      - erf
+      - ibcmd_package
+      - ras_script
+      - other
+      type: string
+    Artifact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ArtifactKindEnum'
+        is_versioned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - name
+      - kind
+      - is_versioned
+      - created_at
+    ArtifactListResponse:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+        count:
+          type: integer
+      required:
+      - artifacts
+      - count
+    ArtifactCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ArtifactKindEnum'
+        is_versioned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+      - name
+      - kind
+    ArtifactCreateResponse:
+      type: object
+      properties:
+        artifact:
+          $ref: '#/components/schemas/Artifact'
+        message:
+          type: string
+      required:
+      - artifact
+      - message
+    ArtifactVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        filename:
+          type: string
+        storage_key:
+          type: string
+        size:
+          type: integer
+        checksum:
+          type: string
+        content_type:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: {}
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - version
+      - filename
+      - storage_key
+      - size
+      - checksum
+      - content_type
+      - metadata
+      - created_at
+    ArtifactVersionListResponse:
+      type: object
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactVersion'
+        count:
+          type: integer
+      required:
+      - versions
+      - count
+    ArtifactVersionUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        version:
+          type: string
+        filename:
+          type: string
+        metadata:
+          type: string
+      required:
+      - file
+    ArtifactAlias:
+      type: object
+      properties:
+        id:
+          type: string
+        alias:
+          type: string
+        version:
+          type: string
+        version_id:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - alias
+      - version
+      - version_id
+      - updated_at
+    ArtifactAliasListResponse:
+      type: object
+      properties:
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactAlias'
+        count:
+          type: integer
+      required:
+      - aliases
+      - count
+    ArtifactAliasUpsertRequest:
+      type: object
+      properties:
+        alias:
+          type: string
+        version:
+          type: string
+        version_id:
+          type: string
+      required:
+      - alias
   securitySchemes:
     bearerAuth:
       type: http

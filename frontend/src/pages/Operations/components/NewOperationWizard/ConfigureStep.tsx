@@ -4,11 +4,14 @@
  * Supports both built-in operation forms and DynamicForm for custom templates.
  */
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  App,
   Typography,
   Form,
   Input,
+  Select,
+  Button,
   DatePicker,
   InputNumber,
   Switch,
@@ -34,6 +37,7 @@ import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { formatFileSize } from '../../../../utils/formatters'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
+import { apiClient } from '../../../../api/client'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -74,8 +78,10 @@ const BlockSessionsForm = ({
       <Form.Item
         label="Block start (optional)"
         help="Start time for blocking new sessions"
+        htmlFor="wizard-block-start"
       >
         <DatePicker
+          id="wizard-block-start"
           showTime={{ format: 'HH:mm' }}
           allowClear
           style={{ width: '100%' }}
@@ -88,8 +94,10 @@ const BlockSessionsForm = ({
       <Form.Item
         label="Block end (optional)"
         help="End time for blocking new sessions"
+        htmlFor="wizard-block-end"
       >
         <DatePicker
+          id="wizard-block-end"
           showTime={{ format: 'HH:mm' }}
           allowClear
           style={{ width: '100%' }}
@@ -103,8 +111,10 @@ const BlockSessionsForm = ({
         label="Message for users"
         required
         help="This message will be shown to users trying to connect"
+        htmlFor="wizard-block-message"
       >
         <TextArea
+          id="wizard-block-message"
           rows={3}
           placeholder="Technical maintenance. Please wait..."
           value={config.message || ''}
@@ -115,8 +125,10 @@ const BlockSessionsForm = ({
       <Form.Item
         label="Permission code (optional)"
         help="Users with this code can still connect"
+        htmlFor="wizard-block-permission-code"
       >
         <Input
+          id="wizard-block-permission-code"
           placeholder="Enter permission code"
           value={config.permission_code || ''}
           onChange={(e) => onChange({ permission_code: e.target.value })}
@@ -126,8 +138,10 @@ const BlockSessionsForm = ({
       <Form.Item
         label="Block parameter (optional)"
         help="Additional block parameter for 1C"
+        htmlFor="wizard-block-parameter"
       >
         <Input
+          id="wizard-block-parameter"
           placeholder="Enter block parameter"
           value={config.parameter || ''}
           onChange={(e) => onChange({ parameter: e.target.value })}
@@ -151,8 +165,10 @@ const TerminateSessionsForm = ({
     <Form.Item
       label="Filter by application (optional)"
       help="Only terminate sessions from this application (e.g., '1C:Enterprise', 'Designer')"
+      htmlFor="wizard-terminate-filter-app"
     >
       <Input
+        id="wizard-terminate-filter-app"
         placeholder="Application name filter"
         value={config.filter_by_app || ''}
         onChange={(e) => onChange({ filter_by_app: e.target.value })}
@@ -161,6 +177,7 @@ const TerminateSessionsForm = ({
 
     <Form.Item>
       <Checkbox
+        id="wizard-terminate-exclude-admin"
         checked={config.exclude_admin || false}
         onChange={(e) => onChange({ exclude_admin: e.target.checked })}
       >
@@ -180,6 +197,31 @@ const InstallExtensionForm = ({
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
 }) => {
+  const { message } = App.useApp()
+  const [uploading, setUploading] = useState(false)
+  const [extensionsLoading, setExtensionsLoading] = useState(false)
+  const [availableExtensions, setAvailableExtensions] = useState<Array<{
+    filename: string
+    size?: number
+    modified_at?: string
+  }>>([])
+
+  const fetchExtensions = useCallback(async () => {
+    setExtensionsLoading(true)
+    try {
+      const response = await apiClient.get('/api/v2/extensions/list-storage/')
+      const items = Array.isArray(response.data?.extensions) ? response.data.extensions : []
+      setAvailableExtensions(items)
+    } catch (_error) {
+      message.error('Failed to load extension storage list')
+    } finally {
+      setExtensionsLoading(false)
+    }
+  }, [message])
+
+  useEffect(() => {
+    void fetchExtensions()
+  }, [fetchExtensions])
   // Convert File to UploadFile format for Ant Design
   const fileList: UploadFile[] = useMemo(() => {
     if (!config.extension_file) return []
@@ -197,25 +239,74 @@ const InstallExtensionForm = ({
     name: 'file',
     multiple: false,
     accept: '.cfe',
+    disabled: uploading,
     fileList,
-    beforeUpload: (file) => {
-      // Store file in config instead of uploading
-      onChange({ extension_file: file })
-      return false // Prevent actual upload
+    beforeUpload: async (file) => {
+      onChange({ extension_file: file, extension_filename: undefined })
+      const formData = new FormData()
+      formData.append('file', file)
+      setUploading(true)
+      try {
+        const response = await apiClient.post('/api/v2/extensions/upload-extension/', formData)
+        const filename = response.data?.file?.filename || file.name
+        onChange({ extension_filename: filename })
+        setAvailableExtensions((prev) => {
+          const next = prev.filter((item) => item.filename !== filename)
+          return [{ filename }, ...next]
+        })
+      } catch (_error) {
+        onChange({ extension_file: undefined, extension_filename: undefined })
+        message.error('Failed to upload extension file')
+      } finally {
+        setUploading(false)
+      }
+      return false // Prevent automatic upload
     },
     onRemove: () => {
-      onChange({ extension_file: undefined })
+      onChange({ extension_file: undefined, extension_filename: undefined })
     },
   }
 
   return (
     <Form layout="vertical">
       <Form.Item
+        label="Select from storage"
+        help="Choose an existing extension file"
+        htmlFor="wizard-extension-storage"
+      >
+        <Space.Compact style={{ width: '100%' }}>
+          <Select
+            id="wizard-extension-storage"
+            value={config.extension_filename || undefined}
+            placeholder="Select extension file"
+            loading={extensionsLoading}
+            options={availableExtensions.map((item) => ({
+              value: item.filename,
+              label: item.filename,
+            }))}
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            onChange={(value) => onChange({ extension_filename: value || undefined, extension_file: undefined })}
+            style={{ width: '100%' }}
+          />
+          <Button onClick={fetchExtensions} loading={extensionsLoading}>
+            Refresh
+          </Button>
+        </Space.Compact>
+      </Form.Item>
+
+      <Form.Item
         label="Extension File (.cfe)"
         required
         help="Upload 1C extension file to install"
+        htmlFor="wizard-install-extension-file"
       >
-        <Dragger {...uploadProps} style={{ padding: '20px 0' }}>
+        <Dragger
+          {...uploadProps}
+          id="wizard-install-extension-file"
+          style={{ padding: '20px 0' }}
+        >
           <p className="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
@@ -241,6 +332,7 @@ const InstallExtensionForm = ({
 
       <Form.Item>
         <Switch
+          id="wizard-install-safe-mode"
           checked={config.safe_mode || false}
           onChange={(checked) => onChange({ safe_mode: checked })}
         />
@@ -267,8 +359,10 @@ const QueryForm = ({
       label="OData Entity"
       required
       help="Name of the OData entity to query (e.g., 'Catalog_Kontragenty', 'Document_RaskhodnyiOrder')"
+      htmlFor="wizard-query-entity"
     >
       <Input
+        id="wizard-query-entity"
         placeholder="Entity name"
         value={config.entity || ''}
         onChange={(e) => onChange({ entity: e.target.value })}
@@ -278,8 +372,10 @@ const QueryForm = ({
     <Form.Item
       label="Filter (optional)"
       help={'OData filter expression (e.g., "NeIspolzovat eq false")'}
+      htmlFor="wizard-query-filter"
     >
       <TextArea
+        id="wizard-query-filter"
         rows={2}
         placeholder="$filter expression"
         value={config.filter || ''}
@@ -290,8 +386,10 @@ const QueryForm = ({
     <Form.Item
       label="Select fields (optional)"
       help="Comma-separated list of fields to return"
+      htmlFor="wizard-query-select"
     >
       <Input
+        id="wizard-query-select"
         placeholder="Field1,Field2,Field3"
         value={config.select || ''}
         onChange={(e) => onChange({ select: e.target.value })}
@@ -301,8 +399,10 @@ const QueryForm = ({
     <Form.Item
       label="Limit (optional)"
       help="Maximum number of records to return"
+      htmlFor="wizard-query-limit"
     >
       <InputNumber
+        id="wizard-query-limit"
         min={1}
         max={10000}
         placeholder="100"

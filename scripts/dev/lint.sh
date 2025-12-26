@@ -30,6 +30,7 @@ FIX_MODE=false
 CHECK_PYTHON=true
 CHECK_GO=true
 CHECK_TS=true
+CHECK_BROWSER=false
 
 # Counters
 ERRORS=0
@@ -59,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             CHECK_GO=false
             shift
             ;;
+        --browser)
+            CHECK_BROWSER=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -67,6 +72,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --python     Check only Python code"
             echo "  --go         Check only Go code"
             echo "  --ts         Check only TypeScript code"
+            echo "  --browser    Check browser form field ids (requires Playwright)"
             echo "  --help       Show this help"
             exit 0
             ;;
@@ -343,6 +349,37 @@ check_go() {
 }
 
 ##############################################################################
+# Browser Checks (Playwright)
+##############################################################################
+check_browser_forms() {
+    print_header "Browser Form Field Checks"
+
+    cd "$PROJECT_ROOT/frontend"
+
+    if ! command -v npx &> /dev/null; then
+        print_result "Browser forms" "SKIPPED" "(npx not found)"
+        cd "$PROJECT_ROOT"
+        return
+    fi
+
+    if [[ ! -d "node_modules/@playwright/test" ]]; then
+        print_result "Browser forms" "SKIPPED" "(@playwright/test not installed)"
+        cd "$PROJECT_ROOT"
+        return
+    fi
+
+    echo "Running: npx playwright test tests/browser/form-field-ids.spec.ts"
+    if output=$(npx playwright test tests/browser/form-field-ids.spec.ts 2>&1); then
+        print_result "Browser forms" "OK"
+    else
+        echo "$output"
+        print_result "Browser forms" "ERRORS" "(see above)"
+    fi
+
+    cd "$PROJECT_ROOT"
+}
+
+##############################################################################
 # Main
 ##############################################################################
 main() {
@@ -353,6 +390,7 @@ main() {
     [[ "$CHECK_TS" == true ]] && check_typescript
     [[ "$CHECK_PYTHON" == true ]] && check_python
     [[ "$CHECK_GO" == true ]] && check_go
+    [[ "$CHECK_BROWSER" == true ]] && check_browser_forms
 
     # Additional validations (always run)
     validate_json

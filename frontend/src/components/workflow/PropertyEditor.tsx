@@ -61,16 +61,19 @@ const OperationForm = ({
   config,
   onChange,
   templates,
-  readOnly
+  readOnly,
+  idPrefix,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   templates: OperationTemplateListItem[]
   readOnly: boolean
+  idPrefix: string
 }) => (
   <>
-    <Form.Item label="Template" required>
+    <Form.Item label="Template" htmlFor={`${idPrefix}-operation-template`} required>
       <Select
+        id={`${idPrefix}-operation-template`}
         value={config.timeout ? undefined : undefined}
         placeholder="Select operation template"
         disabled={readOnly}
@@ -84,8 +87,9 @@ const OperationForm = ({
       />
     </Form.Item>
 
-    <Form.Item label="Timeout (seconds)">
+    <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-operation-timeout`}>
       <InputNumber
+        id={`${idPrefix}-operation-timeout`}
         value={config.timeout}
         min={1}
         max={3600}
@@ -95,8 +99,9 @@ const OperationForm = ({
       />
     </Form.Item>
 
-    <Form.Item label="Retries">
+    <Form.Item label="Retries" htmlFor={`${idPrefix}-operation-retries`}>
       <InputNumber
+        id={`${idPrefix}-operation-retries`}
         value={config.retries}
         min={0}
         max={10}
@@ -106,8 +111,9 @@ const OperationForm = ({
       />
     </Form.Item>
 
-    <Form.Item label="Retry Delay (seconds)">
+    <Form.Item label="Retry Delay (seconds)" htmlFor={`${idPrefix}-operation-retry-delay`}>
       <InputNumber
+        id={`${idPrefix}-operation-retry-delay`}
         value={config.retry_delay}
         min={1}
         max={300}
@@ -123,19 +129,23 @@ const OperationForm = ({
 const ConditionForm = ({
   config,
   onChange,
-  readOnly
+  readOnly,
+  idPrefix,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   readOnly: boolean
+  idPrefix: string
 }) => (
   <>
     <Form.Item
       label="Expression"
+      htmlFor={`${idPrefix}-condition-expression`}
       required
       help="Jinja2 expression that evaluates to true/false. Example: {{ amount > 100 }}"
     >
       <TextArea
+        id={`${idPrefix}-condition-expression`}
         value={config.expression}
         placeholder="{{ variable > value }}"
         disabled={readOnly}
@@ -158,15 +168,18 @@ const ConditionForm = ({
 const ParallelForm = ({
   config,
   onChange,
-  readOnly
+  readOnly,
+  idPrefix,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   readOnly: boolean
+  idPrefix: string
 }) => (
   <>
-    <Form.Item label="Parallel Nodes" help="Node IDs to execute in parallel">
+    <Form.Item label="Parallel Nodes" htmlFor={`${idPrefix}-parallel-nodes`} help="Node IDs to execute in parallel">
       <Select
+        id={`${idPrefix}-parallel-nodes`}
         mode="tags"
         value={config.parallel_nodes || []}
         placeholder="Enter node IDs"
@@ -175,8 +188,9 @@ const ParallelForm = ({
       />
     </Form.Item>
 
-    <Form.Item label="Wait For">
+    <Form.Item label="Wait For" htmlFor={`${idPrefix}-parallel-wait-for`}>
       <Select
+        id={`${idPrefix}-parallel-wait-for`}
         value={config.wait_for || 'all'}
         disabled={readOnly}
         onChange={(value) => onChange({ ...config, wait_for: value })}
@@ -190,8 +204,9 @@ const ParallelForm = ({
       />
     </Form.Item>
 
-    <Form.Item label="Timeout (seconds)">
+    <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-parallel-timeout`}>
       <InputNumber
+        id={`${idPrefix}-parallel-timeout`}
         value={config.timeout}
         min={1}
         max={3600}
@@ -207,15 +222,18 @@ const ParallelForm = ({
 const LoopForm = ({
   config,
   onChange,
-  readOnly
+  readOnly,
+  idPrefix,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   readOnly: boolean
+  idPrefix: string
 }) => (
   <>
-    <Form.Item label="Loop Mode" required>
+    <Form.Item label="Loop Mode" htmlFor={`${idPrefix}-loop-mode`} required>
       <Select
+        id={`${idPrefix}-loop-mode`}
         value={config.loop_mode || 'count'}
         disabled={readOnly}
         onChange={(value) => onChange({ ...config, loop_mode: value })}
@@ -228,8 +246,9 @@ const LoopForm = ({
     </Form.Item>
 
     {config.loop_mode === 'count' && (
-      <Form.Item label="Loop Count">
+      <Form.Item label="Loop Count" htmlFor={`${idPrefix}-loop-count`}>
         <InputNumber
+          id={`${idPrefix}-loop-count`}
           value={config.loop_count}
           min={1}
           max={1000}
@@ -243,9 +262,11 @@ const LoopForm = ({
     {config.loop_mode === 'while' && (
       <Form.Item
         label="Loop Condition"
+        htmlFor={`${idPrefix}-loop-condition`}
         help="Jinja2 expression. Loop continues while true."
       >
         <TextArea
+          id={`${idPrefix}-loop-condition`}
           value={config.loop_condition}
           placeholder="{{ counter < 10 }}"
           disabled={readOnly}
@@ -258,9 +279,11 @@ const LoopForm = ({
     {config.loop_mode === 'foreach' && (
       <Form.Item
         label="Items Expression"
+        htmlFor={`${idPrefix}-loop-items`}
         help="Jinja2 expression that returns a list."
       >
         <TextArea
+          id={`${idPrefix}-loop-items`}
           value={config.loop_items}
           placeholder="{{ databases }}"
           disabled={readOnly}
@@ -270,8 +293,9 @@ const LoopForm = ({
       </Form.Item>
     )}
 
-    <Form.Item label="Max Iterations" help="Safety limit">
+    <Form.Item label="Max Iterations" htmlFor={`${idPrefix}-loop-max-iterations`} help="Safety limit">
       <InputNumber
+        id={`${idPrefix}-loop-max-iterations`}
         value={config.max_iterations || 100}
         min={1}
         max={10000}
@@ -288,16 +312,19 @@ const SubWorkflowForm = ({
   config,
   onChange,
   workflows,
-  readOnly
+  readOnly,
+  idPrefix,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   workflows: { id: string; name: string }[]
   readOnly: boolean
+  idPrefix: string
 }) => (
   <>
-    <Form.Item label="Sub-Workflow" required>
+    <Form.Item label="Sub-Workflow" htmlFor={`${idPrefix}-subworkflow`} required>
       <Select
+        id={`${idPrefix}-subworkflow`}
         value={config.subworkflow_id}
         placeholder="Select workflow"
         disabled={readOnly}
@@ -315,6 +342,7 @@ const SubWorkflowForm = ({
       <Panel header="Input Mapping" key="input">
         <Form.Item help="Map parent context to sub-workflow input">
           <TextArea
+            id={`${idPrefix}-subworkflow-input-mapping`}
             value={JSON.stringify(config.input_mapping || {}, null, 2)}
             placeholder='{"sub_var": "{{ parent_var }}"}'
             disabled={readOnly}
@@ -333,6 +361,7 @@ const SubWorkflowForm = ({
       <Panel header="Output Mapping" key="output">
         <Form.Item help="Map sub-workflow output to parent context">
           <TextArea
+            id={`${idPrefix}-subworkflow-output-mapping`}
             value={JSON.stringify(config.output_mapping || {}, null, 2)}
             placeholder='{"parent_var": "{{ sub_result }}"}'
             disabled={readOnly}
@@ -363,6 +392,7 @@ const PropertyEditor = ({
   readOnly = false
 }: PropertyEditorProps) => {
   const [localData, setLocalData] = useState<WorkflowNodeData | null>(null)
+  const idPrefix = nodeId ? `workflow-${nodeId}` : 'workflow-node'
 
   // Sync local state with props
   useEffect(() => {
@@ -413,6 +443,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             templates={operationTemplates}
             readOnly={readOnly}
+            idPrefix={idPrefix}
           />
         )
       case 'condition':
@@ -421,6 +452,7 @@ const PropertyEditor = ({
             config={config}
             onChange={handleConfigChange}
             readOnly={readOnly}
+            idPrefix={idPrefix}
           />
         )
       case 'parallel':
@@ -429,6 +461,7 @@ const PropertyEditor = ({
             config={config}
             onChange={handleConfigChange}
             readOnly={readOnly}
+            idPrefix={idPrefix}
           />
         )
       case 'loop':
@@ -437,6 +470,7 @@ const PropertyEditor = ({
             config={config}
             onChange={handleConfigChange}
             readOnly={readOnly}
+            idPrefix={idPrefix}
           />
         )
       case 'subworkflow':
@@ -446,6 +480,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             workflows={availableWorkflows}
             readOnly={readOnly}
+            idPrefix={idPrefix}
           />
         )
       default:
@@ -465,8 +500,9 @@ const PropertyEditor = ({
       </div>
 
       <Form layout="vertical" size="small">
-        <Form.Item label="Name" required>
+        <Form.Item label="Name" required htmlFor={`${idPrefix}-node-name`}>
           <Input
+            id={`${idPrefix}-node-name`}
             value={localData.label}
             placeholder="Node name"
             disabled={readOnly}

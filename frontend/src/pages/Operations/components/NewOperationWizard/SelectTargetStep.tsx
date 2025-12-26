@@ -20,6 +20,7 @@ const { Title, Text } = Typography
 export const SelectTargetStep = ({
   selectedDatabases,
   onSelectionChange,
+  onSelectionMetadataChange,
   preselectedDatabases,
 }: SelectTargetStepProps) => {
   const hasAppliedPreselection = useRef(false)
@@ -117,6 +118,20 @@ export const SelectTargetStep = ({
     ? databasesResponse.total
     : databases.length
 
+  useEffect(() => {
+    if (!onSelectionMetadataChange) return
+    if (selectedDatabases.length === 0 || databases.length === 0) return
+    const map: Record<string, string> = {}
+    databases.forEach((db) => {
+      if (selectedDatabases.includes(db.id)) {
+        map[db.id] = db.name
+      }
+    })
+    if (Object.keys(map).length > 0) {
+      onSelectionMetadataChange(map)
+    }
+  }, [databases, onSelectionMetadataChange, selectedDatabases])
+
   const handleSelectionChange = useCallback(
     (selectedRowKeys: Key[]) => {
       onSelectionChange(selectedRowKeys as string[])
@@ -153,6 +168,7 @@ export const SelectTargetStep = ({
       <Space style={{ marginBottom: 16 }} align="center">
         <Title level={4} style={{ margin: 0 }}>Select Databases</Title>
         <Checkbox
+          id="wizard-select-page"
           indeterminate={somePageSelected}
           checked={allPageSelected}
           onChange={(event) => handleSelectPage(event.target.checked)}

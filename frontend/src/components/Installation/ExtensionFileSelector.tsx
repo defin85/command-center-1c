@@ -110,9 +110,10 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
 
     return (
         <Space direction="vertical" style={{ width: '100%' }}>
-            <Form.Item label="Файл расширения" style={{ marginBottom: 8 }}>
+            <Form.Item label="Файл расширения" htmlFor="extension-storage-select" style={{ marginBottom: 8 }}>
                 <Space.Compact style={{ width: '100%' }}>
                     <Select
+                        id="extension-storage-select"
                         style={{ flex: 1 }}
                         placeholder="Выберите файл из хранилища"
                         value={value?.path}
@@ -142,9 +143,10 @@ export const ExtensionFileSelector: React.FC<ExtensionFileSelectorProps> = ({
                 </Space.Compact>
             </Form.Item>
 
-            <Form.Item label="Или загрузить новый файл" style={{ marginBottom: 0 }}>
+            <Form.Item label="Или загрузить новый файл" htmlFor="extension-upload-input" style={{ marginBottom: 0 }}>
                 <Space.Compact style={{ width: '100%' }}>
                     <Upload
+                        id="extension-upload-input"
                         fileList={fileList}
                         onChange={({ fileList }) => setFileList(fileList)}
                         beforeUpload={() => false}

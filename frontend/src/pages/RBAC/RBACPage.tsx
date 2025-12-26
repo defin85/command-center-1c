@@ -228,10 +228,11 @@ export function RBACPage() {
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
-                      <InputNumber min={1} placeholder="User ID" />
+                      <InputNumber id="rbac-cluster-user-id" min={1} placeholder="User ID" />
                     </Form.Item>
                     <Form.Item name="cluster_id" rules={[{ required: true, message: 'cluster_id required' }]}>
                       <Select
+                        id="rbac-cluster-id"
                         style={{ width: 320 }}
                         placeholder="Cluster"
                         options={clusters.map((c) => ({ label: c.name, value: c.id }))}
@@ -240,10 +241,10 @@ export function RBACPage() {
                       />
                     </Form.Item>
                     <Form.Item name="level" rules={[{ required: true }]}>
-                      <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
+                      <Select id="rbac-cluster-level" style={{ width: 140 }} options={LEVEL_OPTIONS} />
                     </Form.Item>
                     <Form.Item name="notes">
-                      <Input placeholder="Notes (optional)" style={{ width: 260 }} />
+                      <Input id="rbac-cluster-notes" placeholder="Notes (optional)" style={{ width: 260 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" loading={grantCluster.isPending}>
@@ -297,16 +298,16 @@ export function RBACPage() {
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
-                      <InputNumber min={1} placeholder="User ID" />
+                      <InputNumber id="rbac-database-user-id" min={1} placeholder="User ID" />
                     </Form.Item>
                     <Form.Item name="database_id" rules={[{ required: true, message: 'database_id required' }]}>
-                      <Input placeholder="Database ID" style={{ width: 240 }} />
+                      <Input id="rbac-database-id" placeholder="Database ID" style={{ width: 240 }} />
                     </Form.Item>
                     <Form.Item name="level" rules={[{ required: true }]}>
-                      <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
+                      <Select id="rbac-database-level" style={{ width: 140 }} options={LEVEL_OPTIONS} />
                     </Form.Item>
                     <Form.Item name="notes">
-                      <Input placeholder="Notes (optional)" style={{ width: 260 }} />
+                      <Input id="rbac-database-notes" placeholder="Notes (optional)" style={{ width: 260 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" loading={grantDatabase.isPending}>

@@ -85,7 +85,7 @@ TABLE_METADATA = {
                 "group_label": "Core",
                 "sortable": True,
                 "data_type": "number",
-                "filter": {"type": "text", "operators": ["eq"], "placeholder": "Port"},
+                "filter": {"type": "number", "operators": ["eq", "gt", "lt"], "placeholder": "Port"},
                 "server_field": "port",
             },
             {
@@ -133,7 +133,7 @@ TABLE_METADATA = {
                 "group_label": "Status",
                 "sortable": True,
                 "data_type": "datetime",
-                "filter": {"type": "text", "operators": ["contains", "eq"], "placeholder": "Last check"},
+                "filter": {"type": "date", "operators": ["eq", "before", "after"], "placeholder": "Last check"},
                 "server_field": "last_check",
             },
             {
@@ -151,7 +151,7 @@ TABLE_METADATA = {
                         {"value": "missing", "label": "Missing"},
                     ],
                 },
-                "server_field": "password",
+                "server_field": "credentials",
             },
             {
                 "key": "restrictions",
@@ -172,7 +172,7 @@ TABLE_METADATA = {
                         {"value": "sessions_unknown", "label": "Sessions: Unknown"},
                     ],
                 },
-                "server_field": "metadata",
+                "server_field": "restrictions",
             },
             {
                 "key": "actions",
@@ -235,7 +235,7 @@ TABLE_METADATA = {
                 "group_label": "Status",
                 "sortable": True,
                 "data_type": "number",
-                "filter": {"type": "text", "operators": ["eq"], "placeholder": "Databases count"},
+                "filter": {"type": "number", "operators": ["eq", "gt", "lt"], "placeholder": "Databases count"},
                 "server_field": "databases_count",
             },
             {
@@ -245,7 +245,7 @@ TABLE_METADATA = {
                 "group_label": "Status",
                 "sortable": True,
                 "data_type": "datetime",
-                "filter": {"type": "text", "operators": ["contains", "eq"], "placeholder": "Last sync"},
+                "filter": {"type": "date", "operators": ["eq", "before", "after"], "placeholder": "Last sync"},
                 "server_field": "last_sync",
             },
             {
@@ -263,7 +263,7 @@ TABLE_METADATA = {
                         {"value": "missing", "label": "Missing"},
                     ],
                 },
-                "server_field": "cluster_pwd",
+                "server_field": "credentials",
             },
             {
                 "key": "actions",

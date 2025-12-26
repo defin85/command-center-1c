@@ -902,15 +902,18 @@ def list_extension_storage(request):
             "count": 1
         }
     """
-    from apps.databases.services import ExtensionStorageService
+    from apps.databases.storage import ExtensionStorageService
     from datetime import datetime
 
     try:
-        extensions = ExtensionStorageService.list_extensions()
-
-        # Format timestamps to ISO format
-        for ext in extensions:
-            ext['modified_at'] = datetime.fromtimestamp(ext['modified_at']).isoformat()
+        extensions_raw = ExtensionStorageService.list_extensions()
+        extensions = []
+        for ext in extensions_raw:
+            extensions.append({
+                'filename': ext.get('name'),
+                'size': ext.get('size'),
+                'modified_at': datetime.fromtimestamp(ext.get('modified_at')).isoformat(),
+            })
 
         return Response({
             'extensions': extensions,
@@ -960,7 +963,9 @@ def upload_extension(request):
             }
         }
     """
-    from apps.databases.services import ExtensionStorageService
+    from apps.databases.storage import ExtensionStorageService
+    from datetime import datetime
+    from pathlib import Path
 
     try:
         if 'file' not in request.FILES:
@@ -997,11 +1002,13 @@ def upload_extension(request):
 
         # Save file
         result = ExtensionStorageService.save_extension(file, filename)
+        file_path = Path(result.get('path', ''))
+        modified_at = datetime.fromtimestamp(file_path.stat().st_mtime).isoformat() if file_path.exists() else None
 
         logger.info(
-            f"Extension uploaded: {result.get('filename')}",
+            f"Extension uploaded: {result.get('name')}",
             extra={
-                'filename': result.get('filename'),
+                'extension_filename': result.get('name'),
                 'size': result.get('size'),
                 'uploaded_by': request.user.username if request.user else 'anonymous',
             }
@@ -1009,7 +1016,11 @@ def upload_extension(request):
 
         return Response({
             'message': 'File uploaded successfully',
-            'file': result
+            'file': {
+                'filename': result.get('name'),
+                'size': result.get('size'),
+                'modified_at': modified_at,
+            }
         }, status=201)
 
     except ValueError as e:
@@ -1062,7 +1073,7 @@ def delete_extension_storage(request):
             "message": "File deleted successfully"
         }
     """
-    from apps.databases.services import ExtensionStorageService
+    from apps.databases.storage import ExtensionStorageService
 
     filename = request.query_params.get('filename')
 

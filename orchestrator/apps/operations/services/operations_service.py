@@ -1328,3 +1328,127 @@ class OperationsService:
             redis_client.release_enqueue_lock(operation_id)
             _record_batch_metric(operation_type, 'error')
             raise
+
+    @classmethod
+    def enqueue_odata_operation(
+        cls,
+        operation_type: str,
+        database_ids: list,
+        target_entity: str,
+        data: dict,
+        filters: dict,
+        options: dict,
+        user,
+    ) -> "BatchOperation":
+        """
+        Create BatchOperation for OData operation and enqueue to Redis.
+        """
+        from apps.databases.models import Database
+        from apps.operations.models import Task
+
+        databases = list(Database.objects.filter(id__in=database_ids))
+        if not databases:
+            raise ValueError("No valid databases found for the provided IDs")
+
+        operation_id = str(uuid.uuid4())
+        timeout_seconds = 600 if operation_type == "install_extension" else 300
+
+        batch_operation = BatchOperation.objects.create(
+            id=operation_id,
+            name=f"{operation_type} - {len(databases)} databases",
+            operation_type=operation_type,
+            target_entity=target_entity,
+            status=BatchOperation.STATUS_PENDING,
+            payload={"data": data, "filters": filters, "options": options},
+            config={
+                "batch_size": 1,
+                "timeout_seconds": timeout_seconds,
+                "retry_count": 2,
+                "priority": "normal",
+            },
+            total_tasks=len(databases),
+            created_by=user.username if user else "system",
+            metadata={
+                "tags": ["odata", operation_type],
+            },
+        )
+        batch_operation.target_databases.set(databases)
+
+        tasks = [
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ]
+        Task.objects.bulk_create(tasks)
+
+        enqueue_result = cls.enqueue_operation(operation_id)
+        if not enqueue_result.success:
+            batch_operation.status = BatchOperation.STATUS_FAILED
+            batch_operation.save(update_fields=["status", "updated_at"])
+            raise ValueError(enqueue_result.error or "Failed to enqueue operation")
+
+        return batch_operation
+
+    @classmethod
+    def enqueue_cli_operation(
+        cls,
+        operation_type: str,
+        database_ids: list,
+        config: dict,
+        user,
+    ) -> "BatchOperation":
+        """
+        Create BatchOperation for CLI operation and enqueue to Redis.
+        """
+        from apps.databases.models import Database
+        from apps.operations.models import Task
+
+        databases = list(Database.objects.filter(id__in=database_ids))
+        if not databases:
+            raise ValueError("No valid databases found for the provided IDs")
+
+        operation_id = str(uuid.uuid4())
+
+        batch_operation = BatchOperation.objects.create(
+            id=operation_id,
+            name=f"{operation_type} - {len(databases)} databases",
+            operation_type=operation_type,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PENDING,
+            payload={"data": config, "filters": {}, "options": {}},
+            config={
+                "batch_size": 1,
+                "timeout_seconds": 900,
+                "retry_count": 1,
+                "priority": "normal",
+            },
+            total_tasks=len(databases),
+            created_by=user.username if user else "system",
+            metadata={
+                "tags": ["cli", operation_type],
+            },
+        )
+        batch_operation.target_databases.set(databases)
+
+        tasks = [
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ]
+        Task.objects.bulk_create(tasks)
+
+        enqueue_result = cls.enqueue_operation(operation_id)
+        if not enqueue_result.success:
+            batch_operation.status = BatchOperation.STATUS_FAILED
+            batch_operation.save(update_fields=["status", "updated_at"])
+            raise ValueError(enqueue_result.error or "Failed to enqueue operation")
+
+        return batch_operation

@@ -735,6 +735,16 @@ install_node_deps() {
 
     if [[ $npm_result -eq 0 ]]; then
         log_success "Node.js зависимости установлены"
+        if command -v npx &>/dev/null; then
+            log_info "Установка браузеров Playwright..."
+            if (cd "$frontend_dir" && npx playwright install >/dev/null 2>&1); then
+                log_success "Playwright браузеры установлены"
+            else
+                log_warning "Не удалось установить Playwright браузеры"
+            fi
+        else
+            log_warning "npx не найден, пропуск установки Playwright браузеров"
+        fi
     else
         log_error "Ошибка установки Node.js зависимостей"
         return 1

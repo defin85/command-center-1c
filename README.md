@@ -93,7 +93,7 @@ cp .env.example .env.local
 
 # Установить зависимости
 cd orchestrator && python -m venv venv && source venv/Scripts/activate && pip install -r requirements.txt && cd ..
-cd frontend && npm install && cd ..
+cd frontend && npm install && npx playwright install && cd ..
 
 # Запустить все сервисы (с умной автопересборкой)
 ./scripts/dev/start-all.sh

@@ -490,10 +490,34 @@ class ExecuteOperationRequestSerializer(serializers.Serializer):
         ('unblock_sessions', 'Unblock Sessions'),
         ('terminate_sessions', 'Terminate Sessions'),
     ]
+    ODATA_OPERATION_TYPES = [
+        ('create', 'Create Records'),
+        ('update', 'Update Records'),
+        ('delete', 'Delete Records'),
+        ('query', 'Query Records'),
+    ]
+    IBCMD_OPERATION_TYPES = [
+        ('ibcmd_backup', 'IBCMD Backup'),
+        ('ibcmd_restore', 'IBCMD Restore'),
+        ('ibcmd_replicate', 'IBCMD Replicate'),
+        ('ibcmd_create', 'IBCMD Create'),
+    ]
+    CLI_OPERATION_TYPES = [
+        ('install_extension', 'Install Extension'),
+        ('remove_extension', 'Remove Extension'),
+        ('config_update', 'Update Configuration'),
+        ('config_load', 'Load Configuration'),
+        ('config_dump', 'Dump Configuration'),
+    ]
 
     operation_type = serializers.ChoiceField(
-        choices=RAS_OPERATION_TYPES,
-        help_text="Type of RAS operation to execute"
+        choices=(
+            RAS_OPERATION_TYPES
+            + ODATA_OPERATION_TYPES
+            + IBCMD_OPERATION_TYPES
+            + CLI_OPERATION_TYPES
+        ),
+        help_text="Operation type to execute"
     )
     database_ids = serializers.ListField(
         child=serializers.UUIDField(format='hex_verbose'),
@@ -552,6 +576,164 @@ class ExecuteIbcmdOperationThrottle(UserRateThrottle):
     """Rate limit: 10 IBCMD operations per minute per user."""
     rate = '10/min'
     scope = 'execute_ibcmd_operation'
+
+
+def _split_select(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(',') if item.strip()]
+    return []
+
+
+def _prepare_install_extension_config(user, database_ids, config):
+    from pathlib import Path
+    import shutil
+    import hashlib
+
+    from apps.artifacts.models import Artifact, ArtifactKind, ArtifactUsage, ArtifactVersion
+    from apps.artifacts.services import ArtifactService
+    from apps.artifacts.storage import ArtifactStorageClient, ArtifactStorageError
+    from apps.databases.models import Database
+
+    def checksum_path(path: Path) -> str:
+        sha256 = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    artifact_id = config.get("artifact_id")
+    artifact_version = config.get("artifact_version")
+    artifact_alias = config.get("artifact_alias")
+    extension_filename = config.get("extension_filename")
+    extension_path = config.get("extension_path")
+    extension_name = config.get("extension_name")
+
+    artifact = None
+    version_obj = None
+
+    if artifact_id:
+        try:
+            artifact = Artifact.objects.get(id=artifact_id, kind=ArtifactKind.EXTENSION)
+            version_obj = ArtifactService.resolve_version(
+                artifact,
+                version=artifact_version,
+                alias=artifact_alias,
+            )
+        except (Artifact.DoesNotExist, ArtifactVersion.DoesNotExist) as exc:
+            raise ValueError("artifact or version not found") from exc
+        extension_filename = version_obj.filename
+        if not extension_path:
+            base_path = Path(getattr(settings, "EXTENSION_STORAGE_PATH", "/var/lib/1c/extensions"))
+            base_path.mkdir(parents=True, exist_ok=True)
+            local_path = base_path / extension_filename
+            storage = ArtifactStorageClient()
+            try:
+                if not local_path.exists() or checksum_path(local_path) != version_obj.checksum:
+                    data = storage.get_object(version_obj.storage_key)
+                    with open(local_path, "wb") as target:
+                        shutil.copyfileobj(data, target)
+                    data.close()
+                    data.release_conn()
+            except (ArtifactStorageError, OSError) as exc:
+                raise ValueError(f"Failed to download artifact: {exc}") from exc
+            extension_path = str(local_path)
+        if not extension_name:
+            extension_name = (
+                extension_filename[:-4]
+                if extension_filename.lower().endswith(".cfe")
+                else extension_filename
+            )
+    else:
+        if extension_filename and not extension_path:
+            base_path = getattr(settings, "EXTENSION_STORAGE_PATH", "/var/lib/1c/extensions")
+            extension_path = f"{base_path}/{extension_filename}"
+        if extension_filename and not extension_name:
+            extension_name = (
+                extension_filename[:-4]
+                if extension_filename.lower().endswith(".cfe")
+                else extension_filename
+            )
+
+    if not extension_path:
+        raise ValueError("extension_path or extension_filename is required")
+    if not extension_name:
+        raise ValueError("extension_name is required")
+
+    data = {
+        "extension_name": extension_name,
+        "extension_path": extension_path,
+    }
+    if "safe_mode" in config:
+        data["safe_mode"] = bool(config["safe_mode"])
+
+    usage_records = []
+    if artifact and version_obj:
+        databases = list(Database.objects.filter(id__in=database_ids))
+        usage_records = [
+            ArtifactUsage(
+                artifact=artifact,
+                version=version_obj,
+                database=db,
+            )
+            for db in databases
+        ]
+
+    return data, usage_records
+
+
+def _enqueue_odata_operation(user, operation_type, database_ids, config):
+    config = config or {}
+    data: dict = {}
+    filters: dict = {}
+    options: dict = {}
+    target_entity = config.get("entity") or config.get("entity_name")
+
+    if operation_type in ("create", "update", "delete", "query") and not target_entity:
+        raise ValueError("entity is required for OData operations")
+
+    if operation_type == "query":
+        if "filter" in config and config["filter"] is not None:
+            options["filter"] = config["filter"]
+        select_list = _split_select(config.get("select"))
+        if select_list:
+            options["select"] = select_list
+        if config.get("top") is not None:
+            options["top"] = config.get("top")
+        if config.get("skip") is not None:
+            options["skip"] = config.get("skip")
+    elif operation_type == "create":
+        data = config.get("data") or {}
+        if not isinstance(data, dict):
+            raise ValueError("data must be an object for create operation")
+    elif operation_type == "update":
+        data = config.get("data") or {}
+        if not isinstance(data, dict):
+            raise ValueError("data must be an object for update operation")
+        entity_id = config.get("entity_id")
+        if not entity_id:
+            raise ValueError("entity_id is required for update operation")
+        filters["entity_id"] = entity_id
+    elif operation_type == "delete":
+        entity_id = config.get("entity_id")
+        if not entity_id:
+            raise ValueError("entity_id is required for delete operation")
+        filters["entity_id"] = entity_id
+    else:
+        raise ValueError(f"Unsupported OData operation_type: {operation_type}")
+
+    return OperationsService.enqueue_odata_operation(
+        operation_type=operation_type,
+        database_ids=database_ids,
+        target_entity=target_entity,
+        data=data,
+        filters=filters,
+        options=options,
+        user=user,
+    )
 
 
 # =============================================================================
@@ -1046,18 +1228,22 @@ def cancel_operation(request):
     tags=['v2'],
     summary='Execute RAS operation',
     description='''
-    Queue a RAS operation for execution on selected databases.
+    Queue an operation for execution on selected databases.
 
     **Supported operation types:**
-    - `lock_scheduled_jobs` - Lock scheduled jobs on databases
-    - `unlock_scheduled_jobs` - Unlock scheduled jobs on databases
-    - `block_sessions` - Block new sessions (with optional message)
-    - `unblock_sessions` - Unblock sessions
-    - `terminate_sessions` - Terminate all active sessions
+    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`, `block_sessions`,
+      `unblock_sessions`, `terminate_sessions`
+    - OData: `create`, `update`, `delete`, `query`
+    - CLI: `install_extension`, `remove_extension`, `config_update`, `config_load`, `config_dump`
+    - IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`
 
-    **Config options for block_sessions:**
-    - `message` - Message displayed to users
-    - `permission_code` - Code allowing entry despite block
+    **Config notes:**
+    - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`, `parameter`
+    - OData query: `entity`, `filter`, `select`, `top`, `skip`
+    - OData update/delete: `entity`, `entity_id`
+    - CLI install_extension: `artifact_id` + (`artifact_version` or `artifact_alias`)
+      or legacy `extension_filename` / `extension_path` + `extension_name`
+    - CLI operations: driver-specific fields (e.g. `extension_name`, `source_path`, `target_path`)
     ''',
     request=ExecuteOperationRequestSerializer,
     responses={
@@ -1073,7 +1259,7 @@ def execute_operation(request):
     """
     POST /api/v2/operations/execute/
 
-    Queue a RAS operation (lock/unlock/block/terminate) for multiple databases.
+    Queue an operation for multiple databases.
 
     Request Body:
         {
@@ -1098,15 +1284,56 @@ def execute_operation(request):
     config = serializer.validated_data.get('config', {})
 
     try:
-        batch_operation = OperationsService.enqueue_ras_operation(
-            operation_type=operation_type,
-            database_ids=database_ids,
-            config=config,
-            user=request.user,
-        )
+        if operation_type in dict(ExecuteOperationRequestSerializer.RAS_OPERATION_TYPES):
+            batch_operation = OperationsService.enqueue_ras_operation(
+                operation_type=operation_type,
+                database_ids=database_ids,
+                config=config,
+                user=request.user,
+            )
+        elif operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
+            batch_operation = OperationsService.enqueue_ibcmd_operation(
+                operation_type=operation_type,
+                database_ids=database_ids,
+                config=config,
+                user=request.user,
+            )
+        elif operation_type in dict(ExecuteOperationRequestSerializer.CLI_OPERATION_TYPES):
+            if operation_type == "install_extension":
+                prepared_config, usage_records = _prepare_install_extension_config(
+                    request.user, database_ids, config
+                )
+                batch_operation = OperationsService.enqueue_cli_operation(
+                    operation_type=operation_type,
+                    database_ids=database_ids,
+                    config=prepared_config,
+                    user=request.user,
+                )
+                if usage_records:
+                    for usage in usage_records:
+                        usage.operation = batch_operation
+                    from apps.artifacts.models import ArtifactUsage
+                    ArtifactUsage.objects.bulk_create(usage_records)
+            else:
+                batch_operation = OperationsService.enqueue_cli_operation(
+                    operation_type=operation_type,
+                    database_ids=database_ids,
+                    config=config,
+                    user=request.user,
+                )
+        elif operation_type in dict(ExecuteOperationRequestSerializer.ODATA_OPERATION_TYPES):
+            batch_operation = _enqueue_odata_operation(request.user, operation_type, database_ids, config)
+        else:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'INVALID_OPERATION',
+                    'message': f'Unsupported operation_type: {operation_type}',
+                }
+            }, status=http_status.HTTP_400_BAD_REQUEST)
 
         logger.info(
-            f"RAS operation {operation_type} queued",
+            f"Operation {operation_type} queued",
             extra={
                 'operation_id': str(batch_operation.id),
                 'operation_type': operation_type,

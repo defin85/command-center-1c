@@ -47,6 +47,11 @@ class BatchOperation(models.Model):
     TYPE_IBCMD_RESTORE = 'ibcmd_restore'
     TYPE_IBCMD_REPLICATE = 'ibcmd_replicate'
     TYPE_IBCMD_CREATE = 'ibcmd_create'
+    # CLI operation types
+    TYPE_REMOVE_EXTENSION = 'remove_extension'
+    TYPE_CONFIG_UPDATE = 'config_update'
+    TYPE_CONFIG_LOAD = 'config_load'
+    TYPE_CONFIG_DUMP = 'config_dump'
 
     TYPE_CHOICES = [
         # OData operations
@@ -70,6 +75,11 @@ class BatchOperation(models.Model):
         (TYPE_IBCMD_RESTORE, 'IBCMD Restore'),
         (TYPE_IBCMD_REPLICATE, 'IBCMD Replicate'),
         (TYPE_IBCMD_CREATE, 'IBCMD Create'),
+        # CLI operations
+        (TYPE_REMOVE_EXTENSION, 'Remove Extension'),
+        (TYPE_CONFIG_UPDATE, 'Update Configuration'),
+        (TYPE_CONFIG_LOAD, 'Load Configuration'),
+        (TYPE_CONFIG_DUMP, 'Dump Configuration'),
     ]
 
     # Identity

@@ -8,6 +8,7 @@ interface TableToolbarProps {
   filters?: ReactNode
   onReset?: () => void
   actions?: ReactNode
+  idPrefix?: string
 }
 
 export const TableToolbar = ({
@@ -17,12 +18,20 @@ export const TableToolbar = ({
   filters,
   onReset,
   actions,
+  idPrefix,
 }: TableToolbarProps) => {
+  const normalizedPlaceholder = searchPlaceholder
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  const baseId = idPrefix || 'table-toolbar'
+  const searchId = `${baseId}-search-${normalizedPlaceholder || 'search'}`
   return (
     <Space wrap style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
       <Space wrap>
         {onSearchChange && (
           <Input
+            id={searchId}
             allowClear
             value={searchValue}
             placeholder={searchPlaceholder}

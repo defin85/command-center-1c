@@ -19,6 +19,7 @@ interface TablePreferencesModalProps {
   onDeletePreset: (presetId: string) => void
   canToggleFilter?: (key: string) => boolean
   onToggleFilter?: (key: string, visible: boolean) => void
+  idPrefix?: string
 }
 
 interface ColumnsTabProps {
@@ -38,6 +39,7 @@ interface ColumnsTabProps {
   onToggleVisible: (key: string, checked: boolean) => void
   onReorder: (fromKey: string, toKey: string) => void
   groupKeyByColumn: Map<string, string>
+  idPrefix: string
 }
 
 const ColumnsTab = memo(({
@@ -57,6 +59,7 @@ const ColumnsTab = memo(({
   onToggleVisible,
   onReorder,
   groupKeyByColumn,
+  idPrefix,
 }: ColumnsTabProps) => {
   const [draggingKey, setDraggingKey] = useState<string | null>(null)
   const selectedColumn = selectedKey
@@ -119,6 +122,7 @@ const ColumnsTab = memo(({
         <Space direction="vertical" style={{ width: '100%' }}>
           <Space wrap>
             <Input
+              id={`${idPrefix}-columns-search`}
               placeholder="Search columns"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
@@ -176,6 +180,7 @@ const ColumnsTab = memo(({
                       ↓
                     </Button>
                     <Checkbox
+                      id={`${idPrefix}-column-visible-${col.key}`}
                       checked={visibleColumns.includes(col.key)}
                       onChange={(event) => onToggleVisible(col.key, event.target.checked)}
                     >
@@ -209,6 +214,7 @@ const ColumnsTab = memo(({
               <div>
                 <Text type="secondary">Group</Text>
                 <Select
+                  id={`${idPrefix}-column-group-select`}
                   value={selectedGroupKey}
                   onChange={(value) => onChangeGroup(selectedColumn.key, value)}
                   options={groupOptions}
@@ -218,6 +224,7 @@ const ColumnsTab = memo(({
               <Space>
                 <Text type="secondary">Visible</Text>
                 <Switch
+                  id={`${idPrefix}-column-visible-toggle`}
                   checked={visibleColumns.includes(selectedColumn.key)}
                   onChange={(checked) => onToggleVisible(selectedColumn.key, checked)}
                 />
@@ -253,6 +260,7 @@ interface FiltersTabProps {
   onMove: (key: string, direction: -1 | 1) => void
   onToggleVisible: (key: string, checked: boolean) => void
   canToggleVisible?: (key: string) => boolean
+  idPrefix: string
 }
 
 const FiltersTab = memo(({
@@ -265,6 +273,7 @@ const FiltersTab = memo(({
   onMove,
   onToggleVisible,
   canToggleVisible,
+  idPrefix,
 }: FiltersTabProps) => {
   const [draggingKey, setDraggingKey] = useState<string | null>(null)
   const query = search.trim().toLowerCase()
@@ -278,6 +287,7 @@ const FiltersTab = memo(({
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
       <Input
+        id={`${idPrefix}-filters-search`}
         placeholder="Search filters"
         value={search}
         onChange={(event) => onSearchChange(event.target.value)}
@@ -323,6 +333,7 @@ const FiltersTab = memo(({
             <Space>
               <Text type="secondary">Visible</Text>
               <Switch
+                id={`${idPrefix}-filter-visible-${key}`}
                 checked={filterVisibility[key] !== false}
                 disabled={canToggleVisible ? !canToggleVisible(key) : false}
                 onChange={(checked) => onToggleVisible(key, checked)}
@@ -339,12 +350,14 @@ interface DefaultsTabProps {
   filters: TableFilterConfig[]
   values: TableFilters
   onChange: (key: string, value: TableFilters[string]) => void
+  idPrefix: string
 }
 
 const DefaultsTab = memo(({
   filters,
   values,
   onChange,
+  idPrefix,
 }: DefaultsTabProps) => (
   <Space direction="vertical" style={{ width: '100%' }}>
     {filters.map((filter) => {
@@ -357,6 +370,7 @@ const DefaultsTab = memo(({
           <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text>{filter.label}</Text>
             <Select
+              id={`${idPrefix}-default-${filter.key}`}
               allowClear
               placeholder="Any"
               mode={filter.multiple ? 'multiple' : undefined}
@@ -380,6 +394,7 @@ const DefaultsTab = memo(({
           <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text>{filter.label}</Text>
             <Select
+              id={`${idPrefix}-default-${filter.key}`}
               allowClear
               placeholder="Any"
               value={
@@ -413,6 +428,7 @@ const DefaultsTab = memo(({
           <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text>{filter.label}</Text>
             <InputNumber
+              id={`${idPrefix}-default-${filter.key}`}
               value={Number.isFinite(numericValue) ? numericValue : undefined}
               onChange={(value) => onChange(filter.key, value ?? null)}
               style={{ width: 180 }}
@@ -428,6 +444,7 @@ const DefaultsTab = memo(({
           <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text>{filter.label}</Text>
             <DatePicker
+              id={`${idPrefix}-default-${filter.key}`}
               allowClear
               showTime
               value={dateValue && dateValue.isValid() ? dateValue : null}
@@ -441,6 +458,7 @@ const DefaultsTab = memo(({
         <Space key={filter.key} style={{ width: '100%', justifyContent: 'space-between' }}>
           <Text>{filter.label}</Text>
           <Input
+            id={`${idPrefix}-default-${filter.key}`}
             value={(values[filter.key] as string | null) ?? ''}
             onChange={(event) => onChange(filter.key, event.target.value || null)}
             style={{ width: 220 }}
@@ -455,12 +473,14 @@ interface SortingTabProps {
   columns: TableColumnConfig[]
   sortableColumns: string[]
   onToggle: (key: string, checked: boolean) => void
+  idPrefix: string
 }
 
 const SortingTab = memo(({
   columns,
   sortableColumns,
   onToggle,
+  idPrefix,
 }: SortingTabProps) => (
   <Space direction="vertical" style={{ width: '100%' }}>
     <Text type="secondary">Allowed sortable columns</Text>
@@ -470,6 +490,7 @@ const SortingTab = memo(({
         .map((col) => (
           <Space key={col.key}>
             <Switch
+              id={`${idPrefix}-sortable-${col.key}`}
               checked={sortableColumns.includes(col.key)}
               onChange={(checked) => onToggle(col.key, checked)}
             />
@@ -493,7 +514,9 @@ export const TablePreferencesModal = ({
   onDeletePreset,
   canToggleFilter,
   onToggleFilter,
+  idPrefix,
 }: TablePreferencesModalProps) => {
+  const baseId = idPrefix || 'table-preferences'
   const activePreset = presets.find((preset) => preset.id === activePresetId) || presets[0]
   const [draft, setDraft] = useState<TableViewPreset>(activePreset)
   const [newPresetName, setNewPresetName] = useState('New view')
@@ -736,6 +759,7 @@ export const TablePreferencesModal = ({
           onToggleVisible={handleToggleColumn}
           onReorder={handleReorderColumn}
           groupKeyByColumn={groupKeyByColumn}
+          idPrefix={baseId}
         />
       ),
     },
@@ -753,6 +777,7 @@ export const TablePreferencesModal = ({
           onMove={handleMoveFilter}
           onToggleVisible={handleToggleFilter}
           canToggleVisible={canToggleFilter}
+          idPrefix={baseId}
         />
       ),
     },
@@ -764,6 +789,7 @@ export const TablePreferencesModal = ({
           filters={filters}
           values={draft.defaultFilters}
           onChange={updateDefaultFilter}
+          idPrefix={baseId}
         />
       ),
     },
@@ -775,6 +801,7 @@ export const TablePreferencesModal = ({
           columns={columns}
           sortableColumns={draft.sortableColumns}
           onToggle={handleToggleSortable}
+          idPrefix={baseId}
         />
       ),
     },
@@ -849,6 +876,7 @@ export const TablePreferencesModal = ({
         <Space wrap>
           <Text strong>View:</Text>
           <Select
+            id={`${baseId}-view-select`}
             value={activePresetId}
             onChange={onSelectPreset}
             options={presets.map((preset) => ({
@@ -858,6 +886,7 @@ export const TablePreferencesModal = ({
             style={{ minWidth: 220 }}
           />
           <Input
+            id={`${baseId}-view-name`}
             value={draft.name}
             onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
             placeholder="View name"
@@ -868,6 +897,7 @@ export const TablePreferencesModal = ({
         <Space wrap>
           <Text strong>New view name:</Text>
           <Input
+            id={`${baseId}-new-view-name`}
             value={newPresetName}
             onChange={(event) => setNewPresetName(event.target.value)}
             style={{ width: 220 }}

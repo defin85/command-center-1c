@@ -102,8 +102,10 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
             name="denied_from"
             label="Block start (optional)"
             help="Start time for blocking new sessions"
+            htmlFor="operation-confirm-block-start"
           >
             <DatePicker
+              id="operation-confirm-block-start"
               showTime={{ format: 'HH:mm' }}
               allowClear
               style={{ width: '100%' }}
@@ -115,8 +117,10 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
             name="denied_to"
             label="Block end (optional)"
             help="End time for blocking new sessions"
+            htmlFor="operation-confirm-block-end"
           >
             <DatePicker
+              id="operation-confirm-block-end"
               showTime={{ format: 'HH:mm' }}
               allowClear
               style={{ width: '100%' }}
@@ -128,24 +132,27 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
             name="message"
             label="Block message (shown to users)"
             rules={[{ required: true, message: 'Please enter a message' }]}
+            htmlFor="operation-confirm-message"
           >
-            <Input.TextArea rows={2} placeholder="Maintenance in progress..." />
+            <Input.TextArea id="operation-confirm-message" rows={2} placeholder="Maintenance in progress..." />
           </Form.Item>
 
           <Form.Item
             name="permission_code"
             label="Permission code (optional)"
             help="Users with this code can still connect"
+            htmlFor="operation-confirm-permission-code"
           >
-            <Input placeholder="Enter permission code" />
+            <Input id="operation-confirm-permission-code" placeholder="Enter permission code" />
           </Form.Item>
 
           <Form.Item
             name="parameter"
             label="Block parameter (optional)"
             help="Additional block parameter for 1C"
+            htmlFor="operation-confirm-block-parameter"
           >
-            <Input placeholder="Enter block parameter" />
+            <Input id="operation-confirm-block-parameter" placeholder="Enter block parameter" />
           </Form.Item>
         </Form>
       )}

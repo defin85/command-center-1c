@@ -83,22 +83,24 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                     name="ras_server"
                     rules={[{ required: true, message: 'RAS server address is required' }]}
                     extra="Format: host:port (e.g., localhost:1545)"
+                    htmlFor="discover-ras-server"
                 >
-                    <Input placeholder="localhost:1545" />
+                    <Input id="discover-ras-server" placeholder="localhost:1545" />
                 </Form.Item>
                 <Form.Item
                     label="Cluster Service URL"
                     name="cluster_service_url"
                     rules={[{ required: true, message: 'Cluster service URL is required' }]}
                     extra="RAS Adapter service URL (e.g., http://localhost:8188)"
+                    htmlFor="discover-cluster-service-url"
                 >
-                    <Input placeholder="http://localhost:8188" />
+                    <Input id="discover-cluster-service-url" placeholder="http://localhost:8188" />
                 </Form.Item>
-                <Form.Item label="Cluster Admin User (optional)" name="cluster_user">
-                    <Input placeholder="admin" />
+                <Form.Item label="Cluster Admin User (optional)" name="cluster_user" htmlFor="discover-cluster-user">
+                    <Input id="discover-cluster-user" placeholder="admin" />
                 </Form.Item>
-                <Form.Item label="Cluster Admin Password (optional)" name="cluster_pwd">
-                    <Input.Password placeholder="password" />
+                <Form.Item label="Cluster Admin Password (optional)" name="cluster_pwd" htmlFor="discover-cluster-password">
+                    <Input.Password id="discover-cluster-password" placeholder="password" />
                 </Form.Item>
             </Form>
         </Modal>

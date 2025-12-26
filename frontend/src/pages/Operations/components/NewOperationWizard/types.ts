@@ -16,11 +16,24 @@ export type OperationType =
   | 'unblock_sessions'
   | 'terminate_sessions'
   // OData Operations - executed via OData protocol
+  | 'create'
+  | 'update'
+  | 'delete'
   | 'install_extension'
   | 'query'
   // System Operations - internal system operations
   | 'sync_cluster'
   | 'health_check'
+  // IBCMD Operations
+  | 'ibcmd_backup'
+  | 'ibcmd_restore'
+  | 'ibcmd_replicate'
+  | 'ibcmd_create'
+  // CLI Operations
+  | 'remove_extension'
+  | 'config_update'
+  | 'config_load'
+  | 'config_dump'
 
 /**
  * Operation category for grouping in UI
@@ -189,6 +202,7 @@ export interface SelectTypeStepProps {
 export interface SelectTargetStepProps {
   selectedDatabases: string[]
   onSelectionChange: (ids: string[]) => void
+  onSelectionMetadataChange?: (databasesById: Record<string, string>) => void
   preselectedDatabases?: string[]
 }
 
@@ -207,6 +221,7 @@ export interface OperationConfig {
   exclude_admin?: boolean
   // OData - install_extension
   extension_file?: File
+  extension_filename?: string
   safe_mode?: boolean
   // OData - query
   entity?: string

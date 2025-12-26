@@ -5,20 +5,25 @@ interface TableFiltersProps<TFilters extends TableFilters> {
   configs: TableFilterConfig[]
   values: TFilters
   onChange: (key: keyof TFilters, value: string | boolean | null) => void
+  idPrefix?: string
 }
 
 export const TableFiltersPanel = <TFilters extends TableFilters>({
   configs,
   values,
   onChange,
+  idPrefix,
 }: TableFiltersProps<TFilters>) => {
+  const baseId = idPrefix || 'table-filters'
   return (
     <Space wrap>
       {configs.map((config) => {
+        const fieldId = `${baseId}-${config.key}`
         if (config.type === 'text') {
           return (
             <Input
               key={config.key}
+              id={fieldId}
               allowClear
               placeholder={config.placeholder || config.label}
               value={(values[config.key] as string | null) ?? ''}
@@ -36,6 +41,7 @@ export const TableFiltersPanel = <TFilters extends TableFilters>({
           return (
             <Select
               key={config.key}
+              id={fieldId}
               allowClear
               placeholder={config.placeholder || config.label}
               value={
@@ -59,6 +65,7 @@ export const TableFiltersPanel = <TFilters extends TableFilters>({
         return (
           <Select
             key={config.key}
+            id={fieldId}
             allowClear
             placeholder={config.placeholder || config.label}
             value={(values[config.key] as string | null) ?? undefined}

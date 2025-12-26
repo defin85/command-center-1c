@@ -127,10 +127,15 @@ export const useTablePreferences = (
     activePresetId: defaultPreset.id,
     presets: [defaultPreset],
   }))
+  const [loadedFromStorage, setLoadedFromStorage] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
 
   useEffect(() => {
     const raw = localStorage.getItem(storageKey)
-    if (!raw) return
+    if (!raw) {
+      setLoadedFromStorage(false)
+      return
+    }
     try {
       const parsed = JSON.parse(raw) as TablePreferences
       if (!parsed?.presets?.length) return
@@ -144,10 +149,19 @@ export const useTablePreferences = (
         activePresetId,
         presets: normalizedPresets,
       })
+      setLoadedFromStorage(true)
     } catch {
       // ignore
     }
   }, [columns, filters, storageKey])
+
+  useEffect(() => {
+    if (loadedFromStorage || isDirty) return
+    setPreferences({
+      activePresetId: defaultPreset.id,
+      presets: [defaultPreset],
+    })
+  }, [defaultPreset, isDirty, loadedFromStorage])
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(preferences))
@@ -159,6 +173,7 @@ export const useTablePreferences = (
   }, [preferences])
 
   const setActivePreset = useCallback((presetId: string) => {
+    setIsDirty(true)
     setPreferences((prev) => ({
       ...prev,
       activePresetId: presetId,
@@ -166,6 +181,7 @@ export const useTablePreferences = (
   }, [])
 
   const updatePreset = useCallback((updated: TableViewPreset) => {
+    setIsDirty(true)
     setPreferences((prev) => ({
       ...prev,
       presets: prev.presets.map((preset) =>
@@ -175,6 +191,7 @@ export const useTablePreferences = (
   }, [])
 
   const createPreset = useCallback((preset: TableViewPreset) => {
+    setIsDirty(true)
     const next = { ...preset, id: createId() }
     setPreferences((prev) => ({
       activePresetId: next.id,
@@ -183,6 +200,7 @@ export const useTablePreferences = (
   }, [])
 
   const deletePreset = useCallback((presetId: string) => {
+    setIsDirty(true)
     setPreferences((prev) => {
       if (prev.presets.length <= 1) return prev
       const remaining = prev.presets.filter((preset) => preset.id !== presetId)
@@ -197,6 +215,7 @@ export const useTablePreferences = (
   }, [])
 
   const resetToDefault = useCallback(() => {
+    setIsDirty(true)
     setPreferences({
       activePresetId: defaultPreset.id,
       presets: [defaultPreset],

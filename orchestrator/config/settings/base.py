@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'apps.templates',
     'apps.monitoring',
     'apps.files',  # File storage (Phase 5.1)
+    'apps.artifacts',  # Artifact storage (v2)
     'apps.runtime_settings',
     'apps.api_v2',  # API v2 with action-based routing
     'apps.api_internal',  # Internal API for Go Worker
@@ -334,6 +335,13 @@ EXTENSION_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'extensions'
 # Backend reserved for future S3 support (local is default).
 IBCMD_STORAGE_BACKEND = env('IBCMD_STORAGE_BACKEND', default='local')
 IBCMD_STORAGE_PATH = BASE_DIR.parent / 'storage' / 'ibcmd'
+
+# ========== Artifact Storage Configuration (MinIO) ==========
+MINIO_ENDPOINT = env('MINIO_ENDPOINT', default='localhost:9000')
+MINIO_ACCESS_KEY = env('MINIO_ACCESS_KEY', default='minioadmin')
+MINIO_SECRET_KEY = env('MINIO_SECRET_KEY', default='minioadmin')
+MINIO_BUCKET = env('MINIO_BUCKET', default='cc1c-artifacts')
+MINIO_SECURE = env.bool('MINIO_SECURE', default=False)
 
 # ========== File Upload Configuration (Phase 5.1) ==========
 # Base directory for uploaded files

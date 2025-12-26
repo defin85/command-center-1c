@@ -66,6 +66,7 @@ export const NewOperationWizard = ({
   )
   const [submitting, setSubmitting] = useState(false)
   const [databases, setDatabases] = useState<Database[]>([])
+  const [databaseNamesById, setDatabaseNamesById] = useState<Record<string, string>>({})
   const [templateValidationErrors, setTemplateValidationErrors] = useState<DynamicFormValidationError[]>([])
 
   const selectedTypeLabel = state.operationType ?? null
@@ -98,14 +99,18 @@ export const NewOperationWizard = ({
     if (ids.length === 0) return []
     const preview = ids.slice(0, 3)
     const suffix = ids.length > preview.length ? ` +${ids.length - preview.length}` : ''
-    return preview.map((id) => `${id}${suffix && id === preview[preview.length - 1] ? suffix : ''}`)
-  }, [state.selectedDatabases])
+    return preview.map((id) => {
+      const label = databaseNamesById[id] || id
+      return `${label}${suffix && id === preview[preview.length - 1] ? suffix : ''}`
+    })
+  }, [databaseNamesById, state.selectedDatabases])
 
   // Reset state when modal opens
   useEffect(() => {
     if (visible) {
       setState(getInitialState(preselectedDatabases))
       setTemplateValidationErrors([])
+      setDatabaseNamesById({})
     }
   }, [visible, preselectedDatabases])
 
@@ -148,6 +153,10 @@ export const NewOperationWizard = ({
 
       // Built-in operations
       if (!operationType) return false
+
+      if (operationType === 'install_extension') {
+        return Boolean(config.extension_file || config.extension_filename)
+      }
 
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]
       if (!requiredFields || requiredFields.length === 0) {
@@ -212,6 +221,13 @@ export const NewOperationWizard = ({
 
   const handleDatabasesChange = useCallback((ids: string[]) => {
     setState((prev) => ({ ...prev, selectedDatabases: ids }))
+  }, [])
+
+  const handleDatabaseMetadataChange = useCallback((next: Record<string, string>) => {
+    setDatabaseNamesById((prev) => ({
+      ...prev,
+      ...next,
+    }))
   }, [])
 
   const handleConfigChange = useCallback((config: OperationConfig) => {
@@ -342,6 +358,7 @@ export const NewOperationWizard = ({
           <SelectTargetStep
             selectedDatabases={state.selectedDatabases}
             onSelectionChange={handleDatabasesChange}
+            onSelectionMetadataChange={handleDatabaseMetadataChange}
             preselectedDatabases={preselectedDatabases}
           />
         )

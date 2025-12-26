@@ -758,11 +758,12 @@ export const Databases = () => {
         ]}
       >
         <Form form={credentialsForm} layout="vertical">
-          <Form.Item label="OData Username" name="username">
-            <Input placeholder="Optional OData username" />
+          <Form.Item label="OData Username" name="username" htmlFor="database-credentials-username">
+            <Input id="database-credentials-username" placeholder="Optional OData username" />
           </Form.Item>
-          <Form.Item label="OData Password" name="password">
+          <Form.Item label="OData Password" name="password" htmlFor="database-credentials-password">
             <Input.Password
+              id="database-credentials-password"
               placeholder={credentialsDatabase?.password_configured ? 'Configured' : 'Enter password'}
             />
           </Form.Item>

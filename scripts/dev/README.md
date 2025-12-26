@@ -577,7 +577,7 @@ cp .env.example .env.local
 
 # 3. Установить зависимости
 cd orchestrator && python -m venv venv && source venv/Scripts/activate && pip install -r requirements.txt && cd ..
-cd frontend && npm install && cd ..
+cd frontend && npm install && npx playwright install && cd ..
 cd go-services/api-gateway && go mod download && cd ../..
 
 # 4. Собрать бинарники + запустить всё

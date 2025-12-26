@@ -1,4 +1,5 @@
 import { DatePicker, Input, InputNumber, Select, Space } from 'antd'
+import type { RefObject, UIEventHandler } from 'react'
 import dayjs from 'dayjs'
 import type { TableFilterConfig, TableFilters, TableFilterValue } from './types'
 
@@ -8,6 +9,9 @@ interface TableFiltersRowProps<TFilters extends TableFilters> {
   values: TFilters
   visibility: Record<string, boolean>
   onChange: (key: keyof TFilters, value: TableFilterValue) => void
+  scrollRef?: RefObject<HTMLDivElement>
+  onScroll?: UIEventHandler<HTMLDivElement>
+  idPrefix?: string
 }
 
 export const TableFiltersRow = <TFilters extends TableFilters>({
@@ -16,14 +20,18 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
   values,
   visibility,
   onChange,
+  scrollRef,
+  onScroll,
+  idPrefix,
 }: TableFiltersRowProps<TFilters>) => {
   const configByKey = new Map(configs.map((config) => [config.key, config]))
   const widths = columns.map((col) => col.width ?? 160)
   const minWidth = widths.reduce((sum, value) => sum + value, 0)
   const gridTemplateColumns = widths.map((value) => `${value}px`).join(' ')
+  const baseId = idPrefix || 'table-filters-row'
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div ref={scrollRef} style={{ overflowX: 'auto' }} onScroll={onScroll}>
       <div
         style={{
           display: 'grid',
@@ -41,6 +49,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
           }
           const value = values[config.key]
           const isVisible = visibility[config.key] !== false
+          const fieldId = `${baseId}-filter-${config.key}`
 
           if (!isVisible) {
             return <div key={column.key} />
@@ -50,6 +59,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
             if (config.type === 'text') {
               return (
                 <Input
+                  id={fieldId}
                   allowClear
                   size="small"
                   placeholder={config.placeholder || config.label}
@@ -66,6 +76,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
                   : null
               return (
                 <InputNumber
+                  id={fieldId}
                   size="small"
                   placeholder={config.placeholder || config.label}
                   value={Number.isFinite(numericValue) ? numericValue : undefined}
@@ -86,8 +97,8 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
                 : null
               return (
                 <DatePicker
+                  id={fieldId}
                   allowClear
-                  showTime
                   size="small"
                   placeholder={config.placeholder || config.label}
                   value={dateValue && dateValue.isValid() ? dateValue : null}
@@ -96,7 +107,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
                       onChange(config.key as keyof TFilters, null)
                       return
                     }
-                    onChange(config.key as keyof TFilters, next.toISOString())
+                    onChange(config.key as keyof TFilters, next.format('YYYY-MM-DD'))
                   }}
                   style={{ width: '100%' }}
                 />
@@ -109,6 +120,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
               ]
               return (
                 <Select
+                  id={fieldId}
                   allowClear
                   size="small"
                   placeholder={config.placeholder || config.label}
@@ -134,6 +146,7 @@ export const TableFiltersRow = <TFilters extends TableFilters>({
               : (value as string | null) ?? undefined
             return (
               <Select
+                id={fieldId}
                 allowClear
                 size="small"
                 mode={selectMode}
