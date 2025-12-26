@@ -28,3 +28,9 @@ export interface ClusterFilters {
   limit?: number
   offset?: number
 }
+
+export interface ArtifactFilters {
+  kind?: string
+  name?: string
+  tag?: string
+}

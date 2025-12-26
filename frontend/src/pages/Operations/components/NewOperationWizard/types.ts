@@ -103,7 +103,7 @@ export const OPERATION_TYPES: OperationTypeConfig[] = [
   {
     type: 'install_extension',
     label: 'Install Extension',
-    description: 'Install .cfe extension to databases',
+    description: 'Install extension from artifact storage',
     icon: 'RocketOutlined',
     category: 'odata',
     requiresConfig: true,
@@ -219,9 +219,11 @@ export interface OperationConfig {
   // RAS - terminate_sessions
   filter_by_app?: string
   exclude_admin?: boolean
-  // OData - install_extension
-  extension_file?: File
-  extension_filename?: string
+  // Install extension (artifact storage v2)
+  artifact_id?: string
+  artifact_version?: string
+  artifact_alias?: string
+  artifact_name?: string
   safe_mode?: boolean
   // OData - query
   entity?: string
@@ -245,7 +247,6 @@ export interface DynamicFormValidationError {
  * Required fields by operation type
  */
 export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof OperationConfig)[]>> = {
-  install_extension: ['extension_file'],
   query: ['entity'],
   block_sessions: ['message'],
 }

@@ -353,16 +353,20 @@ export const OperationsPage = () => {
       }
 
       if (data.operationType === 'install_extension') {
-        const filename = data.config.extension_filename
-        if (!filename) {
-          throw new Error('extension file is not uploaded')
+        const artifactId = data.config.artifact_id
+        const artifactAlias = data.config.artifact_alias
+        const artifactVersion = data.config.artifact_version
+        if (!artifactId || (!artifactAlias && !artifactVersion)) {
+          throw new Error('artifact selection is incomplete')
         }
 
         await apiClient.post('/api/v2/operations/execute/', {
           operation_type: 'install_extension',
           database_ids: data.databaseIds,
           config: {
-            extension_filename: filename,
+            artifact_id: artifactId,
+            artifact_alias: artifactAlias,
+            artifact_version: artifactVersion,
             safe_mode: Boolean(data.config.safe_mode),
           },
         })

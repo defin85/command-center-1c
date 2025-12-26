@@ -21,7 +21,6 @@ import {
 } from '@ant-design/icons'
 import type { ReviewStepProps, OperationConfig, OperationType } from './types'
 import { OPERATION_TYPES, OPERATION_CATEGORIES } from './types'
-import { formatFileSize } from '../../../../utils/formatters'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -96,11 +95,16 @@ const formatConfigForDisplay = (
       break
 
     case 'install_extension':
-      if (config.extension_file) {
-        items.push({
-          label: 'File',
-          value: `${config.extension_file.name} (${formatFileSize(config.extension_file.size)})`,
-        })
+      if (config.artifact_name) {
+        items.push({ label: 'Artifact', value: config.artifact_name })
+      } else if (config.artifact_id) {
+        items.push({ label: 'Artifact ID', value: config.artifact_id })
+      }
+      if (config.artifact_alias) {
+        items.push({ label: 'Alias', value: config.artifact_alias })
+      }
+      if (config.artifact_version) {
+        items.push({ label: 'Version', value: config.artifact_version })
       }
       items.push({
         label: 'Safe Mode',

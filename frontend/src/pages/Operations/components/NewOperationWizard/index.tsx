@@ -155,7 +155,10 @@ export const NewOperationWizard = ({
       if (!operationType) return false
 
       if (operationType === 'install_extension') {
-        return Boolean(config.extension_file || config.extension_filename)
+        return Boolean(
+          config.artifact_id
+          && (config.artifact_alias || config.artifact_version)
+        )
       }
 
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]

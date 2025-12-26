@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined } from '@ant-design/icons'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
@@ -24,6 +24,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     cooldownSeconds: databaseStreamCooldownSeconds,
     reconnect: reconnectDatabaseStream,
   } = useDatabaseStreamStatus()
+  const canSeeArtifacts = Boolean(meQuery.data?.is_staff)
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -66,6 +67,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       icon: <ThunderboltOutlined />,
       label: 'Operations',
     },
+    ...(canSeeArtifacts
+      ? [{
+        key: '/artifacts',
+        icon: <InboxOutlined />,
+        label: 'Artifacts',
+      }]
+      : []),
     {
       key: '/workflows',
       icon: <ApartmentOutlined />,

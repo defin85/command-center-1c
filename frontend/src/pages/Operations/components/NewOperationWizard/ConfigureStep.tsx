@@ -4,31 +4,26 @@
  * Supports both built-in operation forms and DynamicForm for custom templates.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  App,
   Typography,
   Form,
   Input,
   Select,
-  Button,
   DatePicker,
   InputNumber,
   Switch,
   Checkbox,
-  Upload,
   Card,
   Alert,
   Space,
   Spin,
 } from 'antd'
 import {
-  InboxOutlined,
-  CheckCircleOutlined,
   SettingOutlined,
   LoadingOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons'
-import type { UploadFile, UploadProps } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import type { ConfigureStepProps, OperationType, OperationConfig, DynamicFormValidationError } from './types'
@@ -37,11 +32,11 @@ import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { formatFileSize } from '../../../../utils/formatters'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
-import { apiClient } from '../../../../api/client'
+import { useArtifacts, useArtifactVersions, useArtifactAliases } from '../../../../api/queries'
+import type { Artifact } from '../../../../api/artifacts'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
-const { Dragger } = Upload
 
 /**
  * Configuration for operation types that don't require additional settings
@@ -197,135 +192,178 @@ const InstallExtensionForm = ({
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
 }) => {
-  const { message } = App.useApp()
-  const [uploading, setUploading] = useState(false)
-  const [extensionsLoading, setExtensionsLoading] = useState(false)
-  const [availableExtensions, setAvailableExtensions] = useState<Array<{
-    filename: string
-    size?: number
-    modified_at?: string
-  }>>([])
-
-  const fetchExtensions = useCallback(async () => {
-    setExtensionsLoading(true)
-    try {
-      const response = await apiClient.get('/api/v2/extensions/list-storage/')
-      const items = Array.isArray(response.data?.extensions) ? response.data.extensions : []
-      setAvailableExtensions(items)
-    } catch (_error) {
-      message.error('Failed to load extension storage list')
-    } finally {
-      setExtensionsLoading(false)
-    }
-  }, [message])
+  const [searchValue, setSearchValue] = useState('')
+  const artifactsQuery = useArtifacts({
+    kind: 'extension',
+    name: searchValue.trim() || undefined,
+  })
+  const selectedArtifactId = typeof config.artifact_id === 'string' ? config.artifact_id : undefined
+  const versionsQuery = useArtifactVersions(selectedArtifactId)
+  const aliasesQuery = useArtifactAliases(selectedArtifactId)
+  const selectedVersion = versionsQuery.data?.versions.find(
+    (version) => version.version === config.artifact_version
+  )
+  const selectedAlias = aliasesQuery.data?.aliases.find(
+    (alias) => alias.alias === config.artifact_alias
+  )
 
   useEffect(() => {
-    void fetchExtensions()
-  }, [fetchExtensions])
-  // Convert File to UploadFile format for Ant Design
-  const fileList: UploadFile[] = useMemo(() => {
-    if (!config.extension_file) return []
-    return [
-      {
-        uid: '-1',
-        name: config.extension_file.name,
-        status: 'done',
-        size: config.extension_file.size,
-      },
-    ]
-  }, [config.extension_file])
-
-  const uploadProps: UploadProps = {
-    name: 'file',
-    multiple: false,
-    accept: '.cfe',
-    disabled: uploading,
-    fileList,
-    beforeUpload: async (file) => {
-      onChange({ extension_file: file, extension_filename: undefined })
-      const formData = new FormData()
-      formData.append('file', file)
-      setUploading(true)
-      try {
-        const response = await apiClient.post('/api/v2/extensions/upload-extension/', formData)
-        const filename = response.data?.file?.filename || file.name
-        onChange({ extension_filename: filename })
-        setAvailableExtensions((prev) => {
-          const next = prev.filter((item) => item.filename !== filename)
-          return [{ filename }, ...next]
+    if (!selectedArtifactId) {
+      if (config.artifact_version || config.artifact_alias || config.artifact_name) {
+        onChange({
+          artifact_version: undefined,
+          artifact_alias: undefined,
+          artifact_name: undefined,
         })
-      } catch (_error) {
-        onChange({ extension_file: undefined, extension_filename: undefined })
-        message.error('Failed to upload extension file')
-      } finally {
-        setUploading(false)
       }
-      return false // Prevent automatic upload
-    },
-    onRemove: () => {
-      onChange({ extension_file: undefined, extension_filename: undefined })
-    },
+      return
+    }
+    const selected = artifactsQuery.data?.artifacts.find((item) => item.id === selectedArtifactId)
+    if (selected && config.artifact_name !== selected.name) {
+      onChange({ artifact_name: selected.name })
+    }
+  }, [
+    selectedArtifactId,
+    artifactsQuery.data?.artifacts,
+    config.artifact_alias,
+    config.artifact_name,
+    config.artifact_version,
+    onChange,
+  ])
+
+  const handleArtifactSelect = (value: string) => {
+    const selected = artifactsQuery.data?.artifacts.find((item) => item.id === value)
+    onChange({
+      artifact_id: value,
+      artifact_name: selected?.name,
+      artifact_version: undefined,
+      artifact_alias: undefined,
+    })
   }
+
+  const handleAliasSelect = (value?: string) => {
+    onChange({
+      artifact_alias: value || undefined,
+      artifact_version: undefined,
+    })
+  }
+
+  const handleVersionSelect = (value?: string) => {
+    onChange({
+      artifact_version: value || undefined,
+      artifact_alias: undefined,
+    })
+  }
+
+  const artifactOptions = (artifactsQuery.data?.artifacts ?? []).map((artifact: Artifact) => ({
+    value: artifact.id,
+    label: artifact.name,
+  }))
+
+  const aliasOptions = (aliasesQuery.data?.aliases ?? []).map((alias) => ({
+    value: alias.alias,
+    label: `${alias.alias} → ${alias.version}`,
+  }))
+
+  const versionOptions = (versionsQuery.data?.versions ?? []).map((version) => ({
+    value: version.version,
+    label: `${version.version} (${version.filename})`,
+  }))
 
   return (
     <Form layout="vertical">
-      <Form.Item
-        label="Select from storage"
-        help="Choose an existing extension file"
-        htmlFor="wizard-extension-storage"
-      >
-        <Space.Compact style={{ width: '100%' }}>
-          <Select
-            id="wizard-extension-storage"
-            value={config.extension_filename || undefined}
-            placeholder="Select extension file"
-            loading={extensionsLoading}
-            options={availableExtensions.map((item) => ({
-              value: item.filename,
-              label: item.filename,
-            }))}
-            showSearch
-            allowClear
-            optionFilterProp="label"
-            onChange={(value) => onChange({ extension_filename: value || undefined, extension_file: undefined })}
-            style={{ width: '100%' }}
-          />
-          <Button onClick={fetchExtensions} loading={extensionsLoading}>
-            Refresh
-          </Button>
-        </Space.Compact>
-      </Form.Item>
-
-      <Form.Item
-        label="Extension File (.cfe)"
-        required
-        help="Upload 1C extension file to install"
-        htmlFor="wizard-install-extension-file"
-      >
-        <Dragger
-          {...uploadProps}
-          id="wizard-install-extension-file"
-          style={{ padding: '20px 0' }}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">Drag & drop or click to upload</p>
-          <p className="ant-upload-hint">Supported: .cfe files</p>
-        </Dragger>
-      </Form.Item>
-
-      {config.extension_file && (
+      {artifactsQuery.error && (
         <Alert
-          message={
-            <Space>
-              <CheckCircleOutlined style={{ color: '#52c41a' }} />
-              <Text>
-                {config.extension_file.name} ({formatFileSize(config.extension_file.size)})
-              </Text>
+          type="error"
+          message="Не удалось загрузить список артефактов"
+          style={{ marginBottom: 16 }}
+        />
+      )}
+      <Form.Item
+        label="Artifact"
+        required
+        help="Choose an extension artifact from storage"
+        htmlFor="wizard-extension-artifact"
+      >
+        <Select
+          id="wizard-extension-artifact"
+          value={config.artifact_id || undefined}
+          placeholder="Select artifact"
+          loading={artifactsQuery.isLoading}
+          options={artifactOptions}
+          showSearch
+          allowClear
+          filterOption={false}
+          onSearch={setSearchValue}
+          onChange={(value) => {
+            if (value) {
+              handleArtifactSelect(value as string)
+            } else {
+              onChange({
+                artifact_id: undefined,
+                artifact_name: undefined,
+                artifact_version: undefined,
+                artifact_alias: undefined,
+              })
+            }
+          }}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Alias"
+        help="Prefer alias for stable/approved installs"
+        htmlFor="wizard-extension-alias"
+      >
+        <Select
+          id="wizard-extension-alias"
+          value={config.artifact_alias || undefined}
+          placeholder="Select alias (optional)"
+          loading={aliasesQuery.isLoading}
+          options={aliasOptions}
+          allowClear
+          disabled={!selectedArtifactId}
+          onChange={(value) => handleAliasSelect(value as string | undefined)}
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Version"
+        help="Select a specific version if no alias is chosen"
+        htmlFor="wizard-extension-version"
+      >
+        <Select
+          id="wizard-extension-version"
+          value={config.artifact_version || undefined}
+          placeholder="Select version (optional)"
+          loading={versionsQuery.isLoading}
+          options={versionOptions}
+          allowClear
+          disabled={!selectedArtifactId || Boolean(config.artifact_alias)}
+          onChange={(value) => handleVersionSelect(value as string | undefined)}
+        />
+      </Form.Item>
+
+      {(selectedAlias || selectedVersion) && (
+        <Alert
+          message={(
+            <Space direction="vertical">
+              {selectedAlias && (
+                <Text>
+                  Alias <Text code>{selectedAlias.alias}</Text> → {selectedAlias.version}
+                </Text>
+              )}
+              {selectedVersion && (
+                <Text>
+                  {selectedVersion.filename} ({formatFileSize(selectedVersion.size)})
+                </Text>
+              )}
+              {selectedVersion && (
+                <Text type="secondary">Checksum: {selectedVersion.checksum}</Text>
+              )}
             </Space>
-          }
-          type="success"
+          )}
+          type="info"
           style={{ marginBottom: 16 }}
         />
       )}

@@ -15,6 +15,7 @@ import { TemplatesPage } from './pages/Templates/TemplatesPage'
 import { DLQPage } from './pages/DLQ'
 import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
+import { ArtifactsPage } from './pages/Artifacts'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
@@ -115,6 +116,13 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Operations />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/artifacts" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <ArtifactsPage />
               </MainLayout>
             </ProtectedRoute>
           } />

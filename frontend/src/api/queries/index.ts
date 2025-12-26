@@ -1,4 +1,4 @@
-import type { OperationFilters, DatabaseFilters, ClusterFilters } from './types'
+import type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
 
 export const queryKeys = {
   operations: {
@@ -37,9 +37,15 @@ export const queryKeys = {
   dashboard: {
     stats: ['dashboard', 'stats'] as const,
   },
+  artifacts: {
+    all: ['artifacts'] as const,
+    list: (filters?: ArtifactFilters) => [...queryKeys.artifacts.all, 'list', filters] as const,
+    versions: (artifactId: string) => [...queryKeys.artifacts.all, 'versions', artifactId] as const,
+    aliases: (artifactId: string) => [...queryKeys.artifacts.all, 'aliases', artifactId] as const,
+  },
 } as const
 
-export type { OperationFilters, DatabaseFilters, ClusterFilters } from './types'
+export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
 
 // Re-export hooks for convenience
 export { useDashboardQuery } from './dashboard'
@@ -56,3 +62,4 @@ export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'
+export { useArtifacts, useArtifactVersions, useArtifactAliases, useUpsertArtifactAlias } from './artifacts'
