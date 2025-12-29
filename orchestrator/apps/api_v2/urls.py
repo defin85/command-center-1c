@@ -18,6 +18,7 @@ from .views import (
     audit,
     events,
     rbac,
+    users,
     templates,
     files,
     artifacts,
@@ -52,6 +53,8 @@ urlpatterns = [
     path('databases/create-ib-user/', databases.create_infobase_user, name='create-infobase-user'),
     path('databases/update-ib-user/', databases.update_infobase_user, name='update-infobase-user'),
     path('databases/delete-ib-user/', databases.delete_infobase_user, name='delete-infobase-user'),
+    path('databases/set-ib-user-password/', databases.set_infobase_user_password, name='set-infobase-user-password'),
+    path('databases/reset-ib-user-password/', databases.reset_infobase_user_password, name='reset-infobase-user-password'),
     path('databases/health-check/', databases.health_check, name='database-health-check'),
     path('databases/bulk-health-check/', databases.bulk_health_check, name='bulk-health-check'),
     path('databases/set-status/', databases.set_status, name='set-status'),
@@ -150,6 +153,14 @@ urlpatterns = [
     path('rbac/revoke-database-permission/', rbac.revoke_database_permission, name='revoke-database-permission'),
     path('rbac/list-users/', rbac.list_users, name='list-users'),
     path('rbac/get-effective-access/', rbac.get_effective_access, name='get-effective-access'),
+
+    # ========================================================================
+    # Users (SPA-primary administration)
+    # ========================================================================
+    path('users/list/', users.list_users, name='users-list'),
+    path('users/create/', users.create_user, name='users-create'),
+    path('users/update/', users.update_user, name='users-update'),
+    path('users/set-password/', users.set_user_password, name='users-set-password'),
 
     # ========================================================================
     # Templates

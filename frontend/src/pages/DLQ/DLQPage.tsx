@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 
 import type { DLQMessage } from '../../api/generated/model/dLQMessage'
 import { useDlqMessages, useRetryDlqMessage } from '../../api/queries/dlq'
+import { useMe } from '../../api/queries/me'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
@@ -14,6 +15,8 @@ const { Title, Text } = Typography
 export function DLQPage() {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
+  const meQuery = useMe()
+  const isStaff = Boolean(meQuery.data?.is_staff)
 
   const [retryReason, setRetryReason] = useState<string>('')
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -192,7 +195,7 @@ export function DLQPage() {
     sort: table.sortPayload,
     limit: table.pagination.pageSize,
     offset: pageStart,
-  })
+  }, { enabled: isStaff })
   type AxiosErrorLike = { response?: { status?: number } }
   const status = (dlqQuery.error as AxiosErrorLike | null)?.response?.status
   const showStaffWarning = status === 403
@@ -201,6 +204,18 @@ export function DLQPage() {
   const totalMessages = typeof dlqQuery.data?.total === 'number'
     ? dlqQuery.data.total
     : messages.length
+
+  if (!isStaff) {
+    return (
+      <div>
+        <Title level={2}>DLQ</Title>
+        <Alert
+          type="warning"
+          message="DLQ доступен только для staff пользователей"
+        />
+      </div>
+    )
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>

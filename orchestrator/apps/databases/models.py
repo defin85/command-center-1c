@@ -704,6 +704,7 @@ class InfobaseUserMapping(models.Model):
     ib_username = models.CharField(max_length=128)
     ib_display_name = models.CharField(max_length=255, blank=True)
     ib_roles = models.JSONField(default=list, blank=True)
+    ib_password = EncryptedCharField(max_length=255, blank=True)
     auth_type = models.CharField(
         max_length=32,
         choices=InfobaseAuthType.choices,

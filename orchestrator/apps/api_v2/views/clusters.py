@@ -18,8 +18,9 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from apps.databases.models import Cluster
+from apps.databases.models import Cluster, PermissionLevel
 from apps.databases.serializers import ClusterSerializer, DatabaseSerializer
+from apps.databases.services import PermissionService
 from apps.operations.models import BatchOperation
 from apps.operations.services.admin_action_audit import log_admin_action
 
@@ -41,6 +42,20 @@ CLUSTER_SORT_FIELDS = {
     "databases_count": "databases_count",
     "last_sync": "last_sync",
 }
+
+
+def _is_staff(user) -> bool:
+    return bool(user and (user.is_staff or user.is_superuser))
+
+
+def _permission_denied(message: str):
+    return Response({
+        "success": False,
+        "error": {
+            "code": "PERMISSION_DENIED",
+            "message": message,
+        },
+    }, status=403)
 
 
 def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
@@ -427,6 +442,13 @@ def list_clusters(request):
             order_field = f"-{order_field}"
         qs = qs.order_by(order_field)
 
+    if not _is_staff(request.user):
+        qs = PermissionService.filter_accessible_clusters(
+            request.user,
+            qs,
+            PermissionLevel.VIEW,
+        )
+
     total = qs.count()
     qs = qs[offset:offset + limit]
 
@@ -502,10 +524,26 @@ def get_cluster(request):
             }
         }, status=404)
 
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.VIEW,
+            allow_database_permissions=True,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to access this cluster.")
+
     serializer = ClusterSerializer(cluster)
 
     # Get database statistics
     databases = cluster.databases.all()
+    if not _is_staff(request.user):
+        databases = PermissionService.filter_accessible_databases(
+            request.user,
+            databases,
+            PermissionLevel.VIEW,
+        )
     from apps.databases.serializers import DatabaseSerializer
     db_serializer = DatabaseSerializer(databases[:20], many=True)  # Limit to first 20
 
@@ -586,6 +624,15 @@ def sync_cluster(request):
             }
         }, status=404)
 
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.OPERATE,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to sync this cluster.")
+
     # Trigger async sync via Go Worker (or Celery fallback)
     from apps.operations.services import OperationsService
 
@@ -658,7 +705,7 @@ def sync_cluster(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def create_cluster(request):
     """
     POST /api/v2/clusters/create-cluster/
@@ -824,6 +871,15 @@ def update_cluster(request):
             }
         }, status=404)
 
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.MANAGE,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to update this cluster.")
+
     # Partial update
     serializer = ClusterSerializer(cluster, data=request.data, partial=True)
 
@@ -915,6 +971,15 @@ def update_cluster_credentials(request):
                 'message': 'Cluster not found'
             }
         }, status=404)
+
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.MANAGE,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to update cluster credentials.")
 
     reset = data.get('reset', False)
     updated_fields = []
@@ -1048,6 +1113,15 @@ def delete_cluster(request):
                 'message': 'Cluster not found'
             }
         }, status=404)
+
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.ADMIN,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to delete this cluster.")
 
     # Check if cluster has databases
     databases_count = cluster.databases.count()
@@ -1260,6 +1334,16 @@ def get_cluster_databases(request):
             }
         }, status=404)
 
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.VIEW,
+            allow_database_permissions=True,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to access this cluster.")
+
     # Get databases with optional filtering
     databases_qs = cluster.databases.all()
 
@@ -1275,6 +1359,13 @@ def get_cluster_databases(request):
     if health_status_filter:
         databases_qs = databases_qs.filter(last_check_status=health_status_filter)
         filters_applied['health_status'] = health_status_filter
+
+    if not _is_staff(request.user):
+        databases_qs = PermissionService.filter_accessible_databases(
+            request.user,
+            databases_qs,
+            PermissionLevel.VIEW,
+        )
 
     # Serialize databases
     serializer = DatabaseSerializer(databases_qs, many=True)
@@ -1302,7 +1393,7 @@ def get_cluster_databases(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def discover_clusters(request):
     """
     POST /api/v2/clusters/discover-clusters/

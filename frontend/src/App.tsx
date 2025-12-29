@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider, App as AntApp } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
@@ -11,14 +11,18 @@ import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
 import { ServiceMeshPage } from './pages/ServiceMesh'
 import { RBACPage } from './pages/RBAC/RBACPage'
+import { UsersPage } from './pages/Users/UsersPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
 import { DLQPage } from './pages/DLQ'
 import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
 import { ArtifactsPage } from './pages/Artifacts'
+import { ForbiddenPage } from './pages/Forbidden/ForbiddenPage'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
+import { useMe } from './api/queries/me'
+import { getAuthToken, subscribeAuthChange } from './lib/authState'
 
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -26,6 +30,25 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!token) {
     return <Navigate to="/login" replace />
+  }
+
+  return <>{children}</>
+}
+
+const StaffRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('auth_token')
+  const meQuery = useMe()
+
+  if (!token) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (meQuery.isLoading) {
+    return <div />
+  }
+
+  if (!meQuery.data?.is_staff) {
+    return <Navigate to="/forbidden" replace />
   }
 
   return <>{children}</>
@@ -81,6 +104,13 @@ function GlobalApiErrorHandler() {
 function App() {
   // Enable real-time cache invalidation via WebSocket
   useRealtimeInvalidation()
+  const [authToken, setAuthToken] = useState(() => getAuthToken())
+
+  useEffect(() => {
+    return subscribeAuthChange(() => {
+      setAuthToken(getAuthToken())
+    })
+  }, [])
 
   return (
     <ErrorBoundary>
@@ -91,11 +121,12 @@ function App() {
       }}>
         <AntApp>
           <GlobalApiErrorHandler />
-          <DatabaseStreamProvider>
+          <DatabaseStreamProvider key={authToken ?? 'guest'}>
             <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />
+          <Route path="/forbidden" element={<ForbiddenPage />} />
 
           {/* Защищенные маршруты */}
           <Route path="/" element={
@@ -182,32 +213,39 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/rbac" element={
-            <ProtectedRoute>
+            <StaffRoute>
               <MainLayout>
                 <RBACPage />
               </MainLayout>
-            </ProtectedRoute>
+            </StaffRoute>
+          } />
+          <Route path="/users" element={
+            <StaffRoute>
+              <MainLayout>
+                <UsersPage />
+              </MainLayout>
+            </StaffRoute>
           } />
           <Route path="/dlq" element={
-            <ProtectedRoute>
+            <StaffRoute>
               <MainLayout>
                 <DLQPage />
               </MainLayout>
-            </ProtectedRoute>
+            </StaffRoute>
           } />
           <Route path="/settings/runtime" element={
-            <ProtectedRoute>
+            <StaffRoute>
               <MainLayout>
                 <RuntimeSettingsPage />
               </MainLayout>
-            </ProtectedRoute>
+            </StaffRoute>
           } />
           <Route path="/settings/timeline" element={
-            <ProtectedRoute>
+            <StaffRoute>
               <MainLayout>
                 <TimelineSettingsPage />
               </MainLayout>
-            </ProtectedRoute>
+            </StaffRoute>
           } />
               </Routes>
             </BrowserRouter>

@@ -6,6 +6,9 @@ import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
+import { setAuthToken } from '../../api/client'
+import { notifyAuthChanged } from '../../lib/authState'
+import { resetQueryClient } from '../../lib/queryClient'
 
 const { Header, Content, Sider } = Layout
 
@@ -25,10 +28,15 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     reconnect: reconnectDatabaseStream,
   } = useDatabaseStreamStatus()
   const canSeeArtifacts = Boolean(meQuery.data?.is_staff)
+  const canManageUsers = Boolean(meQuery.data?.is_staff)
+  const canManageAdmin = Boolean(meQuery.data?.is_staff)
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
     localStorage.removeItem('refresh_token')
+    setAuthToken(null)
+    resetQueryClient()
+    notifyAuthChanged()
     navigate('/login')
   }
 
@@ -89,26 +97,39 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       icon: <DeploymentUnitOutlined />,
       label: 'Service Mesh',
     },
-    {
-      key: '/rbac',
-      icon: <SafetyCertificateOutlined />,
-      label: 'RBAC',
-    },
-    {
-      key: '/dlq',
-      icon: <WarningOutlined />,
-      label: 'DLQ',
-    },
-    {
-      key: '/settings/runtime',
-      icon: <SettingOutlined />,
-      label: 'Runtime Settings',
-    },
-    {
-      key: '/settings/timeline',
-      icon: <SettingOutlined />,
-      label: 'Timeline Settings',
-    },
+    ...(canManageAdmin
+      ? [{
+        key: '/rbac',
+        icon: <SafetyCertificateOutlined />,
+        label: 'RBAC',
+      }]
+      : []),
+    ...(canManageUsers
+      ? [{
+        key: '/users',
+        icon: <UserOutlined />,
+        label: 'Users',
+      }]
+      : []),
+    ...(canManageAdmin
+      ? [
+        {
+          key: '/dlq',
+          icon: <WarningOutlined />,
+          label: 'DLQ',
+        },
+        {
+          key: '/settings/runtime',
+          icon: <SettingOutlined />,
+          label: 'Runtime Settings',
+        },
+        {
+          key: '/settings/timeline',
+          icon: <SettingOutlined />,
+          label: 'Timeline Settings',
+        },
+      ]
+      : []),
   ]
 
   return (
@@ -154,11 +175,19 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             </Tooltip>
           </Popover>
         </Space>
-        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-          <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
-            {meQuery.data?.username ?? '...'}
-          </Button>
-        </Dropdown>
+        <Space size="small">
+          {meQuery.data?.is_superuser && (
+            <Tag color="gold">Superuser</Tag>
+          )}
+          {!meQuery.data?.is_superuser && meQuery.data?.is_staff && (
+            <Tag color="blue">Staff</Tag>
+          )}
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
+              {meQuery.data?.username ?? '...'}
+            </Button>
+          </Dropdown>
+        </Space>
       </Header>
       <Layout>
         <Sider width={200} theme="light">

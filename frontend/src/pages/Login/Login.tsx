@@ -5,6 +5,8 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { getApiBaseUrl } from '../../api/baseUrl'
 import { setAuthToken } from '../../api/client'
+import { notifyAuthChanged } from '../../lib/authState'
+import { resetQueryClient } from '../../lib/queryClient'
 
 const { Title } = Typography
 
@@ -38,6 +40,8 @@ export const Login = () => {
             localStorage.setItem('auth_token', access)
             localStorage.setItem('refresh_token', refresh)
             setAuthToken(access)
+            resetQueryClient()
+            notifyAuthChanged()
 
             message.success('Успешная авторизация!')
 

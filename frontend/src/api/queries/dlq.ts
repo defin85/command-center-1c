@@ -32,10 +32,11 @@ async function fetchDlqMessages(params?: DlqListFilters, signal?: AbortSignal): 
   )
 }
 
-export function useDlqMessages(params?: DlqListFilters) {
+export function useDlqMessages(params?: DlqListFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.dlq.list(params),
     queryFn: ({ signal }) => fetchDlqMessages(params, signal),
+    enabled: options?.enabled ?? true,
   })
 }
 

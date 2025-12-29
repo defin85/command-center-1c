@@ -195,6 +195,7 @@ class UserRefSerializer(serializers.Serializer):
 
 class InfobaseUserMappingSerializer(serializers.ModelSerializer):
     user = UserRefSerializer(allow_null=True, required=False)
+    ib_password_configured = serializers.SerializerMethodField()
 
     class Meta:
         model = InfobaseUserMapping
@@ -205,12 +206,16 @@ class InfobaseUserMappingSerializer(serializers.ModelSerializer):
             'ib_username',
             'ib_display_name',
             'ib_roles',
+            'ib_password_configured',
             'auth_type',
             'is_service',
             'notes',
             'created_at',
             'updated_at',
         ]
+
+    def get_ib_password_configured(self, obj: InfobaseUserMapping) -> bool:
+        return bool(obj.ib_password)
 
 
 class InfobaseUserMappingCreateSerializer(serializers.Serializer):
@@ -219,6 +224,7 @@ class InfobaseUserMappingCreateSerializer(serializers.Serializer):
     ib_username = serializers.CharField()
     ib_display_name = serializers.CharField(required=False, allow_blank=True)
     ib_roles = serializers.ListField(child=serializers.CharField(), required=False)
+    ib_password = serializers.CharField(required=False, allow_blank=False, write_only=True)
     auth_type = serializers.ChoiceField(
         choices=InfobaseUserMapping._meta.get_field('auth_type').choices,
         required=False,
@@ -242,4 +248,13 @@ class InfobaseUserMappingUpdateSerializer(serializers.Serializer):
 
 
 class InfobaseUserMappingDeleteSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+
+
+class InfobaseUserPasswordSetSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    password = serializers.CharField(write_only=True)
+
+
+class InfobaseUserPasswordResetSerializer(serializers.Serializer):
     id = serializers.IntegerField()

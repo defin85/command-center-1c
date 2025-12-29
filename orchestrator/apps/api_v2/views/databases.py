@@ -12,6 +12,7 @@ from datetime import date
 
 import redis as redis_module
 import redis.asyncio as redis_async
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
@@ -24,7 +25,8 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from apps.databases.models import Cluster, Database, InfobaseUserMapping
+from apps.databases.models import Cluster, Database, InfobaseUserMapping, PermissionLevel
+from apps.databases.services import PermissionService
 from apps.databases.serializers import (
     DatabaseSerializer,
     ClusterSerializer,
@@ -32,6 +34,8 @@ from apps.databases.serializers import (
     InfobaseUserMappingCreateSerializer,
     InfobaseUserMappingUpdateSerializer,
     InfobaseUserMappingDeleteSerializer,
+    InfobaseUserPasswordSetSerializer,
+    InfobaseUserPasswordResetSerializer,
 )
 from apps.operations.services import OperationsService
 from apps.operations.services.admin_action_audit import log_admin_action
@@ -75,6 +79,20 @@ DATABASE_SORT_FIELDS = {
     "last_check_status": "last_check_status",
     "last_check": "last_check",
 }
+
+
+def _is_staff(user) -> bool:
+    return bool(user and (user.is_staff or user.is_superuser))
+
+
+def _permission_denied(message: str):
+    return Response({
+        "success": False,
+        "error": {
+            "code": "PERMISSION_DENIED",
+            "message": message,
+        },
+    }, status=403)
 
 
 def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
@@ -488,6 +506,13 @@ def list_databases(request):
             Q(name__icontains=search) | Q(description__icontains=search) | Q(host__icontains=search)
         )
 
+    if not _is_staff(request.user):
+        qs = PermissionService.filter_accessible_databases(
+            request.user,
+            qs,
+            PermissionLevel.VIEW,
+        )
+
     # Get total count before pagination
     total = qs.count()
 
@@ -555,6 +580,15 @@ def get_database(request):
                 'message': 'Database not found'
             }
         }, status=404)
+
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_permission(
+            request.user,
+            db,
+            PermissionLevel.VIEW,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to access this database.")
 
     serializer = DatabaseSerializer(db)
 
@@ -627,6 +661,15 @@ def update_database_credentials(request):
                 'message': 'Database not found'
             }
         }, status=404)
+
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_permission(
+            request.user,
+            db,
+            PermissionLevel.MANAGE,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to update database credentials.")
 
     reset = data.get('reset', False)
     updated_fields = []
@@ -738,7 +781,7 @@ def health_check(request):
         }, status=400)
 
     try:
-        Database.objects.get(id=database_id)
+        db = Database.objects.get(id=database_id)
     except Database.DoesNotExist:
         return Response({
             'success': False,
@@ -747,6 +790,15 @@ def health_check(request):
                 'message': 'Database not found'
             }
         }, status=404)
+
+    if not _is_staff(request.user):
+        allowed = PermissionService.has_permission(
+            request.user,
+            db,
+            PermissionLevel.OPERATE,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to run health check.")
 
     enqueue_result = OperationsService.enqueue_health_check(
         database_ids=[database_id],
@@ -924,6 +976,7 @@ def create_infobase_user(request):
             ib_username=data['ib_username'].strip(),
             ib_display_name=data.get('ib_display_name', '').strip(),
             ib_roles=ib_roles,
+            ib_password=data.get('ib_password', ''),
             auth_type=data.get('auth_type', InfobaseUserMapping._meta.get_field('auth_type').default),
             is_service=bool(data.get('is_service', False)),
             notes=data.get('notes', '').strip(),
@@ -1102,6 +1155,116 @@ def delete_infobase_user(request):
 
 @extend_schema(
     tags=['v2'],
+    summary='Set infobase user password',
+    description='Set password for a manual infobase user mapping.',
+    request=InfobaseUserPasswordSetSerializer,
+    responses={
+        200: InfobaseUserMappingSerializer,
+        400: OpenApiResponse(description='Invalid request'),
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        404: OpenApiResponse(description='Not found'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def set_infobase_user_password(request):
+    serializer = InfobaseUserPasswordSetSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': 'Invalid payload',
+                'details': serializer.errors
+            }
+        }, status=400)
+
+    data = serializer.validated_data
+    try:
+        mapping = InfobaseUserMapping.objects.select_related('database').get(id=data['id'])
+    except InfobaseUserMapping.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'NOT_FOUND',
+                'message': 'Infobase user not found'
+            }
+        }, status=404)
+
+    mapping.ib_password = data['password']
+    mapping.updated_by = request.user
+    mapping.save(update_fields=['ib_password', 'updated_by', 'updated_at'])
+
+    log_admin_action(
+        request,
+        action='database.ib_user.set_password',
+        outcome='success',
+        target_type='database',
+        target_id=str(mapping.database.id),
+        metadata={'ib_username': mapping.ib_username},
+    )
+
+    return Response(InfobaseUserMappingSerializer(mapping).data)
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Reset infobase user password',
+    description='Reset password for a manual infobase user mapping.',
+    request=InfobaseUserPasswordResetSerializer,
+    responses={
+        200: OpenApiResponse(description='Password reset'),
+        400: OpenApiResponse(description='Invalid request'),
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        404: OpenApiResponse(description='Not found'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def reset_infobase_user_password(request):
+    serializer = InfobaseUserPasswordResetSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': 'Invalid payload',
+                'details': serializer.errors
+            }
+        }, status=400)
+
+    mapping_id = serializer.validated_data['id']
+    try:
+        mapping = InfobaseUserMapping.objects.select_related('database').get(id=mapping_id)
+    except InfobaseUserMapping.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'NOT_FOUND',
+                'message': 'Infobase user not found'
+            }
+        }, status=404)
+
+    mapping.ib_password = ''
+    mapping.updated_by = request.user
+    mapping.save(update_fields=['ib_password', 'updated_by', 'updated_at'])
+
+    log_admin_action(
+        request,
+        action='database.ib_user.reset_password',
+        outcome='success',
+        target_type='database',
+        target_id=str(mapping.database.id),
+        metadata={'ib_username': mapping.ib_username},
+    )
+
+    return Response({'message': 'Infobase user password reset'})
+
+
+@extend_schema(
+    tags=['v2'],
     summary='Bulk health check databases',
     description='Queue health check on multiple databases. Provide either database_ids or cluster_id.',
     request=BulkHealthCheckRequestSerializer,
@@ -1159,6 +1322,25 @@ def bulk_health_check(request):
                 'message': 'No databases found for the request'
             }
         }, status=400)
+
+    if not _is_staff(request.user):
+        all_allowed, denied = PermissionService.check_bulk_permission(
+            request.user,
+            [str(db.id) for db in databases],
+            PermissionLevel.OPERATE,
+        )
+        if not all_allowed:
+            denied_str = ', '.join(denied[:5])
+            message = f"Access denied for databases: {denied_str}"
+            if len(denied) > 5:
+                message += f" and {len(denied) - 5} more"
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'PERMISSION_DENIED',
+                    'message': message,
+                }
+            }, status=403)
 
     enqueue_result = OperationsService.enqueue_health_check(
         database_ids=[str(db.id) for db in databases],
@@ -1292,6 +1474,20 @@ def get_database_stream_ticket(request):
             }
         }, status=404)
 
+    if not _is_staff(request.user):
+        if not cluster_id:
+            return _permission_denied("cluster_id is required for non-staff users.")
+
+        cluster = Cluster.objects.get(id=cluster_id)
+        allowed = PermissionService.has_cluster_permission(
+            request.user,
+            cluster,
+            PermissionLevel.VIEW,
+            allow_database_permissions=True,
+        )
+        if not allowed:
+            return _permission_denied("You do not have permission to access this cluster.")
+
     redis_conn = _get_redis_connection()
     active_key = f"{DB_SSE_ACTIVE_PREFIX}{request.user.id}"
 
@@ -1371,6 +1567,32 @@ async def database_stream(request):
     username = ticket_data.get('username')
     user_id = ticket_data.get('user_id')
     force = bool(ticket_data.get('force'))
+    user = await sync_to_async(User.objects.get)(id=user_id)
+    is_staff = user.is_staff or user.is_superuser
+    allowed_db_ids: set[str] | None = None
+
+    if not is_staff:
+        def _load_allowed_ids():
+            qs = Database.objects.all()
+            if cluster_id:
+                qs = qs.filter(cluster_id=cluster_id)
+            qs = PermissionService.filter_accessible_databases(
+                user,
+                qs,
+                PermissionLevel.VIEW,
+            )
+            return {str(db_id) for db_id in qs.values_list('id', flat=True)}
+
+        allowed_db_ids = await sync_to_async(_load_allowed_ids, thread_sensitive=True)()
+        if not allowed_db_ids:
+            return JsonResponse({
+                'success': False,
+                'error': {
+                    'code': 'PERMISSION_DENIED',
+                    'message': 'No accessible databases for stream',
+                }
+            }, status=403)
+
     logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
 
     active_key = f"{DB_SSE_ACTIVE_PREFIX}{user_id}"
@@ -1446,6 +1668,11 @@ async def database_stream(request):
 
                         event_data = fields.get('data', '{}')
                         event_type = fields.get('event_type') or 'database_update'
+                        if allowed_db_ids is not None:
+                            event_db_id = fields.get('database_id')
+                            if not event_db_id or event_db_id not in allowed_db_ids:
+                                last_id = msg_id
+                                continue
                         try:
                             await redis_conn.expire(active_key, DB_SSE_ACTIVE_TTL)
                         except Exception:

@@ -33,17 +33,25 @@ export interface DatabasePermissionFilters {
   offset?: number
 }
 
-export function useClusterPermissions(filters?: ClusterPermissionFilters) {
+export function useClusterPermissions(
+  filters?: ClusterPermissionFilters,
+  options?: { enabled?: boolean }
+) {
   return useQuery({
     queryKey: queryKeys.rbac.clusterPermissions(filters),
     queryFn: (): Promise<ClusterPermissionListResponse> => api.getRbacListClusterPermissions(filters),
+    enabled: options?.enabled ?? true,
   })
 }
 
-export function useDatabasePermissions(filters?: DatabasePermissionFilters) {
+export function useDatabasePermissions(
+  filters?: DatabasePermissionFilters,
+  options?: { enabled?: boolean }
+) {
   return useQuery({
     queryKey: queryKeys.rbac.databasePermissions(filters),
     queryFn: (): Promise<DatabasePermissionListResponse> => api.getRbacListDatabasePermissions(filters),
+    enabled: options?.enabled ?? true,
   })
 }
 
@@ -110,12 +118,16 @@ export type UserListResponse = {
   total: number
 }
 
-export function useRbacUsers(filters?: { search?: string; limit?: number; offset?: number }) {
+export function useRbacUsers(
+  filters?: { search?: string; limit?: number; offset?: number },
+  options?: { enabled?: boolean }
+) {
   return useQuery({
     queryKey: queryKeys.rbac.users(filters),
     queryFn: async (): Promise<UserListResponse> => {
       const response = await apiClient.get('/api/v2/rbac/list-users/', { params: filters })
       return response.data
     },
+    enabled: options?.enabled ?? true,
   })
 }

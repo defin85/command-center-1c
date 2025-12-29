@@ -11,3 +11,8 @@ export const queryClient = new QueryClient({
     },
   },
 })
+
+export const resetQueryClient = () => {
+  queryClient.cancelQueries()
+  queryClient.clear()
+}

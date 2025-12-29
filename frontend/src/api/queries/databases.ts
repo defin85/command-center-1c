@@ -132,6 +132,7 @@ export type InfobaseUserMapping = {
   ib_username: string
   ib_display_name?: string | null
   ib_roles: string[]
+  ib_password_configured: boolean
   auth_type: 'local' | 'ad' | 'service' | 'other'
   is_service: boolean
   notes?: string
@@ -151,6 +152,7 @@ export type InfobaseUserCreateRequest = {
   ib_username: string
   ib_display_name?: string
   ib_roles?: string[]
+  ib_password?: string
   auth_type?: InfobaseUserMapping['auth_type']
   is_service?: boolean
   notes?: string
@@ -174,6 +176,11 @@ export type InfobaseUserDeleteRequest = {
 export type InfobaseUserDeleteParams = {
   id: number
   databaseId?: string
+}
+
+export type InfobaseUserPasswordSetRequest = {
+  id: number
+  password: string
 }
 
 export type InfobaseUsersQuery = {
@@ -358,6 +365,48 @@ export function useDeleteInfobaseUser() {
     },
     onError: (error: Error) => {
       message.error(error.message || 'Failed to delete infobase user')
+    },
+  })
+}
+
+export function useSetInfobaseUserPassword() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: InfobaseUserPasswordSetRequest): Promise<InfobaseUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/set-ib-user-password/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`Password updated for ${data.ib_username}`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.ibUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to set infobase user password')
+    },
+  })
+}
+
+export function useResetInfobaseUserPassword() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: { id: number; databaseId: string }): Promise<{ message: string }> => {
+      const response = await apiClient.post('/api/v2/databases/reset-ib-user-password/', { id: payload.id })
+      return response.data
+    },
+    onSuccess: (_data, variables) => {
+      message.success('Password reset')
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.ibUsers({ databaseId: variables.databaseId }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to reset infobase user password')
     },
   })
 }

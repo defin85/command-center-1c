@@ -6,6 +6,7 @@ import type { ClusterPermission } from '../../api/generated/model/clusterPermiss
 import type { DatabasePermission } from '../../api/generated/model/databasePermission'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
+import { useMe } from '../../api/queries/me'
 import {
   useClusterPermissions,
   useDatabasePermissions,
@@ -20,6 +21,8 @@ import {
   useCreateInfobaseUser,
   useUpdateInfobaseUser,
   useDeleteInfobaseUser,
+  useSetInfobaseUserPassword,
+  useResetInfobaseUserPassword,
   type InfobaseUserMapping,
 } from '../../api/queries/databases'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -38,10 +41,13 @@ const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelC
 
 export function RBACPage() {
   const { modal } = App.useApp()
+  const meQuery = useMe()
+  const isStaff = Boolean(meQuery.data?.is_staff)
   const { data: clustersResponse } = useClusters()
   const clusters = clustersResponse?.clusters ?? []
   const { data: databasesResponse } = useDatabases({
     filters: { limit: 1000, offset: 0 },
+    enabled: isStaff,
   })
   const databases = databasesResponse?.databases ?? []
 
@@ -52,6 +58,8 @@ export function RBACPage() {
   const createInfobaseUser = useCreateInfobaseUser()
   const updateInfobaseUser = useUpdateInfobaseUser()
   const deleteInfobaseUser = useDeleteInfobaseUser()
+  const setInfobaseUserPassword = useSetInfobaseUserPassword()
+  const resetInfobaseUserPassword = useResetInfobaseUserPassword()
 
   const [selectedIbDatabaseId, setSelectedIbDatabaseId] = useState<string | undefined>()
   const [editingIbUser, setEditingIbUser] = useState<InfobaseUserMapping | null>(null)
@@ -80,6 +88,7 @@ export function RBACPage() {
     ib_username: string
     ib_display_name?: string
     ib_roles?: string[]
+    ib_password?: string
     auth_type?: InfobaseUserMapping['auth_type']
     is_service?: boolean
     notes?: string
@@ -107,6 +116,7 @@ export function RBACPage() {
       ib_username: record.ib_username,
       ib_display_name: record.ib_display_name ?? '',
       ib_roles: record.ib_roles ?? [],
+      ib_password: '',
       auth_type: record.auth_type,
       is_service: record.is_service,
       notes: record.notes ?? '',
@@ -142,7 +152,7 @@ export function RBACPage() {
     }
 
     createInfobaseUser.mutate(
-      { database_id: values.database_id, ...payloadBase },
+      { database_id: values.database_id, ...payloadBase, ib_password: values.ib_password?.trim() || undefined },
       { onSuccess: handleIbUserResetForm }
     )
   }
@@ -155,6 +165,45 @@ export function RBACPage() {
       cancelText: 'Отмена',
       okButtonProps: { danger: true },
       onOk: () => deleteInfobaseUser.mutate({ id: record.id, databaseId: record.database_id }),
+    })
+  }
+
+  const handleIbUserPasswordUpdate = async () => {
+    if (!editingIbUser) {
+      return
+    }
+    const password = ibUserForm.getFieldValue('ib_password')?.trim()
+    if (!password) {
+      modal.warning({
+        title: 'Введите пароль',
+        content: 'Укажите новый пароль ИБ перед сохранением.',
+      })
+      return
+    }
+    setInfobaseUserPassword.mutate(
+      { id: editingIbUser.id, password },
+      {
+        onSuccess: () => {
+          ibUserForm.setFieldsValue({ ib_password: '' })
+        },
+      }
+    )
+  }
+
+  const handleIbUserPasswordReset = () => {
+    if (!editingIbUser) {
+      return
+    }
+    modal.confirm({
+      title: `Сбросить пароль для ${editingIbUser.ib_username}?`,
+      content: 'Пароль будет очищен.',
+      okText: 'Сбросить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: () => resetInfobaseUserPassword.mutate({
+        id: editingIbUser.id,
+        databaseId: editingIbUser.database_id,
+      }),
     })
   }
 
@@ -322,6 +371,15 @@ export function RBACPage() {
         ),
       },
       {
+        title: 'Password',
+        key: 'password',
+        render: (_: unknown, row) => (
+          <Tag color={row.ib_password_configured ? 'green' : 'default'}>
+            {row.ib_password_configured ? 'Configured' : 'Missing'}
+          </Tag>
+        ),
+      },
+      {
         title: 'Action',
         key: 'actions',
         render: (_: unknown, row) => (
@@ -368,6 +426,7 @@ export function RBACPage() {
       { key: 'roles', label: 'Roles', groupKey: 'meta', groupLabel: 'Meta' },
       { key: 'auth_type', label: 'Auth', groupKey: 'meta', groupLabel: 'Meta' },
       { key: 'is_service', label: 'Service', groupKey: 'meta', groupLabel: 'Meta' },
+      { key: 'password', label: 'Password', groupKey: 'meta', groupLabel: 'Meta' },
       { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
     ],
     initialPageSize: 25,
@@ -383,7 +442,7 @@ export function RBACPage() {
     search: clusterTable.search || undefined,
     limit: clusterTable.pagination.pageSize,
     offset: clusterPageStart,
-  })
+  }, { enabled: isStaff })
   const databasePermissionsQuery = useDatabasePermissions({
     user_id: parseUserId(databaseTable.filters.user_id),
     database_id: normalizeString(databaseTable.filters.database_id),
@@ -391,7 +450,7 @@ export function RBACPage() {
     search: databaseTable.search || undefined,
     limit: databaseTable.pagination.pageSize,
     offset: databasePageStart,
-  })
+  }, { enabled: isStaff })
 
   const ibUsersQuery = useInfobaseUsers({
     databaseId: selectedIbDatabaseId,
@@ -407,7 +466,7 @@ export function RBACPage() {
     search: userSearch || undefined,
     limit: 20,
     offset: 0,
-  })
+  }, { enabled: isStaff })
 
   const clusterPermissions = clusterPermissionsQuery.data?.permissions ?? []
   const totalClusterPermissions = typeof clusterPermissionsQuery.data?.total === 'number'
@@ -438,6 +497,18 @@ export function RBACPage() {
     })
     return Array.from(map.values())
   }, [usersQuery.data?.users, editingIbUser?.user])
+
+  if (!isStaff) {
+    return (
+      <div>
+        <Title level={2}>RBAC</Title>
+        <Alert
+          type="warning"
+          message="RBAC доступен только для staff пользователей"
+        />
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -691,7 +762,7 @@ export function RBACPage() {
                       <Form.Item label="IB Display Name" name="ib_display_name">
                         <Input placeholder="Display name" />
                       </Form.Item>
-                      <Form.Item label="CC User ID" name="user_id">
+                      <Form.Item label="CC User" name="user_id">
                         <Select
                           showSearch
                           allowClear
@@ -721,6 +792,24 @@ export function RBACPage() {
                     <Form.Item label="Roles" name="ib_roles">
                       <Select mode="tags" tokenSeparators={[',']} placeholder="Roles (comma separated)" />
                     </Form.Item>
+                    <Form.Item
+                      label={editingIbUser ? 'New IB Password' : 'IB Password'}
+                      name="ib_password"
+                      help={(
+                        <Space size="small">
+                          {editingIbUser ? (
+                            <span>Use Update Password to apply changes.</span>
+                          ) : (
+                            <span>Set password during creation (optional).</span>
+                          )}
+                          <Tag color={editingIbUser?.ib_password_configured ? 'green' : 'default'}>
+                            {editingIbUser?.ib_password_configured ? 'Configured' : 'Missing'}
+                          </Tag>
+                        </Space>
+                      )}
+                    >
+                      <Input.Password placeholder="Enter password" />
+                    </Form.Item>
                     <Form.Item label="Notes" name="notes">
                       <Input placeholder="Optional notes" />
                     </Form.Item>
@@ -732,6 +821,23 @@ export function RBACPage() {
                       >
                         {editingIbUser ? 'Update' : 'Add'}
                       </Button>
+                      {editingIbUser && (
+                        <Button
+                          onClick={handleIbUserPasswordUpdate}
+                          loading={setInfobaseUserPassword.isPending}
+                        >
+                          Update Password
+                        </Button>
+                      )}
+                      {editingIbUser && (
+                        <Button
+                          danger
+                          onClick={handleIbUserPasswordReset}
+                          loading={resetInfobaseUserPassword.isPending}
+                        >
+                          Reset Password
+                        </Button>
+                      )}
                       {editingIbUser && (
                         <Button onClick={handleIbUserResetForm}>Cancel edit</Button>
                       )}

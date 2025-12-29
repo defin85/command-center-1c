@@ -14,6 +14,7 @@ import { getV2 } from '../../api/generated'
 import { executeOperation, type RASOperationType } from '../../api/operations'
 import { apiClient } from '../../api/client'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
+import { useMe } from '../../api/queries/me'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
 import { OperationsTable, buildOperationsColumns } from './components/OperationsTable'
@@ -49,6 +50,8 @@ const isActiveStatus = (
  * OperationsPage - Main page with tabs for operations list and live monitor
  */
 export const OperationsPage = () => {
+  const meQuery = useMe()
+  const isStaff = Boolean(meQuery.data?.is_staff)
   const [searchParams, setSearchParams] = useSearchParams()
 
   // UI State (not data-related)
@@ -248,6 +251,9 @@ export const OperationsPage = () => {
   }, [operationIdFromUrl])
 
   useEffect(() => {
+    if (!isStaff) {
+      return
+    }
     let isActive = true
     void (async () => {
       try {
@@ -270,7 +276,7 @@ export const OperationsPage = () => {
     return () => {
       isActive = false
     }
-  }, [])
+  }, [isStaff])
 
   useEffect(() => {
     setOperationsState((current) => {

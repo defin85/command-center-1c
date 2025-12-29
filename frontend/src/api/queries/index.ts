@@ -49,6 +49,10 @@ export const queryKeys = {
     versions: (artifactId: string) => [...queryKeys.artifacts.all, 'versions', artifactId] as const,
     aliases: (artifactId: string) => [...queryKeys.artifacts.all, 'aliases', artifactId] as const,
   },
+  users: {
+    all: ['users'] as const,
+    list: (filters?: unknown) => [...queryKeys.users.all, 'list', filters] as const,
+  },
 } as const
 
 export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
@@ -68,11 +72,14 @@ export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'
+export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
 export {
   useInfobaseUsers,
   useCreateInfobaseUser,
   useUpdateInfobaseUser,
   useDeleteInfobaseUser,
+  useSetInfobaseUserPassword,
+  useResetInfobaseUserPassword,
 } from './databases'
 export {
   useArtifacts,

@@ -816,6 +816,36 @@ class PermissionService:
         ).values_list('level', flat=True).first()
 
     @classmethod
+    def has_cluster_permission(
+        cls,
+        user,
+        cluster: Cluster,
+        required_level: int,
+        allow_database_permissions: bool = False,
+    ) -> bool:
+        from .models import ClusterPermission, DatabasePermission
+
+        if user.is_superuser:
+            return True
+
+        level = ClusterPermission.objects.filter(
+            user=user,
+            cluster=cluster
+        ).values_list('level', flat=True).first()
+
+        if level is not None and level >= required_level:
+            return True
+
+        if allow_database_permissions:
+            return DatabasePermission.objects.filter(
+                user=user,
+                level__gte=required_level,
+                database__cluster=cluster,
+            ).exists()
+
+        return False
+
+    @classmethod
     def has_permission(
         cls,
         user,
@@ -864,6 +894,37 @@ class PermissionService:
         return queryset.filter(
             Q(id__in=db_ids) | Q(cluster_id__in=cluster_ids)
         )
+
+    @classmethod
+    def filter_accessible_clusters(
+        cls,
+        user,
+        queryset,
+        min_level: int = None,
+    ):
+        from django.db.models import Q
+        from .models import ClusterPermission, DatabasePermission, PermissionLevel
+
+        if min_level is None:
+            min_level = PermissionLevel.VIEW
+
+        if user.is_superuser:
+            return queryset
+
+        cluster_ids = ClusterPermission.objects.filter(
+            user=user,
+            level__gte=min_level
+        ).values_list('cluster_id', flat=True)
+
+        db_cluster_ids = DatabasePermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+            database__cluster_id__isnull=False,
+        ).values_list('database__cluster_id', flat=True)
+
+        return queryset.filter(
+            Q(id__in=cluster_ids) | Q(id__in=db_cluster_ids)
+        ).distinct()
 
     @classmethod
     def check_bulk_permission(
