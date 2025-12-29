@@ -10,6 +10,9 @@ export const queryKeys = {
     all: ['databases'] as const,
     list: (filters?: DatabaseFilters) => [...queryKeys.databases.all, 'list', filters] as const,
     detail: (id: string) => [...queryKeys.databases.all, 'detail', id] as const,
+    ibUsers: (filters?: { databaseId?: string; search?: string; limit?: number; offset?: number }) => (
+      [...queryKeys.databases.all, 'ib-users', filters] as const
+    ),
   },
   clusters: {
     all: ['clusters'] as const,
@@ -21,6 +24,9 @@ export const queryKeys = {
     clusterPermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'cluster', filters] as const,
     databasePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'database', filters] as const,
     effectiveAccess: (userId?: number) => [...queryKeys.rbac.all, 'effective-access', userId] as const,
+    users: (filters?: { search?: string; limit?: number; offset?: number }) => (
+      [...queryKeys.rbac.all, 'users', filters] as const
+    ),
   },
   templates: {
     all: ['templates'] as const,
@@ -62,4 +68,17 @@ export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'
-export { useArtifacts, useArtifactVersions, useArtifactAliases, useUpsertArtifactAlias } from './artifacts'
+export {
+  useInfobaseUsers,
+  useCreateInfobaseUser,
+  useUpdateInfobaseUser,
+  useDeleteInfobaseUser,
+} from './databases'
+export {
+  useArtifacts,
+  useArtifactVersions,
+  useArtifactAliases,
+  useUpsertArtifactAlias,
+  useDeleteArtifact,
+  useRestoreArtifact,
+} from './artifacts'

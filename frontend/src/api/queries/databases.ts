@@ -120,6 +120,72 @@ export type DatabaseCredentialsUpdateResponse = {
   message: string
 }
 
+export type InfobaseUserRef = {
+  id: number
+  username: string
+}
+
+export type InfobaseUserMapping = {
+  id: number
+  database_id: string
+  user?: InfobaseUserRef | null
+  ib_username: string
+  ib_display_name?: string | null
+  ib_roles: string[]
+  auth_type: 'local' | 'ad' | 'service' | 'other'
+  is_service: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export type InfobaseUserListResponse = {
+  users: InfobaseUserMapping[]
+  count: number
+  total: number
+}
+
+export type InfobaseUserCreateRequest = {
+  database_id: string
+  user_id?: number | null
+  ib_username: string
+  ib_display_name?: string
+  ib_roles?: string[]
+  auth_type?: InfobaseUserMapping['auth_type']
+  is_service?: boolean
+  notes?: string
+}
+
+export type InfobaseUserUpdateRequest = {
+  id: number
+  user_id?: number | null
+  ib_username?: string
+  ib_display_name?: string
+  ib_roles?: string[]
+  auth_type?: InfobaseUserMapping['auth_type']
+  is_service?: boolean
+  notes?: string
+}
+
+export type InfobaseUserDeleteRequest = {
+  id: number
+}
+
+export type InfobaseUserDeleteParams = {
+  id: number
+  databaseId?: string
+}
+
+export type InfobaseUsersQuery = {
+  databaseId?: string
+  search?: string
+  authType?: 'local' | 'ad' | 'service' | 'other'
+  isService?: boolean
+  hasUser?: boolean
+  limit?: number
+  offset?: number
+}
+
 /**
  * React Query hook for fetching single database details.
  */
@@ -201,6 +267,97 @@ export function useUpdateDatabaseCredentials() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+export function useInfobaseUsers(query: InfobaseUsersQuery) {
+  return useQuery({
+    queryKey: queryKeys.databases.ibUsers(query),
+    queryFn: async ({ signal }): Promise<InfobaseUserListResponse> => {
+      const response = await apiClient.get('/api/v2/databases/list-ib-users/', {
+        params: {
+          database_id: query.databaseId,
+          search: query.search,
+          auth_type: query.authType,
+          is_service: query.isService,
+          has_user: query.hasUser,
+          limit: query.limit ?? 100,
+          offset: query.offset ?? 0,
+        },
+        signal,
+      })
+      return response.data
+    },
+    enabled: Boolean(query.databaseId),
+    placeholderData: (previousData) => previousData,
+  })
+}
+
+export function useCreateInfobaseUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: InfobaseUserCreateRequest): Promise<InfobaseUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/create-ib-user/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`Infobase user ${data.ib_username} created`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.ibUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to create infobase user')
+    },
+  })
+}
+
+export function useUpdateInfobaseUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: InfobaseUserUpdateRequest): Promise<InfobaseUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/update-ib-user/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`Infobase user ${data.ib_username} updated`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.ibUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to update infobase user')
+    },
+  })
+}
+
+export function useDeleteInfobaseUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: InfobaseUserDeleteParams): Promise<{ message: string }> => {
+      const response = await apiClient.post('/api/v2/databases/delete-ib-user/', { id: payload.id })
+      return response.data
+    },
+    onSuccess: (_data, variables) => {
+      message.success('Infobase user deleted')
+      if (variables.databaseId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.databases.ibUsers({ databaseId: variables.databaseId }),
+        })
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.databases.ibUsers(undefined) })
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to delete infobase user')
     },
   })
 }

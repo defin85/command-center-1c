@@ -103,6 +103,12 @@ class DatabasePermissionListResponseSerializer(serializers.Serializer):
     total = serializers.IntegerField()
 
 
+class UserListResponseSerializer(serializers.Serializer):
+    users = UserRefSerializer(many=True)
+    count = serializers.IntegerField()
+    total = serializers.IntegerField()
+
+
 class GrantClusterPermissionRequestSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     cluster_id = serializers.UUIDField()
@@ -639,6 +645,55 @@ def revoke_database_permission(request):
         metadata={"user_id": user_id, "deleted": deleted > 0},
     )
     return Response({"deleted": deleted > 0})
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="List users",
+    description="List users for RBAC selection (staff only).",
+    parameters=[
+        OpenApiParameter(name="search", type=str, required=False, description="Search by username or name"),
+        OpenApiParameter(name="limit", type=int, required=False, description="Maximum results (default: 100, max: 1000)"),
+        OpenApiParameter(name="offset", type=int, required=False, description="Pagination offset (default: 0)"),
+    ],
+    responses={
+        200: UserListResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def list_users(request):
+    search = (request.query_params.get("search") or "").strip()
+    try:
+        limit = int(request.query_params.get("limit", 100))
+        limit = max(1, min(limit, 1000))
+    except (TypeError, ValueError):
+        limit = 100
+    try:
+        offset = int(request.query_params.get("offset", 0))
+        offset = max(0, offset)
+    except (TypeError, ValueError):
+        offset = 0
+
+    qs = User.objects.all()
+    if search:
+        qs = qs.filter(
+            Q(username__icontains=search)
+            | Q(first_name__icontains=search)
+            | Q(last_name__icontains=search)
+        )
+
+    total = qs.count()
+    qs = qs.order_by("username")[offset:offset + limit]
+    data = UserRefSerializer(qs, many=True).data
+
+    return Response({
+        "users": data,
+        "count": len(data),
+        "total": total,
+    })
 
 
 @extend_schema(

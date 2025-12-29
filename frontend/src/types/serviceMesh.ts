@@ -292,6 +292,7 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   postgresql: { x: 200, y: 410 },
   redis: { x: 400, y: 410 },
   worker: { x: 600, y: 410 },
+  minio: { x: 800, y: 410 },
 
   // Level 4: Worker children (bottom)
   'ras-server': { x: 200, y: 540 },
@@ -352,6 +353,12 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'Redis',
     icon: 'cloud-server',
     description: 'Queue and cache (port 6379)',
+  },
+  minio: {
+    name: 'minio',
+    displayName: 'MinIO',
+    icon: 'cloud-server',
+    description: 'Artifact storage (port 9000)',
   },
   'event-subscriber': {
     name: 'event-subscriber',

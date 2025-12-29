@@ -122,7 +122,34 @@ export const useTablePreferences = (
   filters: TableFilterConfig[],
 ) => {
   const storageKey = `cc1c.tablePreferences.${tableId}`
-  const defaultPreset = useMemo(() => buildDefaultPreset(columns, filters), [columns, filters])
+  const columnsSignature = useMemo(
+    () => columns.map((col) => [
+      col.key,
+      col.label,
+      col.sortable ? '1' : '0',
+      col.defaultVisible === false ? '0' : '1',
+      col.groupKey ?? '',
+      col.groupLabel ?? '',
+    ].join(':')).join('|'),
+    [columns]
+  )
+  const filtersSignature = useMemo(
+    () => filters.map((filter) => [
+      filter.key,
+      filter.label,
+      filter.type,
+      filter.multiple ? '1' : '0',
+      filter.placeholder ?? '',
+      (filter.options || []).map((option) => `${option.value}:${option.label}`).join(','),
+    ].join(':')).join('|'),
+    [filters]
+  )
+  const stableColumns = useMemo(() => columns, [columnsSignature])
+  const stableFilters = useMemo(() => filters, [filtersSignature])
+  const defaultPreset = useMemo(
+    () => buildDefaultPreset(stableColumns, stableFilters),
+    [columnsSignature, filtersSignature, stableColumns, stableFilters]
+  )
   const [preferences, setPreferences] = useState<TablePreferences>(() => ({
     activePresetId: defaultPreset.id,
     presets: [defaultPreset],
@@ -133,14 +160,17 @@ export const useTablePreferences = (
   useEffect(() => {
     const raw = localStorage.getItem(storageKey)
     if (!raw) {
-      setLoadedFromStorage(false)
+      setLoadedFromStorage(true)
       return
     }
     try {
       const parsed = JSON.parse(raw) as TablePreferences
-      if (!parsed?.presets?.length) return
+      if (!parsed?.presets?.length) {
+        setLoadedFromStorage(true)
+        return
+      }
       const normalizedPresets = parsed.presets.map((preset) =>
-        normalizePreset(preset, columns, filters)
+        normalizePreset(preset, stableColumns, stableFilters)
       )
       const activePresetId = normalizedPresets.some((p) => p.id === parsed.activePresetId)
         ? parsed.activePresetId
@@ -151,9 +181,9 @@ export const useTablePreferences = (
       })
       setLoadedFromStorage(true)
     } catch {
-      // ignore
+      setLoadedFromStorage(true)
     }
-  }, [columns, filters, storageKey])
+  }, [columnsSignature, filtersSignature, stableColumns, stableFilters, storageKey])
 
   useEffect(() => {
     if (loadedFromStorage || isDirty) return

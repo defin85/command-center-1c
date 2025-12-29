@@ -28,6 +28,7 @@ source ~/.bashrc
 | **Системные пакеты** | git, curl, wget, jq, ripgrep, fd, htop, build-essential |
 | **PostgreSQL 15** | База данных + пользователь `commandcenter` + база `commandcenter` |
 | **Redis 7** | Кеш и очередь задач |
+| **MinIO** | S3-совместимое хранилище артефактов |
 | **pgAdmin 4** | Web-интерфейс для управления PostgreSQL |
 | **mise** | Менеджер версий для Go/Python/Node.js |
 | **Go 1.24** | Backend сервисы |
@@ -55,13 +56,13 @@ source ~/.bashrc
 
 Фильтры:
   --system-only       Только системные пакеты
-  --infra-only        Только PostgreSQL/Redis
+  --infra-only        Только PostgreSQL/Redis/MinIO
   --project-only      Только mise + зависимости
   --monitoring-only   Только мониторинг
 
 Skip флаги:
   --skip-system       Пропустить системные пакеты
-  --skip-infra        Пропустить PostgreSQL/Redis
+  --skip-infra        Пропустить PostgreSQL/Redis/MinIO
   --skip-project      Пропустить mise/deps
   --skip-monitoring   Пропустить мониторинг
 
@@ -85,7 +86,7 @@ Options:
 
 Устанавливает: git, curl, wget, jq, ripgrep, fd, htop, tree, unzip, zip, openssh, base-devel
 
-### install-infra.sh — PostgreSQL + Redis + pgAdmin
+### install-infra.sh — PostgreSQL + Redis + MinIO + pgAdmin
 
 ```bash
 ./scripts/setup/install-infra.sh [OPTIONS]
@@ -93,9 +94,11 @@ Options:
 Options:
   --only-postgres     Только PostgreSQL
   --only-redis        Только Redis
+  --only-minio        Только MinIO
   --only-pgadmin      Только pgAdmin
   --skip-postgres     Пропустить PostgreSQL
   --skip-redis        Пропустить Redis
+  --skip-minio        Пропустить MinIO
   --skip-pgadmin      Пропустить pgAdmin
   --dry-run           Показать план
 ```
@@ -181,7 +184,7 @@ scripts/setup/
 ├── bootstrap.sh          # Единая точка входа
 ├── install.sh            # mise + Go/Python/Node.js + deps
 ├── install-system.sh     # Системные пакеты
-├── install-infra.sh      # PostgreSQL + Redis + pgAdmin
+├── install-infra.sh      # PostgreSQL + Redis + MinIO + pgAdmin
 ├── install-monitoring.sh # Prometheus, Grafana, Exporters
 ├── install-exporters.sh  # Legacy (используется install-monitoring.sh)
 ├── verify.sh             # Проверка установки
@@ -208,6 +211,14 @@ DB_NAME=commandcenter
 # Redis
 REDIS_HOST=localhost
 REDIS_PORT=6379
+
+# MinIO
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=cc1c-artifacts
+MINIO_SECURE=false
+MINIO_DATA_DIR=/var/lib/minio
 ```
 
 ## Примеры использования
@@ -220,7 +231,7 @@ source ~/.bashrc
 ./scripts/dev/start-all.sh
 ```
 
-### Только инфраструктура (PostgreSQL + Redis)
+### Только инфраструктура (PostgreSQL + Redis + MinIO)
 
 ```bash
 ./scripts/setup/bootstrap.sh --infra-only
@@ -325,3 +336,9 @@ mise current
 
 **Версия:** 2.0.0
 **Обновлено:** 2025-12-02
+MinIO:
+- Установка пакета (AUR: minio)
+- Настройка systemd unit + env
+- Каталог данных: `/var/lib/minio`
+- Health: http://localhost:9000/minio/health/ready
+- Автосоздание бакета `cc1c-artifacts` (через `mc`, если доступен)

@@ -53,6 +53,11 @@ if [[ -f "$PROJECT_ROOT/scripts/setup/lib/postgres.sh" ]]; then
     source "$PROJECT_ROOT/scripts/setup/lib/postgres.sh"
 fi
 
+# Загрузить переменные окружения (например, MINIO_ENDPOINT)
+if command -v load_env_file &>/dev/null; then
+    load_env_file "$PROJECT_ROOT/.env.local" >/dev/null 2>&1 || true
+fi
+
 ##############################################################################
 # CLI ARGUMENTS
 ##############################################################################
@@ -238,12 +243,67 @@ get_cmd_version() {
         grafana-server)
             version=$(grafana-server -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
             ;;
+        minio)
+            version=$(minio --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+            ;;
         *)
             version=$($cmd --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
             ;;
     esac
 
     echo "$version"
+}
+
+get_minio_health_url() {
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    local host="${endpoint%%:*}"
+    local port="${endpoint##*:}"
+
+    if [[ "$host" == "$port" ]]; then
+        port="9000"
+    fi
+
+    echo "http://${host}:${port}/minio/health/ready"
+}
+
+get_minio_api_url() {
+    local scheme="http"
+    if is_true "$MINIO_SECURE"; then
+        scheme="https"
+    fi
+
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    echo "${scheme}://${endpoint}"
+}
+
+check_minio_bucket() {
+    if ! command -v mc &>/dev/null; then
+        print_check_result "warn" "MinIO bucket" "mc not installed"
+        add_result "infrastructure" "minio_bucket" "fail" "false" "" "minio client missing"
+        return 1
+    fi
+
+    local alias_name="cc1c-minio"
+    local api_url
+    api_url=$(get_minio_api_url)
+
+    if ! mc alias set "$alias_name" "$api_url" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1; then
+        print_check_result "warn" "MinIO bucket" "alias setup failed"
+        add_result "infrastructure" "minio_bucket" "fail" "false" "" "alias setup failed"
+        return 1
+    fi
+
+    if mc ls "${alias_name}/${MINIO_BUCKET}" >/dev/null 2>&1; then
+        print_check_result "pass" "MinIO bucket" "${MINIO_BUCKET}"
+        add_result "infrastructure" "minio_bucket" "pass" "false" "" "${MINIO_BUCKET}"
+        return 0
+    fi
+
+    print_check_result "warn" "MinIO bucket" "missing (${MINIO_BUCKET})"
+    add_result "infrastructure" "minio_bucket" "fail" "false" "" "missing"
+    return 1
 }
 
 ##############################################################################
@@ -385,6 +445,38 @@ check_infrastructure() {
     else
         print_check_result "fail" "Redis" "NOT INSTALLED"
         add_result "infrastructure" "redis" "fail" "true" "" "Not installed"
+    fi
+
+    # MinIO
+    if command -v minio &>/dev/null; then
+        local minio_version
+        minio_version=$(get_cmd_version "minio")
+        local minio_health_url
+        minio_health_url=$(get_minio_health_url)
+
+        if check_systemd_service "minio" 2>/dev/null; then
+            if check_health_endpoint "$minio_health_url" 2 2>/dev/null; then
+                print_check_result "pass" "MinIO ($minio_version)" "running"
+                add_result "infrastructure" "minio" "pass" "true" "$minio_version" "running"
+                check_minio_bucket || true
+            else
+                print_check_result "warn" "MinIO ($minio_version)" "running but not responding"
+                add_result "infrastructure" "minio" "fail" "true" "$minio_version" "Not responding"
+            fi
+        else
+            print_check_result "fail" "MinIO ($minio_version)" "NOT RUNNING"
+            add_result "infrastructure" "minio" "fail" "true" "$minio_version" "Not running"
+
+            if [[ "$FIX_MODE" == "true" ]]; then
+                log_info "Attempting to start MinIO..."
+                if start_systemd_service "minio" 2>/dev/null; then
+                    print_check_result "pass" "MinIO" "STARTED"
+                fi
+            fi
+        fi
+    else
+        print_check_result "fail" "MinIO" "NOT INSTALLED"
+        add_result "infrastructure" "minio" "fail" "true" "" "Not installed"
     fi
 }
 

@@ -680,12 +680,53 @@ wait_for_redis_native() {
     return 1
 }
 
-# start_native_infrastructure - запуск нативной инфраструктуры (PostgreSQL, Redis)
+# get_minio_health_url - получить URL для проверки MinIO
+# Usage: url=$(get_minio_health_url)
+get_minio_health_url() {
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    local host="${endpoint%%:*}"
+    local port="${endpoint##*:}"
+
+    if [[ "$host" == "$port" ]]; then
+        port="9000"
+    fi
+
+    echo "http://${host}:${port}/minio/health/ready"
+}
+
+# wait_for_minio_native - ожидание готовности MinIO (нативный)
+# Usage: wait_for_minio_native 30
+# Returns: 0 when ready, 1 on timeout
+wait_for_minio_native() {
+    local timeout=${1:-30}
+    local elapsed=0
+    local interval=1
+    local health_url
+    health_url=$(get_minio_health_url)
+
+    log_info "Ожидание готовности MinIO (native)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        if check_health_endpoint "$health_url" 2; then
+            log_success "MinIO готов"
+            return 0
+        fi
+
+        sleep "$interval"
+        ((elapsed+=interval))
+    done
+
+    log_error "MinIO не готов за ${timeout}с"
+    return 1
+}
+
+# start_native_infrastructure - запуск нативной инфраструктуры (PostgreSQL, Redis, MinIO)
 # Usage: start_native_infrastructure
 # Returns: 0 on success, 1 on failure
 # Note: Сервисы с автозапуском только проверяются, не запускаются
 start_native_infrastructure() {
-    log_step "Запуск нативной инфраструктуры (PostgreSQL, Redis)..."
+    log_step "Запуск нативной инфраструктуры (PostgreSQL, Redis, MinIO)..."
 
     local success=true
 
@@ -723,6 +764,23 @@ start_native_infrastructure() {
         fi
     fi
 
+    # MinIO
+    if check_systemd_autostart "minio"; then
+        if check_systemd_service "minio"; then
+            log_info "MinIO: запущен (systemd, автозапуск)"
+        else
+            log_warning "MinIO: не запущен, но в автозапуске - ожидание..."
+            if ! wait_for_minio_native 30; then
+                log_error "MinIO: не удалось дождаться запуска"
+                success=false
+            fi
+        fi
+    else
+        if ! start_systemd_service "minio"; then
+            success=false
+        fi
+    fi
+
     # Ожидание готовности (только для не-автозапуск сервисов, которые мы запустили)
     if [[ "$success" == "true" ]]; then
         if ! check_systemd_autostart "postgresql"; then
@@ -733,6 +791,12 @@ start_native_infrastructure() {
 
         if ! check_systemd_autostart "redis"; then
             if ! wait_for_redis_native 30; then
+                success=false
+            fi
+        fi
+
+        if ! check_systemd_autostart "minio"; then
+            if ! wait_for_minio_native 30; then
                 success=false
             fi
         fi
@@ -752,6 +816,13 @@ start_native_infrastructure() {
 # Note: Сервисы с автозапуском НЕ останавливаются
 stop_native_infrastructure() {
     log_step "Остановка нативной инфраструктуры..."
+
+    # MinIO
+    if check_systemd_autostart "minio"; then
+        log_info "MinIO: пропущен (systemd, автозапуск)"
+    else
+        stop_systemd_service "minio"
+    fi
 
     # Redis
     if check_systemd_autostart "redis"; then
@@ -809,6 +880,24 @@ check_native_infrastructure_health() {
         fi
     else
         print_status "error" "Redis: не запущен${redis_suffix}"
+        healthy=false
+    fi
+
+    # MinIO
+    local minio_suffix=""
+    if check_systemd_autostart "minio"; then
+        minio_suffix=" (systemd, автозапуск)"
+    fi
+
+    if check_systemd_service "minio"; then
+        if check_health_endpoint "$(get_minio_health_url)" 2; then
+            print_status "success" "MinIO: запущен и готов${minio_suffix}"
+        else
+            print_status "warning" "MinIO: запущен, но не готов${minio_suffix}"
+            healthy=false
+        fi
+    else
+        print_status "error" "MinIO: не запущен${minio_suffix}"
         healthy=false
     fi
 

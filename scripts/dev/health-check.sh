@@ -225,6 +225,7 @@ check_port 8188 "RAS Adapter"
 check_port "${RAS_PORT:-1539}" "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
+check_port 9000 "MinIO"
 
 echo ""
 

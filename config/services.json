@@ -64,6 +64,16 @@
       "env_var": "REDIS_PORT",
       "description": "Redis 7 - Cache and message broker"
     },
+    "minio": {
+      "port": 9000,
+      "host": {
+        "docker": "minio",
+        "local": "localhost"
+      },
+      "health_path": "/minio/health/ready",
+      "env_var": "MINIO_ENDPOINT",
+      "description": "MinIO - Artifact storage (S3 compatible)"
+    },
     "clickhouse": {
       "port": 8123,
       "host": {

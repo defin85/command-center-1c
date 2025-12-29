@@ -246,21 +246,23 @@ export const TableToolkit = <T,>({
         }}
       />
 
-      <TablePreferencesModal
-        open={preferencesOpen}
-        onClose={() => setPreferencesOpen(false)}
-        columns={table.columnConfigs}
-        filters={table.filterConfigs}
-        presets={table.presets}
-        activePresetId={table.preferencesId}
-        onSelectPreset={table.setActivePreset}
-        onUpdatePreset={table.updatePreset}
-        onCreatePreset={table.createPreset}
-        onDeletePreset={table.deletePreset}
-        canToggleFilter={(key) => table.canHideFilter(key)}
-        onToggleFilter={(key, visible) => table.toggleFilterVisibility(key, visible)}
-        idPrefix={idPrefix}
-      />
+      {preferencesOpen && (
+        <TablePreferencesModal
+          open={preferencesOpen}
+          onClose={() => setPreferencesOpen(false)}
+          columns={table.columnConfigs}
+          filters={table.filterConfigs}
+          presets={table.presets}
+          activePresetId={table.preferencesId}
+          onSelectPreset={table.setActivePreset}
+          onUpdatePreset={table.updatePreset}
+          onCreatePreset={table.createPreset}
+          onDeletePreset={table.deletePreset}
+          canToggleFilter={(key) => table.canHideFilter(key)}
+          onToggleFilter={(key, visible) => table.toggleFilterVisibility(key, visible)}
+          idPrefix={idPrefix}
+        />
+      )}
     </div>
   )
 }

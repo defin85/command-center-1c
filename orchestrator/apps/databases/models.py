@@ -671,3 +671,70 @@ class DatabasePermission(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.database.name} ({self.get_level_display()})"
+
+
+# =============================================================================
+# Infobase Users (manual mapping)
+# =============================================================================
+
+class InfobaseAuthType(models.TextChoices):
+    LOCAL = "local", "Local"
+    AD = "ad", "Active Directory"
+    SERVICE = "service", "Service"
+    OTHER = "other", "Other"
+
+
+class InfobaseUserMapping(models.Model):
+    """Manual mapping between CC users and 1C infobase users."""
+
+    from django.conf import settings as django_settings
+
+    database = models.ForeignKey(
+        'Database',
+        on_delete=models.CASCADE,
+        related_name='ib_user_mappings'
+    )
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ib_user_mappings'
+    )
+    ib_username = models.CharField(max_length=128)
+    ib_display_name = models.CharField(max_length=255, blank=True)
+    ib_roles = models.JSONField(default=list, blank=True)
+    auth_type = models.CharField(
+        max_length=32,
+        choices=InfobaseAuthType.choices,
+        default=InfobaseAuthType.LOCAL,
+    )
+    is_service = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ib_user_mappings_created'
+    )
+    updated_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ib_user_mappings_updated'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'databases_ib_user_mappings'
+        unique_together = ['database', 'ib_username']
+        indexes = [
+            models.Index(fields=['database', 'ib_username'], name='ib_user_db_name_idx'),
+            models.Index(fields=['database', 'auth_type'], name='ib_user_db_auth_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.database.name}: {self.ib_username}"

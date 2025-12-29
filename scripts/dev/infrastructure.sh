@@ -4,7 +4,7 @@
 # CommandCenter1C - Infrastructure Management
 ##############################################################################
 #
-# Явное управление инфраструктурными сервисами (PostgreSQL, Redis,
+# Явное управление инфраструктурными сервисами (PostgreSQL, Redis, MinIO,
 # Prometheus, Grafana, Jaeger).
 #
 # Usage:
@@ -16,13 +16,13 @@
 #   ./infrastructure.sh disable             # Выключить автозапуск
 #
 # Options:
-#   --infra                                 # Только PostgreSQL, Redis
+#   --infra                                 # Только PostgreSQL, Redis, MinIO
 #   --monitoring                            # Только Prometheus, Grafana, Jaeger
 #   --all                                   # Все (по умолчанию)
 #
 # Examples:
 #   ./infrastructure.sh status              # Статус всех
-#   ./infrastructure.sh start --infra       # Запустить только БД
+#   ./infrastructure.sh start --infra       # Запустить только БД/хранилище
 #   ./infrastructure.sh stop --monitoring   # Остановить мониторинг
 #   ./infrastructure.sh enable --all        # Включить автозапуск всего
 #
@@ -52,7 +52,7 @@ fi
 ##############################################################################
 
 # Сервисы инфраструктуры
-INFRA_SERVICES=("postgresql" "redis")
+INFRA_SERVICES=("postgresql" "redis" "minio")
 
 # Сервисы мониторинга
 MONITORING_SERVICES=("prometheus" "grafana" "jaeger")
@@ -81,13 +81,13 @@ show_help() {
     echo "  disable    Выключить автозапуск сервисов"
     echo ""
     echo -e "${CYAN}Options:${NC}"
-    echo "  --infra       Только PostgreSQL, Redis"
+    echo "  --infra       Только PostgreSQL, Redis, MinIO"
     echo "  --monitoring  Только Prometheus, Grafana, Jaeger"
     echo "  --all         Все сервисы (по умолчанию)"
     echo ""
     echo -e "${CYAN}Examples:${NC}"
     echo "  $0 status                    # Статус всех сервисов"
-    echo "  $0 start --infra             # Запустить только БД и кеш"
+    echo "  $0 start --infra             # Запустить только БД/хранилище"
     echo "  $0 stop --monitoring         # Остановить мониторинг"
     echo "  $0 restart --all             # Перезапустить все"
     echo "  $0 enable --infra            # Автозапуск для БД"
@@ -133,6 +133,20 @@ get_service_running_status() {
     fi
 }
 
+# Получить порт MinIO из MINIO_ENDPOINT
+get_minio_port() {
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    local host="${endpoint%%:*}"
+    local port="${endpoint##*:}"
+
+    if [[ "$host" == "$port" ]]; then
+        port="9000"
+    fi
+
+    echo "$port"
+}
+
 # Получить URL для проверки здоровья сервиса
 get_service_health_url() {
     local service=$1
@@ -143,6 +157,9 @@ get_service_health_url() {
             ;;
         redis)
             echo ""  # Проверяем через redis-cli
+            ;;
+        minio)
+            echo "http://localhost:$(get_minio_port)/minio/health/ready"
             ;;
         prometheus)
             echo "http://localhost:9090/-/healthy"
@@ -170,6 +187,9 @@ check_service_health() {
         redis)
             redis-cli -h localhost -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q "PONG"
             ;;
+        minio)
+            check_health_endpoint "http://localhost:$(get_minio_port)/minio/health/ready" 2
+            ;;
         prometheus)
             check_health_endpoint "http://localhost:9090/-/healthy" 2
             ;;
@@ -192,6 +212,7 @@ get_service_port() {
     case "$service" in
         postgresql) echo "${DB_PORT:-5432}" ;;
         redis) echo "${REDIS_PORT:-6379}" ;;
+        minio) echo "$(get_minio_port)" ;;
         prometheus) echo "9090" ;;
         grafana) echo "3000" ;;
         jaeger) echo "16686" ;;
@@ -206,6 +227,7 @@ get_service_description() {
     case "$service" in
         postgresql) echo "PostgreSQL (Database)" ;;
         redis) echo "Redis (Cache/Queue)" ;;
+        minio) echo "MinIO (Artifact Storage)" ;;
         prometheus) echo "Prometheus (Metrics)" ;;
         grafana) echo "Grafana (Dashboards)" ;;
         jaeger) echo "Jaeger (Tracing)" ;;
@@ -220,6 +242,7 @@ get_install_command() {
     case "$service" in
         postgresql) echo "pacman -S postgresql" ;;
         redis) echo "pacman -S redis" ;;
+        minio) echo "pacman -S minio" ;;
         prometheus) echo "pacman -S prometheus" ;;
         grafana) echo "pacman -S grafana" ;;
         jaeger) echo "yay -S jaeger (из AUR)" ;;

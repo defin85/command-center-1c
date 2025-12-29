@@ -62,6 +62,8 @@ declare -gA _PKG_MAP=(
     ["postgresql"]="postgresql|postgresql|postgresql"
     ["redis"]="redis|redis|redis"
     ["pgadmin"]="pgadmin4|pgadmin4|pgadmin4"
+    ["minio"]="AUR:minio|-|-"
+    ["minio_client"]="minio-client|minio-client|minio-client"
 
     # Мониторинг
     ["prometheus"]="prometheus|prometheus|prometheus2"
@@ -311,8 +313,12 @@ pkg_install() {
         local mapped_name
         local map_result
 
+        local errexit_was_set=false
+        [[ $- == *e* ]] && errexit_was_set=true
+        set +e
         mapped_name=$(pkg_map_name "$pkg")
         map_result=$?
+        $errexit_was_set && set -e
 
         case $map_result in
             0)

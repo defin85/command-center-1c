@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // =============================================================================
 // Source: config/services.json
-// Generated: 2025-12-21 03:20:38
+// Generated: 2025-12-29 10:18:13
 // Mode: local
 // Generator: scripts/config/generate.py
 // =============================================================================
@@ -24,6 +24,7 @@ const (
 const (
 	Postgresql = 5432
 	Redis = 6379
+	Minio = 9000
 	Clickhouse = 8123
 	Prometheus = 9090
 	Grafana = 5000

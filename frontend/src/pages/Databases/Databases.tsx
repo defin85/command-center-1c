@@ -17,7 +17,15 @@ import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
 import { queryKeys } from '../../api/queries'
-import { useDatabases, useExecuteRasOperation, useInstallExtension, useHealthCheckDatabase, useBulkHealthCheckDatabases, useSetDatabaseStatus, useUpdateDatabaseCredentials } from '../../api/queries/databases'
+import {
+  useDatabases,
+  useExecuteRasOperation,
+  useInstallExtension,
+  useHealthCheckDatabase,
+  useBulkHealthCheckDatabases,
+  useSetDatabaseStatus,
+  useUpdateDatabaseCredentials,
+} from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
@@ -186,6 +194,7 @@ export const Databases = () => {
       },
     })
   }
+
 
   const handleConfirmInstall = async () => {
     if (!selectedDatabase) return
@@ -364,6 +373,7 @@ export const Databases = () => {
     last_health_error?: string | null
     last_health_error_code?: string | null
   }
+
 
   const columns = [
     {

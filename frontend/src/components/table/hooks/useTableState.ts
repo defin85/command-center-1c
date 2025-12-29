@@ -79,7 +79,7 @@ export function useTableState<TFilters extends TableFilters>(
 
   useEffect(() => {
     if (!autoResetPageOnFilterChange) return
-    setPagination((prev) => ({ ...prev, page: 1 }))
+    setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }))
   }, [filtersSnapshot, autoResetPageOnFilterChange])
 
   return {

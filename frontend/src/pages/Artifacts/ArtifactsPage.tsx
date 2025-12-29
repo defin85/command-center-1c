@@ -1,7 +1,9 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import {
   Alert,
+  App,
   Button,
+  Form,
   Drawer,
   Space,
   Tag,
@@ -15,10 +17,16 @@ import {
   Spin,
   message,
   Input,
+  Upload,
+  Switch,
+  Progress,
+  Collapse,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { MenuProps } from 'antd'
-import { DownloadOutlined, EyeOutlined, CheckOutlined } from '@ant-design/icons'
+import type { UploadFile } from 'antd/es/upload/interface'
+import { DownloadOutlined, EyeOutlined, CheckOutlined, PlusOutlined, InboxOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { useMe } from '../../api/queries'
 import {
@@ -26,23 +34,26 @@ import {
   useArtifactVersions,
   useArtifactAliases,
   useUpsertArtifactAlias,
+  useDeleteArtifact,
+  useRestoreArtifact,
 } from '../../api/queries'
-import type { Artifact, ArtifactAlias, ArtifactVersion, ArtifactKind } from '../../api/artifacts'
-import { downloadArtifactVersion } from '../../api/artifacts'
+import type { Artifact, ArtifactAlias, ArtifactVersion, ArtifactKind, UploadProgressInfo } from '../../api/artifacts'
+import { createArtifact, downloadArtifactVersion, uploadArtifactVersion, upsertArtifactAlias } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { queryKeys } from '../../api/queries'
 
 const { Text, Title } = Typography
 
 const KIND_LABELS: Record<ArtifactKind, string> = {
-  extension: 'Extension',
-  config_xml: 'Config XML',
-  dt_backup: 'DT Backup',
-  epf: 'EPF',
-  erf: 'ERF',
-  ibcmd_package: 'IBCMD Package',
-  ras_script: 'RAS Script',
-  other: 'Other',
+  extension: 'Расширение конфигурации (.cfe)',
+  config_xml: 'Выгрузка конфигурации XML (.xml)',
+  dt_backup: 'Выгрузка ИБ (.dt)',
+  epf: 'Внешняя обработка (.epf)',
+  erf: 'Внешний отчет (.erf)',
+  ibcmd_package: 'Пакет IBCMD (.zip)',
+  ras_script: 'Скрипт RAS (.txt)',
+  other: 'Другое',
 }
 
 const formatBytes = (value: number) => {
@@ -55,6 +66,53 @@ const formatBytes = (value: number) => {
   const gb = mb / 1024
   return `${gb.toFixed(1)} GB`
 }
+
+const formatSpeed = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return '-'
+  return `${formatBytes(value)}/s`
+}
+
+const formatDuration = (seconds: number | null) => {
+  if (!Number.isFinite(seconds) || seconds === null) return '-'
+  const value = Math.max(0, Math.round(seconds))
+  const mins = Math.floor(value / 60)
+  const secs = value % 60
+  if (mins === 0) return `${secs}s`
+  return `${mins}m ${secs}s`
+}
+
+const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '')
+
+const buildVersion = (fileName?: string) => {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  const base = fileName ? stripExtension(fileName) : ''
+  return base ? `${base}-${stamp}` : stamp
+}
+
+const buildMetadataTemplate = (payload: {
+  name?: string
+  kind?: ArtifactKind
+  tags?: string[]
+  version?: string
+  filename?: string
+}) => ({
+  schema_version: '1',
+  source: 'ui',
+  labels: [],
+  notes: '',
+  artifact: {
+    name: payload.name || '',
+    kind: payload.kind || '',
+    tags: payload.tags || [],
+  },
+  build: {
+    version: payload.version || '',
+    filename: payload.filename || '',
+  },
+  created_at: new Date().toISOString(),
+})
 
 const aliasMenuItems: MenuProps['items'] = [
   { key: 'latest', label: 'Set alias: latest' },
@@ -143,8 +201,21 @@ const diffLines = (before: string[], after: string[]): DiffLine[] => {
 }
 
 export const ArtifactsPage = () => {
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
   const meQuery = useMe()
   const isStaff = Boolean(meQuery.data?.is_staff)
+  const [catalogTab, setCatalogTab] = useState<'active' | 'deleted'>('active')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createLoading, setCreateLoading] = useState(false)
+  const [uploadStats, setUploadStats] = useState<{ percent: number; speed: number; eta: number | null } | null>(null)
+  const [fileList, setFileList] = useState<UploadFile[]>([])
+  const [aliasMode, setAliasMode] = useState<'none' | 'latest' | 'approved' | 'stable' | 'custom'>('none')
+  const [customAliasValue, setCustomAliasValue] = useState('')
+  const [form] = Form.useForm()
+  const uploadStartRef = useRef<number | null>(null)
+  const deleteArtifactMutation = useDeleteArtifact()
+  const restoreArtifactMutation = useRestoreArtifact()
 
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('versions')
@@ -174,6 +245,218 @@ export const ArtifactsPage = () => {
     setCompareDiff([])
     setVersionTextCache({})
   }, [])
+
+  const resetCreateForm = useCallback(() => {
+    form.resetFields()
+    setFileList([])
+    setUploadStats(null)
+    setAliasMode('none')
+    setCustomAliasValue('')
+    uploadStartRef.current = null
+  }, [form])
+
+  const updateUploadStats = useCallback((info: UploadProgressInfo) => {
+    const now = Date.now()
+    if (!uploadStartRef.current) {
+      uploadStartRef.current = now
+    }
+    const elapsed = (now - uploadStartRef.current) / 1000
+    const speed = elapsed > 0 ? info.loaded / elapsed : 0
+    const eta = speed > 0 && info.total > info.loaded
+      ? (info.total - info.loaded) / speed
+      : null
+    setUploadStats({ percent: info.percent, speed, eta })
+  }, [])
+
+  const maybeAutofillFromFile = useCallback((file?: File) => {
+    if (!file) return
+    const currentVersion = String(form.getFieldValue('version') || '').trim()
+    const currentMetadata = String(form.getFieldValue('metadata') || '').trim()
+    const currentName = String(form.getFieldValue('name') || '').trim()
+    const currentKind = form.getFieldValue('kind') as ArtifactKind | undefined
+    const currentTagsRaw = form.getFieldValue('tags')
+    const currentTags = Array.isArray(currentTagsRaw)
+      ? currentTagsRaw.map((tag) => String(tag))
+      : []
+
+    const nextVersion = currentVersion || buildVersion(file.name)
+    const nextMetadata = (!currentMetadata || currentMetadata === '{\n  \n}')
+      ? JSON.stringify(
+        buildMetadataTemplate({
+          name: currentName,
+          kind: currentKind,
+          tags: currentTags,
+          version: nextVersion,
+          filename: file.name,
+        }),
+        null,
+        2
+      )
+      : currentMetadata
+
+    form.setFieldsValue({
+      version: nextVersion,
+      metadata: nextMetadata,
+    })
+  }, [form])
+
+  const handleGenerateDefaults = useCallback(() => {
+    const file = fileList[0]?.originFileObj as File | undefined
+    const currentName = String(form.getFieldValue('name') || '').trim()
+    const currentKind = form.getFieldValue('kind') as ArtifactKind | undefined
+    const currentTagsRaw = form.getFieldValue('tags')
+    const currentTags = Array.isArray(currentTagsRaw)
+      ? currentTagsRaw.map((tag) => String(tag))
+      : []
+    const nextVersion = buildVersion(file?.name)
+    const nextMetadata = JSON.stringify(
+      buildMetadataTemplate({
+        name: currentName,
+        kind: currentKind,
+        tags: currentTags,
+        version: nextVersion,
+        filename: file?.name,
+      }),
+      null,
+      2
+    )
+    form.setFieldsValue({
+      version: nextVersion,
+      metadata: nextMetadata,
+    })
+  }, [fileList, form])
+
+  const handleCreateArtifact = useCallback(async () => {
+    try {
+      const values = await form.validateFields()
+      const file = fileList[0]?.originFileObj as File | undefined
+      if (!file) {
+        message.error('Please select a file')
+        return
+      }
+      let metadata = values.metadata.trim()
+      if (!metadata) {
+        message.error('Metadata is required')
+        return
+      }
+      try {
+        metadata = JSON.stringify(JSON.parse(metadata))
+      } catch {
+        message.error('Metadata must be valid JSON')
+        return
+      }
+
+      setCreateLoading(true)
+      setUploadStats(null)
+      uploadStartRef.current = null
+
+      const artifact = await createArtifact({
+        name: values.name.trim(),
+        kind: values.kind,
+        is_versioned: values.is_versioned,
+        tags: values.tags,
+      })
+
+      const version = String(values.version).trim()
+      const uploadedVersion = await uploadArtifactVersion(artifact.id, {
+        file,
+        version,
+        filename: values.filename?.trim() || file.name,
+        metadata,
+        onProgress: updateUploadStats,
+      })
+
+      const nextAlias = aliasMode === 'custom'
+        ? customAliasValue.trim()
+        : aliasMode === 'none'
+          ? ''
+          : aliasMode
+
+      if (nextAlias) {
+        await upsertArtifactAlias(artifact.id, {
+          alias: nextAlias,
+          version: uploadedVersion.version,
+        })
+      }
+
+      await queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
+      setCreateOpen(false)
+      resetCreateForm()
+      handleOpenDetails(artifact)
+      message.success('Artifact created')
+    } catch (error) {
+      const err = error as { response?: { data?: { error?: { message?: string } | string } } } | null
+      const backendMessage = typeof err?.response?.data?.error === 'string'
+        ? err.response?.data?.error
+        : err?.response?.data?.error?.message
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return
+      }
+      message.error(backendMessage || 'Failed to create artifact')
+    } finally {
+      setCreateLoading(false)
+    }
+  }, [
+    aliasMode,
+    customAliasValue,
+    fileList,
+    form,
+    handleOpenDetails,
+    queryClient,
+    resetCreateForm,
+    updateUploadStats,
+  ])
+
+  const handleDeleteArtifact = useCallback((artifact: Artifact) => {
+    if (!isStaff) {
+      message.error('Delete requires staff access')
+      return
+    }
+    Modal.confirm({
+      title: `Delete artifact "${artifact.name}"?`,
+      content: 'Artifact will be hidden from the catalog. Versions and aliases remain stored.',
+      okText: 'Delete',
+      okButtonProps: { danger: true, loading: deleteArtifactMutation.isPending },
+      onOk: async () => {
+        try {
+          await deleteArtifactMutation.mutateAsync(artifact.id)
+          message.success('Artifact deleted')
+          if (selectedArtifact?.id === artifact.id) {
+            setDetailsOpen(false)
+            setSelectedArtifact(null)
+          }
+        } catch {
+          message.error('Failed to delete artifact')
+        }
+      },
+    })
+  }, [deleteArtifactMutation, isStaff, message, selectedArtifact?.id])
+
+  const handleRestoreArtifact = useCallback((artifact: Artifact) => {
+    if (!isStaff) {
+      message.error('Restore requires staff access')
+      return
+    }
+    Modal.confirm({
+      title: `Restore artifact "${artifact.name}"?`,
+      content: 'Artifact will be returned to the active catalog.',
+      okText: 'Restore',
+      onOk: async () => {
+        try {
+          await restoreArtifactMutation.mutateAsync(artifact.id)
+          message.success('Artifact restored')
+          if (selectedArtifact?.id === artifact.id) {
+            setDetailsOpen(false)
+            setSelectedArtifact(null)
+          }
+        } catch {
+          message.error('Failed to restore artifact')
+        }
+      },
+    })
+  }, [isStaff, message, restoreArtifactMutation, selectedArtifact?.id])
+
+
 
   const columns = useMemo<ColumnsType<Artifact>>(() => [
     {
@@ -219,15 +502,33 @@ export const ArtifactsPage = () => {
       key: 'actions',
       width: 140,
       render: (_, record) => (
-        <Button
-          icon={<EyeOutlined />}
-          onClick={() => handleOpenDetails(record)}
-        >
-          Details
-        </Button>
+        <Space>
+          <Button
+            icon={<EyeOutlined />}
+            onClick={() => handleOpenDetails(record)}
+          >
+            Details
+          </Button>
+          {catalogTab === 'deleted' ? (
+            <Button
+              disabled={!isStaff}
+              onClick={() => handleRestoreArtifact(record)}
+            >
+              Restore
+            </Button>
+          ) : (
+            <Button
+              danger
+              disabled={!isStaff}
+              onClick={() => handleDeleteArtifact(record)}
+            >
+              Delete
+            </Button>
+          )}
+        </Space>
       ),
     },
-  ], [handleOpenDetails])
+  ], [catalogTab, handleDeleteArtifact, handleOpenDetails, handleRestoreArtifact, isStaff])
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -255,6 +556,8 @@ export const ArtifactsPage = () => {
       name: nameFilter || searchName || undefined,
       kind: kindFilter || undefined,
       tag: tagFilter.split(',')[0]?.trim() || undefined,
+      include_deleted: catalogTab === 'deleted',
+      only_deleted: catalogTab === 'deleted',
     },
     { enabled: isStaff }
   )
@@ -274,10 +577,18 @@ export const ArtifactsPage = () => {
 
   useEffect(() => {
     if (!selectedArtifactId) {
-      setCompareBaseVersion(null)
-      setCompareTargetVersion(null)
-      setCompareDiff([])
-      setVersionTextCache({})
+      const shouldReset = Boolean(
+        compareBaseVersion
+        || compareTargetVersion
+        || compareDiff.length > 0
+        || Object.keys(versionTextCache).length > 0
+      )
+      if (shouldReset) {
+        setCompareBaseVersion(null)
+        setCompareTargetVersion(null)
+        setCompareDiff([])
+        setVersionTextCache({})
+      }
       return
     }
     if (!compareBaseVersion && versions.length > 0) {
@@ -286,7 +597,14 @@ export const ArtifactsPage = () => {
     if (!compareTargetVersion && versions.length > 1) {
       setCompareTargetVersion(versions[1].version)
     }
-  }, [compareBaseVersion, compareTargetVersion, selectedArtifactId, versions])
+  }, [
+    compareBaseVersion,
+    compareDiff.length,
+    compareTargetVersion,
+    selectedArtifactId,
+    versionTextCache,
+    versions,
+  ])
 
   useEffect(() => {
     if (!selectedArtifactId) {
@@ -545,7 +863,24 @@ export const ArtifactsPage = () => {
     <div>
       <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
         <Title level={2} style={{ margin: 0 }}>Artifacts</Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setCreateOpen(true)}
+          disabled={!isStaff}
+        >
+          Add artifact
+        </Button>
       </Space>
+
+      <Tabs
+        activeKey={catalogTab}
+        onChange={(key) => setCatalogTab(key as 'active' | 'deleted')}
+        items={[
+          { key: 'active', label: 'Active' },
+          { key: 'deleted', label: 'Deleted' },
+        ]}
+      />
 
       {!isStaff && (
         <Alert
@@ -576,11 +911,210 @@ export const ArtifactsPage = () => {
         searchPlaceholder="Search artifacts"
       />
 
+      <Modal
+        title="Add artifact"
+        open={createOpen}
+        onCancel={() => {
+          setCreateOpen(false)
+          resetCreateForm()
+        }}
+        width={720}
+        okText="Create"
+        onOk={handleCreateArtifact}
+        okButtonProps={{ loading: createLoading, disabled: !isStaff }}
+        destroyOnHidden
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            is_versioned: true,
+            kind: 'extension',
+            tags: [],
+          }}
+        >
+          <Form.Item
+            label="Name"
+            name="name"
+            htmlFor="artifact-create-name"
+            rules={[{ required: true, message: 'Name is required' }]}
+          >
+            <Input
+              id="artifact-create-name"
+              placeholder="Artifact name"
+              autoComplete="off"
+            />
+          </Form.Item>
+          <Form.Item
+            label="Kind"
+            name="kind"
+            htmlFor="artifact-create-kind"
+            rules={[{ required: true, message: 'Kind is required' }]}
+          >
+            <Select
+              id="artifact-create-kind"
+              options={Object.entries(KIND_LABELS).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Tags"
+            name="tags"
+            htmlFor="artifact-create-tags"
+            rules={[{ required: true, type: 'array', min: 1, message: 'At least one tag is required' }]}
+          >
+            <Select id="artifact-create-tags" mode="tags" placeholder="Add tags" />
+          </Form.Item>
+          <Form.Item label="Version" htmlFor="artifact-create-version" required>
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="version"
+                noStyle
+                rules={[{ required: true, message: 'Version is required' }]}
+              >
+                <Input
+                  id="artifact-create-version"
+                  placeholder="e.g. 1.0.0"
+                  autoComplete="off"
+                />
+              </Form.Item>
+              <Button icon={<ReloadOutlined />} onClick={handleGenerateDefaults}>
+                Generate
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+          <Form.Item label="File" htmlFor="artifact-create-file" required>
+            <Upload.Dragger
+              id="artifact-create-file"
+              name="file"
+              multiple={false}
+              maxCount={1}
+              beforeUpload={() => false}
+              fileList={fileList}
+              onChange={(info) => {
+                setFileList(info.fileList)
+                const file = info.fileList[0]?.originFileObj as File | undefined
+                maybeAutofillFromFile(file)
+              }}
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">Drag & drop file here</p>
+              <p className="ant-upload-hint">Or click to select a file</p>
+            </Upload.Dragger>
+          </Form.Item>
+          {uploadStats && (
+            <Form.Item label="Upload progress">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Progress percent={uploadStats.percent} />
+                <Space size="large">
+                  <Text type="secondary">Speed: {formatSpeed(uploadStats.speed)}</Text>
+                  <Text type="secondary">ETA: {formatDuration(uploadStats.eta)}</Text>
+                </Space>
+              </Space>
+            </Form.Item>
+          )}
+          <Form.Item label="Set alias (optional)" htmlFor="artifact-create-alias-mode">
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Select
+                id="artifact-create-alias-mode"
+                value={aliasMode}
+                onChange={(value) => setAliasMode(value)}
+                options={[
+                  { value: 'none', label: 'No alias' },
+                  { value: 'latest', label: 'latest' },
+                  { value: 'approved', label: 'approved' },
+                  { value: 'stable', label: 'stable' },
+                  { value: 'custom', label: 'custom' },
+                ]}
+              />
+              {aliasMode === 'custom' && (
+                <Input
+                  id="artifact-create-alias-custom"
+                  placeholder="Custom alias"
+                  value={customAliasValue}
+                  onChange={(event) => setCustomAliasValue(event.target.value)}
+                  autoComplete="off"
+                />
+              )}
+            </Space>
+          </Form.Item>
+          <Collapse
+            items={[
+              {
+                key: 'advanced',
+                label: 'Advanced',
+                children: (
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    <Form.Item
+                      label="Filename (optional)"
+                      name="filename"
+                      htmlFor="artifact-create-filename"
+                    >
+                      <Input
+                        id="artifact-create-filename"
+                        placeholder="Override filename for storage"
+                        autoComplete="off"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="Metadata (JSON)"
+                      name="metadata"
+                      htmlFor="artifact-create-metadata"
+                      rules={[{ required: true, message: 'Metadata is required' }]}
+                      extra="Use JSON for build notes, labels, and future metadata."
+                    >
+                      <Input.TextArea
+                        id="artifact-create-metadata"
+                        rows={6}
+                        autoComplete="off"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="Versioned"
+                      name="is_versioned"
+                      htmlFor="artifact-create-versioned"
+                      valuePropName="checked"
+                    >
+                      <Switch id="artifact-create-versioned" />
+                    </Form.Item>
+                  </Space>
+                ),
+              },
+            ]}
+            defaultActiveKey={['advanced']}
+          />
+        </Form>
+      </Modal>
+
       <Drawer
         title="Artifact details"
         width={860}
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
+        extra={selectedArtifact && (
+          <Space>
+            {catalogTab === 'deleted' ? (
+              <Button
+                disabled={!isStaff}
+                onClick={() => handleRestoreArtifact(selectedArtifact)}
+              >
+                Restore
+              </Button>
+            ) : (
+              <Button
+                danger
+                disabled={!isStaff}
+                onClick={() => handleDeleteArtifact(selectedArtifact)}
+              >
+                Delete
+              </Button>
+            )}
+          </Space>
+        )}
       >
         {!selectedArtifact ? (
           <Text type="secondary">Select an artifact to view details.</Text>

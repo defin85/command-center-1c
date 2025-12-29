@@ -5,6 +5,8 @@ import {
   listArtifactVersions,
   listArtifactAliases,
   upsertArtifactAlias,
+  deleteArtifact,
+  restoreArtifact,
   type ArtifactAliasUpsertPayload,
   type ArtifactListParams,
 } from '../artifacts'
@@ -51,6 +53,26 @@ export const useUpsertArtifactAlias = (artifactId?: string) => {
       if (artifactId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.aliases(artifactId) })
       }
+    },
+  })
+}
+
+export const useDeleteArtifact = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (artifactId: string) => deleteArtifact(artifactId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
+    },
+  })
+}
+
+export const useRestoreArtifact = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (artifactId: string) => restoreArtifact(artifactId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
     },
   })
 }

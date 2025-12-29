@@ -51,6 +51,7 @@ FORCE_REBUILD=false
 NO_REBUILD=false
 PARALLEL_BUILD=false
 VERBOSE=false
+RUN_MAKEMIGRATIONS=false
 
 # Массивы для отчетности
 declare -a REBUILD_SERVICES=()
@@ -75,6 +76,7 @@ show_help() {
     echo "  --force-rebuild          Принудительно пересобрать все Go сервисы"
     echo "  --no-rebuild             Пропустить проверку/пересборку"
     echo "  --parallel-build         Параллельная пересборка (быстрее)"
+    echo "  --makemigrations         Создать миграции Django перед migrate"
     echo "  --verbose                Детальный вывод для отладки"
     echo ""
     echo "Examples:"
@@ -82,6 +84,7 @@ show_help() {
     echo "  $0 --force-rebuild           # Принудительная пересборка всех"
     echo "  $0 --no-rebuild              # Быстрый старт без пересборки"
     echo "  $0 --parallel-build          # Параллельная сборка"
+    echo "  $0 --makemigrations          # Создать миграции перед запуском"
     echo ""
 }
 
@@ -106,6 +109,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --parallel-build)
             PARALLEL_BUILD=true
+            shift
+            ;;
+        --makemigrations)
+            RUN_MAKEMIGRATIONS=true
             shift
             ;;
         --verbose)
@@ -427,6 +434,18 @@ if [ -d "venv" ]; then
     activate_venv "$(pwd)/venv"
 fi
 
+if ! python manage.py makemigrations --check --dry-run >/dev/null 2>&1; then
+    if [[ "$RUN_MAKEMIGRATIONS" == "true" ]]; then
+        echo -e "${CYAN}   Есть изменения моделей — создаю миграции...${NC}"
+        python manage.py makemigrations
+    else
+        echo -e "${RED}✗ Есть изменения моделей без миграций${NC}"
+        echo -e "${YELLOW}Запусти: python manage.py makemigrations${NC}"
+        echo -e "${YELLOW}Или повтори с флагом: $0 --makemigrations${NC}"
+        exit 1
+    fi
+fi
+
 python manage.py migrate --noinput
 echo -e "${GREEN}✓ Миграции применены${NC}"
 
@@ -672,10 +691,10 @@ echo -e "  API Gateway:      ${GREEN}http://localhost:${SERVER_PORT:-8180}/healt
 echo -e "  Orchestrator:"
 echo -e "    Admin Panel:    ${GREEN}http://localhost:${ORCHESTRATOR_PORT:-8200}/admin${NC} (admin / p-123456)"
 echo -e "    API Docs:       ${GREEN}http://localhost:${ORCHESTRATOR_PORT:-8200}/api/docs${NC}"
-echo -e "  RAS Adapter:      ${GREEN}http://localhost:${RAS_ADAPTER_PORT:-8188}/health${NC}"
 echo -e "  Worker:           ${GREEN}http://localhost:${WORKER_PORT:-9091}/health${NC}"
-echo -e "  Designer Agent:   ${GREEN}http://localhost:${DESIGNER_AGENT_PORT:-8190}/health${NC}"
-echo -e "  Batch Service:    ${GREEN}http://localhost:${BATCH_SERVICE_PORT:-8187}/health${NC}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost:9000}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT#*://}"
+echo -e "  MinIO:            ${GREEN}http://${MINIO_ENDPOINT}${NC}"
 echo ""
 echo -e "${BLUE}Мониторинг и Tracing:${NC}"
 

@@ -845,6 +845,249 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/databases/list-ib-users/:
+    get:
+      operationId: v2_databases_list_ib_users_retrieve
+      description: List manually mapped infobase users for a database.
+      summary: List infobase users
+      parameters:
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database ID
+        required: true
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by username or display name
+      - in: query
+        name: auth_type
+        schema:
+          type: string
+          enum:
+          - local
+          - ad
+          - service
+          - other
+        description: Filter by auth type
+      - in: query
+        name: is_service
+        schema:
+          type: boolean
+        description: Filter by service account
+      - in: query
+        name: has_user
+        schema:
+          type: boolean
+        description: Filter by linked CC user
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/rbac/list-users/:
+    get:
+      operationId: v2_rbac_list_users_retrieve
+      description: List users for RBAC selection (staff only).
+      summary: List users
+      parameters:
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by username or name
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/databases/create-ib-user/:
+    post:
+      operationId: v2_databases_create_ib_user_create
+      description: Create a manual infobase user mapping for a database.
+      summary: Create infobase user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserMapping'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          description: Conflict
+  /api/v2/databases/update-ib-user/:
+    post:
+      operationId: v2_databases_update_ib_user_create
+      description: Update a manual infobase user mapping.
+      summary: Update infobase user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserMapping'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Conflict
+  /api/v2/databases/delete-ib-user/:
+    post:
+      operationId: v2_databases_delete_ib_user_create
+      description: Delete a manual infobase user mapping.
+      summary: Delete infobase user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -1559,6 +1802,16 @@ paths:
         schema:
           type: string
         required: false
+      - in: query
+        name: include_deleted
+        schema:
+          type: boolean
+        required: false
+      - in: query
+        name: only_deleted
+        schema:
+          type: boolean
+        required: false
       tags:
       - v2
       security:
@@ -1612,6 +1865,70 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/artifacts/{artifact_id}/:
+    delete:
+      operationId: v2_artifacts_delete
+      description: Soft-delete artifact (hide from catalog).
+      summary: Delete artifact (soft)
+      parameters:
+      - in: path
+        name: artifact_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/artifacts/{artifact_id}/restore/:
+    post:
+      operationId: v2_artifacts_restore
+      description: Restore soft-deleted artifact.
+      summary: Restore artifact
+      parameters:
+      - in: path
+        name: artifact_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/artifacts/{artifact_id}/versions/:
     get:
       operationId: v2_artifacts_versions_list
@@ -5220,6 +5537,145 @@ components:
       required:
       - database
       - message
+    InfobaseUserMapping:
+      type: object
+      description: Manual mapping between CC users and infobase users.
+      properties:
+        id:
+          type: integer
+        database_id:
+          type: string
+        user:
+          allOf:
+          - $ref: '#/components/schemas/UserRef'
+          nullable: true
+        ib_username:
+          type: string
+        ib_display_name:
+          type: string
+          nullable: true
+        ib_roles:
+          type: array
+          items:
+            type: string
+        auth_type:
+          type: string
+          enum:
+          - local
+          - ad
+          - service
+          - other
+        is_service:
+          type: boolean
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - auth_type
+      - database_id
+      - ib_roles
+      - ib_username
+      - id
+      - is_service
+      - created_at
+      - updated_at
+    InfobaseUserListResponse:
+      type: object
+      description: Response for list infobase users endpoint.
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/InfobaseUserMapping'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - total
+      - users
+    InfobaseUserCreateRequest:
+      type: object
+      description: Request body for create infobase user mapping.
+      properties:
+        database_id:
+          type: string
+        user_id:
+          type: integer
+          nullable: true
+        ib_username:
+          type: string
+        ib_display_name:
+          type: string
+        ib_roles:
+          type: array
+          items:
+            type: string
+        auth_type:
+          type: string
+          enum:
+          - local
+          - ad
+          - service
+          - other
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - database_id
+      - ib_username
+    InfobaseUserUpdateRequest:
+      type: object
+      description: Request body for update infobase user mapping.
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        ib_username:
+          type: string
+        ib_display_name:
+          type: string
+        ib_roles:
+          type: array
+          items:
+            type: string
+        auth_type:
+          type: string
+          enum:
+          - local
+          - ad
+          - service
+          - other
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - id
+    InfobaseUserDeleteRequest:
+      type: object
+      description: Request body for delete infobase user mapping.
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    InfobaseUserDeleteResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+      - message
     DatabaseListResponse:
       type: object
       description: Response for list_databases endpoint.
@@ -7385,6 +7841,22 @@ components:
       required:
       - id
       - username
+    UserListResponse:
+      type: object
+      description: Response for list users endpoint.
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - total
+      - users
     ValidateWorkflowRequest:
       type: object
       description: Request for validate_workflow endpoint.

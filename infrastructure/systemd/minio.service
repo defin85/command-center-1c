@@ -1,0 +1,22 @@
+[Unit]
+Description=MinIO Object Storage (CommandCenter1C)
+Documentation=https://min.io/docs/minio/linux/index.html
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=egor
+Environment="MINIO_DATA_DIR=/var/lib/minio"
+Environment="MINIO_ADDRESS=:9000"
+Environment="MINIO_CONSOLE_ADDRESS=:9001"
+Environment="MINIO_ROOT_USER=minioadmin"
+Environment="MINIO_ROOT_PASSWORD=minioadmin"
+Environment="MINIO_PROMETHEUS_AUTH_TYPE=public"
+EnvironmentFile=-/etc/commandcenter1c/minio.env
+ExecStart=/usr/bin/minio server --address ${MINIO_ADDRESS} --console-address ${MINIO_CONSOLE_ADDRESS} ${MINIO_DATA_DIR}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

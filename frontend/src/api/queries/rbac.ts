@@ -10,6 +10,7 @@ import type { RevokeClusterPermissionRequest } from '../generated/model/revokeCl
 import type { RevokeDatabasePermissionRequest } from '../generated/model/revokeDatabasePermissionRequest'
 
 import { queryKeys } from './index'
+import { apiClient } from '../client'
 
 const api = getV2()
 
@@ -94,6 +95,27 @@ export function useRevokeDatabasePermission() {
     mutationFn: (data: RevokeDatabasePermissionRequest) => api.postRbacRevokeDatabasePermission(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rbac.all })
+    },
+  })
+}
+
+export type UserRef = {
+  id: number
+  username: string
+}
+
+export type UserListResponse = {
+  users: UserRef[]
+  count: number
+  total: number
+}
+
+export function useRbacUsers(filters?: { search?: string; limit?: number; offset?: number }) {
+  return useQuery({
+    queryKey: queryKeys.rbac.users(filters),
+    queryFn: async (): Promise<UserListResponse> => {
+      const response = await apiClient.get('/api/v2/rbac/list-users/', { params: filters })
+      return response.data
     },
   })
 }

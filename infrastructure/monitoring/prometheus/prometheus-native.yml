@@ -65,6 +65,13 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9121']
 
+  # MinIO (S3) - metrics endpoint
+  # Requires: MINIO_PROMETHEUS_AUTH_TYPE=public
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['localhost:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+
   # Node exporter for system metrics
   # Installation: pacman -S prometheus-node-exporter
   # Enable: sudo systemctl enable --now prometheus-node-exporter

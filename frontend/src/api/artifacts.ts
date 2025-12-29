@@ -58,12 +58,35 @@ export interface ArtifactListParams {
   kind?: string
   name?: string
   tag?: string
+  include_deleted?: boolean
+  only_deleted?: boolean
 }
 
 export interface ArtifactAliasUpsertPayload {
   alias: string
   version?: string
   version_id?: string
+}
+
+export interface ArtifactCreatePayload {
+  name: string
+  kind: ArtifactKind
+  is_versioned: boolean
+  tags: string[]
+}
+
+export interface UploadProgressInfo {
+  percent: number
+  loaded: number
+  total: number
+}
+
+export interface ArtifactVersionUploadPayload {
+  file: File
+  version: string
+  filename?: string
+  metadata?: string
+  onProgress?: (info: UploadProgressInfo) => void
 }
 
 export const listArtifacts = async (
@@ -76,6 +99,50 @@ export const listArtifacts = async (
       params,
       signal,
       skipGlobalError: true,
+    }
+  )
+  return response.data
+}
+
+export const createArtifact = async (
+  payload: ArtifactCreatePayload
+): Promise<Artifact> => {
+  const response = await apiClient.post<{ artifact: Artifact }>(
+    '/api/v2/artifacts/create/',
+    payload,
+    {
+      skipGlobalError: true,
+    }
+  )
+  return response.data.artifact
+}
+
+export const uploadArtifactVersion = async (
+  artifactId: string,
+  payload: ArtifactVersionUploadPayload
+): Promise<ArtifactVersion> => {
+  const formData = new FormData()
+  formData.append('file', payload.file)
+  formData.append('version', payload.version)
+  if (payload.filename) {
+    formData.append('filename', payload.filename)
+  }
+  if (payload.metadata) {
+    formData.append('metadata', payload.metadata)
+  }
+  const response = await apiClient.post<ArtifactVersion>(
+    `/api/v2/artifacts/${artifactId}/versions/upload/`,
+    formData,
+    {
+      skipGlobalError: true,
+      onUploadProgress: (event) => {
+        if (!payload.onProgress || !event.total) return
+        payload.onProgress({
+          percent: Math.round((event.loaded / event.total) * 100),
+          loaded: event.loaded,
+          total: event.total,
+        })
+      },
     }
   )
   return response.data
@@ -116,6 +183,23 @@ export const upsertArtifactAlias = async (
   const response = await apiClient.post<ArtifactAlias>(
     `/api/v2/artifacts/${artifactId}/aliases/upsert/`,
     payload
+  )
+  return response.data
+}
+
+export const deleteArtifact = async (artifactId: string): Promise<void> => {
+  await apiClient.delete(`/api/v2/artifacts/${artifactId}/`, {
+    skipGlobalError: true,
+  })
+}
+
+export const restoreArtifact = async (artifactId: string): Promise<Artifact> => {
+  const response = await apiClient.post<Artifact>(
+    `/api/v2/artifacts/${artifactId}/restore/`,
+    {},
+    {
+      skipGlobalError: true,
+    }
   )
   return response.data
 }

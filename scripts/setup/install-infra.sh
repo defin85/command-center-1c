@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ##############################################################################
-# CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + pgAdmin)
+# CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + MinIO + pgAdmin)
 ##############################################################################
 #
-# Установка и настройка PostgreSQL, Redis и pgAdmin для локальной разработки.
+# Установка и настройка PostgreSQL, Redis, MinIO и pgAdmin для локальной разработки.
 # Использует библиотеки проекта для кросс-платформенной поддержки.
 #
 # Usage:
@@ -13,9 +13,11 @@
 # Options:
 #   --only-postgres     Установить только PostgreSQL
 #   --only-redis        Установить только Redis
+#   --only-minio        Установить только MinIO
 #   --only-pgadmin      Установить только pgAdmin
 #   --skip-postgres     Пропустить установку PostgreSQL
 #   --skip-redis        Пропустить установку Redis
+#   --skip-minio        Пропустить установку MinIO
 #   --skip-pgadmin      Пропустить установку pgAdmin
 #   --dry-run           Показать план без изменений
 #   --verbose, -v       Подробный вывод
@@ -29,12 +31,22 @@
 #   DB_PORT       PostgreSQL port (default: 5432)
 #   REDIS_HOST    Redis host (default: localhost)
 #   REDIS_PORT    Redis port (default: 6379)
+#   MINIO_ENDPOINT      MinIO endpoint (default: localhost:9000)
+#   MINIO_ACCESS_KEY    MinIO access key (default: minioadmin)
+#   MINIO_SECRET_KEY    MinIO secret key (default: minioadmin)
+#   MINIO_BUCKET        MinIO bucket (default: cc1c-artifacts)
+#   MINIO_SECURE        MinIO secure flag (default: false)
+#   MINIO_DATA_DIR      MinIO data dir (default: /var/lib/minio)
+#   MINIO_ADDRESS       MinIO bind address (default: :9000)
+#   MINIO_CONSOLE_ADDRESS MinIO console address (default: :9001)
 #
 # Examples:
 #   ./scripts/setup/install-infra.sh                  # Полная установка
 #   ./scripts/setup/install-infra.sh --dry-run        # Показать план
 #   ./scripts/setup/install-infra.sh --only-postgres  # Только PostgreSQL
+#   ./scripts/setup/install-infra.sh --only-minio     # Только MinIO
 #   ./scripts/setup/install-infra.sh --skip-redis     # Без Redis
+#   ./scripts/setup/install-infra.sh --skip-minio     # Без MinIO
 #   ./scripts/setup/install-infra.sh --skip-pgadmin   # Без pgAdmin
 #
 # Version: 1.0.0
@@ -97,6 +109,25 @@ DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost:9000}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+MINIO_BUCKET="${MINIO_BUCKET:-cc1c-artifacts}"
+MINIO_SECURE="${MINIO_SECURE:-false}"
+MINIO_DATA_DIR="${MINIO_DATA_DIR:-/var/lib/minio}"
+MINIO_ADDRESS="${MINIO_ADDRESS:-}"
+MINIO_CONSOLE_ADDRESS="${MINIO_CONSOLE_ADDRESS:-:9001}"
+MINIO_ROOT_USER="${MINIO_ROOT_USER:-$MINIO_ACCESS_KEY}"
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$MINIO_SECRET_KEY}"
+MINIO_PROMETHEUS_AUTH_TYPE="${MINIO_PROMETHEUS_AUTH_TYPE:-public}"
+
+if [[ -z "$MINIO_ADDRESS" ]]; then
+    minio_port="${MINIO_ENDPOINT##*:}"
+    if [[ "$minio_port" == "$MINIO_ENDPOINT" ]]; then
+        minio_port="9000"
+    fi
+    MINIO_ADDRESS=":${minio_port}"
+fi
 
 ##############################################################################
 # CLI ARGUMENTS
@@ -106,9 +137,11 @@ DRY_RUN=false
 VERBOSE=false
 SKIP_POSTGRES=false
 SKIP_REDIS=false
+SKIP_MINIO=false
 SKIP_PGADMIN=false
 ONLY_POSTGRES=false
 ONLY_REDIS=false
+ONLY_MINIO=false
 ONLY_PGADMIN=false
 
 parse_args() {
@@ -116,9 +149,11 @@ parse_args() {
         case $1 in
             --only-postgres)  ONLY_POSTGRES=true; shift ;;
             --only-redis)     ONLY_REDIS=true; shift ;;
+            --only-minio)     ONLY_MINIO=true; shift ;;
             --only-pgadmin)   ONLY_PGADMIN=true; shift ;;
             --skip-postgres)  SKIP_POSTGRES=true; shift ;;
             --skip-redis)     SKIP_REDIS=true; shift ;;
+            --skip-minio)     SKIP_MINIO=true; shift ;;
             --skip-pgadmin)   SKIP_PGADMIN=true; shift ;;
             --dry-run)        DRY_RUN=true; shift ;;
             --verbose|-v)     VERBOSE=true; export VERBOSE; shift ;;
@@ -146,15 +181,21 @@ validate_flags() {
         exit 1
     fi
 
+    if [[ "$ONLY_MINIO" == "true" && "$SKIP_MINIO" == "true" ]]; then
+        log_error "Конфликтующие флаги: --only-minio и --skip-minio"
+        exit 1
+    fi
+
     if [[ "$ONLY_PGADMIN" == "true" && "$SKIP_PGADMIN" == "true" ]]; then
         log_error "Конфликтующие флаги: --only-pgadmin и --skip-pgadmin"
         exit 1
     fi
 
     local only_count=0
-    [[ "$ONLY_POSTGRES" == "true" ]] && ((only_count++))
-    [[ "$ONLY_REDIS" == "true" ]] && ((only_count++))
-    [[ "$ONLY_PGADMIN" == "true" ]] && ((only_count++))
+    [[ "$ONLY_POSTGRES" == "true" ]] && only_count=$((only_count + 1))
+    [[ "$ONLY_REDIS" == "true" ]] && only_count=$((only_count + 1))
+    [[ "$ONLY_MINIO" == "true" ]] && only_count=$((only_count + 1))
+    [[ "$ONLY_PGADMIN" == "true" ]] && only_count=$((only_count + 1))
 
     if [[ $only_count -gt 1 ]]; then
         log_error "Можно указать только один --only-X флаг"
@@ -164,7 +205,7 @@ validate_flags() {
 
 show_help() {
     cat << 'EOF'
-CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + pgAdmin)
+CommandCenter1C - Infrastructure Installation (PostgreSQL + Redis + MinIO + pgAdmin)
 
 Usage:
   ./scripts/setup/install-infra.sh [OPTIONS]
@@ -172,9 +213,11 @@ Usage:
 Options:
   --only-postgres     Установить только PostgreSQL
   --only-redis        Установить только Redis
+  --only-minio        Установить только MinIO
   --only-pgadmin      Установить только pgAdmin
   --skip-postgres     Пропустить установку PostgreSQL
   --skip-redis        Пропустить установку Redis
+  --skip-minio        Пропустить установку MinIO
   --skip-pgadmin      Пропустить установку pgAdmin
   --dry-run           Показать план без изменений
   --verbose, -v       Подробный вывод
@@ -188,14 +231,39 @@ Environment Variables (from .env.local):
   DB_PORT       PostgreSQL port (default: 5432)
   REDIS_HOST    Redis host (default: localhost)
   REDIS_PORT    Redis port (default: 6379)
+  MINIO_ENDPOINT      MinIO endpoint (default: localhost:9000)
+  MINIO_ACCESS_KEY    MinIO access key (default: minioadmin)
+  MINIO_SECRET_KEY    MinIO secret key (default: minioadmin)
+  MINIO_BUCKET        MinIO bucket (default: cc1c-artifacts)
+  MINIO_SECURE        MinIO secure flag (default: false)
+  MINIO_DATA_DIR      MinIO data dir (default: /var/lib/minio)
+  MINIO_ADDRESS       MinIO bind address (default: :9000)
+  MINIO_CONSOLE_ADDRESS MinIO console address (default: :9001)
 
 Examples:
   ./scripts/setup/install-infra.sh                  # Полная установка
   ./scripts/setup/install-infra.sh --dry-run        # Показать план
   ./scripts/setup/install-infra.sh --only-postgres  # Только PostgreSQL
+  ./scripts/setup/install-infra.sh --only-minio     # Только MinIO
   ./scripts/setup/install-infra.sh --skip-redis     # Без Redis
+  ./scripts/setup/install-infra.sh --skip-minio     # Без MinIO
   ./scripts/setup/install-infra.sh --skip-pgadmin   # Без pgAdmin
 EOF
+}
+
+ensure_sudo() {
+    if ! command -v sudo &>/dev/null; then
+        log_error "sudo не найден. Установите sudo и повторите."
+        exit 1
+    fi
+
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+
+    log_warning "Требуется пароль sudo для установки/настройки."
+    log_info "Выполните: sudo -v"
+    exit 1
 }
 
 # Определяет, нужно ли устанавливать компонент
@@ -203,10 +271,11 @@ should_install() {
     local component=$1
 
     # Если указан --only-X, устанавливаем только его
-    if [[ "$ONLY_POSTGRES" == "true" || "$ONLY_REDIS" == "true" || "$ONLY_PGADMIN" == "true" ]]; then
+    if [[ "$ONLY_POSTGRES" == "true" || "$ONLY_REDIS" == "true" || "$ONLY_MINIO" == "true" || "$ONLY_PGADMIN" == "true" ]]; then
         case $component in
             postgres) [[ "$ONLY_POSTGRES" == "true" ]] ;;
             redis)    [[ "$ONLY_REDIS" == "true" ]] ;;
+            minio)    [[ "$ONLY_MINIO" == "true" ]] ;;
             pgadmin)  [[ "$ONLY_PGADMIN" == "true" ]] ;;
             *)        return 1 ;;
         esac
@@ -215,6 +284,7 @@ should_install() {
         case $component in
             postgres) [[ "$SKIP_POSTGRES" != "true" ]] ;;
             redis)    [[ "$SKIP_REDIS" != "true" ]] ;;
+            minio)    [[ "$SKIP_MINIO" != "true" ]] ;;
             pgadmin)  [[ "$SKIP_PGADMIN" != "true" ]] ;;
             *)        return 1 ;;
         esac
@@ -379,6 +449,154 @@ install_redis() {
 }
 
 ##############################################################################
+# MINIO INSTALLATION
+##############################################################################
+
+get_minio_health_url() {
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    local host="${endpoint%%:*}"
+    local port="${endpoint##*:}"
+
+    if [[ "$host" == "$port" ]]; then
+        port="9000"
+    fi
+
+    echo "http://${host}:${port}/minio/health/ready"
+}
+
+get_minio_api_url() {
+    local scheme="http"
+    if is_true "$MINIO_SECURE"; then
+        scheme="https"
+    fi
+
+    local endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+    endpoint="${endpoint#*://}"
+    echo "${scheme}://${endpoint}"
+}
+
+ensure_minio_bucket() {
+    if ! command -v mc &>/dev/null; then
+        log_warning "MinIO client (mc) не установлен, пропускаем создание бакета"
+        return 0
+    fi
+
+    local alias_name="cc1c-minio"
+    local api_url
+    api_url=$(get_minio_api_url)
+
+    if ! mc alias set "$alias_name" "$api_url" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1; then
+        log_warning "Не удалось настроить alias для MinIO ($api_url)"
+        return 1
+    fi
+
+    if mc ls "${alias_name}/${MINIO_BUCKET}" >/dev/null 2>&1; then
+        log_info "Бакет уже существует: ${MINIO_BUCKET}"
+        return 0
+    fi
+
+    if mc mb --ignore-existing "${alias_name}/${MINIO_BUCKET}" >/dev/null 2>&1; then
+        log_success "Бакет создан: ${MINIO_BUCKET}"
+        return 0
+    fi
+
+    log_warning "Не удалось создать бакет: ${MINIO_BUCKET}"
+    return 1
+}
+
+install_minio() {
+    log_step "Установка MinIO..."
+
+    local minio_pkg
+    minio_pkg=$(pkg_map_name "minio") || true
+    if [[ -n "$minio_pkg" ]] && pkg_is_installed "$minio_pkg"; then
+        log_info "MinIO уже установлен ($minio_pkg)"
+    else
+        if $DRY_RUN; then
+            log_info "[DRY-RUN] Будет установлен пакет: minio (AUR: minio)"
+        else
+            log_info "Установка MinIO (AUR: minio)..."
+            pkg_install "minio"
+        fi
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет создан каталог данных MinIO: $MINIO_DATA_DIR"
+    else
+        sudo mkdir -p "$MINIO_DATA_DIR"
+        sudo chown -R "$USER:$USER" "$MINIO_DATA_DIR"
+        sudo chmod 750 "$MINIO_DATA_DIR"
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет установлен systemd unit: minio.service"
+    else
+        local unit_src="$PROJECT_ROOT/infrastructure/systemd/minio.service"
+        if [[ -f "$unit_src" ]]; then
+            sudo cp "$unit_src" /etc/systemd/system/minio.service
+        else
+            log_warning "unit file не найден: $unit_src"
+        fi
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет создан env файл MinIO: /etc/commandcenter1c/minio.env"
+    else
+        sudo mkdir -p /etc/commandcenter1c
+        if [[ ! -f /etc/commandcenter1c/minio.env ]]; then
+            sudo tee /etc/commandcenter1c/minio.env >/dev/null <<EOF
+MINIO_DATA_DIR=${MINIO_DATA_DIR}
+MINIO_ADDRESS=${MINIO_ADDRESS}
+MINIO_CONSOLE_ADDRESS=${MINIO_CONSOLE_ADDRESS}
+MINIO_ROOT_USER=${MINIO_ROOT_USER}
+MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+MINIO_PROMETHEUS_AUTH_TYPE=${MINIO_PROMETHEUS_AUTH_TYPE}
+EOF
+            log_success "Создан /etc/commandcenter1c/minio.env"
+        else
+            log_info "/etc/commandcenter1c/minio.env уже существует, пропускаем"
+        fi
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет создан symlink /usr/bin/minio -> /usr/sbin/minio (если нужно)"
+    else
+        if [[ ! -x "/usr/bin/minio" ]] && [[ -x "/usr/sbin/minio" ]]; then
+            sudo ln -sf /usr/sbin/minio /usr/bin/minio
+        fi
+    fi
+
+    if $DRY_RUN; then
+        log_info "[DRY-RUN] Будет включен и запущен сервис MinIO"
+    else
+        sudo systemctl daemon-reload
+        sudo systemctl enable minio
+        sudo systemctl start minio
+    fi
+
+    if ! $DRY_RUN; then
+        local health_url
+        health_url=$(get_minio_health_url)
+        if check_health_endpoint "$health_url" 2; then
+            log_success "MinIO отвечает (${health_url})"
+        else
+            log_warning "MinIO не отвечает (${health_url})"
+        fi
+    fi
+
+    if ! $DRY_RUN; then
+        if ! command -v mc &>/dev/null; then
+            log_info "Установка minio client (mc) для создания бакета..."
+            pkg_install "minio_client" || log_warning "Не удалось установить minio client"
+        fi
+        ensure_minio_bucket || true
+    fi
+
+    log_success "MinIO установлен и настроен"
+}
+
+##############################################################################
 # PGADMIN INSTALLATION
 ##############################################################################
 
@@ -437,6 +655,17 @@ print_plan() {
         echo ""
     fi
 
+    if should_install "minio"; then
+        echo "MinIO:"
+        echo "  - Install package: minio (AUR: minio)"
+        echo "  - Create data dir: $MINIO_DATA_DIR"
+        echo "  - Install systemd unit (minio.service)"
+        echo "  - Create /etc/commandcenter1c/minio.env (if missing)"
+        echo "  - Enable autostart (systemd)"
+        echo "  - Start service"
+        echo ""
+    fi
+
     if should_install "pgadmin"; then
         echo "pgAdmin 4:"
         echo "  - Install package: pgadmin4"
@@ -451,6 +680,12 @@ print_plan() {
     echo "  DB_NAME=$DB_NAME"
     echo "  REDIS_HOST=$REDIS_HOST"
     echo "  REDIS_PORT=$REDIS_PORT"
+    echo "  MINIO_ENDPOINT=$MINIO_ENDPOINT"
+    echo "  MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY"
+    echo "  MINIO_SECRET_KEY=$MINIO_SECRET_KEY"
+    echo "  MINIO_BUCKET=$MINIO_BUCKET"
+    echo "  MINIO_SECURE=$MINIO_SECURE"
+    echo "  MINIO_DATA_DIR=$MINIO_DATA_DIR"
     echo ""
 }
 
@@ -491,6 +726,18 @@ print_report() {
         echo ""
     fi
 
+    if should_install "minio"; then
+        echo "MinIO:"
+        if check_health_endpoint "$(get_minio_health_url)" 2; then
+            print_status "success" "Сервис запущен"
+        else
+            print_status "warning" "Сервис не отвечает"
+        fi
+        echo "  Endpoint: $MINIO_ENDPOINT"
+        echo "  Data dir: $MINIO_DATA_DIR"
+        echo ""
+    fi
+
     if should_install "pgadmin"; then
         echo "pgAdmin 4:"
         if command -v pgadmin4 &>/dev/null; then
@@ -508,6 +755,7 @@ print_report() {
     echo "  1. Проверьте подключение:"
     echo "     psql -h $DB_HOST -U $DB_USER -d $DB_NAME"
     echo "     redis-cli -h $REDIS_HOST -p $REDIS_PORT ping"
+    echo "     curl $(get_minio_health_url)"
     echo ""
     echo "  2. Примените миграции Django:"
     echo "     ./scripts/dev/run-migrations.sh"
@@ -537,7 +785,7 @@ main() {
     echo ""
 
     # Проверка: нечего устанавливать?
-    if ! should_install "postgres" && ! should_install "redis" && ! should_install "pgadmin"; then
+    if ! should_install "postgres" && ! should_install "redis" && ! should_install "minio" && ! should_install "pgadmin"; then
         log_warning "Нечего устанавливать (все компоненты пропущены)"
         exit 0
     fi
@@ -548,6 +796,8 @@ main() {
         exit 0
     fi
 
+    ensure_sudo
+
     # PostgreSQL
     if should_install "postgres"; then
         install_postgresql
@@ -557,6 +807,12 @@ main() {
     # Redis
     if should_install "redis"; then
         install_redis
+        echo ""
+    fi
+
+    # MinIO
+    if should_install "minio"; then
+        install_minio
         echo ""
     fi
 

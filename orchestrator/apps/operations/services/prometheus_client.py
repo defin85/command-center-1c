@@ -110,6 +110,11 @@ SERVICE_CONFIG = {
         'job_patterns': ['redis', 'redis_exporter'],
         'namespace': 'redis',  # redis_exporter uses redis_* prefix
     },
+    'minio': {
+        'display_name': 'MinIO',
+        'job_patterns': ['minio'],
+        'namespace': 'minio',
+    },
     'event-subscriber': {
         'display_name': 'Event Subscriber',
         'job_patterns': ['event_subscriber', 'event-subscriber', 'eventsubscriber'],
@@ -133,6 +138,7 @@ SERVICE_TOPOLOGY = [
     # Level 2: Orchestrator → Infrastructure
     ('orchestrator', 'postgresql'),
     ('orchestrator', 'redis'),
+    ('orchestrator', 'minio'),
 
     # Level 2 → 3: Worker gets tasks from Redis
     ('redis', 'worker'),  # Worker pulls from Redis queue
@@ -143,6 +149,7 @@ SERVICE_TOPOLOGY = [
 
     # Level 3: Worker → Execution Layer (direct RAS/CLI tools)
     ('worker', 'ras-server'),
+    ('worker', 'minio'),
 
     # Note: All adapters communicate via Redis Streams (Event-Driven Architecture)
     # Results flow: Adapters → Redis Streams (events:*) → Worker/Event Subscriber → PostgreSQL

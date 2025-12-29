@@ -162,12 +162,16 @@ class SystemHealthView(APIView):
         api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
         worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
+        minio_endpoint = getattr(settings, 'MINIO_ENDPOINT', 'localhost:9000').lstrip('/')
+        minio_secure = getattr(settings, 'MINIO_SECURE', False)
+        minio_url = f"{'https' if minio_secure else 'http'}://{minio_endpoint}"
 
         url_map = {
             "frontend": f"{frontend_url}/",
             "api-gateway": api_gateway_url,
             "orchestrator": "http://localhost:8200",
             "worker": worker_url,
+            "minio": minio_url,
         }
 
         type_map = {
@@ -177,6 +181,7 @@ class SystemHealthView(APIView):
             "worker": "go-service",
             "postgresql": "database",
             "redis": "cache",
+            "minio": "storage",
             "event-subscriber": "django",
             "ras-server": "external",
         }

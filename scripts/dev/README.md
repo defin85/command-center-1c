@@ -76,19 +76,26 @@
 
 **Использование:**
 ```bash
-./scripts/dev/start-all.sh
+./scripts/dev/start-all.sh [OPTIONS]
 ```
 
-**Опции:** Нет
+**Опции:**
+```bash
+--force-rebuild          Принудительно пересобрать все Go сервисы
+--no-rebuild             Пропустить проверку/пересборку
+--parallel-build         Параллельная пересборка (быстрее)
+--makemigrations         Создать миграции Django перед migrate
+--verbose                Детальный вывод для отладки
+```
 
 **Что делает:**
 1. **Phase 1:** Проверка и пересборка Go сервисов (умная автопересборка измененных)
 2. **Phase 2:** Запускает Docker сервисы:
-   - Infrastructure: PostgreSQL, Redis, ClickHouse (опционально)
+   - Infrastructure: PostgreSQL, Redis, MinIO (native), ClickHouse (опционально)
    - **Monitoring: Prometheus, Grafana** ← автоматически!
-3. Применяет Django миграции
+3. Проверяет наличие миграций и применяет Django миграции
 4. Запускает Python сервис (orchestrator)
-5. Запускает Go сервисы (api-gateway, worker, ras)
+5. Запускает Go сервисы (api-gateway, worker)
 6. Запускает Frontend (React dev server)
 
 **Особенности:**
@@ -97,9 +104,40 @@
 - Автоматически создает `.env.local` из `.env.example` если отсутствует
 - Сохраняет PID процессов в `pids/`
 - Логи сохраняются в `logs/`
-- Ожидает готовности PostgreSQL и Redis перед продолжением
+- Ожидает готовности PostgreSQL и Redis (и MinIO в native) перед продолжением
+- Проверяет изменения моделей и предлагает создать миграции (флаг `--makemigrations`)
 
 **Важно:** Go сервисы должны быть собраны. Скрипт автоматически пересобирает измененные сервисы, либо используйте `--force-rebuild`.
+
+**Ключевые URL после запуска:**
+```text
+Frontend:      http://localhost:5173
+System Status: http://localhost:5173/system-status
+Service Mesh:  http://localhost:5173/service-mesh
+API Gateway:   http://localhost:8180/health
+Orchestrator:  http://localhost:8200/admin
+MinIO:         http://localhost:9000
+Prometheus:    http://localhost:9090
+Grafana:       http://localhost:3000
+Jaeger:        http://localhost:16686
+```
+
+---
+
+### make-migrations.sh
+
+**Назначение:** Создает миграции Django вручную (удобный хелпер)
+
+**Использование:**
+```bash
+./scripts/dev/make-migrations.sh [app ...]
+```
+
+**Примеры:**
+```bash
+./scripts/dev/make-migrations.sh
+./scripts/dev/make-migrations.sh artifacts
+```
 
 ---
 
@@ -305,6 +343,7 @@ Docker Services:
    - PostgreSQL: проверка контейнера + `pg_isready`
    - Redis: проверка контейнера + `redis-cli ping`
    - ClickHouse: проверка контейнера
+   - MinIO (native): проверка health endpoint
 
 4. **Проверка мониторинга (опционально):**
    - Prometheus: проверка контейнера + HTTP health endpoint

@@ -14,7 +14,7 @@
 #   --full                Полная установка (по умолчанию)
 #   --minimal             Без мониторинга
 #   --system-only         Только системные пакеты
-#   --infra-only          Только PostgreSQL/Redis
+#   --infra-only          Только PostgreSQL/Redis/MinIO
 #   --project-only        Только mise + зависимости проекта
 #   --monitoring-only     Только мониторинг
 #   --skip-system         Пропустить системные пакеты
@@ -28,7 +28,7 @@
 #
 # Phases:
 #   1. System Packages    (install-system.sh)
-#   2. Infrastructure     (install-infra.sh) - PostgreSQL, Redis
+#   2. Infrastructure     (install-infra.sh) - PostgreSQL, Redis, MinIO
 #   3. Project            (install.sh) - mise, Go, Python, Node.js, deps
 #   4. Monitoring         (install-monitoring.sh) - Prometheus, Grafana
 #   5. Verification       (verify installation)
@@ -75,7 +75,7 @@ declare -a PHASE_ORDER
 PHASE_ORDER=("system" "infra" "project" "monitoring" "verify")
 
 PHASE_NAMES["system"]="Системные пакеты"
-PHASE_NAMES["infra"]="Инфраструктура (PostgreSQL + Redis)"
+PHASE_NAMES["infra"]="Инфраструктура (PostgreSQL + Redis + MinIO)"
 PHASE_NAMES["project"]="Проект (mise + Go/Python/Node.js)"
 PHASE_NAMES["monitoring"]="Мониторинг (Prometheus, Grafana)"
 PHASE_NAMES["verify"]="Проверка установки"
@@ -203,7 +203,7 @@ Mode Options:
   --full                Полная установка (по умолчанию)
   --minimal             Без мониторинга
   --system-only         Только системные пакеты
-  --infra-only          Только PostgreSQL/Redis
+  --infra-only          Только PostgreSQL/Redis/MinIO
   --project-only        Только mise + зависимости проекта
   --monitoring-only     Только мониторинг
 
@@ -221,7 +221,7 @@ Other Options:
 
 Phases:
   1. System Packages    git, curl, jq, ripgrep, fd, htop, etc.
-  2. Infrastructure     PostgreSQL 15 + Redis 7
+  2. Infrastructure     PostgreSQL 15 + Redis 7 + MinIO
   3. Project            mise (Go 1.24, Python 3.11, Node.js 20) + deps
   4. Monitoring         Prometheus, Grafana, exporters (optional)
   5. Verification       Проверка всех компонентов
@@ -541,6 +541,27 @@ verify_infrastructure() {
         fi
     else
         print_status "error" "Redis: not installed"
+        all_ok=false
+    fi
+
+    # MinIO
+    if command -v minio &>/dev/null; then
+        local minio_endpoint="${MINIO_ENDPOINT:-localhost:9000}"
+        minio_endpoint="${minio_endpoint#*://}"
+        local minio_host="${minio_endpoint%%:*}"
+        local minio_port="${minio_endpoint##*:}"
+        if [[ "$minio_host" == "$minio_port" ]]; then
+            minio_port="9000"
+        fi
+        local minio_health_url="http://${minio_host}:${minio_port}/minio/health/ready"
+
+        if check_health_endpoint "$minio_health_url" 2; then
+            print_status "success" "MinIO: running (${minio_host}:${minio_port})"
+        else
+            print_status "warning" "MinIO: installed but not responding"
+        fi
+    else
+        print_status "error" "MinIO: not installed"
         all_ok=false
     fi
 

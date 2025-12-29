@@ -21,6 +21,15 @@ class Artifact(models.Model):
     kind = models.CharField(max_length=64, choices=ArtifactKind.choices)
     is_versioned = models.BooleanField(default=True)
     tags = models.JSONField(default=list, blank=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="artifacts_deleted",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

@@ -1,6 +1,6 @@
 import { Button, Checkbox, Col, DatePicker, Divider, Input, InputNumber, Modal, Row, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TableFilterConfig, TableFilters } from './types'
 import type { TableColumnConfig, TableViewPreset } from './hooks/useTablePreferences'
 
@@ -524,9 +524,19 @@ export const TablePreferencesModal = ({
   const [columnSearch, setColumnSearch] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
   const [selectedColumnKey, setSelectedColumnKey] = useState<string | null>(null)
+  const lastPresetIdRef = useRef<string | null>(null)
+  const lastOpenRef = useRef(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      lastOpenRef.current = false
+      return
+    }
+    const presetId = activePreset?.id ?? null
+    const shouldReset = !lastOpenRef.current || lastPresetIdRef.current !== presetId
+    if (!shouldReset) return
+    lastOpenRef.current = true
+    lastPresetIdRef.current = presetId
     setDraft(activePreset)
     setSelectedColumnKey((prev) => prev ?? activePreset.columnOrder[0] ?? null)
   }, [activePreset, open])

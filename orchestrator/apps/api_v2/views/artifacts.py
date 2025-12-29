@@ -10,6 +10,7 @@ from django.conf import settings
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
+from django.utils import timezone
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.parsers import MultiPartParser
@@ -111,6 +112,10 @@ def _ensure_staff(request):
     return None
 
 
+def _get_active_artifact(artifact_id):
+    return get_object_or_404(Artifact, id=artifact_id, is_deleted=False)
+
+
 # =============================================================================
 # Endpoints
 # =============================================================================
@@ -184,7 +189,14 @@ def list_artifacts(request):
     if staff_check:
         return staff_check
 
-    queryset = Artifact.objects.all()
+    include_deleted = request.query_params.get("include_deleted") == "true"
+    only_deleted = request.query_params.get("only_deleted") == "true"
+    if only_deleted:
+        queryset = Artifact.objects.filter(is_deleted=True)
+    elif include_deleted:
+        queryset = Artifact.objects.all()
+    else:
+        queryset = Artifact.objects.filter(is_deleted=False)
     kind = request.query_params.get("kind")
     name = request.query_params.get("name")
     tag = request.query_params.get("tag")
@@ -199,6 +211,57 @@ def list_artifacts(request):
     artifacts = list(queryset.order_by("-created_at"))
     response = ArtifactListResponseSerializer({"artifacts": artifacts, "count": len(artifacts)})
     return Response(response.data)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Delete artifact (soft)",
+    responses={
+        204: OpenApiResponse(description="Deleted"),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_artifact(request, artifact_id):
+    staff_check = _ensure_staff(request)
+    if staff_check:
+        return staff_check
+
+    artifact = _get_active_artifact(artifact_id)
+    artifact.is_deleted = True
+    artifact.deleted_at = timezone.now()
+    artifact.deleted_by = request.user
+    artifact.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+    return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Restore artifact",
+    responses={
+        200: ArtifactSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def restore_artifact(request, artifact_id):
+    staff_check = _ensure_staff(request)
+    if staff_check:
+        return staff_check
+
+    artifact = get_object_or_404(Artifact, id=artifact_id, is_deleted=True)
+    artifact.is_deleted = False
+    artifact.deleted_at = None
+    artifact.deleted_by = None
+    artifact.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+    response = ArtifactSerializer(artifact)
+    return Response(response.data, status=http_status.HTTP_200_OK)
 
 
 @extend_schema(
@@ -225,7 +288,7 @@ def upload_artifact_version(request, artifact_id):
     if staff_check:
         return staff_check
 
-    artifact = get_object_or_404(Artifact, id=artifact_id)
+    artifact = _get_active_artifact(artifact_id)
     file = request.FILES.get("file")
     if not file:
         return Response(
@@ -305,7 +368,7 @@ def list_artifact_versions(request, artifact_id):
     if staff_check:
         return staff_check
 
-    artifact = get_object_or_404(Artifact, id=artifact_id)
+    artifact = _get_active_artifact(artifact_id)
     versions = list(artifact.versions.order_by("-created_at"))
     response = ArtifactVersionListResponseSerializer({"versions": versions, "count": len(versions)})
     return Response(response.data)
@@ -329,7 +392,7 @@ def upsert_artifact_alias(request, artifact_id):
     if staff_check:
         return staff_check
 
-    artifact = get_object_or_404(Artifact, id=artifact_id)
+    artifact = _get_active_artifact(artifact_id)
     serializer = ArtifactAliasUpsertRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(
@@ -378,7 +441,7 @@ def list_artifact_aliases(request, artifact_id):
     if staff_check:
         return staff_check
 
-    artifact = get_object_or_404(Artifact, id=artifact_id)
+    artifact = _get_active_artifact(artifact_id)
     aliases = list(artifact.aliases.select_related("version").order_by("alias"))
     response = ArtifactAliasListResponseSerializer(
         {
@@ -414,7 +477,7 @@ def download_artifact_version(request, artifact_id, version):
     if staff_check:
         return staff_check
 
-    artifact = get_object_or_404(Artifact, id=artifact_id)
+    artifact = _get_active_artifact(artifact_id)
     version_obj = get_object_or_404(ArtifactVersion, artifact=artifact, version=version)
     storage = ArtifactStorageClient()
     try:

@@ -57,6 +57,22 @@ const defaultFilterConfigs = (columns: TableColumnConfig[]): TableFilterConfig[]
       placeholder: col.label,
     }))
 
+const isFilterValueEqual = (left: TableFilterValue, right: TableFilterValue) => {
+  if (left === right) return true
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) return false
+    return left.every((value, index) => value === right[index])
+  }
+  return false
+}
+
+const areFiltersEqual = (left: TableFilters, right: TableFilters) => {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => isFilterValueEqual(left[key], right[key]))
+}
+
 export const useTableToolkit = <T,>({
   tableId,
   columns,
@@ -64,7 +80,9 @@ export const useTableToolkit = <T,>({
   initialPageSize = 50,
 }: UseTableToolkitOptions<T>): TableToolkitState<T> => {
   const { data: tableMetadata } = useTableMetadata(tableId)
-  const metadataColumns = tableMetadata?.columns ?? []
+  type MetadataColumn = NonNullable<typeof tableMetadata>['columns'][number]
+  const emptyMetadataColumns = useMemo<MetadataColumn[]>(() => [], [])
+  const metadataColumns = tableMetadata?.columns ?? emptyMetadataColumns
 
   const columnConfigs = useMemo<TableColumnConfig[]>(() => {
     if (metadataColumns.length === 0) {
@@ -171,14 +189,29 @@ export const useTableToolkit = <T,>({
         nextFilters[key] = value
       }
     })
-    setFilters(nextFilters)
-    if (activePreset.defaultSort?.key && activePreset.defaultSort.order) {
-      setSort(activePreset.defaultSort.key, activePreset.defaultSort.order)
-    } else {
-      setSort(null, null)
+    if (!areFiltersEqual(filters, nextFilters)) {
+      setFilters(nextFilters)
     }
-    setPage(1)
-  }, [activePreset.defaultFilters, activePreset.defaultSort, defaultFilterState, setFilters, setPage, setSort])
+    const nextSortKey = activePreset.defaultSort?.key ?? null
+    const nextSortOrder = activePreset.defaultSort?.order ?? null
+    if (sort.key !== nextSortKey || sort.order !== nextSortOrder) {
+      setSort(nextSortKey, nextSortOrder)
+    }
+    if (pagination.page !== 1) {
+      setPage(1)
+    }
+  }, [
+    activePreset.defaultFilters,
+    activePreset.defaultSort,
+    defaultFilterState,
+    filters,
+    pagination.page,
+    setFilters,
+    setPage,
+    setSort,
+    sort.key,
+    sort.order,
+  ])
 
   const hasFilterValue = useCallback((value: TableFilterValue) => {
     if (value === null || value === undefined) return false

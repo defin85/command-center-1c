@@ -48,6 +48,10 @@ urlpatterns = [
     path('databases/list-databases/', databases.list_databases, name='list-databases'),
     path('databases/get-database/', databases.get_database, name='get-database'),
     path('databases/update-credentials/', databases.update_database_credentials, name='update-database-credentials'),
+    path('databases/list-ib-users/', databases.list_infobase_users, name='list-infobase-users'),
+    path('databases/create-ib-user/', databases.create_infobase_user, name='create-infobase-user'),
+    path('databases/update-ib-user/', databases.update_infobase_user, name='update-infobase-user'),
+    path('databases/delete-ib-user/', databases.delete_infobase_user, name='delete-infobase-user'),
     path('databases/health-check/', databases.health_check, name='database-health-check'),
     path('databases/bulk-health-check/', databases.bulk_health_check, name='bulk-health-check'),
     path('databases/set-status/', databases.set_status, name='set-status'),
@@ -127,6 +131,8 @@ urlpatterns = [
     # ========================================================================
     path('artifacts/', artifacts.list_artifacts, name='list-artifacts'),
     path('artifacts/create/', artifacts.create_artifact, name='create-artifact'),
+    path('artifacts/<uuid:artifact_id>/', artifacts.delete_artifact, name='delete-artifact'),
+    path('artifacts/<uuid:artifact_id>/restore/', artifacts.restore_artifact, name='restore-artifact'),
     path('artifacts/<uuid:artifact_id>/versions/', artifacts.list_artifact_versions, name='list-artifact-versions'),
     path('artifacts/<uuid:artifact_id>/versions/upload/', artifacts.upload_artifact_version, name='upload-artifact-version'),
     path('artifacts/<uuid:artifact_id>/versions/<str:version>/download/', artifacts.download_artifact_version, name='download-artifact-version'),
@@ -142,6 +148,7 @@ urlpatterns = [
     path('rbac/list-database-permissions/', rbac.list_database_permissions, name='list-database-permissions'),
     path('rbac/grant-database-permission/', rbac.grant_database_permission, name='grant-database-permission'),
     path('rbac/revoke-database-permission/', rbac.revoke_database_permission, name='revoke-database-permission'),
+    path('rbac/list-users/', rbac.list_users, name='list-users'),
     path('rbac/get-effective-access/', rbac.get_effective_access, name='get-effective-access'),
 
     # ========================================================================

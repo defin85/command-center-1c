@@ -1,7 +1,7 @@
 """Serializers для databases app."""
 
 from rest_framework import serializers
-from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster
+from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster, InfobaseUserMapping
 
 
 class DatabaseSerializer(serializers.ModelSerializer):
@@ -186,3 +186,60 @@ class ClusterSerializer(serializers.ModelSerializer):
             'updated_at',
             'cluster_pwd_configured',
         ]
+
+
+class UserRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+
+
+class InfobaseUserMappingSerializer(serializers.ModelSerializer):
+    user = UserRefSerializer(allow_null=True, required=False)
+
+    class Meta:
+        model = InfobaseUserMapping
+        fields = [
+            'id',
+            'database_id',
+            'user',
+            'ib_username',
+            'ib_display_name',
+            'ib_roles',
+            'auth_type',
+            'is_service',
+            'notes',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class InfobaseUserMappingCreateSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    ib_username = serializers.CharField()
+    ib_display_name = serializers.CharField(required=False, allow_blank=True)
+    ib_roles = serializers.ListField(child=serializers.CharField(), required=False)
+    auth_type = serializers.ChoiceField(
+        choices=InfobaseUserMapping._meta.get_field('auth_type').choices,
+        required=False,
+    )
+    is_service = serializers.BooleanField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class InfobaseUserMappingUpdateSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    ib_username = serializers.CharField(required=False)
+    ib_display_name = serializers.CharField(required=False, allow_blank=True)
+    ib_roles = serializers.ListField(child=serializers.CharField(), required=False)
+    auth_type = serializers.ChoiceField(
+        choices=InfobaseUserMapping._meta.get_field('auth_type').choices,
+        required=False,
+    )
+    is_service = serializers.BooleanField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class InfobaseUserMappingDeleteSerializer(serializers.Serializer):
+    id = serializers.IntegerField()

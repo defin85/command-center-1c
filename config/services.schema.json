@@ -35,6 +35,7 @@
       "properties": {
         "postgresql": { "$ref": "#/definitions/infrastructure_service" },
         "redis": { "$ref": "#/definitions/infrastructure_service" },
+        "minio": { "$ref": "#/definitions/infrastructure_service" },
         "clickhouse": { "$ref": "#/definitions/infrastructure_service" },
         "prometheus": { "$ref": "#/definitions/infrastructure_service" },
         "grafana": { "$ref": "#/definitions/infrastructure_service" },

@@ -35,6 +35,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'event-subscriber': <NotificationOutlined />,
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,
+  minio: <CloudServerOutlined />,
 }
 
 /**
