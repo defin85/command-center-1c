@@ -12,7 +12,7 @@ from typing import Optional
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -28,6 +28,7 @@ from apps.databases.models import (
 from apps.operations.services.admin_action_audit import log_admin_action
 
 
+@extend_schema_field(OpenApiTypes.STR)
 class PermissionLevelCodeField(serializers.Field):
     def to_representation(self, value):
         try:
@@ -47,17 +48,17 @@ class PermissionLevelCodeField(serializers.Field):
             raise serializers.ValidationError("Invalid permission level")
 
 
-class ErrorDetailSerializer(serializers.Serializer):
+class RbacErrorDetailSerializer(serializers.Serializer):
     code = serializers.CharField()
     message = serializers.CharField()
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class RbacErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = RbacErrorDetailSerializer()
 
 
-class UserRefSerializer(serializers.Serializer):
+class RbacUserRefSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
 
@@ -74,19 +75,19 @@ class DatabaseRefSerializer(serializers.Serializer):
 
 
 class ClusterPermissionSerializer(serializers.Serializer):
-    user = UserRefSerializer()
+    user = RbacUserRefSerializer()
     cluster = ClusterRefSerializer()
     level = PermissionLevelCodeField()
-    granted_by = UserRefSerializer(allow_null=True)
+    granted_by = RbacUserRefSerializer(allow_null=True)
     granted_at = serializers.DateTimeField()
     notes = serializers.CharField(allow_blank=True, required=False)
 
 
 class DatabasePermissionSerializer(serializers.Serializer):
-    user = UserRefSerializer()
+    user = RbacUserRefSerializer()
     database = DatabaseRefSerializer()
     level = PermissionLevelCodeField()
-    granted_by = UserRefSerializer(allow_null=True)
+    granted_by = RbacUserRefSerializer(allow_null=True)
     granted_at = serializers.DateTimeField()
     notes = serializers.CharField(allow_blank=True, required=False)
 
@@ -103,8 +104,8 @@ class DatabasePermissionListResponseSerializer(serializers.Serializer):
     total = serializers.IntegerField()
 
 
-class UserListResponseSerializer(serializers.Serializer):
-    users = UserRefSerializer(many=True)
+class RbacUserListResponseSerializer(serializers.Serializer):
+    users = RbacUserRefSerializer(many=True)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
 
@@ -159,7 +160,7 @@ class EffectiveAccessDatabaseItemSerializer(serializers.Serializer):
 
 
 class EffectiveAccessResponseSerializer(serializers.Serializer):
-    user = UserRefSerializer()
+    user = RbacUserRefSerializer()
     clusters = EffectiveAccessClusterItemSerializer(many=True)
     databases = EffectiveAccessDatabaseItemSerializer(many=True)
 
@@ -276,10 +277,10 @@ def list_cluster_permissions(request):
     request=GrantClusterPermissionRequestSerializer,
     responses={
         200: ClusterPermissionUpsertResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: RbacErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
-        404: ErrorResponseSerializer,
+        404: RbacErrorResponseSerializer,
     },
 )
 @api_view(["POST"])
@@ -385,7 +386,7 @@ def grant_cluster_permission(request):
     request=RevokeClusterPermissionRequestSerializer,
     responses={
         200: RevokePermissionResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: RbacErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
     },
@@ -499,10 +500,10 @@ def list_database_permissions(request):
     request=GrantDatabasePermissionRequestSerializer,
     responses={
         200: DatabasePermissionUpsertResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: RbacErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
-        404: ErrorResponseSerializer,
+        404: RbacErrorResponseSerializer,
     },
 )
 @api_view(["POST"])
@@ -608,7 +609,7 @@ def grant_database_permission(request):
     request=RevokeDatabasePermissionRequestSerializer,
     responses={
         200: RevokePermissionResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: RbacErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
     },
@@ -657,7 +658,7 @@ def revoke_database_permission(request):
         OpenApiParameter(name="offset", type=int, required=False, description="Pagination offset (default: 0)"),
     ],
     responses={
-        200: UserListResponseSerializer,
+        200: RbacUserListResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
     },
@@ -687,7 +688,7 @@ def list_users(request):
 
     total = qs.count()
     qs = qs.order_by("username")[offset:offset + limit]
-    data = UserRefSerializer(qs, many=True).data
+    data = RbacUserRefSerializer(qs, many=True).data
 
     return Response({
         "users": data,
@@ -719,7 +720,7 @@ def list_users(request):
 @permission_classes([IsAuthenticated])
 def get_effective_access(request):
     requested_user_id = request.query_params.get("user_id")
-    if requested_user_id and not (request.user.is_staff or request.user.is_superuser):
+    if requested_user_id and not request.user.is_staff:
         return Response({"detail": "Forbidden"}, status=403)
 
     target_user = request.user

@@ -22,7 +22,7 @@ from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.throttling import UserRateThrottle
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -217,17 +217,17 @@ DEPRECATED_OPERATIONS = {}
 # Response Serializers for OpenAPI documentation
 # =============================================================================
 
-class ErrorDetailSerializer(serializers.Serializer):
+class OperationErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
     message = serializers.CharField(help_text="Human-readable error message")
     details = serializers.DictField(required=False, help_text="Additional error details")
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class OperationErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = OperationErrorDetailSerializer()
 
 
 class OperationProgressSerializer(serializers.Serializer):
@@ -850,7 +850,7 @@ class OperationMuxTicketRequestSerializer(serializers.Serializer):
     ],
     responses={
         200: OperationListResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -1005,9 +1005,9 @@ def list_operations(request):
     ],
     responses={
         200: OperationDetailResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: OperationErrorResponseSerializer,
     }
 )
 @api_view(['GET'])
@@ -1133,9 +1133,9 @@ class CancelOperationRequestSerializer(serializers.Serializer):
     request=CancelOperationRequestSerializer,
     responses={
         200: OperationCancelResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: OperationErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -1248,7 +1248,7 @@ def cancel_operation(request):
     request=ExecuteOperationRequestSerializer,
     responses={
         202: ExecuteOperationResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -1388,7 +1388,7 @@ def execute_operation(request):
     request=ExecuteIbcmdOperationRequestSerializer,
     responses={
         202: ExecuteOperationResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -1527,6 +1527,30 @@ def _count_active_mux_streams(redis_conn, user_id: int) -> int:
     return count
 
 
+def _validate_sse_ticket(ticket: str) -> tuple:
+    """
+    Validate and consume SSE ticket (sync).
+
+    Returns:
+        (ticket_data, error_message) - ticket_data is None if validation failed
+    """
+    redis_conn = _get_redis_connection()
+    try:
+        ticket_key = f"{SSE_TICKET_PREFIX}{ticket}"
+        pipe = redis_conn.pipeline()
+        pipe.get(ticket_key)
+        pipe.delete(ticket_key)
+        results = pipe.execute()
+
+        ticket_data_raw = results[0]
+        if not ticket_data_raw:
+            return None, "Invalid or expired ticket"
+
+        return json.loads(ticket_data_raw), None
+    finally:
+        redis_conn.close()
+
+
 async def _count_active_streams_async(redis_conn, user_id: int) -> int:
     pattern = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:*"
     count = 0
@@ -1609,9 +1633,9 @@ async def _validate_mux_ticket_async(ticket: str) -> tuple:
     request=SSETicketRequestSerializer,
     responses={
         200: SSETicketResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: OperationErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: OperationErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -1653,8 +1677,8 @@ def get_stream_ticket(request):
             }
         }, status=404)
 
-    # Authorization check: user must own the operation or be superuser
-    if operation.created_by != request.user.username and not request.user.is_superuser:
+    # Authorization check: user must own the operation or be staff
+    if operation.created_by != request.user.username and not request.user.is_staff:
         record_api_v2_duration(endpoint, "forbidden", time.monotonic() - start_time)
         record_sse_ticket("operations", "forbidden")
         return Response({
@@ -1814,7 +1838,7 @@ def _get_deprecated_meta(operation_id: str) -> tuple[bool, str | None]:
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_operation_catalog(request):
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         accessible = PermissionService.filter_accessible_databases(
             request.user,
             Database.objects.all(),
@@ -1989,7 +2013,7 @@ def _resolve_operation_access(user, operations):
     allowed = []
     denied = []
 
-    if user.is_superuser:
+    if user.is_staff:
         return [str(op.id) for op in operations], denied
 
     op_db_ids: dict[str, list[str]] = {}
@@ -2037,7 +2061,7 @@ def _resolve_operation_access(user, operations):
     responses={
         200: OpenApiResponse(description='Subscription updated'),
         401: OpenApiResponse(description='Unauthorized'),
-        429: ErrorResponseSerializer,
+        429: OperationErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -2133,7 +2157,7 @@ def unsubscribe_operation_streams(request):
     responses={
         200: SSETicketResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        429: ErrorResponseSerializer,
+        429: OperationErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -2382,7 +2406,41 @@ async def operation_stream_mux(request):
     return response
 
 
-async def operation_stream(request):
+@extend_schema(
+    tags=['v2'],
+    summary='Operation SSE stream',
+    description='SSE endpoint for real-time operation updates. Prefer ticket-based auth via /stream-ticket/.',
+    parameters=[
+        OpenApiParameter(
+            name='ticket',
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description='Short-lived SSE ticket from /operations/stream-ticket/.',
+        ),
+        OpenApiParameter(
+            name='operation_id',
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description='Operation ID (deprecated legacy token auth).',
+        ),
+        OpenApiParameter(
+            name='token',
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description='Legacy token auth (deprecated).',
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description='SSE stream (text/event-stream)'),
+        401: OpenApiResponse(description='Unauthorized'),
+    },
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def operation_stream(request):
     """
     GET /api/v2/operations/stream/?ticket=xxx
     GET /api/v2/operations/stream/?operation_id=xxx&token=xxx (deprecated)
@@ -2411,7 +2469,7 @@ async def operation_stream(request):
         # Prefer ticket-based auth (secure)
     user_id = None
     if ticket:
-        ticket_data, error = await _validate_sse_ticket_async(ticket)
+        ticket_data, error = _validate_sse_ticket(ticket)
         if error:
             record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
             return JsonResponse({
@@ -2443,20 +2501,12 @@ async def operation_stream(request):
                 }
             }, status=400)
 
-        # Manual JWT authentication
-        async def _authenticate_legacy_token(raw_token: str):
-            def _sync_auth():
-                jwt_auth = JWTAuthentication()
-                validated_token = jwt_auth.get_validated_token(raw_token)
-                user = jwt_auth.get_user(validated_token)
-                if not user:
-                    raise AuthenticationFailed('User not found')
-                return user
-
-            return await sync_to_async(_sync_auth, thread_sensitive=True)()
-
         try:
-            user = await _authenticate_legacy_token(token)
+            jwt_auth = JWTAuthentication()
+            validated_token = jwt_auth.get_validated_token(token)
+            user = jwt_auth.get_user(validated_token)
+            if not user:
+                raise AuthenticationFailed('User not found')
             username = user.username
             user_id = user.id
         except Exception as e:
@@ -2480,11 +2530,11 @@ async def operation_stream(request):
         active_value = ticket_data.get("client_id") if ticket else None
         if not active_value:
             active_value = secrets.token_urlsafe(12)
-        active_conn = _get_async_redis_connection()
+        active_conn = _get_redis_connection()
         try:
-            max_live_streams = await _get_max_live_streams_async()
+            max_live_streams = _get_max_live_streams()
             if max_live_streams > 0:
-                active_count = await _count_active_streams_async(active_conn, user_id)
+                active_count = _count_active_streams(active_conn, user_id)
                 if active_count >= max_live_streams:
                     record_api_v2_duration(endpoint, "limit", time.monotonic() - start_time)
                     response = JsonResponse({
@@ -2498,7 +2548,7 @@ async def operation_stream(request):
                     response['Retry-After'] = "60"
                     return response
 
-            if not await active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
+            if not active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
                 record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
                 return JsonResponse({
                     'success': False,
@@ -2508,22 +2558,22 @@ async def operation_stream(request):
                     }
                 }, status=429)
         finally:
-            await active_conn.close()
+            active_conn.close()
 
-    async def event_generator():
+    def event_generator():
         """Generator for SSE events using Redis Streams (XREAD)."""
         logger.info(f"event_generator: Starting for operation {operation_id}")
         sse_connection_open("operations")
 
         # Connect to Redis
         redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-        redis_conn = redis_async.from_url(redis_url, decode_responses=True)
+        redis_conn = redis_module.from_url(redis_url, decode_responses=True)
         stream_name = f"events:operation:{operation_id}"
         logger.info(f"event_generator: Will read from stream {stream_name}")
 
         # Send initial state
         try:
-            operation = await sync_to_async(BatchOperation.objects.get, thread_sensitive=True)(id=operation_id)
+            operation = BatchOperation.objects.get(id=operation_id)
             logger.info(f"event_generator: Found operation with status {operation.status}")
             operation_metadata = operation.metadata or {}
             initial_event = {
@@ -2550,7 +2600,7 @@ async def operation_stream(request):
                 "operation_id": str(operation_id)
             }
             yield f"data: {json.dumps(error_event)}\n\n"
-            await redis_conn.close()
+            redis_conn.close()
             record_sse_stream_error("operations", "missing_operation")
             return
 
@@ -2566,7 +2616,7 @@ async def operation_stream(request):
                 loop_start = time.monotonic()
                 # XREAD with short block timeout
                 # Returns: [(stream_name, [(msg_id, {fields}), ...])] or None on timeout
-                messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
+                messages = redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
 
                 if not messages:
                     # Timeout - send heartbeat comment to keep connection alive
@@ -2574,7 +2624,7 @@ async def operation_stream(request):
                     if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
                         if active_key:
                             try:
-                                await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
                             except Exception:
                                 pass
                         yield ": heartbeat\n\n"
@@ -2590,7 +2640,7 @@ async def operation_stream(request):
                         event_type = fields.get('event_type') or 'message'
                         if active_key:
                             try:
-                                await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
                             except Exception:
                                 pass
                         yield f"event: {event_type}\n"
@@ -2612,10 +2662,10 @@ async def operation_stream(request):
         finally:
             try:
                 if active_key and active_value:
-                    current_value = await redis_conn.get(active_key)
+                    current_value = redis_conn.get(active_key)
                     if current_value == active_value:
-                        await redis_conn.delete(active_key)
-                await redis_conn.close()
+                        redis_conn.delete(active_key)
+                redis_conn.close()
             except Exception:
                 pass  # Игнорируем ошибки при закрытии
             sse_connection_close("operations")

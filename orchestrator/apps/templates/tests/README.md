@@ -68,7 +68,7 @@ Operation Templates Reference Panel in Django Admin
 
 Located in `conftest.py`:
 
-- **admin_user** - Superuser for admin tests
+- **admin_user** - Staff user for admin tests
 - **simple_workflow_template** - Basic sequential workflow
 - **workflow_execution** - Workflow execution instance
 

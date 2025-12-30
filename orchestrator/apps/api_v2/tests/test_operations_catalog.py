@@ -7,17 +7,17 @@ from apps.templates.registry.types import BackendType, OperationType, TargetEnti
 
 
 @pytest.fixture
-def superuser():
+def staff_user():
     user = User.objects.create_user(username="catalog_admin", password="pass")
-    user.is_superuser = True
-    user.save(update_fields=["is_superuser"])
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
     return user
 
 
 @pytest.fixture
-def client(superuser):
+def client(staff_user):
     c = APIClient()
-    c.force_authenticate(user=superuser)
+    c.force_authenticate(user=staff_user)
     return c
 
 

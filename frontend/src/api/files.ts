@@ -7,7 +7,9 @@
 import type { AxiosProgressEvent } from 'axios'
 
 import { getV2 } from './generated'
+import type { PurposeEnum } from './generated/model'
 import { getApiBaseUrl } from './baseUrl'
+import { apiClient } from './client'
 
 const api = getV2()
 
@@ -49,7 +51,7 @@ export const filesApi = {
    */
   upload: async (
     file: File,
-    purpose: string,
+    purpose: PurposeEnum,
     expiryHours?: number,
     onProgress?: ProgressCallback
   ): Promise<FileUploadResponse> => {
@@ -61,16 +63,10 @@ export const filesApi = {
       formData.append('expiry_hours', String(expiryHours))
     }
 
-    const response = await api.postFilesUpload(
+    const response = await apiClient.post<FileUploadResponse>(
+      '/api/v2/files/upload/',
+      formData,
       {
-        purpose,
-        expiry_hours: expiryHours,
-      },
-      {
-        data: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         onUploadProgress: (event: AxiosProgressEvent) => {
           if (onProgress && event.total) {
             const percent = Math.round((event.loaded * 100) / event.total)
@@ -80,7 +76,7 @@ export const filesApi = {
       },
     )
 
-    return response as unknown as FileUploadResponse
+    return response.data
   },
 
   /**

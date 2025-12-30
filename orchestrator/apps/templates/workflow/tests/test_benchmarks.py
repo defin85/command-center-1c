@@ -91,8 +91,7 @@ def admin_user(db):
         username='benchadmin',
         email='bench@test.com',
         password='benchpass',
-        is_staff=True,
-        is_superuser=True
+        is_staff=True
     )
 
 

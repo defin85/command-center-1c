@@ -72,7 +72,7 @@ class TimelineService:
 
         Note:
             - When user is provided, checks that operation.created_by == user.username
-              or user is superuser
+              or user is staff
             - When Redis is unavailable, returns empty timeline (not 500 error)
         """
         # Validate and cap parameters
@@ -141,10 +141,10 @@ class TimelineService:
             user: User requesting access
 
         Returns:
-            True if user owns the operation or is superuser
+            True if user owns the operation or is staff
         """
-        # Superusers can access any operation
-        if user.is_superuser:
+        # Staff can access any operation
+        if user.is_staff:
             return True
 
         # Check ownership by username

@@ -1,5 +1,7 @@
 """Serializers для databases app."""
 
+from typing import Optional
+
 from rest_framework import serializers
 from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster, InfobaseUserMapping
 
@@ -21,37 +23,37 @@ class DatabaseSerializer(serializers.ModelSerializer):
     last_health_error = serializers.SerializerMethodField()
     last_health_error_code = serializers.SerializerMethodField()
 
-    def _get_metadata_value(self, obj: Database, key: str):
+    def _get_metadata_value(self, obj: Database, key: str) -> Optional[object]:
         metadata = obj.metadata or {}
         if isinstance(metadata, dict):
             return metadata.get(key)
         return None
 
-    def get_sessions_deny(self, obj: Database):
+    def get_sessions_deny(self, obj: Database) -> Optional[bool]:
         return self._get_metadata_value(obj, 'sessions_deny')
 
-    def get_scheduled_jobs_deny(self, obj: Database):
+    def get_scheduled_jobs_deny(self, obj: Database) -> Optional[bool]:
         return self._get_metadata_value(obj, 'scheduled_jobs_deny')
 
-    def get_denied_from(self, obj: Database):
+    def get_denied_from(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'denied_from')
 
-    def get_denied_to(self, obj: Database):
+    def get_denied_to(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'denied_to')
 
-    def get_denied_message(self, obj: Database):
+    def get_denied_message(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'denied_message')
 
-    def get_permission_code(self, obj: Database):
+    def get_permission_code(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'permission_code')
 
-    def get_denied_parameter(self, obj: Database):
+    def get_denied_parameter(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'denied_parameter')
 
-    def get_last_health_error(self, obj: Database):
+    def get_last_health_error(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'last_health_error')
 
-    def get_last_health_error_code(self, obj: Database):
+    def get_last_health_error_code(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'last_health_error_code')
 
     def get_password_configured(self, obj: Database) -> bool:

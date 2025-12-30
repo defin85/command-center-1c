@@ -11,7 +11,6 @@ export type UserSummary = {
   first_name: string
   last_name: string
   is_staff: boolean
-  is_superuser: boolean
   is_active: boolean
   last_login: string | null
   date_joined: string
@@ -28,7 +27,6 @@ export type UserListFilters = {
   username?: string
   email?: string
   is_staff?: boolean
-  is_superuser?: boolean
   is_active?: boolean
   limit?: number
   offset?: number
@@ -41,7 +39,6 @@ export type UserCreateRequest = {
   first_name?: string
   last_name?: string
   is_staff?: boolean
-  is_superuser?: boolean
   is_active?: boolean
 }
 
@@ -52,7 +49,6 @@ export type UserUpdateRequest = {
   first_name?: string
   last_name?: string
   is_staff?: boolean
-  is_superuser?: boolean
   is_active?: boolean
 }
 

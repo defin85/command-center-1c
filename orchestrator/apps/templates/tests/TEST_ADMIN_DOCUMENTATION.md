@@ -28,7 +28,7 @@ class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
 
 All fixtures are defined in `setUp()` method:
 
-- **admin_user** - Superuser with staff permissions
+- **admin_user** - Staff user for admin tests
 - **workflow** - Sample WorkflowTemplate instance
 - **admin_site** - AdminSite instance
 - **workflow_admin** - WorkflowTemplateAdmin instance

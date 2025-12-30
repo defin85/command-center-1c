@@ -37,7 +37,6 @@ export function UsersPage() {
     { key: 'username', label: 'Username', groupKey: 'core', groupLabel: 'Core', sortable: true },
     { key: 'email', label: 'Email', groupKey: 'core', groupLabel: 'Core', sortable: true },
     { key: 'is_staff', label: 'Staff', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_superuser', label: 'Superuser', groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'is_active', label: 'Active', groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'last_login', label: 'Last Login', groupKey: 'time', groupLabel: 'Time', sortable: true },
     { key: 'date_joined', label: 'Created', groupKey: 'time', groupLabel: 'Time', sortable: true },
@@ -60,14 +59,6 @@ export function UsersPage() {
       title: 'Staff',
       dataIndex: 'is_staff',
       key: 'is_staff',
-      render: (value: boolean) => (
-        <Text type={value ? 'success' : 'secondary'}>{value ? 'Yes' : 'No'}</Text>
-      ),
-    },
-    {
-      title: 'Superuser',
-      dataIndex: 'is_superuser',
-      key: 'is_superuser',
       render: (value: boolean) => (
         <Text type={value ? 'success' : 'secondary'}>{value ? 'Yes' : 'No'}</Text>
       ),
@@ -129,7 +120,6 @@ export function UsersPage() {
     username: typeof table.filters.username === 'string' ? table.filters.username : undefined,
     email: typeof table.filters.email === 'string' ? table.filters.email : undefined,
     is_staff: typeof table.filters.is_staff === 'boolean' ? table.filters.is_staff : undefined,
-    is_superuser: typeof table.filters.is_superuser === 'boolean' ? table.filters.is_superuser : undefined,
     is_active: typeof table.filters.is_active === 'boolean' ? table.filters.is_active : undefined,
     limit: table.pagination.pageSize,
     offset: pageStart,
@@ -152,7 +142,7 @@ export function UsersPage() {
   const openCreateModal = () => {
     setEditingUser(null)
     form.resetFields()
-    form.setFieldsValue({ is_active: true, is_staff: false, is_superuser: false })
+    form.setFieldsValue({ is_active: true, is_staff: false })
     setUserModalVisible(true)
   }
 
@@ -164,7 +154,6 @@ export function UsersPage() {
       first_name: user.first_name,
       last_name: user.last_name,
       is_staff: user.is_staff,
-      is_superuser: user.is_superuser,
       is_active: user.is_active,
     })
     setUserModalVisible(true)
@@ -180,7 +169,6 @@ export function UsersPage() {
         first_name: values.first_name,
         last_name: values.last_name,
         is_staff: values.is_staff,
-        is_superuser: values.is_superuser,
         is_active: values.is_active,
       }, {
         onSuccess: () => {
@@ -204,7 +192,6 @@ export function UsersPage() {
       first_name: values.first_name,
       last_name: values.last_name,
       is_staff: values.is_staff,
-      is_superuser: values.is_superuser,
       is_active: values.is_active,
     }, {
       onSuccess: () => {
@@ -285,7 +272,7 @@ export function UsersPage() {
         okText={editingUser ? 'Save' : 'Create'}
         confirmLoading={createUser.isPending || updateUser.isPending}
       >
-        <Form form={form} layout="vertical" initialValues={{ is_active: true, is_staff: false, is_superuser: false }}>
+        <Form form={form} layout="vertical" initialValues={{ is_active: true, is_staff: false }}>
           <Form.Item label="Username" name="username" rules={[{ required: true, message: 'Username is required' }]}>
             <Input id="users-username" />
           </Form.Item>
@@ -305,9 +292,6 @@ export function UsersPage() {
           </Form.Item>
           <Space size="large">
             <Form.Item label="Staff" name="is_staff" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item label="Superuser" name="is_superuser" valuePropName="checked">
               <Switch />
             </Form.Item>
             <Form.Item label="Active" name="is_active" valuePropName="checked">

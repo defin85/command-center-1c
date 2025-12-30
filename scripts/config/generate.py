@@ -210,7 +210,11 @@ def generate_env_services(config: dict, mode: str, timestamp: str) -> str:
         port = infra["port"]
         env_var = infra.get("env_var", name.upper().replace("-", "_") + "_PORT")
         host = infra["host"][host_key]
-        lines.append(f"{env_var}={port}")
+        # MINIO_ENDPOINT expects host:port, not just port.
+        if env_var == "MINIO_ENDPOINT":
+            lines.append(f"{env_var}={host}:{port}")
+        else:
+            lines.append(f"{env_var}={port}")
         # Also add HOST variable for infrastructure
         host_var = name.upper().replace("-", "_") + "_HOST"
         lines.append(f"{host_var}={host}")

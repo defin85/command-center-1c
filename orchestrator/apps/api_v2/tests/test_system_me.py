@@ -23,5 +23,3 @@ def test_system_me_returns_current_user(client, user):
     assert data["id"] == user.id
     assert data["username"] == user.username
     assert data["is_staff"] is False
-    assert data["is_superuser"] is False
-

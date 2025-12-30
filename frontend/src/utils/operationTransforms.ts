@@ -79,14 +79,14 @@ export interface UIBatchOperation {
  * Parse database_names from API (string | string[]) to string[].
  * API may return JSON string or already parsed array.
  */
-export function parseDatabaseNames(value: string | string[] | undefined): string[] {
+export function parseDatabaseNames(value: string | readonly string[] | undefined): string[] {
   if (!value) return []
-  if (Array.isArray(value)) return value
+  if (typeof value !== 'string') return [...value]
   try {
     const parsed = JSON.parse(value)
     return Array.isArray(parsed) ? parsed : [value]
   } catch {
-    return value ? [value] : []
+    return [value]
   }
 }
 

@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { DiscoverClustersModal } from '../../components/clusters/DiscoverClustersModal'
 import {
+    DEFAULT_CLUSTER_SERVICE_URL,
+    DEFAULT_RAS_SERVER,
     useClusters,
     useSystemConfig,
     useCreateCluster,
@@ -14,7 +16,7 @@ import {
     useResetClusterSyncStatus,
     useUpdateClusterCredentials,
 } from '../../api/queries/clusters'
-import { useMe } from '../../api/queries'
+import { useAuthz } from '../../authz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
@@ -36,8 +38,10 @@ export const Clusters = () => {
     const [credentialsForm] = Form.useForm()
     // React Query hooks
     const { data: systemConfig } = useSystemConfig()
-    const meQuery = useMe()
-    const canResetSync = Boolean(meQuery.data?.is_staff)
+    const authz = useAuthz()
+    const canResetSync = authz.isStaff
+    const canDiscover = authz.isStaff
+    const canCreateCluster = authz.isStaff
     const getErrorStatus = (error: unknown): number | undefined => {
         const maybe = error as { response?: { status?: number } } | null
         return maybe?.response?.status
@@ -64,8 +68,8 @@ export const Clusters = () => {
         setEditingCluster(null)
         form.resetFields()
         form.setFieldsValue({
-            ras_server: systemConfig?.ras_default_server ?? 'localhost:1545',
-            cluster_service_url: systemConfig?.ras_adapter_url ?? 'http://localhost:8188',
+            ras_server: systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER,
+            cluster_service_url: DEFAULT_CLUSTER_SERVICE_URL,
             status: 'active',
         })
         setModalVisible(true)
@@ -331,68 +335,80 @@ export const Clusters = () => {
             title: 'Actions',
             key: 'actions',
             width: 260,
-            render: (_: unknown, record: Cluster) => (
-                <Space size="small">
-                    <Button
-                        size="small"
-                        icon={<DatabaseOutlined />}
-                        onClick={() => handleViewDatabases(record.id)}
-                        title="View Databases"
-                    >
-                        Databases
-                    </Button>
-                    <Button
-                        size="small"
-                        icon={<SyncOutlined spin={syncCluster.isPending} />}
-                        onClick={() => handleSync(record.id, record.name)}
-                        title="Sync with RAS"
-                        disabled={syncCluster.isPending}
-                    />
-                    {canResetSync && (
+            render: (_: unknown, record: Cluster) => {
+                const canView = authz.canCluster(record.id, 'VIEW')
+                const canOperate = authz.canCluster(record.id, 'OPERATE')
+                const canManage = authz.canCluster(record.id, 'MANAGE')
+                const canAdmin = authz.canCluster(record.id, 'ADMIN')
+
+                return (
+                    <Space size="small">
+                        <Button
+                            size="small"
+                            icon={<DatabaseOutlined />}
+                            onClick={() => handleViewDatabases(record.id)}
+                            title="View Databases"
+                            disabled={!canView}
+                        >
+                            Databases
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<SyncOutlined spin={syncCluster.isPending} />}
+                            onClick={() => handleSync(record.id, record.name)}
+                            title="Sync with RAS"
+                            disabled={!canOperate || syncCluster.isPending}
+                        />
+                        {canResetSync && (
+                            <Popconfirm
+                                title="Reset sync status?"
+                                description="Use this if cluster sync is stuck."
+                                onConfirm={() => handleResetSyncStatus(record.id, record.name)}
+                                okText="Reset"
+                                cancelText="Cancel"
+                            >
+                                <Button
+                                    size="small"
+                                    icon={<UnlockOutlined />}
+                                    title="Reset sync status"
+                                    loading={resettingClusterId === record.id}
+                                />
+                            </Popconfirm>
+                        )}
+                        <Button
+                            size="small"
+                            icon={<KeyOutlined />}
+                            onClick={() => openCredentialsModal(record)}
+                            title="Credentials"
+                            disabled={!canManage}
+                        />
+                        <Button
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => handleEdit(record)}
+                            title="Edit"
+                            disabled={!canManage}
+                        />
                         <Popconfirm
-                            title="Reset sync status?"
-                            description="Use this if cluster sync is stuck."
-                            onConfirm={() => handleResetSyncStatus(record.id, record.name)}
-                            okText="Reset"
-                            cancelText="Cancel"
+                            title="Delete cluster?"
+                            description="This will also delete all databases in this cluster."
+                            onConfirm={() => handleDelete(record.id)}
+                            okText="Yes"
+                            cancelText="No"
+                            disabled={!canAdmin}
                         >
                             <Button
                                 size="small"
-                                icon={<UnlockOutlined />}
-                                title="Reset sync status"
-                                loading={resettingClusterId === record.id}
+                                danger
+                                icon={<DeleteOutlined />}
+                                title="Delete"
+                                loading={deleteCluster.isPending}
+                                disabled={!canAdmin}
                             />
                         </Popconfirm>
-                    )}
-                    <Button
-                        size="small"
-                        icon={<KeyOutlined />}
-                        onClick={() => openCredentialsModal(record)}
-                        title="Credentials"
-                    />
-                    <Button
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => handleEdit(record)}
-                        title="Edit"
-                    />
-                    <Popconfirm
-                        title="Delete cluster?"
-                        description="This will also delete all databases in this cluster."
-                        onConfirm={() => handleDelete(record.id)}
-                        okText="Yes"
-                        cancelText="No"
-                    >
-                        <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            title="Delete"
-                            loading={deleteCluster.isPending}
-                        />
-                    </Popconfirm>
-                </Space>
-            ),
+                    </Space>
+                )
+            },
         },
     ]
 
@@ -436,10 +452,11 @@ export const Clusters = () => {
                     <Button
                         icon={<SearchOutlined />}
                         onClick={() => setDiscoverModalVisible(true)}
+                        disabled={!canDiscover}
                     >
                         Discover Clusters
                     </Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} disabled={!canCreateCluster}>
                         Add Cluster
                     </Button>
                 </Space>
@@ -452,10 +469,13 @@ export const Clusters = () => {
                 loading={isLoading}
                 rowKey="id"
                 columns={columns}
-                rowSelection={{
-                    selectedRowKeys: selectedClusterIds,
-                    onChange: (keys: React.Key[]) => setSelectedClusterIds(keys as string[]),
-                }}
+                rowSelection={canResetSync
+                    ? {
+                        selectedRowKeys: selectedClusterIds,
+                        onChange: (keys: React.Key[]) => setSelectedClusterIds(keys as string[]),
+                    }
+                    : undefined
+                }
                 tableLayout="fixed"
                 scroll={{ x: totalColumnsWidth }}
                 searchPlaceholder="Search clusters"
@@ -493,7 +513,7 @@ export const Clusters = () => {
                         rules={[{ required: true, message: 'Please enter RAS server address' }]}
                         htmlFor="cluster-ras-server"
                     >
-                        <Input id="cluster-ras-server" placeholder={systemConfig?.ras_default_server ?? 'localhost:1545'} />
+                        <Input id="cluster-ras-server" placeholder={systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER} />
                     </Form.Item>
 
                     <Form.Item
@@ -502,7 +522,7 @@ export const Clusters = () => {
                         rules={[{ required: true, message: 'Please enter cluster service URL' }]}
                         htmlFor="cluster-service-url"
                     >
-                        <Input id="cluster-service-url" placeholder={systemConfig?.ras_adapter_url ?? 'http://localhost:8188'} />
+                        <Input id="cluster-service-url" placeholder={DEFAULT_CLUSTER_SERVICE_URL} />
                     </Form.Item>
 
                     {editingCluster ? (

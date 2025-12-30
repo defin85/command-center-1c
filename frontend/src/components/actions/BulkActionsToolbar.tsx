@@ -9,6 +9,7 @@ export interface BulkActionsToolbarProps {
   onAction: (action: string) => void;
   onClearSelection: () => void;
   loading?: boolean;
+  disabled?: boolean;
 }
 
 const bulkMenuItems: MenuProps['items'] = Object.values(RAS_OPERATIONS).map((op) => ({
@@ -22,8 +23,10 @@ export const BulkActionsToolbar: React.FC<BulkActionsToolbarProps> = ({
   onAction,
   onClearSelection,
   loading = false,
+  disabled = false,
 }) => {
   if (selectedCount === 0) return null;
+  const isDisabled = disabled || loading;
 
   return (
     <Space style={{ marginBottom: 16 }}>
@@ -36,9 +39,9 @@ export const BulkActionsToolbar: React.FC<BulkActionsToolbarProps> = ({
           items: bulkMenuItems,
           onClick: ({ key }) => onAction(key),
         }}
-        disabled={loading}
+        disabled={isDisabled}
       >
-        <Button type="primary" loading={loading}>
+        <Button type="primary" loading={loading} disabled={disabled}>
           Bulk Actions <DownOutlined />
         </Button>
       </Dropdown>
@@ -46,7 +49,7 @@ export const BulkActionsToolbar: React.FC<BulkActionsToolbarProps> = ({
       <Button
         icon={<ClearOutlined />}
         onClick={onClearSelection}
-        disabled={loading}
+        disabled={isDisabled}
       >
         Clear
       </Button>

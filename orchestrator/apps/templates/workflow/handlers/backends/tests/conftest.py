@@ -20,8 +20,7 @@ def admin_user(db):
         username='testadmin',
         email='test@test.com',
         password='testpass123',
-        is_staff=True,
-        is_superuser=True
+        is_staff=True
     )
 
 

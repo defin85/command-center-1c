@@ -12,16 +12,16 @@ from datetime import date
 
 import redis as redis_module
 import redis.asyncio as redis_async
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+from asgiref.sync import async_to_sync, sync_to_async
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
@@ -82,7 +82,7 @@ DATABASE_SORT_FIELDS = {
 
 
 def _is_staff(user) -> bool:
-    return bool(user and (user.is_staff or user.is_superuser))
+    return bool(user and user.is_staff)
 
 
 def _permission_denied(message: str):
@@ -273,17 +273,17 @@ async def _validate_db_stream_ticket(ticket: str) -> tuple[dict | None, str | No
 # Response Serializers for OpenAPI documentation
 # =============================================================================
 
-class ErrorDetailSerializer(serializers.Serializer):
+class DatabaseErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
     message = serializers.CharField(help_text="Human-readable error message")
     details = serializers.DictField(required=False, help_text="Additional error details")
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class DatabaseErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = DatabaseErrorDetailSerializer()
 
 
 class DatabaseListFiltersSerializer(serializers.Serializer):
@@ -319,6 +319,13 @@ class DatabaseCredentialsUpdateResponseSerializer(serializers.Serializer):
     """Response for update_database_credentials endpoint."""
     database = DatabaseSerializer()
     message = serializers.CharField()
+
+
+class InfobaseUserListResponseSerializer(serializers.Serializer):
+    """Response for list_infobase_users endpoint."""
+    users = InfobaseUserMappingSerializer(many=True)
+    count = serializers.IntegerField()
+    total = serializers.IntegerField()
 
 
 class HealthCheckEnqueueResponseSerializer(serializers.Serializer):
@@ -537,9 +544,9 @@ def list_databases(request):
     ],
     responses={
         200: DatabaseDetailResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: DatabaseErrorResponseSerializer,
     }
 )
 @api_view(['GET'])
@@ -610,9 +617,9 @@ def get_database(request):
     request=DatabaseCredentialsUpdateRequestSerializer,
     responses={
         200: DatabaseCredentialsUpdateResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: DatabaseErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -743,9 +750,9 @@ def update_database_credentials(request):
     request=HealthCheckRequestSerializer,
     responses={
         202: HealthCheckEnqueueResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: DatabaseErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -835,7 +842,7 @@ def health_check(request):
         OpenApiParameter(name='offset', type=int, required=False, description='Pagination offset (default: 0)'),
     ],
     responses={
-        200: serializers.Serializer,
+        200: InfobaseUserListResponseSerializer,
         400: OpenApiResponse(description='Invalid request'),
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
@@ -1270,7 +1277,7 @@ def reset_infobase_user_password(request):
     request=BulkHealthCheckRequestSerializer,
     responses={
         202: HealthCheckEnqueueResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -1370,7 +1377,7 @@ def bulk_health_check(request):
     request=SetDatabaseStatusRequestSerializer,
     responses={
         200: SetDatabaseStatusResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
     }
@@ -1447,9 +1454,9 @@ def set_status(request):
     request=DatabaseStreamTicketRequestSerializer,
     responses={
         200: DatabaseStreamTicketResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: DatabaseErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -1537,7 +1544,31 @@ def get_database_stream_ticket(request):
     })
 
 
-async def database_stream(request):
+@extend_schema(
+    tags=['v2'],
+    summary='Database SSE stream',
+    description='SSE endpoint for database updates. Use ticket from /databases/stream-ticket/.',
+    parameters=[
+        OpenApiParameter(
+            name='ticket',
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=True,
+            description='Short-lived SSE ticket from /databases/stream-ticket/.',
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description='SSE stream (text/event-stream)'),
+        401: OpenApiResponse(description='Unauthorized'),
+    },
+)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def database_stream(request):
+    return async_to_sync(_database_stream_async)(request)
+
+
+async def _database_stream_async(request):
     start_time = time.monotonic()
     endpoint = "databases.stream"
     ticket = request.GET.get('ticket')
@@ -1568,7 +1599,7 @@ async def database_stream(request):
     user_id = ticket_data.get('user_id')
     force = bool(ticket_data.get('force'))
     user = await sync_to_async(User.objects.get)(id=user_id)
-    is_staff = user.is_staff or user.is_superuser
+    is_staff = user.is_staff
     allowed_db_ids: set[str] | None = None
 
     if not is_staff:

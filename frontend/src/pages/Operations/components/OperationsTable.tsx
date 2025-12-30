@@ -14,15 +14,20 @@ const { Paragraph } = Typography
 /**
  * OperationsTable - Reusable table for batch operations
  */
+type BuildOperationsColumnsParams = Pick<
+  OperationsTableProps,
+  'onViewDetails' | 'onCancel' | 'onFilterWorkflow' | 'onFilterNode'
+> & {
+  canCancel?: boolean
+}
+
 export const buildOperationsColumns = ({
   onViewDetails,
   onCancel,
   onFilterWorkflow,
   onFilterNode,
-}: Pick<
-  OperationsTableProps,
-  'onViewDetails' | 'onCancel' | 'onFilterWorkflow' | 'onFilterNode'
->): import('antd/es/table').ColumnsType<UIBatchOperation> => ([
+  canCancel = true,
+}: BuildOperationsColumnsParams): import('antd/es/table').ColumnsType<UIBatchOperation> => ([
   {
     title: 'Name',
     dataIndex: 'name',
@@ -143,7 +148,7 @@ export const buildOperationsColumns = ({
         >
           Details
         </Button>
-        {record.status === 'processing' && (
+        {record.status === 'processing' && canCancel && (
           <Button
             type="link"
             danger

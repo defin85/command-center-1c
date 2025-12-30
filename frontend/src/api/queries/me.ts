@@ -11,12 +11,12 @@ async function fetchMe(): Promise<CurrentUser> {
   return api.getSystemMe()
 }
 
-export function useMe() {
+export function useMe(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.me.current(),
     queryFn: fetchMe,
     staleTime: 60_000,
     retry: false,
+    enabled: options?.enabled ?? true,
   })
 }
-

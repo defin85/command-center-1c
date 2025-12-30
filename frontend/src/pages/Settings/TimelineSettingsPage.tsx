@@ -39,8 +39,8 @@ export function TimelineSettingsPage() {
     maxSubscriptions: number
   } | null>(null)
 
-  const canEdit = Boolean(meQuery.data?.is_superuser)
   const isStaff = Boolean(meQuery.data?.is_staff)
+  const canEdit = isStaff
 
   const loadSettings = useCallback(async () => {
     setLoading(true)

@@ -111,9 +111,9 @@ function deriveServiceFromOperation(data: BatchOperation): string {
  * Parse duration_seconds string to number.
  * Generated API returns duration as string (e.g., "123.45").
  */
-function parseDurationSeconds(duration: string): number | null {
-  if (!duration) return null
-  const parsed = parseFloat(duration)
+function parseDurationSeconds(duration: string | number | null | undefined): number | null {
+  if (duration === null || duration === undefined || duration === '') return null
+  const parsed = typeof duration === 'string' ? parseFloat(duration) : duration
   return isNaN(parsed) ? null : parsed
 }
 

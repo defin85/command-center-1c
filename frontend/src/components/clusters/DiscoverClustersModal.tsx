@@ -1,7 +1,12 @@
 import React, { useEffect } from 'react'
 import { Modal, Form, Input, App } from 'antd'
 import type { DiscoverClustersRequest } from '../../api/generated/model/discoverClustersRequest'
-import { useSystemConfig, useDiscoverClusters } from '../../api/queries/clusters'
+import {
+    DEFAULT_CLUSTER_SERVICE_URL,
+    DEFAULT_RAS_SERVER,
+    useDiscoverClusters,
+    useSystemConfig,
+} from '../../api/queries/clusters'
 
 interface DiscoverClustersModalProps {
     visible: boolean
@@ -21,12 +26,11 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
 
     // Set default values when modal opens
     useEffect(() => {
-        if (visible && systemConfig) {
-            form.setFieldsValue({
-                ras_server: systemConfig.ras_default_server,
-                cluster_service_url: systemConfig.ras_adapter_url,
-            })
-        }
+        if (!visible) return
+        form.setFieldsValue({
+            ras_server: systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER,
+            cluster_service_url: DEFAULT_CLUSTER_SERVICE_URL,
+        })
     }, [visible, systemConfig, form])
 
     const handleDiscover = async () => {

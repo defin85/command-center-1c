@@ -211,6 +211,14 @@ if [ -f "$PROJECT_ROOT/scripts/config/generate.sh" ]; then
         echo -e "${YELLOW}Совет: Проверьте config/services.json${NC}"
         exit 1
     fi
+    # Перезагрузить сгенерированные переменные, чтобы использовать их в этом запуске.
+    generated_env="$PROJECT_ROOT/generated/.env.services"
+    if [[ -f "$generated_env" ]]; then
+        set -a
+        # shellcheck source=/dev/null
+        source <(grep -v '^#' "$generated_env" | grep -v '^[[:space:]]*$' | grep -v '^=' | sed 's/\r$//')
+        set +a
+    fi
 else
     echo -e "${YELLOW}⚠️  Скрипт генерации не найден (scripts/config/generate.sh)${NC}"
     echo -e "${YELLOW}   Пропускаем генерацию конфигурации${NC}"

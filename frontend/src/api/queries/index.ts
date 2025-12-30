@@ -73,6 +73,7 @@ export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'
 export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
+export type { UserSummary } from './users'
 export {
   useInfobaseUsers,
   useCreateInfobaseUser,

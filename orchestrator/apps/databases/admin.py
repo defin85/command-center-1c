@@ -16,35 +16,35 @@ from .services import DatabaseService
 
 logger = logging.getLogger(__name__)
 
-class SuperuserWriteAdminMixin:
+class StaffWriteAdminMixin:
     """
-    Make Django Admin effectively read-only for non-superusers.
+    Make Django Admin effectively read-only for non-staff.
 
-    Operators should use SPA (/api/v2/*); Django Admin is break-glass for superusers.
+    Operators should use SPA (/api/v2/*); Django Admin is break-glass for staff.
     """
 
     def has_view_permission(self, request, obj=None):
         return True
 
     def has_add_permission(self, request):
-        return bool(getattr(request.user, "is_superuser", False))
+        return bool(getattr(request.user, "is_staff", False))
 
     def has_change_permission(self, request, obj=None):
-        if getattr(request.user, "is_superuser", False):
+        if getattr(request.user, "is_staff", False):
             return True
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return bool(getattr(request.user, "is_superuser", False))
+        return bool(getattr(request.user, "is_staff", False))
 
 
 @admin.action(description='Check health')
 def health_check_action(modeladmin, request, queryset):
     """Action для health check баз из admin."""
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         messages.error(
             request,
-            "Health check is disabled in Django Admin. Use SPA (/databases). Superuser-only break-glass.",
+            "Health check is disabled in Django Admin. Use SPA (/databases). Staff-only break-glass.",
         )
         return
 
@@ -68,10 +68,10 @@ def check_cluster_service_status_action(modeladmin, request, queryset):
     """
     Проверить доступность RAS сервера для выбранных кластеров.
     """
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         messages.error(
             request,
-            "Cluster health check is disabled in Django Admin. Use SPA (/system-status). Superuser-only break-glass.",
+            "Cluster health check is disabled in Django Admin. Use SPA (/system-status). Staff-only break-glass.",
         )
         return
 
@@ -89,10 +89,10 @@ def sync_infobases_action(modeladmin, request, queryset):
 
     Для каждого кластера отправляет sync_cluster в Go Worker.
     """
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         messages.error(
             request,
-            "Cluster sync is disabled in Django Admin. Use SPA (/clusters). Superuser-only break-glass.",
+            "Cluster sync is disabled in Django Admin. Use SPA (/clusters). Staff-only break-glass.",
         )
         return
 
@@ -142,10 +142,10 @@ def reset_sync_status_action(modeladmin, request, queryset):
     Используется когда кластер "застрял" в статусе 'pending'
     после неудачной синхронизации.
     """
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         messages.error(
             request,
-            "Reset sync status is disabled in Django Admin. Use SPA (/clusters). Superuser-only break-glass.",
+            "Reset sync status is disabled in Django Admin. Use SPA (/clusters). Staff-only break-glass.",
         )
         return
 
@@ -192,7 +192,7 @@ def reset_sync_status_action(modeladmin, request, queryset):
 
 
 @admin.register(Cluster)
-class ClusterAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class ClusterAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для Cluster model."""
 
     list_display = [
@@ -321,7 +321,7 @@ class ClusterAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(Database)
-class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class DatabaseAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для Database model."""
 
     list_display = [
@@ -393,10 +393,10 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
         Redirects to intermediate page with cluster connection form.
         """
-        if not request.user.is_superuser:
+        if not request.user.is_staff:
             messages.error(
                 request,
-                "Database import/sync is disabled in Django Admin. Use SPA (/clusters → Discover / Sync). Superuser-only break-glass.",
+                "Database import/sync is disabled in Django Admin. Use SPA (/clusters → Discover / Sync). Staff-only break-glass.",
             )
             return redirect('admin:databases_database_changelist')
         return redirect('admin:databases_database_sync_from_cluster')
@@ -418,8 +418,8 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
         - Step 3: System imports selected databases
         """
         # Check permissions
-        if not request.user.is_superuser:
-            messages.error(request, 'Only superusers can sync databases from cluster.')
+        if not request.user.is_staff:
+            messages.error(request, 'Only staff can sync databases from cluster.')
             return redirect('admin:databases_database_changelist')
 
         # Step 1: Show form for cluster connection parameters
@@ -688,7 +688,7 @@ class DatabaseAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(DatabaseGroup)
-class DatabaseGroupAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class DatabaseGroupAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для DatabaseGroup model."""
 
     list_display = ['name', 'databases_count', 'created_at']
@@ -702,7 +702,7 @@ class DatabaseGroupAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(ExtensionInstallation)
-class ExtensionInstallationAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class ExtensionInstallationAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для ExtensionInstallation model."""
 
     list_display = [
@@ -755,7 +755,7 @@ class ExtensionInstallationAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(ClusterPermission)
-class ClusterPermissionAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class ClusterPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для ClusterPermission model (RBAC)."""
 
     list_display = ['user', 'cluster', 'level', 'granted_by', 'granted_at']
@@ -771,7 +771,7 @@ class ClusterPermissionAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(DatabasePermission)
-class DatabasePermissionAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
+class DatabasePermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin для DatabasePermission model (RBAC)."""
 
     list_display = ['user', 'database', 'level', 'granted_by', 'granted_at']

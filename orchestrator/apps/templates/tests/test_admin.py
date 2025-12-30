@@ -41,7 +41,7 @@ def request_factory():
 
 @pytest.fixture
 def admin_user(db):
-    """Create superuser for testing."""
+    """Create staff user for testing."""
     # Cleanup: delete existing user if present
     User.objects.filter(username='testadmin_admin').delete()
 
@@ -49,8 +49,7 @@ def admin_user(db):
         username='testadmin_admin',
         email='testadmin@test.com',
         password='testpass123',
-        is_staff=True,
-        is_superuser=True
+        is_staff=True
     )
 
 
@@ -89,14 +88,13 @@ class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
         self.workflow_admin = WorkflowTemplateAdmin(WorkflowTemplate, self.admin_site)
         self.request_factory = RequestFactory()
 
-        # Create admin user
+        # Create staff user
         User.objects.filter(username='testadmin_admin').delete()
         self.admin_user = User.objects.create_user(
             username='testadmin_admin',
             email='testadmin@test.com',
             password='testpass123',
-            is_staff=True,
-            is_superuser=True
+            is_staff=True
         )
 
         # Create sample workflow

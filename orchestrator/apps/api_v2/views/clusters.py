@@ -45,7 +45,7 @@ CLUSTER_SORT_FIELDS = {
 
 
 def _is_staff(user) -> bool:
-    return bool(user and (user.is_staff or user.is_superuser))
+    return bool(user and user.is_staff)
 
 
 def _permission_denied(message: str):
@@ -189,17 +189,17 @@ def _apply_filters(qs, filters: dict) -> tuple:
 # Response Serializers for OpenAPI documentation
 # =============================================================================
 
-class ErrorDetailSerializer(serializers.Serializer):
+class ClusterErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
     message = serializers.CharField(help_text="Human-readable error message")
     details = serializers.DictField(required=False, help_text="Additional error details")
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class ClusterErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = ClusterErrorDetailSerializer()
 
 
 class ClusterListResponseSerializer(serializers.Serializer):
@@ -475,9 +475,9 @@ def list_clusters(request):
     ],
     responses={
         200: ClusterDetailResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['GET'])
@@ -575,10 +575,10 @@ def get_cluster(request):
     request=None,
     responses={
         200: ClusterSyncResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
-        500: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
+        500: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -699,9 +699,9 @@ def sync_cluster(request):
     request=ClusterSerializer,
     responses={
         201: ClusterCreateResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        409: ErrorResponseSerializer,
+        409: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -809,10 +809,10 @@ def create_cluster(request):
     request=ClusterSerializer,
     responses={
         200: ClusterUpdateResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
-        409: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
+        409: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['PUT', 'POST'])
@@ -920,9 +920,9 @@ def update_cluster(request):
     request=ClusterCredentialsUpdateRequestSerializer,
     responses={
         200: ClusterCredentialsUpdateResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -1056,10 +1056,10 @@ def update_cluster_credentials(request):
     request=None,
     responses={
         200: ClusterDeleteResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
-        409: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
+        409: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['DELETE', 'POST'])
@@ -1160,7 +1160,7 @@ def delete_cluster(request):
         200: ResetSyncStatusResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
-        404: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['POST'])
@@ -1278,9 +1278,9 @@ def reset_sync_status(request):
     ],
     responses={
         200: ClusterDatabasesResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        404: ErrorResponseSerializer,
+        404: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['GET'])
@@ -1386,10 +1386,10 @@ def get_cluster_databases(request):
     request=DiscoverClustersRequestSerializer,
     responses={
         200: DiscoverClustersResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ClusterErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        409: ErrorResponseSerializer,
-        500: ErrorResponseSerializer,
+        409: ClusterErrorResponseSerializer,
+        500: ClusterErrorResponseSerializer,
     }
 )
 @api_view(['POST'])

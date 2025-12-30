@@ -55,15 +55,25 @@ export function useDatabasePermissions(
   })
 }
 
-export function useEffectiveAccess(userId?: number, includeDatabases: boolean = false) {
+export function useEffectiveAccess(
+  userId?: number,
+  options?: {
+    includeDatabases?: boolean
+    includeClusters?: boolean
+    enabled?: boolean
+  }
+) {
+  const includeDatabases = options?.includeDatabases ?? false
+  const includeClusters = options?.includeClusters ?? true
   return useQuery({
     queryKey: queryKeys.rbac.effectiveAccess(userId),
     queryFn: (): Promise<EffectiveAccessResponse> =>
       api.getRbacGetEffectiveAccess({
         user_id: userId,
         include_databases: includeDatabases,
-        include_clusters: true,
+        include_clusters: includeClusters,
       }),
+    enabled: options?.enabled ?? true,
   })
 }
 

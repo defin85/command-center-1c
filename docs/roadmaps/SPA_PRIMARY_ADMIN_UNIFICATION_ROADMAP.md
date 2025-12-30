@@ -60,7 +60,7 @@
 
 ### Django Admin (secondary)
 
-- Read-only по основным доменным моделям (Cluster/Database/WorkflowTemplate/OperationTemplate) или строго ограниченные мутации только для superuser.
+- Read-only по основным доменным моделям (Cluster/Database/WorkflowTemplate/OperationTemplate) или строго ограниченные мутации только для staff.
 - Диагностика и служебные модели (например, логи/инциденты) — по необходимости.
 - Никаких уникальных “операторских” flows, которые отсутствуют в SPA.
 
@@ -526,7 +526,7 @@ EffectiveAccessResponse:
       items: { $ref: '#/components/schemas/EffectiveAccessDatabaseItem' }
 ```
 
-**Примечание по правам:** доступ к RBAC управлению должен быть ограничен (минимум `is_staff`/`is_superuser`), при этом чтение эффективных прав текущего пользователя может быть разрешено всем `IsAuthenticated`.
+**Примечание по правам:** доступ к RBAC управлению должен быть ограничен (минимум `is_staff`), при этом чтение эффективных прав текущего пользователя может быть разрешено всем `IsAuthenticated`.
 
 ### CT3 — Templates: “sync from registry” как v2 action
 
@@ -681,12 +681,12 @@ DiscoverClustersRequest:
 | Домен | Операторский путь (SPA) | Break-glass (Django Admin) | Примечание |
 |------:|--------------------------|----------------------------|------------|
 | Auth / Me | `/login`, header user (`/api/v2/system/me/`) | — | SPA uses JWT через API Gateway |
-| Clusters | `/clusters` (CRUD/sync/discover/reset) | read-only для staff; write для superuser | reset/sync actions в admin закрыты для non-superuser |
-| Databases | `/databases` (health check, RAS actions, extension install) | read-only для staff; write для superuser | “импорт/ручные” admin flows оставлены как break-glass |
+| Clusters | `/clusters` (CRUD/sync/discover/reset) | read-only для staff; write для staff | reset/sync actions в admin закрыты для non-staff |
+| Databases | `/databases` (health check, RAS actions, extension install) | read-only для staff; write для staff | “импорт/ручные” admin flows оставлены как break-glass |
 | Operations | `/operations` (list/details/monitor/cancel) | read-only | операторские мутации через v2 actions |
-| Templates | `/templates` (list + sync-from-registry staff-only) | read-only для staff; write для superuser | sync action/button в admin — superuser-only |
-| Workflows | `/workflows` (designer/validate/execute/monitor) | read-only для staff; write для superuser | validate в admin — superuser-only |
-| RBAC | `/rbac` (grant/revoke/effective) | read-only для staff; write для superuser | единый путь для выдачи прав — SPA |
+| Templates | `/templates` (list + sync-from-registry staff-only) | read-only для staff; write для staff | sync action/button в admin — staff-only |
+| Workflows | `/workflows` (designer/validate/execute/monitor) | read-only для staff; write для staff | validate в admin — staff-only |
+| RBAC | `/rbac` (grant/revoke/effective) | read-only для staff; write для staff | единый путь для выдачи прав — SPA |
 | DLQ | `/dlq` (list/get/retry + audit) | — | операторский UX только в SPA |
 | Tracing | Trace viewer (Jaeger proxy via Gateway) | — | `/api/v2/tracing/*` контракт + generated client |
 
@@ -710,7 +710,7 @@ DiscoverClustersRequest:
 
 ### Фаза 4 (Week 8–10): De-duplication в Django Admin + финализация
 
-- [x] Отключить/урезать дублирующие модели/действия в Django Admin (read-only / superuser-only write).
+- [x] Отключить/урезать дублирующие модели/действия в Django Admin (read-only / staff-only write).
 - [x] Обновить документацию для операторов: “единый путь через SPA”.
 - [x] Добавить минимальный контроль: метрики/аудит по ключевым админ-действиям.
 
@@ -731,12 +731,12 @@ DiscoverClustersRequest:
 - [x] Добавить v2 endpoint `POST /api/v2/templates/sync-from-registry/` в `orchestrator/apps/api_v2/views/templates.py` (и подключить в `orchestrator/apps/api_v2/urls.py`).
 - [x] Описать endpoint + `TemplateSyncResponse` в `contracts/orchestrator/openapi.yaml`.
 - [x] SPA: добавить кнопку/страницу (с отчётом created/updated/unchanged и `dry_run`).
-- [x] После паритета: отключить admin action `sync_from_registry` в `orchestrator/apps/templates/admin.py` (или ограничить суперпользователем).
+- [x] После паритета: отключить admin action `sync_from_registry` в `orchestrator/apps/templates/admin.py` (или ограничить staff).
 
 ### P1 — Убрать оставшийся “второй путь” через Admin (break-glass)
 
 - [x] SPA: добавить UI “Reset sync status” (точечно + bulk) поверх `POST /api/v2/clusters/reset-sync-status/`.
-- [x] Django Admin: отключить/ограничить дублирующие actions (sync/reset/health/import) → superuser-only break-glass, основной путь через SPA.
+- [x] Django Admin: отключить/ограничить дублирующие actions (sync/reset/health/import) → staff-only break-glass, основной путь через SPA.
 
 ### P1 — DLQ Console (операторский UX)
 

@@ -15,7 +15,6 @@ import {
   Dropdown,
   Modal,
   Spin,
-  message,
   Input,
   Upload,
   Switch,
@@ -201,7 +200,7 @@ const diffLines = (before: string[], after: string[]): DiffLine[] => {
 }
 
 export const ArtifactsPage = () => {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const meQuery = useMe()
   const isStaff = Boolean(meQuery.data?.is_staff)
@@ -412,7 +411,7 @@ export const ArtifactsPage = () => {
       message.error('Delete requires staff access')
       return
     }
-    Modal.confirm({
+    modal.confirm({
       title: `Delete artifact "${artifact.name}"?`,
       content: 'Artifact will be hidden from the catalog. Versions and aliases remain stored.',
       okText: 'Delete',
@@ -430,14 +429,14 @@ export const ArtifactsPage = () => {
         }
       },
     })
-  }, [deleteArtifactMutation, isStaff, message, selectedArtifact?.id])
+  }, [deleteArtifactMutation, isStaff, message, modal, selectedArtifact?.id])
 
   const handleRestoreArtifact = useCallback((artifact: Artifact) => {
     if (!isStaff) {
       message.error('Restore requires staff access')
       return
     }
-    Modal.confirm({
+    modal.confirm({
       title: `Restore artifact "${artifact.name}"?`,
       content: 'Artifact will be returned to the active catalog.',
       okText: 'Restore',
@@ -454,7 +453,7 @@ export const ArtifactsPage = () => {
         }
       },
     })
-  }, [isStaff, message, restoreArtifactMutation, selectedArtifact?.id])
+  }, [isStaff, message, modal, restoreArtifactMutation, selectedArtifact?.id])
 
 
 
@@ -640,7 +639,7 @@ export const ArtifactsPage = () => {
         if (!cancelled) {
           setPreviewContent(text)
         }
-      } catch (error) {
+      } catch (_error) {
         if (!cancelled) {
           setPreviewError('Failed to load preview')
         }
@@ -741,7 +740,7 @@ export const ArtifactsPage = () => {
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-    } catch (error) {
+    } catch (_error) {
       message.error('Failed to download artifact')
     }
   }
@@ -764,7 +763,7 @@ export const ArtifactsPage = () => {
     )
 
     if (alias === 'stable' || alias === 'approved') {
-      Modal.confirm({
+      modal.confirm({
         title: `Set alias "${alias}"?`,
         content: `This will point ${alias} to ${version.version}.`,
         onOk: action,

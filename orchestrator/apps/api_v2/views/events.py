@@ -4,10 +4,12 @@ Internal API for Go services when Redis is unavailable.
 """
 
 import logging
+
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework import status
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -17,6 +19,37 @@ from apps.operations.models import FailedEvent
 logger = logging.getLogger(__name__)
 
 
+class StoreFailedEventRequestSerializer(serializers.Serializer):
+    channel = serializers.CharField()
+    event_type = serializers.CharField()
+    correlation_id = serializers.CharField()
+    payload = serializers.JSONField()
+    source_service = serializers.CharField()
+    original_timestamp = serializers.DateTimeField(required=False)
+
+
+class StoreFailedEventResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    event_id = serializers.IntegerField()
+
+
+class PendingEventsResponseSerializer(serializers.Serializer):
+    pending_count = serializers.IntegerField()
+    failed_count = serializers.IntegerField()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Store failed event',
+    description='Internal endpoint to store events that failed to publish to Redis.',
+    request=StoreFailedEventRequestSerializer,
+    responses={
+        201: StoreFailedEventResponseSerializer,
+        400: OpenApiResponse(description='Bad request'),
+        403: OpenApiResponse(description='Forbidden'),
+        500: OpenApiResponse(description='Internal server error'),
+    },
+)
 @api_view(['POST'])
 @permission_classes([IsInternalService])  # Internal service-to-service call (requires WORKER_API_KEY or service JWT)
 def store_failed_event(request):
@@ -78,6 +111,14 @@ def store_failed_event(request):
         )
 
 
+@extend_schema(
+    tags=['v2'],
+    summary='Get pending events stats',
+    description='Returns counts of pending and failed events (for monitoring).',
+    responses={
+        200: PendingEventsResponseSerializer,
+    },
+)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_pending_events(request):

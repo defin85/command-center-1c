@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Optional, Tuple
+from typing import Optional
 
 from django.db import transaction
 

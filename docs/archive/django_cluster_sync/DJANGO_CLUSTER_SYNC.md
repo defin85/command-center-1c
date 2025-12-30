@@ -38,7 +38,7 @@ curl http://localhost:8085/health
 ### 2. Открыть Django Admin
 
 1. Перейдите в Django Admin: http://localhost:8000/admin/
-2. Войдите как superuser
+2. Войдите как staff
 3. Откройте раздел **1C Databases**
 
 ### 3. Запустить синхронизацию
@@ -254,7 +254,7 @@ INSTALLATION_SERVICE_TIMEOUT = int(env('INSTALLATION_SERVICE_TIMEOUT', default='
 
 ### Разрешения
 
-- ✅ Только **superusers** могут запускать синхронизацию
+- ✅ Только **staff** могут запускать синхронизацию
 - ✅ CSRF protection включен
 - ✅ Session-based authentication
 
@@ -370,7 +370,7 @@ python manage.py sync_databases_from_cluster \
    - Может быть недостаточно для очень больших кластеров (100+ баз)
 
 4. **Permissions**:
-   - Только superusers
+   - Только staff
    - Нельзя делегировать обычным пользователям
 
 ## Roadmap

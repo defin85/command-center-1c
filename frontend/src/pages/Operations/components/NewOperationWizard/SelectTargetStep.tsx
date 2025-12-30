@@ -14,6 +14,7 @@ import type { SelectTargetStepProps } from './types'
 import { getHealthTag, getStatusTag } from '../../../../utils/databaseStatus'
 import { TableToolkit } from '../../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../../components/table/hooks/useTableToolkit'
+import { useAuthz } from '../../../../authz'
 
 const { Title, Text } = Typography
 
@@ -24,6 +25,7 @@ export const SelectTargetStep = ({
   preselectedDatabases,
 }: SelectTargetStepProps) => {
   const hasAppliedPreselection = useRef(false)
+  const authz = useAuthz()
 
   const clustersQuery = useClusters()
   const clusters = clustersQuery.data?.clusters ?? []
@@ -35,12 +37,25 @@ export const SelectTargetStep = ({
     return map
   }, [clusters])
 
+  const canOperateDatabase = useCallback(
+    (databaseId: string) => authz.canDatabase(databaseId, 'OPERATE'),
+    [authz]
+  )
+
   useEffect(() => {
     if (!hasAppliedPreselection.current && preselectedDatabases && preselectedDatabases.length > 0) {
       hasAppliedPreselection.current = true
       onSelectionChange(preselectedDatabases)
     }
   }, [preselectedDatabases, onSelectionChange])
+
+  useEffect(() => {
+    if (authz.isLoading) return
+    const filtered = selectedDatabases.filter((id) => canOperateDatabase(id))
+    if (filtered.length !== selectedDatabases.length) {
+      onSelectionChange(filtered)
+    }
+  }, [authz.isLoading, canOperateDatabase, onSelectionChange, selectedDatabases])
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -118,6 +133,14 @@ export const SelectTargetStep = ({
     ? databasesResponse.total
     : databases.length
 
+  const selectableIds = useMemo(
+    () =>
+      databases
+        .filter((db) => canOperateDatabase(db.id) && db.status !== 'maintenance')
+        .map((db) => db.id),
+    [canOperateDatabase, databases]
+  )
+
   useEffect(() => {
     if (!onSelectionMetadataChange) return
     if (selectedDatabases.length === 0 || databases.length === 0) return
@@ -140,26 +163,26 @@ export const SelectTargetStep = ({
   )
 
   const handleSelectPage = useCallback((checked: boolean) => {
-    const pageIds = databases.map((db) => db.id)
+    if (selectableIds.length === 0) return
     if (checked) {
-      const combined = new Set([...selectedDatabases, ...pageIds])
+      const combined = new Set([...selectedDatabases, ...selectableIds])
       onSelectionChange(Array.from(combined))
       return
     }
-    const pageIdSet = new Set(pageIds)
+    const pageIdSet = new Set(selectableIds)
     onSelectionChange(selectedDatabases.filter((id) => !pageIdSet.has(id)))
-  }, [databases, onSelectionChange, selectedDatabases])
+  }, [onSelectionChange, selectableIds, selectedDatabases])
 
   const allPageSelected =
-    databases.length > 0 && databases.every((db) => selectedDatabases.includes(db.id))
+    selectableIds.length > 0 && selectableIds.every((id) => selectedDatabases.includes(id))
   const somePageSelected =
-    databases.some((db) => selectedDatabases.includes(db.id)) && !allPageSelected
+    selectableIds.some((id) => selectedDatabases.includes(id)) && !allPageSelected
 
   const rowSelection = {
     selectedRowKeys: selectedDatabases,
     onChange: handleSelectionChange,
     getCheckboxProps: (record: Database) => ({
-      disabled: record.status === 'maintenance',
+      disabled: record.status === 'maintenance' || !canOperateDatabase(record.id),
     }),
   }
 
@@ -172,8 +195,9 @@ export const SelectTargetStep = ({
           indeterminate={somePageSelected}
           checked={allPageSelected}
           onChange={(event) => handleSelectPage(event.target.checked)}
+          disabled={selectableIds.length === 0}
         >
-          Select page ({databases.length})
+          Select page ({selectableIds.length})
         </Checkbox>
         <Text type="secondary">
           {selectedDatabases.length} selected

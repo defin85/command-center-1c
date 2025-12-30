@@ -9,21 +9,24 @@ import {
   restoreArtifact,
   type ArtifactAliasUpsertPayload,
   type ArtifactListParams,
+  type ArtifactListResponse,
+  type ArtifactVersionListResponse,
+  type ArtifactAliasListResponse,
 } from '../artifacts'
 import { queryKeys } from './index'
 
 export const useArtifacts = (params: ArtifactListParams, options?: { enabled?: boolean }) => {
-  return useQuery({
+  return useQuery<ArtifactListResponse, Error>({
     queryKey: queryKeys.artifacts.list(params),
     queryFn: ({ signal }) => listArtifacts(params, signal),
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
     retry: false,
     enabled: options?.enabled ?? true,
   })
 }
 
 export const useArtifactVersions = (artifactId?: string) => {
-  return useQuery({
+  return useQuery<ArtifactVersionListResponse, Error>({
     queryKey: queryKeys.artifacts.versions(artifactId ?? 'none'),
     queryFn: ({ signal }) => listArtifactVersions(artifactId as string, signal),
     enabled: Boolean(artifactId),
@@ -32,7 +35,7 @@ export const useArtifactVersions = (artifactId?: string) => {
 }
 
 export const useArtifactAliases = (artifactId?: string) => {
-  return useQuery({
+  return useQuery<ArtifactAliasListResponse, Error>({
     queryKey: queryKeys.artifacts.aliases(artifactId ?? 'none'),
     queryFn: ({ signal }) => listArtifactAliases(artifactId as string, signal),
     enabled: Boolean(artifactId),

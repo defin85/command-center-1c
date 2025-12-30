@@ -11,6 +11,7 @@ import logging
 import uuid
 from datetime import timedelta
 
+from drf_spectacular.utils import extend_schema
 from django.db import models, transaction
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -34,6 +35,7 @@ from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.registry import RUNTIME_SETTINGS
 
 logger = logging.getLogger(__name__)
+exclude_schema = extend_schema(exclude=True)
 
 
 def _ensure_runtime_defaults():
@@ -48,6 +50,7 @@ def _ensure_runtime_defaults():
 # Scheduler Job History Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def start_scheduler_run(request):
@@ -100,6 +103,7 @@ def start_scheduler_run(request):
     }, status=status.HTTP_201_CREATED)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def complete_scheduler_run(request):
@@ -198,6 +202,7 @@ def complete_scheduler_run(request):
 # Task Execution Log Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def start_task(request):
@@ -271,6 +276,7 @@ def start_task(request):
     }, status=status.HTTP_201_CREATED)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def complete_task(request):
@@ -369,6 +375,7 @@ def complete_task(request):
 # Database Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['GET'])
 @permission_classes([IsInternalService])
 def get_database_cluster_info(request):
@@ -458,6 +465,7 @@ def get_database_cluster_info(request):
     )
 
 
+@exclude_schema
 @api_view(['GET'])
 @permission_classes([IsInternalService])
 def list_databases_for_health_check(request):
@@ -502,6 +510,7 @@ def list_databases_for_health_check(request):
     }, status=status.HTTP_200_OK)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def update_database_health(request):
@@ -595,6 +604,7 @@ def update_database_health(request):
 # Cluster Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def update_cluster_health(request):
@@ -668,6 +678,7 @@ def update_cluster_health(request):
 # Failed Events Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['GET'])
 @permission_classes([IsInternalService])
 def list_pending_failed_events(request):
@@ -714,6 +725,7 @@ def list_pending_failed_events(request):
     }, status=status.HTTP_200_OK)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def mark_event_replayed(request):
@@ -788,6 +800,7 @@ def mark_event_replayed(request):
     }, status=status.HTTP_200_OK)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def mark_event_failed(request):
@@ -878,6 +891,7 @@ def mark_event_failed(request):
     }, status=status.HTTP_200_OK)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def cleanup_failed_events(request):
@@ -941,6 +955,7 @@ def cleanup_failed_events(request):
 # Template Endpoints (v2)
 # =============================================================================
 
+@exclude_schema
 @api_view(['GET'])
 @permission_classes([IsInternalService])
 def get_template(request):
@@ -1005,6 +1020,7 @@ def get_template(request):
     }, status=status.HTTP_200_OK)
 
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def render_template(request):
@@ -1131,6 +1147,7 @@ def _render_template_data(data, context):
 # Timeline Endpoints (Operation Observability)
 # =============================================================================
 
+@exclude_schema
 @api_view(['POST'])
 @permission_classes([IsInternalService])
 def get_operation_timeline(request):
@@ -1217,6 +1234,7 @@ def get_operation_timeline(request):
 # =============================================================================
 
 
+@exclude_schema
 @api_view(['GET'])
 @permission_classes([IsInternalService])
 def list_runtime_settings(request):

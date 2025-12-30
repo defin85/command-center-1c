@@ -267,7 +267,7 @@ apps/templates/admin.py     100     43    57%
 ### Request Simulation
 - RequestFactory used for isolated request testing
 - No actual HTTP server needed
-- Superuser authentication simulated
+- Staff authentication simulated
 - Full admin context available
 
 ### Data Validation

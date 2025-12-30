@@ -68,6 +68,14 @@ class FileDeleteResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class FileUploadRequestSerializer(serializers.Serializer):
+    """Request for file upload endpoint."""
+
+    file = serializers.FileField()
+    purpose = serializers.ChoiceField(choices=FilePurpose.choices)
+    expiry_hours = serializers.IntegerField(required=False)
+
+
 # =============================================================================
 # Endpoints
 # =============================================================================
@@ -76,20 +84,7 @@ class FileDeleteResponseSerializer(serializers.Serializer):
     tags=['v2'],
     summary='Upload file',
     description='Upload a file for use in operations. Supports operation_input, extension, and export purposes.',
-    parameters=[
-        OpenApiParameter(
-            name='purpose',
-            type=str,
-            required=True,
-            description='File purpose: operation_input, extension, export'
-        ),
-        OpenApiParameter(
-            name='expiry_hours',
-            type=int,
-            required=False,
-            description='Custom expiration hours (default: 24)'
-        ),
-    ],
+    request=FileUploadRequestSerializer,
     responses={
         201: FileUploadResponseSerializer,
         400: ErrorResponseSerializer,

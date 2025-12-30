@@ -390,7 +390,7 @@ class TestServiceUserBehavior:
         assert user.is_authenticated is True
         assert user.is_active is True
         assert user.is_staff is False
-        assert user.is_superuser is False
+        assert user.is_staff is False
 
         print("[OK] ServiceUser properties OK")
         print(f"  service_name: {user.service_name}")

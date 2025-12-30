@@ -31,8 +31,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Get user roles/groups
         roles = []
-        if user.is_superuser:
-            roles.append('admin')
         if user.is_staff:
             roles.append('staff')
 

@@ -6,16 +6,47 @@ Internal API for Go Worker to report compensation execution outcomes.
 import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from apps.core.permissions import IsInternalService
 from apps.operations.models import CompensationAuditLog
 
 logger = logging.getLogger(__name__)
 
+class CompensationResultSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    success = serializers.BooleanField()
+    attempts = serializers.IntegerField(required=False)
+    total_duration = serializers.FloatField(required=False)
+    error = serializers.CharField(required=False, allow_blank=True)
+    executed_at = serializers.DateTimeField(required=False)
 
+
+class CompensationLogRequestSerializer(serializers.Serializer):
+    operation_id = serializers.CharField()
+    results = CompensationResultSerializer(many=True)
+
+
+class CompensationLogResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Log compensation results',
+    request=CompensationLogRequestSerializer,
+    responses={
+        201: CompensationLogResponseSerializer,
+        400: OpenApiResponse(description='Bad request'),
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        500: OpenApiResponse(description='Internal server error'),
+    },
+)
 @api_view(['POST'])
 @permission_classes([IsInternalService])  # Internal service-to-service call (requires WORKER_API_KEY or service JWT)
 def log_compensation(request):

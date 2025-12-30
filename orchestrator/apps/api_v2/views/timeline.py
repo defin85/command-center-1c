@@ -64,16 +64,16 @@ class GetOperationTimelineResponseSerializer(serializers.Serializer):
     )
 
 
-class ErrorDetailSerializer(serializers.Serializer):
+class TimelineErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code")
     message = serializers.CharField(help_text="Human-readable error message")
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class TimelineErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = TimelineErrorDetailSerializer()
 
 
 # =============================================================================
@@ -89,7 +89,7 @@ class ErrorResponseSerializer(serializers.Serializer):
     **Authentication:** Requires valid JWT token.
 
     **Authorization:** User must own the operation (created_by matches username)
-    or be a superuser.
+    or be staff.
 
     **Response format:**
     - Timeline events are sorted chronologically (ascending)
@@ -102,10 +102,10 @@ class ErrorResponseSerializer(serializers.Serializer):
     request=GetOperationTimelineRequestSerializer,
     responses={
         200: GetOperationTimelineResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: TimelineErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
-        403: ErrorResponseSerializer,
-        404: ErrorResponseSerializer,
+        403: TimelineErrorResponseSerializer,
+        404: TimelineErrorResponseSerializer,
     }
 )
 @api_view(['POST'])

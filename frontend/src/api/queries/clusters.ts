@@ -22,6 +22,9 @@ import { queryKeys, type ClusterFilters } from './index'
 // Initialize API client
 const api = getV2()
 
+export const DEFAULT_RAS_SERVER = 'localhost:1545'
+export const DEFAULT_CLUSTER_SERVICE_URL = 'http://localhost:8188'
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -62,13 +65,12 @@ async function fetchClusters(filters?: ClusterFilters): Promise<ClusterListRespo
 
 async function fetchSystemConfig(): Promise<SystemConfig> {
   try {
-    return api.getSystemConfig()
+    return await api.getSystemConfig()
   } catch {
     // Use fallback defaults if config endpoint fails
     console.warn('Failed to load system config, using defaults')
     return {
-      ras_default_server: 'localhost:1545',
-      ras_adapter_url: 'http://localhost:8188',
+      ras_default_server: DEFAULT_RAS_SERVER,
     }
   }
 }

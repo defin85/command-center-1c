@@ -19,15 +19,15 @@ from apps.operations.services.admin_action_audit import log_admin_action
 User = get_user_model()
 
 
-class ErrorDetailSerializer(serializers.Serializer):
+class UserErrorDetailSerializer(serializers.Serializer):
     code = serializers.CharField()
     message = serializers.CharField()
     details = serializers.JSONField(required=False)
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class UserErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = UserErrorDetailSerializer()
 
 
 class UserSerializer(serializers.Serializer):
@@ -37,7 +37,6 @@ class UserSerializer(serializers.Serializer):
     first_name = serializers.CharField(allow_blank=True)
     last_name = serializers.CharField(allow_blank=True)
     is_staff = serializers.BooleanField()
-    is_superuser = serializers.BooleanField()
     is_active = serializers.BooleanField()
     last_login = serializers.DateTimeField(allow_null=True)
     date_joined = serializers.DateTimeField()
@@ -56,7 +55,6 @@ class UserCreateRequestSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
     is_staff = serializers.BooleanField(required=False)
-    is_superuser = serializers.BooleanField(required=False)
     is_active = serializers.BooleanField(required=False)
 
 
@@ -67,7 +65,6 @@ class UserUpdateRequestSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
     is_staff = serializers.BooleanField(required=False)
-    is_superuser = serializers.BooleanField(required=False)
     is_active = serializers.BooleanField(required=False)
 
 
@@ -96,7 +93,6 @@ def _parse_bool(value: Optional[str]) -> Optional[bool]:
         OpenApiParameter(name="username", type=str, required=False, description="Filter by username"),
         OpenApiParameter(name="email", type=str, required=False, description="Filter by email"),
         OpenApiParameter(name="is_staff", type=bool, required=False, description="Filter by staff flag"),
-        OpenApiParameter(name="is_superuser", type=bool, required=False, description="Filter by superuser flag"),
         OpenApiParameter(name="is_active", type=bool, required=False, description="Filter by active flag"),
         OpenApiParameter(name="limit", type=int, required=False, description="Maximum results (default: 100, max: 1000)"),
         OpenApiParameter(name="offset", type=int, required=False, description="Pagination offset (default: 0)"),
@@ -114,7 +110,6 @@ def list_users(request):
     username = (request.query_params.get("username") or "").strip()
     email = (request.query_params.get("email") or "").strip()
     is_staff = _parse_bool(request.query_params.get("is_staff"))
-    is_superuser = _parse_bool(request.query_params.get("is_superuser"))
     is_active = _parse_bool(request.query_params.get("is_active"))
 
     try:
@@ -142,8 +137,6 @@ def list_users(request):
         qs = qs.filter(email__icontains=email)
     if is_staff is not None:
         qs = qs.filter(is_staff=is_staff)
-    if is_superuser is not None:
-        qs = qs.filter(is_superuser=is_superuser)
     if is_active is not None:
         qs = qs.filter(is_active=is_active)
 
@@ -164,7 +157,7 @@ def list_users(request):
     request=UserCreateRequestSerializer,
     responses={
         201: UserSerializer,
-        400: ErrorResponseSerializer,
+        400: UserErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
         409: OpenApiResponse(description="Duplicate username"),
@@ -196,11 +189,8 @@ def create_user(request):
         last_name=data.get("last_name", "").strip(),
     )
     user.is_staff = bool(data.get("is_staff", False))
-    user.is_superuser = bool(data.get("is_superuser", False))
-    if user.is_superuser:
-        user.is_staff = True
     user.is_active = bool(data.get("is_active", True))
-    user.save(update_fields=["is_staff", "is_superuser", "is_active"])
+    user.save(update_fields=["is_staff", "is_active"])
 
     log_admin_action(
         request,
@@ -211,7 +201,6 @@ def create_user(request):
         metadata={
             "username": user.username,
             "is_staff": user.is_staff,
-            "is_superuser": user.is_superuser,
             "is_active": user.is_active,
         },
     )
@@ -225,10 +214,10 @@ def create_user(request):
     request=UserUpdateRequestSerializer,
     responses={
         200: UserSerializer,
-        400: ErrorResponseSerializer,
+        400: UserErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
-        404: ErrorResponseSerializer,
+        404: UserErrorResponseSerializer,
         409: OpenApiResponse(description="Duplicate username"),
     },
 )
@@ -267,13 +256,8 @@ def update_user(request):
         user.last_name = data.get("last_name", "").strip()
     if "is_staff" in data:
         user.is_staff = bool(data.get("is_staff"))
-    if "is_superuser" in data:
-        user.is_superuser = bool(data.get("is_superuser"))
     if "is_active" in data:
         user.is_active = bool(data.get("is_active"))
-
-    if user.is_superuser:
-        user.is_staff = True
 
     user.save()
 
@@ -286,7 +270,6 @@ def update_user(request):
         metadata={
             "username": user.username,
             "is_staff": user.is_staff,
-            "is_superuser": user.is_superuser,
             "is_active": user.is_active,
         },
     )
@@ -300,10 +283,10 @@ def update_user(request):
     request=UserPasswordRequestSerializer,
     responses={
         200: UserSerializer,
-        400: ErrorResponseSerializer,
+        400: UserErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
-        404: ErrorResponseSerializer,
+        404: UserErrorResponseSerializer,
     },
 )
 @api_view(["POST"])

@@ -89,7 +89,7 @@ Endpoints (черновой набор):
 ---
 
 ## Рекомендации
-- Перевести доступ к “Artifacts” и alias-approval с `is_staff/is_superuser` на полноценный RBAC (роли/права) после фикса интерфейса.
+- Перевести доступ к “Artifacts” и alias-approval с `is_staff` на полноценный RBAC (роли/права) после фикса интерфейса.
 
 ---
 

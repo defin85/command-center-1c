@@ -1,5 +1,30 @@
 const DEFAULT_API_PORT = 8180
 
+type EnvKey = 'VITE_BASE_HOST' | 'VITE_API_URL' | 'VITE_WS_HOST'
+type EnvRecord = Partial<Record<EnvKey, string>>
+
+const readEnv = (): EnvRecord => {
+  if (typeof globalThis === 'undefined') {
+    return {}
+  }
+  const env = (globalThis as { __CC1C_ENV__?: EnvRecord }).__CC1C_ENV__
+  return env ?? {}
+}
+
+const normalizeEnvValue = (value?: string | null): string | undefined => {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.startsWith('%VITE_')) {
+    return undefined
+  }
+  return trimmed
+}
+
+const getEnvValue = (key: EnvKey): string | undefined => {
+  const env = readEnv()
+  return normalizeEnvValue(env[key])
+}
+
 const normalizeHost = (host: string): string => {
   if (host.startsWith('localhost')) {
     return `127.0.0.1${host.slice('localhost'.length)}`
@@ -8,11 +33,11 @@ const normalizeHost = (host: string): string => {
 }
 
 const resolveBaseHost = (): string => {
-  const envHost = import.meta.env.VITE_BASE_HOST
+  const envHost = getEnvValue('VITE_BASE_HOST')
   if (envHost) {
     return envHost
   }
-  const envApiUrl = import.meta.env.VITE_API_URL
+  const envApiUrl = getEnvValue('VITE_API_URL')
   if (envApiUrl) {
     try {
       return new URL(envApiUrl).hostname
@@ -20,7 +45,10 @@ const resolveBaseHost = (): string => {
       // ignore invalid URL and fallback
     }
   }
-  return window.location.hostname
+  if (typeof window === 'undefined') {
+    return 'localhost'
+  }
+  return window.location.hostname || 'localhost'
 }
 
 export const getBaseHost = (): string => {
@@ -28,7 +56,7 @@ export const getBaseHost = (): string => {
 }
 
 export const getApiBaseUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_URL
+  const envUrl = getEnvValue('VITE_API_URL')
   if (envUrl) {
     return envUrl
       .replace(/\/api\/v\d+\/?$/, '')
@@ -40,7 +68,7 @@ export const getApiBaseUrl = (): string => {
 }
 
 export const getWsHost = (): string => {
-  const envHost = import.meta.env.VITE_WS_HOST
+  const envHost = getEnvValue('VITE_WS_HOST')
   if (envHost) {
     return normalizeHost(envHost)
   }

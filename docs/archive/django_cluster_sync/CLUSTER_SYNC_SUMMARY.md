@@ -86,7 +86,7 @@ with InstallationServiceClient() as client:
 
 - URL: `/admin/databases/database/sync-from-cluster/`
 - Workflow: Параметры → Выбор баз → Импорт
-- Permissions: Superuser only
+- Permissions: Staff only
 - Session-based state management
 
 ### Database Import
@@ -117,14 +117,14 @@ Database.objects.update_or_create(
 - ✅ Три-шаговый workflow с intermediate pages
 - ✅ Session для хранения состояния
 - ✅ User-friendly error messages
-- ✅ Permissions check (superuser only)
+- ✅ Permissions check (staff only)
 - ✅ Responsive design
 
 ### Security
 - ✅ CSRF protection
 - ✅ Password encryption (EncryptedCharField)
 - ✅ No passwords in logs
-- ✅ Superuser-only access
+- ✅ Staff-only access
 
 ## Configuration
 

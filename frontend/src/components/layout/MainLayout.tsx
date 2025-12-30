@@ -176,10 +176,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           </Popover>
         </Space>
         <Space size="small">
-          {meQuery.data?.is_superuser && (
-            <Tag color="gold">Superuser</Tag>
-          )}
-          {!meQuery.data?.is_superuser && meQuery.data?.is_staff && (
+          {meQuery.data?.is_staff && (
             <Tag color="blue">Staff</Tag>
           )}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">

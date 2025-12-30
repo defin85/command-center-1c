@@ -681,7 +681,7 @@ class PermissionService:
     Centralized permission checking for databases and clusters.
 
     Resolution order:
-    1. Superuser -> Full access (ADMIN level)
+    1. Staff -> Full access (ADMIN level)
     2. DatabasePermission (direct) -> Use if exists
     3. ClusterPermission (inherited) -> Use if database has cluster
     4. No permission -> Deny (None)
@@ -747,7 +747,7 @@ class PermissionService:
         """
         from .models import PermissionLevel
 
-        if user.is_superuser:
+        if user.is_staff:
             return {str(db.id): PermissionLevel.ADMIN for db in databases}
 
         # Collect IDs
@@ -807,7 +807,7 @@ class PermissionService:
         """Get permission level for user on cluster."""
         from .models import ClusterPermission, PermissionLevel
 
-        if user.is_superuser:
+        if user.is_staff:
             return PermissionLevel.ADMIN
 
         return ClusterPermission.objects.filter(
@@ -825,7 +825,7 @@ class PermissionService:
     ) -> bool:
         from .models import ClusterPermission, DatabasePermission
 
-        if user.is_superuser:
+        if user.is_staff:
             return True
 
         level = ClusterPermission.objects.filter(
@@ -876,7 +876,7 @@ class PermissionService:
         if min_level is None:
             min_level = PermissionLevel.VIEW
 
-        if user.is_superuser:
+        if user.is_staff:
             return queryset
 
         # Get database IDs with direct permission
@@ -908,7 +908,7 @@ class PermissionService:
         if min_level is None:
             min_level = PermissionLevel.VIEW
 
-        if user.is_superuser:
+        if user.is_staff:
             return queryset
 
         cluster_ids = ClusterPermission.objects.filter(
@@ -939,7 +939,7 @@ class PermissionService:
         Returns:
             (all_allowed: bool, denied_ids: List[str])
         """
-        if user.is_superuser:
+        if user.is_staff:
             return True, []
 
         # Fetch databases with cluster info (1 query)

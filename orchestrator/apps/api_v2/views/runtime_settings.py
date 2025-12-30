@@ -129,9 +129,9 @@ def list_runtime_settings(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def update_runtime_setting(request, key: str):
-    if not request.user.is_superuser:
+    if not request.user.is_staff:
         return Response(
-            {'success': False, 'error': {'code': 'FORBIDDEN', 'message': 'Superuser only'}},
+            {'success': False, 'error': {'code': 'FORBIDDEN', 'message': 'Staff only'}},
             status=status.HTTP_403_FORBIDDEN
         )
 

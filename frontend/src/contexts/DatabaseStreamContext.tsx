@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from 'react'
 import { useDatabaseStreamInvalidation } from '../hooks/useDatabaseStreamInvalidation'
+import { useAuthz } from '../authz'
 
 type DatabaseStreamStatus = {
   isConnected: boolean
@@ -15,9 +16,12 @@ const DatabaseStreamContext = createContext<DatabaseStreamStatus | null>(null)
 
 export const DatabaseStreamProvider = ({ children }: { children: React.ReactNode }) => {
   const hasToken = Boolean(localStorage.getItem('auth_token'))
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
+  const isAuthzReady = !authz.isLoading
   const streamStatus = useDatabaseStreamInvalidation({
     clusterId: null,
-    enabled: hasToken,
+    enabled: hasToken && isAuthzReady && isStaff,
   })
 
   return (

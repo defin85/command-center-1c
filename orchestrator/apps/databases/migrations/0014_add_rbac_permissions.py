@@ -5,16 +5,16 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
-def grant_superuser_cluster_access(apps, schema_editor):
-    """Grant ADMIN access to all superusers on all clusters."""
+def grant_staff_cluster_access(apps, schema_editor):
+    """Grant ADMIN access to all staff users on all clusters."""
     User = apps.get_model('auth', 'User')
     Cluster = apps.get_model('databases', 'Cluster')
     ClusterPermission = apps.get_model('databases', 'ClusterPermission')
 
-    superusers = User.objects.filter(is_superuser=True)
+    staff_users = User.objects.filter(is_staff=True)
     clusters = Cluster.objects.all()
 
-    for user in superusers:
+    for user in staff_users:
         for cluster in clusters:
             ClusterPermission.objects.get_or_create(
                 user=user,
@@ -74,6 +74,6 @@ class Migration(migrations.Migration):
                 'unique_together': {('user', 'cluster')},
             },
         ),
-        # Data migration: grant ADMIN to all superusers on all clusters
-        migrations.RunPython(grant_superuser_cluster_access, reverse_grant),
+        # Data migration: grant ADMIN to all staff users on all clusters
+        migrations.RunPython(grant_staff_cluster_access, reverse_grant),
     ]

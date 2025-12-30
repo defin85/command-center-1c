@@ -83,7 +83,6 @@ class CurrentUserSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
     is_staff = serializers.BooleanField()
-    is_superuser = serializers.BooleanField()
 
 
 @extend_schema(
@@ -108,7 +107,6 @@ def system_me(request):
         'id': user.id,
         'username': user.get_username(),
         'is_staff': bool(getattr(user, 'is_staff', False)),
-        'is_superuser': bool(getattr(user, 'is_superuser', False)),
     })
 
 class SystemHealthView(APIView):

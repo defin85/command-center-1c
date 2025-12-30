@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Response Serializers for OpenAPI documentation
 # =============================================================================
 
-class ErrorDetailSerializer(serializers.Serializer):
+class ServiceMeshErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code")
     message = serializers.CharField(help_text="Human-readable error message")
@@ -36,10 +36,10 @@ class ErrorDetailSerializer(serializers.Serializer):
     )
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class ServiceMeshErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = ServiceMeshErrorDetailSerializer()
 
 
 class ServiceMetricSerializer(serializers.Serializer):
@@ -140,7 +140,7 @@ TYPE_MAP = {
     ],
     responses={
         200: ServiceMetricsResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ServiceMeshErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )
@@ -262,7 +262,7 @@ def get_metrics(request):
     ],
     responses={
         200: ServiceHistoryResponseSerializer,
-        400: ErrorResponseSerializer,
+        400: ServiceMeshErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )

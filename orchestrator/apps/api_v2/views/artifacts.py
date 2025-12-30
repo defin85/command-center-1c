@@ -70,6 +70,13 @@ class ArtifactVersionSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
 
 
+class ArtifactVersionUploadRequestSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    version = serializers.CharField(required=False, allow_blank=True)
+    filename = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.CharField(required=False, allow_blank=True)
+
+
 class ArtifactVersionListResponseSerializer(serializers.Serializer):
     versions = ArtifactVersionSerializer(many=True)
     count = serializers.IntegerField()
@@ -241,6 +248,7 @@ def delete_artifact(request, artifact_id):
 @extend_schema(
     tags=["v2"],
     summary="Restore artifact",
+    request=None,
     responses={
         200: ArtifactSerializer,
         401: OpenApiResponse(description="Unauthorized"),
@@ -267,11 +275,7 @@ def restore_artifact(request, artifact_id):
 @extend_schema(
     tags=["v2"],
     summary="Upload artifact version",
-    parameters=[
-        OpenApiParameter(name="version", type=str, required=False),
-        OpenApiParameter(name="filename", type=str, required=False),
-        OpenApiParameter(name="metadata", type=str, required=False),
-    ],
+    request=ArtifactVersionUploadRequestSerializer,
     responses={
         201: ArtifactVersionSerializer,
         400: ErrorResponseSerializer,

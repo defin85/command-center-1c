@@ -14,7 +14,7 @@ import { getV2 } from '../../api/generated'
 import { executeOperation, type RASOperationType } from '../../api/operations'
 import { apiClient } from '../../api/client'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
-import { useMe } from '../../api/queries/me'
+import { useAuthz } from '../../authz'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
 import { OperationsTable, buildOperationsColumns } from './components/OperationsTable'
@@ -50,8 +50,8 @@ const isActiveStatus = (
  * OperationsPage - Main page with tabs for operations list and live monitor
  */
 export const OperationsPage = () => {
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
   const [searchParams, setSearchParams] = useSearchParams()
 
   // UI State (not data-related)
@@ -69,6 +69,11 @@ export const OperationsPage = () => {
   const operationIdFilter = (searchParams.get('operation_id') || '').trim() || undefined
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
+  const canOperateAny = authz.isStaff || authz.canAnyDatabase('OPERATE')
+  const canViewAny = authz.isStaff || authz.canAnyDatabase('VIEW')
+  const canCreateOperation = canOperateAny
+  const canCancel = canOperateAny
+  const canStreamOperations = canViewAny
 
   // React Query: cancel mutation
   const cancelMutation = useCancelOperation()
@@ -195,8 +200,9 @@ export const OperationsPage = () => {
       onCancel: handleCancel,
       onFilterWorkflow: handleFilterWorkflow,
       onFilterNode: handleFilterNode,
+      canCancel,
     }),
-    [handleCancel, handleFilterNode, handleFilterWorkflow, handleViewDetails]
+    [canCancel, handleCancel, handleFilterNode, handleFilterWorkflow, handleViewDetails]
   )
 
   const table = useTableToolkit({
@@ -434,10 +440,12 @@ export const OperationsPage = () => {
     [api, handleRefresh]
   )
 
-  const activeOperationIds = operationsState
-    .filter((operation) => isActiveStatus(operation.status))
-    .slice(0, Math.min(maxLiveStreams, maxSubscriptions))
-    .map((operation) => operation.id)
+  const activeOperationIds = canStreamOperations
+    ? operationsState
+      .filter((operation) => isActiveStatus(operation.status))
+      .slice(0, Math.min(maxLiveStreams, maxSubscriptions))
+      .map((operation) => operation.id)
+    : []
 
   const { lastEvent: muxEvent } = useOperationsMuxStream(activeOperationIds)
 
@@ -462,6 +470,7 @@ export const OperationsPage = () => {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setWizardVisible(true)}
+            disabled={!canCreateOperation}
           >
             New Operation
           </Button>

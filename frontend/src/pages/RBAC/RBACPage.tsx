@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, InputNumber, Select, Space, Tabs, Typography, Tag, Switch } from 'antd'
+import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
@@ -528,14 +528,24 @@ export function RBACPage() {
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
-                      <InputNumber id="rbac-cluster-user-id" min={1} placeholder="User ID" />
+                      <Select
+                        id="rbac-cluster-user-id"
+                        style={{ width: 220 }}
+                        placeholder="User"
+                        allowClear
+                        showSearch
+                        filterOption={false}
+                        onSearch={setUserSearch}
+                        options={userOptions}
+                        loading={usersQuery.isFetching}
+                      />
                     </Form.Item>
                     <Form.Item name="cluster_id" rules={[{ required: true, message: 'cluster_id required' }]}>
                       <Select
                         id="rbac-cluster-id"
                         style={{ width: 320 }}
                         placeholder="Cluster"
-                        options={clusters.map((c) => ({ label: c.name, value: c.id }))}
+                        options={clusters.map((c) => ({ label: `${c.name} #${c.id}`, value: c.id }))}
                         showSearch
                         optionFilterProp="label"
                       />
@@ -562,7 +572,7 @@ export function RBACPage() {
                     <Alert
                       type="warning"
                       message="RBAC endpoints require staff access"
-                      description="If you are not staff/superuser, listing/granting permissions is forbidden."
+                      description="If you are not staff, listing/granting permissions is forbidden."
                       style={{ marginBottom: 12 }}
                     />
                   )}
@@ -598,10 +608,27 @@ export function RBACPage() {
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
-                      <InputNumber id="rbac-database-user-id" min={1} placeholder="User ID" />
+                      <Select
+                        id="rbac-database-user-id"
+                        style={{ width: 220 }}
+                        placeholder="User"
+                        allowClear
+                        showSearch
+                        filterOption={false}
+                        onSearch={setUserSearch}
+                        options={userOptions}
+                        loading={usersQuery.isFetching}
+                      />
                     </Form.Item>
                     <Form.Item name="database_id" rules={[{ required: true, message: 'database_id required' }]}>
-                      <Input id="rbac-database-id" placeholder="Database ID" style={{ width: 240 }} />
+                      <Select
+                        id="rbac-database-id"
+                        style={{ width: 320 }}
+                        placeholder="Database"
+                        options={databases.map((db) => ({ label: `${db.name} #${db.id}`, value: db.id }))}
+                        showSearch
+                        optionFilterProp="label"
+                      />
                     </Form.Item>
                     <Form.Item name="level" rules={[{ required: true }]}>
                       <Select id="rbac-database-level" style={{ width: 140 }} options={LEVEL_OPTIONS} />
@@ -625,7 +652,7 @@ export function RBACPage() {
                     <Alert
                       type="warning"
                       message="RBAC endpoints require staff access"
-                      description="If you are not staff/superuser, listing/granting permissions is forbidden."
+                      description="If you are not staff, listing/granting permissions is forbidden."
                       style={{ marginBottom: 12 }}
                     />
                   )}

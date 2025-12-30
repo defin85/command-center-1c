@@ -207,6 +207,13 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API для управления операциями в 700+ базах 1С',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'ENUM_NAME_OVERRIDES': {
+        'DatabaseStatusEnum': ['active', 'inactive', 'error', 'maintenance'],
+        'OperationStatusEnum': ['pending', 'running', 'completed', 'failed', 'cancelled'],
+    },
+    'EXCLUDE_PATHS': [
+        r'^/api/v2/internal/.*$',
+    ],
 }
 
 # Celery Configuration - REMOVED

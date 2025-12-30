@@ -87,6 +87,311 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenVerify'
           description: ''
+  /api/v2/artifacts/:
+    get:
+      operationId: v2_artifacts_retrieve
+      summary: List artifacts
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+      - in: query
+        name: name
+        schema:
+          type: string
+      - in: query
+        name: tag
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/{artifact_id}/:
+    delete:
+      operationId: v2_artifacts_destroy
+      summary: Delete artifact (soft)
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/artifacts/{artifact_id}/aliases/:
+    get:
+      operationId: v2_artifacts_aliases_retrieve
+      summary: List artifact aliases
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactAliasListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/{artifact_id}/aliases/upsert/:
+    post:
+      operationId: v2_artifacts_aliases_upsert_create
+      summary: Upsert artifact alias
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactAlias'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/{artifact_id}/restore/:
+    post:
+      operationId: v2_artifacts_restore_create
+      summary: Restore artifact
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/artifacts/{artifact_id}/versions/:
+    get:
+      operationId: v2_artifacts_versions_retrieve
+      summary: List artifact versions
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactVersionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/{artifact_id}/versions/{version}/download/:
+    get:
+      operationId: v2_artifacts_versions_download_retrieve
+      summary: Download artifact version
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: version
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: File download
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/artifacts/{artifact_id}/versions/upload/:
+    post:
+      operationId: v2_artifacts_versions_upload_create
+      summary: Upload artifact version
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactVersionUploadRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactVersion'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/artifacts/create/:
+    post:
+      operationId: v2_artifacts_create_create
+      summary: Create artifact
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/audit/log-compensation/:
     post:
       operationId: v2_audit_log_compensation_create
@@ -109,14 +414,39 @@ paths:
                 }
             ]
         }
+      summary: Log compensation results
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompensationLogRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CompensationLogRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CompensationLogRequest'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompensationLogResponse'
+          description: ''
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Internal server error
   /api/v2/clusters/create-cluster/:
     post:
       operationId: v2_clusters_create_cluster_create
@@ -150,17 +480,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '409':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/delete-cluster/:
     post:
@@ -190,23 +518,21 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '404':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '409':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
     delete:
       operationId: v2_clusters_delete_cluster_destroy
@@ -235,23 +561,21 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '404':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '409':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/discover-clusters/:
     post:
@@ -287,7 +611,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -295,13 +619,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '500':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/get-cluster/:
     get:
@@ -332,7 +656,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -340,7 +664,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/get-cluster-databases/:
     get:
@@ -381,7 +705,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -389,7 +713,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/list-clusters/:
     get:
@@ -398,6 +722,21 @@ paths:
         and RAS server.
       summary: List all clusters
       parameters:
+      - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
       - in: query
         name: ras_server
         schema:
@@ -409,30 +748,15 @@ paths:
           type: string
         description: Search by name or RAS server
       - in: query
-        name: status
-        schema:
-          type: string
-        description: Filter by status (active, inactive, error, maintenance)
-      - in: query
-        name: filters
-        schema:
-          type: string
-        description: JSON object with filter conditions
-      - in: query
         name: sort
         schema:
           type: string
         description: JSON object with sort configuration
       - in: query
-        name: limit
+        name: status
         schema:
-          type: integer
-        description: 'Maximum results (default: 100, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
+          type: string
+        description: Filter by status (active, inactive, error, maintenance)
       tags:
       - v2
       security:
@@ -459,6 +783,8 @@ paths:
         schema:
           type: string
         description: Cluster UUID (optional, resets specific cluster)
+      tags:
+      - v2
       requestBody:
         content:
           application/json:
@@ -470,8 +796,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/ResetSyncStatusRequest'
-      tags:
-      - v2
       security:
       - bearerAuth: []
       - cookieAuth: []
@@ -490,7 +814,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/sync-cluster/:
     post:
@@ -520,7 +844,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -528,13 +852,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '500':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/update-cluster/:
     post:
@@ -575,7 +899,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -583,13 +907,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '409':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
     put:
       operationId: v2_clusters_update_cluster_update
@@ -629,7 +953,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -637,13 +961,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '409':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/clusters/update-credentials/:
     post:
@@ -678,7 +1002,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -686,7 +1010,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
   /api/v2/databases/bulk-health-check/:
     post:
@@ -715,54 +1039,88 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkHealthCheckResponse'
+                $ref: '#/components/schemas/HealthCheckEnqueueResponse'
           description: ''
         '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
         '401':
           description: Unauthorized
-  /api/v2/databases/set-status/:
+  /api/v2/databases/create-ib-user/:
     post:
-      operationId: v2_databases_set_status_create
-      description: Set status for one or more databases (staff-only).
-      summary: Set database status
+      operationId: v2_databases_create_ib_user_create
+      description: Create a manual infobase user mapping for a database.
+      summary: Create infobase user mapping
       tags:
       - v2
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+              $ref: '#/components/schemas/InfobaseUserMappingCreate'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+              $ref: '#/components/schemas/InfobaseUserMappingCreate'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+              $ref: '#/components/schemas/InfobaseUserMappingCreate'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserMapping'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Database not found
+        '409':
+          description: Duplicate entry
+  /api/v2/databases/delete-ib-user/:
+    post:
+      operationId: v2_databases_delete_ib_user_create
+      description: Delete a manual infobase user mapping.
+      summary: Delete infobase user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingDelete'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingDelete'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingDelete'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SetDatabaseStatusResponse'
-          description: ''
+          description: Deleted
         '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
+          description: Invalid request
         '401':
           description: Unauthorized
         '403':
           description: Forbidden
+        '404':
+          description: Not found
   /api/v2/databases/get-database/:
     get:
       operationId: v2_databases_get_database_retrieve
@@ -792,7 +1150,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -800,563 +1158,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
-  /api/v2/databases/update-credentials/:
-    post:
-      operationId: v2_databases_update_credentials_create
-      description: Set or reset database OData credentials.
-      summary: Update database credentials
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseCredentialsUpdateResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/databases/list-ib-users/:
-    get:
-      operationId: v2_databases_list_ib_users_retrieve
-      description: List manually mapped infobase users for a database.
-      summary: List infobase users
-      parameters:
-      - in: query
-        name: database_id
-        schema:
-          type: string
-        description: Database ID
-        required: true
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by username or display name
-      - in: query
-        name: auth_type
-        schema:
-          type: string
-          enum:
-          - local
-          - ad
-          - service
-          - other
-        description: Filter by auth type
-      - in: query
-        name: is_service
-        schema:
-          type: boolean
-        description: Filter by service account
-      - in: query
-        name: has_user
-        schema:
-          type: boolean
-        description: Filter by linked CC user
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: 'Maximum results (default: 100, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserListResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/rbac/list-users/:
-    get:
-      operationId: v2_rbac_list_users_retrieve
-      description: List users for RBAC selection (staff only).
-      summary: List users
-      parameters:
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by username or name
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: 'Maximum results (default: 100, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserRefListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/users/list/:
-    get:
-      operationId: v2_users_list_retrieve
-      description: List users for admin UI (staff only).
-      summary: List users
-      parameters:
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by username or name
-      - in: query
-        name: username
-        schema:
-          type: string
-        description: Filter by username
-      - in: query
-        name: email
-        schema:
-          type: string
-        description: Filter by email
-      - in: query
-        name: is_staff
-        schema:
-          type: boolean
-        description: Filter by staff flag
-      - in: query
-        name: is_superuser
-        schema:
-          type: boolean
-        description: Filter by superuser flag
-      - in: query
-        name: is_active
-        schema:
-          type: boolean
-        description: Filter by active flag
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: 'Maximum results (default: 100, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/users/create/:
-    post:
-      operationId: v2_users_create_create
-      description: Create a new user (staff only).
-      summary: Create user
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UserCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UserCreateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '409':
-          description: Conflict
-  /api/v2/users/update/:
-    post:
-      operationId: v2_users_update_create
-      description: Update user fields (staff only).
-      summary: Update user
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UserUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UserUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-        '409':
-          description: Conflict
-  /api/v2/users/set-password/:
-    post:
-      operationId: v2_users_set_password_create
-      description: Set user password (staff only).
-      summary: Set user password
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserPasswordRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UserPasswordRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UserPasswordRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-  /api/v2/databases/create-ib-user/:
-    post:
-      operationId: v2_databases_create_ib_user_create
-      description: Create a manual infobase user mapping for a database.
-      summary: Create infobase user mapping
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserCreateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserMapping'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '409':
-          description: Conflict
-  /api/v2/databases/update-ib-user/:
-    post:
-      operationId: v2_databases_update_ib_user_create
-      description: Update a manual infobase user mapping.
-      summary: Update infobase user mapping
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserMapping'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-        '409':
-          description: Conflict
-  /api/v2/databases/delete-ib-user/:
-    post:
-      operationId: v2_databases_delete_ib_user_create
-      description: Delete a manual infobase user mapping.
-      summary: Delete infobase user mapping
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserDeleteRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserDeleteResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-  /api/v2/databases/set-ib-user-password/:
-    post:
-      operationId: v2_databases_set_ib_user_password_create
-      description: Set password for a manual infobase user mapping.
-      summary: Set infobase user password
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordSetRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordSetRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordSetRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserMapping'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-  /api/v2/databases/reset-ib-user-password/:
-    post:
-      operationId: v2_databases_reset_ib_user_password_create
-      description: Reset password for a manual infobase user mapping.
-      summary: Reset infobase user password
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordResetRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordResetRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InfobaseUserPasswordResetRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfobaseUserDeleteResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -1384,13 +1187,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthCheckResponse'
+                $ref: '#/components/schemas/HealthCheckEnqueueResponse'
           description: ''
         '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -1398,7 +1201,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
   /api/v2/databases/list-databases/:
     get:
@@ -1461,12 +1264,207 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/databases/list-ib-users/:
+    get:
+      operationId: v2_databases_list_ib_users_retrieve
+      description: List manually mapped infobase users for a database.
+      summary: List infobase users
+      parameters:
+      - in: query
+        name: auth_type
+        schema:
+          type: string
+        description: Filter by auth type
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database ID
+        required: true
+      - in: query
+        name: has_user
+        schema:
+          type: boolean
+        description: Filter by linked CC user
+      - in: query
+        name: is_service
+        schema:
+          type: boolean
+        description: Filter by service account
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by username or display name
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserListResponse'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Database not found
+  /api/v2/databases/reset-ib-user-password/:
+    post:
+      operationId: v2_databases_reset_ib_user_password_create
+      description: Reset password for a manual infobase user mapping.
+      summary: Reset infobase user password
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordReset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordReset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordReset'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Password reset
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/databases/set-ib-user-password/:
+    post:
+      operationId: v2_databases_set_ib_user_password_create
+      description: Set password for a manual infobase user mapping.
+      summary: Set infobase user password
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordSet'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordSet'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserPasswordSet'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserMapping'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/databases/set-status/:
+    post:
+      operationId: v2_databases_set_status_create
+      description: Set status for one or more databases (staff-only). Intended for
+        operator control (exclude from ops, maintenance windows, etc.).
+      summary: Set database status
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SetDatabaseStatusRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetDatabaseStatusResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/databases/stream/:
+    get:
+      operationId: v2_databases_stream_retrieve
+      description: SSE endpoint for database updates. Use ticket from /databases/stream-ticket/.
+      summary: Database SSE stream
+      parameters:
+      - in: query
+        name: ticket
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /databases/stream-ticket/.
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          description: Unauthorized
   /api/v2/databases/stream-ticket/:
     post:
       operationId: v2_databases_stream_ticket_create
-      description: "\n    Obtain a short-lived, single-use ticket for database SSE\n\
-        \    stream authentication.\n\n    The ticket is valid for 30 seconds and can only\n\
-        \    be used once.\n    "
+      description: "\n    Obtain a short-lived, single-use ticket for database SSE\
+        \ stream authentication.\n\n    The ticket is valid for 30 seconds and can\
+        \ only be used once.\n    "
       summary: Get database SSE stream ticket
       tags:
       - v2
@@ -1481,7 +1479,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/DatabaseStreamTicketRequest'
-        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
@@ -1496,7 +1493,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -1504,49 +1501,90 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
-  /api/v2/databases/stream/:
-    get:
-      operationId: v2_databases_stream_retrieve
-      description: "\n    Real-time Server-Sent Events (SSE) stream for database updates.\n\
-        \n    **Authentication:** Use ticket from /databases/stream-ticket/ endpoint.\n\
-        \    "
-      summary: Stream database updates (SSE)
-      parameters:
-      - in: query
-        name: ticket
-        schema:
-          type: string
-        description: Short-lived SSE ticket from /databases/stream-ticket/
-        required: true
+  /api/v2/databases/update-credentials/:
+    post:
+      operationId: v2_databases_update_credentials_create
+      description: Set or reset database OData credentials.
+      summary: Update database credentials
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseCredentialsUpdateRequest'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
-      - {}
       responses:
         '200':
-          description: SSE stream (text/event-stream)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseCredentialsUpdateResponse'
+          description: ''
         '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
         '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
+          description: Unauthorized
         '404':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+  /api/v2/databases/update-ib-user/:
+    post:
+      operationId: v2_databases_update_ib_user_create
+      description: Update a manual infobase user mapping.
+      summary: Update infobase user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InfobaseUserMappingUpdate'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfobaseUserMapping'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Duplicate entry
   /api/v2/dlq/get/:
     get:
       operationId: v2_dlq_get_retrieve
@@ -1604,20 +1642,10 @@ paths:
         schema:
           type: string
       - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by operation ID or error message
-      - in: query
         name: filters
         schema:
           type: string
         description: JSON object with filter conditions
-      - in: query
-        name: sort
-        schema:
-          type: string
-        description: JSON object with sort configuration
       - in: query
         name: limit
         schema:
@@ -1633,10 +1661,20 @@ paths:
         schema:
           type: string
       - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by operation ID or error message
+      - in: query
         name: since
         schema:
           type: string
         description: RFC3339 timestamp filter
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
       tags:
       - v2
       security:
@@ -1648,6 +1686,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DLQListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -1695,10 +1739,8 @@ paths:
   /api/v2/events/pending/:
     get:
       operationId: v2_events_pending_retrieve
-      description: |-
-        GET /api/v2/events/pending/
-
-        Returns count and list of pending events (for monitoring).
+      description: Returns counts of pending and failed events (for monitoring).
+      summary: Get pending events stats
       tags:
       - v2
       security:
@@ -1707,32 +1749,46 @@ paths:
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingEventsResponse'
+          description: ''
   /api/v2/events/store-failed/:
     post:
       operationId: v2_events_store_failed_create
-      description: |-
-        POST /api/v2/events/store-failed/
-
-        Internal endpoint for Go services to store events that failed to publish to Redis.
-
-        Request body:
-        {
-            "channel": "events:orchestrator:operation:completed",
-            "event_type": "orchestrator.operation.completed",
-            "correlation_id": "corr-456",
-            "payload": {"operation_id": "op-123", "success": true},
-            "source_service": "worker",
-            "original_timestamp": "2025-11-28T12:00:00Z"
-        }
+      description: Internal endpoint to store events that failed to publish to Redis.
+      summary: Store failed event
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreFailedEventRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StoreFailedEventRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StoreFailedEventRequest'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreFailedEventResponse'
+          description: ''
+        '400':
+          description: Bad request
+        '403':
+          description: Forbidden
+        '500':
+          description: Internal server error
   /api/v2/extensions/batch-install/:
     post:
       operationId: v2_extensions_batch_install_create
@@ -1963,8 +2019,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '500':
           content:
             application/json:
@@ -2009,8 +2063,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '404':
           content:
             application/json:
@@ -2024,6 +2076,18 @@ paths:
       summary: Upload extension file
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadExtensionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadExtensionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadExtensionRequest'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
@@ -2042,324 +2106,12 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '500':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
-  /api/v2/artifacts/:
-    get:
-      operationId: v2_artifacts_list
-      description: List artifacts (optionally filter by kind/name/tag).
-      summary: List artifacts
-      parameters:
-      - in: query
-        name: kind
-        schema:
-          type: string
-        required: false
-      - in: query
-        name: name
-        schema:
-          type: string
-        required: false
-      - in: query
-        name: tag
-        schema:
-          type: string
-        required: false
-      - in: query
-        name: include_deleted
-        schema:
-          type: boolean
-        required: false
-      - in: query
-        name: only_deleted
-        schema:
-          type: boolean
-        required: false
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/artifacts/create/:
-    post:
-      operationId: v2_artifacts_create
-      description: Create artifact.
-      summary: Create artifact
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ArtifactCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ArtifactCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ArtifactCreateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactCreateResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/artifacts/{artifact_id}/:
-    delete:
-      operationId: v2_artifacts_delete
-      description: Soft-delete artifact (hide from catalog).
-      summary: Delete artifact (soft)
-      parameters:
-      - in: path
-        name: artifact_id
-        required: true
-        schema:
-          type: string
-          format: uuid
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '204':
-          description: Deleted
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/artifacts/{artifact_id}/restore/:
-    post:
-      operationId: v2_artifacts_restore
-      description: Restore soft-deleted artifact.
-      summary: Restore artifact
-      parameters:
-      - in: path
-        name: artifact_id
-        required: true
-        schema:
-          type: string
-          format: uuid
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Artifact'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/artifacts/{artifact_id}/versions/:
-    get:
-      operationId: v2_artifacts_versions_list
-      description: List artifact versions.
-      summary: List artifact versions
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactVersionListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/artifacts/{artifact_id}/versions/upload/:
-    post:
-      operationId: v2_artifacts_versions_upload
-      description: Upload artifact version.
-      summary: Upload artifact version
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v2
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ArtifactVersionUploadRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactVersion'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '500':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/artifacts/{artifact_id}/versions/{version}/download/:
-    get:
-      operationId: v2_artifacts_versions_download
-      description: Download artifact version.
-      summary: Download artifact version
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-        required: true
-      - in: path
-        name: version
-        schema:
-          type: string
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: File content
-        '401':
-          description: Unauthorized
-  /api/v2/artifacts/{artifact_id}/aliases/:
-    get:
-      operationId: v2_artifacts_aliases_list
-      description: List artifact aliases.
-      summary: List artifact aliases
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactAliasListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/artifacts/{artifact_id}/aliases/upsert/:
-    post:
-      operationId: v2_artifacts_aliases_upsert
-      description: Upsert artifact alias.
-      summary: Upsert artifact alias
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-        required: true
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ArtifactAliasUpsertRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactAlias'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
   /api/v2/files/delete/{file_id}/:
     delete:
       operationId: v2_files_delete_destroy
@@ -2444,20 +2196,14 @@ paths:
       description: Upload a file for use in operations. Supports operation_input,
         extension, and export purposes.
       summary: Upload file
-      parameters:
-      - in: query
-        name: expiry_hours
-        schema:
-          type: integer
-        description: 'Custom expiration hours (default: 24)'
-      - in: query
-        name: purpose
-        schema:
-          type: string
-        description: 'File purpose: operation_input, extension, export'
-        required: true
       tags:
       - v2
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+        required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
@@ -2482,459 +2228,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
-  /api/v2/internal/cleanup-failed-events:
-    post:
-      operationId: v2_internal_cleanup_failed_events_create
-      description: |-
-        POST /api/v2/internal/cleanup-failed-events
-
-        Delete old replayed events.
-        Called by Go Worker periodically to clean up storage.
-
-        Request body:
-        {
-            "retention_days": 7  // default: 7
-        }
-
-        Response:
-        {
-            "success": true,
-            "deleted_count": 150
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/complete-scheduler-run:
-    post:
-      operationId: v2_internal_complete_scheduler_run_create
-      description: |-
-        POST /api/v2/internal/complete-scheduler-run?run_id=X
-
-        Complete a scheduler job run.
-        Called by Go Worker when a scheduled job finishes execution.
-
-        Query params:
-            run_id: int (required)
-
-        Request body:
-        {
-            "status": "success",
-            "duration_ms": 1234,
-            "result_summary": "Processed 10 items",
-            "error_message": "",
-            "items_processed": 10,
-            "items_failed": 0
-        }
-
-        Response:
-        {
-            "success": true,
-            "run_id": 123,
-            "status": "success"
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/complete-task:
-    post:
-      operationId: v2_internal_complete_task_create
-      description: |-
-        POST /api/v2/internal/complete-task?task_id=X
-
-        Log task execution completion.
-        Called by Go Worker when a task finishes processing.
-
-        Query params:
-            task_id: int (required)
-
-        Request body:
-        {
-            "status": "success",
-            "duration_ms": 1234,
-            "result_summary": "OK",
-            "error_message": "",
-            "error_type": "",
-            "retry_count": 0
-        }
-
-        Response:
-        {
-            "success": true,
-            "task_id": 123,
-            "status": "success"
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/get-operation-timeline:
-    post:
-      operationId: v2_internal_get_operation_timeline_create
-      description: |-
-        POST /api/v2/internal/get-operation-timeline
-
-        Get operation execution timeline from Redis.
-
-        NOTE: Internal endpoint - no ownership check (service-to-service).
-        For public access with ownership validation, use:
-        POST /api/v2/operations/get-operation-timeline/
-
-        Request body:
-            operation_id: str (required)
-            limit: int (default: 100, max: 500)
-            offset: int (default: 0)
-
-        Response:
-        {
-            "operation_id": "op-123",
-            "timeline": [
-                {
-                    "timestamp": 1734567890123,
-                    "event": "operation.started",
-                    "service": "worker",
-                    "trace_id": "0123abcd...",
-                    "workflow_execution_id": "wf-exec-123",
-                    "node_id": "node-1",
-                    "metadata": {}
-                }
-            ],
-            "total_events": 5,
-            "duration_ms": 1234
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/get-template:
-    get:
-      operationId: v2_internal_get_template_retrieve
-      description: |-
-        GET /api/v2/internal/get-template?template_id=X
-
-        Get template data for Go Worker.
-        Returns template definition including template_data for rendering.
-
-        Query params:
-            template_id: str (required)
-
-        Response:
-        {
-            "success": true,
-            "template": {
-                "id": "create_document",
-                "name": "Create Document Template",
-                "operation_type": "create",
-                "target_entity": "Document.ЗаказКлиента",
-                "template_data": {...},
-                "version": 1,
-                "is_active": true
-            }
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/list-databases-for-health-check:
-    get:
-      operationId: v2_internal_list_databases_for_health_check_retrieve
-      description: |-
-        GET /api/v2/internal/list-databases-for-health-check
-
-        Get list of databases for periodic health checks.
-        Called by Go Worker to fetch databases that need health monitoring.
-
-        Response:
-        {
-            "success": true,
-            "databases": [
-                {
-                    "id": "db-123",
-                    "odata_url": "http://localhost:8080/base/odata/standard.odata",
-                    "name": "Production DB"
-                }
-            ],
-            "count": 1
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/list-pending-failed-events:
-    get:
-      operationId: v2_internal_list_pending_failed_events_retrieve
-      description: |-
-        GET /api/v2/internal/list-pending-failed-events?batch_size=100
-
-        Get pending failed events for replay.
-        Called by Go Worker to fetch events that need to be replayed to Redis.
-
-        Query params:
-            batch_size: int (default: 100, max: 1000)
-
-        Response:
-        {
-            "success": true,
-            "events": [...],
-            "count": 10
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/mark-event-failed:
-    post:
-      operationId: v2_internal_mark_event_failed_create
-      description: |-
-        POST /api/v2/internal/mark-event-failed?event_id=X
-
-        Mark event as failed (increment retry count).
-        Called by Go Worker when replay attempt fails.
-
-        Query params:
-            event_id: int (required)
-
-        Request body:
-        {
-            "error_message": "Connection refused",
-            "increment_retry": true  // default: true
-        }
-
-        Response:
-        {
-            "success": true,
-            "event_id": 123,
-            "new_status": "pending",
-            "retry_count": 3
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/mark-event-replayed:
-    post:
-      operationId: v2_internal_mark_event_replayed_create
-      description: |-
-        POST /api/v2/internal/mark-event-replayed?event_id=X
-
-        Mark event as successfully replayed.
-        Called by Go Worker after successfully publishing event to Redis.
-
-        Query params:
-            event_id: int (required)
-
-        Request body:
-        {
-            "replayed_at": "2025-01-01T12:00:00Z"  // optional
-        }
-
-        Response:
-        {
-            "success": true,
-            "event_id": 123,
-            "status": "replayed"
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/render-template:
-    post:
-      operationId: v2_internal_render_template_create
-      description: |-
-        POST /api/v2/internal/render-template?template_id=X
-
-        Render template using Python Jinja2 (fallback for Go pongo2).
-        Called by Go Worker when pongo2 encounters incompatible syntax.
-
-        Query params:
-            template_id: str (required)
-
-        Request body:
-        {
-            "context": {
-                "order_number": "12345",
-                "items": [{"name": "Item1", "qty": 10}]
-            }
-        }
-
-        Response:
-        {
-            "success": true,
-            "rendered": {...},
-            "error": ""
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/start-scheduler-run:
-    post:
-      operationId: v2_internal_start_scheduler_run_create
-      description: |-
-        POST /api/v2/internal/start-scheduler-run
-
-        Start a new scheduler job run.
-        Called by Go Worker when a scheduled job begins execution.
-
-        Request body:
-        {
-            "job_name": "health_check_databases",
-            "worker_instance": "worker-1"
-        }
-
-        Response:
-        {
-            "run_id": 123,
-            "status": "running"
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/start-task:
-    post:
-      operationId: v2_internal_start_task_create
-      description: |-
-        POST /api/v2/internal/start-task
-
-        Log task execution start.
-        Called by Go Worker when a task begins processing.
-
-        Request body:
-        {
-            "task_id": "task-123",
-            "task_type": "health_check",
-            "queue_name": "default",
-            "worker_instance": "worker-1",
-            "operation_id": "op-456"  // optional
-        }
-
-        Response:
-        {
-            "task_id": 123,
-            "status": "running"
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/update-cluster-health:
-    post:
-      operationId: v2_internal_update_cluster_health_create
-      description: |-
-        POST /api/v2/internal/update-cluster-health?cluster_id=X
-
-        Update cluster health status.
-        Called by Go Worker after health check execution.
-
-        Query params:
-            cluster_id: uuid (required)
-
-        Request body:
-        {
-            "healthy": true,
-            "error_message": "",
-            "response_time_ms": 100
-        }
-
-        Response:
-        {
-            "success": true,
-            "cluster_id": "...",
-            "healthy": true
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v2/internal/update-database-health:
-    post:
-      operationId: v2_internal_update_database_health_create
-      description: |-
-        POST /api/v2/internal/update-database-health?database_id=X
-
-        Update database health status.
-        Called by Go Worker after health check execution.
-
-        Query params:
-            database_id: uuid (required)
-
-        Request body:
-        {
-            "healthy": true,
-            "error_message": "",
-            "response_time_ms": 250,
-            "error_code": ""
-        }
-
-        Response:
-        {
-            "success": true,
-            "database_id": "...",
-            "healthy": true
-        }
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: No response body
   /api/v2/operations/cancel-operation/:
     post:
       operationId: v2_operations_cancel_operation_create
@@ -2969,7 +2262,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -2977,24 +2270,45 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+  /api/v2/operations/catalog/:
+    get:
+      operationId: v2_operations_catalog_retrieve
+      description: List available operation types and workflow templates for Operations
+        Center.
+      summary: Get operations catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
       description: "\n    Queue an operation for execution on selected databases.\n\
         \n    **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,\
-        \ `block_sessions`, `unblock_sessions`, `terminate_sessions`\n    - OData:\
-        \ `create`, `update`, `delete`, `query`\n    - CLI: `install_extension`, `remove_extension`,\
-        \ `config_update`, `config_load`, `config_dump`\n    - IBCMD: `ibcmd_backup`,\
-        \ `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\n    **Config notes:**\n\
-        \    - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`,\
-        \ `parameter`\n    - OData query: `entity`, `filter`, `select`, `top`, `skip`\n\
-        \    - OData update/delete: `entity`, `entity_id`\n    - CLI install_extension:\
-        \ `artifact_id` + (`artifact_version` or `artifact_alias`) or legacy `extension_filename` / `extension_path` + `extension_name`\n    - CLI operations:\
-        \ driver-specific fields (e.g. `extension_name`, `source_path`, `target_path`)\n\
-        \    "
-      summary: Execute operation
+        \ `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    -\
+        \ OData: `create`, `update`, `delete`, `query`\n    - CLI: `install_extension`,\
+        \ `remove_extension`, `config_update`, `config_load`, `config_dump`\n    -\
+        \ IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\
+        \n    **Config notes:**\n    - RAS block_sessions: `message`, `permission_code`,\
+        \ `denied_from`, `denied_to`, `parameter`\n    - OData query: `entity`, `filter`,\
+        \ `select`, `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n\
+        \    - CLI install_extension: `artifact_id` + (`artifact_version` or `artifact_alias`)\n\
+        \      or legacy `extension_filename` / `extension_path` + `extension_name`\n\
+        \    - CLI operations: driver-specific fields (e.g. `extension_name`, `source_path`,\
+        \ `target_path`)\n    "
+      summary: Execute RAS operation
       tags:
       - v2
       requestBody:
@@ -3023,7 +2337,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3064,7 +2378,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3087,6 +2401,11 @@ paths:
         description: Operation ID (UUID)
         required: true
       - in: query
+        name: task_filters
+        schema:
+          type: string
+        description: JSON object with task filter conditions
+      - in: query
         name: task_limit
         schema:
           type: integer
@@ -3096,11 +2415,6 @@ paths:
         schema:
           type: integer
         description: 'Task pagination offset (default: 0)'
-      - in: query
-        name: task_filters
-        schema:
-          type: string
-        description: JSON object with task filter conditions
       - in: query
         name: task_sort
         schema:
@@ -3122,7 +2436,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3130,17 +2444,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
   /api/v2/operations/get-operation-timeline/:
     post:
       operationId: v2_operations_get_operation_timeline_create
       description: "\n    Get the execution timeline for an operation.\n\n    **Authentication:**\
         \ Requires valid JWT token.\n\n    **Authorization:** User must own the operation\
-        \ (created_by matches username)\n    or be a superuser.\n\n    **Response\
-        \ format:**\n    - Timeline events are sorted chronologically (ascending)\n\
-        \    - Each event includes timestamp, event name, service, and optional metadata\n\
-        \    - Duration is calculated from first to last event (null if < 2 events)\n\
+        \ (created_by matches username)\n    or be staff.\n\n    **Response format:**\n\
+        \    - Timeline events are sorted chronologically (ascending)\n    - Each\
+        \ event includes timestamp, event name, service, and optional metadata\n \
+        \   - Duration is calculated from first to last event (null if < 2 events)\n\
         \n    **Graceful degradation:**\n    - If Redis is unavailable, returns empty\
         \ timeline (not 500 error)\n    "
       summary: Get operation timeline
@@ -3172,7 +2486,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/TimelineErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3180,13 +2494,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/TimelineErrorResponse'
           description: ''
         '404':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/TimelineErrorResponse'
           description: ''
   /api/v2/operations/list-operations/:
     get:
@@ -3196,61 +2510,61 @@ paths:
       summary: List batch operations
       parameters:
       - in: query
-        name: operation_id
-        schema:
-          type: string
-        description: Filter by operation ID
-      - in: query
         name: created_by
         schema:
           type: string
         description: Filter by creator username
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by name, description, or ID
       - in: query
         name: filters
         schema:
           type: string
         description: JSON object with filter conditions
       - in: query
-        name: sort
-        schema:
-          type: string
-        description: JSON object with sort configuration
-      - in: query
         name: limit
         schema:
           type: integer
         description: 'Maximum results (default: 50, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      - in: query
-        name: operation_type
-        schema:
-          type: string
-        description: Filter by type (create, update, delete, query, install_extension)
-      - in: query
-        name: workflow_execution_id
-        schema:
-          type: string
-        description: Filter by workflow execution ID
       - in: query
         name: node_id
         schema:
           type: string
         description: Filter by workflow node ID
       - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: operation_id
+        schema:
+          type: string
+        description: Filter by operation ID
+      - in: query
+        name: operation_type
+        schema:
+          type: string
+        description: Filter by type (create, update, delete, query, install_extension)
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name, description, or ID
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
+      - in: query
         name: status
         schema:
           type: string
         description: Filter by status (pending, queued, processing, completed, failed,
           cancelled)
+      - in: query
+        name: workflow_execution_id
+        schema:
+          type: string
+        description: Filter by workflow execution ID
       tags:
       - v2
       security:
@@ -3263,55 +2577,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationListResponse'
           description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/operations/catalog/:
-    get:
-      operationId: v2_operations_catalog_retrieve
-      description: List available operation types and workflow templates for Operations Center.
-      summary: Get operations catalog
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
+        '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperationCatalogResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
   /api/v2/operations/stream/:
     get:
       operationId: v2_operations_stream_retrieve
-      description: "\n    Real-time Server-Sent Events (SSE) stream for operation\
-        \ progress updates.\n\n    **Authentication:** Use ticket from /stream-ticket/\
-        \ endpoint (preferred) or\n    legacy token via query parameter.\n\n    **Event\
-        \ format:**\n    ```\n    data: {\"state\": \"PROCESSING\", \"microservice\"\
-        : \"worker\", \"message\": \"...\", \"timestamp\": \"...\", \"trace_id\": \"...\",\
-        \ \"workflow_execution_id\": \"...\", \"node_id\": \"...\"}\n    ```\n\n \
-        \   **States flow:** PENDING -> QUEUED -> PROCESSING -> UPLOADING -> INSTALLING\
-        \ -> VERIFYING -> SUCCESS/FAILED\n    "
-      summary: Stream operation events (SSE)
+      description: SSE endpoint for real-time operation updates. Prefer ticket-based
+        auth via /stream-ticket/.
+      summary: Operation SSE stream
       parameters:
       - in: query
         name: operation_id
         schema:
           type: string
-        description: Operation ID (only needed with token auth, not with ticket)
+        description: Operation ID (deprecated legacy token auth).
       - in: query
         name: ticket
         schema:
           type: string
-        description: Short-lived SSE ticket from /stream-ticket/ (preferred)
+        description: Short-lived SSE ticket from /operations/stream-ticket/.
       - in: query
         name: token
         schema:
           type: string
-        description: JWT access token (deprecated, use ticket instead)
+        description: Legacy token auth (deprecated).
       tags:
       - v2
       security:
@@ -3321,23 +2616,112 @@ paths:
       responses:
         '200':
           description: SSE stream (text/event-stream)
-        '400':
+        '401':
+          description: Unauthorized
+  /api/v2/operations/stream-mux-status/:
+    get:
+      operationId: v2_operations_stream_mux_status_retrieve
+      description: Get active multiplex SSE stream count for current user.
+      summary: Get multiplex SSE stream status
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationMuxStreamStatus'
           description: ''
         '401':
+          description: Unauthorized
+  /api/v2/operations/stream-mux-ticket/:
+    post:
+      operationId: v2_operations_stream_mux_ticket_create
+      summary: Get multiplex SSE stream ticket
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationMuxTicketRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationMuxTicketRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationMuxTicketRequest'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/SSETicketResponse'
           description: ''
-        '404':
+        '401':
+          description: Unauthorized
+        '429':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
+  /api/v2/operations/stream-status/:
+    get:
+      operationId: v2_operations_stream_status_retrieve
+      description: Get active SSE stream count for current user.
+      summary: Get SSE stream status
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStreamStatus'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/operations/stream-subscribe/:
+    post:
+      operationId: v2_operations_stream_subscribe_create
+      summary: Subscribe to multiplex stream operations
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationMuxSubscribe'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationMuxSubscribe'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationMuxSubscribe'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Subscription updated
+        '401':
+          description: Unauthorized
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
   /api/v2/operations/stream-ticket/:
     post:
@@ -3374,7 +2758,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3382,162 +2766,32 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/operations/stream-subscribe/:
-    post:
-      operationId: v2_operations_stream_subscribe_create
-      description: Subscribe to multiplex SSE stream for operations.
-      summary: Subscribe to multiplex stream
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationMuxSubscribeRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationMuxSubscribeResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '429':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
   /api/v2/operations/stream-unsubscribe/:
     post:
       operationId: v2_operations_stream_unsubscribe_create
-      description: Unsubscribe from multiplex SSE stream for operations.
-      summary: Unsubscribe from multiplex stream
+      summary: Unsubscribe from multiplex stream operations
       tags:
       - v2
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OperationMuxSubscribeRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationMuxSubscribeResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/operations/stream-mux-ticket/:
-    post:
-      operationId: v2_operations_stream_mux_ticket_create
-      description: Obtain a ticket for multiplex SSE stream authentication.
-      summary: Get multiplex SSE stream ticket
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
+              $ref: '#/components/schemas/OperationMuxUnsubscribe'
+          application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/OperationMuxTicketRequest'
+              $ref: '#/components/schemas/OperationMuxUnsubscribe'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationMuxUnsubscribe'
         required: true
       security:
       - bearerAuth: []
       - cookieAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SSETicketResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '429':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/operations/stream-mux/:
-    get:
-      operationId: v2_operations_stream_mux_retrieve
-      description: Multiplex SSE stream for operation updates.
-      summary: Stream multiplex operation events (SSE)
-      parameters:
-      - in: query
-        name: ticket
-        schema:
-          type: string
-        description: Short-lived SSE ticket from /stream-mux-ticket/
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: SSE stream (text/event-stream)
-        '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '429':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/operations/stream-status/:
-    get:
-      operationId: v2_operations_stream_status_retrieve
-      description: Get active SSE stream count for current user.
-      summary: Get SSE stream status
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationStreamStatus'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/operations/stream-mux-status/:
-    get:
-      operationId: v2_operations_stream_mux_status_retrieve
-      description: Get active multiplex SSE stream count for current user.
-      summary: Get multiplex SSE stream status
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationMuxStreamStatus'
-          description: ''
+          description: Subscription updated
         '401':
           description: Unauthorized
   /api/v2/rbac/get-effective-access/:
@@ -3608,7 +2862,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3618,7 +2872,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
   /api/v2/rbac/grant-database-permission/:
     post:
@@ -3652,7 +2906,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3662,7 +2916,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
   /api/v2/rbac/list-cluster-permissions/:
     get:
@@ -3758,6 +3012,43 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/list-users/:
+    get:
+      operationId: v2_rbac_list_users_retrieve
+      description: List users for RBAC selection (staff only).
+      summary: List users
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by username or name
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacUserListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/rbac/revoke-cluster-permission/:
     post:
       operationId: v2_rbac_revoke_cluster_permission_create
@@ -3790,7 +3081,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3828,7 +3119,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3868,7 +3159,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ServiceMeshErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -3883,7 +3174,7 @@ paths:
         name: include_prometheus
         schema:
           type: boolean
-        description: 'Include raw Prometheus metrics (default: false)'
+        description: 'Include raw Prometheus metrics (reserved, default: false)'
       - in: query
         name: service
         schema:
@@ -3905,10 +3196,79 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ServiceMeshErrorResponse'
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/settings/runtime/:
+    get:
+      operationId: v2_settings_runtime_retrieve
+      description: List runtime-configurable settings for SPA and operations.
+      summary: List runtime settings
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSettingsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/settings/runtime/{key}/:
+    patch:
+      operationId: v2_settings_runtime_partial_update
+      description: Update a runtime-configurable setting.
+      summary: Update runtime setting
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: key
+        schema:
+          type: string
+        description: Setting key
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingUpdate'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSetting'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/system/config/:
     get:
       operationId: v2_system_config_retrieve
@@ -3968,106 +3328,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-  /api/v2/ui/table-metadata/:
-    get:
-      operationId: v2_ui_table_metadata_retrieve
-      description: Returns metadata for server-driven table configuration.
-      summary: Get table metadata
-      parameters:
-      - in: query
-        name: table
-        schema:
-          type: string
-        required: true
-        description: Table identifier
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TableMetadataResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/settings/runtime/:
-    get:
-      operationId: v2_settings_runtime_list
-      description: |-
-        GET /api/v2/settings/runtime/
-
-        List runtime-configurable settings.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeSettingsResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/settings/runtime/{key}/:
-    patch:
-      operationId: v2_settings_runtime_update
-      description: |-
-        PATCH /api/v2/settings/runtime/{key}/
-
-        Update runtime-configurable setting.
-      parameters:
-      - in: path
-        name: key
-        schema:
-          type: string
-        required: true
-        description: Setting key
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RuntimeSettingUpdate'
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeSetting'
-          description: ''
-        '400':
-          description: Validation error
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
@@ -4076,25 +3336,15 @@ paths:
       summary: List operation templates
       parameters:
       - in: query
-        name: is_active
-        schema:
-          type: boolean
-        description: Filter by active status (true/false)
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by name or description
-      - in: query
         name: filters
         schema:
           type: string
         description: JSON object with filter conditions
       - in: query
-        name: sort
+        name: is_active
         schema:
-          type: string
-        description: JSON object with sort configuration
+          type: boolean
+        description: Filter by active status (true/false)
       - in: query
         name: limit
         schema:
@@ -4111,6 +3361,16 @@ paths:
           type: string
         description: Filter by operation type
       - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by name or description
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with sort configuration
+      - in: query
         name: target_entity
         schema:
           type: string
@@ -4126,6 +3386,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationTemplateListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -4168,6 +3434,231 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/ui/table-metadata/:
+    get:
+      operationId: v2_ui_table_metadata_retrieve
+      description: Returns metadata for server-driven table configuration.
+      summary: Get table metadata
+      parameters:
+      - in: query
+        name: table
+        schema:
+          type: string
+        description: Table identifier
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableMetadataResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiErrorResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/users/create/:
+    post:
+      operationId: v2_users_create_create
+      summary: Create user
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '409':
+          description: Duplicate username
+  /api/v2/users/list/:
+    get:
+      operationId: v2_users_list_retrieve
+      description: List users for admin UI (staff only).
+      summary: List users
+      parameters:
+      - in: query
+        name: email
+        schema:
+          type: string
+        description: Filter by email
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+        description: Filter by active flag
+      - in: query
+        name: is_staff
+        schema:
+          type: boolean
+        description: Filter by staff flag
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by username or name
+      - in: query
+        name: username
+        schema:
+          type: string
+        description: Filter by username
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/users/set-password/:
+    post:
+      operationId: v2_users_set_password_create
+      summary: Set user password
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserPasswordRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserErrorResponse'
+          description: ''
+  /api/v2/users/update/:
+    post:
+      operationId: v2_users_update_create
+      summary: Update user
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserErrorResponse'
+          description: ''
+        '409':
+          description: Duplicate username
   /api/v2/workflows/cancel-execution/:
     post:
       operationId: v2_workflows_cancel_execution_create
@@ -4663,6 +4154,11 @@ paths:
       summary: List workflow templates
       parameters:
       - in: query
+        name: filters
+        schema:
+          type: string
+        description: JSON object with filter conditions
+      - in: query
         name: is_active
         schema:
           type: string
@@ -4688,11 +4184,6 @@ paths:
           type: string
         description: Search by name or description
       - in: query
-        name: filters
-        schema:
-          type: string
-        description: JSON object with filter conditions
-      - in: query
         name: sort
         schema:
           type: string
@@ -4714,6 +4205,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkflowListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -4812,6 +4309,208 @@ paths:
           description: ''
 components:
   schemas:
+    Artifact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+        is_versioned:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - created_at
+      - id
+      - is_versioned
+      - kind
+      - name
+    ArtifactAlias:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        alias:
+          type: string
+        version:
+          type: string
+        version_id:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - alias
+      - id
+      - updated_at
+      - version
+      - version_id
+    ArtifactAliasListResponse:
+      type: object
+      properties:
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactAlias'
+        count:
+          type: integer
+      required:
+      - aliases
+      - count
+    ArtifactAliasUpsertRequest:
+      type: object
+      properties:
+        alias:
+          type: string
+        version:
+          type: string
+        version_id:
+          type: string
+          format: uuid
+      required:
+      - alias
+    ArtifactCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ArtifactCreateRequestKindEnum'
+        is_versioned:
+          type: boolean
+          default: true
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+      - kind
+      - name
+    ArtifactCreateRequestKindEnum:
+      enum:
+      - extension
+      - config_xml
+      - dt_backup
+      - epf
+      - erf
+      - ibcmd_package
+      - ras_script
+      - other
+      type: string
+      description: |-
+        * `extension` - Extension
+        * `config_xml` - Config XML
+        * `dt_backup` - DT Backup
+        * `epf` - EPF
+        * `erf` - ERF
+        * `ibcmd_package` - IBCMD Package
+        * `ras_script` - RAS Script
+        * `other` - Other
+    ArtifactCreateResponse:
+      type: object
+      properties:
+        artifact:
+          $ref: '#/components/schemas/Artifact'
+        message:
+          type: string
+      required:
+      - artifact
+      - message
+    ArtifactListResponse:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+        count:
+          type: integer
+      required:
+      - artifacts
+      - count
+    ArtifactVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: string
+        filename:
+          type: string
+        storage_key:
+          type: string
+        size:
+          type: integer
+        checksum:
+          type: string
+        content_type:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: {}
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - checksum
+      - content_type
+      - created_at
+      - filename
+      - id
+      - metadata
+      - size
+      - storage_key
+      - version
+    ArtifactVersionListResponse:
+      type: object
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactVersion'
+        count:
+          type: integer
+      required:
+      - count
+      - versions
+    ArtifactVersionUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: uri
+        version:
+          type: string
+        filename:
+          type: string
+        metadata:
+          type: string
+      required:
+      - file
+    AuthTypeEnum:
+      enum:
+      - local
+      - ad
+      - service
+      - other
+      type: string
+      description: |-
+        * `local` - Local
+        * `ad` - Active Directory
+        * `service` - Service
+        * `other` - Other
     BatchInstallItem:
       type: object
       description: Single item in batch installation result.
@@ -4937,10 +4636,16 @@ components:
           format: date-time
           nullable: true
         duration_seconds:
-          type: string
+          type: number
+          format: double
+          nullable: true
+          description: Calculate operation duration in seconds.
           readOnly: true
         success_rate:
-          type: string
+          type: number
+          format: double
+          nullable: true
+          description: Calculate success rate percentage.
           readOnly: true
         created_by:
           type: string
@@ -4959,7 +4664,10 @@ components:
           format: date-time
           readOnly: true
         database_names:
-          type: string
+          type: array
+          items:
+            type: string
+          description: Get list of database names for this operation.
           readOnly: true
         tasks:
           type: array
@@ -4996,6 +4704,15 @@ components:
       - unblock_sessions
       - sync_cluster
       - discover_clusters
+      - health_check
+      - ibcmd_backup
+      - ibcmd_restore
+      - ibcmd_replicate
+      - ibcmd_create
+      - remove_extension
+      - config_update
+      - config_load
+      - config_dump
       type: string
       description: |-
         * `create` - Create
@@ -5010,6 +4727,15 @@ components:
         * `unblock_sessions` - Unblock Sessions
         * `sync_cluster` - Sync Cluster
         * `discover_clusters` - Discover Clusters
+        * `health_check` - Health Check
+        * `ibcmd_backup` - IBCMD Backup
+        * `ibcmd_restore` - IBCMD Restore
+        * `ibcmd_replicate` - IBCMD Replicate
+        * `ibcmd_create` - IBCMD Create
+        * `remove_extension` - Remove Extension
+        * `config_update` - Update Configuration
+        * `config_load` - Load Configuration
+        * `config_dump` - Dump Configuration
     BatchOperationStatusEnum:
       enum:
       - pending
@@ -5039,68 +4765,6 @@ components:
           type: string
           format: uuid
           description: Check all databases in this cluster
-    BulkHealthCheckResponse:
-      type: object
-      description: Response for bulk_health_check endpoint.
-      properties:
-        operation_id:
-          type: string
-          description: ID of the created operation
-        status:
-          type: string
-          description: Operation status (queued)
-        total_tasks:
-          type: integer
-          description: Number of tasks created
-        message:
-          type: string
-          description: Status message
-      required:
-      - message
-      - operation_id
-      - status
-      - total_tasks
-    SetDatabaseStatusRequest:
-      type: object
-      description: Request body for set_status endpoint.
-      properties:
-        database_ids:
-          type: array
-          items:
-            type: string
-          description: List of database IDs to update
-        status:
-          type: string
-          enum:
-          - active
-          - inactive
-          - maintenance
-          description: New status to set
-        reason:
-          type: string
-          description: Optional operator reason
-      required:
-      - database_ids
-      - status
-    SetDatabaseStatusResponse:
-      type: object
-      description: Response for set_status endpoint.
-      properties:
-        updated:
-          type: integer
-        not_found:
-          type: array
-          items:
-            type: string
-        status:
-          type: string
-        message:
-          type: string
-      required:
-      - updated
-      - not_found
-      - status
-      - message
     CancelOperationRequest:
       type: object
       description: Request body for cancel_operation endpoint.
@@ -5145,7 +4809,7 @@ components:
         cluster_service_url:
           type: string
           format: uri
-          description: URL of installation-service managing this cluster
+          description: Legacy URL for cluster integrations (currently unused)
           maxLength: 512
         cluster_user:
           type: string
@@ -5158,7 +4822,7 @@ components:
           type: boolean
           readOnly: true
         status:
-          $ref: '#/components/schemas/StatusD4eEnum'
+          $ref: '#/components/schemas/DatabaseStatusEnum'
         status_display:
           type: string
           readOnly: true
@@ -5184,6 +4848,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - cluster_pwd_configured
       - cluster_service_url
       - created_at
       - databases_count
@@ -5195,6 +4860,34 @@ components:
     ClusterCreateResponse:
       type: object
       description: Response for create_cluster endpoint.
+      properties:
+        cluster:
+          $ref: '#/components/schemas/Cluster'
+        message:
+          type: string
+      required:
+      - cluster
+      - message
+    ClusterCredentialsUpdateRequest:
+      type: object
+      description: Request body for update_cluster_credentials endpoint.
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        reset:
+          type: boolean
+          default: false
+      required:
+      - cluster_id
+    ClusterCredentialsUpdateResponse:
+      type: object
+      description: Response for update_cluster_credentials endpoint.
       properties:
         cluster:
           $ref: '#/components/schemas/Cluster'
@@ -5254,6 +4947,34 @@ components:
       - cluster
       - databases
       - statistics
+    ClusterErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code (e.g., MISSING_PARAMETER)
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional error details
+      required:
+      - code
+      - message
+    ClusterErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/ClusterErrorDetail'
+      required:
+      - error
     ClusterFilters:
       type: object
       description: Applied filters.
@@ -5284,14 +5005,14 @@ components:
       type: object
       properties:
         user:
-          $ref: '#/components/schemas/UserRef'
+          $ref: '#/components/schemas/RbacUserRef'
         cluster:
           $ref: '#/components/schemas/ClusterRef'
         level:
           type: string
         granted_by:
           allOf:
-          - $ref: '#/components/schemas/UserRef'
+          - $ref: '#/components/schemas/RbacUserRef'
           nullable: true
         granted_at:
           type: string
@@ -5399,34 +5120,48 @@ components:
       required:
       - cluster
       - message
-    ClusterCredentialsUpdateRequest:
+    CompensationLogRequest:
       type: object
-      description: Request body for update-credentials endpoint (cluster).
       properties:
-        cluster_id:
+        operation_id:
           type: string
-          format: uuid
-        username:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompensationResult'
+      required:
+      - operation_id
+      - results
+    CompensationLogResponse:
+      type: object
+      properties:
+        status:
           type: string
-        password:
+        count:
+          type: integer
+      required:
+      - count
+      - status
+    CompensationResult:
+      type: object
+      properties:
+        name:
           type: string
-          writeOnly: true
-        reset:
+        success:
           type: boolean
-          default: false
-      required:
-      - cluster_id
-    ClusterCredentialsUpdateResponse:
-      type: object
-      description: Response for update-credentials endpoint (cluster).
-      properties:
-        cluster:
-          $ref: '#/components/schemas/Cluster'
-        message:
+        attempts:
+          type: integer
+        total_duration:
+          type: number
+          format: double
+        error:
           type: string
+        executed_at:
+          type: string
+          format: date-time
       required:
-      - cluster
-      - message
+      - name
+      - success
     CreateWorkflowRequest:
       type: object
       description: Request for create_workflow endpoint.
@@ -5460,57 +5195,10 @@ components:
           type: string
         is_staff:
           type: boolean
-        is_superuser:
-          type: boolean
       required:
       - id
       - is_staff
-      - is_superuser
       - username
-    RuntimeSetting:
-      type: object
-      description: Runtime setting descriptor.
-      properties:
-        key:
-          type: string
-        value:
-          type: object
-        value_type:
-          type: string
-        description:
-          type: string
-        min_value:
-          type: integer
-          nullable: true
-        max_value:
-          type: integer
-          nullable: true
-        default:
-          type: object
-      required:
-      - key
-      - value
-      - value_type
-      - description
-      - default
-    RuntimeSettingUpdate:
-      type: object
-      description: Update runtime setting request.
-      properties:
-        value:
-          type: object
-      required:
-      - value
-    RuntimeSettingsResponse:
-      type: object
-      description: Response with runtime settings list.
-      properties:
-        settings:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeSetting'
-      required:
-      - settings
     CustomTokenObtainPair:
       type: object
       description: |-
@@ -5658,7 +5346,7 @@ components:
           description: Имя информационной базы на сервере 1С (если отличается от name)
           maxLength: 255
         status:
-          $ref: '#/components/schemas/StatusD4eEnum'
+          $ref: '#/components/schemas/DatabaseStatusEnum'
         status_display:
           type: string
           readOnly: true
@@ -5706,42 +5394,40 @@ components:
           readOnly: true
         sessions_deny:
           type: boolean
-          readOnly: true
           nullable: true
+          readOnly: true
         scheduled_jobs_deny:
           type: boolean
-          readOnly: true
           nullable: true
+          readOnly: true
         denied_from:
           type: string
-          readOnly: true
           nullable: true
-          description: RFC3339 start time for session blocking
+          readOnly: true
         denied_to:
           type: string
-          readOnly: true
           nullable: true
-          description: RFC3339 end time for session blocking
+          readOnly: true
         denied_message:
           type: string
-          readOnly: true
           nullable: true
+          readOnly: true
         permission_code:
           type: string
-          readOnly: true
           nullable: true
+          readOnly: true
         denied_parameter:
           type: string
-          readOnly: true
           nullable: true
+          readOnly: true
         last_health_error:
           type: string
-          readOnly: true
           nullable: true
+          readOnly: true
         last_health_error_code:
           type: string
-          readOnly: true
           nullable: true
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -5755,17 +5441,55 @@ components:
       - cluster_id
       - consecutive_failures
       - created_at
+      - denied_from
+      - denied_message
+      - denied_parameter
+      - denied_to
       - host
       - id
       - is_healthy
       - last_check
       - last_check_status
+      - last_health_error
+      - last_health_error_code
       - name
       - odata_url
       - password
+      - password_configured
+      - permission_code
+      - scheduled_jobs_deny
+      - sessions_deny
       - status_display
       - updated_at
       - username
+    DatabaseCredentialsUpdateRequest:
+      type: object
+      description: Request body for update_database_credentials endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database ID to update
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        reset:
+          type: boolean
+          default: false
+      required:
+      - database_id
+    DatabaseCredentialsUpdateResponse:
+      type: object
+      description: Response for update_database_credentials endpoint.
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        message:
+          type: string
+      required:
+      - database
+      - message
     DatabaseDetailResponse:
       type: object
       description: Response for get_database endpoint.
@@ -5779,198 +5503,34 @@ components:
           description: Cluster info if database belongs to a cluster
       required:
       - database
-    DatabaseCredentialsUpdateRequest:
+    DatabaseErrorDetail:
       type: object
-      description: Request body for update-credentials endpoint (database).
+      description: Error detail structure.
       properties:
-        database_id:
+        code:
           type: string
-        username:
+          description: Error code (e.g., MISSING_PARAMETER)
+        message:
           type: string
-        password:
-          type: string
-          writeOnly: true
-        reset:
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional error details
+      required:
+      - code
+      - message
+    DatabaseErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
           type: boolean
           default: false
+        error:
+          $ref: '#/components/schemas/DatabaseErrorDetail'
       required:
-      - database_id
-    DatabaseCredentialsUpdateResponse:
-      type: object
-      description: Response for update-credentials endpoint (database).
-      properties:
-        database:
-          $ref: '#/components/schemas/Database'
-        message:
-          type: string
-      required:
-      - database
-      - message
-    InfobaseUserMapping:
-      type: object
-      description: Manual mapping between CC users and infobase users.
-      properties:
-        id:
-          type: integer
-        database_id:
-          type: string
-        user:
-          allOf:
-          - $ref: '#/components/schemas/UserRef'
-          nullable: true
-        ib_username:
-          type: string
-        ib_display_name:
-          type: string
-          nullable: true
-        ib_roles:
-          type: array
-          items:
-            type: string
-        ib_password_configured:
-          type: boolean
-        auth_type:
-          type: string
-          enum:
-          - local
-          - ad
-          - service
-          - other
-        is_service:
-          type: boolean
-        notes:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - auth_type
-      - database_id
-      - ib_roles
-      - ib_username
-      - ib_password_configured
-      - id
-      - is_service
-      - created_at
-      - updated_at
-    InfobaseUserListResponse:
-      type: object
-      description: Response for list infobase users endpoint.
-      properties:
-        users:
-          type: array
-          items:
-            $ref: '#/components/schemas/InfobaseUserMapping'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-      - count
-      - total
-      - users
-    InfobaseUserCreateRequest:
-      type: object
-      description: Request body for create infobase user mapping.
-      properties:
-        database_id:
-          type: string
-        user_id:
-          type: integer
-          nullable: true
-        ib_username:
-          type: string
-        ib_display_name:
-          type: string
-        ib_roles:
-          type: array
-          items:
-            type: string
-        ib_password:
-          type: string
-          writeOnly: true
-        auth_type:
-          type: string
-          enum:
-          - local
-          - ad
-          - service
-          - other
-        is_service:
-          type: boolean
-        notes:
-          type: string
-      required:
-      - database_id
-      - ib_username
-    InfobaseUserUpdateRequest:
-      type: object
-      description: Request body for update infobase user mapping.
-      properties:
-        id:
-          type: integer
-        user_id:
-          type: integer
-          nullable: true
-        ib_username:
-          type: string
-        ib_display_name:
-          type: string
-        ib_roles:
-          type: array
-          items:
-            type: string
-        auth_type:
-          type: string
-          enum:
-          - local
-          - ad
-          - service
-          - other
-        is_service:
-          type: boolean
-        notes:
-          type: string
-      required:
-      - id
-    InfobaseUserPasswordSetRequest:
-      type: object
-      description: Request body for set infobase user password.
-      properties:
-        id:
-          type: integer
-        password:
-          type: string
-          writeOnly: true
-      required:
-      - id
-      - password
-    InfobaseUserPasswordResetRequest:
-      type: object
-      description: Request body for reset infobase user password.
-      properties:
-        id:
-          type: integer
-      required:
-      - id
-    InfobaseUserDeleteRequest:
-      type: object
-      description: Request body for delete infobase user mapping.
-      properties:
-        id:
-          type: integer
-      required:
-      - id
-    InfobaseUserDeleteResponse:
-      type: object
-      properties:
-        message:
-          type: string
-      required:
-      - message
+      - error
     DatabaseListResponse:
       type: object
       description: Response for list_databases endpoint.
@@ -5993,14 +5553,14 @@ components:
       type: object
       properties:
         user:
-          $ref: '#/components/schemas/UserRef'
+          $ref: '#/components/schemas/RbacUserRef'
         database:
           $ref: '#/components/schemas/DatabaseRef'
         level:
           type: string
         granted_by:
           allOf:
-          - $ref: '#/components/schemas/UserRef'
+          - $ref: '#/components/schemas/RbacUserRef'
           nullable: true
         granted_at:
           type: string
@@ -6053,6 +5613,49 @@ components:
       - cluster_id
       - id
       - name
+    DatabaseStatusEnum:
+      enum:
+      - active
+      - inactive
+      - error
+      - maintenance
+      type: string
+      description: |-
+        * `active` - Active
+        * `inactive` - Inactive
+        * `error` - Error
+        * `maintenance` - Maintenance
+    DatabaseStreamTicketRequest:
+      type: object
+      description: Request body for database stream ticket endpoint.
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        force:
+          type: boolean
+          default: false
+    DatabaseStreamTicketResponse:
+      type: object
+      description: Response for database stream ticket endpoint.
+      properties:
+        ticket:
+          type: string
+          description: Short-lived ticket for SSE connection
+        expires_in:
+          type: integer
+          description: Seconds until ticket expires
+        stream_url:
+          type: string
+          description: SSE endpoint URL to connect to
+        message:
+          type: string
+      required:
+      - expires_in
+      - message
+      - stream_url
+      - ticket
     DeleteWorkflowRequest:
       type: object
       description: Request for delete_workflow endpoint.
@@ -6125,7 +5728,7 @@ components:
       type: object
       properties:
         user:
-          $ref: '#/components/schemas/UserRef'
+          $ref: '#/components/schemas/RbacUserRef'
         clusters:
           type: array
           items:
@@ -6148,10 +5751,6 @@ components:
         message:
           type: string
           description: Human-readable error message
-        details:
-          type: object
-          additionalProperties: {}
-          description: Additional error details
       required:
       - code
       - message
@@ -6166,116 +5765,6 @@ components:
           $ref: '#/components/schemas/ErrorDetail'
       required:
       - error
-    TableFilterOption:
-      type: object
-      properties:
-        value:
-          type: string
-        label:
-          type: string
-      required:
-      - value
-      - label
-    TableFilterMetadata:
-      type: object
-      properties:
-        type:
-          type: string
-        operators:
-          type: array
-          items:
-            type: string
-        options:
-          type: array
-          items:
-            $ref: '#/components/schemas/TableFilterOption'
-        placeholder:
-          type: string
-      required:
-      - type
-    TableColumnMetadata:
-      type: object
-      properties:
-        key:
-          type: string
-        label:
-          type: string
-        group_key:
-          type: string
-          nullable: true
-        group_label:
-          type: string
-          nullable: true
-        sortable:
-          type: boolean
-        data_type:
-          type: string
-        filter:
-          $ref: '#/components/schemas/TableFilterMetadata'
-        server_field:
-          type: string
-      required:
-      - key
-      - label
-    TableMetadataResponse:
-      type: object
-      description: Table metadata for server-driven UI configuration.
-      properties:
-        table_id:
-          type: string
-        version:
-          type: string
-        columns:
-          type: array
-          items:
-            $ref: '#/components/schemas/TableColumnMetadata'
-      required:
-      - table_id
-      - version
-      - columns
-    ExecuteOperationRequest:
-      type: object
-      description: Request body for execute_operation endpoint.
-      properties:
-        operation_type:
-          allOf:
-          - $ref: '#/components/schemas/ExecuteOperationRequestOperationTypeEnum'
-          description: |-
-            Operation type to execute
-
-            * `lock_scheduled_jobs` - Lock Scheduled Jobs
-            * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
-            * `block_sessions` - Block Sessions
-            * `unblock_sessions` - Unblock Sessions
-            * `terminate_sessions` - Terminate Sessions
-            * `create` - Create Records
-            * `update` - Update Records
-            * `delete` - Delete Records
-            * `query` - Query Records
-            * `install_extension` - Install Extension
-            * `remove_extension` - Remove Extension
-            * `config_update` - Update Configuration
-            * `config_load` - Load Configuration
-            * `config_dump` - Dump Configuration
-            * `ibcmd_backup` - IBCMD Backup
-            * `ibcmd_restore` - IBCMD Restore
-            * `ibcmd_replicate` - IBCMD Replicate
-            * `ibcmd_create` - IBCMD Create
-        database_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: List of database UUIDs
-          maxItems: 500
-          minItems: 1
-        config:
-          type: object
-          additionalProperties: {}
-          description: Operation-specific configuration (fields depend on operation_type)
-      required:
-      - database_ids
-      - operation_type
     ExecuteIbcmdOperationRequest:
       type: object
       description: Request body for execute_ibcmd_operation endpoint.
@@ -6301,7 +5790,63 @@ components:
         config:
           type: object
           additionalProperties: {}
-          description: Operation-specific configuration (dbms, db_server, db_name, etc.)
+          description: Operation-specific configuration (dbms, db_server, db_name,
+            etc.)
+      required:
+      - database_ids
+      - operation_type
+    ExecuteIbcmdOperationRequestOperationTypeEnum:
+      enum:
+      - ibcmd_backup
+      - ibcmd_restore
+      - ibcmd_replicate
+      - ibcmd_create
+      type: string
+      description: |-
+        * `ibcmd_backup` - IBCMD Backup
+        * `ibcmd_restore` - IBCMD Restore
+        * `ibcmd_replicate` - IBCMD Replicate
+        * `ibcmd_create` - IBCMD Create
+    ExecuteOperationRequest:
+      type: object
+      description: Request body for execute_operation endpoint.
+      properties:
+        operation_type:
+          allOf:
+          - $ref: '#/components/schemas/ExecuteOperationRequestOperationTypeEnum'
+          description: |-
+            Operation type to execute
+
+            * `lock_scheduled_jobs` - Lock Scheduled Jobs
+            * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+            * `block_sessions` - Block Sessions
+            * `unblock_sessions` - Unblock Sessions
+            * `terminate_sessions` - Terminate Sessions
+            * `create` - Create Records
+            * `update` - Update Records
+            * `delete` - Delete Records
+            * `query` - Query Records
+            * `ibcmd_backup` - IBCMD Backup
+            * `ibcmd_restore` - IBCMD Restore
+            * `ibcmd_replicate` - IBCMD Replicate
+            * `ibcmd_create` - IBCMD Create
+            * `install_extension` - Install Extension
+            * `remove_extension` - Remove Extension
+            * `config_update` - Update Configuration
+            * `config_load` - Load Configuration
+            * `config_dump` - Dump Configuration
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of database UUIDs
+          maxItems: 500
+          minItems: 1
+        config:
+          type: object
+          additionalProperties: {}
+          description: Operation-specific configuration (e.g., message for block_sessions)
       required:
       - database_ids
       - operation_type
@@ -6316,15 +5861,15 @@ components:
       - update
       - delete
       - query
+      - ibcmd_backup
+      - ibcmd_restore
+      - ibcmd_replicate
+      - ibcmd_create
       - install_extension
       - remove_extension
       - config_update
       - config_load
       - config_dump
-      - ibcmd_backup
-      - ibcmd_restore
-      - ibcmd_replicate
-      - ibcmd_create
       type: string
       description: |-
         * `lock_scheduled_jobs` - Lock Scheduled Jobs
@@ -6336,27 +5881,15 @@ components:
         * `update` - Update Records
         * `delete` - Delete Records
         * `query` - Query Records
+        * `ibcmd_backup` - IBCMD Backup
+        * `ibcmd_restore` - IBCMD Restore
+        * `ibcmd_replicate` - IBCMD Replicate
+        * `ibcmd_create` - IBCMD Create
         * `install_extension` - Install Extension
         * `remove_extension` - Remove Extension
         * `config_update` - Update Configuration
         * `config_load` - Load Configuration
         * `config_dump` - Dump Configuration
-        * `ibcmd_backup` - IBCMD Backup
-        * `ibcmd_restore` - IBCMD Restore
-        * `ibcmd_replicate` - IBCMD Replicate
-        * `ibcmd_create` - IBCMD Create
-    ExecuteIbcmdOperationRequestOperationTypeEnum:
-      enum:
-      - ibcmd_backup
-      - ibcmd_restore
-      - ibcmd_replicate
-      - ibcmd_create
-      type: string
-      description: |-
-        * `ibcmd_backup` - IBCMD Backup
-        * `ibcmd_restore` - IBCMD Restore
-        * `ibcmd_replicate` - IBCMD Replicate
-        * `ibcmd_create` - IBCMD Create
     ExecuteOperationResponse:
       type: object
       description: Response for execute_operation endpoint.
@@ -6670,6 +6203,20 @@ components:
       - deleted
       - file_id
       - message
+    FileUploadRequest:
+      type: object
+      description: Request for file upload endpoint.
+      properties:
+        file:
+          type: string
+          format: uri
+        purpose:
+          $ref: '#/components/schemas/PurposeEnum'
+        expiry_hours:
+          type: integer
+      required:
+      - file
+      - purpose
     FileUploadResponse:
       type: object
       description: Response for file upload endpoint.
@@ -6756,18 +6303,9 @@ components:
       - database_id
       - level
       - user_id
-    HealthCheckRequest:
+    HealthCheckEnqueueResponse:
       type: object
-      description: Request body for health_check endpoint.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID to check
-      required:
-      - database_id
-    HealthCheckResponse:
-      type: object
-      description: Response for health_check endpoint.
+      description: Response for health_check endpoints (operation queued).
       properties:
         operation_id:
           type: string
@@ -6786,6 +6324,15 @@ components:
       - operation_id
       - status
       - total_tasks
+    HealthCheckRequest:
+      type: object
+      description: Request body for health_check endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID to check
+      required:
+      - database_id
     HistoryDataPoint:
       type: object
       description: Single data point in history.
@@ -6811,6 +6358,145 @@ components:
           description: Error rate (0.0 to 1.0)
       required:
       - timestamp
+    InfobaseUserListResponse:
+      type: object
+      description: Response for list_infobase_users endpoint.
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/InfobaseUserMapping'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - total
+      - users
+    InfobaseUserMapping:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        database_id:
+          type: string
+          readOnly: true
+        user:
+          allOf:
+          - $ref: '#/components/schemas/UserRef'
+          nullable: true
+        ib_username:
+          type: string
+          maxLength: 128
+        ib_display_name:
+          type: string
+          maxLength: 255
+        ib_roles:
+          type: object
+          additionalProperties: {}
+        ib_password_configured:
+          type: boolean
+          readOnly: true
+        auth_type:
+          $ref: '#/components/schemas/AuthTypeEnum'
+        is_service:
+          type: boolean
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - database_id
+      - ib_password_configured
+      - ib_username
+      - id
+      - updated_at
+    InfobaseUserMappingCreate:
+      type: object
+      properties:
+        database_id:
+          type: string
+        user_id:
+          type: integer
+          nullable: true
+        ib_username:
+          type: string
+        ib_display_name:
+          type: string
+        ib_roles:
+          type: array
+          items:
+            type: string
+        ib_password:
+          type: string
+          writeOnly: true
+        auth_type:
+          $ref: '#/components/schemas/AuthTypeEnum'
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - database_id
+      - ib_username
+    InfobaseUserMappingDelete:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    InfobaseUserMappingUpdate:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        ib_username:
+          type: string
+        ib_display_name:
+          type: string
+        ib_roles:
+          type: array
+          items:
+            type: string
+        auth_type:
+          $ref: '#/components/schemas/AuthTypeEnum'
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - id
+    InfobaseUserPasswordReset:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    InfobaseUserPasswordSet:
+      type: object
+      properties:
+        id:
+          type: integer
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - id
+      - password
     InstallProgressDatabase:
       type: object
       description: Database status in installation progress.
@@ -7007,45 +6693,15 @@ components:
       - cancelled
       - message
       - operation_id
-    OperationStreamStatus:
-      type: object
-      description: Operation SSE stream status for current user.
-      properties:
-        active_streams:
-          type: integer
-        max_streams:
-          type: integer
-      required:
-      - active_streams
-      - max_streams
-    OperationMuxStreamStatus:
-      type: object
-      description: Operation multiplex SSE stream status for current user.
-      properties:
-        active_streams:
-          type: integer
-        max_streams:
-          type: integer
-        active_subscriptions:
-          type: integer
-        max_subscriptions:
-          type: integer
-      required:
-      - active_streams
-      - max_streams
-      - active_subscriptions
-      - max_subscriptions
     OperationCatalogItem:
       type: object
       description: Operation catalog entry for Operations Center.
       properties:
         id:
           type: string
+          description: Catalog item identifier
         kind:
-          type: string
-          enum:
-          - operation
-          - template
+          $ref: '#/components/schemas/OperationCatalogItemKindEnum'
         operation_type:
           type: string
           nullable: true
@@ -7078,18 +6734,26 @@ components:
           type: string
           nullable: true
       required:
+      - category
+      - deprecated
+      - description
+      - driver
+      - has_ui_form
       - id
       - kind
       - label
-      - description
-      - driver
-      - category
       - requires_config
-      - has_ui_form
-      - deprecated
+    OperationCatalogItemKindEnum:
+      enum:
+      - operation
+      - template
+      type: string
+      description: |-
+        * `operation` - operation
+        * `template` - template
     OperationCatalogResponse:
       type: object
-      description: Response for operations catalog endpoint.
+      description: Response for operation catalog endpoint.
       properties:
         items:
           type: array
@@ -7098,8 +6762,8 @@ components:
         count:
           type: integer
       required:
-      - items
       - count
+      - items
     OperationDetailResponse:
       type: object
       description: Response for get_operation endpoint.
@@ -7116,6 +6780,34 @@ components:
       required:
       - operation
       - progress
+    OperationErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code (e.g., MISSING_PARAMETER)
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional error details
+      required:
+      - code
+      - message
+    OperationErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/OperationErrorDetail'
+      required:
+      - error
     OperationListResponse:
       type: object
       description: Response for list_operations endpoint.
@@ -7134,6 +6826,56 @@ components:
       - count
       - operations
       - total
+    OperationMuxStreamStatus:
+      type: object
+      description: Response for multiplex stream status.
+      properties:
+        active_streams:
+          type: integer
+          description: Active multiplex SSE streams for current user
+        max_streams:
+          type: integer
+          description: Maximum allowed multiplex SSE streams
+        active_subscriptions:
+          type: integer
+          description: Active operation subscriptions for user
+        max_subscriptions:
+          type: integer
+          description: Maximum allowed subscriptions
+      required:
+      - active_streams
+      - active_subscriptions
+      - max_streams
+      - max_subscriptions
+    OperationMuxSubscribe:
+      type: object
+      description: Request body for multiplex stream subscribe.
+      properties:
+        operation_ids:
+          type: array
+          items:
+            type: string
+          description: Operation IDs to subscribe to
+      required:
+      - operation_ids
+    OperationMuxTicketRequest:
+      type: object
+      description: Request body for multiplex stream ticket.
+      properties:
+        client_id:
+          type: string
+          description: Optional client identifier
+    OperationMuxUnsubscribe:
+      type: object
+      description: Request body for multiplex stream unsubscribe.
+      properties:
+        operation_ids:
+          type: array
+          items:
+            type: string
+          description: Operation IDs to unsubscribe from
+      required:
+      - operation_ids
     OperationProgress:
       type: object
       description: Progress information for an operation.
@@ -7163,6 +6905,33 @@ components:
       - percent
       - processing
       - total
+    OperationStatusEnum:
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `running` - Running
+        * `completed` - Completed
+        * `failed` - Failed
+        * `cancelled` - Cancelled
+    OperationStreamStatus:
+      type: object
+      description: Response for operation stream status.
+      properties:
+        active_streams:
+          type: integer
+          description: Active SSE streams for current user
+        max_streams:
+          type: integer
+          description: Maximum allowed SSE streams
+      required:
+      - active_streams
+      - max_streams
     OperationTemplate:
       type: object
       description: Serializer for OperationTemplate model.
@@ -7274,6 +7043,22 @@ components:
           default: 300
       required:
       - parallel_nodes
+    PatchedRuntimeSettingUpdate:
+      type: object
+      properties:
+        value:
+          type: object
+          additionalProperties: {}
+    PendingEventsResponse:
+      type: object
+      properties:
+        pending_count:
+          type: integer
+        failed_count:
+          type: integer
+      required:
+      - failed_count
+      - pending_count
     PrometheusMetric:
       type: object
       description: Prometheus metrics for a service.
@@ -7287,6 +7072,61 @@ components:
       required:
       - metrics
       - service
+    PurposeEnum:
+      enum:
+      - operation_input
+      - extension
+      - export
+      type: string
+      description: |-
+        * `operation_input` - Operation Input
+        * `extension` - Extension File
+        * `export` - Export File
+    RbacErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+    RbacErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/RbacErrorDetail'
+      required:
+      - error
+    RbacUserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/RbacUserRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - total
+      - users
+    RbacUserRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+      required:
+      - id
+      - username
     ResetClusterInfo:
       type: object
       description: Info about reset cluster.
@@ -7302,6 +7142,15 @@ components:
       - id
       - name
       - old_status
+    ResetSyncStatusRequest:
+      type: object
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+        all:
+          type: boolean
+          default: false
     ResetSyncStatusResponse:
       type: object
       description: Response for reset_sync_status endpoint.
@@ -7318,18 +7167,6 @@ components:
       - clusters
       - message
       - reset_count
-    ResetSyncStatusRequest:
-      type: object
-      description: Optional request body for reset_sync_status endpoint.
-      properties:
-        cluster_id:
-          type: string
-          format: uuid
-          description: Cluster UUID (optional, alternative to query param)
-        all:
-          type: boolean
-          default: false
-          description: Reset all stuck clusters (backward compatibility)
     RetryInstallationRequest:
       type: object
       description: Request body for retry_installation endpoint.
@@ -7395,35 +7232,42 @@ components:
           type: boolean
       required:
       - deleted
-    DatabaseStreamTicketRequest:
+    RuntimeSetting:
       type: object
-      description: Request body for database stream ticket endpoint.
       properties:
-        cluster_id:
+        key:
           type: string
-          format: uuid
-          nullable: true
-          description: Optional cluster filter for SSE stream
-        force:
-          type: boolean
-          description: Replace an existing active stream for the same user
-    DatabaseStreamTicketResponse:
-      type: object
-      description: Response for database stream ticket endpoint.
-      properties:
-        ticket:
+        value:
+          type: object
+          additionalProperties: {}
+        value_type:
           type: string
-          description: Short-lived ticket for SSE connection
-        expires_in:
+        description:
+          type: string
+        min_value:
           type: integer
-          description: Seconds until ticket expires
-        stream_url:
-          type: string
-          description: SSE endpoint URL to connect to
+          nullable: true
+        max_value:
+          type: integer
+          nullable: true
+        default:
+          type: object
+          additionalProperties: {}
       required:
-      - expires_in
-      - stream_url
-      - ticket
+      - default
+      - description
+      - key
+      - value
+      - value_type
+    RuntimeSettingsResponse:
+      type: object
+      properties:
+        settings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeSetting'
+      required:
+      - settings
     SSETicketRequest:
       type: object
       description: Request body for get_stream_ticket endpoint.
@@ -7436,50 +7280,6 @@ components:
           description: Optional client identifier
       required:
       - operation_id
-    OperationMuxTicketRequest:
-      type: object
-      description: Request body for multiplex stream ticket.
-      properties:
-        client_id:
-          type: string
-          description: Optional client identifier
-    OperationMuxSubscribeRequest:
-      type: object
-      description: Request body for multiplex stream subscribe/unsubscribe.
-      properties:
-        operation_ids:
-          type: array
-          items:
-            type: string
-      required:
-      - operation_ids
-    OperationMuxSubscribeResponse:
-      type: object
-      description: Response for multiplex stream subscribe/unsubscribe.
-      properties:
-        subscribed:
-          type: array
-          items:
-            type: string
-        denied:
-          type: array
-          items:
-            type: string
-        missing:
-          type: array
-          items:
-            type: string
-        unsubscribed:
-          type: array
-          items:
-            type: string
-        active_subscriptions:
-          type: integer
-        max_subscriptions:
-          type: integer
-      required:
-      - active_subscriptions
-      - max_subscriptions
     SSETicketResponse:
       type: object
       description: Response for get_stream_ticket endpoint.
@@ -7571,6 +7371,35 @@ components:
       - display_name
       - minutes
       - service
+    ServiceMeshErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        available_services:
+          type: array
+          items:
+            type: string
+          description: List of available service names
+      required:
+      - code
+      - message
+    ServiceMeshErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/ServiceMeshErrorDetail'
+      required:
+      - error
     ServiceMeshSummary:
       type: object
       description: Summary statistics for service mesh.
@@ -7681,7 +7510,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PrometheusMetric'
-          description: Raw Prometheus metrics (only if include_prometheus=true)
+          description: Raw Prometheus metrics (reserved, may be empty even if requested)
       required:
       - services
       - status
@@ -7697,6 +7526,57 @@ components:
         * `healthy` - healthy
         * `degraded` - degraded
         * `unhealthy` - unhealthy
+    SetDatabaseStatusRequest:
+      type: object
+      description: Request body for set_status endpoint.
+      properties:
+        database_ids:
+          type: array
+          items:
+            type: string
+          description: List of database IDs to update
+          maxItems: 500
+          minItems: 1
+        status:
+          allOf:
+          - $ref: '#/components/schemas/SetDatabaseStatusRequestStatusEnum'
+          description: |-
+            New database status (active, inactive, maintenance)
+
+            * `active` - active
+            * `inactive` - inactive
+            * `maintenance` - maintenance
+        reason:
+          type: string
+      required:
+      - database_ids
+      - status
+    SetDatabaseStatusRequestStatusEnum:
+      enum:
+      - active
+      - inactive
+      - maintenance
+      type: string
+      description: |-
+        * `active` - active
+        * `inactive` - inactive
+        * `maintenance` - maintenance
+    SetDatabaseStatusResponse:
+      type: object
+      description: Response for set_status endpoint.
+      properties:
+        updated:
+          type: integer
+        not_found:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+      required:
+      - not_found
+      - status
+      - updated
     SourceEnum:
       enum:
       - direct
@@ -7705,32 +7585,39 @@ components:
       description: |-
         * `direct` - direct
         * `cluster` - cluster
-    Status2a6Enum:
-      enum:
-      - pending
-      - running
-      - completed
-      - failed
-      - cancelled
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `running` - Running
-        * `completed` - Completed
-        * `failed` - Failed
-        * `cancelled` - Cancelled
-    StatusD4eEnum:
-      enum:
-      - active
-      - inactive
-      - error
-      - maintenance
-      type: string
-      description: |-
-        * `active` - Active
-        * `inactive` - Inactive
-        * `error` - Error
-        * `maintenance` - Maintenance
+    StoreFailedEventRequest:
+      type: object
+      properties:
+        channel:
+          type: string
+        event_type:
+          type: string
+        correlation_id:
+          type: string
+        payload:
+          type: object
+          additionalProperties: {}
+        source_service:
+          type: string
+        original_timestamp:
+          type: string
+          format: date-time
+      required:
+      - channel
+      - correlation_id
+      - event_type
+      - payload
+      - source_service
+    StoreFailedEventResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        event_id:
+          type: integer
+      required:
+      - event_id
+      - status
     SubWorkflowConfig:
       type: object
       description: Serializer for SubWorkflowConfig Pydantic model.
@@ -7760,11 +7647,7 @@ components:
         ras_default_server:
           type: string
           description: Default RAS server address for new clusters (e.g., localhost:1545)
-        ras_adapter_url:
-          type: string
-          description: RAS Adapter service URL (e.g., http://localhost:8188)
       required:
-      - ras_adapter_url
       - ras_default_server
     SystemHealthResponse:
       type: object
@@ -7818,6 +7701,73 @@ components:
       - offline
       - online
       - total
+    TableColumnMetadata:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        group_key:
+          type: string
+          nullable: true
+        group_label:
+          type: string
+          nullable: true
+        sortable:
+          type: boolean
+          default: false
+        data_type:
+          type: string
+        filter:
+          $ref: '#/components/schemas/TableFilterMetadata'
+        server_field:
+          type: string
+      required:
+      - key
+      - label
+    TableFilterMetadata:
+      type: object
+      properties:
+        type:
+          type: string
+        operators:
+          type: array
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableFilterOption'
+        placeholder:
+          type: string
+      required:
+      - type
+    TableFilterOption:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+      - label
+      - value
+    TableMetadataResponse:
+      type: object
+      properties:
+        table_id:
+          type: string
+        version:
+          type: string
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableColumnMetadata'
+      required:
+      - columns
+      - table_id
+      - version
     Task:
       type: object
       description: Serializer for Task model.
@@ -7984,6 +7934,30 @@ components:
       - input_schema
       - name
       - workflow_id
+    TimelineErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+      required:
+      - code
+      - message
+    TimelineErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/TimelineErrorDetail'
+      required:
+      - error
     TimelineEvent:
       type: object
       description: Timeline event structure.
@@ -8050,6 +8024,34 @@ components:
         * `parallel` - parallel
         * `loop` - loop
         * `subworkflow` - subworkflow
+    UiErrorDetail:
+      type: object
+      description: Error detail structure.
+      properties:
+        code:
+          type: string
+          description: Error code (e.g., MISSING_PARAMETER)
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: {}
+          description: Additional error details
+      required:
+      - code
+      - message
+    UiErrorResponse:
+      type: object
+      description: Standard error response.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/UiErrorDetail'
+      required:
+      - error
     UpdateWorkflowRequest:
       type: object
       description: Request for update_workflow endpoint.
@@ -8071,6 +8073,18 @@ components:
           type: boolean
       required:
       - workflow_id
+    UploadExtensionRequest:
+      type: object
+      description: Request for upload_extension endpoint.
+      properties:
+        file:
+          type: string
+          format: uri
+          description: Extension file (.cfe)
+        filename:
+          type: string
+      required:
+      - file
     UploadExtensionResponse:
       type: object
       description: Response for upload_extension endpoint.
@@ -8126,19 +8140,86 @@ components:
       - purpose
       - size
       - size_human
-    UserRef:
+    User:
       type: object
       properties:
         id:
           type: integer
         username:
           type: string
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        is_staff:
+          type: boolean
+        is_active:
+          type: boolean
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        date_joined:
+          type: string
+          format: date-time
       required:
+      - date_joined
+      - email
+      - first_name
       - id
+      - is_active
+      - is_staff
+      - last_login
+      - last_name
       - username
+    UserCreateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        is_staff:
+          type: boolean
+        is_active:
+          type: boolean
+      required:
+      - password
+      - username
+    UserErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: {}
+      required:
+      - code
+      - message
+    UserErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/UserErrorDetail'
+      required:
+      - error
     UserListResponse:
       type: object
-      description: Response for list users endpoint.
       properties:
         users:
           type: array
@@ -8152,87 +8233,29 @@ components:
       - count
       - total
       - users
-    UserRefListResponse:
+    UserPasswordRequest:
       type: object
-      description: Response for list user refs endpoint.
       properties:
-        users:
-          type: array
-          items:
-            $ref: '#/components/schemas/UserRef'
-        count:
+        id:
           type: integer
-        total:
-          type: integer
+        password:
+          type: string
+          writeOnly: true
       required:
-      - count
-      - total
-      - users
-    User:
+      - id
+      - password
+    UserRef:
       type: object
-      description: User model (admin view).
       properties:
         id:
           type: integer
         username:
           type: string
-        email:
-          type: string
-        first_name:
-          type: string
-        last_name:
-          type: string
-        is_staff:
-          type: boolean
-        is_superuser:
-          type: boolean
-        is_active:
-          type: boolean
-        last_login:
-          type: string
-          format: date-time
-          nullable: true
-        date_joined:
-          type: string
-          format: date-time
       required:
-      - date_joined
       - id
-      - is_active
-      - is_staff
-      - is_superuser
-      - last_login
-      - username
-    UserCreateRequest:
-      type: object
-      description: Request body for create user.
-      properties:
-        username:
-          type: string
-        password:
-          type: string
-          writeOnly: true
-        email:
-          type: string
-        first_name:
-          type: string
-        last_name:
-          type: string
-        is_staff:
-          type: boolean
-          default: false
-        is_superuser:
-          type: boolean
-          default: false
-        is_active:
-          type: boolean
-          default: true
-      required:
-      - password
       - username
     UserUpdateRequest:
       type: object
-      description: Request body for update user.
       properties:
         id:
           type: integer
@@ -8246,24 +8269,10 @@ components:
           type: string
         is_staff:
           type: boolean
-        is_superuser:
-          type: boolean
         is_active:
           type: boolean
       required:
       - id
-    UserPasswordRequest:
-      type: object
-      description: Request body for set user password.
-      properties:
-        id:
-          type: integer
-        password:
-          type: string
-          writeOnly: true
-      required:
-      - id
-      - password
     ValidateWorkflowRequest:
       type: object
       description: Request for validate_workflow endpoint.
@@ -8402,7 +8411,7 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/Status2a6Enum'
+          - $ref: '#/components/schemas/OperationStatusEnum'
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8521,7 +8530,7 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/Status2a6Enum'
+          - $ref: '#/components/schemas/OperationStatusEnum'
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8973,181 +8982,6 @@ components:
             type: string
       required:
       - valid
-    ArtifactKindEnum:
-      enum:
-      - extension
-      - config_xml
-      - dt_backup
-      - epf
-      - erf
-      - ibcmd_package
-      - ras_script
-      - other
-      type: string
-    Artifact:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        kind:
-          $ref: '#/components/schemas/ArtifactKindEnum'
-        is_versioned:
-          type: boolean
-        tags:
-          type: array
-          items:
-            type: string
-        created_at:
-          type: string
-          format: date-time
-      required:
-      - id
-      - name
-      - kind
-      - is_versioned
-      - created_at
-    ArtifactListResponse:
-      type: object
-      properties:
-        artifacts:
-          type: array
-          items:
-            $ref: '#/components/schemas/Artifact'
-        count:
-          type: integer
-      required:
-      - artifacts
-      - count
-    ArtifactCreateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        kind:
-          $ref: '#/components/schemas/ArtifactKindEnum'
-        is_versioned:
-          type: boolean
-        tags:
-          type: array
-          items:
-            type: string
-      required:
-      - name
-      - kind
-    ArtifactCreateResponse:
-      type: object
-      properties:
-        artifact:
-          $ref: '#/components/schemas/Artifact'
-        message:
-          type: string
-      required:
-      - artifact
-      - message
-    ArtifactVersion:
-      type: object
-      properties:
-        id:
-          type: string
-        version:
-          type: string
-        filename:
-          type: string
-        storage_key:
-          type: string
-        size:
-          type: integer
-        checksum:
-          type: string
-        content_type:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: {}
-        created_at:
-          type: string
-          format: date-time
-      required:
-      - id
-      - version
-      - filename
-      - storage_key
-      - size
-      - checksum
-      - content_type
-      - metadata
-      - created_at
-    ArtifactVersionListResponse:
-      type: object
-      properties:
-        versions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ArtifactVersion'
-        count:
-          type: integer
-      required:
-      - versions
-      - count
-    ArtifactVersionUploadRequest:
-      type: object
-      properties:
-        file:
-          type: string
-          format: binary
-        version:
-          type: string
-        filename:
-          type: string
-        metadata:
-          type: string
-      required:
-      - file
-    ArtifactAlias:
-      type: object
-      properties:
-        id:
-          type: string
-        alias:
-          type: string
-        version:
-          type: string
-        version_id:
-          type: string
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - id
-      - alias
-      - version
-      - version_id
-      - updated_at
-    ArtifactAliasListResponse:
-      type: object
-      properties:
-        aliases:
-          type: array
-          items:
-            $ref: '#/components/schemas/ArtifactAlias'
-        count:
-          type: integer
-      required:
-      - aliases
-      - count
-    ArtifactAliasUpsertRequest:
-      type: object
-      properties:
-        alias:
-          type: string
-        version:
-          type: string
-        version_id:
-          type: string
-      required:
-      - alias
   securitySchemes:
     bearerAuth:
       type: http

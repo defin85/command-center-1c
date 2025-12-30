@@ -11,17 +11,17 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 
-class ErrorDetailSerializer(serializers.Serializer):
+class UiErrorDetailSerializer(serializers.Serializer):
     """Error detail structure."""
     code = serializers.CharField(help_text="Error code (e.g., MISSING_PARAMETER)")
     message = serializers.CharField(help_text="Human-readable error message")
     details = serializers.DictField(required=False, help_text="Additional error details")
 
 
-class ErrorResponseSerializer(serializers.Serializer):
+class UiErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
-    error = ErrorDetailSerializer()
+    error = UiErrorDetailSerializer()
 
 
 class TableFilterOptionSerializer(serializers.Serializer):
@@ -1351,16 +1351,6 @@ TABLE_METADATA = {
                 "server_field": "is_staff",
             },
             {
-                "key": "is_superuser",
-                "label": "Superuser",
-                "group_key": "meta",
-                "group_label": "Meta",
-                "sortable": False,
-                "data_type": "boolean",
-                "filter": {"type": "boolean", "operators": ["eq"], "placeholder": "Superuser"},
-                "server_field": "is_superuser",
-            },
-            {
                 "key": "is_active",
                 "label": "Active",
                 "group_key": "meta",
@@ -1475,8 +1465,8 @@ TABLE_METADATA = {
     ],
     responses={
         200: TableMetadataResponseSerializer,
-        400: ErrorResponseSerializer,
-        404: ErrorResponseSerializer,
+        400: UiErrorResponseSerializer,
+        404: UiErrorResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
     }
 )

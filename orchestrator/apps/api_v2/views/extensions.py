@@ -19,7 +19,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.databases.models import Database, ExtensionInstallation, PermissionLevel
 from apps.databases.serializers import ExtensionInstallationSerializer
 from apps.databases.services import PermissionService
-from apps.api_v2.views.clusters import ErrorResponseSerializer
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -866,6 +866,12 @@ class ExtensionStorageListResponseSerializer(serializers.Serializer):
     count = serializers.IntegerField(help_text="Number of extensions in storage")
 
 
+class UploadExtensionRequestSerializer(serializers.Serializer):
+    """Request for upload_extension endpoint."""
+    file = serializers.FileField(help_text="Extension file (.cfe)")
+    filename = serializers.CharField(required=False, allow_blank=True)
+
+
 class UploadExtensionResponseSerializer(serializers.Serializer):
     """Response for upload_extension endpoint."""
     message = serializers.CharField(help_text="Status message")
@@ -934,6 +940,7 @@ def list_extension_storage(request):
     tags=['v2'],
     summary='Upload extension file',
     description='Upload a .cfe extension file to storage for later installation.',
+    request=UploadExtensionRequestSerializer,
     responses={
         201: UploadExtensionResponseSerializer,
         400: ErrorResponseSerializer,

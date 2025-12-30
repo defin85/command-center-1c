@@ -16,7 +16,6 @@ class ServiceUser:
         self.is_authenticated = True
         self.is_active = True
         self.is_staff = False
-        self.is_superuser = False
         
     @property
     def username(self):

@@ -35,7 +35,7 @@
   2. Выбор баз для импорта
   3. Импорт в Database модель
 - ✅ Session-based state management
-- ✅ Permission check (superuser only)
+- ✅ Permission check (staff only)
 - ✅ Полная обработка ошибок с user-friendly messages
 
 **Методы:**
@@ -182,7 +182,7 @@ Host извлекается из:
 - `ValueError` → невалидный response format
 
 **Django Admin:**
-- Permission denied → только superuser
+- Permission denied → только staff
 - Service unavailable → health check failed
 - Session expired → restart workflow
 - Import errors → показываются в messages + логируются
@@ -200,9 +200,9 @@ Host извлекается из:
    password = EncryptedCharField(max_length=255)
    ```
 
-3. **Superuser only**:
+3. **Staff only**:
    ```python
-   if not request.user.is_superuser:
+   if not request.user.is_staff:
        return redirect(...)
    ```
 
@@ -248,7 +248,7 @@ Host извлекается из:
    - После импорта нужно установить username/password вручную
    - Решение: в будущем добавить bulk edit
 
-3. **Superuser only**:
+3. **Staff only**:
    - Обычные пользователи не могут запустить синхронизацию
    - Решение: в будущем добавить custom permission
 

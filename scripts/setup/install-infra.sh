@@ -39,6 +39,8 @@
 #   MINIO_DATA_DIR      MinIO data dir (default: /var/lib/minio)
 #   MINIO_ADDRESS       MinIO bind address (default: :9000)
 #   MINIO_CONSOLE_ADDRESS MinIO console address (default: :9001)
+#   MINIO_SERVER_URL    MinIO server URL (default: http://localhost:9000)
+#   MINIO_BROWSER_REDIRECT_URL MinIO console URL (default: http://localhost:9001)
 #
 # Examples:
 #   ./scripts/setup/install-infra.sh                  # Полная установка
@@ -121,13 +123,25 @@ MINIO_ROOT_USER="${MINIO_ROOT_USER:-$MINIO_ACCESS_KEY}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$MINIO_SECRET_KEY}"
 MINIO_PROMETHEUS_AUTH_TYPE="${MINIO_PROMETHEUS_AUTH_TYPE:-public}"
 
+minio_endpoint="${MINIO_ENDPOINT#*://}"
+minio_host="${minio_endpoint%%:*}"
+minio_port="${minio_endpoint##*:}"
+if [[ "$minio_host" == "$minio_port" ]]; then
+    minio_host="localhost"
+    minio_port="9000"
+fi
+
 if [[ -z "$MINIO_ADDRESS" ]]; then
-    minio_port="${MINIO_ENDPOINT##*:}"
-    if [[ "$minio_port" == "$MINIO_ENDPOINT" ]]; then
-        minio_port="9000"
-    fi
     MINIO_ADDRESS=":${minio_port}"
 fi
+
+minio_console_port="${MINIO_CONSOLE_ADDRESS##*:}"
+if [[ "$minio_console_port" == "$MINIO_CONSOLE_ADDRESS" ]]; then
+    minio_console_port="9001"
+fi
+
+MINIO_SERVER_URL="${MINIO_SERVER_URL:-http://${minio_host}:${minio_port}}"
+MINIO_BROWSER_REDIRECT_URL="${MINIO_BROWSER_REDIRECT_URL:-http://${minio_host}:${minio_console_port}}"
 
 ##############################################################################
 # CLI ARGUMENTS
@@ -239,6 +253,8 @@ Environment Variables (from .env.local):
   MINIO_DATA_DIR      MinIO data dir (default: /var/lib/minio)
   MINIO_ADDRESS       MinIO bind address (default: :9000)
   MINIO_CONSOLE_ADDRESS MinIO console address (default: :9001)
+  MINIO_SERVER_URL    MinIO server URL (default: http://localhost:9000)
+  MINIO_BROWSER_REDIRECT_URL MinIO console URL (default: http://localhost:9001)
 
 Examples:
   ./scripts/setup/install-infra.sh                  # Полная установка
@@ -549,6 +565,8 @@ install_minio() {
 MINIO_DATA_DIR=${MINIO_DATA_DIR}
 MINIO_ADDRESS=${MINIO_ADDRESS}
 MINIO_CONSOLE_ADDRESS=${MINIO_CONSOLE_ADDRESS}
+MINIO_SERVER_URL=${MINIO_SERVER_URL}
+MINIO_BROWSER_REDIRECT_URL=${MINIO_BROWSER_REDIRECT_URL}
 MINIO_ROOT_USER=${MINIO_ROOT_USER}
 MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 MINIO_PROMETHEUS_AUTH_TYPE=${MINIO_PROMETHEUS_AUTH_TYPE}

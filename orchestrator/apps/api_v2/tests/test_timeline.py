@@ -21,12 +21,13 @@ def user():
 
 
 @pytest.fixture
-def superuser():
-    """Create superuser."""
-    return User.objects.create_superuser(
+def staff_user():
+    """Create staff user."""
+    return User.objects.create_user(
         username='admin',
         password='adminpass',
-        email='admin@test.com'
+        email='admin@test.com',
+        is_staff=True,
     )
 
 
@@ -39,10 +40,10 @@ def authenticated_client(user):
 
 
 @pytest.fixture
-def superuser_client(superuser):
-    """Provide authenticated superuser API client."""
+def staff_client(staff_user):
+    """Provide authenticated staff API client."""
     client = APIClient()
-    client.force_authenticate(user=superuser)
+    client.force_authenticate(user=staff_user)
     return client
 
 
@@ -127,12 +128,12 @@ class TestGetOperationTimeline:
         assert data['error']['code'] == 'OPERATION_NOT_FOUND'
 
     @pytest.mark.django_db
-    def test_superuser_can_access_any_operation(self, superuser_client, other_user_operation):
-        """Test superuser can access any operation's timeline."""
+    def test_staff_can_access_any_operation(self, staff_client, other_user_operation):
+        """Test staff can access any operation's timeline."""
         with patch('apps.operations.services.timeline_service.TimelineService._fetch_timeline_from_redis') as mock_fetch:
             mock_fetch.return_value = ([], 0, None)
 
-            response = superuser_client.post(
+            response = staff_client.post(
                 '/api/v2/operations/get-operation-timeline/',
                 {'operation_id': other_user_operation.id},
                 format='json'
@@ -272,14 +273,14 @@ class TestTimelineService:
         assert result.error_code == TimelineErrorCode.FORBIDDEN
 
     @pytest.mark.django_db
-    def test_ownership_check_superuser(self, superuser, other_user_operation):
-        """Test superuser can access any operation."""
+    def test_ownership_check_staff(self, staff_user, other_user_operation):
+        """Test staff can access any operation."""
         from apps.operations.services import TimelineService
 
         with patch.object(TimelineService, '_fetch_timeline_from_redis', return_value=([], 0, None)):
             result = TimelineService.get_timeline(
                 operation_id=other_user_operation.id,
-                user=superuser
+                user=staff_user
             )
             assert result.success is True
 

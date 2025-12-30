@@ -1,5 +1,7 @@
 """BatchOperation model - represents a batch of operations across databases."""
 
+from typing import Optional
+
 from django.db import models
 from django.utils import timezone
 
@@ -195,7 +197,7 @@ class BatchOperation(models.Model):
         ])
 
     @property
-    def duration_seconds(self):
+    def duration_seconds(self) -> Optional[float]:
         """Calculate operation duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
@@ -204,7 +206,7 @@ class BatchOperation(models.Model):
         return None
 
     @property
-    def success_rate(self):
+    def success_rate(self) -> Optional[float]:
         """Calculate success rate percentage."""
         if self.total_tasks == 0:
             return None

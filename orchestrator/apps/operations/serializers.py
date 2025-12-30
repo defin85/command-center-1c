@@ -1,3 +1,5 @@
+from typing import List
+
 from rest_framework import serializers
 from .models import BatchOperation, Task
 
@@ -44,6 +46,6 @@ class BatchOperationSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'tasks'
         ]
     
-    def get_database_names(self, obj):
+    def get_database_names(self, obj: BatchOperation) -> List[str]:
         """Get list of database names for this operation."""
         return list(obj.target_databases.values_list('name', flat=True))

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { App, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons'
@@ -27,6 +27,7 @@ import {
   useUpdateDatabaseCredentials,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
+import { useAuthz } from '../../authz'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -39,6 +40,8 @@ export const Databases = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { message, modal } = App.useApp()
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
   const [searchParams] = useSearchParams()
   const clusterIdFromUrl = searchParams.get('cluster')
 
@@ -58,6 +61,15 @@ export const Databases = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [selectedDatabases, setSelectedDatabases] = useState<Database[]>([])
   const [healthCheckPendingIds, setHealthCheckPendingIds] = useState<Set<string>>(new Set())
+
+  const canOperateAny = authz.isStaff || authz.canAnyDatabase('OPERATE')
+  const canSelectRows = canOperateAny
+
+  useEffect(() => {
+    if (canSelectRows) return
+    setSelectedRowKeys([])
+    setSelectedDatabases([])
+  }, [canSelectRows])
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -98,6 +110,26 @@ export const Databases = () => {
     return clusters.find((c) => c.id === selectedClusterId) || null
   }, [selectedClusterId, clusters])
 
+  const canOperateDatabase = useCallback(
+    (databaseId: string) => authz.canDatabase(databaseId, 'OPERATE'),
+    [authz]
+  )
+
+  const canManageDatabase = useCallback(
+    (databaseId: string) => authz.canDatabase(databaseId, 'MANAGE'),
+    [authz]
+  )
+
+  const canOperateSelected = useMemo(
+    () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canOperateDatabase(db.id)),
+    [selectedDatabases, canOperateDatabase]
+  )
+
+  const canManageSelected = useMemo(
+    () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canManageDatabase(db.id)),
+    [selectedDatabases, canManageDatabase]
+  )
+
   type AxiosErrorLike = { response?: { status?: number }; message?: string }
 
   const getErrorStatus = (error: unknown): number | undefined => {
@@ -122,11 +154,19 @@ export const Databases = () => {
   }
 
   const handleInstallExtension = (database: Database) => {
+    if (!canManageDatabase(database.id)) {
+      message.error('Недостаточно прав для установки расширения')
+      return
+    }
     setSelectedDatabase(database)
     setModalVisible(true)
   }
 
   const openCredentialsModal = (database: Database) => {
+    if (!canManageDatabase(database.id)) {
+      message.error('Недостаточно прав для управления кредами базы')
+      return
+    }
     setCredentialsDatabase(database)
     credentialsForm.setFieldsValue({
       username: database.username ?? '',
@@ -137,6 +177,10 @@ export const Databases = () => {
 
   const handleCredentialsSave = async () => {
     if (!credentialsDatabase) return
+    if (!canManageDatabase(credentialsDatabase.id)) {
+      message.error('Недостаточно прав для управления кредами базы')
+      return
+    }
 
     const values = await credentialsForm.validateFields()
     const username = (values.username ?? '').trim()
@@ -169,6 +213,10 @@ export const Databases = () => {
 
   const handleCredentialsReset = () => {
     if (!credentialsDatabase) return
+    if (!canManageDatabase(credentialsDatabase.id)) {
+      message.error('Недостаточно прав для управления кредами базы')
+      return
+    }
 
     modal.confirm({
       title: 'Сбросить креды базы?',
@@ -198,6 +246,10 @@ export const Databases = () => {
 
   const handleConfirmInstall = async () => {
     if (!selectedDatabase) return
+    if (!canManageDatabase(selectedDatabase.id)) {
+      message.error('Недостаточно прав для установки расширения')
+      return
+    }
 
     try {
       const values = await form.validateFields()
@@ -247,16 +299,18 @@ export const Databases = () => {
   }
 
   // Row selection configuration
-  const rowSelection: TableRowSelection<Database> = {
-    selectedRowKeys,
-    onChange: (keys, rows) => {
-      setSelectedRowKeys(keys)
-      setSelectedDatabases(rows)
-    },
-    getCheckboxProps: (record) => ({
-      disabled: record.status === 'maintenance',
-    }),
-  }
+  const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
+    ? {
+      selectedRowKeys,
+      onChange: (keys, rows) => {
+        setSelectedRowKeys(keys)
+        setSelectedDatabases(rows)
+      },
+      getCheckboxProps: (record) => ({
+        disabled: record.status === 'maintenance' || !canOperateDatabase(record.id),
+      }),
+    }
+    : undefined
 
   const runBulkHealthCheck = useCallback(async (ids: string[]) => {
     const chunks: string[][] = []
@@ -285,7 +339,9 @@ export const Databases = () => {
 
   const runSetStatus = useCallback(async (ids: string[], status: SetDatabaseStatusValue) => {
     const res = await setDatabaseStatus.mutateAsync({ databaseIds: ids, status })
-    message.success(res.message)
+    const missingCount = res.not_found?.length ?? 0
+    const missingSuffix = missingCount > 0 ? `, не найдено: ${missingCount}` : ''
+    message.success(`Статус "${res.status}" применен к ${res.updated}${missingSuffix}`)
   }, [setDatabaseStatus, message])
 
   const markHealthCheckPending = useCallback((databaseId: string, pending: boolean) => {
@@ -302,6 +358,10 @@ export const Databases = () => {
 
   // Handler for single database action (context menu)
   const handleSingleAction = useCallback((action: DatabaseActionKey, database: Database) => {
+    if (!canOperateDatabase(database.id)) {
+      message.error('Недостаточно прав для операции')
+      return
+    }
     if (action === 'more') {
       // Open Operations Wizard with preselected database
       navigate(`/operations?wizard=true&databases=${database.id}`)
@@ -314,16 +374,20 @@ export const Databases = () => {
       operation: action,
       databases: [{ id: database.id, name: database.name }],
     })
-  }, [navigate])
+  }, [canOperateDatabase, message, navigate])
 
   // Handler for bulk action
   const handleBulkAction = useCallback((action: string) => {
+    if (!canOperateSelected) {
+      message.error('Недостаточно прав для массовой операции')
+      return
+    }
     setConfirmModal({
       visible: true,
       operation: action,
       databases: selectedDatabases.map((db) => ({ id: db.id, name: db.name })),
     })
-  }, [selectedDatabases])
+  }, [canOperateSelected, message, selectedDatabases])
 
   // Confirm operation handler
   const handleConfirmOperation = useCallback(async (config?: {
@@ -335,6 +399,10 @@ export const Databases = () => {
   }) => {
     const operationType = confirmModal.operation as RASOperationType
     const dbs = confirmModal.databases
+    if (!dbs.every((db) => canOperateDatabase(db.id))) {
+      message.error('Недостаточно прав для операции')
+      return
+    }
 
     executeRasOperation.mutate(
       {
@@ -355,7 +423,7 @@ export const Databases = () => {
         },
       }
     )
-  }, [confirmModal, executeRasOperation, navigate])
+  }, [canOperateDatabase, confirmModal, executeRasOperation, message, navigate])
 
   // Clear selection handler
   const handleClearSelection = useCallback(() => {
@@ -499,83 +567,91 @@ export const Databases = () => {
       title: 'Actions',
       key: 'actions',
       width: 260,
-      render: (_: unknown, record: Database) => (
-        <Space size="small">
-          <Button
-            size="small"
-            type="primary"
-            icon={<RocketOutlined />}
-            onClick={() => handleInstallExtension(record)}
-            disabled={record.status !== 'active'}
-          >
-            Install
-          </Button>
-          <Button
-            size="small"
-            icon={<HeartOutlined />}
-            onClick={async () => {
-              if (healthCheckPendingIds.has(record.id)) {
-                return
-              }
-              markHealthCheckPending(record.id, true)
-              try {
-                const res = await healthCheck.mutateAsync(record.id)
-                message.success(`${record.name}: health check queued`)
-                if (res.operation_id) {
-                  message.info(`Operation ${res.operation_id} queued`)
+      render: (_: unknown, record: Database) => {
+        const canOperate = canOperateDatabase(record.id)
+        const canManage = canManageDatabase(record.id)
+
+        return (
+          <Space size="small">
+            <Button
+              size="small"
+              type="primary"
+              icon={<RocketOutlined />}
+              onClick={() => handleInstallExtension(record)}
+              disabled={!canManage || record.status !== 'active'}
+            >
+              Install
+            </Button>
+            <Button
+              size="small"
+              icon={<HeartOutlined />}
+              onClick={async () => {
+                if (!canOperate || healthCheckPendingIds.has(record.id)) {
+                  return
                 }
-              } catch (e: unknown) {
-                const status = getErrorStatus(e)
-                const statusLabel = status ? ` (status ${status})` : ''
-                message.error(`Health check failed: ${getErrorMessage(e)}${statusLabel}`)
-              } finally {
-                markHealthCheckPending(record.id, false)
-              }
-            }}
-            loading={healthCheckPendingIds.has(record.id)}
-          >
-            Check
-          </Button>
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: [
-                { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
-                { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
-                { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
-              ],
-              onClick: async ({ key }) => {
+                markHealthCheckPending(record.id, true)
                 try {
-                  await runSetStatus([record.id], key as SetDatabaseStatusValue)
+                  const res = await healthCheck.mutateAsync(record.id)
+                  message.success(`${record.name}: health check queued`)
+                  if (res.operation_id) {
+                    message.info(`Operation ${res.operation_id} queued`)
+                  }
                 } catch (e: unknown) {
                   const status = getErrorStatus(e)
-                  if (status === 403) {
-                    message.error('Set status requires staff access')
-                    return
-                  }
-                  message.error(`Set status failed: ${getErrorMessage(e)}`)
+                  const statusLabel = status ? ` (status ${status})` : ''
+                  message.error(`Health check failed: ${getErrorMessage(e)}${statusLabel}`)
+                } finally {
+                  markHealthCheckPending(record.id, false)
                 }
-              },
-            }}
-          >
-            <Button size="small" icon={<EditOutlined />}>
-              Status <DownOutlined />
+              }}
+              loading={healthCheckPendingIds.has(record.id)}
+              disabled={!canOperate}
+            >
+              Check
             </Button>
-          </Dropdown>
-          <Button
-            size="small"
-            icon={<KeyOutlined />}
-            onClick={() => openCredentialsModal(record)}
-            title="Credentials"
-          />
-          <DatabaseActionsMenu
-            databaseId={record.id}
-            databaseStatus={record.status}
-            onAction={(action) => handleSingleAction(action, record)}
-            disabled={record.status !== 'active'}
-          />
-        </Space>
-      ),
+            <Dropdown
+              trigger={['click']}
+              disabled={!canManage}
+              menu={{
+                items: [
+                  { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
+                  { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
+                  { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
+                ],
+                onClick: async ({ key }) => {
+                  try {
+                    await runSetStatus([record.id], key as SetDatabaseStatusValue)
+                  } catch (e: unknown) {
+                    const status = getErrorStatus(e)
+                    if (status === 403) {
+                      message.error('Set status requires manage access')
+                      return
+                    }
+                    message.error(`Set status failed: ${getErrorMessage(e)}`)
+                  }
+                },
+              }}
+            >
+              <Button size="small" icon={<EditOutlined />} disabled={!canManage}>
+                Status <DownOutlined />
+              </Button>
+            </Dropdown>
+            <Button
+              size="small"
+              icon={<KeyOutlined />}
+              onClick={() => openCredentialsModal(record)}
+              title="Credentials"
+              disabled={!canManage}
+            />
+            <DatabaseActionsMenu
+              databaseId={record.id}
+              databaseStatus={record.status}
+              onAction={(action) => handleSingleAction(action, record)}
+              disabled={!canOperate}
+            />
+          </Space>
+        )
+      },
     },
   ]
 
@@ -641,24 +717,31 @@ export const Databases = () => {
             ))}
           </Select>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />}>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!isStaff}>
           Add Database
         </Button>
       </Space>
 
-      <BulkActionsToolbar
-        selectedCount={selectedRowKeys.length}
-        onAction={handleBulkAction}
-        onClearSelection={handleClearSelection}
-        loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
-      />
+      {canOperateAny && (
+        <BulkActionsToolbar
+          selectedCount={selectedRowKeys.length}
+          onAction={handleBulkAction}
+          onClearSelection={handleClearSelection}
+          loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
+          disabled={!canOperateSelected}
+        />
+      )}
 
-      {selectedRowKeys.length > 0 && (
+      {canOperateAny && selectedRowKeys.length > 0 && (
         <Space style={{ marginBottom: 16 }}>
           <Typography.Text type="secondary">Ops:</Typography.Text>
           <Button
             icon={<HeartOutlined />}
             onClick={async () => {
+              if (!canOperateSelected) {
+                message.error('Недостаточно прав для массовой проверки')
+                return
+              }
               try {
                 await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
               } catch (e: unknown) {
@@ -666,11 +749,13 @@ export const Databases = () => {
               }
             }}
             loading={bulkHealthCheck.isPending}
+            disabled={!canOperateSelected}
           >
             Health check
           </Button>
           <Dropdown
             trigger={['click']}
+            disabled={!canManageSelected}
             menu={{
               items: [
                 { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
@@ -678,12 +763,16 @@ export const Databases = () => {
                 { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
               ],
               onClick: async ({ key }) => {
+                if (!canManageSelected) {
+                  message.error('Недостаточно прав для смены статуса')
+                  return
+                }
                 try {
                   await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
                 } catch (e: unknown) {
                   const status = getErrorStatus(e)
                   if (status === 403) {
-                    message.error('Set status requires staff access')
+                    message.error('Set status requires manage access')
                     return
                   }
                   message.error(`Set status failed: ${getErrorMessage(e)}`)
@@ -691,7 +780,7 @@ export const Databases = () => {
               },
             }}
           >
-            <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending}>
+            <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
               Set status <DownOutlined />
             </Button>
           </Dropdown>

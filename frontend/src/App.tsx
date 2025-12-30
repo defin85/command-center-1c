@@ -23,6 +23,7 @@ import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useMe } from './api/queries/me'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
+import { AuthzProvider } from './authz'
 
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -121,9 +122,10 @@ function App() {
       }}>
         <AntApp>
           <GlobalApiErrorHandler />
-          <DatabaseStreamProvider key={authToken ?? 'guest'}>
-            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-              <Routes>
+          <AuthzProvider key={authToken ?? 'guest'}>
+            <DatabaseStreamProvider>
+              <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Routes>
           {/* Публичный маршрут - логин */}
           <Route path="/login" element={<Login />} />
           <Route path="/forbidden" element={<ForbiddenPage />} />
@@ -247,9 +249,10 @@ function App() {
               </MainLayout>
             </StaffRoute>
           } />
-              </Routes>
-            </BrowserRouter>
-          </DatabaseStreamProvider>
+                </Routes>
+              </BrowserRouter>
+            </DatabaseStreamProvider>
+          </AuthzProvider>
         </AntApp>
       </ConfigProvider>
     </ErrorBoundary>

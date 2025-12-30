@@ -1,6 +1,6 @@
 # Operator Guide (SPA‑primary)
 
-Цель: повседневное администрирование делается **только через SPA**, а Django Admin — **break‑glass** (write только для superuser).
+Цель: повседневное администрирование делается **только через SPA**, а Django Admin — **break‑glass** (write только для staff).
 
 ## Доступ и вход
 
@@ -46,11 +46,10 @@
 
 ## Контроль (аудит/метрики)
 
-- **Audit log** ключевых действий пишется в БД (`AdminActionAuditLog`) и доступен для просмотра в Django Admin (read-only для не‑superuser).
+- **Audit log** ключевых действий пишется в БД (`AdminActionAuditLog`) и доступен для просмотра в Django Admin (read-only для не‑staff).
 - **Prometheus metrics**: `cc1c_orchestrator_admin_actions_total{action=...,outcome=...}` — счётчик админ-действий (success/error).
 
 ## Django Admin (break‑glass)
 
-- Любые write‑действия в админке предназначены только для superuser и могут быть заблокированы для обычных пользователей.
+- Любые write‑действия в админке предназначены только для staff и могут быть заблокированы для обычных пользователей.
 - Если “нужно срочно починить руками”, зафиксируй причину, действие и результат (audit/тикет) и вернись к SPA‑пути.
-

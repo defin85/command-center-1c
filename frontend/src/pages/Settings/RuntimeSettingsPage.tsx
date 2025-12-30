@@ -30,8 +30,8 @@ export function RuntimeSettingsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canEdit = Boolean(meQuery.data?.is_superuser)
   const isStaff = Boolean(meQuery.data?.is_staff)
+  const canEdit = isStaff
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
