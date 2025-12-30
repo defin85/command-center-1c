@@ -11,7 +11,6 @@ import time
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
-from asgiref.sync import async_to_sync
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -193,13 +192,14 @@ class SystemHealthView(APIView):
             client = get_prometheus_client()
 
             async def _fetch_metrics():
-                return await asyncio.wait_for(
+                services = await asyncio.wait_for(
                     client.get_all_services_metrics(),
                     timeout=SYSTEM_HEALTH_PROM_TIMEOUT,
                 )
+                overall = await client.get_overall_health(services)
+                return services, overall
 
-            services_metrics = async_to_sync(_fetch_metrics)()
-            overall_health = async_to_sync(client.get_overall_health)(services_metrics)
+            services_metrics, overall_health = asyncio.run(_fetch_metrics())
         except asyncio.TimeoutError:
             logger.warning("Prometheus health fetch timed out")
             record_api_v2_error(endpoint, "prometheus_timeout")

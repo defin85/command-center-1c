@@ -393,15 +393,3 @@ async def broadcast_service_mesh_update(
 
     logger.debug("Broadcast service_mesh_update to all clients")
 
-
-def sync_broadcast_service_mesh_update(
-    services: list,
-    connections: list,
-    overallHealth: str,
-):
-    """Synchronous wrapper for broadcast_service_mesh_update."""
-    from asgiref.sync import async_to_sync
-
-    async_to_sync(broadcast_service_mesh_update)(
-        services, connections, overallHealth
-    )

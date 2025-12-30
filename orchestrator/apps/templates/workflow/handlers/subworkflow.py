@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Any, Dict
 
+from asgiref.sync import sync_to_async
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode, WorkflowTemplate
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
@@ -43,7 +44,7 @@ class SubWorkflowHandler(BaseNodeHandler):
     # Safety limit for subworkflow recursion depth
     MAX_DEPTH_HARD_LIMIT = 20
 
-    def execute(
+    async def execute(
         self,
         node: WorkflowNode,
         context: Dict[str, Any],
@@ -65,7 +66,10 @@ class SubWorkflowHandler(BaseNodeHandler):
         start_time = time.time()
 
         # Create step result for audit
-        step_result = self._create_step_result(
+        step_result = await sync_to_async(
+            self._create_step_result,
+            thread_sensitive=True
+        )(
             execution=execution,
             node=node,
             input_data={'context_keys': list(context.keys())}
@@ -100,7 +104,10 @@ class SubWorkflowHandler(BaseNodeHandler):
 
             # 3. Get subworkflow template
             try:
-                subworkflow_template = WorkflowTemplate.objects.get(id=subworkflow_id)
+                subworkflow_template = await sync_to_async(
+                    WorkflowTemplate.objects.get,
+                    thread_sensitive=True
+                )(id=subworkflow_id)
             except WorkflowTemplate.DoesNotExist:
                 raise ValueError(f"Subworkflow template not found: {subworkflow_id}")
 
@@ -121,7 +128,7 @@ class SubWorkflowHandler(BaseNodeHandler):
             try:
                 from apps.templates.workflow.engine import WorkflowEngine
                 engine = WorkflowEngine()
-                subworkflow_result = engine.execute_workflow(
+                subworkflow_execution = await engine.execute_workflow(
                     subworkflow_template, subworkflow_context
                 )
             except ImportError:
@@ -131,7 +138,7 @@ class SubWorkflowHandler(BaseNodeHandler):
 
             # 6. Map output context
             mapped_output = self._map_context(
-                subworkflow_result, output_mapping, direction='output'
+                subworkflow_execution.final_result or {}, output_mapping, direction='output'
             )
 
             duration = time.time() - start_time
@@ -145,7 +152,10 @@ class SubWorkflowHandler(BaseNodeHandler):
                 duration_seconds=duration
             )
 
-            self._update_step_result(step_result, result)
+            await sync_to_async(
+                self._update_step_result,
+                thread_sensitive=True
+            )(step_result, result)
 
             logger.info(
                 f"SubWorkflow node {node.id} completed successfully",
@@ -171,7 +181,10 @@ class SubWorkflowHandler(BaseNodeHandler):
                 mode=NodeExecutionMode.SYNC,
                 duration_seconds=time.time() - start_time
             )
-            self._update_step_result(step_result, result)
+            await sync_to_async(
+                self._update_step_result,
+                thread_sensitive=True
+            )(step_result, result)
             return result
 
         except RecursionError as exc:
@@ -185,7 +198,10 @@ class SubWorkflowHandler(BaseNodeHandler):
                 mode=NodeExecutionMode.SYNC,
                 duration_seconds=time.time() - start_time
             )
-            self._update_step_result(step_result, result)
+            await sync_to_async(
+                self._update_step_result,
+                thread_sensitive=True
+            )(step_result, result)
             return result
 
         except Exception as exc:
@@ -203,7 +219,10 @@ class SubWorkflowHandler(BaseNodeHandler):
                 mode=NodeExecutionMode.SYNC,
                 duration_seconds=time.time() - start_time
             )
-            self._update_step_result(step_result, result)
+            await sync_to_async(
+                self._update_step_result,
+                thread_sensitive=True
+            )(step_result, result)
             return result
 
     def _map_context(

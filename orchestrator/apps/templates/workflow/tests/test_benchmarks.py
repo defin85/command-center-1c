@@ -14,6 +14,7 @@ Benchmark Requirements (Week 11):
 - Throughput: > 100 workflows/min
 """
 
+import asyncio
 import pytest
 import time
 from unittest.mock import patch
@@ -400,7 +401,7 @@ class TestSimpleWorkflowBenchmarks:
         input_context = {"benchmark": True}
 
         def execute():
-            return engine.execute_workflow(simple_workflow_template, input_context)
+            return engine.execute_workflow_sync(simple_workflow_template, input_context)
 
         result = benchmark(execute)
 
@@ -416,7 +417,7 @@ class TestSimpleWorkflowBenchmarks:
         input_context = {"benchmark": True}
 
         def execute():
-            return engine.execute_workflow(three_node_template, input_context)
+            return engine.execute_workflow_sync(three_node_template, input_context)
 
         result = benchmark(execute)
 
@@ -480,7 +481,7 @@ class TestComplexWorkflowBenchmarks:
         input_context = {"benchmark": True, "branch_selector": "both"}
 
         def execute():
-            return engine.execute_workflow(complex_workflow_template, input_context)
+            return engine.execute_workflow_sync(complex_workflow_template, input_context)
 
         result = benchmark(execute)
 
@@ -568,7 +569,7 @@ class TestComplexWorkflowBenchmarks:
         input_context = {"count": 10, "status": "active"}
 
         def execute():
-            return engine.execute_workflow(template, input_context)
+            return engine.execute_workflow_sync(template, input_context)
 
         result = benchmark(execute)
         assert result.status == WorkflowExecution.STATUS_COMPLETED
@@ -597,7 +598,7 @@ class TestParallelExecutionBenchmarks:
         input_context = {"benchmark": True, "parallel_count": 10}
 
         def execute():
-            return engine.execute_workflow(parallel_workflow_template, input_context)
+            return engine.execute_workflow_sync(parallel_workflow_template, input_context)
 
         result = benchmark(execute)
 
@@ -619,7 +620,7 @@ class TestParallelExecutionBenchmarks:
             def execute():
                 executor = DAGExecutor(parallel_10_dag, execution)
                 context = ContextManager({"benchmark": True})
-                return executor.execute(context)
+                return asyncio.run(executor.execute(context))
 
             result = benchmark(execute)
             success, _ = result
@@ -679,7 +680,7 @@ class TestThroughputBenchmarks:
         def execute_batch():
             results = []
             for i in range(workflows_per_batch):
-                result = engine.execute_workflow(
+                result = engine.execute_workflow_sync(
                     simple_workflow_template,
                     {"iteration": i}
                 )
@@ -716,7 +717,7 @@ class TestThroughputBenchmarks:
                         "filters": ["active", "verified"]
                     }
                 }
-                result = engine.execute_workflow(three_node_template, context)
+                result = engine.execute_workflow_sync(three_node_template, context)
                 results.append(result)
             return results
 

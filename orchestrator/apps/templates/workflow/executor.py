@@ -9,9 +9,11 @@ Executes workflow DAG in topological order with:
 - Support for all node types (operation, condition, parallel, loop, subworkflow)
 """
 
+import inspect
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from asgiref.sync import sync_to_async
 from django.utils import timezone
 
 from apps.templates.tracing import (
@@ -23,8 +25,8 @@ from apps.templates.tracing import (
     start_node_span,
 )
 from apps.templates.consumers import (
-    sync_broadcast_node_update,
-    sync_broadcast_workflow_update,
+    broadcast_node_update,
+    broadcast_workflow_update,
 )
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.handlers import NodeExecutionMode, NodeHandlerFactory
@@ -76,7 +78,7 @@ class DAGExecutor:
 
     Usage:
         executor = DAGExecutor(dag, execution)
-        success, result = executor.execute(context)
+        success, result = await executor.execute(context)
     """
 
     def __init__(self, dag: DAGStructure, execution: WorkflowExecution):
@@ -150,7 +152,7 @@ class DAGExecutor:
             }
         )
 
-    def execute(self, context: ContextManager) -> Tuple[bool, Dict[str, Any]]:
+    async def execute(self, context: ContextManager) -> Tuple[bool, Dict[str, Any]]:
         """
         Execute DAG in topological order.
 
@@ -197,10 +199,13 @@ class DAGExecutor:
                 if not should_execute:
                     # Skip this node
                     skipped_nodes.add(node_id)
-                    self.execution.update_node_status(node_id, 'skipped')
+                    await sync_to_async(
+                        self.execution.update_node_status,
+                        thread_sensitive=True
+                    )(node_id, 'skipped')
 
                     # Broadcast node skip via WebSocket
-                    self._broadcast_node_update(node_id, 'skipped')
+                    await self._broadcast_node_update(node_id, 'skipped')
 
                     logger.info(
                         f"Skipping node {node_id} (conditions not met)",
@@ -212,7 +217,7 @@ class DAGExecutor:
                     continue
 
                 # Execute node
-                success, current_context = self._execute_node(
+                success, current_context = await self._execute_node(
                     node_id, node, current_context
                 )
 
@@ -364,7 +369,7 @@ class DAGExecutor:
             # On error, treat as false (don't execute)
             return False
 
-    def _execute_node(
+    async def _execute_node(
         self,
         node_id: str,
         node: WorkflowNode,
@@ -393,10 +398,13 @@ class DAGExecutor:
         )
 
         # Update node status to running
-        self.execution.update_node_status(node_id, 'running')
+        await sync_to_async(
+            self.execution.update_node_status,
+            thread_sensitive=True
+        )(node_id, 'running')
 
         # Broadcast node start via WebSocket
-        self._broadcast_node_update(node_id, 'running')
+        await self._broadcast_node_update(node_id, 'running')
 
         # Start OpenTelemetry span for node execution
         with start_node_span(
@@ -413,12 +421,23 @@ class DAGExecutor:
                     add_span_event("node_handler_resolved", {"handler_type": node.type})
 
                 # Execute node
-                result = handler.execute(
-                    node=node,
-                    context=context.to_dict(),
-                    execution=self.execution,
-                    mode=NodeExecutionMode.SYNC
-                )
+                if inspect.iscoroutinefunction(handler.execute):
+                    result = await handler.execute(
+                        node=node,
+                        context=context.to_dict(),
+                        execution=self.execution,
+                        mode=NodeExecutionMode.SYNC
+                    )
+                else:
+                    result = await sync_to_async(
+                        handler.execute,
+                        thread_sensitive=True
+                    )(
+                        node=node,
+                        context=context.to_dict(),
+                        execution=self.execution,
+                        mode=NodeExecutionMode.SYNC
+                    )
 
                 if result.success:
                     # Update context with node result
@@ -432,13 +451,16 @@ class DAGExecutor:
                     )
 
                     # Update node status
-                    self.execution.update_node_status(
+                    await sync_to_async(
+                        self.execution.update_node_status,
+                        thread_sensitive=True
+                    )(
                         node_id, 'completed',
                         result={'output': result.output, 'duration': result.duration_seconds}
                     )
 
                     # Create WorkflowStepResult with tracing info
-                    self._create_step_result(
+                    await self._create_step_result(
                         node_id=node_id,
                         node=node,
                         status='completed',
@@ -456,7 +478,7 @@ class DAGExecutor:
                     )
 
                     # Broadcast node completion via WebSocket
-                    self._broadcast_node_update(
+                    await self._broadcast_node_update(
                         node_id, 'completed',
                         output=result.output,
                         duration_ms=int((result.duration_seconds or 0) * 1000)
@@ -487,13 +509,16 @@ class DAGExecutor:
                     })
 
                     # Update node status
-                    self.execution.update_node_status(
+                    await sync_to_async(
+                        self.execution.update_node_status,
+                        thread_sensitive=True
+                    )(
                         node_id, 'failed',
                         result={'error': result.error, 'duration': result.duration_seconds}
                     )
 
                     # Create WorkflowStepResult with error
-                    self._create_step_result(
+                    await self._create_step_result(
                         node_id=node_id,
                         node=node,
                         status='failed',
@@ -511,7 +536,7 @@ class DAGExecutor:
                     )
 
                     # Broadcast node failure via WebSocket
-                    self._broadcast_node_update(
+                    await self._broadcast_node_update(
                         node_id, 'failed',
                         error=result.error,
                         duration_ms=int((result.duration_seconds or 0) * 1000)
@@ -529,13 +554,16 @@ class DAGExecutor:
                 error_msg = f"Handler error for node {node_id}: {exc}"
                 logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
 
-                self.execution.update_node_status(
+                await sync_to_async(
+                    self.execution.update_node_status,
+                    thread_sensitive=True
+                )(
                     node_id, 'failed',
                     result={'error': error_msg}
                 )
 
                 # Create WorkflowStepResult with error
-                self._create_step_result(
+                await self._create_step_result(
                     node_id=node_id,
                     node=node,
                     status='failed',
@@ -557,13 +585,16 @@ class DAGExecutor:
                 error_msg = f"Unexpected error executing node {node_id}: {exc}"
                 logger.error(error_msg, extra={'node_id': node_id}, exc_info=True)
 
-                self.execution.update_node_status(
+                await sync_to_async(
+                    self.execution.update_node_status,
+                    thread_sensitive=True
+                )(
                     node_id, 'failed',
                     result={'error': error_msg}
                 )
 
                 # Create WorkflowStepResult with error
-                self._create_step_result(
+                await self._create_step_result(
                     node_id=node_id,
                     node=node,
                     status='failed',
@@ -580,7 +611,7 @@ class DAGExecutor:
 
                 return False, error_context
 
-    def _create_step_result(
+    async def _create_step_result(
         self,
         node_id: str,
         node: WorkflowNode,
@@ -607,7 +638,10 @@ class DAGExecutor:
         trace_id = get_current_trace_id()
         span_id = get_current_span_id()
 
-        step_result = WorkflowStepResult.objects.create(
+        step_result = await sync_to_async(
+            WorkflowStepResult.objects.create,
+            thread_sensitive=True
+        )(
             workflow_execution=self.execution,
             node_id=node_id,
             node_name=node.name,
@@ -660,7 +694,7 @@ class DAGExecutor:
 
         return next_nodes
 
-    def _broadcast_node_update(
+    async def _broadcast_node_update(
         self,
         node_id: str,
         status: str,
@@ -696,7 +730,7 @@ class DAGExecutor:
             span_id = get_current_span_id()
 
             # Broadcast node update
-            sync_broadcast_node_update(
+            await broadcast_node_update(
                 execution_id=str(self.execution.id),
                 node_id=node_id,
                 status=status,
@@ -707,7 +741,7 @@ class DAGExecutor:
             )
 
             # Also broadcast workflow progress update
-            sync_broadcast_workflow_update(
+            await broadcast_workflow_update(
                 execution_id=str(self.execution.id),
                 status='running',
                 progress=progress,

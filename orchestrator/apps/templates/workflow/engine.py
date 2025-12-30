@@ -9,10 +9,12 @@ High-level API for workflow execution with:
 - OpenTelemetry tracing integration (Week 12)
 """
 
+import asyncio
 import logging
 import threading
 from typing import Any, Dict, Optional
 
+from asgiref.sync import sync_to_async
 from django.db import transaction
 
 from apps.templates.tracing import (
@@ -23,8 +25,8 @@ from apps.templates.tracing import (
     start_workflow_span,
 )
 from apps.templates.consumers import (
-    sync_broadcast_execution_completed,
-    sync_broadcast_workflow_update,
+    broadcast_execution_completed,
+    broadcast_workflow_update,
 )
 from apps.templates.workflow.context import ContextManager
 from apps.templates.workflow.executor import DAGExecutor
@@ -66,7 +68,7 @@ class WorkflowEngine:
 
     Usage:
         engine = WorkflowEngine()
-        execution = engine.execute_workflow(template, {'database_id': '123'})
+        execution = await engine.execute_workflow(template, {'database_id': '123'})
         print(execution.status)  # 'completed' or 'failed'
         print(execution.final_result)  # Result data
     """
@@ -101,13 +103,13 @@ class WorkflowEngine:
             logger.info("Initializing WorkflowEngine singleton")
             self._initialized = True
 
-    def execute_workflow(
+    async def execute_workflow(
         self,
         template: WorkflowTemplate,
         input_context: Dict[str, Any]
     ) -> WorkflowExecution:
         """
-        Execute workflow template synchronously.
+        Execute workflow template asynchronously.
 
         Steps:
         1. Validate template (if not validated)
@@ -127,20 +129,14 @@ class WorkflowEngine:
         Raises:
             WorkflowEngineError: If execution cannot be started
         """
-        logger.info(
-            f"Starting workflow execution for template '{template.name}'",
-            extra={
-                'template_id': str(template.id),
-                'template_name': template.name,
-                'input_keys': list(input_context.keys())
-            }
-        )
-
         # Step 1: Validate template if needed
         if not template.is_valid:
             try:
-                template.validate()
-                template.save(update_fields=['is_valid'])
+                await sync_to_async(template.validate, thread_sensitive=True)()
+                await sync_to_async(
+                    template.save,
+                    thread_sensitive=True
+                )(update_fields=['is_valid'])
             except ValueError as exc:
                 raise WorkflowEngineError(
                     f"Template validation failed: {exc}"
@@ -153,13 +149,43 @@ class WorkflowEngine:
             )
 
         # Step 2: Create WorkflowExecution
-        execution = template.create_execution(input_context)
+        execution = await sync_to_async(
+            template.create_execution,
+            thread_sensitive=True
+        )(input_context)
 
         logger.info(
             f"Created execution {execution.id}",
             extra={
                 'execution_id': str(execution.id),
                 'template_id': str(template.id)
+            }
+        )
+
+        return await self.execute(execution)
+
+    async def execute(self, execution: WorkflowExecution) -> WorkflowExecution:
+        """
+        Execute an existing workflow execution asynchronously.
+
+        Args:
+            execution: Existing WorkflowExecution instance
+
+        Returns:
+            WorkflowExecution: Updated execution with final_result/status
+        """
+        template = await sync_to_async(
+            WorkflowTemplate.objects.get,
+            thread_sensitive=True
+        )(id=execution.workflow_template_id)
+        input_context = execution.input_context or {}
+
+        logger.info(
+            f"Starting workflow execution for template '{template.name}'",
+            extra={
+                'template_id': str(template.id),
+                'template_name': template.name,
+                'input_keys': list(input_context.keys())
             }
         )
 
@@ -174,13 +200,19 @@ class WorkflowEngine:
             trace_id = get_current_trace_id()
             if trace_id:
                 execution.set_trace_id(trace_id)
-                execution.save(update_fields=['trace_id'])
+                await sync_to_async(
+                    execution.save,
+                    thread_sensitive=True
+                )(update_fields=['trace_id'])
 
             try:
                 # Step 4: Start execution (FSM transition)
-                with transaction.atomic():
-                    execution.start()
-                    execution.save(update_fields=['status', 'started_at'])
+                def _start_execution():
+                    with transaction.atomic():
+                        execution.start()
+                        execution.save(update_fields=['status', 'started_at'])
+
+                await sync_to_async(_start_execution, thread_sensitive=True)()
 
                 logger.info(
                     f"Execution {execution.id} started",
@@ -188,7 +220,7 @@ class WorkflowEngine:
                 )
 
                 # Broadcast workflow started via WebSocket
-                sync_broadcast_workflow_update(
+                await broadcast_workflow_update(
                     execution_id=str(execution.id),
                     status='running',
                     progress=0.0,
@@ -199,68 +231,78 @@ class WorkflowEngine:
                     add_span_event("workflow_started")
 
                 # Step 5: Execute DAG
-                success, result = self._execute_dag(template, execution, input_context)
+                success, result = await self._execute_dag(template, execution, input_context)
 
                 # Step 6: Complete or Fail execution
-                with transaction.atomic():
-                    if success:
+                def _complete_execution():
+                    with transaction.atomic():
                         execution.complete(result)
                         execution.save(update_fields=[
                             'status', 'final_result', 'completed_at'
                         ])
 
-                        logger.info(
-                            f"Execution {execution.id} completed successfully",
-                            extra={
-                                'execution_id': str(execution.id),
-                                'duration_seconds': execution.duration
-                            }
-                        )
-
-                        # Broadcast workflow completion via WebSocket
-                        sync_broadcast_execution_completed(
-                            execution_id=str(execution.id),
-                            status='completed',
-                            result=result,
-                            duration_ms=int((execution.duration or 0) * 1000)
-                        )
-
-                        if span:
-                            set_span_attribute("workflow.status", "completed")
-                            set_span_attribute("workflow.duration_seconds", execution.duration)
-                            add_span_event("workflow_completed")
-                    else:
-                        error_msg = result.get('error', 'Unknown error')
-                        error_node = result.get('node_id')
-
+                def _fail_execution(error_msg: str, error_node: Optional[str]):
+                    with transaction.atomic():
                         execution.fail(error_msg, error_node)
                         execution.save(update_fields=[
                             'status', 'error_message', 'error_node_id', 'completed_at'
                         ])
 
-                        logger.error(
-                            f"Execution {execution.id} failed: {error_msg}",
-                            extra={
-                                'execution_id': str(execution.id),
-                                'error_node': error_node,
-                                'duration_seconds': execution.duration
-                            }
-                        )
+                if success:
+                    await sync_to_async(_complete_execution, thread_sensitive=True)()
 
-                        # Broadcast workflow failure via WebSocket
-                        sync_broadcast_execution_completed(
-                            execution_id=str(execution.id),
-                            status='failed',
-                            error_message=error_msg,
-                            duration_ms=int((execution.duration or 0) * 1000)
-                        )
+                    logger.info(
+                        f"Execution {execution.id} completed successfully",
+                        extra={
+                            'execution_id': str(execution.id),
+                            'duration_seconds': execution.duration
+                        }
+                    )
 
-                        if span:
-                            set_span_attribute("workflow.status", "failed")
-                            set_span_attribute("workflow.error", error_msg)
-                            if error_node:
-                                set_span_attribute("workflow.error_node_id", error_node)
-                            add_span_event("workflow_failed", {"error": error_msg})
+                    # Broadcast workflow completion via WebSocket
+                    await broadcast_execution_completed(
+                        execution_id=str(execution.id),
+                        status='completed',
+                        result=result,
+                        duration_ms=int((execution.duration or 0) * 1000)
+                    )
+
+                    if span:
+                        set_span_attribute("workflow.status", "completed")
+                        set_span_attribute("workflow.duration_seconds", execution.duration)
+                        add_span_event("workflow_completed")
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    error_node = result.get('node_id')
+
+                    await sync_to_async(
+                        _fail_execution,
+                        thread_sensitive=True
+                    )(error_msg, error_node)
+
+                    logger.error(
+                        f"Execution {execution.id} failed: {error_msg}",
+                        extra={
+                            'execution_id': str(execution.id),
+                            'error_node': error_node,
+                            'duration_seconds': execution.duration
+                        }
+                    )
+
+                    # Broadcast workflow failure via WebSocket
+                    await broadcast_execution_completed(
+                        execution_id=str(execution.id),
+                        status='failed',
+                        error_message=error_msg,
+                        duration_ms=int((execution.duration or 0) * 1000)
+                    )
+
+                    if span:
+                        set_span_attribute("workflow.status", "failed")
+                        set_span_attribute("workflow.error", error_msg)
+                        if error_node:
+                            set_span_attribute("workflow.error_node_id", error_node)
+                        add_span_event("workflow_failed", {"error": error_msg})
 
                 return execution
 
@@ -277,7 +319,7 @@ class WorkflowEngine:
                     set_span_error(exc)
 
                 # Try to mark as failed
-                try:
+                def _mark_failed():
                     with transaction.atomic():
                         # Refresh to get current state
                         execution.refresh_from_db()
@@ -287,6 +329,9 @@ class WorkflowEngine:
                             execution.save(update_fields=[
                                 'status', 'error_message', 'completed_at'
                             ])
+
+                try:
+                    await sync_to_async(_mark_failed, thread_sensitive=True)()
                 except Exception as save_exc:
                     logger.error(
                         f"Failed to save error state: {save_exc}",
@@ -295,7 +340,7 @@ class WorkflowEngine:
 
                 return execution
 
-    def _execute_dag(
+    async def _execute_dag(
         self,
         template: WorkflowTemplate,
         execution: WorkflowExecution,
@@ -324,9 +369,9 @@ class WorkflowEngine:
         executor = DAGExecutor(dag, execution)
 
         # Execute
-        return executor.execute(context)
+        return await executor.execute(context)
 
-    def cancel_workflow(self, execution_id: str) -> bool:
+    async def cancel_workflow(self, execution_id: str) -> bool:
         """
         Cancel running workflow execution.
 
@@ -337,7 +382,10 @@ class WorkflowEngine:
             True if cancelled successfully, False otherwise
         """
         try:
-            execution = WorkflowExecution.objects.get(id=execution_id)
+            execution = await sync_to_async(
+                WorkflowExecution.objects.get,
+                thread_sensitive=True
+            )(id=execution_id)
 
             # Check if can be cancelled (pending or running)
             if execution.status not in [
@@ -350,9 +398,12 @@ class WorkflowEngine:
                 )
                 return False
 
-            with transaction.atomic():
-                execution.cancel()
-                execution.save(update_fields=['status', 'completed_at'])
+            def _cancel_execution():
+                with transaction.atomic():
+                    execution.cancel()
+                    execution.save(update_fields=['status', 'completed_at'])
+
+            await sync_to_async(_cancel_execution, thread_sensitive=True)()
 
             logger.info(
                 f"Execution {execution_id} cancelled",
@@ -360,7 +411,7 @@ class WorkflowEngine:
             )
 
             # Broadcast cancellation via WebSocket
-            sync_broadcast_execution_completed(
+            await broadcast_execution_completed(
                 execution_id=str(execution_id),
                 status='cancelled'
             )
@@ -382,7 +433,7 @@ class WorkflowEngine:
             )
             return False
 
-    def get_execution_status(self, execution_id: str) -> Dict[str, Any]:
+    async def get_execution_status(self, execution_id: str) -> Dict[str, Any]:
         """
         Get current execution status with progress.
 
@@ -393,9 +444,12 @@ class WorkflowEngine:
             Dict with status, progress, and result/error information
         """
         try:
-            execution = WorkflowExecution.objects.select_related(
-                'workflow_template'
-            ).get(id=execution_id)
+            execution = await sync_to_async(
+                WorkflowExecution.objects.select_related(
+                    'workflow_template'
+                ).get,
+                thread_sensitive=True
+            )(id=execution_id)
 
             status_info = {
                 'execution_id': str(execution.id),
@@ -438,7 +492,7 @@ class WorkflowEngine:
                 'error': str(exc)
             }
 
-    def get_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
+    async def get_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
         """
         Get WorkflowExecution instance by ID.
 
@@ -449,11 +503,41 @@ class WorkflowEngine:
             WorkflowExecution or None if not found
         """
         try:
-            return WorkflowExecution.objects.select_related(
-                'workflow_template'
-            ).get(id=execution_id)
+            return await sync_to_async(
+                WorkflowExecution.objects.select_related(
+                    'workflow_template'
+                ).get,
+                thread_sensitive=True
+            )(id=execution_id)
         except WorkflowExecution.DoesNotExist:
             return None
+
+    @staticmethod
+    def _run_async(coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        raise RuntimeError("Cannot call sync wrapper from async context")
+
+    def execute_workflow_sync(
+        self,
+        template: WorkflowTemplate,
+        input_context: Dict[str, Any]
+    ) -> WorkflowExecution:
+        return self._run_async(self.execute_workflow(template, input_context))
+
+    def execute_sync(self, execution: WorkflowExecution) -> WorkflowExecution:
+        return self._run_async(self.execute(execution))
+
+    def cancel_workflow_sync(self, execution_id: str) -> bool:
+        return self._run_async(self.cancel_workflow(execution_id))
+
+    def get_execution_status_sync(self, execution_id: str) -> Dict[str, Any]:
+        return self._run_async(self.get_execution_status(execution_id))
+
+    def get_execution_sync(self, execution_id: str) -> Optional[WorkflowExecution]:
+        return self._run_async(self.get_execution(execution_id))
 
     @classmethod
     def reset_singleton(cls) -> None:

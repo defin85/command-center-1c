@@ -10,7 +10,7 @@
 
 ## Цель
 
-Перейти на Django 6.0 (Python 3.12) и убрать смешивание sync/async в API,
+Перейти на Django 6.0 (Python 3.13) и убрать смешивание sync/async в API,
 особенно для SSE/long-lived запросов. Итог — устойчивые асинхронные стримы
 и понятные границы синхронного кода.
 
@@ -37,19 +37,20 @@
 **Цель:** зафиксировать текущее состояние и точки смешивания sync/async.
 
 **Subtasks:**
-- [ ] Инвентаризация async-to-sync точек:
+- [x] Инвентаризация async-to-sync точек:
   - `orchestrator/apps/api_v2/views/databases.py`
   - `orchestrator/apps/api_v2/views/operations.py`
   - `orchestrator/apps/api_v2/views/system.py`
   - `orchestrator/apps/monitoring/services.py`
   - `orchestrator/apps/operations/consumers.py`
   - `orchestrator/apps/operations/signals.py`
-- [ ] Инвентаризация sync-only библиотек (DB/ORM, cache, сторонние клиенты).
-- [ ] Карта SSE и WebSocket потоков (endpoints + точка входа).
+- [x] Инвентаризация sync-only библиотек (DB/ORM, cache, сторонние клиенты).
+- [x] Карта SSE и WebSocket потоков (endpoints + точка входа).
 
 **Артефакты:**
 - Список sync/async boundary.
 - Список библиотек и их совместимость с Django 6.0.
+- Отчёт Phase 0: `docs/roadmaps/ROADMAP_DJANGO_6_ASYNC_PHASE0.md`
 
 ---
 
@@ -58,13 +59,13 @@
 **Цель:** поднять базу под Django 6.0.
 
 **Subtasks:**
-- [ ] Обновить Python до 3.12 в dev.
-- [ ] Пересоздать `orchestrator/venv`.
-- [ ] Обновить зависимости в `orchestrator/requirements.txt`:
+- [x] Обновить Python до 3.13 в dev.
+- [x] Пересоздать `orchestrator/venv`.
+- [x] Обновить зависимости в `orchestrator/requirements.txt`:
   - Django 6.0
   - DRF, drf-spectacular, django-filter
   - channels, daphne, redis, aiohttp и др.
-- [ ] Проверить совместимость пакетами и исправить конфликты.
+- [x] Проверить совместимость пакетами и исправить конфликты.
 
 **Артефакты:**
 - Обновлённый `requirements.txt`.
@@ -99,11 +100,11 @@
 - DRF остаётся sync для обычных CRUD, async только там, где реально нужен.
 
 **Subtasks:**
-- [ ] Перевести SSE endpoints на чистый async без `async_to_sync`.
-- [ ] Выделить единый async слой для Redis/stream I/O (через `redis.asyncio`).
-- [ ] Устранить async_to_sync в `system.py` (если используется).
-- [ ] Проверить, что каждый async view не делает sync ORM напрямую.
-- [ ] Настроить корректные таймауты и отмену (cancel) для SSE.
+- [x] Перевести SSE endpoints на чистый async без `async_to_sync`.
+- [x] Выделить единый async слой для Redis/stream I/O (через `redis.asyncio`).
+- [x] Устранить async_to_sync в `system.py` (если используется).
+- [x] Проверить, что каждый async view не делает sync ORM напрямую.
+- [x] Настроить корректные таймауты и отмену (cancel) для SSE.
 
 **Артефакты:**
 - Стабильные SSE без fallback/502.
@@ -129,7 +130,7 @@
 ## Фаза 5: Документация и стабилизация (1 день)
 
 **Subtasks:**
-- [ ] Обновить документацию по dev-окружению (Python 3.12).
+- [ ] Обновить документацию по dev-окружению (Python 3.13).
 - [ ] Зафиксировать async-гайдлайны для новых endpoints.
 - [ ] Обновить quick-start/README (если нужно).
 
@@ -137,8 +138,7 @@
 
 ## Definition of Done
 
-- Django 6.0 + Python 3.12 в dev.
+- Django 6.0 + Python 3.13 в dev.
 - SSE работает стабильно без sync wrappers и без 5xx.
 - Нет критичных deprecation warnings.
 - Тесты проходят (или есть явный список допустимых исключений).
-

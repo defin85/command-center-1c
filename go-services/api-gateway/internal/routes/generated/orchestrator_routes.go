@@ -67,6 +67,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/operations/stream/", OperationID: "v2_operations_stream_retrieve"},
 	{Method: "GET", Path: "/operations/stream-mux-status/", OperationID: "v2_operations_stream_mux_status_retrieve"},
 	{Method: "POST", Path: "/operations/stream-mux-ticket/", OperationID: "v2_operations_stream_mux_ticket_create"},
+	{Method: "GET", Path: "/operations/stream-mux/", OperationID: "v2_operations_stream_mux_retrieve"},
 	{Method: "GET", Path: "/operations/stream-status/", OperationID: "v2_operations_stream_status_retrieve"},
 	{Method: "POST", Path: "/operations/stream-subscribe/", OperationID: "v2_operations_stream_subscribe_create"},
 	{Method: "POST", Path: "/operations/stream-ticket/", OperationID: "v2_operations_stream_ticket_create"},

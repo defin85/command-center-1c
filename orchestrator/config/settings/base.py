@@ -26,14 +26,21 @@ if env_file_local.exists():
 elif env_file.exists():
     environ.Env.read_env(str(env_file))
 
+ENABLE_DJANGO_PROMETHEUS = env('ENABLE_DJANGO_PROMETHEUS', default='false').lower() == 'true'
+DJANGO_PROMETHEUS_ENABLED = False
+if ENABLE_DJANGO_PROMETHEUS:
+    try:
+        import django_prometheus  # noqa: F401
+    except Exception:
+        DJANGO_PROMETHEUS_ENABLED = False
+    else:
+        DJANGO_PROMETHEUS_ENABLED = True
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('DJANGO_SECRET_KEY', default='django-insecure-change-me-in-production')
 
 # Application definition
 INSTALLED_APPS = [
-    # Prometheus metrics - MUST be first
-    'django_prometheus',
-
     # ASGI server - MUST be before django.contrib.staticfiles
     'daphne',
 
@@ -65,19 +72,25 @@ INSTALLED_APPS = [
     'apps.api_internal',  # Internal API for Go Worker
 ]
 
+if DJANGO_PROMETHEUS_ENABLED:
+    INSTALLED_APPS.insert(0, 'django_prometheus')
+
 MIDDLEWARE = [
-    'django_prometheus.middleware.PrometheusBeforeMiddleware',  # Prometheus - FIRST
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files (required for ASGI/Daphne)
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'apps.operations.middleware.PrometheusMetricsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'django_prometheus.middleware.PrometheusAfterMiddleware',  # Prometheus - LAST
 ]
+
+if DJANGO_PROMETHEUS_ENABLED:
+    MIDDLEWARE.insert(0, 'django_prometheus.middleware.PrometheusBeforeMiddleware')
+    MIDDLEWARE.append('django_prometheus.middleware.PrometheusAfterMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 

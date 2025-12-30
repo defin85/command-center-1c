@@ -2672,6 +2672,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+  /api/v2/operations/stream-mux/:
+    get:
+      operationId: v2_operations_stream_mux_retrieve
+      description: SSE endpoint for multiplex operation updates.
+      summary: Operation multiplex SSE stream
+      parameters:
+      - in: query
+        name: ticket
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /operations/stream-mux-ticket/.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          description: Unauthorized
   /api/v2/operations/stream-status/:
     get:
       operationId: v2_operations_stream_status_retrieve

@@ -192,14 +192,12 @@ def get_metrics(request):
             }
         }, status=400)
 
-    async def _fetch_metrics():
+    try:
         client = get_prometheus_client()
         if service_filter:
-            return [await client.get_service_metrics(service_filter)]
-        return await client.get_all_services_metrics()
-
-    try:
-        metrics = asyncio.run(_fetch_metrics())
+            metrics = [asyncio.run(client.get_service_metrics(service_filter))]
+        else:
+            metrics = asyncio.run(client.get_all_services_metrics())
     except Exception as e:
         logger.error(f"Prometheus metrics fetch failed: {e}")
         metrics = []
@@ -294,7 +292,6 @@ def get_history(request):
             ]
         }
     """
-    import asyncio
     from apps.operations.services.prometheus_client import (
         get_prometheus_client,
         SERVICE_CONFIG,
@@ -338,13 +335,7 @@ def get_history(request):
     data_points = []
     try:
         prometheus_client = get_prometheus_client()
-
-        # Run async function in sync context using asyncio.run()
-        # This is safer than manually managing event loops
-        data_points = asyncio.run(
-            prometheus_client.get_historical_metrics(service, minutes)
-        )
-
+        data_points = asyncio.run(prometheus_client.get_historical_metrics(service, minutes))
     except Exception as e:
         logger.warning(
             f"Failed to fetch Prometheus metrics for {service}: {e}",

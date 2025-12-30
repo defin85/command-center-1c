@@ -13,17 +13,19 @@ from rest_framework_simplejwt.views import (
 )
 from apps.core.jwt_views import CustomTokenObtainPairView
 from apps.health import health_check, health_check_detailed
+from apps.operations.views.metrics import metrics as prometheus_metrics
 
-urlpatterns = [
-    # Prometheus metrics endpoint
-    path('', include('django_prometheus.urls')),
+urlpatterns = []
 
+urlpatterns += [
     path('admin/', admin.site.urls),
 
     # Health checks
     path('health', health_check, name='health'),
     path('health/', health_check, name='health-slash'),
     path('health/detailed', health_check_detailed, name='health-detailed'),
+    path('metrics', prometheus_metrics, name='metrics'),
+    path('metrics/', prometheus_metrics, name='metrics-slash'),
 
     # JWT Authentication (custom view adds username + roles claims for Go compatibility)
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),

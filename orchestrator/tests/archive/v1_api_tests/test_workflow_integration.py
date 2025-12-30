@@ -599,7 +599,7 @@ class TestCompleteWorkflowFlow:
 
         # Execute workflow
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(template, {})
+        execution = engine.execute_workflow_sync(template, {})
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert execution_order == ["n1", "n2", "n3"]
@@ -607,7 +607,7 @@ class TestCompleteWorkflowFlow:
     def test_workflow_execution_tracks_progress(self, workflow_template, mock_handlers):
         """Test that workflow execution properly tracks progress."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {"test": "data"})
+        execution = engine.execute_workflow_sync(workflow_template, {"test": "data"})
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert len(execution.completed_nodes) > 0
@@ -627,7 +627,7 @@ class TestRASIntegration:
     ):
         """Test database lock/unlock workflow with mocked handlers (simulates RAS)."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(
+        execution = engine.execute_workflow_sync(
             workflow_template,
             {"database_id": "test_db", "action": "lock"}
         )
@@ -648,7 +648,7 @@ class TestRASIntegration:
         )
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(
+        execution = engine.execute_workflow_sync(
             workflow_template,
             {"database_id": "test_db", "extension_id": "ext_001"}
         )
@@ -660,7 +660,7 @@ class TestRASIntegration:
     ):
         """Test handling when RAS is unavailable (simulated by failing handler)."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(
+        execution = engine.execute_workflow_sync(
             workflow_template,
             {"database_id": "test_db"}
         )
@@ -683,7 +683,7 @@ class TestFailureScenarios:
     ):
         """Test that node failure properly marks execution as failed."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         assert execution.status == WorkflowExecution.STATUS_FAILED
         assert execution.error_message is not None
@@ -695,7 +695,7 @@ class TestFailureScenarios:
 
         # Execute with slow handler
         start_time = time.time()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
         elapsed = time.time() - start_time
 
         # Should complete (with delay)
@@ -733,7 +733,7 @@ class TestFailureScenarios:
 
         try:
             engine = get_workflow_engine()
-            execution = engine.execute_workflow(workflow_with_rollback, {})
+            execution = engine.execute_workflow_sync(workflow_with_rollback, {})
 
             # Should fail at step2
             assert execution.status == WorkflowExecution.STATUS_FAILED
@@ -749,7 +749,7 @@ class TestFailureScenarios:
         mock_handler, call_count = mock_transient_error
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         # With current implementation (no retry), should fail on first error
         assert execution.status == WorkflowExecution.STATUS_FAILED
@@ -757,7 +757,7 @@ class TestFailureScenarios:
     def test_execution_with_empty_context(self, workflow_template, mock_handlers):
         """Test execution with empty input context."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert execution.input_context == {}
@@ -767,7 +767,7 @@ class TestFailureScenarios:
     ):
         """Test that error_node_id is correctly set on failure."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         assert execution.status == WorkflowExecution.STATUS_FAILED
         # error_node_id should be set to the failing node
@@ -815,7 +815,7 @@ class TestRollbackScenarios:
 
         try:
             engine = get_workflow_engine()
-            execution = engine.execute_workflow(workflow_with_rollback, {"initial": "data"})
+            execution = engine.execute_workflow_sync(workflow_with_rollback, {"initial": "data"})
 
             # Execution should be failed but completed nodes should be tracked
             assert execution.status == WorkflowExecution.STATUS_FAILED
@@ -856,7 +856,7 @@ class TestRollbackScenarios:
 
         try:
             engine = get_workflow_engine()
-            execution = engine.execute_workflow(workflow_with_rollback, {})
+            execution = engine.execute_workflow_sync(workflow_with_rollback, {})
 
             # step1, step2 executed successfully, step3 failed
             assert "step1" in executed_nodes
@@ -883,7 +883,7 @@ class TestConcurrencyScenarios:
 
         executions = []
         for i in range(3):
-            execution = engine.execute_workflow(
+            execution = engine.execute_workflow_sync(
                 workflow_template,
                 {"iteration": i}
             )
@@ -902,8 +902,8 @@ class TestConcurrencyScenarios:
         engine = get_workflow_engine()
 
         # Execute two workflows with different contexts
-        exec1 = engine.execute_workflow(workflow_template, {"workflow": "1"})
-        exec2 = engine.execute_workflow(workflow_template, {"workflow": "2"})
+        exec1 = engine.execute_workflow_sync(workflow_template, {"workflow": "1"})
+        exec2 = engine.execute_workflow_sync(workflow_template, {"workflow": "2"})
 
         # Each should have its own context
         assert exec1.input_context == {"workflow": "1"}
@@ -953,7 +953,7 @@ class TestDataPersistence:
 
         try:
             engine = get_workflow_engine()
-            execution = engine.execute_workflow(workflow_template, {"test": "persistence"})
+            execution = engine.execute_workflow_sync(workflow_template, {"test": "persistence"})
 
             # Reload from database (exclude FSM status field to avoid protection error)
             saved_execution = WorkflowExecution.objects.get(id=execution.id)
@@ -977,7 +977,7 @@ class TestDataPersistence:
         input_context = {"initial_key": "initial_value", "counter": 0}
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, input_context)
+        execution = engine.execute_workflow_sync(workflow_template, input_context)
 
         # Reload from database (use fresh query to avoid FSM protection)
         saved_execution = WorkflowExecution.objects.get(id=execution.id)
@@ -988,7 +988,7 @@ class TestDataPersistence:
     def test_execution_history_complete(self, workflow_template, mock_handlers):
         """Test that full execution history is recorded."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {"history_test": True})
+        execution = engine.execute_workflow_sync(workflow_template, {"history_test": True})
 
         # Check execution record
         assert execution.started_at is not None
@@ -1004,7 +1004,7 @@ class TestDataPersistence:
     def test_final_result_persisted(self, workflow_template, mock_handlers):
         """Test that final result is persisted on completion."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         # Reload from database
         saved_execution = WorkflowExecution.objects.get(id=execution.id)
@@ -1017,7 +1017,7 @@ class TestDataPersistence:
     def test_execution_duration_calculated(self, workflow_template, mock_handlers):
         """Test that execution duration is correctly calculated."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         assert execution.duration is not None
         assert execution.duration >= 0
@@ -1025,7 +1025,7 @@ class TestDataPersistence:
     def test_progress_percent_updated(self, workflow_template, mock_handlers):
         """Test that progress percentage is updated during execution."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         # After completion, progress should reflect completed state
         if execution.status == WorkflowExecution.STATUS_COMPLETED:
@@ -1061,7 +1061,7 @@ class TestAPIIntegration:
     ):
         """Test getting execution steps via API."""
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, {})
+        execution = engine.execute_workflow_sync(workflow_template, {})
 
         url = f"{EXECUTIONS_URL}{execution.id}/steps/"
         response = authenticated_client.get(url)
@@ -1084,7 +1084,7 @@ class TestAPIIntegration:
 
         # Cancel via engine (bypassing the buggy view)
         engine = get_workflow_engine()
-        result = engine.cancel_workflow(str(execution.id))
+        result = engine.cancel_workflow_sync(str(execution.id))
 
         assert result is True
 
@@ -1191,7 +1191,7 @@ class TestEdgeCases:
         )
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(template, {})
+        execution = engine.execute_workflow_sync(template, {})
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert "only" in execution.completed_nodes
@@ -1201,7 +1201,7 @@ class TestEdgeCases:
         large_context = {f"key_{i}": f"value_{i}" * 100 for i in range(100)}
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, large_context)
+        execution = engine.execute_workflow_sync(workflow_template, large_context)
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert len(execution.input_context) == 100
@@ -1213,7 +1213,7 @@ class TestEdgeCases:
         # Execute same workflow multiple times
         results = []
         for _ in range(5):
-            execution = engine.execute_workflow(workflow_template, {})
+            execution = engine.execute_workflow_sync(workflow_template, {})
             results.append(execution)
 
         # All should succeed with unique execution IDs
@@ -1230,7 +1230,7 @@ class TestEdgeCases:
         }
 
         engine = get_workflow_engine()
-        execution = engine.execute_workflow(workflow_template, unicode_context)
+        execution = engine.execute_workflow_sync(workflow_template, unicode_context)
 
         assert execution.status == WorkflowExecution.STATUS_COMPLETED
         assert execution.input_context == unicode_context

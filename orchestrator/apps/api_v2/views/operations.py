@@ -15,6 +15,7 @@ import redis.asyncio as redis_async
 from django.conf import settings
 from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
+from django.views.decorators.http import require_GET
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from asgiref.sync import sync_to_async
@@ -58,6 +59,8 @@ SSE_TICKET_PREFIX = "sse_ticket:"
 SSE_MUX_TICKET_PREFIX = "sse_mux_ticket:"
 SSE_BLOCK_MS = 1000
 SSE_HEARTBEAT_INTERVAL_SECONDS = 10
+SSE_MAX_CONNECTION_SECONDS = getattr(settings, "SSE_MAX_CONNECTION_SECONDS", 0)
+SSE_MAX_IDLE_SECONDS = getattr(settings, "SSE_MAX_IDLE_SECONDS", 0)
 OP_SSE_ACTIVE_PREFIX = "op_sse_active:"
 OP_SSE_ACTIVE_TTL = 120
 OP_SSE_MAX_STREAMS_KEY = "ui.operations.max_live_streams"
@@ -1527,30 +1530,6 @@ def _count_active_mux_streams(redis_conn, user_id: int) -> int:
     return count
 
 
-def _validate_sse_ticket(ticket: str) -> tuple:
-    """
-    Validate and consume SSE ticket (sync).
-
-    Returns:
-        (ticket_data, error_message) - ticket_data is None if validation failed
-    """
-    redis_conn = _get_redis_connection()
-    try:
-        ticket_key = f"{SSE_TICKET_PREFIX}{ticket}"
-        pipe = redis_conn.pipeline()
-        pipe.get(ticket_key)
-        pipe.delete(ticket_key)
-        results = pipe.execute()
-
-        ticket_data_raw = results[0]
-        if not ticket_data_raw:
-            return None, "Invalid or expired ticket"
-
-        return json.loads(ticket_data_raw), None
-    finally:
-        redis_conn.close()
-
-
 async def _count_active_streams_async(redis_conn, user_id: int) -> int:
     pattern = f"{OP_SSE_ACTIVE_PREFIX}{user_id}:*"
     count = 0
@@ -1597,6 +1576,18 @@ async def _validate_sse_ticket_async(ticket: str) -> tuple:
         return json.loads(ticket_data_raw), None
     finally:
         await redis_conn.close()
+
+
+async def _authenticate_legacy_token_async(token: str):
+    def _do_auth():
+        jwt_auth = JWTAuthentication()
+        validated_token = jwt_auth.get_validated_token(token)
+        user = jwt_auth.get_user(validated_token)
+        if not user:
+            raise AuthenticationFailed('User not found')
+        return user
+
+    return await sync_to_async(_do_auth, thread_sensitive=True)()
 
 
 async def _validate_mux_ticket_async(ticket: str) -> tuple:
@@ -2323,15 +2314,23 @@ async def operation_stream_mux(request):
         logger.info(f"operation_stream_mux: Starting for user {username}")
         sse_connection_open("operations_mux")
 
-        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-        redis_conn = redis_async.from_url(redis_url, decode_responses=True)
+        redis_conn = _get_async_redis_connection()
         sub_key = f"{OP_MUX_SUB_PREFIX}{user_id}"
         last_key = f"{OP_MUX_LAST_PREFIX}{user_id}"
         last_heartbeat = time.monotonic()
+        stream_started_at = time.monotonic()
+        last_event_at = stream_started_at
 
         try:
             while True:
                 loop_start = time.monotonic()
+                now = time.monotonic()
+                if SSE_MAX_CONNECTION_SECONDS and now - stream_started_at > SSE_MAX_CONNECTION_SECONDS:
+                    logger.info("operation_stream_mux: max connection time reached (user=%s)", username)
+                    break
+                if SSE_MAX_IDLE_SECONDS and now - last_event_at > SSE_MAX_IDLE_SECONDS:
+                    logger.info("operation_stream_mux: idle timeout reached (user=%s)", username)
+                    break
                 subscriptions = await redis_conn.smembers(sub_key)
                 if not subscriptions:
                     now = time.monotonic()
@@ -2377,9 +2376,12 @@ async def operation_stream_mux(request):
                         yield f"event: {event_type}\n"
                         yield f"id: {msg_id}\n"
                         yield f"data: {event_data}\n\n"
+                        last_event_at = time.monotonic()
 
                 record_sse_loop_duration("operations_mux", time.monotonic() - loop_start)
 
+        except asyncio.CancelledError:
+            logger.info("operation_stream_mux: cancelled user=%s", username)
         except GeneratorExit:
             logger.info(f"operation_stream_mux: client disconnected user={username}")
         except Exception as e:
@@ -2438,9 +2440,8 @@ async def operation_stream_mux(request):
         401: OpenApiResponse(description='Unauthorized'),
     },
 )
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def operation_stream(request):
+@require_GET
+async def operation_stream(request):
     """
     GET /api/v2/operations/stream/?ticket=xxx
     GET /api/v2/operations/stream/?operation_id=xxx&token=xxx (deprecated)
@@ -2455,7 +2456,7 @@ def operation_stream(request):
     token = request.GET.get('token')
     operation_id = request.GET.get('operation_id')
 
-        # Validate: need either ticket or (token + operation_id)
+    # Validate: need either ticket or (token + operation_id)
     if not ticket and not token:
         record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
         return JsonResponse({
@@ -2466,10 +2467,10 @@ def operation_stream(request):
             }
         }, status=401)
 
-        # Prefer ticket-based auth (secure)
+    # Prefer ticket-based auth (secure)
     user_id = None
     if ticket:
-        ticket_data, error = _validate_sse_ticket(ticket)
+        ticket_data, error = await _validate_sse_ticket_async(ticket)
         if error:
             record_api_v2_duration(endpoint, "unauthorized", time.monotonic() - start_time)
             return JsonResponse({
@@ -2502,11 +2503,7 @@ def operation_stream(request):
             }, status=400)
 
         try:
-            jwt_auth = JWTAuthentication()
-            validated_token = jwt_auth.get_validated_token(token)
-            user = jwt_auth.get_user(validated_token)
-            if not user:
-                raise AuthenticationFailed('User not found')
+            user = await _authenticate_legacy_token_async(token)
             username = user.username
             user_id = user.id
         except Exception as e:
@@ -2530,11 +2527,11 @@ def operation_stream(request):
         active_value = ticket_data.get("client_id") if ticket else None
         if not active_value:
             active_value = secrets.token_urlsafe(12)
-        active_conn = _get_redis_connection()
+        active_conn = _get_async_redis_connection()
         try:
-            max_live_streams = _get_max_live_streams()
+            max_live_streams = await _get_max_live_streams_async()
             if max_live_streams > 0:
-                active_count = _count_active_streams(active_conn, user_id)
+                active_count = await _count_active_streams_async(active_conn, user_id)
                 if active_count >= max_live_streams:
                     record_api_v2_duration(endpoint, "limit", time.monotonic() - start_time)
                     response = JsonResponse({
@@ -2548,7 +2545,7 @@ def operation_stream(request):
                     response['Retry-After'] = "60"
                     return response
 
-            if not active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
+            if not await active_conn.set(active_key, active_value, nx=True, ex=OP_SSE_ACTIVE_TTL):
                 record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
                 return JsonResponse({
                     'success': False,
@@ -2558,22 +2555,26 @@ def operation_stream(request):
                     }
                 }, status=429)
         finally:
-            active_conn.close()
+            await active_conn.close()
 
-    def event_generator():
+    async def event_generator():
         """Generator for SSE events using Redis Streams (XREAD)."""
         logger.info(f"event_generator: Starting for operation {operation_id}")
         sse_connection_open("operations")
 
         # Connect to Redis
-        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-        redis_conn = redis_module.from_url(redis_url, decode_responses=True)
+        redis_conn = _get_async_redis_connection()
         stream_name = f"events:operation:{operation_id}"
         logger.info(f"event_generator: Will read from stream {stream_name}")
+        stream_started_at = time.monotonic()
+        last_event_at = stream_started_at
 
         # Send initial state
         try:
-            operation = BatchOperation.objects.get(id=operation_id)
+            operation = await sync_to_async(
+                BatchOperation.objects.get,
+                thread_sensitive=True,
+            )(id=operation_id)
             logger.info(f"event_generator: Found operation with status {operation.status}")
             operation_metadata = operation.metadata or {}
             initial_event = {
@@ -2594,13 +2595,14 @@ def operation_stream(request):
             logger.info("event_generator: Sending initial event")
             yield f"data: {json.dumps(initial_event)}\n\n"
             logger.info("event_generator: Initial event sent")
+            last_event_at = time.monotonic()
         except BatchOperation.DoesNotExist:
             error_event = {
                 "error": "Operation not found",
                 "operation_id": str(operation_id)
             }
             yield f"data: {json.dumps(error_event)}\n\n"
-            redis_conn.close()
+            await redis_conn.close()
             record_sse_stream_error("operations", "missing_operation")
             return
 
@@ -2614,9 +2616,16 @@ def operation_stream(request):
         try:
             while True:
                 loop_start = time.monotonic()
+                now = time.monotonic()
+                if SSE_MAX_CONNECTION_SECONDS and now - stream_started_at > SSE_MAX_CONNECTION_SECONDS:
+                    logger.info("operation_stream: max connection time reached (operation_id=%s)", operation_id)
+                    break
+                if SSE_MAX_IDLE_SECONDS and now - last_event_at > SSE_MAX_IDLE_SECONDS:
+                    logger.info("operation_stream: idle timeout reached (operation_id=%s)", operation_id)
+                    break
                 # XREAD with short block timeout
                 # Returns: [(stream_name, [(msg_id, {fields}), ...])] or None on timeout
-                messages = redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
+                messages = await redis_conn.xread({stream_name: last_id}, block=SSE_BLOCK_MS, count=10)
 
                 if not messages:
                     # Timeout - send heartbeat comment to keep connection alive
@@ -2624,7 +2633,7 @@ def operation_stream(request):
                     if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
                         if active_key:
                             try:
-                                redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
                             except Exception:
                                 pass
                         yield ": heartbeat\n\n"
@@ -2640,18 +2649,21 @@ def operation_stream(request):
                         event_type = fields.get('event_type') or 'message'
                         if active_key:
                             try:
-                                redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
+                                await redis_conn.expire(active_key, OP_SSE_ACTIVE_TTL)
                             except Exception:
                                 pass
                         yield f"event: {event_type}\n"
                         yield f"id: {msg_id}\n"
                         yield f"data: {event_data}\n\n"
                         last_id = msg_id
+                        last_event_at = time.monotonic()
                 loop_duration = time.monotonic() - loop_start
                 record_sse_loop_duration("operations", loop_duration)
                 if loop_duration > 5:
                     logger.warning("operation_stream: slow loop %.2fs (operation_id=%s)", loop_duration, operation_id)
 
+        except asyncio.CancelledError:
+            logger.info("operation_stream: cancelled (operation_id=%s)", operation_id)
         except GeneratorExit:
             # Client disconnected
             logger.info(f"Client disconnected from SSE stream for operation {operation_id}")
@@ -2662,10 +2674,10 @@ def operation_stream(request):
         finally:
             try:
                 if active_key and active_value:
-                    current_value = redis_conn.get(active_key)
+                    current_value = await redis_conn.get(active_key)
                     if current_value == active_value:
-                        redis_conn.delete(active_key)
-                redis_conn.close()
+                        await redis_conn.delete(active_key)
+                await redis_conn.close()
             except Exception:
                 pass  # Игнорируем ошибки при закрытии
             sse_connection_close("operations")

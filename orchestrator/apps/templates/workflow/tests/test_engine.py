@@ -12,7 +12,7 @@ Covers:
 
 import pytest
 import threading
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 from apps.templates.workflow.engine import WorkflowEngine, WorkflowEngineError, get_workflow_engine
@@ -94,14 +94,14 @@ class TestWorkflowEngineExecution:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {
+            mock_executor.execute = AsyncMock(return_value=(True, {
                 'nodes': {
                     'step1': {'success': True, 'output': 'result1'},
                     'step2': {'success': True, 'output': 'result2'},
                 }
-            })
+            }))
 
-            execution = engine.execute_workflow(
+            execution = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'input': 'test_value'}
             )
@@ -117,12 +117,12 @@ class TestWorkflowEngineExecution:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (False, {
+            mock_executor.execute = AsyncMock(return_value=(False, {
                 'error': 'Node execution failed',
                 'node_id': 'step1'
-            })
+            }))
 
-            execution = engine.execute_workflow(
+            execution = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'input': 'test_value'}
             )
@@ -144,7 +144,7 @@ class TestWorkflowEngineExecution:
             mock_validate.side_effect = ValueError("Invalid DAG: cycle detected")
 
             with pytest.raises(WorkflowEngineError, match="Template validation failed"):
-                engine.execute_workflow(simple_workflow_template, {})
+                engine.execute_workflow_sync(simple_workflow_template, {})
 
     def test_execute_workflow_inactive_template(self, simple_workflow_template):
         """Test that inactive template cannot be executed."""
@@ -154,7 +154,7 @@ class TestWorkflowEngineExecution:
         simple_workflow_template.save()
 
         with pytest.raises(WorkflowEngineError, match="is not active"):
-            engine.execute_workflow(simple_workflow_template, {})
+            engine.execute_workflow_sync(simple_workflow_template, {})
 
     def test_execute_workflow_creates_execution(self, simple_workflow_template):
         """Test that execute_workflow creates WorkflowExecution."""
@@ -163,9 +163,9 @@ class TestWorkflowEngineExecution:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {})
+            mock_executor.execute = AsyncMock(return_value=(True, {}))
 
-            execution = engine.execute_workflow(
+            execution = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'key': 'value'}
             )
@@ -181,9 +181,9 @@ class TestWorkflowEngineExecution:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {'result': 'data'})
+            mock_executor.execute = AsyncMock(return_value=(True, {'result': 'data'}))
 
-            execution = engine.execute_workflow(simple_workflow_template, {})
+            execution = engine.execute_workflow_sync(simple_workflow_template, {})
 
             # Check transitions: created -> pending -> running -> completed
             assert execution.status == WorkflowExecution.STATUS_COMPLETED
@@ -198,9 +198,9 @@ class TestWorkflowEngineExecution:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {})
+            mock_executor.execute = AsyncMock(return_value=(True, {}))
 
-            engine.execute_workflow(simple_workflow_template, input_context)
+            engine.execute_workflow_sync(simple_workflow_template, input_context)
 
             # Verify DAGExecutor was called with correct context
             mock_executor.execute.assert_called_once()
@@ -232,7 +232,7 @@ class TestWorkflowEngineCancel:
         )
         # Status is already STATUS_PENDING by default
 
-        result = engine.cancel_workflow(str(new_execution.id))
+        result = engine.cancel_workflow_sync(str(new_execution.id))
 
         assert result is True
 
@@ -253,7 +253,7 @@ class TestWorkflowEngineCancel:
         new_execution.start()  # FSM transition: pending -> running
         new_execution.save()
 
-        result = engine.cancel_workflow(str(new_execution.id))
+        result = engine.cancel_workflow_sync(str(new_execution.id))
 
         assert result is True
 
@@ -275,7 +275,7 @@ class TestWorkflowEngineCancel:
         new_execution.complete({'success': True})  # running -> completed
         new_execution.save()
 
-        result = engine.cancel_workflow(str(new_execution.id))
+        result = engine.cancel_workflow_sync(str(new_execution.id))
 
         assert result is False
 
@@ -283,7 +283,7 @@ class TestWorkflowEngineCancel:
         """Test cancellation of non-existent workflow."""
         engine = WorkflowEngine()
 
-        result = engine.cancel_workflow(str(uuid4()))
+        result = engine.cancel_workflow_sync(str(uuid4()))
 
         assert result is False
 
@@ -294,7 +294,7 @@ class TestWorkflowEngineCancel:
         with patch('apps.templates.workflow.engine.WorkflowExecution.objects.get') as mock_get:
             mock_get.side_effect = Exception("DB error")
 
-            result = engine.cancel_workflow('some-id')
+            result = engine.cancel_workflow_sync('some-id')
 
             assert result is False
 
@@ -319,7 +319,7 @@ class TestWorkflowEngineStatus:
             input_context={},
         )
 
-        status = engine.get_execution_status(str(new_execution.id))
+        status = engine.get_execution_status_sync(str(new_execution.id))
 
         assert status['status'] == WorkflowExecution.STATUS_PENDING
         assert status['execution_id'] == str(new_execution.id)
@@ -338,7 +338,7 @@ class TestWorkflowEngineStatus:
         new_execution.start()  # FSM: pending -> running
         new_execution.save()
 
-        status = engine.get_execution_status(str(new_execution.id))
+        status = engine.get_execution_status_sync(str(new_execution.id))
 
         assert status['status'] == WorkflowExecution.STATUS_RUNNING
         assert status['started_at'] is not None
@@ -357,7 +357,7 @@ class TestWorkflowEngineStatus:
         new_execution.complete({'success': True})  # running -> completed
         new_execution.save()
 
-        status = engine.get_execution_status(str(new_execution.id))
+        status = engine.get_execution_status_sync(str(new_execution.id))
 
         assert status['status'] == WorkflowExecution.STATUS_COMPLETED
         assert 'result' in status
@@ -377,7 +377,7 @@ class TestWorkflowEngineStatus:
         new_execution.fail('Node execution failed', 'step1')  # running -> failed
         new_execution.save()
 
-        status = engine.get_execution_status(str(new_execution.id))
+        status = engine.get_execution_status_sync(str(new_execution.id))
 
         assert status['status'] == WorkflowExecution.STATUS_FAILED
         assert 'error' in status
@@ -389,7 +389,7 @@ class TestWorkflowEngineStatus:
         """Test getting status of non-existent execution."""
         engine = WorkflowEngine()
 
-        status = engine.get_execution_status(str(uuid4()))
+        status = engine.get_execution_status_sync(str(uuid4()))
 
         # May return 'not_found' or 'error' depending on implementation
         assert status['status'] in ['not_found', 'error']
@@ -402,7 +402,7 @@ class TestWorkflowEngineStatus:
         with patch('apps.templates.workflow.engine.WorkflowExecution.objects.select_related') as mock_select:
             mock_select.return_value.get.side_effect = Exception("DB error")
 
-            status = engine.get_execution_status('some-id')
+            status = engine.get_execution_status_sync('some-id')
 
             assert status['status'] == 'error'
             assert 'error' in status
@@ -421,7 +421,7 @@ class TestWorkflowEngineGetExecution:
         """Test getting existing execution."""
         engine = WorkflowEngine()
 
-        execution = engine.get_execution(str(workflow_execution.id))
+        execution = engine.get_execution_sync(str(workflow_execution.id))
 
         assert execution is not None
         assert execution.id == workflow_execution.id
@@ -431,7 +431,7 @@ class TestWorkflowEngineGetExecution:
         """Test getting non-existent execution."""
         engine = WorkflowEngine()
 
-        execution = engine.get_execution(str(uuid4()))
+        execution = engine.get_execution_sync(str(uuid4()))
 
         assert execution is None
 
@@ -449,7 +449,7 @@ class TestWorkflowEngineGetExecution:
         new_execution.save()
 
         # Get fresh instance
-        execution = engine.get_execution(str(new_execution.id))
+        execution = engine.get_execution_sync(str(new_execution.id))
 
         assert execution.status == WorkflowExecution.STATUS_RUNNING
 
@@ -470,16 +470,16 @@ class TestWorkflowEngineIntegration:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {
+            mock_executor.execute = AsyncMock(return_value=(True, {
                 'nodes': {
                     'step1': {'success': True, 'output': {'status': 'ok'}},
                     'step2': {'success': True, 'output': {'count': 42}},
                 },
                 'status': 'completed'
-            })
+            }))
 
             # Execute
-            execution = engine.execute_workflow(
+            execution = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'database_id': '123'}
             )
@@ -488,7 +488,7 @@ class TestWorkflowEngineIntegration:
             assert execution.final_result is not None
 
             # Check status
-            status = engine.get_execution_status(str(execution.id))
+            status = engine.get_execution_status_sync(str(execution.id))
             assert status['status'] == WorkflowExecution.STATUS_COMPLETED
             assert status['result'] is not None
 
@@ -504,7 +504,7 @@ class TestWorkflowEngineIntegration:
         )
 
         # Cancel it while still pending
-        result = engine.cancel_workflow(str(new_execution.id))
+        result = engine.cancel_workflow_sync(str(new_execution.id))
 
         assert result is True
 
@@ -519,14 +519,14 @@ class TestWorkflowEngineIntegration:
         with patch('apps.templates.workflow.engine.DAGExecutor') as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
-            mock_executor.execute.return_value = (True, {})
+            mock_executor.execute = AsyncMock(return_value=(True, {}))
 
             # Execute two workflows
-            execution1 = engine.execute_workflow(
+            execution1 = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'input': 'value1'}
             )
-            execution2 = engine.execute_workflow(
+            execution2 = engine.execute_workflow_sync(
                 simple_workflow_template,
                 {'input': 'value2'}
             )

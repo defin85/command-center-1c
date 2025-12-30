@@ -20,9 +20,6 @@ from apps.templates.consumers import (
     broadcast_workflow_update,
     broadcast_node_update,
     broadcast_execution_completed,
-    sync_broadcast_workflow_update,
-    sync_broadcast_node_update,
-    sync_broadcast_execution_completed,
 )
 
 
@@ -418,61 +415,6 @@ class TestBroadcastHelpers:
         assert call_args[0][1]["status"] == "completed"
         assert call_args[0][1]["result"] == {'output': 'data'}
         assert call_args[0][1]["duration_ms"] == 5000
-
-
-# ============================================================================
-# Sync Wrapper Tests
-# ============================================================================
-
-class TestSyncWrappers(TestCase):
-    """Tests for synchronous broadcast wrapper functions."""
-
-    @patch('channels.layers.get_channel_layer')
-    def test_sync_broadcast_workflow_update(self, mock_get_layer):
-        """Test sync wrapper for broadcast_workflow_update."""
-        mock_layer = MagicMock()
-        mock_layer.group_send = AsyncMock()
-        mock_get_layer.return_value = mock_layer
-
-        execution_id = str(uuid4())
-
-        # Should not raise
-        sync_broadcast_workflow_update(
-            execution_id=execution_id,
-            status='running',
-            progress=0.5
-        )
-
-    @patch('channels.layers.get_channel_layer')
-    def test_sync_broadcast_node_update(self, mock_get_layer):
-        """Test sync wrapper for broadcast_node_update."""
-        mock_layer = MagicMock()
-        mock_layer.group_send = AsyncMock()
-        mock_get_layer.return_value = mock_layer
-
-        execution_id = str(uuid4())
-
-        # Should not raise
-        sync_broadcast_node_update(
-            execution_id=execution_id,
-            node_id='node_1',
-            status='completed'
-        )
-
-    @patch('channels.layers.get_channel_layer')
-    def test_sync_broadcast_execution_completed(self, mock_get_layer):
-        """Test sync wrapper for broadcast_execution_completed."""
-        mock_layer = MagicMock()
-        mock_layer.group_send = AsyncMock()
-        mock_get_layer.return_value = mock_layer
-
-        execution_id = str(uuid4())
-
-        # Should not raise
-        sync_broadcast_execution_completed(
-            execution_id=execution_id,
-            status='completed'
-        )
 
 
 # ============================================================================

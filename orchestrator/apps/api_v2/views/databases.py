@@ -4,6 +4,7 @@ Database endpoints for API v2.
 Provides action-based endpoints for database operations.
 """
 
+import asyncio
 import json
 import logging
 import secrets
@@ -18,8 +19,9 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
-from asgiref.sync import async_to_sync, sync_to_async
+from asgiref.sync import sync_to_async
 from rest_framework import serializers, status as http_status
+from django.views.decorators.http import require_GET
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -57,6 +59,8 @@ DB_SSE_TICKET_TTL = 30
 DB_STREAM_NAME = "events:databases"
 SSE_BLOCK_MS = 1000
 SSE_HEARTBEAT_INTERVAL_SECONDS = 10
+SSE_MAX_CONNECTION_SECONDS = getattr(settings, "SSE_MAX_CONNECTION_SECONDS", 0)
+SSE_MAX_IDLE_SECONDS = getattr(settings, "SSE_MAX_IDLE_SECONDS", 0)
 DB_SSE_ACTIVE_PREFIX = "db_sse_active:"
 DB_SSE_ACTIVE_TTL = 60
 
@@ -1562,10 +1566,9 @@ def get_database_stream_ticket(request):
         401: OpenApiResponse(description='Unauthorized'),
     },
 )
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def database_stream(request):
-    return async_to_sync(_database_stream_async)(request)
+@require_GET
+async def database_stream(request):
+    return await _database_stream_async(request)
 
 
 async def _database_stream_async(request):
@@ -1653,6 +1656,8 @@ async def _database_stream_async(request):
         last_event_id = request.headers.get("Last-Event-ID")
         last_id = last_event_id or '$'
         last_heartbeat = time.monotonic()
+        stream_started_at = time.monotonic()
+        last_event_at = stream_started_at
 
         try:
             ready_event = {
@@ -1663,9 +1668,17 @@ async def _database_stream_async(request):
             }
             yield "event: database_stream_connected\n"
             yield f"data: {json.dumps(ready_event)}\n\n"
+            last_event_at = time.monotonic()
 
             while True:
                 loop_start = time.monotonic()
+                now = time.monotonic()
+                if SSE_MAX_CONNECTION_SECONDS and now - stream_started_at > SSE_MAX_CONNECTION_SECONDS:
+                    logger.info("database_stream: max connection time reached (user=%s)", username)
+                    break
+                if SSE_MAX_IDLE_SECONDS and now - last_event_at > SSE_MAX_IDLE_SECONDS:
+                    logger.info("database_stream: idle timeout reached (user=%s)", username)
+                    break
                 try:
                     current_value = await redis_conn.get(active_key)
                     if current_value and current_value != active_value:
@@ -1712,6 +1725,7 @@ async def _database_stream_async(request):
                         yield f"id: {msg_id}\n"
                         yield f"data: {event_data}\n\n"
                         last_id = msg_id
+                        last_event_at = time.monotonic()
                 loop_duration = time.monotonic() - loop_start
                 record_sse_loop_duration("databases", loop_duration)
                 if loop_duration > 5:
@@ -1723,6 +1737,10 @@ async def _database_stream_async(request):
 
         except GeneratorExit:
             logger.info("Client disconnected from database SSE stream")
+        except asyncio.CancelledError:
+            logger.info("database_stream: cancelled (user=%s)", username)
+        except GeneratorExit:
+            logger.info("database_stream: client disconnected (user=%s)", username)
         except Exception as exc:
             logger.error("Database SSE stream error: %s", exc)
             record_sse_stream_error("databases", "event_loop")

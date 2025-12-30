@@ -10,6 +10,7 @@ Covers:
 - Edge cases and error scenarios
 """
 
+import asyncio
 import pytest
 from unittest.mock import Mock, patch
 
@@ -143,7 +144,7 @@ class TestDAGExecutorLinearExecution:
 
             # Execute
             context = ContextManager({'input': 'value'})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             assert isinstance(result, dict)
@@ -171,7 +172,7 @@ class TestDAGExecutorLinearExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            executor.execute(context)
+            asyncio.run(executor.execute(context))
 
             assert execution_order == ['A', 'B', 'C']
 
@@ -205,7 +206,7 @@ class TestDAGExecutorLinearExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is False
             assert result['error'] == 'Node B failed'
@@ -233,7 +234,7 @@ class TestDAGExecutorLinearExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({'initial': 'data'})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             # Result should contain node results
@@ -291,7 +292,7 @@ class TestDAGExecutorConditionalExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({'condition': 'true'})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             # Should execute A -> B -> D, skip C
@@ -322,7 +323,7 @@ class TestDAGExecutorConditionalExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({'condition': 'false'})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             # Should execute A -> C -> D, skip B
@@ -365,7 +366,7 @@ class TestDAGExecutorConditionalExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             assert 'check' in execution_order
@@ -402,7 +403,7 @@ class TestDAGExecutorConditionalExecution:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
 
@@ -436,7 +437,7 @@ class TestDAGExecutorErrorHandling:
             mock_factory.get_handler.side_effect = ValueError("No handler for type 'unknown'")
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is False
             assert 'error' in result
@@ -452,7 +453,7 @@ class TestDAGExecutorErrorHandling:
             mock_handler.execute.side_effect = Exception("Unexpected error")
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is False
             assert 'error' in result
@@ -491,7 +492,7 @@ class TestDAGExecutorErrorHandling:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             # Should execute A -> C, skip B (condition error = false)
             assert 'A' in execution_order
@@ -534,7 +535,7 @@ class TestDAGExecutorEdgeCases:
             mock_handler.execute = mock_execute
 
             context = ContextManager({})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
 
@@ -572,7 +573,7 @@ class TestDAGExecutorEdgeCases:
             mock_handler.execute = mock_execute
 
             context = ContextManager({'a_path': 'true', 'b_path': 'false'})
-            success, result = executor.execute(context)
+            success, result = asyncio.run(executor.execute(context))
 
             assert success is True
             # Both A and B are start nodes, C has multiple incoming edges

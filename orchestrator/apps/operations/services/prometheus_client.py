@@ -93,7 +93,7 @@ SERVICE_CONFIG = {
     'orchestrator': {
         'display_name': 'Orchestrator',
         'job_patterns': ['orchestrator', 'django'],
-        'namespace': 'orchestrator',
+        'namespace': 'cc1c_orchestrator',
     },
     'frontend': {
         'display_name': 'Frontend',

@@ -33,6 +33,28 @@ logger = logging.getLogger(__name__)
 # Namespace: cc1c_orchestrator_
 
 # =============================================================================
+# HTTP Request Metrics
+# =============================================================================
+
+http_requests_total = Counter(
+    'cc1c_orchestrator_requests_total',
+    'Total HTTP requests',
+    ['method', 'status']
+)
+
+http_request_duration = Histogram(
+    'cc1c_orchestrator_request_duration_seconds',
+    'HTTP request duration',
+    ['method', 'status'],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10]
+)
+
+active_workers = Gauge(
+    'cc1c_orchestrator_active_workers',
+    'Number of in-flight HTTP requests'
+)
+
+# =============================================================================
 # Operations Metrics
 # =============================================================================
 
