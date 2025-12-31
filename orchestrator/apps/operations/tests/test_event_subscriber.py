@@ -49,7 +49,7 @@ class EventSubscriberTest(TestCase):
         self.batch_op = BatchOperation.objects.create(
             id='batch-123',
             name='Test Batch',
-            operation_type=BatchOperation.TYPE_INSTALL_EXTENSION,
+            operation_type=BatchOperation.TYPE_DESIGNER_CLI,
             target_entity='Extension',
             status=BatchOperation.STATUS_PROCESSING,
         )

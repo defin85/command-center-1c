@@ -41,6 +41,38 @@ type V8Executor struct {
 	timeout     time.Duration
 }
 
+// CommandOptions configures default flags for DESIGNER commands.
+type CommandOptions struct {
+	DisableStartupMessages bool
+	DisableStartupDialogs  bool
+}
+
+// DefaultCommandOptions returns default CLI flags for silent execution.
+func DefaultCommandOptions() CommandOptions {
+	return CommandOptions{
+		DisableStartupMessages: true,
+		DisableStartupDialogs:  true,
+	}
+}
+
+// NewV8ExecutorFromEnv creates a V8Executor using environment configuration.
+// Requires EXE_1CV8_PATH to be set.
+func NewV8ExecutorFromEnv() (*V8Executor, error) {
+	exePath := os.Getenv("EXE_1CV8_PATH")
+	if exePath == "" {
+		return nil, fmt.Errorf("EXE_1CV8_PATH is not configured")
+	}
+
+	timeout := 5 * time.Minute
+	if raw := os.Getenv("CLI_1CV8_TIMEOUT"); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil {
+			timeout = parsed
+		}
+	}
+
+	return NewV8Executor(exePath, timeout), nil
+}
+
 // NewV8Executor creates a new V8Executor instance.
 // exe1cv8Path must be explicitly provided - no default path is assumed.
 func NewV8Executor(exe1cv8Path string, timeout time.Duration) *V8Executor {
@@ -156,143 +188,55 @@ func (e *V8Executor) Execute(ctx context.Context, args []string) (*ExecutionResu
 	return result, cmdErr
 }
 
-// BuildInstallLoadCommand builds command arguments for loading extension (step 1 of install).
-func BuildInstallLoadCommand(server, infobase, username, password, extensionName, extensionPath string) ([]string, error) {
+// BuildDesignerCommandArgs builds full DESIGNER command arguments.
+func BuildDesignerCommandArgs(
+	server string,
+	infobase string,
+	username string,
+	password string,
+	command string,
+	args []string,
+	options CommandOptions,
+) ([]string, error) {
 	if strings.TrimSpace(server) == "" {
 		return nil, fmt.Errorf("server cannot be empty")
 	}
 	if strings.TrimSpace(infobase) == "" {
 		return nil, fmt.Errorf("infobase cannot be empty")
 	}
-	if strings.TrimSpace(extensionName) == "" {
-		return nil, fmt.Errorf("extension name cannot be empty")
-	}
-	if strings.TrimSpace(extensionPath) == "" {
-		return nil, fmt.Errorf("extension path cannot be empty")
+
+	cmd := strings.TrimSpace(command)
+	cmd = strings.TrimPrefix(cmd, "/")
+	if cmd == "" {
+		return nil, fmt.Errorf("command cannot be empty")
 	}
 
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
+	cmdArgs := []string{"DESIGNER"}
+	if options.DisableStartupMessages {
+		cmdArgs = append(cmdArgs, "/DisableStartupMessages")
+	}
+	if options.DisableStartupDialogs {
+		cmdArgs = append(cmdArgs, "/DisableStartupDialogs")
+	}
+	cmdArgs = append(cmdArgs,
 		fmt.Sprintf("/S%s\\%s", server, infobase),
 		fmt.Sprintf("/N%s", username),
 		fmt.Sprintf("/P%s", password),
-		"/LoadCfg", extensionPath,
-		"-Extension", extensionName,
-	}, nil
+		fmt.Sprintf("/%s", cmd),
+	)
+	cmdArgs = append(cmdArgs, args...)
+	return cmdArgs, nil
 }
 
-// BuildInstallUpdateCommand builds command arguments for updating DB config (step 2 of install).
-func BuildInstallUpdateCommand(server, infobase, username, password, extensionName string) ([]string, error) {
-	if strings.TrimSpace(server) == "" {
-		return nil, fmt.Errorf("server cannot be empty")
+// MaskSensitiveArgs replaces password arguments with placeholder.
+func MaskSensitiveArgs(args []string) []string {
+	masked := make([]string, 0, len(args))
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "/P") {
+			masked = append(masked, "/P***")
+			continue
+		}
+		masked = append(masked, arg)
 	}
-	if strings.TrimSpace(infobase) == "" {
-		return nil, fmt.Errorf("infobase cannot be empty")
-	}
-	if strings.TrimSpace(extensionName) == "" {
-		return nil, fmt.Errorf("extension name cannot be empty")
-	}
-
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		"/UpdateDBCfg",
-		"-Extension", extensionName,
-	}, nil
-}
-
-// BuildDeleteCommand builds command arguments for deleting an extension.
-func BuildDeleteCommand(server, infobase, username, password, extensionName string) ([]string, error) {
-	if strings.TrimSpace(server) == "" {
-		return nil, fmt.Errorf("server cannot be empty")
-	}
-	if strings.TrimSpace(infobase) == "" {
-		return nil, fmt.Errorf("infobase cannot be empty")
-	}
-	if strings.TrimSpace(extensionName) == "" {
-		return nil, fmt.Errorf("extension name cannot be empty")
-	}
-
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		"/DeleteCfg",
-		"-Extension", extensionName,
-	}, nil
-}
-
-// BuildUpdateDBCfgCommand builds command arguments for updating DB configuration (no extension).
-func BuildUpdateDBCfgCommand(server, infobase, username, password string) ([]string, error) {
-	if strings.TrimSpace(server) == "" {
-		return nil, fmt.Errorf("server cannot be empty")
-	}
-	if strings.TrimSpace(infobase) == "" {
-		return nil, fmt.Errorf("infobase cannot be empty")
-	}
-
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		"/UpdateDBCfg",
-	}, nil
-}
-
-// BuildLoadConfigCommand builds command arguments for loading configuration from file (.cf).
-func BuildLoadConfigCommand(server, infobase, username, password, configPath string) ([]string, error) {
-	if strings.TrimSpace(server) == "" {
-		return nil, fmt.Errorf("server cannot be empty")
-	}
-	if strings.TrimSpace(infobase) == "" {
-		return nil, fmt.Errorf("infobase cannot be empty")
-	}
-	if strings.TrimSpace(configPath) == "" {
-		return nil, fmt.Errorf("config path cannot be empty")
-	}
-
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		"/LoadCfg", configPath,
-	}, nil
-}
-
-// BuildDumpConfigCommand builds command arguments for dumping configuration to file (.cf).
-func BuildDumpConfigCommand(server, infobase, username, password, targetPath string) ([]string, error) {
-	if strings.TrimSpace(server) == "" {
-		return nil, fmt.Errorf("server cannot be empty")
-	}
-	if strings.TrimSpace(infobase) == "" {
-		return nil, fmt.Errorf("infobase cannot be empty")
-	}
-	if strings.TrimSpace(targetPath) == "" {
-		return nil, fmt.Errorf("target path cannot be empty")
-	}
-
-	return []string{
-		"DESIGNER",
-		"/DisableStartupMessages",
-		"/DisableStartupDialogs",
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		"/DumpCfg", targetPath,
-	}, nil
+	return masked
 }

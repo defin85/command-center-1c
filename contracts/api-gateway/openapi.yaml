@@ -239,8 +239,8 @@ components:
           example: "550e8400-e29b-41d4-a716-446655440000"
         operation_type:
           type: string
-          enum: [install_extension, update_data, query_data]
-          example: install_extension
+          enum: [designer_cli, update_data, query_data]
+          example: designer_cli
         status:
           type: string
           enum: [pending, running, completed, failed]

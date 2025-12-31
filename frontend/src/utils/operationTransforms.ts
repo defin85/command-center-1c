@@ -46,7 +46,7 @@ export interface UIBatchOperation {
   id: string
   name: string
   description: string
-  operation_type: 'create' | 'update' | 'delete' | 'query' | 'install_extension' | 'lock_scheduled_jobs' | 'unlock_scheduled_jobs' | 'terminate_sessions' | 'block_sessions' | 'unblock_sessions'
+  operation_type: 'create' | 'update' | 'delete' | 'query' | 'designer_cli' | 'lock_scheduled_jobs' | 'unlock_scheduled_jobs' | 'terminate_sessions' | 'block_sessions' | 'unblock_sessions'
   target_entity: string
   status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
   progress: number

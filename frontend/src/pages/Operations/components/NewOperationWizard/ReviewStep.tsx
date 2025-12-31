@@ -11,10 +11,11 @@ import {
   StopOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  RocketOutlined,
+  CodeOutlined,
   SearchOutlined,
   SyncOutlined,
   HeartOutlined,
+  RocketOutlined,
   WarningOutlined,
   FileOutlined,
   DatabaseOutlined,
@@ -34,7 +35,7 @@ const iconMap: Record<string, React.ReactNode> = {
   StopOutlined: <StopOutlined />,
   CheckCircleOutlined: <CheckCircleOutlined />,
   CloseCircleOutlined: <CloseCircleOutlined />,
-  RocketOutlined: <RocketOutlined />,
+  CodeOutlined: <CodeOutlined />,
   SearchOutlined: <SearchOutlined />,
   SyncOutlined: <SyncOutlined />,
   HeartOutlined: <HeartOutlined />,
@@ -46,6 +47,7 @@ const iconMap: Record<string, React.ReactNode> = {
 const categoryColors: Record<string, string> = {
   ras: 'blue',
   odata: 'green',
+  cli: 'purple',
   system: 'orange',
 }
 
@@ -94,21 +96,20 @@ const formatConfigForDisplay = (
       })
       break
 
-    case 'install_extension':
-      if (config.artifact_name) {
-        items.push({ label: 'Artifact', value: config.artifact_name })
-      } else if (config.artifact_id) {
-        items.push({ label: 'Artifact ID', value: config.artifact_id })
+    case 'designer_cli':
+      if (config.command) {
+        items.push({ label: 'Command', value: config.command })
       }
-      if (config.artifact_alias) {
-        items.push({ label: 'Alias', value: config.artifact_alias })
-      }
-      if (config.artifact_version) {
-        items.push({ label: 'Version', value: config.artifact_version })
+      if (config.args) {
+        items.push({ label: 'Args', value: config.args })
       }
       items.push({
-        label: 'Safe Mode',
-        value: config.safe_mode ? 'Yes (install without enabling)' : 'No',
+        label: 'Disable Messages',
+        value: config.disable_startup_messages === false ? 'No' : 'Yes',
+      })
+      items.push({
+        label: 'Disable Dialogs',
+        value: config.disable_startup_dialogs === false ? 'No' : 'Yes',
       })
       break
 
@@ -157,8 +158,8 @@ const getWarningMessage = (
       return `This operation will unblock sessions on ${dbText}. Users will be able to connect again.`
     case 'terminate_sessions':
       return `This operation will terminate active sessions on ${dbText}. Users may lose unsaved work!`
-    case 'install_extension':
-      return `This operation will install extension on ${dbText}. Databases may require restart.`
+    case 'designer_cli':
+      return `This operation will execute DESIGNER CLI on ${dbText}.`
     case 'query':
       return `This operation will execute OData query on ${dbText}.`
     case 'sync_cluster':

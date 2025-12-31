@@ -80,7 +80,7 @@ def _default_flow_path(operation_type: str) -> list[str]:
         "discover_clusters",
     }:
         return ["frontend", "api-gateway", "orchestrator", "worker"]
-    if operation_type == "install_extension":
+    if operation_type == "designer_cli":
         return ["frontend", "api-gateway", "orchestrator", "worker"]
     if operation_type in {"query", "health_check"}:
         return ["frontend", "api-gateway", "orchestrator", "worker"]
@@ -859,6 +859,53 @@ class EventSubscriber:
             logger.warning(f"BatchOperation not found: {operation_id}")
         except Exception as e:
             logger.error(f"Error handling worker:failed: {e}", exc_info=True)
+
+    def handle_infobase_locked(self, payload: Dict[str, Any], correlation_id: str) -> None:
+        """
+        Handle infobase locked events.
+
+        Currently informational: logs and attempts to update task status if correlation_id matches.
+        """
+        cluster_id = payload.get("cluster_id")
+        infobase_id = payload.get("infobase_id")
+        reason = payload.get("reason")
+        logger.info(
+            "Infobase locked event: cluster_id=%s, infobase_id=%s, reason=%s, correlation_id=%s",
+            cluster_id,
+            infobase_id,
+            reason,
+            correlation_id,
+        )
+        self._update_task_status_from_correlation_id(
+            correlation_id=correlation_id,
+            status=Task.STATUS_COMPLETED,
+            result=payload,
+        )
+
+    def handle_sessions_closed(self, payload: Dict[str, Any], correlation_id: str) -> None:
+        """
+        Handle sessions closed events.
+
+        Currently informational: logs and attempts to update task status if correlation_id matches.
+        """
+        cluster_id = payload.get("cluster_id")
+        infobase_id = payload.get("infobase_id")
+        sessions_closed = payload.get("sessions_closed")
+        duration_seconds = payload.get("duration_seconds")
+        logger.info(
+            "Sessions closed event: cluster_id=%s, infobase_id=%s, sessions_closed=%s, "
+            "duration_seconds=%s, correlation_id=%s",
+            cluster_id,
+            infobase_id,
+            sessions_closed,
+            duration_seconds,
+            correlation_id,
+        )
+        self._update_task_status_from_correlation_id(
+            correlation_id=correlation_id,
+            status=Task.STATUS_COMPLETED,
+            result=payload,
+        )
 
     def _update_database_restrictions(self, batch_op, results: list[Dict[str, Any]]) -> None:
         if batch_op.operation_type not in {

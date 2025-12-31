@@ -27,7 +27,6 @@ class HasDatabasePermission(BasePermission):
             'update': PermissionLevel.MANAGE,
             'partial_update': PermissionLevel.MANAGE,
             'destroy': PermissionLevel.ADMIN,
-            'install_extension': PermissionLevel.MANAGE,
         }
 
         action = getattr(view, 'action', None)

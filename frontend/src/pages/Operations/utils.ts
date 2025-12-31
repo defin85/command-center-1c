@@ -27,7 +27,7 @@ export const getOperationTypeLabel = (type: string): string => {
     update: 'Update',
     delete: 'Delete',
     query: 'Query',
-    install_extension: 'Install Extension',
+    designer_cli: 'Designer CLI',
     // RAS operations
     lock_scheduled_jobs: 'Lock Scheduled Jobs',
     unlock_scheduled_jobs: 'Unlock Scheduled Jobs',

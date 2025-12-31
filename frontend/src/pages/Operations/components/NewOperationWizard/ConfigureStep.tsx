@@ -4,12 +4,12 @@
  * Supports both built-in operation forms and DynamicForm for custom templates.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import {
   Typography,
   Form,
   Input,
-  Select,
+  AutoComplete,
   DatePicker,
   InputNumber,
   Switch,
@@ -29,11 +29,9 @@ import type { Dayjs } from 'dayjs'
 import type { ConfigureStepProps, OperationType, OperationConfig, DynamicFormValidationError } from './types'
 import { OPERATION_TYPES } from './types'
 import type { ValidationError } from '../../../../components/DynamicForm/types'
-import { formatFileSize } from '../../../../utils/formatters'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
-import { useArtifacts, useArtifactVersions, useArtifactAliases } from '../../../../api/queries'
-import type { Artifact } from '../../../../api/artifacts'
+import { useCliCommandCatalog } from '../../../../hooks/useCliCommandCatalog'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -183,201 +181,79 @@ const TerminateSessionsForm = ({
 )
 
 /**
- * Form for install_extension operation
+ * Form for designer_cli operation
  */
-const InstallExtensionForm = ({
+const DesignerCliForm = ({
   config,
   onChange,
 }: {
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
 }) => {
-  const [searchValue, setSearchValue] = useState('')
-  const artifactsQuery = useArtifacts({
-    kind: 'extension',
-    name: searchValue.trim() || undefined,
-  })
-  const selectedArtifactId = typeof config.artifact_id === 'string' ? config.artifact_id : undefined
-  const versionsQuery = useArtifactVersions(selectedArtifactId)
-  const aliasesQuery = useArtifactAliases(selectedArtifactId)
-  const selectedVersion = versionsQuery.data?.versions.find(
-    (version) => version.version === config.artifact_version
-  )
-  const selectedAlias = aliasesQuery.data?.aliases.find(
-    (alias) => alias.alias === config.artifact_alias
-  )
-
-  useEffect(() => {
-    if (!selectedArtifactId) {
-      if (config.artifact_version || config.artifact_alias || config.artifact_name) {
-        onChange({
-          artifact_version: undefined,
-          artifact_alias: undefined,
-          artifact_name: undefined,
-        })
-      }
-      return
-    }
-    const selected = artifactsQuery.data?.artifacts.find((item) => item.id === selectedArtifactId)
-    if (selected && config.artifact_name !== selected.name) {
-      onChange({ artifact_name: selected.name })
-    }
-  }, [
-    selectedArtifactId,
-    artifactsQuery.data?.artifacts,
-    config.artifact_alias,
-    config.artifact_name,
-    config.artifact_version,
-    onChange,
-  ])
-
-  const handleArtifactSelect = (value: string) => {
-    const selected = artifactsQuery.data?.artifacts.find((item) => item.id === value)
-    onChange({
-      artifact_id: value,
-      artifact_name: selected?.name,
-      artifact_version: undefined,
-      artifact_alias: undefined,
-    })
-  }
-
-  const handleAliasSelect = (value?: string) => {
-    onChange({
-      artifact_alias: value || undefined,
-      artifact_version: undefined,
-    })
-  }
-
-  const handleVersionSelect = (value?: string) => {
-    onChange({
-      artifact_version: value || undefined,
-      artifact_alias: undefined,
-    })
-  }
-
-  const artifactOptions = (artifactsQuery.data?.artifacts ?? []).map((artifact: Artifact) => ({
-    value: artifact.id,
-    label: artifact.name,
+  const { commands, loading } = useCliCommandCatalog()
+  const commandOptions = commands.map((cmd) => ({
+    value: cmd.id,
+    label: cmd.label,
   }))
 
-  const aliasOptions = (aliasesQuery.data?.aliases ?? []).map((alias) => ({
-    value: alias.alias,
-    label: `${alias.alias} → ${alias.version}`,
-  }))
-
-  const versionOptions = (versionsQuery.data?.versions ?? []).map((version) => ({
-    value: version.version,
-    label: `${version.version} (${version.filename})`,
-  }))
+  const disableStartupMessages = config.disable_startup_messages ?? true
+  const disableStartupDialogs = config.disable_startup_dialogs ?? true
 
   return (
     <Form layout="vertical">
-      {artifactsQuery.error && (
-        <Alert
-          type="error"
-          message="Не удалось загрузить список артефактов"
-          style={{ marginBottom: 16 }}
-        />
-      )}
       <Form.Item
-        label="Artifact"
+        label="Command"
         required
-        help="Choose an extension artifact from storage"
-        htmlFor="wizard-extension-artifact"
+        help="DESIGNER batch command (e.g., LoadCfg, UpdateDBCfg)"
+        htmlFor="wizard-designer-command"
       >
-        <Select
-          id="wizard-extension-artifact"
-          value={config.artifact_id || undefined}
-          placeholder="Select artifact"
-          loading={artifactsQuery.isLoading}
-          options={artifactOptions}
-          showSearch
-          allowClear
-          filterOption={false}
-          onSearch={setSearchValue}
-          onChange={(value) => {
-            if (value) {
-              handleArtifactSelect(value as string)
-            } else {
-              onChange({
-                artifact_id: undefined,
-                artifact_name: undefined,
-                artifact_version: undefined,
-                artifact_alias: undefined,
-              })
-            }
-          }}
-        />
+        <AutoComplete
+          options={commandOptions}
+          value={config.command || ''}
+          onChange={(value) => onChange({ command: value })}
+          placeholder="Enter command"
+        >
+          <Input id="wizard-designer-command" />
+        </AutoComplete>
       </Form.Item>
 
       <Form.Item
-        label="Alias"
-        help="Prefer alias for stable/approved installs"
-        htmlFor="wizard-extension-alias"
+        label="Arguments"
+        help="One argument per line (will be appended after /<command>)"
+        htmlFor="wizard-designer-args"
       >
-        <Select
-          id="wizard-extension-alias"
-          value={config.artifact_alias || undefined}
-          placeholder="Select alias (optional)"
-          loading={aliasesQuery.isLoading}
-          options={aliasOptions}
-          allowClear
-          disabled={!selectedArtifactId}
-          onChange={(value) => handleAliasSelect(value as string | undefined)}
+        <TextArea
+          id="wizard-designer-args"
+          rows={6}
+          placeholder="/path/to/file.cfe\n-Extension\nMyExtension"
+          value={config.args || ''}
+          onChange={(e) => onChange({ args: e.target.value })}
         />
       </Form.Item>
 
-      <Form.Item
-        label="Version"
-        help="Select a specific version if no alias is chosen"
-        htmlFor="wizard-extension-version"
-      >
-        <Select
-          id="wizard-extension-version"
-          value={config.artifact_version || undefined}
-          placeholder="Select version (optional)"
-          loading={versionsQuery.isLoading}
-          options={versionOptions}
-          allowClear
-          disabled={!selectedArtifactId || Boolean(config.artifact_alias)}
-          onChange={(value) => handleVersionSelect(value as string | undefined)}
+      <Form.Item label="Disable startup messages" htmlFor="wizard-designer-disable-messages">
+        <Switch
+          id="wizard-designer-disable-messages"
+          checked={disableStartupMessages}
+          onChange={(checked) => onChange({ disable_startup_messages: checked })}
         />
       </Form.Item>
 
-      {(selectedAlias || selectedVersion) && (
+      <Form.Item label="Disable startup dialogs" htmlFor="wizard-designer-disable-dialogs">
+        <Switch
+          id="wizard-designer-disable-dialogs"
+          checked={disableStartupDialogs}
+          onChange={(checked) => onChange({ disable_startup_dialogs: checked })}
+        />
+      </Form.Item>
+
+      {loading && (
         <Alert
-          message={(
-            <Space direction="vertical">
-              {selectedAlias && (
-                <Text>
-                  Alias <Text code>{selectedAlias.alias}</Text> → {selectedAlias.version}
-                </Text>
-              )}
-              {selectedVersion && (
-                <Text>
-                  {selectedVersion.filename} ({formatFileSize(selectedVersion.size)})
-                </Text>
-              )}
-              {selectedVersion && (
-                <Text type="secondary">Checksum: {selectedVersion.checksum}</Text>
-              )}
-            </Space>
-          )}
+          message="Loading command catalog"
           type="info"
-          style={{ marginBottom: 16 }}
+          showIcon
         />
       )}
-
-      <Form.Item>
-        <Switch
-          id="wizard-install-safe-mode"
-          checked={config.safe_mode || false}
-          onChange={(checked) => onChange({ safe_mode: checked })}
-        />
-        <Text style={{ marginLeft: 8 }}>
-          Safe mode (install without enabling)
-        </Text>
-      </Form.Item>
     </Form>
   )
 }
@@ -628,8 +504,8 @@ export const ConfigureStep = ({
         return <BlockSessionsForm config={config} onChange={handleChange} />
       case 'terminate_sessions':
         return <TerminateSessionsForm config={config} onChange={handleChange} />
-      case 'install_extension':
-        return <InstallExtensionForm config={config} onChange={handleChange} />
+      case 'designer_cli':
+        return <DesignerCliForm config={config} onChange={handleChange} />
       case 'query':
         return <QueryForm config={config} onChange={handleChange} />
       default:

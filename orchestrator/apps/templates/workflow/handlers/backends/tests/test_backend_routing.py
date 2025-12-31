@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from apps.templates.workflow.handlers.operation import OperationHandler
 from apps.templates.workflow.handlers.backends import (
+    CLIBackend,
     IBCMDBackend,
     ODataBackend,
     RASBackend,
@@ -87,12 +88,12 @@ class TestBackendRouting:
 
         assert isinstance(backend, ODataBackend)
 
-    def test_get_backend_returns_odata_for_install_extension(self):
-        """Test that install_extension operation routes to ODataBackend."""
+    def test_get_backend_returns_cli_for_designer_cli(self):
+        """Test that designer_cli operation routes to CLIBackend."""
         handler = OperationHandler()
-        backend = handler._get_backend('install_extension')
+        backend = handler._get_backend('designer_cli')
 
-        assert isinstance(backend, ODataBackend)
+        assert isinstance(backend, CLIBackend)
 
     def test_get_backend_returns_ibcmd_for_backup(self):
         """Test that ibcmd_backup operation routes to IBCMDBackend."""
@@ -120,12 +121,13 @@ class TestBackendRouting:
         assert 'OData' in error_msg
         assert 'RAS' in error_msg
         assert 'IBCMD' in error_msg
+        assert 'CLI' in error_msg
 
     def test_get_backend_returns_abstract_backend_interface(self):
         """Test that returned backends implement AbstractOperationBackend."""
         handler = OperationHandler()
 
-        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_backup']:
+        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_backup', 'designer_cli']:
             backend = handler._get_backend(op_type)
             assert isinstance(backend, AbstractOperationBackend)
 
@@ -136,7 +138,8 @@ class TestBackendRouting:
         # RASBackend should be first in the list
         assert isinstance(handler._backends[0], RASBackend)
         assert isinstance(handler._backends[1], IBCMDBackend)
-        assert isinstance(handler._backends[2], ODataBackend)
+        assert isinstance(handler._backends[2], CLIBackend)
+        assert isinstance(handler._backends[3], ODataBackend)
 
     def test_get_all_supported_types(self):
         """Test get_all_supported_types returns grouped operation types."""
@@ -145,6 +148,7 @@ class TestBackendRouting:
         assert 'odata' in all_types
         assert 'ras' in all_types
         assert 'ibcmd' in all_types
+        assert 'cli' in all_types
 
         # Check OData types
         odata_types = all_types['odata']
@@ -152,7 +156,6 @@ class TestBackendRouting:
         assert 'update' in odata_types
         assert 'delete' in odata_types
         assert 'query' in odata_types
-        assert 'install_extension' in odata_types
 
         # Check RAS types
         ras_types = all_types['ras']
@@ -169,11 +172,15 @@ class TestBackendRouting:
         assert 'ibcmd_replicate' in ibcmd_types
         assert 'ibcmd_create' in ibcmd_types
 
+        cli_types = all_types['cli']
+        assert 'designer_cli' in cli_types
+
     def test_backend_supports_operation_type_method(self):
         """Test backend support checking via supports_operation_type."""
         ras_backend = RASBackend()
         odata_backend = ODataBackend()
         ibcmd_backend = IBCMDBackend()
+        cli_backend = CLIBackend()
 
         # RAS should support RAS types
         assert ras_backend.supports_operation_type('lock_scheduled_jobs') is True
@@ -187,24 +194,34 @@ class TestBackendRouting:
         assert ibcmd_backend.supports_operation_type('ibcmd_backup') is True
         assert ibcmd_backend.supports_operation_type('create') is False
 
+        # CLI should support designer_cli
+        assert cli_backend.supports_operation_type('designer_cli') is True
+        assert cli_backend.supports_operation_type('create') is False
+
     def test_backend_get_supported_types_class_method(self):
         """Test get_supported_types class method on backends."""
         ras_types = RASBackend.get_supported_types()
         odata_types = ODataBackend.get_supported_types()
         ibcmd_types = IBCMDBackend.get_supported_types()
+        cli_types = CLIBackend.get_supported_types()
 
         # Both should return non-empty sets
         assert isinstance(ras_types, set)
         assert isinstance(odata_types, set)
         assert isinstance(ibcmd_types, set)
+        assert isinstance(cli_types, set)
         assert len(ras_types) > 0
         assert len(odata_types) > 0
         assert len(ibcmd_types) > 0
+        assert len(cli_types) > 0
 
         # Sets should not overlap
         assert len(ras_types & odata_types) == 0
         assert len(ras_types & ibcmd_types) == 0
         assert len(odata_types & ibcmd_types) == 0
+        assert len(cli_types & ras_types) == 0
+        assert len(cli_types & odata_types) == 0
+        assert len(cli_types & ibcmd_types) == 0
 
     def test_backend_instance_caching(self):
         """Test that handler maintains backend instances."""

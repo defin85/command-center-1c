@@ -154,13 +154,6 @@ export const NewOperationWizard = ({
       // Built-in operations
       if (!operationType) return false
 
-      if (operationType === 'install_extension') {
-        return Boolean(
-          config.artifact_id
-          && (config.artifact_alias || config.artifact_version)
-        )
-      }
-
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]
       if (!requiredFields || requiredFields.length === 0) {
         return true // No required fields for this operation

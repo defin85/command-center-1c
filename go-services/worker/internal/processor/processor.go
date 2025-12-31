@@ -19,7 +19,6 @@ import (
 	workerConfig "github.com/commandcenter1c/commandcenter/worker/internal/config"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/designerops"
-	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/extensionops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/healthops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibcmdops"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/odataops"
@@ -166,15 +165,6 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 	)
 
 	// Database operations
-	_ = processor.driverRegistry.RegisterDatabase(
-		extensionops.NewInstallDriver(
-			featureFlags,
-			processor.clusterResolver,
-			processor.credsClient,
-			redisClient,
-			processor.timeline,
-		),
-	)
 	_ = processor.driverRegistry.RegisterDatabase(
 		designerops.NewDriver(
 			processor.credsClient,

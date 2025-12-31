@@ -36,10 +36,10 @@ def isolated_registry():
 @pytest.mark.django_db
 def test_operations_catalog_returns_items(client, isolated_registry):
     isolated_registry.register(OperationType(
-        id="install_extension",
-        name="Install Extension",
-        description="Install extension via CLI.",
-        backend=BackendType.ODATA,
+        id="designer_cli",
+        name="Designer CLI",
+        description="Execute designer CLI command.",
+        backend=BackendType.CLI,
         target_entity=TargetEntity.INFOBASE,
         is_async=True,
         category="admin",
@@ -51,7 +51,7 @@ def test_operations_catalog_returns_items(client, isolated_registry):
     payload = resp.json()
     assert payload["count"] == len(payload["items"])
 
-    found = next((item for item in payload["items"] if item["id"] == "install_extension"), None)
+    found = next((item for item in payload["items"] if item["id"] == "designer_cli"), None)
     assert found is not None
     assert found["kind"] == "operation"
     assert found["driver"] == "cli"

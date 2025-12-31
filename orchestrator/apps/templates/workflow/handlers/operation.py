@@ -2,10 +2,10 @@
 OperationHandler for Workflow Engine.
 
 Executes operation nodes by rendering templates and routing to appropriate backends.
-Uses Strategy pattern to delegate execution to ODataBackend or RASBackend.
+Uses Strategy pattern to delegate execution to backend implementations.
 
 Phase 4 Week 17: Full integration with Worker via BatchOperationFactory.
-Enhanced: Strategy pattern for backend routing (OData/RAS).
+Enhanced: Strategy pattern for backend routing (OData/RAS/CLI/IBCMD).
 """
 
 import logging
@@ -20,7 +20,7 @@ from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
-from .backends import AbstractOperationBackend, IBCMDBackend, ODataBackend, RASBackend
+from .backends import AbstractOperationBackend, CLIBackend, IBCMDBackend, ODataBackend, RASBackend
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +34,10 @@ class OperationHandler(BaseNodeHandler):
         2. Render template via TemplateRenderer
         3. Extract target_databases from context
         4. Route to appropriate backend based on operation_type:
-           - ODataBackend: create, update, delete, query, install_extension
+           - ODataBackend: create, update, delete, query
            - RASBackend: lock_scheduled_jobs, unlock_scheduled_jobs,
                         terminate_sessions, block_sessions, unblock_sessions
+           - CLIBackend: designer_cli
         5. Execute via backend and return result
 
     Backend Selection (Strategy Pattern):
@@ -57,6 +58,7 @@ class OperationHandler(BaseNodeHandler):
         self._backends: List[AbstractOperationBackend] = [
             RASBackend(),
             IBCMDBackend(),
+            CLIBackend(),
             ODataBackend(),
         ]
 
@@ -352,4 +354,5 @@ class OperationHandler(BaseNodeHandler):
             'odata': list(ODataBackend.get_supported_types()),
             'ras': list(RASBackend.get_supported_types()),
             'ibcmd': list(IBCMDBackend.get_supported_types()),
+            'cli': list(CLIBackend.get_supported_types()),
         }

@@ -26,7 +26,7 @@ export type OperationOperationType =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OperationOperationType = {
-  install_extension: "install_extension",
+  designer_cli: "designer_cli",
   update_data: "update_data",
   query_data: "query_data",
 } as const;

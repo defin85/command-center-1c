@@ -13,7 +13,7 @@ Comprehensive test suite for RAS and OData operation backends in the workflow en
   - `terminate_sessions` - terminate all active sessions
   - `block_sessions` - block new user connections
   - `unblock_sessions` - allow user connections
-- Verify RASBackend does NOT support OData operations (create, update, delete, query, install_extension)
+- Verify RASBackend does NOT support OData operations (create, update, delete, query)
 
 **RAS Operation Execution Tests (13 tests)**
 - `test_execute_lock_success` - successful lock operation with mocked RAS adapter
@@ -44,13 +44,12 @@ Comprehensive test suite for RAS and OData operation backends in the workflow en
 
 ### 2. Unit Tests for OData Backend (`test_odata_backend.py`)
 
-**Operation Type Support Tests (12 tests)**
+**Operation Type Support Tests (11 tests)**
 - Verify ODataBackend supports all OData operation types:
   - `create` - create records via OData POST
   - `update` - update records via OData PATCH
   - `delete` - delete records via OData DELETE
   - `query` - query records via OData GET
-  - `install_extension` - install .cfe extension
 - Verify ODataBackend does NOT support RAS operations (lock, unlock, terminate, block, unblock)
 
 **OData Operation Execution Tests (11 tests)**
@@ -63,7 +62,6 @@ Comprehensive test suite for RAS and OData operation backends in the workflow en
 - `test_execute_operation_with_sync_failure` - SYNC operation completion with failure
 - `test_execute_delete_operation` - delete operation workflow
 - `test_execute_query_operation` - query operation with result extraction
-- `test_execute_install_extension_operation` - extension installation operation
 
 **Initialization Tests (1 test)**
 - `test_initialization_with_defaults` - default timeout setting
@@ -71,13 +69,14 @@ Comprehensive test suite for RAS and OData operation backends in the workflow en
 **Integration Tests (1 test)**
 - `test_execute_with_workflow_execution_context` - workflow execution tracking
 
-**Total: 24 unit tests for ODataBackend**
+**Total: 23 unit tests for ODataBackend**
 
 ### 3. Backend Routing Tests (`test_backend_routing.py`)
 
-**Backend Selection Tests (21 tests)**
+**Backend Selection Tests (22 tests)**
 - `test_get_backend_returns_ras_for_*` (5 tests) - RAS operation routing
 - `test_get_backend_returns_odata_for_*` (5 tests) - OData operation routing
+- `test_get_backend_returns_cli_for_designer_cli` - CLI routing
 - `test_get_backend_raises_for_unknown_operation_type` - error on unknown type
 - `test_get_backend_raises_with_helpful_message` - helpful error messages
 - `test_get_backend_returns_abstract_backend_interface` - interface compliance

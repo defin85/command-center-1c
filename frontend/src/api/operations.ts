@@ -98,6 +98,18 @@ export interface OperationCatalogResponse {
   count: number;
 }
 
+export interface CliCommandDescriptor {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface CliCommandCatalogResponse {
+  version: string;
+  source: string;
+  commands: CliCommandDescriptor[];
+}
+
 /**
  * Execute RAS operation on selected databases
  */
@@ -159,6 +171,14 @@ export const getStreamMuxTicket = async (
 export const getOperationCatalog = async (): Promise<OperationCatalogResponse> => {
   const response = await apiClient.get<OperationCatalogResponse>(
     '/api/v2/operations/catalog/',
+    { skipGlobalError: true }
+  );
+  return response.data;
+};
+
+export const getCliCommandCatalog = async (): Promise<CliCommandCatalogResponse> => {
+  const response = await apiClient.get<CliCommandCatalogResponse>(
+    '/api/v2/operations/cli-commands/',
     { skipGlobalError: true }
   );
   return response.data;

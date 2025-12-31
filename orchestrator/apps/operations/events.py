@@ -157,7 +157,7 @@ class OperationFlowPublisher:
             current_service: Текущий сервис обрабатывающий операцию
             status: Статус операции (processing, completed, failed)
             message: Человекочитаемое сообщение о текущем действии
-            operation_type: Тип операции (sync_cluster, install_extension, etc.)
+            operation_type: Тип операции (sync_cluster, designer_cli, etc.)
             operation_name: Имя операции для отображения
             path: Список сервисов через которые проходит операция
             metadata: Дополнительные данные операции

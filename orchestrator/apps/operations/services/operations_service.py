@@ -274,93 +274,17 @@ class OperationsService:
         extension_config: dict,
         created_by: str = "system"
     ) -> EnqueueResult:
-        """
-        Enqueue extension installation operation.
-
-        Args:
-            database_ids: List of database UUIDs to install extension on
-            extension_config: Extension configuration dict with:
-                - extension_id: UUID of stored extension
-                - version: Extension version
-                - options: Installation options (safe_mode, etc.)
-            created_by: User who initiated the operation
-
-        Returns:
-            EnqueueResult with generated operation_id
-        """
-        from apps.databases.models import Database
-
-        operation_id = str(uuid.uuid4())
-
-        # Load database objects for unified format
-        databases = Database.objects.filter(id__in=database_ids)
-
-        message = {
-            "version": cls.VERSION,
-            "operation_id": operation_id,
-            "batch_id": None,
-            "operation_type": "install_extension",
-            "entity": "Extension",
-            "target_databases": [
-                cls._build_target_database_data(db) for db in databases
-            ],
-            "payload": {
-                "data": extension_config,
-                "filters": {},
-                "options": extension_config.get("options", {})
-            },
-            "execution_config": {
-                "batch_size": 1,  # Install one at a time
-                "timeout_seconds": 180,  # 3 minutes per install
-                "retry_count": 2,
-                "priority": "normal",
-                "idempotency_key": operation_id
-            },
-            "metadata": {
-                "created_by": created_by,
-                "created_at": timezone.now().isoformat(),
-                "template_id": None,
-                "tags": ["extension", "install"]
-            }
-        }
-
-        try:
-            redis_client.enqueue_operation(message)
-
-            database_count = databases.count()
-
-            event_publisher.publish(
-                operation_id=operation_id,
-                state='QUEUED',
-                microservice='orchestrator',
-                queue=cls.QUEUE_KEY,
-                target_databases_count=database_count
-            )
-
-            logger.info(
-                f"Extension install operation {operation_id} enqueued",
-                extra={
-                    "operation_id": operation_id,
-                    "database_count": database_count,
-                    "extension_id": extension_config.get("extension_id")
-                }
-            )
-
-            return EnqueueResult(
-                success=True,
-                operation_id=operation_id,
-                status="queued",
-                metadata={"database_count": database_count}
-            )
-
-        except Exception as exc:
-            logger.error(f"Error enqueueing extension install: {exc}", exc_info=True)
-            return EnqueueResult(
-                success=False,
-                operation_id=operation_id,
-                status="error",
-                error=str(exc)
-            )
+        """Deprecated: extension installation via install_extension is removed."""
+        logger.warning(
+            "install_extension is deprecated; use designer_cli workflow instead",
+            extra={"created_by": created_by, "database_count": len(database_ids)},
+        )
+        return EnqueueResult(
+            success=False,
+            operation_id="",
+            status="error",
+            error="install_extension is deprecated; use designer_cli workflow",
+        )
 
     @classmethod
     def enqueue_workflow_execution(
@@ -1351,7 +1275,7 @@ class OperationsService:
             raise ValueError("No valid databases found for the provided IDs")
 
         operation_id = str(uuid.uuid4())
-        timeout_seconds = 600 if operation_type == "install_extension" else 300
+        timeout_seconds = 300
 
         batch_operation = BatchOperation.objects.create(
             id=operation_id,

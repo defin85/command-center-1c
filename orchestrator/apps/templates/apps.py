@@ -9,6 +9,7 @@ class TemplatesConfig(AppConfig):
     def ready(self):
         """Register all operation types when app loads."""
         # Import backends to trigger registration
+        from apps.templates.workflow.handlers.backends.cli import CLIBackend
         from apps.templates.workflow.handlers.backends.ibcmd import IBCMDBackend
         from apps.templates.workflow.handlers.backends.ras import RASBackend
         from apps.templates.workflow.handlers.backends.odata import ODataBackend
@@ -17,3 +18,4 @@ class TemplatesConfig(AppConfig):
         RASBackend.register_operations()
         ODataBackend.register_operations()
         IBCMDBackend.register_operations()
+        CLIBackend.register_operations()

@@ -80,7 +80,7 @@ SERVICE_CONFIG = {
         'job_patterns': ['worker', 'go_worker'],
         'namespace': 'cc1c',
         'metrics_type': 'tasks',  # Use tasks_processed_total instead of requests_total
-        # Worker processes long-running tasks (e.g., sync_cluster, install_extension).
+        # Worker processes long-running tasks (e.g., sync_cluster, designer_cli).
         # Use wider p95 thresholds than HTTP services to avoid false "critical"
         # when the system is healthy but doing long work.
         'thresholds': {

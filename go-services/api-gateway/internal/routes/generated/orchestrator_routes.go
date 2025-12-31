@@ -59,6 +59,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/files/upload/", OperationID: "v2_files_upload_create"},
 	{Method: "POST", Path: "/operations/cancel-operation/", OperationID: "v2_operations_cancel_operation_create"},
 	{Method: "GET", Path: "/operations/catalog/", OperationID: "v2_operations_catalog_retrieve"},
+	{Method: "GET", Path: "/operations/cli-commands/", OperationID: "v2_operations_cli_commands_retrieve"},
 	{Method: "POST", Path: "/operations/execute/", OperationID: "v2_operations_execute_create"},
 	{Method: "POST", Path: "/operations/execute-ibcmd/", OperationID: "v2_operations_execute_ibcmd_create"},
 	{Method: "GET", Path: "/operations/get-operation/", OperationID: "v2_operations_get_operation_retrieve"},

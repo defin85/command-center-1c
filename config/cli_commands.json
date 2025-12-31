@@ -1,0 +1,274 @@
+{
+  "version": "8.3.27",
+  "source": "generated/its/\u0413\u043b\u0430\u0432\u043d\u0430\u044f_\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438_\u043f\u043e_\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435_\u043d\u0430_1\u0421_\u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430_1\u0421_\u041f\u0440\u0435\u0434\u043f\u0440\u0438\u044f\u0442\u0438\u0435._\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f_\u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430_1\u0421_\u041f\u0440\u0435\u0434\u043f\u0440\u0438\u044f\u0442\u0438\u0435_8.3.27_\u0420\u0443\u043a\u043e\u0432\u043e\u0434\u0441\u0442\u0432__v8.3.27__TI000000493.json",
+  "commands": [
+    {
+      "id": "AgentBaseDir",
+      "label": "AgentBaseDir"
+    },
+    {
+      "id": "AgentListenAddress",
+      "label": "AgentListenAddress"
+    },
+    {
+      "id": "AgentMode",
+      "label": "AgentMode"
+    },
+    {
+      "id": "AgentPort",
+      "label": "AgentPort"
+    },
+    {
+      "id": "AgentSSHHostKey",
+      "label": "AgentSSHHostKey"
+    },
+    {
+      "id": "AgentSSHHostKeyAuto",
+      "label": "AgentSSHHostKeyAuto"
+    },
+    {
+      "id": "CheckCanApplyConfigurationExtensions",
+      "label": "CheckCanApplyConfigurationExtensions"
+    },
+    {
+      "id": "CheckConfig",
+      "label": "CheckConfig"
+    },
+    {
+      "id": "CheckModules",
+      "label": "CheckModules"
+    },
+    {
+      "id": "CompareCfg",
+      "label": "CompareCfg"
+    },
+    {
+      "id": "ConfigurationRepositoryAddUser",
+      "label": "ConfigurationRepositoryAddUser"
+    },
+    {
+      "id": "ConfigurationRepositoryBindCfg",
+      "label": "ConfigurationRepositoryBindCfg"
+    },
+    {
+      "id": "ConfigurationRepositoryClearCache",
+      "label": "ConfigurationRepositoryClearCache"
+    },
+    {
+      "id": "ConfigurationRepositoryClearGlobalCache",
+      "label": "ConfigurationRepositoryClearGlobalCache"
+    },
+    {
+      "id": "ConfigurationRepositoryClearLocalCache",
+      "label": "ConfigurationRepositoryClearLocalCache"
+    },
+    {
+      "id": "ConfigurationRepositoryCommit",
+      "label": "ConfigurationRepositoryCommit"
+    },
+    {
+      "id": "ConfigurationRepositoryCopyUsers",
+      "label": "ConfigurationRepositoryCopyUsers"
+    },
+    {
+      "id": "ConfigurationRepositoryCreate",
+      "label": "ConfigurationRepositoryCreate"
+    },
+    {
+      "id": "ConfigurationRepositoryDumpCfg",
+      "label": "ConfigurationRepositoryDumpCfg"
+    },
+    {
+      "id": "ConfigurationRepositoryF",
+      "label": "ConfigurationRepositoryF"
+    },
+    {
+      "id": "ConfigurationRepositoryLock",
+      "label": "ConfigurationRepositoryLock"
+    },
+    {
+      "id": "ConfigurationRepositoryN",
+      "label": "ConfigurationRepositoryN"
+    },
+    {
+      "id": "ConfigurationRepositoryOptimizeData",
+      "label": "ConfigurationRepositoryOptimizeData"
+    },
+    {
+      "id": "ConfigurationRepositoryP",
+      "label": "ConfigurationRepositoryP"
+    },
+    {
+      "id": "ConfigurationRepositoryReport",
+      "label": "ConfigurationRepositoryReport"
+    },
+    {
+      "id": "ConfigurationRepositorySetLabel",
+      "label": "ConfigurationRepositorySetLabel"
+    },
+    {
+      "id": "ConfigurationRepositoryUnLock",
+      "label": "ConfigurationRepositoryUnLock"
+    },
+    {
+      "id": "ConfigurationRepositoryUnbindCfg",
+      "label": "ConfigurationRepositoryUnbindCfg"
+    },
+    {
+      "id": "ConfigurationRepositoryUpdateCfg",
+      "label": "ConfigurationRepositoryUpdateCfg"
+    },
+    {
+      "id": "ConvertFiles",
+      "label": "ConvertFiles"
+    },
+    {
+      "id": "CreateDistributionFiles",
+      "label": "CreateDistributionFiles"
+    },
+    {
+      "id": "CreateDistributive",
+      "label": "CreateDistributive"
+    },
+    {
+      "id": "CreateDistributivePackage",
+      "label": "CreateDistributivePackage"
+    },
+    {
+      "id": "CreateTemplateListFile",
+      "label": "CreateTemplateListFile"
+    },
+    {
+      "id": "DeleteCfg",
+      "label": "DeleteCfg"
+    },
+    {
+      "id": "DumpCfg",
+      "label": "DumpCfg"
+    },
+    {
+      "id": "DumpConfigFiles",
+      "label": "DumpConfigFiles"
+    },
+    {
+      "id": "DumpConfigToFiles",
+      "label": "DumpConfigToFiles"
+    },
+    {
+      "id": "DumpDBCfg",
+      "label": "DumpDBCfg"
+    },
+    {
+      "id": "DumpDBCfgList",
+      "label": "DumpDBCfgList"
+    },
+    {
+      "id": "DumpExternalDataProcessorOrReportToFiles",
+      "label": "DumpExternalDataProcessorOrReportToFiles"
+    },
+    {
+      "id": "DumpIB",
+      "label": "DumpIB"
+    },
+    {
+      "id": "DumpResult",
+      "label": "DumpResult"
+    },
+    {
+      "id": "EraseData",
+      "label": "EraseData"
+    },
+    {
+      "id": "GetConfigGenerationID",
+      "label": "GetConfigGenerationID"
+    },
+    {
+      "id": "IBCheckAndRepair",
+      "label": "IBCheckAndRepair"
+    },
+    {
+      "id": "IBRestoreIntegrity",
+      "label": "IBRestoreIntegrity"
+    },
+    {
+      "id": "LoadCfg",
+      "label": "LoadCfg"
+    },
+    {
+      "id": "LoadConfigFiles",
+      "label": "LoadConfigFiles"
+    },
+    {
+      "id": "LoadConfigFromFiles",
+      "label": "LoadConfigFromFiles"
+    },
+    {
+      "id": "LoadExternalDataProcessorOrReportFromFiles",
+      "label": "LoadExternalDataProcessorOrReportFromFiles"
+    },
+    {
+      "id": "ManageCfgSupport",
+      "label": "ManageCfgSupport"
+    },
+    {
+      "id": "MergeCfg",
+      "label": "MergeCfg"
+    },
+    {
+      "id": "MobileAppUpdatePublication",
+      "label": "MobileAppUpdatePublication"
+    },
+    {
+      "id": "MobileAppWriteFile",
+      "label": "MobileAppWriteFile"
+    },
+    {
+      "id": "MobileClientDigiSign",
+      "label": "MobileClientDigiSign"
+    },
+    {
+      "id": "MobileClientWriteFile",
+      "label": "MobileClientWriteFile"
+    },
+    {
+      "id": "ReduceEventLogSize",
+      "label": "ReduceEventLogSize"
+    },
+    {
+      "id": "ResetMasterNode",
+      "label": "ResetMasterNode"
+    },
+    {
+      "id": "RestoreIB",
+      "label": "RestoreIB"
+    },
+    {
+      "id": "RollbackCfg",
+      "label": "RollbackCfg"
+    },
+    {
+      "id": "RunEnterprise",
+      "label": "RunEnterprise"
+    },
+    {
+      "id": "SetPredefinedDataUpdate",
+      "label": "SetPredefinedDataUpdate"
+    },
+    {
+      "id": "SignCfg",
+      "label": "SignCfg"
+    },
+    {
+      "id": "UpdateCfg",
+      "label": "UpdateCfg"
+    },
+    {
+      "id": "UpdateDBCfg",
+      "label": "UpdateDBCfg"
+    },
+    {
+      "id": "Visible",
+      "label": "Visible"
+    }
+  ]
+}

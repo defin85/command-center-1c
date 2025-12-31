@@ -23,7 +23,7 @@ from asgiref.sync import sync_to_async
 from rest_framework import serializers, status as http_status
 from django.views.decorators.http import require_GET
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 

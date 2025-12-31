@@ -81,6 +81,7 @@ urlpatterns = [
     path('operations/list-operations/', operations.list_operations, name='list-operations'),
     path('operations/get-operation/', operations.get_operation, name='get-operation'),
     path('operations/catalog/', operations.get_operation_catalog, name='operations-catalog'),
+    path('operations/cli-commands/', operations.get_cli_command_catalog, name='operations-cli-commands'),
     path('operations/execute/', operations.execute_operation, name='execute-operation'),
     path('operations/execute-ibcmd/', operations.execute_ibcmd_operation, name='execute-ibcmd-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),

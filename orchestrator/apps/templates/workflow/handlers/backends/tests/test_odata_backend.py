@@ -3,7 +3,7 @@ Unit tests for ODataBackend.
 
 Tests cover:
 - Operation type support checks
-- OData operation execution (create, update, delete, query, install_extension)
+- OData operation execution (create, update, delete, query)
 - Error handling (timeout, factory errors, etc.)
 - SYNC vs ASYNC modes
 """
@@ -39,11 +39,6 @@ class TestODataBackendOperationTypeSupport:
         backend = ODataBackend()
         assert backend.supports_operation_type('query') is True
 
-    def test_supports_install_extension(self):
-        """Test ODataBackend supports install_extension operation."""
-        backend = ODataBackend()
-        assert backend.supports_operation_type('install_extension') is True
-
     def test_does_not_support_lock_scheduled_jobs(self):
         """Test ODataBackend does not support RAS lock_scheduled_jobs."""
         backend = ODataBackend()
@@ -77,7 +72,6 @@ class TestODataBackendOperationTypeSupport:
         assert 'update' in supported_types
         assert 'delete' in supported_types
         assert 'query' in supported_types
-        assert 'install_extension' in supported_types
 
         # Should not contain RAS types
         assert 'lock_scheduled_jobs' not in supported_types
@@ -475,55 +469,6 @@ class TestODataBackendExecution:
 
         assert result.success is True
 
-    @pytest.mark.django_db
-    def test_execute_install_extension_operation(
-        self,
-        database,
-        workflow_execution
-    ):
-        """Test install_extension operation execution."""
-        from apps.templates.models import OperationTemplate
-
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
-            name="Install Extension",
-            operation_type='install_extension',
-            target_entity="Extension",
-            template_data={"path": "/path/to/extension.cfe"}
-        )
-
-        backend = ODataBackend()
-
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_factory.create.return_value = mock_operation
-
-            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
-                mock_enqueue.return_value = MagicMock(
-                    success=True,
-                    operation_id="task-ext",
-                    status="queued",
-                    error=None
-                )
-
-                with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
-                    mock_waiter.wait.return_value = {
-                        'success': True,
-                        'status': 'completed',
-                        'total_tasks': 1,
-                        'completed_tasks': 1,
-                        'error': None
-                    }
-
-                    result = backend.execute(
-                        template=template,
-                        rendered_data={},
-                        target_databases=[str(database.id)],
-                        context={'user_id': 'test_user'},
-                        execution=workflow_execution,
-                        mode=NodeExecutionMode.SYNC
-                    )
 
         assert result.success is True
 

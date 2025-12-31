@@ -352,6 +352,14 @@ def retry_installation(request):
             "message": "Installation retry scheduled"
         }
     """
+    return Response({
+        'success': False,
+        'error': {
+            'code': 'DEPRECATED_OPERATION',
+            'message': 'install_extension is deprecated; use designer_cli workflow',
+        }
+    }, status=400)
+
     database_id = request.data.get('database_id')
     extension_name = request.data.get('extension_name', 'ODataAutoConfig')
 
@@ -460,29 +468,24 @@ def retry_installation(request):
                 'operation_id': result.operation_id,
                 'message': 'Installation retry scheduled',
             })
-        else:
-            logger.warning(f"Go Worker enqueue failed: {result.error}")
+
+        logger.warning(f"Go Worker enqueue failed: {result.error}")
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'DEPRECATED_OPERATION',
+                'message': result.error or 'install_extension is deprecated',
+            }
+        }, status=400)
     except Exception as e:
         logger.warning(f"Go Worker unavailable: {e}")
-
-    # Fallback response
-    logger.info(
-        "Extension installation queued (async worker unavailable)",
-        extra={
-            'installation_id': str(installation.id),
-            'database_id': database_id,
-            'extension_name': extension_name,
-            'retry_count': retry_count,
-            'requested_by': request.user.username if request.user else 'anonymous',
-        }
-    )
-
-    return Response({
-        'database_id': database_id,
-        'installation_id': str(installation.id),
-        'status': 'pending',
-        'message': 'Installation queued (async worker unavailable)',
-    })
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'WORKER_UNAVAILABLE',
+                'message': 'Go Worker unavailable for extension install',
+            }
+        }, status=503)
 
 
 class BatchInstallRequestSerializer(serializers.Serializer):
@@ -541,6 +544,14 @@ def batch_install(request):
             ]
         }
     """
+    return Response({
+        'success': False,
+        'error': {
+            'code': 'DEPRECATED_OPERATION',
+            'message': 'install_extension is deprecated; use designer_cli workflow',
+        }
+    }, status=400)
+
     database_ids = request.data.get('database_ids', [])
 
     # Validate batch size limit

@@ -30,7 +30,6 @@ class BatchOperation(models.Model):
     TYPE_UPDATE = 'update'
     TYPE_DELETE = 'delete'
     TYPE_QUERY = 'query'
-    TYPE_INSTALL_EXTENSION = 'install_extension'
 
     # RAS operation types
     TYPE_LOCK_SCHEDULED_JOBS = 'lock_scheduled_jobs'
@@ -50,10 +49,7 @@ class BatchOperation(models.Model):
     TYPE_IBCMD_REPLICATE = 'ibcmd_replicate'
     TYPE_IBCMD_CREATE = 'ibcmd_create'
     # CLI operation types
-    TYPE_REMOVE_EXTENSION = 'remove_extension'
-    TYPE_CONFIG_UPDATE = 'config_update'
-    TYPE_CONFIG_LOAD = 'config_load'
-    TYPE_CONFIG_DUMP = 'config_dump'
+    TYPE_DESIGNER_CLI = 'designer_cli'
 
     TYPE_CHOICES = [
         # OData operations
@@ -61,7 +57,6 @@ class BatchOperation(models.Model):
         (TYPE_UPDATE, 'Update'),
         (TYPE_DELETE, 'Delete'),
         (TYPE_QUERY, 'Query'),
-        (TYPE_INSTALL_EXTENSION, 'Install Extension'),
         # RAS operations
         (TYPE_LOCK_SCHEDULED_JOBS, 'Lock Scheduled Jobs'),
         (TYPE_UNLOCK_SCHEDULED_JOBS, 'Unlock Scheduled Jobs'),
@@ -78,10 +73,7 @@ class BatchOperation(models.Model):
         (TYPE_IBCMD_REPLICATE, 'IBCMD Replicate'),
         (TYPE_IBCMD_CREATE, 'IBCMD Create'),
         # CLI operations
-        (TYPE_REMOVE_EXTENSION, 'Remove Extension'),
-        (TYPE_CONFIG_UPDATE, 'Update Configuration'),
-        (TYPE_CONFIG_LOAD, 'Load Configuration'),
-        (TYPE_CONFIG_DUMP, 'Dump Configuration'),
+        (TYPE_DESIGNER_CLI, 'Designer CLI'),
     ]
 
     # Identity

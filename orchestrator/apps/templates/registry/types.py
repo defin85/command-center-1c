@@ -21,6 +21,7 @@ class BackendType(str, Enum):
     ODATA = 'odata'
     RAS = 'ras'
     IBCMD = 'ibcmd'
+    CLI = 'cli'
 
 
 @dataclass

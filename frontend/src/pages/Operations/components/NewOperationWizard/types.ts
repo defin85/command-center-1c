@@ -19,7 +19,6 @@ export type OperationType =
   | 'create'
   | 'update'
   | 'delete'
-  | 'install_extension'
   | 'query'
   // System Operations - internal system operations
   | 'sync_cluster'
@@ -30,16 +29,13 @@ export type OperationType =
   | 'ibcmd_replicate'
   | 'ibcmd_create'
   // CLI Operations
-  | 'remove_extension'
-  | 'config_update'
-  | 'config_load'
-  | 'config_dump'
+  | 'designer_cli'
 
 /**
  * Operation category for grouping in UI
  * 'custom' is used for user-defined workflow templates
  */
-export type OperationCategory = 'ras' | 'odata' | 'system' | 'custom'
+export type OperationCategory = 'ras' | 'odata' | 'system' | 'cli' | 'custom'
 
 /**
  * Configuration for operation type display in UI
@@ -99,15 +95,16 @@ export const OPERATION_TYPES: OperationTypeConfig[] = [
     category: 'ras',
     requiresConfig: true,
   },
-  // OData Operations
+  // CLI Operations
   {
-    type: 'install_extension',
-    label: 'Install Extension',
-    description: 'Install extension from artifact storage',
-    icon: 'RocketOutlined',
-    category: 'odata',
+    type: 'designer_cli',
+    label: 'Designer CLI',
+    description: 'Execute 1C DESIGNER batch command',
+    icon: 'CodeOutlined',
+    category: 'cli',
     requiresConfig: true,
   },
+  // OData Operations
   {
     type: 'query',
     label: 'Execute Query',
@@ -141,8 +138,9 @@ export const OPERATION_TYPES: OperationTypeConfig[] = [
 export const OPERATION_CATEGORIES: Record<OperationCategory, { label: string; order: number }> = {
   ras: { label: 'RAS Operations', order: 1 },
   odata: { label: 'OData Operations', order: 2 },
-  system: { label: 'System Operations', order: 3 },
-  custom: { label: 'Custom Templates', order: 4 },
+  cli: { label: 'CLI Operations', order: 3 },
+  system: { label: 'System Operations', order: 4 },
+  custom: { label: 'Custom Templates', order: 5 },
 }
 
 /**
@@ -219,12 +217,11 @@ export interface OperationConfig {
   // RAS - terminate_sessions
   filter_by_app?: string
   exclude_admin?: boolean
-  // Install extension (artifact storage v2)
-  artifact_id?: string
-  artifact_version?: string
-  artifact_alias?: string
-  artifact_name?: string
-  safe_mode?: boolean
+  // Designer CLI
+  command?: string
+  args?: string
+  disable_startup_messages?: boolean
+  disable_startup_dialogs?: boolean
   // OData - query
   entity?: string
   filter?: string
@@ -249,6 +246,7 @@ export interface DynamicFormValidationError {
 export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof OperationConfig)[]>> = {
   query: ['entity'],
   block_sessions: ['message'],
+  designer_cli: ['command'],
 }
 
 /**

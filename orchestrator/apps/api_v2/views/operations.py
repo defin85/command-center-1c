@@ -23,7 +23,7 @@ from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.throttling import UserRateThrottle
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -32,6 +32,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
+from apps.operations.cli_catalog import load_cli_command_catalog
 from apps.databases.permissions import CanExecuteOperation
 from apps.databases.services import PermissionService
 from apps.databases.models import Database, PermissionLevel
@@ -118,8 +119,8 @@ OPERATION_CATALOG_UI_META = {
         "icon": "CloseCircleOutlined",
         "requires_config": True,
     },
-    "install_extension": {
-        "icon": "RocketOutlined",
+    "designer_cli": {
+        "icon": "CodeOutlined",
         "requires_config": True,
     },
     "query": {
@@ -137,11 +138,7 @@ OPERATION_CATALOG_UI_META = {
 }
 
 CLI_OPERATION_IDS = {
-    "install_extension",
-    "remove_extension",
-    "config_update",
-    "config_load",
-    "config_dump",
+    "designer_cli",
 }
 
 EXTRA_OPERATION_CATALOG = [
@@ -166,50 +163,6 @@ EXTRA_OPERATION_CATALOG = [
         "requires_config": False,
         "has_ui_form": True,
         "icon": "HeartOutlined",
-    },
-    {
-        "id": "remove_extension",
-        "label": "Remove Extension",
-        "description": "Remove installed extension via CLI.",
-        "driver": "cli",
-        "category": "cli",
-        "tags": ["cli", "extension"],
-        "requires_config": True,
-        "has_ui_form": False,
-        "icon": "ToolOutlined",
-    },
-    {
-        "id": "config_update",
-        "label": "Update Configuration",
-        "description": "Update database configuration via CLI.",
-        "driver": "cli",
-        "category": "cli",
-        "tags": ["cli", "configuration"],
-        "requires_config": True,
-        "has_ui_form": False,
-        "icon": "SettingOutlined",
-    },
-    {
-        "id": "config_load",
-        "label": "Load Configuration",
-        "description": "Load configuration from file via CLI.",
-        "driver": "cli",
-        "category": "cli",
-        "tags": ["cli", "configuration"],
-        "requires_config": True,
-        "has_ui_form": False,
-        "icon": "FileOutlined",
-    },
-    {
-        "id": "config_dump",
-        "label": "Dump Configuration",
-        "description": "Dump configuration to file via CLI.",
-        "driver": "cli",
-        "category": "cli",
-        "tags": ["cli", "configuration"],
-        "requires_config": True,
-        "has_ui_form": False,
-        "icon": "FileOutlined",
     },
 ]
 
@@ -480,6 +433,20 @@ class OperationCatalogResponseSerializer(serializers.Serializer):
     count = serializers.IntegerField()
 
 
+class CliCommandSerializer(serializers.Serializer):
+    """Single CLI command descriptor."""
+    id = serializers.CharField()
+    label = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+
+
+class CliCommandCatalogResponseSerializer(serializers.Serializer):
+    """Response for CLI command catalog endpoint."""
+    version = serializers.CharField()
+    source = serializers.CharField()
+    commands = CliCommandSerializer(many=True)
+
+
 # =============================================================================
 # Execute Operation Serializers
 # =============================================================================
@@ -506,11 +473,7 @@ class ExecuteOperationRequestSerializer(serializers.Serializer):
         ('ibcmd_create', 'IBCMD Create'),
     ]
     CLI_OPERATION_TYPES = [
-        ('install_extension', 'Install Extension'),
-        ('remove_extension', 'Remove Extension'),
-        ('config_update', 'Update Configuration'),
-        ('config_load', 'Load Configuration'),
-        ('config_dump', 'Dump Configuration'),
+        ('designer_cli', 'Designer CLI'),
     ]
 
     operation_type = serializers.ChoiceField(
@@ -589,103 +552,6 @@ def _split_select(value):
     if isinstance(value, str):
         return [item.strip() for item in value.split(',') if item.strip()]
     return []
-
-
-def _prepare_install_extension_config(user, database_ids, config):
-    from pathlib import Path
-    import shutil
-    import hashlib
-
-    from apps.artifacts.models import Artifact, ArtifactKind, ArtifactUsage, ArtifactVersion
-    from apps.artifacts.services import ArtifactService
-    from apps.artifacts.storage import ArtifactStorageClient, ArtifactStorageError
-    from apps.databases.models import Database
-
-    def checksum_path(path: Path) -> str:
-        sha256 = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(8192), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-
-    artifact_id = config.get("artifact_id")
-    artifact_version = config.get("artifact_version")
-    artifact_alias = config.get("artifact_alias")
-    extension_filename = config.get("extension_filename")
-    extension_path = config.get("extension_path")
-    extension_name = config.get("extension_name")
-
-    artifact = None
-    version_obj = None
-
-    if artifact_id:
-        try:
-            artifact = Artifact.objects.get(id=artifact_id, kind=ArtifactKind.EXTENSION)
-            version_obj = ArtifactService.resolve_version(
-                artifact,
-                version=artifact_version,
-                alias=artifact_alias,
-            )
-        except (Artifact.DoesNotExist, ArtifactVersion.DoesNotExist) as exc:
-            raise ValueError("artifact or version not found") from exc
-        extension_filename = version_obj.filename
-        if not extension_path:
-            base_path = Path(getattr(settings, "EXTENSION_STORAGE_PATH", "/var/lib/1c/extensions"))
-            base_path.mkdir(parents=True, exist_ok=True)
-            local_path = base_path / extension_filename
-            storage = ArtifactStorageClient()
-            try:
-                if not local_path.exists() or checksum_path(local_path) != version_obj.checksum:
-                    data = storage.get_object(version_obj.storage_key)
-                    with open(local_path, "wb") as target:
-                        shutil.copyfileobj(data, target)
-                    data.close()
-                    data.release_conn()
-            except (ArtifactStorageError, OSError) as exc:
-                raise ValueError(f"Failed to download artifact: {exc}") from exc
-            extension_path = str(local_path)
-        if not extension_name:
-            extension_name = (
-                extension_filename[:-4]
-                if extension_filename.lower().endswith(".cfe")
-                else extension_filename
-            )
-    else:
-        if extension_filename and not extension_path:
-            base_path = getattr(settings, "EXTENSION_STORAGE_PATH", "/var/lib/1c/extensions")
-            extension_path = f"{base_path}/{extension_filename}"
-        if extension_filename and not extension_name:
-            extension_name = (
-                extension_filename[:-4]
-                if extension_filename.lower().endswith(".cfe")
-                else extension_filename
-            )
-
-    if not extension_path:
-        raise ValueError("extension_path or extension_filename is required")
-    if not extension_name:
-        raise ValueError("extension_name is required")
-
-    data = {
-        "extension_name": extension_name,
-        "extension_path": extension_path,
-    }
-    if "safe_mode" in config:
-        data["safe_mode"] = bool(config["safe_mode"])
-
-    usage_records = []
-    if artifact and version_obj:
-        databases = list(Database.objects.filter(id__in=database_ids))
-        usage_records = [
-            ArtifactUsage(
-                artifact=artifact,
-                version=version_obj,
-                database=db,
-            )
-            for db in databases
-        ]
-
-    return data, usage_records
 
 
 def _enqueue_odata_operation(user, operation_type, database_ids, config):
@@ -800,7 +666,7 @@ class OperationMuxTicketRequestSerializer(serializers.Serializer):
             name='operation_type',
             type=str,
             required=False,
-            description='Filter by type (create, update, delete, query, install_extension)'
+            description='Filter by type (create, update, delete, query, designer_cli)'
         ),
         OpenApiParameter(
             name='created_by',
@@ -868,7 +734,7 @@ def list_operations(request):
     Query Parameters:
         - operation_id: Filter by operation ID
         - status: Filter by status (pending, queued, processing, completed, failed, cancelled)
-        - operation_type: Filter by type (create, update, delete, query, install_extension)
+        - operation_type: Filter by type (create, update, delete, query, designer_cli)
         - created_by: Filter by creator username
         - search: Search by name, description, or ID
         - filters: JSON object with filter conditions
@@ -1237,16 +1103,14 @@ def cancel_operation(request):
     - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`, `block_sessions`,
       `unblock_sessions`, `terminate_sessions`
     - OData: `create`, `update`, `delete`, `query`
-    - CLI: `install_extension`, `remove_extension`, `config_update`, `config_load`, `config_dump`
+    - CLI: `designer_cli`
     - IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`
 
     **Config notes:**
     - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`, `parameter`
     - OData query: `entity`, `filter`, `select`, `top`, `skip`
     - OData update/delete: `entity`, `entity_id`
-    - CLI install_extension: `artifact_id` + (`artifact_version` or `artifact_alias`)
-      or legacy `extension_filename` / `extension_path` + `extension_name`
-    - CLI operations: driver-specific fields (e.g. `extension_name`, `source_path`, `target_path`)
+    - CLI designer_cli: `command` + `args` + optional `options`
     ''',
     request=ExecuteOperationRequestSerializer,
     responses={
@@ -1302,28 +1166,14 @@ def execute_operation(request):
                 user=request.user,
             )
         elif operation_type in dict(ExecuteOperationRequestSerializer.CLI_OPERATION_TYPES):
-            if operation_type == "install_extension":
-                prepared_config, usage_records = _prepare_install_extension_config(
-                    request.user, database_ids, config
-                )
-                batch_operation = OperationsService.enqueue_cli_operation(
-                    operation_type=operation_type,
-                    database_ids=database_ids,
-                    config=prepared_config,
-                    user=request.user,
-                )
-                if usage_records:
-                    for usage in usage_records:
-                        usage.operation = batch_operation
-                    from apps.artifacts.models import ArtifactUsage
-                    ArtifactUsage.objects.bulk_create(usage_records)
-            else:
-                batch_operation = OperationsService.enqueue_cli_operation(
-                    operation_type=operation_type,
-                    database_ids=database_ids,
-                    config=config,
-                    user=request.user,
-                )
+            if not config.get("command"):
+                raise ValueError("command is required for designer_cli")
+            batch_operation = OperationsService.enqueue_cli_operation(
+                operation_type=operation_type,
+                database_ids=database_ids,
+                config=config,
+                user=request.user,
+            )
         elif operation_type in dict(ExecuteOperationRequestSerializer.ODATA_OPERATION_TYPES):
             batch_operation = _enqueue_odata_operation(request.user, operation_type, database_ids, config)
         else:
@@ -1805,6 +1655,8 @@ def _resolve_catalog_driver(operation_id: str, backend: BackendType | None) -> s
         return "odata"
     if backend == BackendType.IBCMD:
         return "ibcmd"
+    if backend == BackendType.CLI:
+        return "cli"
     if backend is None:
         return "workflow"
     return str(backend.value)
@@ -1970,6 +1822,22 @@ def get_operation_catalog(request):
         "items": items,
         "count": len(items),
     })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get CLI command catalog',
+    description='List supported DESIGNER batch commands for designer_cli.',
+    responses={
+        200: CliCommandCatalogResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_cli_command_catalog(request):
+    catalog = load_cli_command_catalog()
+    return Response(catalog)
 
 
 @extend_schema(

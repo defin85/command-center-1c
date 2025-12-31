@@ -364,22 +364,36 @@ export const OperationsPage = () => {
         return
       }
 
-      if (data.operationType === 'install_extension') {
-        const artifactId = data.config.artifact_id
-        const artifactAlias = data.config.artifact_alias
-        const artifactVersion = data.config.artifact_version
-        if (!artifactId || (!artifactAlias && !artifactVersion)) {
-          throw new Error('artifact selection is incomplete')
+      if (data.operationType === 'designer_cli') {
+        const command = typeof data.config.command === 'string' ? data.config.command.trim() : ''
+        if (!command) {
+          throw new Error('command is required')
+        }
+        const normalizeArgs = (value: unknown): string[] | undefined => {
+          if (Array.isArray(value)) {
+            const list = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            return list.length > 0 ? list : undefined
+          }
+          if (typeof value === 'string') {
+            const list = value
+              .split('\n')
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0)
+            return list.length > 0 ? list : undefined
+          }
+          return undefined
         }
 
         await apiClient.post('/api/v2/operations/execute/', {
-          operation_type: 'install_extension',
+          operation_type: 'designer_cli',
           database_ids: data.databaseIds,
           config: {
-            artifact_id: artifactId,
-            artifact_alias: artifactAlias,
-            artifact_version: artifactVersion,
-            safe_mode: Boolean(data.config.safe_mode),
+            command,
+            args: normalizeArgs(data.config.args),
+            options: {
+              disable_startup_messages: data.config.disable_startup_messages !== false,
+              disable_startup_dialogs: data.config.disable_startup_dialogs !== false,
+            },
           },
         })
         handleRefresh()
@@ -413,21 +427,6 @@ export const OperationsPage = () => {
       if (String(data.operationType).startsWith('ibcmd_')) {
         await api.postOperationsExecuteIbcmd({
           operation_type: data.operationType as 'ibcmd_backup' | 'ibcmd_restore' | 'ibcmd_replicate' | 'ibcmd_create',
-          database_ids: data.databaseIds,
-          config: data.config,
-        })
-        handleRefresh()
-        return
-      }
-
-      if (
-        data.operationType === 'remove_extension'
-        || data.operationType === 'config_update'
-        || data.operationType === 'config_load'
-        || data.operationType === 'config_dump'
-      ) {
-        await apiClient.post('/api/v2/operations/execute/', {
-          operation_type: data.operationType,
           database_ids: data.databaseIds,
           config: data.config,
         })

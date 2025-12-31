@@ -308,8 +308,9 @@ class WorkflowEngine:
 
             except Exception as exc:
                 # Handle unexpected errors
+                error_message = str(exc)
                 logger.error(
-                    f"Unexpected error during execution {execution.id}: {exc}",
+                    f"Unexpected error during execution {execution.id}: {error_message}",
                     extra={'execution_id': str(execution.id)},
                     exc_info=True
                 )
@@ -325,7 +326,7 @@ class WorkflowEngine:
                         execution.refresh_from_db()
 
                         if execution.status == WorkflowExecution.STATUS_RUNNING:
-                            execution.fail(str(exc))
+                            execution.fail(error_message)
                             execution.save(update_fields=[
                                 'status', 'error_message', 'completed_at'
                             ])

@@ -14,7 +14,7 @@ const RECONNECT_MAX_DELAY = 30000
 const RECONNECT_MAX_ATTEMPTS = 10
 const PING_INTERVAL = 30000
 const DISCONNECT_GRACE_MS = 250
-const LONG_RUNNING_OPERATION_TYPES = new Set(['sync_cluster', 'install_extension', 'execute_workflow'])
+const LONG_RUNNING_OPERATION_TYPES = new Set(['sync_cluster', 'designer_cli', 'execute_workflow'])
 
 export interface InvalidationEvent {
   scope: InvalidationScope

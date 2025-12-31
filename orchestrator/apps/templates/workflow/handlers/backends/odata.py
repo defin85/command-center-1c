@@ -2,7 +2,7 @@
 OData Backend for Workflow Engine.
 
 Handles OData-based operations via BatchOperationFactory and Celery task queue.
-Supports: create, update, delete, query, install_extension
+Supports: create, update, delete, query
 """
 
 import logging
@@ -44,7 +44,6 @@ class ODataBackend(AbstractOperationBackend):
         - update: Update records via OData PATCH
         - delete: Delete records via OData DELETE
         - query: Query records via OData GET
-        - install_extension: Install .cfe extension via worker direct CLI
     """
 
     # Operation type definitions with full metadata
@@ -119,24 +118,6 @@ class ODataBackend(AbstractOperationBackend):
             timeout_seconds=300,
             category='data',
             tags=['odata', 'query'],
-        ),
-        OperationType(
-            id='install_extension',
-            name='Install Extension',
-            description='Install .cfe extension file to 1C database via worker direct CLI.',
-            backend=BackendType.ODATA,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('extension_path', 'string', description='Path to .cfe file'),
-            ],
-            optional_parameters=[
-                ParameterSchema('restart_after', 'boolean', required=False,
-                              description='Restart database after installation', default=False),
-            ],
-            is_async=True,
-            timeout_seconds=600,
-            category='admin',
-            tags=['extension', 'deployment'],
         ),
     ]
 

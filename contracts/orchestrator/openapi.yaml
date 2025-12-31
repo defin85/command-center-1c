@@ -2292,22 +2292,38 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/cli-commands/:
+    get:
+      operationId: v2_operations_cli_commands_retrieve
+      description: List supported DESIGNER batch commands for designer_cli.
+      summary: Get CLI command catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CliCommandCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
       description: "\n    Queue an operation for execution on selected databases.\n\
         \n    **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,\
         \ `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    -\
-        \ OData: `create`, `update`, `delete`, `query`\n    - CLI: `install_extension`,\
-        \ `remove_extension`, `config_update`, `config_load`, `config_dump`\n    -\
+        \ OData: `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n\
+        \    -\
         \ IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\
         \n    **Config notes:**\n    - RAS block_sessions: `message`, `permission_code`,\
         \ `denied_from`, `denied_to`, `parameter`\n    - OData query: `entity`, `filter`,\
         \ `select`, `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n\
-        \    - CLI install_extension: `artifact_id` + (`artifact_version` or `artifact_alias`)\n\
-        \      or legacy `extension_filename` / `extension_path` + `extension_name`\n\
-        \    - CLI operations: driver-specific fields (e.g. `extension_name`, `source_path`,\
-        \ `target_path`)\n    "
+        \    - CLI designer_cli: `command` + `args` + optional `options`\n    "
       summary: Execute RAS operation
       tags:
       - v2
@@ -2543,7 +2559,7 @@ paths:
         name: operation_type
         schema:
           type: string
-        description: Filter by type (create, update, delete, query, install_extension)
+        description: Filter by type (create, update, delete, query, designer_cli)
       - in: query
         name: search
         schema:
@@ -4718,7 +4734,6 @@ components:
       - update
       - delete
       - query
-      - install_extension
       - lock_scheduled_jobs
       - unlock_scheduled_jobs
       - terminate_sessions
@@ -4731,17 +4746,13 @@ components:
       - ibcmd_restore
       - ibcmd_replicate
       - ibcmd_create
-      - remove_extension
-      - config_update
-      - config_load
-      - config_dump
+      - designer_cli
       type: string
       description: |-
         * `create` - Create
         * `update` - Update
         * `delete` - Delete
         * `query` - Query
-        * `install_extension` - Install Extension
         * `lock_scheduled_jobs` - Lock Scheduled Jobs
         * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
         * `terminate_sessions` - Terminate Sessions
@@ -4754,10 +4765,7 @@ components:
         * `ibcmd_restore` - IBCMD Restore
         * `ibcmd_replicate` - IBCMD Replicate
         * `ibcmd_create` - IBCMD Create
-        * `remove_extension` - Remove Extension
-        * `config_update` - Update Configuration
-        * `config_load` - Load Configuration
-        * `config_dump` - Dump Configuration
+        * `designer_cli` - Designer CLI
     BatchOperationStatusEnum:
       enum:
       - pending
@@ -5852,11 +5860,7 @@ components:
             * `ibcmd_restore` - IBCMD Restore
             * `ibcmd_replicate` - IBCMD Replicate
             * `ibcmd_create` - IBCMD Create
-            * `install_extension` - Install Extension
-            * `remove_extension` - Remove Extension
-            * `config_update` - Update Configuration
-            * `config_load` - Load Configuration
-            * `config_dump` - Dump Configuration
+            * `designer_cli` - Designer CLI
         database_ids:
           type: array
           items:
@@ -5887,11 +5891,7 @@ components:
       - ibcmd_restore
       - ibcmd_replicate
       - ibcmd_create
-      - install_extension
-      - remove_extension
-      - config_update
-      - config_load
-      - config_dump
+      - designer_cli
       type: string
       description: |-
         * `lock_scheduled_jobs` - Lock Scheduled Jobs
@@ -5907,11 +5907,7 @@ components:
         * `ibcmd_restore` - IBCMD Restore
         * `ibcmd_replicate` - IBCMD Replicate
         * `ibcmd_create` - IBCMD Create
-        * `install_extension` - Install Extension
-        * `remove_extension` - Remove Extension
-        * `config_update` - Update Configuration
-        * `config_load` - Load Configuration
-        * `config_dump` - Dump Configuration
+        * `designer_cli` - Designer CLI
     ExecuteOperationResponse:
       type: object
       description: Response for execute_operation endpoint.
@@ -6786,6 +6782,35 @@ components:
       required:
       - count
       - items
+    CliCommandDescriptor:
+      type: object
+      description: Single CLI command descriptor.
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+      required:
+      - id
+      - label
+    CliCommandCatalogResponse:
+      type: object
+      description: Response for CLI command catalog endpoint.
+      properties:
+        version:
+          type: string
+        source:
+          type: string
+        commands:
+          type: array
+          items:
+            $ref: '#/components/schemas/CliCommandDescriptor'
+      required:
+      - commands
+      - source
+      - version
     OperationDetailResponse:
       type: object
       description: Response for get_operation endpoint.

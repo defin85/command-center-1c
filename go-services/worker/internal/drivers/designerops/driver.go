@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -17,7 +19,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 )
 
-// Driver executes designer operations via direct CLI.
+// Driver executes arbitrary DESIGNER CLI commands (designer_cli).
 type Driver struct {
 	credsClient credentials.Fetcher
 	timeline    tracing.TimelineRecorder
@@ -37,14 +39,14 @@ func NewDriver(credsClient credentials.Fetcher, timeline tracing.TimelineRecorde
 func (d *Driver) Name() string { return "designer-cli" }
 
 func (d *Driver) OperationTypes() []string {
-	return []string{"remove_extension", "config_update", "config_load", "config_dump"}
+	return []string{"designer_cli"}
 }
 
 func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, databaseID string) (models.DatabaseResultV2, error) {
 	start := time.Now()
 	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
-
 	eventBase := fmt.Sprintf("cli.%s", msg.OperationType)
+
 	d.timeline.Record(ctx, msg.OperationID, eventBase+".started", events.MergeMetadata(map[string]interface{}{
 		"database_id": databaseID,
 	}, workflowMetadata))
@@ -53,7 +55,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return d.failResult(msg, databaseID, start, "direct CLI disabled (USE_DIRECT_CLI=false)", "CLI_DISABLED"), nil
 	}
 
-	exec, err := cli.NewDesignerExecutorFromEnv()
+	exec, err := cli.NewV8ExecutorFromEnv()
 	if err != nil {
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("cli executor not configured: %v", err), "CLI_NOT_CONFIGURED"), nil
 	}
@@ -67,44 +69,66 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	if creds.ServerPort > 0 {
 		server = fmt.Sprintf("%s:%d", creds.ServerAddress, creds.ServerPort)
 	}
-	if server == "" || creds.InfobaseName == "" || creds.Username == "" {
+	if server == "" || creds.InfobaseName == "" {
 		return d.failResult(msg, databaseID, start, "designer credentials are incomplete", "CREDENTIALS_ERROR"), nil
 	}
 
-	switch msg.OperationType {
-	case "remove_extension":
-		extName := extractString(msg.Payload.Data, "extension_name")
-		if extName == "" {
-			return d.failResult(msg, databaseID, start, "extension_name is required", "VALIDATION_ERROR"), nil
-		}
-		res, err := exec.RemoveExtension(ctx, server, creds.InfobaseName, creds.Username, creds.Password, extName)
-		return d.buildResult(msg, databaseID, start, res, err), nil
-	case "config_update":
-		res, err := exec.UpdateDBCfg(ctx, server, creds.InfobaseName, creds.Username, creds.Password)
-		return d.buildResult(msg, databaseID, start, res, err), nil
-	case "config_load":
-		sourcePath := extractString(msg.Payload.Data, "source_path")
-		if sourcePath == "" {
-			sourcePath = extractString(msg.Payload.Data, "config_path")
-		}
-		if sourcePath == "" {
-			return d.failResult(msg, databaseID, start, "source_path is required", "VALIDATION_ERROR"), nil
-		}
-		res, err := exec.LoadConfig(ctx, server, creds.InfobaseName, creds.Username, creds.Password, sourcePath)
-		return d.buildResult(msg, databaseID, start, res, err), nil
-	case "config_dump":
-		targetPath := extractString(msg.Payload.Data, "target_path")
-		if targetPath == "" {
-			return d.failResult(msg, databaseID, start, "target_path is required", "VALIDATION_ERROR"), nil
-		}
-		res, err := exec.DumpConfig(ctx, server, creds.InfobaseName, creds.Username, creds.Password, targetPath)
-		return d.buildResult(msg, databaseID, start, res, err), nil
-	default:
-		return d.failResult(msg, databaseID, start, fmt.Sprintf("unsupported operation type: %s", msg.OperationType), "INVALID_OPERATION"), nil
+	command := extractString(msg.Payload.Data, "command")
+	if strings.TrimSpace(command) == "" {
+		return d.failResult(msg, databaseID, start, "command is required", "VALIDATION_ERROR"), nil
 	}
+
+	args, err := extractStringSlice(msg.Payload.Data["args"])
+	if err != nil {
+		return d.failResult(msg, databaseID, start, err.Error(), "VALIDATION_ERROR"), nil
+	}
+
+	options := cli.DefaultCommandOptions()
+	if value := extractBoolOption(msg.Payload.Data, "disable_startup_messages"); value != nil {
+		options.DisableStartupMessages = *value
+	}
+	if value := extractBoolOption(msg.Payload.Data, "disable_startup_dialogs"); value != nil {
+		options.DisableStartupDialogs = *value
+	}
+	if rawOptions, ok := msg.Payload.Data["options"]; ok {
+		if optMap, ok := rawOptions.(map[string]interface{}); ok {
+			if value := extractBoolOption(optMap, "disable_startup_messages"); value != nil {
+				options.DisableStartupMessages = *value
+			}
+			if value := extractBoolOption(optMap, "disable_startup_dialogs"); value != nil {
+				options.DisableStartupDialogs = *value
+			}
+		}
+	}
+
+	cmdArgs, err := cli.BuildDesignerCommandArgs(
+		server,
+		creds.InfobaseName,
+		creds.Username,
+		creds.Password,
+		command,
+		args,
+		options,
+	)
+	if err != nil {
+		return d.failResult(msg, databaseID, start, err.Error(), "VALIDATION_ERROR"), nil
+	}
+
+	res, err := exec.Execute(ctx, cmdArgs)
+	maskedArgs := cli.MaskSensitiveArgs(cmdArgs)
+	return d.buildResult(msg, databaseID, start, command, args, maskedArgs, res, err), nil
 }
 
-func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, start time.Time, res *cli.ExecutionResult, err error) models.DatabaseResultV2 {
+func (d *Driver) buildResult(
+	msg *models.OperationMessage,
+	databaseID string,
+	start time.Time,
+	command string,
+	userArgs []string,
+	fullArgs []string,
+	res *cli.ExecutionResult,
+	err error,
+) models.DatabaseResultV2 {
 	duration := time.Since(start)
 	eventBase := fmt.Sprintf("cli.%s", msg.OperationType)
 	if err != nil {
@@ -130,6 +154,9 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 
 	data := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
+		"command":     command,
+		"args":        userArgs,
+		"cli_args":    fullArgs,
 	}
 	if res != nil {
 		data["exit_code"] = res.ExitCode
@@ -192,4 +219,68 @@ func extractString(data map[string]interface{}, key string) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+func extractStringSlice(value interface{}) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	switch raw := value.(type) {
+	case []string:
+		return raw, nil
+	case []interface{}:
+		out := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if item == nil {
+				continue
+			}
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("args must be array of strings")
+			}
+			if strings.TrimSpace(s) == "" {
+				continue
+			}
+			out = append(out, s)
+		}
+		return out, nil
+	case string:
+		lines := strings.Split(raw, "\n")
+		out := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				out = append(out, line)
+			}
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("args must be array of strings")
+	}
+}
+
+func extractBoolOption(data map[string]interface{}, key string) *bool {
+	if data == nil {
+		return nil
+	}
+	raw, ok := data[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch value := raw.(type) {
+	case bool:
+		return &value
+	case string:
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return nil
+		}
+		return &parsed
+	case float64:
+		parsed := value != 0
+		return &parsed
+	default:
+		return nil
+	}
 }
