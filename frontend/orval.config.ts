@@ -67,7 +67,7 @@ export default defineConfig({
     },
     output: {
       mode: 'single',
-      target: './src/api/generated-gateway.ts',
+      target: './src/api/generated-gateway/index.ts',
       schemas: './src/api/generated-gateway/model',
       client: 'axios',
       override: {

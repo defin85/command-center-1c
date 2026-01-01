@@ -68,7 +68,13 @@ export {
   cancelOperation,
 } from './operations'
 
-export { useOperationTemplates, useSyncTemplatesFromRegistry } from './templates'
+export {
+  useOperationTemplates,
+  useSyncTemplatesFromRegistry,
+  useCreateTemplate,
+  useUpdateTemplate,
+  useDeleteTemplate,
+} from './templates'
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'

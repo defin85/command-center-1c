@@ -3,8 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getV2 } from '../generated'
 import type { GetTemplatesListTemplatesParams } from '../generated/model/getTemplatesListTemplatesParams'
 import type { OperationTemplateListResponse } from '../generated/model/operationTemplateListResponse'
+import type { OperationTemplateWrite } from '../generated/model/operationTemplateWrite'
 import type { OperationTemplateSyncRequest } from '../generated/model/operationTemplateSyncRequest'
 import type { OperationTemplateSyncResponse } from '../generated/model/operationTemplateSyncResponse'
+import type { OperationTemplateId } from '../generated/model/operationTemplateId'
+import type { OperationTemplateDetailResponse } from '../generated/model/operationTemplateDetailResponse'
 
 import { queryKeys } from './index'
 
@@ -42,6 +45,42 @@ export function useSyncTemplatesFromRegistry() {
   return useMutation({
     mutationFn: (request: OperationTemplateSyncRequest): Promise<OperationTemplateSyncResponse> =>
       api.postTemplatesSyncFromRegistry(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
+    },
+  })
+}
+
+export function useCreateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> =>
+      api.postTemplatesCreateTemplate(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
+    },
+  })
+}
+
+export function useUpdateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> =>
+      api.postTemplatesUpdateTemplate(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
+    },
+  })
+}
+
+export function useDeleteTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: OperationTemplateId): Promise<OperationTemplateDetailResponse> =>
+      api.postTemplatesDeleteTemplate(request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
     },

@@ -53,7 +53,7 @@ check_port 8180
 |--------|------------|
 | `start-all.sh` | Запуск всех сервисов с автопересборкой |
 | `stop-all.sh` | Остановка всех сервисов |
-| `restart-all.sh` | Перезапуск всех сервисов |
+| `restart-all.sh` | Перезапуск всех сервисов (есть `--makemigrations`) |
 | `restart.sh <svc>` | Перезапуск одного сервиса |
 | `health-check.sh` | Проверка состояния сервисов |
 | `logs.sh <svc>` | Просмотр логов сервиса |
@@ -142,3 +142,8 @@ sudo systemctl restart blackbox-exporter
 # Пройти по оглавлению (TOC) и сохранить каждую посещенную страницу
 ./scripts/dev/its-scrape.py --crawl-toc --out-dir generated/its/crawl --no-raw-text --only-unique-docs
 ```
+
+Импорт в UI:
+- Откройте страницу `Settings → Driver Catalogs`.
+- Вкладка `CLI` → `Import ITS JSON`.
+- Загрузите JSON, сохраненный скриптом.

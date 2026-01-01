@@ -49,7 +49,7 @@ func (info *ServerInfo) Parse(decoder Decoder, version int, r io.Reader) {
 	for i := 0; i < count; i++ {
 		highBound := decoder.Short(r)
 		lowBound := decoder.Short(r)
-		info.PortRange = append(info.PortRange, fmt.Sprintf("%d:%D", lowBound, highBound))
+		info.PortRange = append(info.PortRange, fmt.Sprintf("%d:%d", lowBound, highBound))
 	}
 
 	if version >= 8 {

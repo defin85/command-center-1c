@@ -12,6 +12,7 @@
 #   ./scripts/dev/restart-all.sh --no-rebuild       # Skip rebuild
 #   ./scripts/dev/restart-all.sh --service=worker   # Single service
 #   ./scripts/dev/restart-all.sh --parallel-build   # Parallel rebuild
+#   ./scripts/dev/restart-all.sh --makemigrations   # Django makemigrations
 #   ./scripts/dev/restart-all.sh --verbose          # Detailed output
 #   ./scripts/dev/restart-all.sh --help             # Show help
 ##############################################################################
@@ -49,6 +50,7 @@ NO_REBUILD=false
 PARALLEL_BUILD=false
 SINGLE_SERVICE=""
 VERBOSE=false
+RUN_MAKEMIGRATIONS=false
 
 # Массивы для отчетности
 declare -a REBUILD_SERVICES=()
@@ -71,6 +73,7 @@ show_help() {
     echo "  --force-rebuild          Принудительно пересобрать все Go сервисы"
     echo "  --no-rebuild             Только перезапуск, без проверки/пересборки"
     echo "  --parallel-build         Параллельная пересборка (через build.sh --parallel)"
+    echo "  --makemigrations         Создать миграции Django перед migrate"
     echo "  --service=<name>         Перезапустить только один сервис"
     echo "  --verbose                Детальный вывод для отладки"
     echo ""
@@ -80,6 +83,7 @@ show_help() {
     echo "  $0 --no-rebuild              # Только перезапуск, без rebuild"
     echo "  $0 --service=api-gateway     # Перезапуск только API Gateway"
     echo "  $0 --parallel-build          # Параллельная пересборка"
+    echo "  $0 --makemigrations          # Создать миграции перед запуском"
     echo "  $0 --verbose                 # Детальный вывод"
     echo ""
     echo "Available services:"
@@ -135,6 +139,9 @@ restart_all_services() {
     fi
     if [ "$VERBOSE" = true ]; then
         start_args+=("--verbose")
+    fi
+    if [ "$RUN_MAKEMIGRATIONS" = true ]; then
+        start_args+=("--makemigrations")
     fi
 
     if bash "$SCRIPTS_DIR/start-all.sh" "${start_args[@]}"; then
@@ -236,6 +243,10 @@ parse_arguments() {
                 PARALLEL_BUILD=true
                 shift
                 ;;
+            --makemigrations)
+                RUN_MAKEMIGRATIONS=true
+                shift
+                ;;
             --service=*)
                 SINGLE_SERVICE="${1#*=}"
                 shift
@@ -276,6 +287,7 @@ main() {
         log_verbose "  FORCE_REBUILD: $FORCE_REBUILD"
         log_verbose "  NO_REBUILD: $NO_REBUILD"
         log_verbose "  PARALLEL_BUILD: $PARALLEL_BUILD"
+        log_verbose "  RUN_MAKEMIGRATIONS: $RUN_MAKEMIGRATIONS"
         log_verbose "  SINGLE_SERVICE: $SINGLE_SERVICE"
         log_verbose ""
     fi

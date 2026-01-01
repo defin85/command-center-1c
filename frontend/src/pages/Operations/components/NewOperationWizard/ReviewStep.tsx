@@ -101,7 +101,10 @@ const formatConfigForDisplay = (
         items.push({ label: 'Command', value: config.command })
       }
       if (config.args) {
-        items.push({ label: 'Args', value: config.args })
+        const argsValue = Array.isArray(config.args)
+          ? config.args.join(' ')
+          : config.args
+        items.push({ label: 'Args', value: argsValue })
       }
       items.push({
         label: 'Disable Messages',

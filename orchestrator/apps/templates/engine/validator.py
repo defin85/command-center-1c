@@ -33,7 +33,7 @@ class TemplateValidator:
         r'raw_input\s*\(',    # User input (Python 2)
     ]
 
-    # Valid operation types (whitelist)
+    # Valid operation types fallback (used when registry is empty)
     VALID_OPERATION_TYPES = [
         'create',
         'update',
@@ -197,19 +197,35 @@ class TemplateValidator:
         """Validate business logic rules."""
         errors = []
 
-        # 1. Validate operation_type is in whitelist
-        if template.operation_type not in self.VALID_OPERATION_TYPES:
+        # 1. Validate operation_type against registry (fallback to whitelist)
+        valid_types = set(self.VALID_OPERATION_TYPES)
+        try:
+            from apps.templates.registry import get_registry, TargetEntity
+
+            registry = get_registry()
+            if registry.get_all():
+                valid_types = set(registry.get_ids())
+        except Exception:
+            registry = None
+
+        if template.operation_type not in valid_types:
+            allowed = ", ".join(sorted(valid_types))
             errors.append(
                 f"Invalid operation_type: '{template.operation_type}'. "
-                f"Allowed: {', '.join(self.VALID_OPERATION_TYPES)}"
+                f"Allowed: {allowed}"
             )
 
         # 2. Validate target_entity if operation requires it
-        if template.operation_type in ['create', 'update', 'delete']:
-            if not template.target_entity:
+        if registry and registry.get_all():
+            op = registry.get(template.operation_type)
+            if op and op.target_entity == TargetEntity.ENTITY and not template.target_entity:
                 errors.append(
                     f"target_entity is required for operation_type '{template.operation_type}'"
                 )
+        elif template.operation_type in ['create', 'update', 'delete'] and not template.target_entity:
+            errors.append(
+                f"target_entity is required for operation_type '{template.operation_type}'"
+            )
 
         return errors
 

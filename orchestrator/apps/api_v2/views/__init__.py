@@ -9,7 +9,6 @@ from . import (
     clusters,
     operations,
     workflows,
-    extensions,
     system,
     service_mesh,
     audit,
@@ -19,6 +18,7 @@ from . import (
     files,
     timeline,
     dlq,
+    driver_catalogs,
 )
 
 __all__ = [
@@ -26,7 +26,6 @@ __all__ = [
     'clusters',
     'operations',
     'workflows',
-    'extensions',
     'system',
     'service_mesh',
     'audit',
@@ -36,4 +35,5 @@ __all__ = [
     'files',
     'timeline',
     'dlq',
+    'driver_catalogs',
 ]

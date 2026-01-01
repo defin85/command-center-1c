@@ -46,6 +46,7 @@ const { Text, Title } = Typography
 
 const KIND_LABELS: Record<ArtifactKind, string> = {
   extension: 'Расширение конфигурации (.cfe)',
+  config_cf: 'Конфигурация (*.cf)',
   config_xml: 'Выгрузка конфигурации XML (.xml)',
   dt_backup: 'Выгрузка ИБ (.dt)',
   epf: 'Внешняя обработка (.epf)',

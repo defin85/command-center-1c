@@ -219,9 +219,11 @@ export interface OperationConfig {
   exclude_admin?: boolean
   // Designer CLI
   command?: string
-  args?: string
+  args?: string | string[]
   disable_startup_messages?: boolean
   disable_startup_dialogs?: boolean
+  cli_mode?: 'manual' | 'guided'
+  cli_params?: Record<string, string | boolean>
   // OData - query
   entity?: string
   filter?: string

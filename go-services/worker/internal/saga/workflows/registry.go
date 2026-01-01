@@ -11,9 +11,6 @@ import (
 
 // Workflow IDs - unique identifiers for each workflow type.
 const (
-	// WorkflowExtensionInstall installs a .cfe extension to multiple databases.
-	WorkflowExtensionInstall = "extension_install"
-
 	// WorkflowExtensionRemove removes an extension from multiple databases.
 	WorkflowExtensionRemove = "extension_remove"
 
@@ -91,7 +88,6 @@ func (r *WorkflowRegistry) RegisterAll() error {
 		def  *saga.SagaDefinition
 	}{
 		// Extension workflows
-		{WorkflowExtensionInstall, NewExtensionInstallWorkflow(r.rm, r.deps)},
 		{WorkflowExtensionRemove, NewExtensionRemoveWorkflow(r.rm, r.deps)},
 
 		// Simple RAS workflows
@@ -137,7 +133,6 @@ func (r *WorkflowRegistry) RegisterAll() error {
 // Useful for testing or when not all dependencies are available.
 func (r *WorkflowRegistry) RegisterSubset(workflowIDs ...string) error {
 	workflowMap := map[string]func() *saga.SagaDefinition{
-		WorkflowExtensionInstall:    func() *saga.SagaDefinition { return NewExtensionInstallWorkflow(r.rm, r.deps) },
 		WorkflowExtensionRemove:     func() *saga.SagaDefinition { return NewExtensionRemoveWorkflow(r.rm, r.deps) },
 		WorkflowLockScheduledJobs:   func() *saga.SagaDefinition { return NewLockScheduledJobsWorkflow(r.rm, r.deps) },
 		WorkflowUnlockScheduledJobs: func() *saga.SagaDefinition { return NewUnlockScheduledJobsWorkflow(r.rm, r.deps) },
@@ -172,7 +167,6 @@ func (r *WorkflowRegistry) RegisterSubset(workflowIDs ...string) error {
 // ListRegisteredWorkflows returns a list of all workflow IDs that can be registered.
 func ListRegisteredWorkflows() []string {
 	return []string{
-		WorkflowExtensionInstall,
 		WorkflowExtensionRemove,
 		WorkflowLockScheduledJobs,
 		WorkflowUnlockScheduledJobs,
@@ -197,13 +191,6 @@ type WorkflowDescription struct {
 // GetWorkflowDescriptions returns descriptions of all available workflows.
 func GetWorkflowDescriptions() []WorkflowDescription {
 	return []WorkflowDescription{
-		{
-			ID:          WorkflowExtensionInstall,
-			Name:        "Install Extension",
-			Description: "Installs a .cfe extension to one or more 1C databases with proper locking and session management",
-			Steps:       []string{"acquire_locks", "lock_scheduled_jobs", "block_connections", "terminate_sessions", "wait_sessions_closed", "install_extension", "unblock_connections", "unlock_scheduled_jobs", "release_locks"},
-			Category:    "extensions",
-		},
 		{
 			ID:          WorkflowExtensionRemove,
 			Name:        "Remove Extension",

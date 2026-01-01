@@ -13,6 +13,7 @@ import { ServiceMeshPage } from './pages/ServiceMesh'
 import { RBACPage } from './pages/RBAC/RBACPage'
 import { UsersPage } from './pages/Users/UsersPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
+import { DriverCatalogsPage } from './pages/DriverCatalogs/DriverCatalogsPage'
 import { DLQPage } from './pages/DLQ'
 import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
@@ -239,6 +240,13 @@ function App() {
             <StaffRoute>
               <MainLayout>
                 <RuntimeSettingsPage />
+              </MainLayout>
+            </StaffRoute>
+          } />
+          <Route path="/settings/driver-catalogs" element={
+            <StaffRoute>
+              <MainLayout>
+                <DriverCatalogsPage />
               </MainLayout>
             </StaffRoute>
           } />

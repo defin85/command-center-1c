@@ -83,6 +83,12 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return d.failResult(msg, databaseID, start, err.Error(), "VALIDATION_ERROR"), nil
 	}
 
+	resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, args, msg.OperationID, databaseID)
+	if err != nil {
+		return d.failResult(msg, databaseID, start, fmt.Sprintf("artifact resolve failed: %v", err), "ARTIFACT_ERROR"), nil
+	}
+	defer cleanup()
+
 	options := cli.DefaultCommandOptions()
 	if value := extractBoolOption(msg.Payload.Data, "disable_startup_messages"); value != nil {
 		options.DisableStartupMessages = *value
@@ -107,7 +113,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		creds.Username,
 		creds.Password,
 		command,
-		args,
+		resolvedArgs,
 		options,
 	)
 	if err != nil {

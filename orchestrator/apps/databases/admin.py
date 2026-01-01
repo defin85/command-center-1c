@@ -9,7 +9,7 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
-    Cluster, Database, DatabaseGroup, ExtensionInstallation, StatusHistory,
+    Cluster, Database, DatabaseGroup, StatusHistory,
     ClusterPermission, DatabasePermission
 )
 from .services import DatabaseService
@@ -699,59 +699,6 @@ class DatabaseGroupAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         """Количество баз в группе."""
         return obj.databases.count()
     databases_count.short_description = 'Databases'
-
-
-@admin.register(ExtensionInstallation)
-class ExtensionInstallationAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
-    """Admin для ExtensionInstallation model."""
-
-    list_display = [
-        'id',
-        'database',
-        'extension_name',
-        'status_badge',
-        'retry_count',
-        'duration_seconds',
-        'started_at',
-        'completed_at'
-    ]
-    list_filter = ['status', 'extension_name', 'started_at']
-    search_fields = ['database__name', 'extension_name', 'error_message']
-    readonly_fields = [
-        'id',
-        'started_at',
-        'completed_at',
-        'duration_seconds',
-        'retry_count'
-    ]
-
-    fieldsets = (
-        ('Основная информация', {
-            'fields': ('id', 'database', 'extension_name', 'status')
-        }),
-        ('Время выполнения', {
-            'fields': ('started_at', 'completed_at', 'duration_seconds', 'retry_count')
-        }),
-        ('Результат', {
-            'fields': ('error_message', 'metadata')
-        }),
-    )
-
-    def status_badge(self, obj):
-        """Цветной badge для статуса."""
-        colors = {
-            'pending': 'gray',
-            'in_progress': 'blue',
-            'completed': 'green',
-            'failed': 'red'
-        }
-        color = colors.get(obj.status, 'gray')
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">●</span> {}',
-            color,
-            obj.get_status_display()
-        )
-    status_badge.short_description = 'Status'
 
 
 @admin.register(ClusterPermission)

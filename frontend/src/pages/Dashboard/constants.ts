@@ -2,7 +2,7 @@
  * Constants for dashboard statistics calculations.
  */
 import { BatchOperationStatusEnum } from '../../api/generated/model/batchOperationStatusEnum'
-import { StatusD4eEnum } from '../../api/generated/model/statusD4eEnum'
+import { StatusC5cEnum } from '../../api/generated/model/statusC5cEnum'
 
 // ============================================================================
 // Operation Status Groups (for statistics calculation)
@@ -27,13 +27,13 @@ export const OPERATION_FAILED_STATUS = BatchOperationStatusEnum.failed
 
 /**
  * Database status indicating locked state.
- * Note: 'locked' is a business status not present in StatusD4eEnum,
+ * Note: 'locked' is a business status not present in StatusC5cEnum,
  * but may be returned by API or used in Dashboard logic.
  */
 export const DATABASE_LOCKED_STATUS = 'locked' as const
 
 /** Database status indicating maintenance */
-export const DATABASE_MAINTENANCE_STATUS = StatusD4eEnum.maintenance
+export const DATABASE_MAINTENANCE_STATUS = StatusC5cEnum.maintenance
 
 /** Database statuses considered unhealthy */
 export const DATABASE_UNHEALTHY_STATUSES = [
@@ -47,6 +47,6 @@ export const DATABASE_UNHEALTHY_STATUSES = [
 
 /** Cluster statuses indicating critical state */
 export const CLUSTER_CRITICAL_STATUSES = [
-  StatusD4eEnum.error,
-  StatusD4eEnum.inactive,
+  StatusC5cEnum.error,
+  StatusC5cEnum.inactive,
 ] as const

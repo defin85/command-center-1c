@@ -36,6 +36,7 @@ vi.mock('../WaterfallTimeline', () => ({
 describe('OperationTimelineDrawer', () => {
   const mockOperationId = 'op-123456789012345' // Long ID to test truncation
   const mockOnClose = vi.fn()
+  const apiOptions = { skipGlobalError: true }
 
   const mockTimelineResponse: OperationTimelineResponse = {
     operation_id: mockOperationId,
@@ -223,7 +224,8 @@ describe('OperationTimelineDrawer', () => {
       await waitFor(() => {
         expect(apiClient.post).toHaveBeenCalledWith(
           '/api/v2/operations/get-operation-timeline/',
-          { operation_id: mockOperationId }
+          { operation_id: mockOperationId },
+          apiOptions
         )
       })
     })
@@ -266,7 +268,8 @@ describe('OperationTimelineDrawer', () => {
       await waitFor(() => {
         expect(apiClient.post).toHaveBeenCalledWith(
           '/api/v2/operations/get-operation-timeline/',
-          { operation_id: 'op-first' }
+          { operation_id: 'op-first' },
+          apiOptions
         )
       })
 
@@ -283,7 +286,8 @@ describe('OperationTimelineDrawer', () => {
       await waitFor(() => {
         expect(apiClient.post).toHaveBeenCalledWith(
           '/api/v2/operations/get-operation-timeline/',
-          { operation_id: 'op-second' }
+          { operation_id: 'op-second' },
+          apiOptions
         )
       })
     })
@@ -697,7 +701,8 @@ describe('OperationTimelineDrawer', () => {
       // Verify API was called
       expect(apiClient.post).toHaveBeenCalledWith(
         '/api/v2/operations/get-operation-timeline/',
-        { operation_id: mockOperationId }
+        { operation_id: mockOperationId },
+        apiOptions
       )
 
       // Close drawer

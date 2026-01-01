@@ -97,7 +97,7 @@ function calculateDatabasesStats(databases: Database[]): DatabasesStats {
   let maintenance = 0
 
   for (const db of databases) {
-    // Cast to string for comparison since API may return statuses not in StatusD4eEnum
+    // Cast to string for comparison since API may return statuses not in StatusC5cEnum
     const status = db.status as string | undefined
 
     if (status === DATABASE_LOCKED_STATUS) {

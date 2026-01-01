@@ -37,52 +37,7 @@ func (sm *ExtensionInstallStateMachine) handleJobsLocked(ctx context.Context) er
 // handleSessionsClosed handles sessions closed state
 func (sm *ExtensionInstallStateMachine) handleSessionsClosed(ctx context.Context) error {
 	fmt.Printf("[StateMachine] Handling SessionsClosed state\n")
-
-	if sm.extensionInstaller != nil {
-		defer sm.clearDesignerCredentials()
-
-		server := sm.ServerAddress
-		if sm.ServerPort > 0 {
-			server = fmt.Sprintf("%s:%d", sm.ServerAddress, sm.ServerPort)
-		}
-
-		if server == "" || sm.InfobaseName == "" || sm.Username == "" {
-			return fmt.Errorf("direct install requires server, infobase_name, and username")
-		}
-
-		sm.timeline.Record(ctx, sm.OperationID, "cli.install_extension.started", map[string]interface{}{
-			"database_id": sm.DatabaseID,
-			"server":      server,
-			"infobase":    sm.InfobaseName,
-		})
-
-		res, err := sm.extensionInstaller.InstallExtension(ctx, ExtensionInstallRequest{
-			Server:        server,
-			InfobaseName:  sm.InfobaseName,
-			Username:      sm.Username,
-			Password:      sm.Password,
-			ExtensionName: sm.ExtensionName,
-			ExtensionPath: sm.ExtensionPath,
-		})
-		if err != nil {
-			sm.timeline.Record(ctx, sm.OperationID, "cli.install_extension.failed", map[string]interface{}{
-				"database_id": sm.DatabaseID,
-				"error":       err.Error(),
-			})
-			return fmt.Errorf("direct install failed: %w", err)
-		}
-
-		if res != nil {
-			sm.timeline.Record(ctx, sm.OperationID, "cli.install_extension.completed", map[string]interface{}{
-				"database_id": sm.DatabaseID,
-				"duration_ms": res.Duration.Milliseconds(),
-			})
-		}
-
-		return sm.transitionTo(StateExtensionInstalled)
-	}
-
-	return fmt.Errorf("direct installer is required for extension install")
+	return fmt.Errorf("extension installer removed; use designer_cli workflow")
 }
 
 // handleExtensionInstalled handles extension installed state

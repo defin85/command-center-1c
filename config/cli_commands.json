@@ -1,274 +1,3943 @@
 {
   "version": "8.3.27",
-  "source": "generated/its/\u0413\u043b\u0430\u0432\u043d\u0430\u044f_\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438_\u043f\u043e_\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435_\u043d\u0430_1\u0421_\u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430_1\u0421_\u041f\u0440\u0435\u0434\u043f\u0440\u0438\u044f\u0442\u0438\u0435._\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f_\u041f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430_1\u0421_\u041f\u0440\u0435\u0434\u043f\u0440\u0438\u044f\u0442\u0438\u0435_8.3.27_\u0420\u0443\u043a\u043e\u0432\u043e\u0434\u0441\u0442\u0432__v8.3.27__TI000000493.json",
+  "source": "../generated/its/Главная_Инструкции_по_разработке_на_1С_Платформа_1С_Предприятие._Документация_Платформа_1С_Предприятие_8.3.27_Руководств__v8.3.27__TI000000493.json",
+  "generated_at": "2025-12-31T14:19:41.929753+00:00",
   "commands": [
     {
+      "id": "AccessToken",
+      "label": "AccessToken",
+      "usage": "/AccessToken",
+      "description": "Позволяет указать JWT для выполнения аутентификации пользователя.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
       "id": "AgentBaseDir",
-      "label": "AgentBaseDir"
+      "label": "AgentBaseDir",
+      "usage": "/AgentBaseDir <рабочий каталог>",
+      "description": "Данная команда позволяет указать рабочий каталог, который используется при работе SFTP-сервера, а также при работе команд загрузки/выгрузки конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "рабочий каталог",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
     },
     {
       "id": "AgentListenAddress",
-      "label": "AgentListenAddress"
+      "label": "AgentListenAddress",
+      "usage": "/AgentListenAddress <Адрес>",
+      "description": "Параметр команды позволяет указать IP-адрес, который будет прослушиваться агентом. Если команда не указан, то по умолчанию используется IP-адрес 127.0.0.1.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "Адрес",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
     },
     {
       "id": "AgentMode",
-      "label": "AgentMode"
+      "label": "AgentMode",
+      "usage": "/AgentMode",
+      "description": "Включает режим агента конфигуратора. При наличии этой команды игнорируются команды /DisableStartupMessages /DisableStartupDialogs, если таковые указаны.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
     },
     {
       "id": "AgentPort",
-      "label": "AgentPort"
+      "label": "AgentPort",
+      "usage": "/AgentPort <Порт>",
+      "description": "Указывает номер сетевого порта, который использует агент в режиме SSH-сервера. Если команда не указана, то по умолчанию используется сетевой порт с номером 1543.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "Порт",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
     },
     {
       "id": "AgentSSHHostKey",
-      "label": "AgentSSHHostKey"
+      "label": "AgentSSHHostKey",
+      "usage": "/AgentSSHHostKey <приватный ключ>",
+      "description": "Параметр команды позволяет указать путь к закрытому ключу хоста. Если параметр не указан, то должна быть указана команда /AgentSSHHostKeyAuto. Если не указан ни одна команда ‐ запуск в режиме агента будет невозможен.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "приватный ключ",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
     },
     {
       "id": "AgentSSHHostKeyAuto",
-      "label": "AgentSSHHostKeyAuto"
+      "label": "AgentSSHHostKeyAuto",
+      "usage": "/AgentSSHHostKeyAuto",
+      "description": "Команда указывает, что закрытый ключ хоста имеет следующее расположение (в зависимости от используемой операционной системы):",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.16. Команды работы в режиме агента"
+    },
+    {
+      "id": "AllowExecuteScheduledJobs",
+      "label": "AllowExecuteScheduledJobs",
+      "usage": "/AllowExecuteScheduledJobs -Off|-Force",
+      "description": "Управление запуском регламентных заданий. Регламентные задания начинают выполняться на первом запущенном по порядку клиенте, у которого не /AllowExecuteScheduledJobs –Off. После завершения сеанса этого клиента, выполнение переходит к какому-либо из других запущенных сеансов. Если запускается сеанс с /AllowExecuteScheduledJobs –Force, то регламентные задания начинают выполняться на нем, не зависимо от наличия других сеансов.",
+      "params": [
+        {
+          "name": "Off",
+          "kind": "flag",
+          "flag": "-Off",
+          "required": true,
+          "label": "-Off",
+          "expects_value": false
+        },
+        {
+          "name": "Force",
+          "kind": "flag",
+          "flag": "-Force",
+          "required": true,
+          "label": "-Force",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "AppArch",
+      "label": "AppArch",
+      "usage": "/AppArch <разрядность>",
+      "description": "Позволяет указать разрядность используемого клиентского приложения.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "разрядность",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
+    },
+    {
+      "id": "AppAutoCheckMode",
+      "label": "AppAutoCheckMode",
+      "usage": "/AppAutoCheckMode",
+      "description": "Выполнять автоматическое определение приложения на основе данных информационной базы (основного режима запуска для конфигурации и режима запуска для пользователя).",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
+    },
+    {
+      "id": "AppAutoCheckVersion",
+      "label": "AppAutoCheckVersion",
+      "usage": "/AppAutoCheckVersion<режим>",
+      "description": "Выполнять автоматический подбор нужной версии для каждой информационной базы.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
+    },
+    {
+      "id": "AppAutoInstallLastVersion",
+      "label": "AppAutoInstallLastVersion",
+      "usage": "/AppAutoInstallLastVersion<режим>",
+      "description": "Управляет возможность автоматической установки новых версий клиентского приложения.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "Authoff",
+      "label": "Authoff",
+      "usage": "/Authoff",
+      "description": "Выполняет операцию OpenID logout (завершение сеанса работы пользователя) для протоколов OpenID и OpenID Connect. Завершение сеанса работы выполняется вне зависимости от используемого в дальнейшем метода аутентификации.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "C",
+      "label": "C",
+      "usage": "/C <строка текста>",
+      "description": "Передача параметра в прикладное решение.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "строка текста",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
     },
     {
       "id": "CheckCanApplyConfigurationExtensions",
-      "label": "CheckCanApplyConfigurationExtensions"
+      "label": "CheckCanApplyConfigurationExtensions",
+      "usage": "/CheckCanApplyConfigurationExtensions [-Extension <ИмяРасширения>] [-AllZones] [-Z «Значения разделителей»]",
+      "description": "Выполняется проверка применимости расширения для использования в конкретной информационной базе.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "ИмяРасширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllZones",
+          "kind": "flag",
+          "flag": "-AllZones",
+          "required": false,
+          "label": "-AllZones",
+          "expects_value": false
+        },
+        {
+          "name": "Z",
+          "kind": "flag",
+          "flag": "-Z",
+          "required": false,
+          "label": "-Z",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.5. Проверки конфигурации и расширений"
     },
     {
       "id": "CheckConfig",
-      "label": "CheckConfig"
+      "label": "CheckConfig",
+      "usage": "/CheckConfig [-ConfigLogIntegrity] [-IncorrectReferences] [-ThinClient] [-WebClient] [-MobileClient] [-MobileAppClient] [-Server] [-MobileAppServer] [-MobileClientStandalone] [-ExternalConnection] [-ExternalConnectionServer] [-ThickClientManagedApplication] [-ThickClientServerManagedApplication] [-ThickClientOrdinaryApplication] [-ThickClientServerOrdinaryApplication] [-DistributiveModules] [-UnreferenceProcedures] [-HandlersExistence] [-EmptyHandlers] [-ExtendedModulesCheck] [-CheckUseModality] [-CheckUseSynchronousCalls] [-UnsupportedFunctional] [-MobileClientDigiSign] [-Extension <Имя расширения>] [-AllExtensions]",
+      "description": "Выполнить централизованную проверку конфигурации. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "ConfigLogIntegrity",
+          "kind": "flag",
+          "flag": "-ConfigLogIntegrity",
+          "required": false,
+          "label": "-ConfigLogIntegrity",
+          "expects_value": false
+        },
+        {
+          "name": "IncorrectReferences",
+          "kind": "flag",
+          "flag": "-IncorrectReferences",
+          "required": false,
+          "label": "-IncorrectReferences",
+          "expects_value": false
+        },
+        {
+          "name": "ThinClient",
+          "kind": "flag",
+          "flag": "-ThinClient",
+          "required": false,
+          "label": "-ThinClient",
+          "expects_value": false
+        },
+        {
+          "name": "WebClient",
+          "kind": "flag",
+          "flag": "-WebClient",
+          "required": false,
+          "label": "-WebClient",
+          "expects_value": false
+        },
+        {
+          "name": "MobileClient",
+          "kind": "flag",
+          "flag": "-MobileClient",
+          "required": false,
+          "label": "-MobileClient",
+          "expects_value": false
+        },
+        {
+          "name": "MobileAppClient",
+          "kind": "flag",
+          "flag": "-MobileAppClient",
+          "required": false,
+          "label": "-MobileAppClient",
+          "expects_value": false
+        },
+        {
+          "name": "Server",
+          "kind": "flag",
+          "flag": "-Server",
+          "required": false,
+          "label": "-Server",
+          "expects_value": false
+        },
+        {
+          "name": "MobileAppServer",
+          "kind": "flag",
+          "flag": "-MobileAppServer",
+          "required": false,
+          "label": "-MobileAppServer",
+          "expects_value": false
+        },
+        {
+          "name": "MobileClientStandalone",
+          "kind": "flag",
+          "flag": "-MobileClientStandalone",
+          "required": false,
+          "label": "-MobileClientStandalone",
+          "expects_value": false
+        },
+        {
+          "name": "ExternalConnection",
+          "kind": "flag",
+          "flag": "-ExternalConnection",
+          "required": false,
+          "label": "-ExternalConnection",
+          "expects_value": false
+        },
+        {
+          "name": "ExternalConnectionServer",
+          "kind": "flag",
+          "flag": "-ExternalConnectionServer",
+          "required": false,
+          "label": "-ExternalConnectionServer",
+          "expects_value": false
+        },
+        {
+          "name": "ThickClientManagedApplication",
+          "kind": "flag",
+          "flag": "-ThickClientManagedApplication",
+          "required": false,
+          "label": "-ThickClientManagedApplication",
+          "expects_value": false
+        },
+        {
+          "name": "ThickClientServerManagedApplication",
+          "kind": "flag",
+          "flag": "-ThickClientServerManagedApplication",
+          "required": false,
+          "label": "-ThickClientServerManagedApplication",
+          "expects_value": false
+        },
+        {
+          "name": "ThickClientOrdinaryApplication",
+          "kind": "flag",
+          "flag": "-ThickClientOrdinaryApplication",
+          "required": false,
+          "label": "-ThickClientOrdinaryApplication",
+          "expects_value": false
+        },
+        {
+          "name": "ThickClientServerOrdinaryApplication",
+          "kind": "flag",
+          "flag": "-ThickClientServerOrdinaryApplication",
+          "required": false,
+          "label": "-ThickClientServerOrdinaryApplication",
+          "expects_value": false
+        },
+        {
+          "name": "DistributiveModules",
+          "kind": "flag",
+          "flag": "-DistributiveModules",
+          "required": false,
+          "label": "-DistributiveModules",
+          "expects_value": false
+        },
+        {
+          "name": "UnreferenceProcedures",
+          "kind": "flag",
+          "flag": "-UnreferenceProcedures",
+          "required": false,
+          "label": "-UnreferenceProcedures",
+          "expects_value": false
+        },
+        {
+          "name": "HandlersExistence",
+          "kind": "flag",
+          "flag": "-HandlersExistence",
+          "required": false,
+          "label": "-HandlersExistence",
+          "expects_value": false
+        },
+        {
+          "name": "EmptyHandlers",
+          "kind": "flag",
+          "flag": "-EmptyHandlers",
+          "required": false,
+          "label": "-EmptyHandlers",
+          "expects_value": false
+        },
+        {
+          "name": "ExtendedModulesCheck",
+          "kind": "flag",
+          "flag": "-ExtendedModulesCheck",
+          "required": false,
+          "label": "-ExtendedModulesCheck",
+          "expects_value": false
+        },
+        {
+          "name": "CheckUseModality",
+          "kind": "flag",
+          "flag": "-CheckUseModality",
+          "required": false,
+          "label": "-CheckUseModality",
+          "expects_value": false
+        },
+        {
+          "name": "CheckUseSynchronousCalls",
+          "kind": "flag",
+          "flag": "-CheckUseSynchronousCalls",
+          "required": false,
+          "label": "-CheckUseSynchronousCalls",
+          "expects_value": false
+        },
+        {
+          "name": "UnsupportedFunctional",
+          "kind": "flag",
+          "flag": "-UnsupportedFunctional",
+          "required": false,
+          "label": "-UnsupportedFunctional",
+          "expects_value": false
+        },
+        {
+          "name": "MobileClientDigiSign",
+          "kind": "flag",
+          "flag": "-MobileClientDigiSign",
+          "required": false,
+          "label": "-MobileClientDigiSign",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.5. Проверки конфигурации и расширений"
     },
     {
       "id": "CheckModules",
-      "label": "CheckModules"
+      "label": "CheckModules",
+      "usage": "/CheckModules [-ThinClient] [-WebClient] [-MobileClient] [-MobileClientStandalone] [-MobileAppClient] [-Server] [-MobileAppServer] [-ExternalConnection] [-ThickClientOrdinaryApplication] [-ExtendedModulesCheck] [-Extension <Имя расширения>] [-AllExtensions]",
+      "description": "Выполнить проверку программных модулей. Должен быть указан один или несколько параметров, описывающих режимы проверки. Если параметры не указаны, проверка выполнена не будет. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "ThinClient",
+          "kind": "flag",
+          "flag": "-ThinClient",
+          "required": false,
+          "label": "-ThinClient",
+          "expects_value": false
+        },
+        {
+          "name": "WebClient",
+          "kind": "flag",
+          "flag": "-WebClient",
+          "required": false,
+          "label": "-WebClient",
+          "expects_value": false
+        },
+        {
+          "name": "MobileClient",
+          "kind": "flag",
+          "flag": "-MobileClient",
+          "required": false,
+          "label": "-MobileClient",
+          "expects_value": false
+        },
+        {
+          "name": "MobileClientStandalone",
+          "kind": "flag",
+          "flag": "-MobileClientStandalone",
+          "required": false,
+          "label": "-MobileClientStandalone",
+          "expects_value": false
+        },
+        {
+          "name": "MobileAppClient",
+          "kind": "flag",
+          "flag": "-MobileAppClient",
+          "required": false,
+          "label": "-MobileAppClient",
+          "expects_value": false
+        },
+        {
+          "name": "Server",
+          "kind": "flag",
+          "flag": "-Server",
+          "required": false,
+          "label": "-Server",
+          "expects_value": false
+        },
+        {
+          "name": "MobileAppServer",
+          "kind": "flag",
+          "flag": "-MobileAppServer",
+          "required": false,
+          "label": "-MobileAppServer",
+          "expects_value": false
+        },
+        {
+          "name": "ExternalConnection",
+          "kind": "flag",
+          "flag": "-ExternalConnection",
+          "required": false,
+          "label": "-ExternalConnection",
+          "expects_value": false
+        },
+        {
+          "name": "ThickClientOrdinaryApplication",
+          "kind": "flag",
+          "flag": "-ThickClientOrdinaryApplication",
+          "required": false,
+          "label": "-ThickClientOrdinaryApplication",
+          "expects_value": false
+        },
+        {
+          "name": "ExtendedModulesCheck",
+          "kind": "flag",
+          "flag": "-ExtendedModulesCheck",
+          "required": false,
+          "label": "-ExtendedModulesCheck",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.5. Проверки конфигурации и расширений"
+    },
+    {
+      "id": "ClearCache",
+      "label": "ClearCache",
+      "usage": "/ClearCache",
+      "description": "Выполняется очистка служебных данных, размещенных в каталоге данных приложения:",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
     },
     {
       "id": "CompareCfg",
-      "label": "CompareCfg"
+      "label": "CompareCfg",
+      "usage": "/CompareCfg –FirstConfigurationType <тип конфигурации> [-FirstName <имя конфигурации>] [-FirstFile <путь к файлу>] [-FirstVersion <номер версии>] –SecondConfigurationType <тип конфигурации> [-SecondName <имя конфигурации>] [-SecondFile <путь к файлу>] [-SecondVersion <номер версии>] [-MappingRule <правило>] [-Objects <имя файла>] -ReportType <тип отчета> [-IncludeChangedObjects] [-IncludeDeletedObjects] [-IncludeAddedObjects] -ReportFormat <тип формата> -ReportFile <имя файла>",
+      "description": "Выполнить сравнение двух конфигураций и сформировать файл с отчетом о сравнении.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "тип конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": true,
+          "label": "тип конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "ReportType",
+          "kind": "flag",
+          "flag": "-ReportType",
+          "required": true,
+          "label": "тип отчета",
+          "expects_value": true
+        },
+        {
+          "name": "ReportFormat",
+          "kind": "flag",
+          "flag": "-ReportFormat",
+          "required": true,
+          "label": "тип формата",
+          "expects_value": true
+        },
+        {
+          "name": "ReportFile",
+          "kind": "flag",
+          "flag": "-ReportFile",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "FirstName",
+          "kind": "flag",
+          "flag": "-FirstName",
+          "required": false,
+          "label": "имя конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "FirstFile",
+          "kind": "flag",
+          "flag": "-FirstFile",
+          "required": false,
+          "label": "путь к файлу",
+          "expects_value": true
+        },
+        {
+          "name": "FirstVersion",
+          "kind": "flag",
+          "flag": "-FirstVersion",
+          "required": false,
+          "label": "номер версии",
+          "expects_value": true
+        },
+        {
+          "name": "SecondName",
+          "kind": "flag",
+          "flag": "-SecondName",
+          "required": false,
+          "label": "имя конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "SecondFile",
+          "kind": "flag",
+          "flag": "-SecondFile",
+          "required": false,
+          "label": "путь к файлу",
+          "expects_value": true
+        },
+        {
+          "name": "SecondVersion",
+          "kind": "flag",
+          "flag": "-SecondVersion",
+          "required": false,
+          "label": "номер версии",
+          "expects_value": true
+        },
+        {
+          "name": "MappingRule",
+          "kind": "flag",
+          "flag": "-MappingRule",
+          "required": false,
+          "label": "правило",
+          "expects_value": true
+        },
+        {
+          "name": "Objects",
+          "kind": "flag",
+          "flag": "-Objects",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "IncludeChangedObjects",
+          "kind": "flag",
+          "flag": "-IncludeChangedObjects",
+          "required": false,
+          "label": "-IncludeChangedObjects",
+          "expects_value": false
+        },
+        {
+          "name": "IncludeDeletedObjects",
+          "kind": "flag",
+          "flag": "-IncludeDeletedObjects",
+          "required": false,
+          "label": "-IncludeDeletedObjects",
+          "expects_value": false
+        },
+        {
+          "name": "IncludeAddedObjects",
+          "kind": "flag",
+          "flag": "-IncludeAddedObjects",
+          "required": false,
+          "label": "-IncludeAddedObjects",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "ConfigurationRepositoryAddUser",
-      "label": "ConfigurationRepositoryAddUser"
+      "label": "ConfigurationRepositoryAddUser",
+      "usage": "/ConfigurationRepositoryAddUser -User <Имя> -Pwd <Пароль> -Rights <Права> [-RestoreDeletedUser] [-Extension <Имя расширения>]",
+      "description": "Создать пользователя хранилища конфигурации. Пользователь, от имени которого выполняется подключение к хранилищу, должен обладать административными правами. Если пользователь с указанным именем существует, то пользователь добавлен не будет. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "User",
+          "kind": "flag",
+          "flag": "-User",
+          "required": true,
+          "label": "Имя",
+          "expects_value": true
+        },
+        {
+          "name": "Pwd",
+          "kind": "flag",
+          "flag": "-Pwd",
+          "required": true,
+          "label": "Пароль",
+          "expects_value": true
+        },
+        {
+          "name": "Rights",
+          "kind": "flag",
+          "flag": "-Rights",
+          "required": true,
+          "label": "Права",
+          "expects_value": true
+        },
+        {
+          "name": "RestoreDeletedUser",
+          "kind": "flag",
+          "flag": "-RestoreDeletedUser",
+          "required": false,
+          "label": "-RestoreDeletedUser",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.3. Работа с пользователями"
     },
     {
       "id": "ConfigurationRepositoryBindCfg",
-      "label": "ConfigurationRepositoryBindCfg"
+      "label": "ConfigurationRepositoryBindCfg",
+      "usage": "/ConfigurationRepositoryBindCfg [-forceBindAlreadyBindedUser] [-forceReplaceCfg] [-Extension <Имя расширения>]",
+      "description": "Выполняет подключение ранее неподключенной информационной базы к хранилищу конфигурации. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "forceBindAlreadyBindedUser",
+          "kind": "flag",
+          "flag": "-forceBindAlreadyBindedUser",
+          "required": false,
+          "label": "-forceBindAlreadyBindedUser",
+          "expects_value": false
+        },
+        {
+          "name": "forceReplaceCfg",
+          "kind": "flag",
+          "flag": "-forceReplaceCfg",
+          "required": false,
+          "label": "-forceReplaceCfg",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.5. Операции со всей конфигурацией"
     },
     {
       "id": "ConfigurationRepositoryClearCache",
-      "label": "ConfigurationRepositoryClearCache"
+      "label": "ConfigurationRepositoryClearCache",
+      "usage": "/ConfigurationRepositoryClearCache [-Extension <Имя расширения>]",
+      "description": "Выполнить очистку локальной базы данных хранилища конфигурации.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.7. Операции с кешем хранилища"
     },
     {
       "id": "ConfigurationRepositoryClearGlobalCache",
-      "label": "ConfigurationRepositoryClearGlobalCache"
+      "label": "ConfigurationRepositoryClearGlobalCache",
+      "usage": "/ConfigurationRepositoryClearGlobalCache [-Extension <Имя расширения>]",
+      "description": "Выполнить очистку глобального кеша версий конфигурации.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.7. Операции с кешем хранилища"
     },
     {
       "id": "ConfigurationRepositoryClearLocalCache",
-      "label": "ConfigurationRepositoryClearLocalCache"
+      "label": "ConfigurationRepositoryClearLocalCache",
+      "usage": "/ConfigurationRepositoryClearLocalCache [-Extension <Имя расширения>]",
+      "description": "Выполнить очистку локального кеша версий конфигурации.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.7. Операции с кешем хранилища"
     },
     {
       "id": "ConfigurationRepositoryCommit",
-      "label": "ConfigurationRepositoryCommit"
+      "label": "ConfigurationRepositoryCommit",
+      "usage": "/ConfigurationRepositoryCommit [–Objects <имя файла>] [-comment <текст комментария>] [-keepLocked] [-force] [-Extension <Имя расширения>]",
+      "description": "Выполняет помещение изменений объектов в хранилище конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "comment",
+          "kind": "flag",
+          "flag": "-comment",
+          "required": false,
+          "label": "текст комментария",
+          "expects_value": true
+        },
+        {
+          "name": "keepLocked",
+          "kind": "flag",
+          "flag": "-keepLocked",
+          "required": false,
+          "label": "-keepLocked",
+          "expects_value": false
+        },
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.4. Операции с объектами"
     },
     {
       "id": "ConfigurationRepositoryCopyUsers",
-      "label": "ConfigurationRepositoryCopyUsers"
+      "label": "ConfigurationRepositoryCopyUsers",
+      "usage": "/ConfigurationRepositoryCopyUsers -Path <путь> -User <Имя> -Pwd <Пароль> [-RestoreDeletedUser] [-Extension <Имя расширения>]",
+      "description": "Выполнить копирования пользователей из другого хранилища конфигурации. Копирование удаленных пользователей не выполняется. Если пользователь с указанным именем существует, то пользователь не будет добавлен. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "Path",
+          "kind": "flag",
+          "flag": "-Path",
+          "required": true,
+          "label": "путь",
+          "expects_value": true
+        },
+        {
+          "name": "User",
+          "kind": "flag",
+          "flag": "-User",
+          "required": true,
+          "label": "Имя",
+          "expects_value": true
+        },
+        {
+          "name": "Pwd",
+          "kind": "flag",
+          "flag": "-Pwd",
+          "required": true,
+          "label": "Пароль",
+          "expects_value": true
+        },
+        {
+          "name": "RestoreDeletedUser",
+          "kind": "flag",
+          "flag": "-RestoreDeletedUser",
+          "required": false,
+          "label": "-RestoreDeletedUser",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.3. Работа с пользователями"
     },
     {
       "id": "ConfigurationRepositoryCreate",
-      "label": "ConfigurationRepositoryCreate"
+      "label": "ConfigurationRepositoryCreate",
+      "usage": "/ConfigurationRepositoryCreate [-AllowConfigurationChanges -ChangesAllowedRule <Правило поддержки> -ChangesNotRecommendedRule <Правило поддержки>] [-NoBind] [-MinPasswordLenght <Длина>] [-CheckPasswordComplexity] [-Extension <Имя расширения>]",
+      "description": "Создать хранилище конфигурации. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "AllowConfigurationChanges",
+          "kind": "flag",
+          "flag": "-AllowConfigurationChanges",
+          "required": false,
+          "label": "-AllowConfigurationChanges",
+          "expects_value": false
+        },
+        {
+          "name": "ChangesAllowedRule",
+          "kind": "flag",
+          "flag": "-ChangesAllowedRule",
+          "required": false,
+          "label": "Правило поддержки",
+          "expects_value": true
+        },
+        {
+          "name": "ChangesNotRecommendedRule",
+          "kind": "flag",
+          "flag": "-ChangesNotRecommendedRule",
+          "required": false,
+          "label": "Правило поддержки",
+          "expects_value": true
+        },
+        {
+          "name": "NoBind",
+          "kind": "flag",
+          "flag": "-NoBind",
+          "required": false,
+          "label": "-NoBind",
+          "expects_value": false
+        },
+        {
+          "name": "MinPasswordLenght",
+          "kind": "flag",
+          "flag": "-MinPasswordLenght",
+          "required": false,
+          "label": "Длина",
+          "expects_value": true
+        },
+        {
+          "name": "CheckPasswordComplexity",
+          "kind": "flag",
+          "flag": "-CheckPasswordComplexity",
+          "required": false,
+          "label": "-CheckPasswordComplexity",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.2. Создание хранилища"
     },
     {
       "id": "ConfigurationRepositoryDumpCfg",
-      "label": "ConfigurationRepositoryDumpCfg"
+      "label": "ConfigurationRepositoryDumpCfg",
+      "usage": "/ConfigurationRepositoryDumpCfg <имя cf файла> [-v <номер версии хранилища>] [-Extension <Имя расширения>]",
+      "description": "Сохранить конфигурацию из хранилища в файл. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf файла",
+          "expects_value": true
+        },
+        {
+          "name": "v",
+          "kind": "flag",
+          "flag": "-v",
+          "required": false,
+          "label": "номер версии хранилища",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.5. Операции со всей конфигурацией"
     },
     {
       "id": "ConfigurationRepositoryF",
-      "label": "ConfigurationRepositoryF"
+      "label": "ConfigurationRepositoryF",
+      "usage": "/ConfigurationRepositoryF <каталог хранилища>",
+      "description": "Параметр предназначен для указания пути к хранилищу конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог хранилища",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.1. Параметры доступа к хранилищу"
     },
     {
       "id": "ConfigurationRepositoryLock",
-      "label": "ConfigurationRepositoryLock"
+      "label": "ConfigurationRepositoryLock",
+      "usage": "/ConfigurationRepositoryLock [–Objects <имя файла>] [-revised] [-Extension <Имя расширения>]",
+      "description": "Выполняет захват объектов из хранилища конфигурации для редактирования.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "revised",
+          "kind": "flag",
+          "flag": "-revised",
+          "required": false,
+          "label": "-revised",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.4. Операции с объектами"
     },
     {
       "id": "ConfigurationRepositoryN",
-      "label": "ConfigurationRepositoryN"
+      "label": "ConfigurationRepositoryN",
+      "usage": "/ConfigurationRepositoryN <имя>",
+      "description": "Параметр предназначен для указания имени пользователя хранилища конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.1. Параметры доступа к хранилищу"
     },
     {
       "id": "ConfigurationRepositoryOptimizeData",
-      "label": "ConfigurationRepositoryOptimizeData"
+      "label": "ConfigurationRepositoryOptimizeData",
+      "usage": "/ConfigurationRepositoryOptimizeData [-Extension <Имя расширения>]",
+      "description": "Выполняет оптимизацию хранения данных в хранилище конфигурации.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.6. Сервисные операции"
     },
     {
       "id": "ConfigurationRepositoryP",
-      "label": "ConfigurationRepositoryP"
+      "label": "ConfigurationRepositoryP",
+      "usage": "/ConfigurationRepositoryP <пароль>",
+      "description": "Параметр предназначен для указания пароля пользователя хранилища конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "пароль",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.1. Параметры доступа к хранилищу"
     },
     {
       "id": "ConfigurationRepositoryReport",
-      "label": "ConfigurationRepositoryReport"
+      "label": "ConfigurationRepositoryReport",
+      "usage": "/ConfigurationRepositoryReport <имя файла> [-NBegin <номер версии>] [-NEnd <номер версии>] [-DateBegin <дата начала>] [-DateEnd <дата окончания>] [-GroupByObject] [-GroupByComment] [-DoNotIncludeVersionsWithLabels] [-IncludeOnlyVersionsWithLabels] [-IncludeCommentLinesWithDoubleSlash] [-ConfigurationVersion <версия конфигурации>] [-ReportFormat <txt|mxl>] [-Extension <Имя расшире-ния>]",
+      "description": "Выполнить построение отчета по истории хранилища. Если параметры группировки не указаны и режим совместимости конфигурации равен значению Не использовать, то отчет формируется с группировкой по версиям. В режимах совместимости Версия 8.1 и Версия 8.2.13 отчет формируется с группировкой по объектам. Если конфигурация базы данных отличается от редактируемой по свойству совместимости, при обработке командной строки учитывается значение режима совместимости конфигурации базы данных. Допустимо указывать следующие имена файлов и использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "NBegin",
+          "kind": "flag",
+          "flag": "-NBegin",
+          "required": false,
+          "label": "номер версии",
+          "expects_value": true
+        },
+        {
+          "name": "NEnd",
+          "kind": "flag",
+          "flag": "-NEnd",
+          "required": false,
+          "label": "номер версии",
+          "expects_value": true
+        },
+        {
+          "name": "DateBegin",
+          "kind": "flag",
+          "flag": "-DateBegin",
+          "required": false,
+          "label": "дата начала",
+          "expects_value": true
+        },
+        {
+          "name": "DateEnd",
+          "kind": "flag",
+          "flag": "-DateEnd",
+          "required": false,
+          "label": "дата окончания",
+          "expects_value": true
+        },
+        {
+          "name": "GroupByObject",
+          "kind": "flag",
+          "flag": "-GroupByObject",
+          "required": false,
+          "label": "-GroupByObject",
+          "expects_value": false
+        },
+        {
+          "name": "GroupByComment",
+          "kind": "flag",
+          "flag": "-GroupByComment",
+          "required": false,
+          "label": "-GroupByComment",
+          "expects_value": false
+        },
+        {
+          "name": "DoNotIncludeVersionsWithLabels",
+          "kind": "flag",
+          "flag": "-DoNotIncludeVersionsWithLabels",
+          "required": false,
+          "label": "-DoNotIncludeVersionsWithLabels",
+          "expects_value": false
+        },
+        {
+          "name": "IncludeOnlyVersionsWithLabels",
+          "kind": "flag",
+          "flag": "-IncludeOnlyVersionsWithLabels",
+          "required": false,
+          "label": "-IncludeOnlyVersionsWithLabels",
+          "expects_value": false
+        },
+        {
+          "name": "IncludeCommentLinesWithDoubleSlash",
+          "kind": "flag",
+          "flag": "-IncludeCommentLinesWithDoubleSlash",
+          "required": false,
+          "label": "-IncludeCommentLinesWithDoubleSlash",
+          "expects_value": false
+        },
+        {
+          "name": "ConfigurationVersion",
+          "kind": "flag",
+          "flag": "-ConfigurationVersion",
+          "required": false,
+          "label": "версия конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "ReportFormat",
+          "kind": "flag",
+          "flag": "-ReportFormat",
+          "required": false,
+          "label": "txt mxl",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расшире-ния",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.6. Сервисные операции"
     },
     {
       "id": "ConfigurationRepositorySetLabel",
-      "label": "ConfigurationRepositorySetLabel"
+      "label": "ConfigurationRepositorySetLabel",
+      "usage": "/ConfigurationRepositorySetLabel [-v <номер версии хранилища>] [-name] <имя метки> [-comment <текст комментария>] [-Extension <Имя расширения>]",
+      "description": "Устанавливает метку на версию хранилища.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя метки",
+          "expects_value": true
+        },
+        {
+          "name": "v",
+          "kind": "flag",
+          "flag": "-v",
+          "required": false,
+          "label": "номер версии хранилища",
+          "expects_value": true
+        },
+        {
+          "name": "name",
+          "kind": "flag",
+          "flag": "-name",
+          "required": false,
+          "label": "-name",
+          "expects_value": false
+        },
+        {
+          "name": "comment",
+          "kind": "flag",
+          "flag": "-comment",
+          "required": false,
+          "label": "текст комментария",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.6. Сервисные операции"
     },
     {
       "id": "ConfigurationRepositoryUnLock",
-      "label": "ConfigurationRepositoryUnLock"
+      "label": "ConfigurationRepositoryUnLock",
+      "usage": "/ConfigurationRepositoryUnLock [–Objects <имя файла>] [-force] [-Extension <Имя расширения>]",
+      "description": "Выполняет отмену захвата объектов в хранилище конфигурации.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.4. Операции с объектами"
     },
     {
       "id": "ConfigurationRepositoryUnbindCfg",
-      "label": "ConfigurationRepositoryUnbindCfg"
+      "label": "ConfigurationRepositoryUnbindCfg",
+      "usage": "/ConfigurationRepositoryUnbindCfg [-force] [-Extension <Имя расширения>]",
+      "description": "Выполнить отключение конфигурации от хранилища конфигурации (у пользователя должны быть административные права в данной информационной базе). Если пользователь аутентифицируется в хранилище (интерактивно или через параметры командной строки), то отключение конфигурации от хранилища также отражается в самом хранилище конфигурации (информация о подключении удаляется), если же пользователь не аутентифицировался в хранилище, то производится только локальное отключение конфигурации от хранилища.",
+      "params": [
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.5. Операции со всей конфигурацией"
     },
     {
       "id": "ConfigurationRepositoryUpdateCfg",
-      "label": "ConfigurationRepositoryUpdateCfg"
+      "label": "ConfigurationRepositoryUpdateCfg",
+      "usage": "/ConfigurationRepositoryUpdateCfg [-v <номер версии хранилища>] [-revised] [-force] [-Objects <имя файла>] [-Extension <Имя расширения>]",
+      "description": "Обновить конфигурацию из хранилища.",
+      "params": [
+        {
+          "name": "v",
+          "kind": "flag",
+          "flag": "-v",
+          "required": false,
+          "label": "номер версии хранилища",
+          "expects_value": true
+        },
+        {
+          "name": "revised",
+          "kind": "flag",
+          "flag": "-revised",
+          "required": false,
+          "label": "-revised",
+          "expects_value": false
+        },
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        },
+        {
+          "name": "Objects",
+          "kind": "flag",
+          "flag": "-Objects",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.15.5. Операции со всей конфигурацией"
     },
     {
       "id": "ConvertFiles",
-      "label": "ConvertFiles"
+      "label": "ConvertFiles",
+      "usage": "/ConvertFiles <имя файла|путь>",
+      "description": "Выполнить пакетную конвертацию файлов 1С:Предприятия 8.x. <имя файла|путь> ‐ имя файла или каталога.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла путь",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.17. Прочие параметры"
     },
     {
       "id": "CreateDistributionFiles",
-      "label": "CreateDistributionFiles"
+      "label": "CreateDistributionFiles",
+      "usage": "/CreateDistributionFiles [-cffile <имя cf-файла>] [-cfufile <имя cfu-файла> [-f <имя cf-файла>|-v <версия дистрибутива>]+][–digisign <имя файла с параметрами лицензирования>] [-WarningAsError]",
+      "description": "Выполнить создание файлов поставки и обновления. В том случае, если для конфигурации задана подпись мобильного клиента, то перед выполнением команды выполняется проверка того, что установленная подпись соответствует текущим метаданным конфигурации. Если подпись конфигурации не соответствует конфигурации, то формируется диагностическое сообщение, а дальнейшее поведение системы определяется наличием параметра -WarningAsError.",
+      "params": [
+        {
+          "name": "cffile",
+          "kind": "flag",
+          "flag": "-cffile",
+          "required": false,
+          "label": "имя cf-файла",
+          "expects_value": true
+        },
+        {
+          "name": "cfufile",
+          "kind": "flag",
+          "flag": "-cfufile",
+          "required": false,
+          "label": "имя cfu-файла",
+          "expects_value": true
+        },
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "имя cf-файла",
+          "expects_value": true
+        },
+        {
+          "name": "v",
+          "kind": "flag",
+          "flag": "-v",
+          "required": false,
+          "label": "версия дистрибутива",
+          "expects_value": true
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла с параметрами лицензирования",
+          "expects_value": true
+        },
+        {
+          "name": "WarningAsError",
+          "kind": "flag",
+          "flag": "-WarningAsError",
+          "required": false,
+          "label": "-WarningAsError",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.7. Команды создания файла поставки и обновления"
     },
     {
       "id": "CreateDistributive",
-      "label": "CreateDistributive"
+      "label": "CreateDistributive",
+      "usage": "/CreateDistributive <каталог создания комплекта поставки> -File <имя файла описания комплекта поставки> [-Option <вариант поставки>] [-MakeSetup] [-MakeFiles] [-digisign <имя файла с параметрами лицензирования >] [-WarningAsError]",
+      "description": "ПРИМЕЧАНИЕ. Данная команда является устаревшей и не рекомендуется для использования.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог создания комплекта поставки",
+          "expects_value": true
+        },
+        {
+          "name": "File",
+          "kind": "flag",
+          "flag": "-File",
+          "required": true,
+          "label": "имя файла описания комплекта поставки",
+          "expects_value": true
+        },
+        {
+          "name": "Option",
+          "kind": "flag",
+          "flag": "-Option",
+          "required": false,
+          "label": "вариант поставки",
+          "expects_value": true
+        },
+        {
+          "name": "MakeSetup",
+          "kind": "flag",
+          "flag": "-MakeSetup",
+          "required": false,
+          "label": "-MakeSetup",
+          "expects_value": false
+        },
+        {
+          "name": "MakeFiles",
+          "kind": "flag",
+          "flag": "-MakeFiles",
+          "required": false,
+          "label": "-MakeFiles",
+          "expects_value": false
+        },
+        {
+          "name": "digisign",
+          "kind": "flag",
+          "flag": "-digisign",
+          "required": false,
+          "label": "имя файла с параметрами лицензирования",
+          "expects_value": true
+        },
+        {
+          "name": "WarningAsError",
+          "kind": "flag",
+          "flag": "-WarningAsError",
+          "required": false,
+          "label": "-WarningAsError",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.7. Команды создания файла поставки и обновления"
     },
     {
       "id": "CreateDistributivePackage",
-      "label": "CreateDistributivePackage"
+      "label": "CreateDistributivePackage",
+      "usage": "/CreateDistributivePackage <имя каталога> -File <имя файла описания комплекта поставки> -PackageFileName <имя архива> [-Option <вариант поставки>] [-MakeSetup] [-MakeFiles] [-digisign <имя файла с параметрами лицензирования >] [-WarningAsError]",
+      "description": "Выполнить создание архива с комплектом поставки или файлов комплекта поставки по готовому описанию комплекта поставки. В том случае, если для конфигурации задана подпись мобильного клиента, то перед выполнением команды выполняется проверка того, что установленная подпись соответствует текущим метаданным конфигурации. Если подпись конфигурации не соответствует конфигурации, то формируется диагностическое сообщение, а дальнейшее поведение системы определяется наличием параметра -WarningAsError.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя каталога",
+          "expects_value": true
+        },
+        {
+          "name": "File",
+          "kind": "flag",
+          "flag": "-File",
+          "required": true,
+          "label": "имя файла описания комплекта поставки",
+          "expects_value": true
+        },
+        {
+          "name": "PackageFileName",
+          "kind": "flag",
+          "flag": "-PackageFileName",
+          "required": true,
+          "label": "имя архива",
+          "expects_value": true
+        },
+        {
+          "name": "Option",
+          "kind": "flag",
+          "flag": "-Option",
+          "required": false,
+          "label": "вариант поставки",
+          "expects_value": true
+        },
+        {
+          "name": "MakeSetup",
+          "kind": "flag",
+          "flag": "-MakeSetup",
+          "required": false,
+          "label": "-MakeSetup",
+          "expects_value": false
+        },
+        {
+          "name": "MakeFiles",
+          "kind": "flag",
+          "flag": "-MakeFiles",
+          "required": false,
+          "label": "-MakeFiles",
+          "expects_value": false
+        },
+        {
+          "name": "digisign",
+          "kind": "flag",
+          "flag": "-digisign",
+          "required": false,
+          "label": "имя файла с параметрами лицензирования",
+          "expects_value": true
+        },
+        {
+          "name": "WarningAsError",
+          "kind": "flag",
+          "flag": "-WarningAsError",
+          "required": false,
+          "label": "-WarningAsError",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.7. Команды создания файла поставки и обновления"
     },
     {
       "id": "CreateTemplateListFile",
-      "label": "CreateTemplateListFile"
+      "label": "CreateTemplateListFile",
+      "usage": "/CreateTemplateListFile <имя файла> [-TemplatesSourcePath]",
+      "description": "Создать файла шаблонов конфигураций. Допустимо указывать следующие каталоги и использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "TemplatesSourcePath",
+          "kind": "flag",
+          "flag": "-TemplatesSourcePath",
+          "required": false,
+          "label": "-TemplatesSourcePath",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.7. Команды создания файла поставки и обновления"
     },
     {
       "id": "DeleteCfg",
-      "label": "DeleteCfg"
+      "label": "DeleteCfg",
+      "usage": "/DeleteCfg [-Extension <Имя расширения>] [-AllExtensions]",
+      "description": "Выполняет удаление расширения с указанным именем. При указании параметра –AllExtensions будет выполнено удаление всех расширений. Использование команды без параметра не допускается.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
+    },
+    {
+      "id": "DisableBackgroundIndexBuild",
+      "label": "DisableBackgroundIndexBuild",
+      "usage": "/DisableBackgroundIndexBuild",
+      "description": "Отключает фоновое построение индекса рефакторинга при запуске конфигуратора. Индекс используется в следующих операциях:",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisableHomePageForms",
+      "label": "DisableHomePageForms",
+      "usage": "/DisableHomePageForms",
+      "description": "При открытии тонкого клиента запрещает открытие форм начальной страницы прикладного решения.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisableSplash",
+      "label": "DisableSplash",
+      "usage": "/DisableSplash",
+      "description": "Отключает отображение заставки при запуске «1С:Предприятия», если заставка была полностью заменена. Для того чтобы полностью заменить заставку, необходимо обращаться в фирму «1С».",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisableStartupDialogs",
+      "label": "DisableStartupDialogs",
+      "usage": "/DisableStartupDialogs",
+      "description": "Отключает вызов стартового диалога и диалогов аутентификации. При этом:",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisableStartupMessages",
+      "label": "DisableStartupMessages",
+      "usage": "/DisableStartupMessages",
+      "description": "Отключает стартовые сообщения:",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisableUnrecoverableErrorMessage",
+      "label": "DisableUnrecoverableErrorMessage",
+      "usage": "/DisableUnrecoverableErrorMessage",
+      "description": "Позволяет указать специальное поведение при возникновении невосстановимой ошибки (в том числе аварийного завершения):",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "DisplayUserNotificationList",
+      "label": "DisplayUserNotificationList",
+      "usage": "/DisplayUserNotificationList",
+      "description": "Показывает непрочитанные сообщения из системы взаимодействия и центра оповещений при старте клиентского приложения.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
     },
     {
       "id": "DumpCfg",
-      "label": "DumpCfg"
+      "label": "DumpCfg",
+      "usage": "/DumpCfg <имя cf/cfe файла> [-Extension <Имя расширения>]",
+      "description": "Выполнить сохранение конфигурации или расширения конфигурации в файл. Сохранение конфигурации расширения будет выполняться при корректном указании параметра -Extension.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf/cfe файла",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "DumpConfigFiles",
-      "label": "DumpConfigFiles"
+      "label": "DumpConfigFiles",
+      "usage": "/DumpConfigFiles <каталог выгрузки> [-Module] [-Template] [-Help] [-AllWritable] [–Picture] [–Right] [-Extension <Имя расширения>]",
+      "description": "Позволяет осуществлять выгрузку некоторых свойств объектов конфигурации (модулей, макетов, картинки, права доступа и справочной информации) в файлы. Допустимо указывать следующие каталоги и использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог выгрузки",
+          "expects_value": true
+        },
+        {
+          "name": "Module",
+          "kind": "flag",
+          "flag": "-Module",
+          "required": false,
+          "label": "-Module",
+          "expects_value": false
+        },
+        {
+          "name": "Template",
+          "kind": "flag",
+          "flag": "-Template",
+          "required": false,
+          "label": "-Template",
+          "expects_value": false
+        },
+        {
+          "name": "Help",
+          "kind": "flag",
+          "flag": "-Help",
+          "required": false,
+          "label": "-Help",
+          "expects_value": false
+        },
+        {
+          "name": "AllWritable",
+          "kind": "flag",
+          "flag": "-AllWritable",
+          "required": false,
+          "label": "-AllWritable",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "DumpConfigToFiles",
-      "label": "DumpConfigToFiles"
+      "label": "DumpConfigToFiles",
+      "usage": "/DumpConfigToFiles <каталог выгрузки> [-Format <режим>] [-Extension <Имя расширения>] [-AllExtensions] [–update] [–force] [–getChanges <имя файла>] [–configDumpInfoForChanges <имя файла>] [-listFile <имя файла>] [-configDumpInfoOnly] [-Server [-JobsCount <количество>]] [-Archive <имя файла>] [-ignoreUnresolvedReferences]",
+      "description": "Выполнить выгрузку конфигурации в файлы. Допустимо указывать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог выгрузки",
+          "expects_value": true
+        },
+        {
+          "name": "Format",
+          "kind": "flag",
+          "flag": "-Format",
+          "required": false,
+          "label": "режим",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "arg3",
+          "kind": "positional",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "listFile",
+          "kind": "flag",
+          "flag": "-listFile",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "configDumpInfoOnly",
+          "kind": "flag",
+          "flag": "-configDumpInfoOnly",
+          "required": false,
+          "label": "-configDumpInfoOnly",
+          "expects_value": false
+        },
+        {
+          "name": "Server",
+          "kind": "flag",
+          "flag": "-Server",
+          "required": false,
+          "label": "-Server",
+          "expects_value": false
+        },
+        {
+          "name": "arg4",
+          "kind": "positional",
+          "required": false,
+          "label": "количество",
+          "expects_value": true
+        },
+        {
+          "name": "Archive",
+          "kind": "flag",
+          "flag": "-Archive",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "ignoreUnresolvedReferences",
+          "kind": "flag",
+          "flag": "-ignoreUnresolvedReferences",
+          "required": false,
+          "label": "-ignoreUnresolvedReferences",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "DumpDBCfg",
-      "label": "DumpDBCfg"
+      "label": "DumpDBCfg",
+      "usage": "/DumpDBCfg <имя cf/cfe файла> [-Extension <Имя расширения>]",
+      "description": "Выполнить сохранение конфигурации базы данных или конфигурации расширения, сохраненного в базу данных, в файл. Сохранение конфигурации расширения будет выполняться при корректном задании параметра -Extension.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf/cfe файла",
+          "expects_value": true
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "DumpDBCfgList",
-      "label": "DumpDBCfgList"
+      "label": "DumpDBCfgList",
+      "usage": "/DumpDBCfgList [-Extension <Имя расширения>] [-AllExtensions]",
+      "description": "Выводит имя основной конфигурации (если не указан не один параметр) или имя расширения(-ий). Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "DumpExternalDataProcessorOrReportToFiles",
-      "label": "DumpExternalDataProcessorOrReportToFiles"
+      "label": "DumpExternalDataProcessorOrReportToFiles",
+      "usage": "/DumpExternalDataProcessorOrReportToFiles <корневой файл выгрузки> <внешняя обработка (отчет)> [-Format Plain|Hierarchical]",
+      "description": "Выполняет выгрузку внешней обработки (отчета) в формате XML. Используется выгрузка формата 2.0 (подробнее написано в книге).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "корневой файл выгрузки",
+          "expects_value": true
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": true,
+          "label": "внешняя обработка (отчет)",
+          "expects_value": true
+        },
+        {
+          "name": "Format",
+          "kind": "flag",
+          "flag": "-Format",
+          "required": false,
+          "label": "-Format",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.8. Внешние обработки (отчеты)"
     },
     {
       "id": "DumpIB",
-      "label": "DumpIB"
+      "label": "DumpIB",
+      "usage": "/DumpIB <имя файла>",
+      "description": "Выполнить выгрузку информационной базы в файл.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.2. Выгрузка/загрузка информационной базы"
     },
     {
       "id": "DumpResult",
-      "label": "DumpResult"
+      "label": "DumpResult",
+      "usage": "/DumpResult <имя файла>",
+      "description": "Записать результат работы конфигуратора в файл. Результат ‐ число (0 ‐ в случае успеха).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.17. Прочие параметры"
+    },
+    {
+      "id": "EmailAuth",
+      "label": "EmailAuth",
+      "usage": "/EmailAuth <email>",
+      "description": "Позволяет выполнить аутентификацию через электронную почту. На указанную электронную почту будет отправлен код подтверждения и будет открыто окно для ввода этого кода.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "email",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "EmulateServerCallDelay",
+      "label": "EmulateServerCallDelay",
+      "usage": "/EmulateServerCallDelay [-Call<задержка>] [-Send<задержка>] [-Recevie<задержка>]",
+      "description": "Данная команда имитирует работу клиентского приложения в условиях медленного соединения.",
+      "params": [
+        {
+          "name": "Call",
+          "kind": "flag",
+          "flag": "-Call",
+          "required": false,
+          "label": "задержка",
+          "expects_value": true
+        },
+        {
+          "name": "Send",
+          "kind": "flag",
+          "flag": "-Send",
+          "required": false,
+          "label": "задержка",
+          "expects_value": true
+        },
+        {
+          "name": "Recevie",
+          "kind": "flag",
+          "flag": "-Recevie",
+          "required": false,
+          "label": "задержка",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.7. Настройки отладки"
+    },
+    {
+      "id": "EnableCheckExtensionsAndAddInsSyncCalls",
+      "label": "EnableCheckExtensionsAndAddInsSyncCalls",
+      "usage": "/EnableCheckExtensionsAndAddInsSyncCalls",
+      "description": "Включает режим строгой проверки использования синхронных вызовов расширений работы с файлами и криптографией и внешних компонент. Игнорируется при запуске толстого клиента. Более подробную информацию о работе параметра можно получить в книге.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.9. Проверки во время работы клиентского приложения"
+    },
+    {
+      "id": "EnableCheckModal",
+      "label": "EnableCheckModal",
+      "usage": "/EnableCheckModal",
+      "description": "Включает режим строгой проверки использования модальных методов. Более подробную информацию о работе параметра можно получить в книге.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.9. Проверки во время работы клиентского приложения"
+    },
+    {
+      "id": "EnableCheckScriptCircularRefs",
+      "label": "EnableCheckScriptCircularRefs",
+      "usage": "/EnableCheckScriptCircularRefs",
+      "description": "Включает поиск циклических ссылок при выполнении кода на встроенном языке.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.9. Проверки во время работы клиентского приложения"
+    },
+    {
+      "id": "EnableCheckServerCalls",
+      "label": "EnableCheckServerCalls",
+      "usage": "/EnableCheckServerCalls",
+      "description": "Включает режим проверки использования контекстных серверных вызовов формы в обработчиках событий, в которых такие вызовы запрещены. Если параметр указан, то при контекстном серверном вызове в обработчиках, в которых такие вызовы запрещены, в окно сообщений будет выведено сообщение. Это же сообщение будет доступно в диалоге Информация для технической поддержки.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.9. Проверки во время работы клиентского приложения"
     },
     {
       "id": "EraseData",
-      "label": "EraseData"
+      "label": "EraseData",
+      "usage": "/EraseData [/Z[<разделители>]]",
+      "description": "Выполнить удаление данных информационной базы. С помощью параметра /Z задается область, в которой будут удалены данные. Удаление данных доступно пользователю с правом Администрирование. Более подробное описание удаления области данных приведено в книге.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.12. Удаление данных"
+    },
+    {
+      "id": "Execute",
+      "label": "Execute",
+      "usage": "/Execute <имя файла внешней обработки>",
+      "description": "Предназначен для запуска внешней обработки, полный путь к которой указан в качестве значения команды, в режиме «1С:Предприятие» непосредственно после старта системы. При указании параметра /Execute параметр /URL игнорируется.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла внешней обработки",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "F",
+      "label": "F",
+      "usage": "/F <каталог>",
+      "description": "Каталог, в котором расположен файл базы данных 1Cv8.1CD.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
     },
     {
       "id": "GetConfigGenerationID",
-      "label": "GetConfigGenerationID"
+      "label": "GetConfigGenerationID",
+      "usage": "/GetConfigGenerationID [-Extension <Имя расширения>]",
+      "description": "Команда позволяет получить идентификатор текущего «поколения» метданных конфигурации. Этот идентификатор обновляется при любом изменении собственно конфигурации. Идентификаторы, полученные с помощью данной команды, не имеет смысла сравнивать на «больше/меньше». Идентификаторы имеет смысл сравнивать только на «равно/не равно», тем самым проверяя, были изменения в конфигурации с момента последнего получения идентификатора или нет.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
+    },
+    {
+      "id": "HttpsCA",
+      "label": "HttpsCA",
+      "usage": "/HttpsCA [-windows] [-linux] [-macos] [-file <path>] [-pwd <password>] [-none]",
+      "description": "Указывает источник сертификатов удостоверяющих центров, используемых для проверки сертификата сервера.",
+      "params": [
+        {
+          "name": "windows",
+          "kind": "flag",
+          "flag": "-windows",
+          "required": false,
+          "label": "-windows",
+          "expects_value": false
+        },
+        {
+          "name": "linux",
+          "kind": "flag",
+          "flag": "-linux",
+          "required": false,
+          "label": "-linux",
+          "expects_value": false
+        },
+        {
+          "name": "macos",
+          "kind": "flag",
+          "flag": "-macos",
+          "required": false,
+          "label": "-macos",
+          "expects_value": false
+        },
+        {
+          "name": "file",
+          "kind": "flag",
+          "flag": "-file",
+          "required": false,
+          "label": "path",
+          "expects_value": true
+        },
+        {
+          "name": "pwd",
+          "kind": "flag",
+          "flag": "-pwd",
+          "required": false,
+          "label": "password",
+          "expects_value": true
+        },
+        {
+          "name": "none",
+          "kind": "flag",
+          "flag": "-none",
+          "required": false,
+          "label": "-none",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.4. Работа с сертификатами"
+    },
+    {
+      "id": "HttpsCert",
+      "label": "HttpsCert",
+      "usage": "/HttpsCert [-windows] [-linux] [-macos] [-recent] [-auto] [-choose] [-file <path>] [-pwd <password>] [-none]",
+      "description": "Указывает источник клиентского сертификата.",
+      "params": [
+        {
+          "name": "windows",
+          "kind": "flag",
+          "flag": "-windows",
+          "required": false,
+          "label": "-windows",
+          "expects_value": false
+        },
+        {
+          "name": "linux",
+          "kind": "flag",
+          "flag": "-linux",
+          "required": false,
+          "label": "-linux",
+          "expects_value": false
+        },
+        {
+          "name": "macos",
+          "kind": "flag",
+          "flag": "-macos",
+          "required": false,
+          "label": "-macos",
+          "expects_value": false
+        },
+        {
+          "name": "recent",
+          "kind": "flag",
+          "flag": "-recent",
+          "required": false,
+          "label": "-recent",
+          "expects_value": false
+        },
+        {
+          "name": "auto",
+          "kind": "flag",
+          "flag": "-auto",
+          "required": false,
+          "label": "-auto",
+          "expects_value": false
+        },
+        {
+          "name": "choose",
+          "kind": "flag",
+          "flag": "-choose",
+          "required": false,
+          "label": "-choose",
+          "expects_value": false
+        },
+        {
+          "name": "file",
+          "kind": "flag",
+          "flag": "-file",
+          "required": false,
+          "label": "path",
+          "expects_value": true
+        },
+        {
+          "name": "pwd",
+          "kind": "flag",
+          "flag": "-pwd",
+          "required": false,
+          "label": "password",
+          "expects_value": true
+        },
+        {
+          "name": "none",
+          "kind": "flag",
+          "flag": "-none",
+          "required": false,
+          "label": "-none",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.4. Работа с сертификатами"
+    },
+    {
+      "id": "HttpsForceTLS1_0",
+      "label": "HttpsForceTLS1_0",
+      "usage": "/HttpsForceTLS1_0",
+      "description": "Указывает на необходимость принудительного использования протокола TLS версии 1.0 системой «1С:Предприятие» при работе через веб-сервер с помощью протокола HTTPS.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.4. Работа с сертификатами"
+    },
+    {
+      "id": "HttpsForceTLS1_1",
+      "label": "HttpsForceTLS1_1",
+      "usage": "/HttpsForceTLS1_1",
+      "description": "Указывает на необходимость принудительного использования протокола TLS версии 1.1 или предшествующих версий системой «1С:Предприятие» при работе через веб-сервер с помощью протокола HTTPS.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.4. Работа с сертификатами"
+    },
+    {
+      "id": "HttpsForceTLS1_2",
+      "label": "HttpsForceTLS1_2",
+      "usage": "/HttpsForceTLS1_2",
+      "description": "Указывает на необходимость принудительного использования протокола TLS версии 1.2 или предшествующих версий системой «1С:Предприятие» при работе через веб-сервер с помощью протокола HTTPS.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.4. Работа с сертификатами"
     },
     {
       "id": "IBCheckAndRepair",
-      "label": "IBCheckAndRepair"
+      "label": "IBCheckAndRepair",
+      "usage": "/IBCheckAndRepair [-ReIndex] [-LogIntegrity [MDtype[,MDtype]] | -LogAndRefsIntegrity [MDtype[,MDtype]]] [-RecalcTotals] [-IBCompression] [-Rebuild] [–RebuildStandaloneCfg] [-TestOnly | [[-BadRefCreate | -BadRefClear | -BadRefNone] [-BadDataCreate | -BadDataDelete]]] [-UseStartPoint] [-TimeLimit:hhh:mm] [-ConfigurationExtensionsLogIntegrity] [-RefreshTableLocation] [-BinaryDataStorageIntegrity [MDtype[,MDtype]]] [-JobsCount <количество>] [-Z: «значения разделителей»] [-CheckAndEnableCORPFunctionality]",
+      "description": "Выполнить операцию тестирования и исправления информационной базы. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "LogAndRefsIntegrity",
+          "kind": "flag",
+          "flag": "-LogAndRefsIntegrity",
+          "required": true,
+          "label": "-LogAndRefsIntegrity",
+          "expects_value": false
+        },
+        {
+          "name": "ReIndex",
+          "kind": "flag",
+          "flag": "-ReIndex",
+          "required": false,
+          "label": "-ReIndex",
+          "expects_value": false
+        },
+        {
+          "name": "LogIntegrity",
+          "kind": "flag",
+          "flag": "-LogIntegrity",
+          "required": false,
+          "label": "-LogIntegrity",
+          "expects_value": false
+        },
+        {
+          "name": "RecalcTotals",
+          "kind": "flag",
+          "flag": "-RecalcTotals",
+          "required": false,
+          "label": "-RecalcTotals",
+          "expects_value": false
+        },
+        {
+          "name": "IBCompression",
+          "kind": "flag",
+          "flag": "-IBCompression",
+          "required": false,
+          "label": "-IBCompression",
+          "expects_value": false
+        },
+        {
+          "name": "Rebuild",
+          "kind": "flag",
+          "flag": "-Rebuild",
+          "required": false,
+          "label": "-Rebuild",
+          "expects_value": false
+        },
+        {
+          "name": "TestOnly",
+          "kind": "flag",
+          "flag": "-TestOnly",
+          "required": false,
+          "label": "-TestOnly",
+          "expects_value": false
+        },
+        {
+          "name": "BadRefClear",
+          "kind": "flag",
+          "flag": "-BadRefClear",
+          "required": false,
+          "label": "-BadRefClear",
+          "expects_value": false
+        },
+        {
+          "name": "BadRefNone",
+          "kind": "flag",
+          "flag": "-BadRefNone",
+          "required": false,
+          "label": "-BadRefNone",
+          "expects_value": false
+        },
+        {
+          "name": "BadDataCreate",
+          "kind": "flag",
+          "flag": "-BadDataCreate",
+          "required": false,
+          "label": "-BadDataCreate",
+          "expects_value": false
+        },
+        {
+          "name": "BadDataDelete",
+          "kind": "flag",
+          "flag": "-BadDataDelete",
+          "required": false,
+          "label": "-BadDataDelete",
+          "expects_value": false
+        },
+        {
+          "name": "UseStartPoint",
+          "kind": "flag",
+          "flag": "-UseStartPoint",
+          "required": false,
+          "label": "-UseStartPoint",
+          "expects_value": false
+        },
+        {
+          "name": "TimeLimit",
+          "kind": "flag",
+          "flag": "-TimeLimit",
+          "required": false,
+          "label": "-TimeLimit",
+          "expects_value": false
+        },
+        {
+          "name": "ConfigurationExtensionsLogIntegrity",
+          "kind": "flag",
+          "flag": "-ConfigurationExtensionsLogIntegrity",
+          "required": false,
+          "label": "-ConfigurationExtensionsLogIntegrity",
+          "expects_value": false
+        },
+        {
+          "name": "RefreshTableLocation",
+          "kind": "flag",
+          "flag": "-RefreshTableLocation",
+          "required": false,
+          "label": "-RefreshTableLocation",
+          "expects_value": false
+        },
+        {
+          "name": "BinaryDataStorageIntegrity",
+          "kind": "flag",
+          "flag": "-BinaryDataStorageIntegrity",
+          "required": false,
+          "label": "-BinaryDataStorageIntegrity",
+          "expects_value": false
+        },
+        {
+          "name": "JobsCount",
+          "kind": "flag",
+          "flag": "-JobsCount",
+          "required": false,
+          "label": "количество",
+          "expects_value": true
+        },
+        {
+          "name": "Z",
+          "kind": "flag",
+          "flag": "-Z",
+          "required": false,
+          "label": "-Z",
+          "expects_value": false
+        },
+        {
+          "name": "CheckAndEnableCORPFunctionality",
+          "kind": "flag",
+          "flag": "-CheckAndEnableCORPFunctionality",
+          "required": false,
+          "label": "-CheckAndEnableCORPFunctionality",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.5. Проверки конфигурации и расширений"
+    },
+    {
+      "id": "IBConnectionString",
+      "label": "IBConnectionString",
+      "usage": "/IBConnectionString",
+      "description": "Позволяет задать строку соединения с информационной базой целиком в том виде, в котором ее возвращает функция СтрокаСоединенияИнформационнойБазы(). Части строки соединения могут быть переопределены ранее существовавшими параметрами. Для этого нужно, чтобы /IBConnectionString находился в командной строке раньше них. Передавая строку соединения в качестве параметра командной строки, нужно помнить о том, что строка соединения содержит кавычки. Поэтому требуется взять всю строку в кавычки, а содержащиеся внутри кавычки удвоить. Описание строки соединения с информационной базой см. здесь.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
+    },
+    {
+      "id": "IBName",
+      "label": "IBName",
+      "usage": "/IBName <имя информационной базы>",
+      "description": "Позволяет указать имя запускаемой информационной базы. В этом случае программа запуска (или исполняемый файл конкретного клиента) выполнит поиск указанной информационной базы в списке информационных баз. Если баз с указанным именем более одной, запуск будет прекращен с выдачей сообщения об ошибке.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя информационной базы",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
     },
     {
       "id": "IBRestoreIntegrity",
-      "label": "IBRestoreIntegrity"
+      "label": "IBRestoreIntegrity",
+      "usage": "/IBRestoreIntegrity",
+      "description": "Происходит попытка восстановления структуры информационной базы. При обнаружении других параметров они будут игнорироваться.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.3. Восстановление структуры информационной базы"
+    },
+    {
+      "id": "L",
+      "label": "L",
+      "usage": "/L<код языка>",
+      "description": "Указывается код языка интерфейса платформы. Поддерживаемые языки интерфейса (<код языка>) см. здесь.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "код языка",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.6. Настройки локализации"
     },
     {
       "id": "LoadCfg",
-      "label": "LoadCfg"
+      "label": "LoadCfg",
+      "usage": "/LoadCfg <имя cf/cfe файла> [-Extension <Имя расширения>]",
+      "description": "Выполнить загрузку конфигурации или расширения конфигурации из файла. Загрузка конфигурации расширения будет выполняться при корректном указании параметра -Extension. Если в момент загрузки расширение отсутствует в информационной базе ‐ оно будет создано с указанным именем. Если расширение, указанное в параметре -Extension, подключено к хранилищу конфигурации ‐ его загрузка невозможна.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf/cfe файла",
+          "expects_value": true,
+          "input_type": "artifact",
+          "artifact_kinds": [
+            "extension",
+            "config_cf"
+          ],
+          "file_extensions": [
+            ".cfe",
+            ".cf"
+          ]
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "LoadConfigFiles",
-      "label": "LoadConfigFiles"
+      "label": "LoadConfigFiles",
+      "usage": "/LoadConfigFiles <каталог загрузки> [-Module] [-Template] [-Help] [-AllWritable] [–Picture] [–Right] [-Extension <Имя расширения>]",
+      "description": "Позволяет осуществлять загрузку некоторых свойств объектов конфигурации (модулей, макетов, картинки, права доступа и справочной информации) из файлов. Допустимо указывать следующие каталоги и использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог загрузки",
+          "expects_value": true
+        },
+        {
+          "name": "Module",
+          "kind": "flag",
+          "flag": "-Module",
+          "required": false,
+          "label": "-Module",
+          "expects_value": false
+        },
+        {
+          "name": "Template",
+          "kind": "flag",
+          "flag": "-Template",
+          "required": false,
+          "label": "-Template",
+          "expects_value": false
+        },
+        {
+          "name": "Help",
+          "kind": "flag",
+          "flag": "-Help",
+          "required": false,
+          "label": "-Help",
+          "expects_value": false
+        },
+        {
+          "name": "AllWritable",
+          "kind": "flag",
+          "flag": "-AllWritable",
+          "required": false,
+          "label": "-AllWritable",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "LoadConfigFromFiles",
-      "label": "LoadConfigFromFiles"
+      "label": "LoadConfigFromFiles",
+      "usage": "/LoadConfigFromFiles <каталог загрузки> [-Extension <Имя расширения>] [-AllExtensions] –files «<файлы>» –listFile <файлСписка> -Format <режим> [-updateConfigDumpInfo] [-NoCheck] [-Archive <имя ZIP-архива>] -partial",
+      "description": "Выполнить загрузку конфигурации из файлов. Загрузка расширения в основную конфигурацию (и наоборот) не поддерживается. При полной загрузке файлов конфигурации, формат загрузки (линейный или иерархический) определяется автоматически. Для частичной загрузки автоматического определения формата не поддерживается, формат следует явно указать с помощью параметра –Format.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "каталог загрузки",
+          "expects_value": true
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": true,
+          "label": "файлСписка",
+          "expects_value": true
+        },
+        {
+          "name": "Format",
+          "kind": "flag",
+          "flag": "-Format",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        },
+        {
+          "name": "partial",
+          "kind": "flag",
+          "flag": "-partial",
+          "required": true,
+          "label": "-partial",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "AllExtensions",
+          "kind": "flag",
+          "flag": "-AllExtensions",
+          "required": false,
+          "label": "-AllExtensions",
+          "expects_value": false
+        },
+        {
+          "name": "updateConfigDumpInfo",
+          "kind": "flag",
+          "flag": "-updateConfigDumpInfo",
+          "required": false,
+          "label": "-updateConfigDumpInfo",
+          "expects_value": false
+        },
+        {
+          "name": "NoCheck",
+          "kind": "flag",
+          "flag": "-NoCheck",
+          "required": false,
+          "label": "-NoCheck",
+          "expects_value": false
+        },
+        {
+          "name": "Archive",
+          "kind": "flag",
+          "flag": "-Archive",
+          "required": false,
+          "label": "имя ZIP-архива",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "LoadExternalDataProcessorOrReportFromFiles",
-      "label": "LoadExternalDataProcessorOrReportFromFiles"
+      "label": "LoadExternalDataProcessorOrReportFromFiles",
+      "usage": "/LoadExternalDataProcessorOrReportFromFiles <корневой файл выгрузки> <внешняя обработка (отчет)>",
+      "description": "Выполняет загрузку внешней обработки (отчета) из формата XML. Используется выгрузка формата 2.0 (подробнее написано в книге).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "корневой файл выгрузки",
+          "expects_value": true
+        },
+        {
+          "name": "arg2",
+          "kind": "positional",
+          "required": true,
+          "label": "внешняя обработка (отчет)",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.8. Внешние обработки (отчеты)"
+    },
+    {
+      "id": "MainWindowMode",
+      "label": "MainWindowMode",
+      "usage": "/MainWindowMode <режим запуска>",
+      "description": "Позволяет явным образом указать режим запуска основного окна клиентского приложения. Параметр <режим запуска> может принимать одно из следующих значений:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим запуска",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
     },
     {
       "id": "ManageCfgSupport",
-      "label": "ManageCfgSupport"
+      "label": "ManageCfgSupport",
+      "usage": "/ManageCfgSupport [-disableSupport [-force]]",
+      "description": "Позволяет снимать конфигурация с поддержки. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "disableSupport",
+          "kind": "flag",
+          "flag": "-disableSupport",
+          "required": false,
+          "label": "-disableSupport",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.6. Поддержка конфигурации"
     },
     {
       "id": "MergeCfg",
-      "label": "MergeCfg"
+      "label": "MergeCfg",
+      "usage": "/MergeCfg <имя cf-файла> -Settings <имя файла настроек> [-EnableSupport | -DisableSupport] [-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs] [-force]",
+      "description": "В данном случае приведено описание команды MergeCfg, которое содержит:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf‐ или cfe-файла",
+          "expects_value": true
+        },
+        {
+          "name": "Settings",
+          "kind": "flag",
+          "flag": "-Settings",
+          "required": true,
+          "label": "имя файла настроек",
+          "expects_value": true
+        },
+        {
+          "name": "EnableSupport",
+          "kind": "flag",
+          "flag": "-EnableSupport",
+          "required": false,
+          "label": "-EnableSupport",
+          "expects_value": false
+        },
+        {
+          "name": "DisableSupport",
+          "kind": "flag",
+          "flag": "-DisableSupport",
+          "required": false,
+          "label": "-DisableSupport",
+          "expects_value": false
+        },
+        {
+          "name": "IncludeObjectsByUnresolvedRefs",
+          "kind": "flag",
+          "flag": "-IncludeObjectsByUnresolvedRefs",
+          "required": false,
+          "label": "-IncludeObjectsByUnresolvedRefs",
+          "expects_value": false
+        },
+        {
+          "name": "ClearUnresolvedRefs",
+          "kind": "flag",
+          "flag": "-ClearUnresolvedRefs",
+          "required": false,
+          "label": "-ClearUnresolvedRefs",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.1. Общая информация об интерфейсе командной строки системы"
     },
     {
       "id": "MobileAppUpdatePublication",
-      "label": "MobileAppUpdatePublication"
+      "label": "MobileAppUpdatePublication",
+      "usage": "/MobileAppUpdatePublication",
+      "description": "Обновить публикацию мобильного приложения, если она была ранее создана, в противном случае будет выдана ошибка. Возможно предварительное обновление конфигурации базы данных.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.9. Мобильное приложение"
     },
     {
       "id": "MobileAppWriteFile",
-      "label": "MobileAppWriteFile"
+      "label": "MobileAppWriteFile",
+      "usage": "/MobileAppWriteFile <имя zip-файла>",
+      "description": "Сохранить конфигурацию в zip-файл. Указанный файл используется для сборки приложения для мобильного устройства. ZIP-файл содержит описание конфигурации (в виде xml-файла) и файл с данными, которые используются для создания информационной базы на мобильном устройстве.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя zip-файла",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.9. Мобильное приложение"
     },
     {
       "id": "MobileClientDigiSign",
-      "label": "MobileClientDigiSign"
+      "label": "MobileClientDigiSign",
+      "usage": "/MobileClientDigiSign",
+      "description": "Подписать конфигурацию мобильного клиента. Возможно предварительное обновление конфигурации базы данных.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.10. Мобильный клиент"
     },
     {
       "id": "MobileClientWriteFile",
-      "label": "MobileClientWriteFile"
+      "label": "MobileClientWriteFile",
+      "usage": "/MobileClientWriteFile <имя файла>",
+      "description": "Сохранить конфигурацию в файл. Указанный файл можно использовать для сборки мобильного клиента. Возможно предварительное обновление конфигурации базы данных.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.10. Мобильный клиент"
+    },
+    {
+      "id": "ModifyPassword",
+      "label": "ModifyPassword",
+      "usage": "/ModifyPassword <пароль>",
+      "description": "Команда может использоваться только совместно с командами /N и /P и приводит к установке пользователю, указанному в команде /N, пароля, указанного в качестве параметра команды. Если в команде /P указан корректный пароль, то пользователь аутентифицируется в информационной базе, затем выполняется смена пароля и затем пользователь продолжает работу в сеансе.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "пароль",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "N",
+      "label": "N",
+      "usage": "/N<имя>",
+      "description": "Имя пользователя. Должно быть указано так же, как в списке пользователей, создаваемом в Конфигураторе.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "NoProxy",
+      "label": "NoProxy",
+      "usage": "/NoProxy",
+      "description": "Запретить использование прокси (только для ws-соединения).",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "O",
+      "label": "O",
+      "usage": "/O<скорость соединения>",
+      "description": "Определяет скорость соединения (используется в тонком клиенте). Команда используется для настройки элемента списка информационных баз. <скорость соединения> может принимать следующие значения:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "скорость соединения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
+    },
+    {
+      "id": "OIDA",
+      "label": "OIDA",
+      "usage": "/OIDA<режим>",
+      "description": "Применение сквозной аутентификации пользователя между разными информационными базами и/или внешними ресурсами для тонкого и веб-клиентов. Если при запуске клиента параметр /OIDA не задан, или задан параметр /OIDA+, то производится попытка аутентификации через OpenID-провайдера, адрес которого задан в файле default.vrd публикации этой информационной базы.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "Out",
+      "label": "Out",
+      "usage": "/Out <имя файла> [-NoTruncate]",
+      "description": "Установка файла для вывода служебных сообщений. Если задан параметр -NoTruncate (через пробел), файл не очищается (не используется в тонком клиенте).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "NoTruncate",
+          "kind": "flag",
+          "flag": "-NoTruncate",
+          "required": false,
+          "label": "-NoTruncate",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "P",
+      "label": "P",
+      "usage": "/P<пароль>",
+      "description": "Пароль пользователя, имя которого указано в команде /N. Если у пользователя нет пароля, этот параметр можно опустить.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "пароль",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "Proxy",
+      "label": "Proxy",
+      "usage": "/Proxy -PSrv <адрес прокси> -PPort <порт> [-PUser <имя пользователя прокси> [-PPwd <пароль>]]",
+      "description": "Использовать указанные настройки прокси, игнорируя умолчания (только для ws-соединения).",
+      "params": [
+        {
+          "name": "PSrv",
+          "kind": "flag",
+          "flag": "-PSrv",
+          "required": true,
+          "label": "адрес прокси",
+          "expects_value": true
+        },
+        {
+          "name": "PPort",
+          "kind": "flag",
+          "flag": "-PPort",
+          "required": true,
+          "label": "порт",
+          "expects_value": true
+        },
+        {
+          "name": "PUser",
+          "kind": "flag",
+          "flag": "-PUser",
+          "required": false,
+          "label": "имя пользователя прокси",
+          "expects_value": true
+        },
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "пароль",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
     },
     {
       "id": "ReduceEventLogSize",
-      "label": "ReduceEventLogSize"
+      "label": "ReduceEventLogSize",
+      "usage": "/ReduceEventLogSize <Date> [-saveAs <имя файла>] [-KeepSplitting]",
+      "description": "Выполнить сокращение журнала регистрации. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "Date",
+          "expects_value": true
+        },
+        {
+          "name": "saveAs",
+          "kind": "flag",
+          "flag": "-saveAs",
+          "required": false,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "KeepSplitting",
+          "kind": "flag",
+          "flag": "-KeepSplitting",
+          "required": false,
+          "label": "-KeepSplitting",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.11. Журнал регистрации"
+    },
+    {
+      "id": "RegServer",
+      "label": "RegServer",
+      "usage": "/RegServer [-AllUsers | -CurrentUser | -Auto]",
+      "description": "Выполнить регистрацию объектов «V83.Application» и «V83C.Application». Допустимо использовать один из следующих параметров:",
+      "params": [
+        {
+          "name": "AllUsers",
+          "kind": "flag",
+          "flag": "-AllUsers",
+          "required": false,
+          "label": "-AllUsers",
+          "expects_value": false
+        },
+        {
+          "name": "CurrentUser",
+          "kind": "flag",
+          "flag": "-CurrentUser",
+          "required": false,
+          "label": "-CurrentUser",
+          "expects_value": false
+        },
+        {
+          "name": "Auto",
+          "kind": "flag",
+          "flag": "-Auto",
+          "required": false,
+          "label": "-Auto",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.6. Регистрация «1С:Предприятия» в качестве OLE-Automation-сервера"
     },
     {
       "id": "ResetMasterNode",
-      "label": "ResetMasterNode"
+      "label": "ResetMasterNode",
+      "usage": "/ResetMasterNode",
+      "description": "Отменить назначение главного узла распределенной информационной базы. Действие параметра аналогично вызову метода УстановитьГлавныйУзел() со значением параметра Неопределено.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.14. Распределенная информационная база"
+    },
+    {
+      "id": "ResetSavedAuth",
+      "label": "ResetSavedAuth",
+      "usage": "/ResetSavedAuth",
+      "description": "Указывает на необходимость удалить из хранилища сохраненный токен для повторного входа, а также имена всех запомненных пользователей информационной базы, которые выполняли аутентификацию с этого компьютера.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
     },
     {
       "id": "RestoreIB",
-      "label": "RestoreIB"
+      "label": "RestoreIB",
+      "usage": "/RestoreIB <имя файла> [-JobsCount <Количество>]",
+      "description": "Выполнить загрузку информационной базы из файла. Допустимо использовать следующие параметры:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        },
+        {
+          "name": "JobsCount",
+          "kind": "flag",
+          "flag": "-JobsCount",
+          "required": false,
+          "label": "Количество",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.2. Выгрузка/загрузка информационной базы"
     },
     {
       "id": "RollbackCfg",
-      "label": "RollbackCfg"
+      "label": "RollbackCfg",
+      "usage": "/RollbackCfg [-Extension <Имя расширения>]",
+      "description": "Выполнить возврат к конфигурации базы данных.",
+      "params": [
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
     },
     {
       "id": "RunEnterprise",
-      "label": "RunEnterprise"
+      "label": "RunEnterprise",
+      "usage": "/RunEnterprise",
+      "description": "Запустить «1С:Предприятие» после исполнения пакетной команды. После команды может быть указана дополнительная командная строка. При запуске «1С:Предприятия», переданные в ней параметры будут использованы вместо параметров текущей сессии. Дополнительная командная строка обязательно должна быть в кавычках, вложенные в нее кавычки должны быть удвоены.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.17. Прочие параметры"
+    },
+    {
+      "id": "RunModeManagedApplication",
+      "label": "RunModeManagedApplication",
+      "usage": "/RunModeManagedApplication",
+      "description": "Запуск толстого клиента в режиме управляемого приложения, при этом учитывается настройка клиента в списке информационных баз (настройка Основной режим запуска, см. здесь):",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
+    },
+    {
+      "id": "RunModeOrdinaryApplication",
+      "label": "RunModeOrdinaryApplication",
+      "usage": "/RunModeOrdinaryApplication",
+      "description": "Запуск толстого клиента в обычном режиме, несмотря на настройки конфигурации и пользователя, от имени которого будет выполняться запуск. Не используется в тонком клиенте.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.3. Определение режима запуска"
+    },
+    {
+      "id": "RunShortcut",
+      "label": "RunShortcut",
+      "usage": "/RunShortcut <имя файла>",
+      "description": "Позволяет запустить систему «1С:Предприятие» со списком информационных баз, который помещен в указанный файл. В качестве файла может быть указан файл списка общих информационных баз (*.v8i), или файл ярлыка информационных баз (*.v8l).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя файла",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "S",
+      "label": "S",
+      "usage": "/S <адрес>",
+      "description": "Адрес информационной базы, хранящейся на сервере «1С:Предприятия». Формируется как <Имя компьютера, работающего сервером приложений>/<Ссылочное имя информационной базы, известное в рамках сервера \"1С:Предприятия\">. Разделитель между именем компьютера и именем информационной базы должен быть прямым или весь адрес информационной базы (значение команды /S) должен быть заключен в кавычки:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "адрес",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
+    },
+    {
+      "id": "SAOnRestart",
+      "label": "SAOnRestart",
+      "usage": "/SAOnRestart",
+      "description": "Указывает на то, что при перезапуске клиентского приложения из данного сеанса будет обязательно запрошены имя пользователя и пароль. По умолчанию пароль не запрашивается.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "SLev",
+      "label": "SLev",
+      "usage": "/SLev<Уровень>",
+      "description": "Определяет уровень защищенности соединения клиента с сервером «1С:Предприятия». Для команды могут быть задано одно из следующих значений:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "Уровень",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
     },
     {
       "id": "SetPredefinedDataUpdate",
-      "label": "SetPredefinedDataUpdate"
+      "label": "SetPredefinedDataUpdate",
+      "usage": "/SetPredefinedDataUpdate [-Auto] [-UpdateAutomatically] [-DoNotUpdateAutomatically]",
+      "description": "Параметр предназначен для указания режимов обновления предопределенных данных. Допустимо использование следующих параметров:",
+      "params": [
+        {
+          "name": "Auto",
+          "kind": "flag",
+          "flag": "-Auto",
+          "required": false,
+          "label": "-Auto",
+          "expects_value": false
+        },
+        {
+          "name": "UpdateAutomatically",
+          "kind": "flag",
+          "flag": "-UpdateAutomatically",
+          "required": false,
+          "label": "-UpdateAutomatically",
+          "expects_value": false
+        },
+        {
+          "name": "DoNotUpdateAutomatically",
+          "kind": "flag",
+          "flag": "-DoNotUpdateAutomatically",
+          "required": false,
+          "label": "-DoNotUpdateAutomatically",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.13. Предопределенные данные"
     },
     {
       "id": "SignCfg",
-      "label": "SignCfg"
+      "label": "SignCfg",
+      "usage": "/SignCfg -ConfigurationType <тип конфигурации> -SignedFile <путь к cfe-файлу> [-File <путь к cfe-файлу>] [-Name <имя расширения>] [-Version <версия>] -digisign <имя файла с параметрами лицензирования>",
+      "description": "Подписать расширение конфигурации цифровой подписью. После выполнения процедуры подписи расширение может быть использовано в базовых версиях конфигураций, подписанных тем же ключом, что и расширение.",
+      "params": [
+        {
+          "name": "ConfigurationType",
+          "kind": "flag",
+          "flag": "-ConfigurationType",
+          "required": true,
+          "label": "тип конфигурации",
+          "expects_value": true
+        },
+        {
+          "name": "SignedFile",
+          "kind": "flag",
+          "flag": "-SignedFile",
+          "required": true,
+          "label": "путь к cfe-файлу",
+          "expects_value": true
+        },
+        {
+          "name": "digisign",
+          "kind": "flag",
+          "flag": "-digisign",
+          "required": true,
+          "label": "имя файла с параметрами лицензирования",
+          "expects_value": true
+        },
+        {
+          "name": "File",
+          "kind": "flag",
+          "flag": "-File",
+          "required": false,
+          "label": "путь к cfe-файлу",
+          "expects_value": true
+        },
+        {
+          "name": "Name",
+          "kind": "flag",
+          "flag": "-Name",
+          "required": false,
+          "label": "имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "Version",
+          "kind": "flag",
+          "flag": "-Version",
+          "required": false,
+          "label": "версия",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.7. Команды создания файла поставки и обновления"
+    },
+    {
+      "id": "TComp",
+      "label": "TComp",
+      "usage": "/TComp [-None|-Deflate|-SDC|-lz4|-zstd]",
+      "description": "В данном примере описывается команда TComp, для которой может быть указан один из пяти параметров: -None или -Deflate или -SDC или -lz4 или -zstd. При этом указание параметров не является обязательным. Команда может быть применена совсем без параметров, в виде /TComp.",
+      "params": [
+        {
+          "name": "None",
+          "kind": "flag",
+          "flag": "-None",
+          "required": false,
+          "label": "-None",
+          "expects_value": false
+        },
+        {
+          "name": "Deflate",
+          "kind": "flag",
+          "flag": "-Deflate",
+          "required": false,
+          "label": "-Deflate",
+          "expects_value": false
+        },
+        {
+          "name": "SDC",
+          "kind": "flag",
+          "flag": "-SDC",
+          "required": false,
+          "label": "-SDC",
+          "expects_value": false
+        },
+        {
+          "name": "lz4",
+          "kind": "flag",
+          "flag": "-lz4",
+          "required": false,
+          "label": "-lz4",
+          "expects_value": false
+        },
+        {
+          "name": "zstd",
+          "kind": "flag",
+          "flag": "-zstd",
+          "required": false,
+          "label": "-zstd",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.1. Общая информация об интерфейсе командной строки системы"
+    },
+    {
+      "id": "TechnicalSpecialistMode",
+      "label": "TechnicalSpecialistMode",
+      "usage": "/TechnicalSpecialistMode",
+      "description": "Включает команду меню Функции для технического специалиста.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.5. Настройки интерфейса"
+    },
+    {
+      "id": "TestClient",
+      "label": "TestClient",
+      "usage": "/TestClient [-TPort<Номер сетевого порта>] [-TestClientID<Идентификатор>] [-TURL=<АдресПубликации>]",
+      "description": "Запуск клиентского приложения (тонкий клиент, толстый клиент, веб-клиент, мобильный клиент и мобильное приложение) как клиента тестирования.",
+      "params": [
+        {
+          "name": "TPort",
+          "kind": "flag",
+          "flag": "-TPort",
+          "required": false,
+          "label": "Номер сетевого порта",
+          "expects_value": true
+        },
+        {
+          "name": "TestClientID",
+          "kind": "flag",
+          "flag": "-TestClientID",
+          "required": false,
+          "label": "Идентификатор",
+          "expects_value": true
+        },
+        {
+          "name": "TURL",
+          "kind": "flag",
+          "flag": "-TURL",
+          "required": false,
+          "label": "-TURL",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.8. Настройки тестирования"
+    },
+    {
+      "id": "TestManager",
+      "label": "TestManager",
+      "usage": "/TestManager",
+      "description": "Запуск толстого или тонкого клиента для управления клиентами тестирования с помощью специализированной объектной модели.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.8. Настройки тестирования"
+    },
+    {
+      "id": "UC",
+      "label": "UC",
+      "usage": "/UC <код доступа>",
+      "description": "Позволяет выполнить установку соединения с информационной базой, на которую установлена блокировка установки соединений. Если при установке блокировки задан непустой код доступа, то для установки соединения необходимо в параметре /UC указать этот код доступа.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "код доступа",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "UILogRecorder",
+      "label": "UILogRecorder",
+      "usage": "/UILogRecorder [–TPort<Номер сетевого порта>] [-File<Путь>]",
+      "description": "Позволяет в клиентском приложении (тонкий клиент, толстый клиент, веб-клиент, мобильный клиент) выполнять запись журнала интерактивных действий пользователя. Журнал действий, в дальнейшем, может быть использован для формирования, на его основе, программы на встроенном языке «1С:Предприятие», которая позволит воспроизвести записанные действия. Может совмещаться с параметром /TestClient.",
+      "params": [
+        {
+          "name": "File",
+          "kind": "flag",
+          "flag": "-File",
+          "required": false,
+          "label": "Путь",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.8. Настройки тестирования"
+    },
+    {
+      "id": "URL",
+      "label": "URL",
+      "usage": "/URL <адрес>",
+      "description": "Указывает необходимость перехода по ссылке. Поддерживаются ссылки формата e1c и http(s).",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "адрес",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.10. Вспомогательные параметры"
+    },
+    {
+      "id": "UnregServer",
+      "label": "UnregServer",
+      "usage": "/UnregServer",
+      "description": "Отменить регистрацию объектов V83.Application и V83C.Application.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.6. Регистрация «1С:Предприятия» в качестве OLE-Automation-сервера"
     },
     {
       "id": "UpdateCfg",
-      "label": "UpdateCfg"
+      "label": "UpdateCfg",
+      "usage": "/UpdateCfg <имя cf или cfu файла> -Settings <имя файла настроек> [-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs] [-DumpListOfTwiceChangedProperties] [-force]",
+      "description": "Выполнить обновление конфигурации, находящейся на поддержке.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя cf или cfu файла",
+          "expects_value": true
+        },
+        {
+          "name": "Settings",
+          "kind": "flag",
+          "flag": "-Settings",
+          "required": true,
+          "label": "имя файла настроек",
+          "expects_value": true
+        },
+        {
+          "name": "IncludeObjectsByUnresolvedRefs",
+          "kind": "flag",
+          "flag": "-IncludeObjectsByUnresolvedRefs",
+          "required": false,
+          "label": "-IncludeObjectsByUnresolvedRefs",
+          "expects_value": false
+        },
+        {
+          "name": "ClearUnresolvedRefs",
+          "kind": "flag",
+          "flag": "-ClearUnresolvedRefs",
+          "required": false,
+          "label": "-ClearUnresolvedRefs",
+          "expects_value": false
+        },
+        {
+          "name": "DumpListOfTwiceChangedProperties",
+          "kind": "flag",
+          "flag": "-DumpListOfTwiceChangedProperties",
+          "required": false,
+          "label": "-DumpListOfTwiceChangedProperties",
+          "expects_value": false
+        },
+        {
+          "name": "force",
+          "kind": "flag",
+          "flag": "-force",
+          "required": false,
+          "label": "-force",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.6. Поддержка конфигурации"
     },
     {
       "id": "UpdateDBCfg",
-      "label": "UpdateDBCfg"
+      "label": "UpdateDBCfg",
+      "usage": "/UpdateDBCfg [-Dynamic<Режим>] [-BackgroundStart] [-BackgroundCancel] [-BackgroundFinish [-Visible]] [-BackgroundSuspend] [-BackgroundResume] [-WarningsAsErrors] [-Server] [-v1|-v2] [-Extension <Имя расширения>] [-SessionTerminate <режим>]",
+      "description": "Выполнить обновление конфигурации базы данных. Перед выполнением реструктуризации будет выполнена проверка подписи мобильного клиента (см. здесь). Выводимые диагностические сообщения по умолчанию считаются предупреждениями (не блокируют обновление конфигурации базы данных).",
+      "params": [
+        {
+          "name": "Dynamic",
+          "kind": "flag",
+          "flag": "-Dynamic",
+          "required": false,
+          "label": "Режим",
+          "expects_value": true
+        },
+        {
+          "name": "BackgroundStart",
+          "kind": "flag",
+          "flag": "-BackgroundStart",
+          "required": false,
+          "label": "-BackgroundStart",
+          "expects_value": false
+        },
+        {
+          "name": "BackgroundCancel",
+          "kind": "flag",
+          "flag": "-BackgroundCancel",
+          "required": false,
+          "label": "-BackgroundCancel",
+          "expects_value": false
+        },
+        {
+          "name": "BackgroundFinish",
+          "kind": "flag",
+          "flag": "-BackgroundFinish",
+          "required": false,
+          "label": "-BackgroundFinish",
+          "expects_value": false
+        },
+        {
+          "name": "BackgroundSuspend",
+          "kind": "flag",
+          "flag": "-BackgroundSuspend",
+          "required": false,
+          "label": "-BackgroundSuspend",
+          "expects_value": false
+        },
+        {
+          "name": "BackgroundResume",
+          "kind": "flag",
+          "flag": "-BackgroundResume",
+          "required": false,
+          "label": "-BackgroundResume",
+          "expects_value": false
+        },
+        {
+          "name": "WarningsAsErrors",
+          "kind": "flag",
+          "flag": "-WarningsAsErrors",
+          "required": false,
+          "label": "-WarningsAsErrors",
+          "expects_value": false
+        },
+        {
+          "name": "Server",
+          "kind": "flag",
+          "flag": "-Server",
+          "required": false,
+          "label": "-Server",
+          "expects_value": false
+        },
+        {
+          "name": "v1",
+          "kind": "flag",
+          "flag": "-v1",
+          "required": false,
+          "label": "-v1",
+          "expects_value": false
+        },
+        {
+          "name": "v2",
+          "kind": "flag",
+          "flag": "-v2",
+          "required": false,
+          "label": "-v2",
+          "expects_value": false
+        },
+        {
+          "name": "Extension",
+          "kind": "flag",
+          "flag": "-Extension",
+          "required": false,
+          "label": "Имя расширения",
+          "expects_value": true
+        },
+        {
+          "name": "SessionTerminate",
+          "kind": "flag",
+          "flag": "-SessionTerminate",
+          "required": false,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.4.4. Конфигурация и расширения"
+    },
+    {
+      "id": "UseHwLicenses",
+      "label": "UseHwLicenses",
+      "usage": "/UseHwLicenses<режим>",
+      "description": "Определяет режим поиска ключа защиты.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "2. Если команда /@ указана не первой ‐ поведение является неопределенным."
+    },
+    {
+      "id": "VA",
+      "label": "VA",
+      "usage": "/VA<режим>",
+      "description": "В данном примере описывается команда VA, которая содержит в качестве параметра некоторое значение (<режим>), которое необходимо указать без пробела после самой команды. Конкретные значения команды будут рассмотрены уже в описании команды.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.1. Общая информация об интерфейсе командной строки системы"
+    },
+    {
+      "id": "VL",
+      "label": "VL",
+      "usage": "/VL<код локализации сеанса>",
+      "description": "Указывается код локализации сеанса, используемый при форматировании данных типа Число и Дата, а также в методах ЧислоПрописью() и ПредставлениеПериода().",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "код локализации сеанса",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.6. Настройки локализации"
     },
     {
       "id": "Visible",
-      "label": "Visible"
+      "label": "Visible",
+      "usage": "/Visible",
+      "description": "Делает исполнение пакетной команды видимым пользователю. На время работы конфигуратора открывается окно заставки.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.4.17. Прочие параметры"
+    },
+    {
+      "id": "WA",
+      "label": "WA",
+      "usage": "/WA<режим>",
+      "description": "Определяет режим использования аутентификации операционной системы при запуске «1С:Предприятие». Если команда /WA не указывается, то подразумевается, что используется команда командной строки /WA+.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "WS",
+      "label": "WS",
+      "usage": "/WS <url>",
+      "description": "Строка ws-соединения.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "url",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
+    },
+    {
+      "id": "WSA",
+      "label": "WSA",
+      "usage": "/WSA<режим>",
+      "description": "Определяет режим использования аутентификации операционной системы на веб-сервере. Если параметр /WSA не указывается, то подразумевается, что используется параметр командной строки /WSA+.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "режим",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "WSN",
+      "label": "WSN",
+      "usage": "/WSN <имя>",
+      "description": "Имя пользователя операционной системы, которое будет использовано системой для выполнения аутентификации на веб-сервере в случае указания параметра /WSA+. Пароль пользователя указывается в параметре /WSP.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "имя",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "WSP",
+      "label": "WSP",
+      "usage": "/WSP <пароль>",
+      "description": "Пароль пользователя, имя которого указано в параметре /WSN, для аутентификации на веб-сервере.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "пароль",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.2. Настройка аутентификации"
+    },
+    {
+      "id": "Z",
+      "label": "Z",
+      "usage": "/Z \"<Общий реквизит 1>,<Общий реквизит 2>,...,<Общий реквизит N>\"",
+      "description": "Установка разделителей при запуске клиентского приложения.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.1. Указание параметров подключения"
+    },
+    {
+      "id": "debug",
+      "label": "debug",
+      "usage": "/debug [<режим>] [-attach]",
+      "description": "Означает, что данное клиентское приложение будет запущено в режиме отладки. Протокол, используемый для работы отладчика, определяет параметром <режим>:",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": false,
+          "label": "режим",
+          "expects_value": true
+        },
+        {
+          "name": "attach",
+          "kind": "flag",
+          "flag": "-attach",
+          "required": false,
+          "label": "-attach",
+          "expects_value": false
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.7. Настройки отладки"
+    },
+    {
+      "id": "debuggerURL",
+      "label": "debuggerURL",
+      "usage": "/debuggerURL <адрес отладчика>",
+      "description": "Данная команда указывает адрес отладчика (при отладке по протоколу TCP/IP) или адрес сервера отладки (при отладке по протоколу HTTP) при работе в режиме отладки. При указании сервера отладки необходимо указать не только имя компьютера, на котором работает сервер отладки, но и порт, по которому происходит взаимодействие с ним.",
+      "params": [
+        {
+          "name": "arg1",
+          "kind": "positional",
+          "required": true,
+          "label": "адрес отладчика",
+          "expects_value": true
+        }
+      ],
+      "source_section_id": null,
+      "source_section": "7.3.7. Настройки отладки"
+    },
+    {
+      "id": "iTaxi",
+      "label": "iTaxi",
+      "usage": "/iTaxi",
+      "description": "Запуск в режиме интерфейса Такси.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.5. Настройки интерфейса"
+    },
+    {
+      "id": "itdi",
+      "label": "itdi",
+      "usage": "/itdi",
+      "description": "Запуск в режиме интерфейса с использованием закладок.",
+      "params": [],
+      "source_section_id": null,
+      "source_section": "7.3.5. Настройки интерфейса"
     }
   ]
 }

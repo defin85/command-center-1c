@@ -11,7 +11,6 @@ Tests:
 import pytest
 from datetime import timedelta
 from django.utils import timezone
-from django.test import override_settings
 import base64
 
 from apps.databases.encryption import (
@@ -37,8 +36,12 @@ def sample_credentials():
     }
 
 
+@pytest.fixture(autouse=True)
+def transport_key_settings(settings):
+    settings.CREDENTIALS_TRANSPORT_KEY = VALID_TRANSPORT_KEY_HEX
+
+
 @pytest.mark.django_db
-@override_settings(CREDENTIALS_TRANSPORT_KEY=VALID_TRANSPORT_KEY_HEX)
 class TestCredentialsEncryption:
     """Tests для credentials encryption module"""
 
@@ -149,15 +152,15 @@ class TestCredentialsEncryption:
             with pytest.raises(ValueError, match=f"Missing required field: {field}"):
                 decrypt_credentials_from_transport(incomplete)
 
-    @override_settings(CREDENTIALS_TRANSPORT_KEY="00" * 31)
-    def test_short_key_rejected(self, sample_credentials):
+    def test_short_key_rejected(self, sample_credentials, settings):
         """Test что слишком короткий ключ отвергается"""
+        settings.CREDENTIALS_TRANSPORT_KEY = "00" * 31
         with pytest.raises(ValueError, match="too short"):
             encrypt_credentials_for_transport(sample_credentials)
 
-    @override_settings(CREDENTIALS_TRANSPORT_KEY="not-hex!!!")
-    def test_invalid_hex_key_rejected(self, sample_credentials):
+    def test_invalid_hex_key_rejected(self, sample_credentials, settings):
         """Test что не-hex ключ отвергается"""
+        settings.CREDENTIALS_TRANSPORT_KEY = "not-hex!!!"
         with pytest.raises(ValueError, match="hex-encoded"):
             encrypt_credentials_for_transport(sample_credentials)
 

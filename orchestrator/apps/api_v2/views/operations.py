@@ -437,13 +437,18 @@ class CliCommandSerializer(serializers.Serializer):
     """Single CLI command descriptor."""
     id = serializers.CharField()
     label = serializers.CharField()
+    usage = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
+    params = serializers.ListField(child=serializers.DictField(), required=False)
+    source_section_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    source_section = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class CliCommandCatalogResponseSerializer(serializers.Serializer):
     """Response for CLI command catalog endpoint."""
     version = serializers.CharField()
     source = serializers.CharField()
+    generated_at = serializers.CharField(required=False, allow_blank=True)
     commands = CliCommandSerializer(many=True)
 
 

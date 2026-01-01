@@ -101,12 +101,29 @@ export interface OperationCatalogResponse {
 export interface CliCommandDescriptor {
   id: string;
   label: string;
+  usage?: string;
   description?: string;
+  params?: CliCommandParamDescriptor[];
+  source_section?: string;
+  source_section_id?: string | null;
+}
+
+export interface CliCommandParamDescriptor {
+  name: string;
+  kind: 'positional' | 'flag';
+  label?: string;
+  required?: boolean;
+  flag?: string;
+  expects_value?: boolean;
+  input_type?: 'text' | 'artifact';
+  artifact_kinds?: string[];
+  file_extensions?: string[];
 }
 
 export interface CliCommandCatalogResponse {
   version: string;
   source: string;
+  generated_at?: string;
   commands: CliCommandDescriptor[];
 }
 

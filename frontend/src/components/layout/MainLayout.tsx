@@ -124,6 +124,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           label: 'Runtime Settings',
         },
         {
+          key: '/settings/driver-catalogs',
+          icon: <SettingOutlined />,
+          label: 'Driver Catalogs',
+        },
+        {
           key: '/settings/timeline',
           icon: <SettingOutlined />,
           label: 'Timeline Settings',

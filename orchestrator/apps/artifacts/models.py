@@ -6,6 +6,7 @@ from django.db import models
 
 class ArtifactKind(models.TextChoices):
     EXTENSION = "extension", "Extension"
+    CONFIG_CF = "config_cf", "Config CF"
     CONFIG_XML = "config_xml", "Config XML"
     DT_BACKUP = "dt_backup", "DT Backup"
     EPF = "epf", "EPF"

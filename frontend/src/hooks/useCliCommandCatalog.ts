@@ -3,9 +3,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { getCliCommandCatalog, type CliCommandDescriptor } from '../api/operations'
+import { getCliCommandCatalog, type CliCommandCatalogResponse, type CliCommandDescriptor } from '../api/operations'
 
 export interface UseCliCommandCatalogResult {
+  catalog: CliCommandCatalogResponse | null
   commands: CliCommandDescriptor[]
   loading: boolean
   error: string | null
@@ -14,6 +15,7 @@ export interface UseCliCommandCatalogResult {
 
 export function useCliCommandCatalog(): UseCliCommandCatalogResult {
   const [commands, setCommands] = useState<CliCommandDescriptor[]>([])
+  const [catalog, setCatalog] = useState<CliCommandCatalogResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,11 +24,13 @@ export function useCliCommandCatalog(): UseCliCommandCatalogResult {
     setError(null)
     try {
       const response = await getCliCommandCatalog()
+      setCatalog(response)
       setCommands(response.commands ?? [])
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to load CLI command catalog'
       setError(message)
+      setCatalog(null)
       setCommands([])
     } finally {
       setLoading(false)
@@ -38,6 +42,7 @@ export function useCliCommandCatalog(): UseCliCommandCatalogResult {
   }, [fetchCatalog])
 
   return {
+    catalog,
     commands,
     loading,
     error,

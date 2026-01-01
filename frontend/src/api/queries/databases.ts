@@ -5,13 +5,11 @@
  * - Fetching databases list (with optional cluster filtering)
  * - Fetching single database details
  * - Executing RAS operations on databases
- * - Installing extensions
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 
 import { getV2 } from '../generated'
-import type { BatchInstallResponse } from '../generated/model/batchInstallResponse'
 import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
@@ -411,20 +409,6 @@ export function useResetInfobaseUserPassword() {
   })
 }
 
-export interface InstallExtensionParams {
-  databaseId: string
-  extensionName: string
-  extensionPath: string
-}
-
-export interface InstallExtensionResponse {
-  message: string
-  batch_id: string
-  total: number
-  queued: number
-  skipped: number
-}
-
 export interface BulkHealthCheckParams {
   databaseIds: string[]
 }
@@ -440,57 +424,6 @@ export interface SetDatabaseStatusParams {
   databaseIds: string[]
   status: SetDatabaseStatusRequest['status']
   reason?: string
-}
-
-function formatInstallExtensionMessage(result: BatchInstallResponse): string {
-  const queued = result.queued ?? 0
-  const skipped = result.skipped ?? 0
-  return `Installation queued: ${queued}, skipped: ${skipped}`
-}
-
-/**
- * React Query mutation hook for installing extension on a single database.
- *
- * @example
- * ```tsx
- * const { mutate, isPending } = useInstallExtension()
- *
- * mutate(
- *   { databaseId: 'db-1', extensionName: 'MyExt.cfe', extensionPath: '/path/to/ext.cfe' },
- *   { onSuccess: (data) => console.log('Operation ID:', data.operation_id) }
- * )
- * ```
- */
-export function useInstallExtension() {
-  const queryClient = useQueryClient()
-  const { message } = App.useApp()
-
-  return useMutation({
-    mutationFn: async (
-      params: InstallExtensionParams
-    ): Promise<InstallExtensionResponse> => {
-      const result = await api.postExtensionsBatchInstall({
-        database_ids: [params.databaseId],
-        extension_name: params.extensionName,
-        extension_path: params.extensionPath,
-      })
-
-      return {
-        message: formatInstallExtensionMessage(result),
-        batch_id: result.batch_id,
-        total: result.total ?? 1,
-        queued: result.queued ?? 0,
-        skipped: result.skipped ?? 0,
-      }
-    },
-    onSuccess: () => {
-      // Invalidate databases to refresh installation status
-      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
-    },
-    onError: (error: Error) => {
-      message.error(error.message || 'Failed to start installation')
-    },
-  })
 }
 
 export function useHealthCheckDatabase() {

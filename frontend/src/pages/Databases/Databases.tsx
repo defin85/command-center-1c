@@ -1,26 +1,18 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { App, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, RocketOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons'
+import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
-import { getV2 } from '../../api/generated'
 import type { Database } from '../../api/generated/model/database'
-import { SetDatabaseStatusRequestStatus } from '../../api/generated/model/setDatabaseStatusRequestStatus'
-import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
-import { extractInstallationFromStatus } from '../../utils/installationTransforms'
-import { ExtensionFileSelector } from '../../components/Installation/ExtensionFileSelector'
-import { InstallationProgressModal } from '../../components/Installation/InstallationProgressModal'
-import type { ExtensionInstallation } from '../../types/installation'
+import { SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatusEnum'
+import type { SetDatabaseStatusRequestStatusEnum as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatusEnum'
 import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
-import { queryKeys } from '../../api/queries'
 import {
   useDatabases,
   useExecuteRasOperation,
-  useInstallExtension,
   useHealthCheckDatabase,
   useBulkHealthCheckDatabases,
   useSetDatabaseStatus,
@@ -33,12 +25,8 @@ import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
-// Get generated API functions (for fetchStatus in InstallationProgressModal)
-const api = getV2()
-
 export const Databases = () => {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { message, modal } = App.useApp()
   const authz = useAuthz()
   const isStaff = authz.isStaff
@@ -49,12 +37,8 @@ export const Databases = () => {
   const [selectedClusterId, setSelectedClusterId] = useState<string | undefined>(
     clusterIdFromUrl || undefined
   )
-  const [modalVisible, setModalVisible] = useState(false)
-  const [progressModalVisible, setProgressModalVisible] = useState(false)
-  const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null)
   const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
   const [credentialsDatabase, setCredentialsDatabase] = useState<Database | null>(null)
-  const [form] = Form.useForm()
   const [credentialsForm] = Form.useForm()
 
   // Row selection state
@@ -98,7 +82,6 @@ export const Databases = () => {
 
   // Mutations
   const executeRasOperation = useExecuteRasOperation()
-  const installExtension = useInstallExtension()
   const healthCheck = useHealthCheckDatabase()
   const bulkHealthCheck = useBulkHealthCheckDatabases()
   const setDatabaseStatus = useSetDatabaseStatus()
@@ -151,15 +134,6 @@ export const Databases = () => {
     } else {
       navigate('/databases', { replace: true })
     }
-  }
-
-  const handleInstallExtension = (database: Database) => {
-    if (!canManageDatabase(database.id)) {
-      message.error('Недостаточно прав для установки расширения')
-      return
-    }
-    setSelectedDatabase(database)
-    setModalVisible(true)
   }
 
   const openCredentialsModal = (database: Database) => {
@@ -243,60 +217,6 @@ export const Databases = () => {
     })
   }
 
-
-  const handleConfirmInstall = async () => {
-    if (!selectedDatabase) return
-    if (!canManageDatabase(selectedDatabase.id)) {
-      message.error('Недостаточно прав для установки расширения')
-      return
-    }
-
-    try {
-      const values = await form.validateFields()
-
-      if (!values.extension || !values.extension.name || !values.extension.path) {
-        message.error('Vyberite fayl rasshireniya')
-        return
-      }
-
-      installExtension.mutate(
-        {
-          databaseId: selectedDatabase.id,
-          extensionName: values.extension.name,
-          extensionPath: values.extension.path,
-        },
-        {
-          onSuccess: (response) => {
-            // Close file selection modal
-            setModalVisible(false)
-            form.resetFields()
-
-            // Open progress modal
-            setProgressModalVisible(true)
-
-            // Show message
-            message.success({
-              content: (
-                <div>
-                  <div>{response.message}</div>
-                </div>
-              ),
-              duration: 5,
-            })
-          },
-        }
-      )
-    } catch (error) {
-      console.error('Failed to validate form:', error)
-    }
-  }
-
-  const handleProgressModalClose = () => {
-    setProgressModalVisible(false)
-    setSelectedDatabase(null)
-    // Invalidate databases query to refresh data
-    queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
-  }
 
   // Row selection configuration
   const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
@@ -575,15 +495,6 @@ export const Databases = () => {
           <Space size="small">
             <Button
               size="small"
-              type="primary"
-              icon={<RocketOutlined />}
-              onClick={() => handleInstallExtension(record)}
-              disabled={!canManage || record.status !== 'active'}
-            >
-              Install
-            </Button>
-            <Button
-              size="small"
               icon={<HeartOutlined />}
               onClick={async () => {
                 if (!canOperate || healthCheckPendingIds.has(record.id)) {
@@ -614,9 +525,9 @@ export const Databases = () => {
               disabled={!canManage}
               menu={{
                 items: [
-                  { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
-                  { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
-                  { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
+                  { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
+                  { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
+                  { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
                 ],
                 onClick: async ({ key }) => {
                   try {
@@ -758,9 +669,9 @@ export const Databases = () => {
             disabled={!canManageSelected}
             menu={{
               items: [
-                { key: SetDatabaseStatusRequestStatus.active, label: 'Set Active' },
-                { key: SetDatabaseStatusRequestStatus.inactive, label: 'Set Inactive' },
-                { key: SetDatabaseStatusRequestStatus.maintenance, label: 'Set Maintenance' },
+                { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
+                { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
+                { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
               ],
               onClick: async ({ key }) => {
                 if (!canManageSelected) {
@@ -799,25 +710,6 @@ export const Databases = () => {
         scroll={{ x: totalColumnsWidth }}
         searchPlaceholder="Search databases"
       />
-
-      <Modal
-        title={`Install Extension on ${selectedDatabase?.name}`}
-        open={modalVisible}
-        onOk={handleConfirmInstall}
-        onCancel={() => setModalVisible(false)}
-        okText="Install"
-        width={700}
-        confirmLoading={installExtension.isPending}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="extension"
-            rules={[{ required: true, message: 'Выберите файл расширения' }]}
-          >
-            <ExtensionFileSelector />
-          </Form.Item>
-        </Form>
-      </Modal>
 
       <Modal
         title={credentialsDatabase ? `Credentials: ${credentialsDatabase.name}` : 'Credentials'}
@@ -868,33 +760,6 @@ export const Databases = () => {
           </Form.Item>
         </Form>
       </Modal>
-
-      {/* Progress Modal с Operation ID внутри */}
-      {selectedDatabase && (
-        <InstallationProgressModal
-          visible={progressModalVisible}
-          databaseId={selectedDatabase.id}
-          databaseName={selectedDatabase.name}
-          onClose={handleProgressModalClose}
-          fetchStatus={async (databaseId: string): Promise<ExtensionInstallation | null> => {
-            try {
-              const response = await api.getExtensionsGetInstallStatus({ database_id: databaseId })
-              return extractInstallationFromStatus(response)
-            } catch (error: unknown) {
-              // If installation not found, return null
-              if (
-                error &&
-                typeof error === 'object' &&
-                'response' in error &&
-                (error as { response?: { status?: number } }).response?.status === 404
-              ) {
-                return null
-              }
-              throw error
-            }
-          }}
-        />
-      )}
 
       {/* Operation Confirm Modal for RAS actions */}
       <OperationConfirmModal

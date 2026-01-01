@@ -2,6 +2,7 @@ import { apiClient } from './client'
 
 export type ArtifactKind =
   | 'extension'
+  | 'config_cf'
   | 'config_xml'
   | 'dt_backup'
   | 'epf'

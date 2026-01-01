@@ -1436,35 +1436,12 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
-  /api/v2/databases/stream/:
-    get:
-      operationId: v2_databases_stream_retrieve
-      description: SSE endpoint for database updates. Use ticket from /databases/stream-ticket/.
-      summary: Database SSE stream
-      parameters:
-      - in: query
-        name: ticket
-        schema:
-          type: string
-        description: Short-lived SSE ticket from /databases/stream-ticket/.
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: SSE stream (text/event-stream)
-        '401':
-          description: Unauthorized
   /api/v2/databases/stream-ticket/:
     post:
       operationId: v2_databases_stream_ticket_create
-      description: "\n    Obtain a short-lived, single-use ticket for database SSE\
-        \ stream authentication.\n\n    The ticket is valid for 30 seconds and can\
-        \ only be used once.\n    "
+      description: "\n    Obtain a short-lived, single-use ticket for database SSE
+        stream authentication.\n\n    The ticket is valid for 30 seconds and can only
+        be used once.\n    "
       summary: Get database SSE stream ticket
       tags:
       - v2
@@ -1789,329 +1766,6 @@ paths:
           description: Forbidden
         '500':
           description: Internal server error
-  /api/v2/extensions/batch-install/:
-    post:
-      operationId: v2_extensions_batch_install_create
-      description: Batch install extension to multiple databases. Skips databases
-        that already have installation in progress.
-      summary: Batch install extension
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BatchInstallRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/BatchInstallRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/BatchInstallRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BatchInstallResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/extensions/delete-extension/:
-    delete:
-      operationId: v2_extensions_delete_extension_destroy
-      description: Delete an extension file from storage.
-      summary: Delete extension file
-      parameters:
-      - in: query
-        name: filename
-        schema:
-          type: string
-        description: Extension filename to delete
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          description: File deleted successfully
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '500':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/extensions/get-install-progress/:
-    get:
-      operationId: v2_extensions_get_install_progress_retrieve
-      description: Get progress of extension installations across databases. Shows
-        aggregated statistics and per-database status.
-      summary: Get extension installation progress
-      parameters:
-      - in: query
-        name: database_ids
-        schema:
-          type: string
-        description: Comma-separated list of database UUIDs (optional)
-      - in: query
-        name: extension_name
-        schema:
-          type: string
-        description: 'Extension name filter (default: ODataAutoConfig)'
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InstallProgressResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/extensions/get-install-status/:
-    get:
-      operationId: v2_extensions_get_install_status_retrieve
-      description: Get extension installation status for a specific database, including
-        latest installation and history.
-      summary: Get extension installation status
-      parameters:
-      - in: query
-        name: database_id
-        schema:
-          type: string
-        description: Database UUID (required)
-        required: true
-      - in: query
-        name: extension_name
-        schema:
-          type: string
-        description: 'Extension name (default: ODataAutoConfig)'
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InstallStatusResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/extensions/list-extensions/:
-    get:
-      operationId: v2_extensions_list_extensions_retrieve
-      description: List all extension installations with optional filtering by database,
-        status, and extension name.
-      summary: List extension installations
-      parameters:
-      - in: query
-        name: database_id
-        schema:
-          type: string
-        description: Filter by database UUID
-      - in: query
-        name: extension_name
-        schema:
-          type: string
-        description: Filter by extension name
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: 'Maximum results (default: 50, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: Filter by status (pending, in_progress, completed, failed)
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/extensions/list-storage/:
-    get:
-      operationId: v2_extensions_list_storage_retrieve
-      description: Get list of extension files (.cfe) available in storage for installation.
-      summary: List extensions in storage
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionStorageListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '500':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/extensions/retry-installation/:
-    post:
-      operationId: v2_extensions_retry_installation_create
-      description: Retry extension installation for a specific database. Creates a
-        new installation record and queues the task.
-      summary: Retry extension installation
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RetryInstallationRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/RetryInstallationRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/RetryInstallationRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RetryInstallationResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/extensions/upload-extension/:
-    post:
-      operationId: v2_extensions_upload_extension_create
-      description: Upload a .cfe extension file to storage for later installation.
-      summary: Upload extension file
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadExtensionRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UploadExtensionRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UploadExtensionRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadExtensionResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '500':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
   /api/v2/files/delete/{file_id}/:
     delete:
       operationId: v2_files_delete_destroy
@@ -2314,16 +1968,15 @@ paths:
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
-      description: "\n    Queue an operation for execution on selected databases.\n\
-        \n    **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,\
-        \ `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    -\
-        \ OData: `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n\
-        \    -\
-        \ IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\
-        \n    **Config notes:**\n    - RAS block_sessions: `message`, `permission_code`,\
-        \ `denied_from`, `denied_to`, `parameter`\n    - OData query: `entity`, `filter`,\
-        \ `select`, `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n\
-        \    - CLI designer_cli: `command` + `args` + optional `options`\n    "
+      description: "\n    Queue an operation for execution on selected databases.\n\n
+        \   **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,
+        `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    - OData:
+        `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n    - IBCMD:
+        `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\n    **Config
+        notes:**\n    - RAS block_sessions: `message`, `permission_code`, `denied_from`,
+        `denied_to`, `parameter`\n    - OData query: `entity`, `filter`, `select`,
+        `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n    - CLI
+        designer_cli: `command` + `args` + optional `options`\n    "
       summary: Execute RAS operation
       tags:
       - v2
@@ -2360,11 +2013,11 @@ paths:
   /api/v2/operations/execute-ibcmd/:
     post:
       operationId: v2_operations_execute_ibcmd_create
-      description: "\n    Queue an IBCMD operation for execution on selected databases.\n\
-        \n    **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n\
-        \    - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`\
-        \ - Replicate infobase to another server\n    - `ibcmd_create` - Create new\
-        \ infobase\n    "
+      description: "\n    Queue an IBCMD operation for execution on selected databases.\n\n
+        \   **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n
+        \   - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`
+        - Replicate infobase to another server\n    - `ibcmd_create` - Create new
+        infobase\n    "
       summary: Execute IBCMD operation
       tags:
       - v2
@@ -2465,14 +2118,14 @@ paths:
   /api/v2/operations/get-operation-timeline/:
     post:
       operationId: v2_operations_get_operation_timeline_create
-      description: "\n    Get the execution timeline for an operation.\n\n    **Authentication:**\
-        \ Requires valid JWT token.\n\n    **Authorization:** User must own the operation\
-        \ (created_by matches username)\n    or be staff.\n\n    **Response format:**\n\
-        \    - Timeline events are sorted chronologically (ascending)\n    - Each\
-        \ event includes timestamp, event name, service, and optional metadata\n \
-        \   - Duration is calculated from first to last event (null if < 2 events)\n\
-        \n    **Graceful degradation:**\n    - If Redis is unavailable, returns empty\
-        \ timeline (not 500 error)\n    "
+      description: "\n    Get the execution timeline for an operation.\n\n    **Authentication:**
+        Requires valid JWT token.\n\n    **Authorization:** User must own the operation
+        (created_by matches username)\n    or be staff.\n\n    **Response format:**\n
+        \   - Timeline events are sorted chronologically (ascending)\n    - Each event
+        includes timestamp, event name, service, and optional metadata\n    - Duration
+        is calculated from first to last event (null if < 2 events)\n\n    **Graceful
+        degradation:**\n    - If Redis is unavailable, returns empty timeline (not
+        500 error)\n    "
       summary: Get operation timeline
       tags:
       - v2
@@ -2601,39 +2254,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-  /api/v2/operations/stream/:
-    get:
-      operationId: v2_operations_stream_retrieve
-      description: SSE endpoint for real-time operation updates. Prefer ticket-based
-        auth via /stream-ticket/.
-      summary: Operation SSE stream
-      parameters:
-      - in: query
-        name: operation_id
-        schema:
-          type: string
-        description: Operation ID (deprecated legacy token auth).
-      - in: query
-        name: ticket
-        schema:
-          type: string
-        description: Short-lived SSE ticket from /operations/stream-ticket/.
-      - in: query
-        name: token
-        schema:
-          type: string
-        description: Legacy token auth (deprecated).
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: SSE stream (text/event-stream)
-        '401':
-          description: Unauthorized
   /api/v2/operations/stream-mux-status/:
     get:
       operationId: v2_operations_stream_mux_status_retrieve
@@ -2688,28 +2308,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
-  /api/v2/operations/stream-mux/:
-    get:
-      operationId: v2_operations_stream_mux_retrieve
-      description: SSE endpoint for multiplex operation updates.
-      summary: Operation multiplex SSE stream
-      parameters:
-      - in: query
-        name: ticket
-        schema:
-          type: string
-        description: Short-lived SSE ticket from /operations/stream-mux-ticket/.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      - {}
-      responses:
-        '200':
-          description: SSE stream (text/event-stream)
-        '401':
-          description: Unauthorized
   /api/v2/operations/stream-status/:
     get:
       operationId: v2_operations_stream_status_retrieve
@@ -2764,9 +2362,9 @@ paths:
   /api/v2/operations/stream-ticket/:
     post:
       operationId: v2_operations_stream_ticket_create
-      description: "\n    Obtain a short-lived, single-use ticket for SSE stream authentication.\n\
-        \n    The ticket is valid for 30 seconds and can only be used once.\n    This\
-        \ allows secure SSE connections without exposing JWT tokens in URLs.\n    "
+      description: "\n    Obtain a short-lived, single-use ticket for SSE stream authentication.\n\n
+        \   The ticket is valid for 30 seconds and can only be used once.\n    This
+        allows secure SSE connections without exposing JWT tokens in URLs.\n    "
       summary: Get SSE stream ticket
       tags:
       - v2
@@ -3238,6 +2836,131 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/settings/driver-catalogs/:
+    get:
+      operationId: v2_settings_driver_catalogs_retrieve
+      description: List available driver catalogs and metadata (staff-only).
+      summary: List driver catalogs
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/get/:
+    get:
+      operationId: v2_settings_driver_catalogs_get_retrieve
+      description: Return driver catalog contents (staff-only).
+      summary: Get driver catalog
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ras/odata/ibcmd)
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogGetResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/import-its/:
+    post:
+      operationId: v2_settings_driver_catalogs_import_its_create
+      description: Parse ITS JSON into CLI command catalog and optionally save (staff-only).
+      summary: Import ITS catalog for CLI
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogImportRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogImportRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogImportRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogImportResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/update/:
+    post:
+      operationId: v2_settings_driver_catalogs_update_create
+      description: Update driver catalog file (staff-only).
+      summary: Update driver catalog
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogGetResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/settings/runtime/:
     get:
       operationId: v2_settings_runtime_retrieve
@@ -3366,6 +3089,84 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/templates/create-template/:
+    post:
+      operationId: v2_templates_create_template_create
+      description: Create a custom operation template (staff-only).
+      summary: Create operation template
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/templates/delete-template/:
+    post:
+      operationId: v2_templates_delete_template_create
+      description: Delete an operation template (staff-only).
+      summary: Delete operation template
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateId'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateId'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateId'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
@@ -3461,6 +3262,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationTemplateSyncResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/templates/update-template/:
+    post:
+      operationId: v2_templates_update_template_create
+      description: Update an existing operation template (staff-only).
+      summary: Update operation template
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationTemplateWrite'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateDetailResponse'
           description: ''
         '400':
           content:
@@ -4345,6 +4185,82 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/databases/stream/:
+    get:
+      operationId: v2_databases_stream_retrieve
+      summary: Database SSE stream
+      description: SSE endpoint for database updates. Use ticket from /databases/stream-ticket/.
+      tags:
+      - v2
+      parameters:
+      - name: ticket
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /databases/stream-ticket/.
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '429':
+          description: Stream already active
+  /api/v2/operations/stream/:
+    get:
+      operationId: v2_operations_stream_retrieve
+      summary: Operation SSE stream
+      description: SSE endpoint for operation updates. Prefer ticket from /operations/stream-ticket/.
+        Legacy token auth is deprecated.
+      tags:
+      - v2
+      parameters:
+      - name: ticket
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /operations/stream-ticket/.
+      - name: operation_id
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Operation ID (deprecated legacy token auth).
+      - name: token
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Legacy token auth (deprecated).
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          description: Unauthorized
+  /api/v2/operations/stream-mux/:
+    get:
+      operationId: v2_operations_stream_mux_retrieve
+      summary: Operation SSE multiplex stream
+      description: SSE endpoint for multiplex operation updates. Use ticket from /operations/stream-mux-ticket/.
+      tags:
+      - v2
+      parameters:
+      - name: ticket
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Short-lived SSE ticket from /operations/stream-mux-ticket/.
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '401':
+          description: Unauthorized
+        '429':
+          description: Stream already active
 components:
   schemas:
     Artifact:
@@ -4438,6 +4354,7 @@ components:
     ArtifactCreateRequestKindEnum:
       enum:
       - extension
+      - config_cf
       - config_xml
       - dt_backup
       - epf
@@ -4448,6 +4365,7 @@ components:
       type: string
       description: |-
         * `extension` - Extension
+        * `config_cf` - Config CF
         * `config_xml` - Config XML
         * `dt_backup` - DT Backup
         * `epf` - EPF
@@ -4549,72 +4467,6 @@ components:
         * `ad` - Active Directory
         * `service` - Service
         * `other` - Other
-    BatchInstallItem:
-      type: object
-      description: Single item in batch installation result.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID
-        installation_id:
-          type: string
-          description: Installation UUID (if queued)
-        status:
-          type: string
-          description: 'Status: pending or skipped'
-        reason:
-          type: string
-          description: Skip reason (if skipped)
-        existing_installation_id:
-          type: string
-          description: Existing installation ID (if skipped)
-      required:
-      - database_id
-      - status
-    BatchInstallRequest:
-      type: object
-      description: Request body for batch_install endpoint.
-      properties:
-        database_ids:
-          type: array
-          items:
-            type: string
-          description: List of database UUIDs to install extension to
-        extension_name:
-          type: string
-          default: ODataAutoConfig
-          description: 'Extension name (default: ODataAutoConfig)'
-        extension_path:
-          type: string
-          description: Path to extension file (optional)
-      required:
-      - database_ids
-    BatchInstallResponse:
-      type: object
-      description: Response for batch_install endpoint.
-      properties:
-        batch_id:
-          type: string
-          description: Batch operation UUID
-        total:
-          type: integer
-          description: Total number of databases in request
-        queued:
-          type: integer
-          description: Number of installations queued
-        skipped:
-          type: integer
-          description: Number of databases skipped
-        installations:
-          type: array
-          items:
-            $ref: '#/components/schemas/BatchInstallItem'
-      required:
-      - batch_id
-      - installations
-      - queued
-      - skipped
-      - total
     BatchOperation:
       type: object
       description: Serializer for BatchOperation model.
@@ -4654,12 +4506,8 @@ components:
           readOnly: true
           description: Number of failed tasks
         payload:
-          type: object
-          additionalProperties: {}
           description: Operation payload/parameters
         config:
-          type: object
-          additionalProperties: {}
           description: Execution configuration (timeout, retries, etc.)
         task_id:
           type: string
@@ -4690,8 +4538,6 @@ components:
           description: User who created operation
           maxLength: 255
         metadata:
-          type: object
-          additionalProperties: {}
           description: Additional metadata
         created_at:
           type: string
@@ -4804,6 +4650,50 @@ components:
           description: ID of the operation to cancel (UUID)
       required:
       - operation_id
+    CliCommand:
+      type: object
+      description: Single CLI command descriptor.
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        usage:
+          type: string
+        description:
+          type: string
+        params:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        source_section_id:
+          type: string
+          nullable: true
+        source_section:
+          type: string
+          nullable: true
+      required:
+      - id
+      - label
+    CliCommandCatalogResponse:
+      type: object
+      description: Response for CLI command catalog endpoint.
+      properties:
+        version:
+          type: string
+        source:
+          type: string
+        generated_at:
+          type: string
+        commands:
+          type: array
+          items:
+            $ref: '#/components/schemas/CliCommand'
+      required:
+      - commands
+      - source
+      - version
     CloneWorkflowRequest:
       type: object
       description: Request for clone_workflow endpoint.
@@ -4834,6 +4724,7 @@ components:
           description: Optional description
         ras_server:
           type: string
+          default: localhost:1545
           description: RAS server address (host:port)
           maxLength: 255
         cluster_service_url:
@@ -4852,7 +4743,7 @@ components:
           type: boolean
           readOnly: true
         status:
-          $ref: '#/components/schemas/DatabaseStatusEnum'
+          $ref: '#/components/schemas/StatusC5cEnum'
         status_display:
           type: string
           readOnly: true
@@ -4863,8 +4754,6 @@ components:
           nullable: true
           description: Last sync timestamp
         metadata:
-          type: object
-          additionalProperties: {}
           description: Additional cluster metadata
         databases_count:
           type: integer
@@ -5376,7 +5265,7 @@ components:
           description: Имя информационной базы на сервере 1С (если отличается от name)
           maxLength: 255
         status:
-          $ref: '#/components/schemas/DatabaseStatusEnum'
+          $ref: '#/components/schemas/StatusC5cEnum'
         status_display:
           type: string
           readOnly: true
@@ -5643,18 +5532,6 @@ components:
       - cluster_id
       - id
       - name
-    DatabaseStatusEnum:
-      enum:
-      - active
-      - inactive
-      - error
-      - maintenance
-      type: string
-      description: |-
-        * `active` - Active
-        * `inactive` - Inactive
-        * `error` - Error
-        * `maintenance` - Maintenance
     DatabaseStreamTicketRequest:
       type: object
       description: Request body for database stream ticket endpoint.
@@ -5731,6 +5608,80 @@ components:
       - message
       - operation_id
       - status
+    DriverCatalogGetResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+    DriverCatalogImportRequest:
+      type: object
+      properties:
+        driver:
+          type: string
+          default: cli
+        its_payload:
+          type: object
+          additionalProperties: {}
+        save:
+          type: boolean
+          default: true
+      required:
+      - its_payload
+    DriverCatalogImportResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+    DriverCatalogListItem:
+      type: object
+      properties:
+        driver:
+          type: string
+        version:
+          type: string
+        command_count:
+          type: integer
+        source:
+          type: string
+      required:
+      - command_count
+      - driver
+      - version
+    DriverCatalogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverCatalogListItem'
+        count:
+          type: integer
+      required:
+      - count
+      - items
+    DriverCatalogUpdateRequest:
+      type: object
+      properties:
+        driver:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
     EffectiveAccessClusterItem:
       type: object
       properties:
@@ -6062,150 +6013,6 @@ components:
       required:
       - count
       - steps
-    ExtensionInstallation:
-      type: object
-      description: Serializer для ExtensionInstallation model.
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        database_id:
-          type: string
-          readOnly: true
-        database_name:
-          type: string
-          readOnly: true
-        extension_name:
-          type: string
-          maxLength: 255
-        status:
-          $ref: '#/components/schemas/ExtensionInstallationStatusEnum'
-        started_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        error_message:
-          type: string
-          nullable: true
-        duration_seconds:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-          nullable: true
-        retry_count:
-          type: integer
-          maximum: 2147483647
-          minimum: -2147483648
-        metadata:
-          type: object
-          additionalProperties: {}
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - completed_at
-      - created_at
-      - database_id
-      - database_name
-      - id
-      - started_at
-      - updated_at
-    ExtensionInstallationStatusEnum:
-      enum:
-      - pending
-      - in_progress
-      - completed
-      - failed
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `in_progress` - In Progress
-        * `completed` - Completed
-        * `failed` - Failed
-    ExtensionListResponse:
-      type: object
-      description: Response for list_extensions endpoint.
-      properties:
-        extensions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionInstallation'
-        count:
-          type: integer
-          description: Number of extensions returned
-        total:
-          type: integer
-          description: Total number of extensions matching filters
-        summary:
-          $ref: '#/components/schemas/ExtensionSummary'
-      required:
-      - count
-      - extensions
-      - summary
-      - total
-    ExtensionStorageItem:
-      type: object
-      description: Single extension file in storage.
-      properties:
-        filename:
-          type: string
-          description: File name
-        size:
-          type: integer
-          description: File size in bytes
-        modified_at:
-          type: string
-          description: Last modified timestamp (ISO format)
-      required:
-      - filename
-      - modified_at
-      - size
-    ExtensionStorageListResponse:
-      type: object
-      description: Response for list_extension_storage endpoint.
-      properties:
-        extensions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionStorageItem'
-        count:
-          type: integer
-          description: Number of extensions in storage
-      required:
-      - count
-      - extensions
-    ExtensionSummary:
-      type: object
-      description: Summary statistics for extensions.
-      properties:
-        pending:
-          type: integer
-          description: Number of pending installations
-        in_progress:
-          type: integer
-          description: Number of installations in progress
-        completed:
-          type: integer
-          description: Number of completed installations
-        failed:
-          type: integer
-          description: Number of failed installations
-      required:
-      - completed
-      - failed
-      - in_progress
-      - pending
     FileDeleteResponse:
       type: object
       description: Response for file delete endpoint.
@@ -6411,9 +6218,7 @@ components:
         ib_display_name:
           type: string
           maxLength: 255
-        ib_roles:
-          type: object
-          additionalProperties: {}
+        ib_roles: {}
         ib_password_configured:
           type: boolean
           readOnly: true
@@ -6515,102 +6320,6 @@ components:
       required:
       - id
       - password
-    InstallProgressDatabase:
-      type: object
-      description: Database status in installation progress.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID
-        database_name:
-          type: string
-          description: Database name
-        status:
-          type: string
-          description: Installation status
-        error_message:
-          type: string
-          nullable: true
-        updated_at:
-          type: string
-          nullable: true
-      required:
-      - database_id
-      - database_name
-      - status
-    InstallProgressResponse:
-      type: object
-      description: Response for get_install_progress endpoint.
-      properties:
-        progress:
-          $ref: '#/components/schemas/InstallProgressStats'
-        databases:
-          type: array
-          items:
-            $ref: '#/components/schemas/InstallProgressDatabase'
-      required:
-      - databases
-      - progress
-    InstallProgressStats:
-      type: object
-      description: Progress statistics for batch installation.
-      properties:
-        total:
-          type: integer
-          description: Total number of installations
-        pending:
-          type: integer
-          description: Number of pending installations
-        in_progress:
-          type: integer
-          description: Number of installations in progress
-        completed:
-          type: integer
-          description: Number of completed installations
-        failed:
-          type: integer
-          description: Number of failed installations
-        percent_complete:
-          type: number
-          format: double
-          description: Percentage of completed installations
-      required:
-      - completed
-      - failed
-      - in_progress
-      - pending
-      - percent_complete
-      - total
-    InstallStatusResponse:
-      type: object
-      description: Response for get_install_status endpoint.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID
-        database_name:
-          type: string
-          description: Database name
-        extension_name:
-          type: string
-          description: Extension name
-        status:
-          type: string
-          description: 'Current status: completed, failed, pending, in_progress, none'
-        installation:
-          allOf:
-          - $ref: '#/components/schemas/ExtensionInstallation'
-          nullable: true
-        history:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionInstallation'
-      required:
-      - database_id
-      - database_name
-      - extension_name
-      - history
-      - status
     LastCheckStatusEnum:
       enum:
       - ok
@@ -6782,35 +6491,6 @@ components:
       required:
       - count
       - items
-    CliCommandDescriptor:
-      type: object
-      description: Single CLI command descriptor.
-      properties:
-        id:
-          type: string
-        label:
-          type: string
-        description:
-          type: string
-      required:
-      - id
-      - label
-    CliCommandCatalogResponse:
-      type: object
-      description: Response for CLI command catalog endpoint.
-      properties:
-        version:
-          type: string
-        source:
-          type: string
-        commands:
-          type: array
-          items:
-            $ref: '#/components/schemas/CliCommandDescriptor'
-      required:
-      - commands
-      - source
-      - version
     OperationDetailResponse:
       type: object
       description: Response for get_operation endpoint.
@@ -6952,20 +6632,6 @@ components:
       - percent
       - processing
       - total
-    OperationStatusEnum:
-      enum:
-      - pending
-      - running
-      - completed
-      - failed
-      - cancelled
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `running` - Running
-        * `completed` - Completed
-        * `failed` - Failed
-        * `cancelled` - Cancelled
     OperationStreamStatus:
       type: object
       description: Response for operation stream status.
@@ -6997,9 +6663,7 @@ components:
         target_entity:
           type: string
           maxLength: 255
-        template_data:
-          type: object
-          additionalProperties: {}
+        template_data: {}
         is_active:
           type: boolean
         created_at:
@@ -7017,6 +6681,20 @@ components:
       - operation_type
       - target_entity
       - updated_at
+    OperationTemplateDetailResponse:
+      type: object
+      properties:
+        template:
+          $ref: '#/components/schemas/OperationTemplate'
+      required:
+      - template
+    OperationTemplateId:
+      type: object
+      properties:
+        template_id:
+          type: string
+      required:
+      - template_id
     OperationTemplateListResponse:
       type: object
       description: Response for list_templates endpoint.
@@ -7058,6 +6736,28 @@ components:
       - message
       - unchanged
       - updated
+    OperationTemplateWrite:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        operation_type:
+          type: string
+        target_entity:
+          type: string
+        template_data: {}
+        is_active:
+          type: boolean
+          default: true
+      required:
+      - name
+      - operation_type
+      - target_entity
+      - template_data
     OverallStatusEnum:
       enum:
       - healthy
@@ -7093,9 +6793,7 @@ components:
     PatchedRuntimeSettingUpdate:
       type: object
       properties:
-        value:
-          type: object
-          additionalProperties: {}
+        value: {}
     PendingEventsResponse:
       type: object
       properties:
@@ -7214,43 +6912,6 @@ components:
       - clusters
       - message
       - reset_count
-    RetryInstallationRequest:
-      type: object
-      description: Request body for retry_installation endpoint.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID (required)
-        extension_name:
-          type: string
-          default: ODataAutoConfig
-          description: 'Extension name (default: ODataAutoConfig)'
-      required:
-      - database_id
-    RetryInstallationResponse:
-      type: object
-      description: Response for retry_installation endpoint.
-      properties:
-        database_id:
-          type: string
-          description: Database UUID
-        installation_id:
-          type: string
-          description: New installation UUID
-        status:
-          type: string
-          description: 'Installation status: pending'
-        task_id:
-          type: string
-          description: Task ID (if async)
-        message:
-          type: string
-          description: Status message
-      required:
-      - database_id
-      - installation_id
-      - message
-      - status
     RevokeClusterPermissionRequest:
       type: object
       properties:
@@ -7284,9 +6945,7 @@ components:
       properties:
         key:
           type: string
-        value:
-          type: object
-          additionalProperties: {}
+        value: {}
         value_type:
           type: string
         description:
@@ -7297,9 +6956,7 @@ components:
         max_value:
           type: integer
           nullable: true
-        default:
-          type: object
-          additionalProperties: {}
+        default: {}
       required:
       - default
       - description
@@ -7632,6 +7289,32 @@ components:
       description: |-
         * `direct` - direct
         * `cluster` - cluster
+    Status1b7Enum:
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `running` - Running
+        * `completed` - Completed
+        * `failed` - Failed
+        * `cancelled` - Cancelled
+    StatusC5cEnum:
+      enum:
+      - active
+      - inactive
+      - error
+      - maintenance
+      type: string
+      description: |-
+        * `active` - Active
+        * `inactive` - Inactive
+        * `error` - Error
+        * `maintenance` - Maintenance
     StoreFailedEventRequest:
       type: object
       properties:
@@ -7641,9 +7324,7 @@ components:
           type: string
         correlation_id:
           type: string
-        payload:
-          type: object
-          additionalProperties: {}
+        payload: {}
         source_service:
           type: string
         original_timestamp:
@@ -7834,8 +7515,6 @@ components:
           - $ref: '#/components/schemas/TaskStatusEnum'
           readOnly: true
         result:
-          type: object
-          additionalProperties: {}
           readOnly: true
           nullable: true
           description: Task result data
@@ -8120,32 +7799,6 @@ components:
           type: boolean
       required:
       - workflow_id
-    UploadExtensionRequest:
-      type: object
-      description: Request for upload_extension endpoint.
-      properties:
-        file:
-          type: string
-          format: uri
-          description: Extension file (.cfe)
-        filename:
-          type: string
-      required:
-      - file
-    UploadExtensionResponse:
-      type: object
-      description: Response for upload_extension endpoint.
-      properties:
-        message:
-          type: string
-          description: Status message
-        file:
-          allOf:
-          - $ref: '#/components/schemas/ExtensionStorageItem'
-          description: Uploaded file details
-      required:
-      - file
-      - message
     UploadedFile:
       type: object
       description: Serializer for UploadedFile response.
@@ -8249,9 +7902,7 @@ components:
           type: string
         message:
           type: string
-        details:
-          type: object
-          additionalProperties: {}
+        details: {}
       required:
       - code
       - message
@@ -8458,7 +8109,7 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/OperationStatusEnum'
+          - $ref: '#/components/schemas/Status1b7Enum'
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8469,13 +8120,9 @@ components:
             * `failed` - Failed
             * `cancelled` - Cancelled
         input_context:
-          type: object
-          additionalProperties: {}
           readOnly: true
           description: Initial input data for the workflow
         final_result:
-          type: object
-          additionalProperties: {}
           readOnly: true
           nullable: true
           description: Final workflow output data
@@ -8484,18 +8131,12 @@ components:
           readOnly: true
           description: Currently executing node ID
         completed_nodes:
-          type: object
-          additionalProperties: {}
           readOnly: true
           description: List of completed node IDs
         failed_nodes:
-          type: object
-          additionalProperties: {}
           readOnly: true
           description: List of failed node IDs
         node_statuses:
-          type: object
-          additionalProperties: {}
           readOnly: true
           description: Map of node_id -> status (pending/running/completed/failed/skipped)
         progress_percent:
@@ -8577,7 +8218,7 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/OperationStatusEnum'
+          - $ref: '#/components/schemas/Status1b7Enum'
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8751,13 +8392,9 @@ components:
           - $ref: '#/components/schemas/WorkflowStepResultStatusEnum'
           readOnly: true
         input_data:
-          type: object
-          additionalProperties: {}
           readOnly: true
           description: Input data for this node
         output_data:
-          type: object
-          additionalProperties: {}
           readOnly: true
           nullable: true
           description: Output data from this node
@@ -8857,6 +8494,7 @@ components:
         version_number:
           type: integer
           readOnly: true
+          default: 1
           description: Version number (auto-incremented)
         parent_version:
           type: string
@@ -8935,6 +8573,7 @@ components:
         version_number:
           type: integer
           readOnly: true
+          default: 1
           description: Version number (auto-incremented)
         parent_version:
           type: string

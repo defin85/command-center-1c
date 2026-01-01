@@ -227,6 +227,98 @@ SPECTACULAR_SETTINGS = {
     'EXCLUDE_PATHS': [
         r'^/api/v2/internal/.*$',
     ],
+    'APPEND_PATHS': {
+        '/api/v2/databases/stream/': {
+            'get': {
+                'operationId': 'v2_databases_stream_retrieve',
+                'summary': 'Database SSE stream',
+                'description': (
+                    'SSE endpoint for database updates. '
+                    'Use ticket from /databases/stream-ticket/.'
+                ),
+                'tags': ['v2'],
+                'parameters': [
+                    {
+                        'name': 'ticket',
+                        'in': 'query',
+                        'required': True,
+                        'schema': {'type': 'string'},
+                        'description': 'Short-lived SSE ticket from /databases/stream-ticket/.',
+                    },
+                ],
+                'responses': {
+                    '200': {'description': 'SSE stream (text/event-stream)'},
+                    '401': {'description': 'Unauthorized'},
+                    '403': {'description': 'Forbidden'},
+                    '429': {'description': 'Stream already active'},
+                },
+            },
+        },
+        '/api/v2/operations/stream/': {
+            'get': {
+                'operationId': 'v2_operations_stream_retrieve',
+                'summary': 'Operation SSE stream',
+                'description': (
+                    'SSE endpoint for operation updates. '
+                    'Prefer ticket from /operations/stream-ticket/. '
+                    'Legacy token auth is deprecated.'
+                ),
+                'tags': ['v2'],
+                'parameters': [
+                    {
+                        'name': 'ticket',
+                        'in': 'query',
+                        'required': False,
+                        'schema': {'type': 'string'},
+                        'description': 'Short-lived SSE ticket from /operations/stream-ticket/.',
+                    },
+                    {
+                        'name': 'operation_id',
+                        'in': 'query',
+                        'required': False,
+                        'schema': {'type': 'string'},
+                        'description': 'Operation ID (deprecated legacy token auth).',
+                    },
+                    {
+                        'name': 'token',
+                        'in': 'query',
+                        'required': False,
+                        'schema': {'type': 'string'},
+                        'description': 'Legacy token auth (deprecated).',
+                    },
+                ],
+                'responses': {
+                    '200': {'description': 'SSE stream (text/event-stream)'},
+                    '401': {'description': 'Unauthorized'},
+                },
+            },
+        },
+        '/api/v2/operations/stream-mux/': {
+            'get': {
+                'operationId': 'v2_operations_stream_mux_retrieve',
+                'summary': 'Operation SSE multiplex stream',
+                'description': (
+                    'SSE endpoint for multiplex operation updates. '
+                    'Use ticket from /operations/stream-mux-ticket/.'
+                ),
+                'tags': ['v2'],
+                'parameters': [
+                    {
+                        'name': 'ticket',
+                        'in': 'query',
+                        'required': True,
+                        'schema': {'type': 'string'},
+                        'description': 'Short-lived SSE ticket from /operations/stream-mux-ticket/.',
+                    },
+                ],
+                'responses': {
+                    '200': {'description': 'SSE stream (text/event-stream)'},
+                    '401': {'description': 'Unauthorized'},
+                    '429': {'description': 'Stream already active'},
+                },
+            },
+        },
+    },
 }
 
 # Celery Configuration - REMOVED

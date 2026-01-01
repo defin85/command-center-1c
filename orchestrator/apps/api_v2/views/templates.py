@@ -4,8 +4,10 @@ Template management endpoints for API v2.
 Provides action-based endpoints for operation template management.
 """
 
+import hashlib
 import json
 import logging
+import re
 
 from django.db import transaction
 from django.db.models import Q
@@ -44,6 +46,29 @@ class OperationTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
+class OperationTemplateWriteSerializer(serializers.Serializer):
+    id = serializers.CharField(required=False)
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    operation_type = serializers.CharField()
+    target_entity = serializers.CharField()
+    template_data = serializers.JSONField()
+    is_active = serializers.BooleanField(default=True)
+
+    def validate(self, attrs):
+        if not attrs.get("name"):
+            raise serializers.ValidationError("name is required")
+        if not attrs.get("operation_type"):
+            raise serializers.ValidationError("operation_type is required")
+        if not attrs.get("template_data"):
+            raise serializers.ValidationError("template_data is required")
+        return attrs
+
+
+class OperationTemplateIdSerializer(serializers.Serializer):
+    template_id = serializers.CharField()
+
+
 # =============================================================================
 # Response Serializers for OpenAPI documentation
 # =============================================================================
@@ -53,6 +78,10 @@ class OperationTemplateListResponseSerializer(serializers.Serializer):
     templates = OperationTemplateSerializer(many=True, help_text="List of operation templates")
     count = serializers.IntegerField(help_text="Number of templates in current page")
     total = serializers.IntegerField(help_text="Total number of templates matching filters")
+
+
+class OperationTemplateDetailResponseSerializer(serializers.Serializer):
+    template = OperationTemplateSerializer()
 
 
 TEMPLATE_FILTER_FIELDS = {
@@ -306,6 +335,182 @@ def list_templates(request):
         'count': len(serializer.data),
         'total': total,
     })
+
+
+def _generate_template_id(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        slug = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    base = f"tpl-custom-{slug}"
+    if not OperationTemplate.objects.filter(id=base).exists():
+        return base
+    counter = 2
+    while OperationTemplate.objects.filter(id=f"{base}-{counter}").exists():
+        counter += 1
+    return f"{base}-{counter}"
+
+
+def _validate_operation_type(value: str) -> dict | None:
+    registry = get_registry()
+    if registry.get_all() and not registry.is_valid(value):
+        return {
+            "code": "UNKNOWN_OPERATION",
+            "message": f"Unknown operation_type: {value}",
+        }
+    return None
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Create operation template',
+    description='Create a custom operation template (staff-only).',
+    request=OperationTemplateWriteSerializer,
+    responses={
+        200: OperationTemplateDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def create_template(request):
+    serializer = OperationTemplateWriteSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"success": False, "error": serializer.errors}, status=400)
+
+    data = serializer.validated_data
+    template_id = data.get("id") or _generate_template_id(data["name"])
+    op_error = _validate_operation_type(data["operation_type"])
+    if op_error:
+        return Response({"success": False, "error": op_error}, status=400)
+
+    if OperationTemplate.objects.filter(id=template_id).exists():
+        return Response({
+            "success": False,
+            "error": {"code": "TEMPLATE_EXISTS", "message": f"Template {template_id} already exists"},
+        }, status=400)
+
+    template = OperationTemplate.objects.create(
+        id=template_id,
+        name=data["name"],
+        description=data.get("description", ""),
+        operation_type=data["operation_type"],
+        target_entity=data["target_entity"],
+        template_data=data["template_data"],
+        is_active=data.get("is_active", True),
+    )
+
+    log_admin_action(
+        request,
+        action="templates.create",
+        outcome="success",
+        target_type="operation_template",
+        metadata={"template_id": template_id},
+    )
+
+    return Response({"template": OperationTemplateSerializer(template).data})
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Update operation template',
+    description='Update an existing operation template (staff-only).',
+    request=OperationTemplateWriteSerializer,
+    responses={
+        200: OperationTemplateDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def update_template(request):
+    serializer = OperationTemplateWriteSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"success": False, "error": serializer.errors}, status=400)
+
+    data = serializer.validated_data
+    template_id = data.get("id")
+    if not template_id:
+        return Response({
+            "success": False,
+            "error": {"code": "MISSING_ID", "message": "id is required for update"},
+        }, status=400)
+    op_error = _validate_operation_type(data["operation_type"])
+    if op_error:
+        return Response({"success": False, "error": op_error}, status=400)
+
+    try:
+        template = OperationTemplate.objects.get(id=template_id)
+    except OperationTemplate.DoesNotExist:
+        return Response({
+            "success": False,
+            "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
+        }, status=404)
+
+    fields = ["name", "description", "operation_type", "target_entity", "template_data", "is_active"]
+    changed = []
+    for field in fields:
+        value = data.get(field)
+        if value is not None and getattr(template, field) != value:
+            setattr(template, field, value)
+            changed.append(field)
+
+    if changed:
+        template.save(update_fields=changed + ["updated_at"])
+
+    log_admin_action(
+        request,
+        action="templates.update",
+        outcome="success",
+        target_type="operation_template",
+        metadata={"template_id": template_id, "changed_fields": changed},
+    )
+
+    return Response({"template": OperationTemplateSerializer(template).data})
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Delete operation template',
+    description='Delete an operation template (staff-only).',
+    request=OperationTemplateIdSerializer,
+    responses={
+        200: OperationTemplateDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def delete_template(request):
+    serializer = OperationTemplateIdSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"success": False, "error": serializer.errors}, status=400)
+
+    template_id = serializer.validated_data["template_id"]
+    try:
+        template = OperationTemplate.objects.get(id=template_id)
+    except OperationTemplate.DoesNotExist:
+        return Response({
+            "success": False,
+            "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
+        }, status=404)
+
+    template.delete()
+
+    log_admin_action(
+        request,
+        action="templates.delete",
+        outcome="success",
+        target_type="operation_template",
+        metadata={"template_id": template_id},
+    )
+
+    return Response({"template": OperationTemplateSerializer(template).data})
 
 
 class OperationTemplateSyncRequestSerializer(serializers.Serializer):

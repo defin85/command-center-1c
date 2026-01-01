@@ -12,7 +12,6 @@ from .views import (
     clusters,
     operations,
     workflows,
-    extensions,
     system,
     service_mesh,
     audit,
@@ -26,6 +25,7 @@ from .views import (
     dlq,
     runtime_settings,
     ui,
+    driver_catalogs,
 )
 
 app_name = 'api_v2'
@@ -118,19 +118,6 @@ urlpatterns = [
     path('workflows/get-template-schema/', workflows.get_template_schema, name='get-template-schema'),
 
     # ========================================================================
-    # Extensions
-    # ========================================================================
-    path('extensions/list-extensions/', extensions.list_extensions, name='list-extensions'),
-    path('extensions/get-install-status/', extensions.get_install_status, name='get-install-status'),
-    path('extensions/retry-installation/', extensions.retry_installation, name='retry-installation'),
-    path('extensions/batch-install/', extensions.batch_install, name='batch-install'),
-    path('extensions/get-install-progress/', extensions.get_install_progress, name='get-install-progress'),
-    # Extension Storage (migrated from v1)
-    path('extensions/list-storage/', extensions.list_extension_storage, name='list-extension-storage'),
-    path('extensions/upload-extension/', extensions.upload_extension, name='upload-extension'),
-    path('extensions/delete-extension/', extensions.delete_extension_storage, name='delete-extension-storage'),
-
-    # ========================================================================
     # Artifacts (v2 storage)
     # ========================================================================
     path('artifacts/', artifacts.list_artifacts, name='list-artifacts'),
@@ -168,6 +155,9 @@ urlpatterns = [
     # ========================================================================
     path('templates/list-templates/', templates.list_templates, name='list-templates'),
     path('templates/sync-from-registry/', templates.sync_from_registry, name='sync-from-registry'),
+    path('templates/create-template/', templates.create_template, name='create-template'),
+    path('templates/update-template/', templates.update_template, name='update-template'),
+    path('templates/delete-template/', templates.delete_template, name='delete-template'),
 
     # ========================================================================
     # Service Mesh
@@ -205,4 +195,12 @@ urlpatterns = [
     # ========================================================================
     path('settings/runtime/', runtime_settings.list_runtime_settings, name='runtime-settings'),
     path('settings/runtime/<str:key>/', runtime_settings.update_runtime_setting, name='runtime-settings-update'),
+
+    # ========================================================================
+    # Driver Catalogs (SPA-primary administration)
+    # ========================================================================
+    path('settings/driver-catalogs/', driver_catalogs.list_driver_catalogs, name='driver-catalogs-list'),
+    path('settings/driver-catalogs/get/', driver_catalogs.get_driver_catalog, name='driver-catalogs-get'),
+    path('settings/driver-catalogs/update/', driver_catalogs.update_driver_catalog, name='driver-catalogs-update'),
+    path('settings/driver-catalogs/import-its/', driver_catalogs.import_its_cli_catalog, name='driver-catalogs-import-its'),
 ]

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
-	"github.com/commandcenter1c/commandcenter/worker/internal/metrics"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,11 +28,6 @@ type ExtensionInstallStateMachine struct {
 	InfobaseID    string
 	ExtensionPath string
 	ExtensionName string
-	ServerAddress string
-	ServerPort    int
-	InfobaseName  string
-	Username      string
-	Password      string
 	RASServer     string
 	ClusterUser   string
 	ClusterPwd    string
@@ -58,12 +52,6 @@ type ExtensionInstallStateMachine struct {
 
 	// Timeline for operation tracing
 	timeline tracing.TimelineRecorder
-
-	// Optional direct installer (CLI)
-	extensionInstaller ExtensionInstaller
-
-	// Optional credentials provider (re-init without persisted secrets)
-	credentialsProvider DesignerCredentialsProvider
 
 	// Optional cluster info provider (re-init without persisted secrets)
 	clusterInfoProvider ClusterInfoProvider
@@ -96,20 +84,6 @@ func WithCompensationConfig(config *CompensationConfig, auditLogger AuditLogger,
 func WithTimeline(timeline tracing.TimelineRecorder) StateMachineOption {
 	return func(sm *ExtensionInstallStateMachine) {
 		sm.timeline = timeline
-	}
-}
-
-// WithExtensionInstaller sets a direct installer to avoid legacy batch pipeline.
-func WithExtensionInstaller(installer ExtensionInstaller) StateMachineOption {
-	return func(sm *ExtensionInstallStateMachine) {
-		sm.extensionInstaller = installer
-	}
-}
-
-// WithDesignerCredentialsProvider sets a provider for rehydrating credentials on resume.
-func WithDesignerCredentialsProvider(provider DesignerCredentialsProvider) StateMachineOption {
-	return func(sm *ExtensionInstallStateMachine) {
-		sm.credentialsProvider = provider
 	}
 }
 
@@ -189,10 +163,6 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := sm.ensureDesignerCredentials(ctx); err != nil {
-		return err
-	}
-
 	// Main state loop
 	for !sm.State.IsFinal() {
 		fmt.Printf("[StateMachine] Loop iteration, current state: %s (correlation_id=%s)\n", sm.State, sm.CorrelationID)
@@ -259,60 +229,6 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (sm *ExtensionInstallStateMachine) ensureDesignerCredentials(ctx context.Context) error {
-	if sm.extensionInstaller == nil {
-		return nil
-	}
-	if sm.ServerAddress != "" && sm.InfobaseName != "" && sm.Username != "" {
-		return nil
-	}
-	if sm.credentialsProvider == nil {
-		metrics.RecordDesignerCredentialsRehydrate(false)
-		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
-			"database_id": sm.DatabaseID,
-			"error":       "credentials provider not configured",
-		})
-		return fmt.Errorf("designer credentials provider not configured")
-	}
-
-	fmt.Printf("[StateMachine] Rehydrating designer credentials from provider (no persistence): database_id=%s\n", sm.DatabaseID)
-
-	creds, err := sm.credentialsProvider.Fetch(ctx, sm.DatabaseID)
-	if err != nil {
-		metrics.RecordDesignerCredentialsRehydrate(false)
-		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
-			"database_id": sm.DatabaseID,
-			"error":       err.Error(),
-		})
-		return fmt.Errorf("failed to fetch designer credentials: %w", err)
-	}
-	if creds == nil || creds.ServerAddress == "" || creds.InfobaseName == "" || creds.Username == "" {
-		metrics.RecordDesignerCredentialsRehydrate(false)
-		sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrate.failed", map[string]interface{}{
-			"database_id": sm.DatabaseID,
-			"error":       "designer credentials are incomplete",
-		})
-		return fmt.Errorf("designer credentials are incomplete")
-	}
-
-	sm.ServerAddress = creds.ServerAddress
-	sm.ServerPort = creds.ServerPort
-	sm.InfobaseName = creds.InfobaseName
-	sm.Username = creds.Username
-	sm.Password = creds.Password
-	metrics.RecordDesignerCredentialsRehydrate(true)
-	sm.timeline.Record(ctx, sm.OperationID, "designer.credentials.rehydrated", map[string]interface{}{
-		"database_id": sm.DatabaseID,
-		"source":      "provider",
-	})
-	fmt.Printf("[StateMachine] Designer credentials rehydrated: database_id=%s\n", sm.DatabaseID)
-	return nil
-}
-
-func (sm *ExtensionInstallStateMachine) clearDesignerCredentials() {
-	sm.Password = ""
 }
 
 func (sm *ExtensionInstallStateMachine) ensureClusterInfo(ctx context.Context) error {

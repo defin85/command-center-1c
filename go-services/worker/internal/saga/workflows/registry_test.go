@@ -65,8 +65,7 @@ func (m *mockOrchestrator) Close() error {
 func TestListRegisteredWorkflows(t *testing.T) {
 	workflows := ListRegisteredWorkflows()
 
-	assert.Len(t, workflows, 10, "Should list all 10 workflows")
-	assert.Contains(t, workflows, WorkflowExtensionInstall)
+	assert.Len(t, workflows, 9, "Should list all 9 workflows")
 	assert.Contains(t, workflows, WorkflowExtensionRemove)
 	assert.Contains(t, workflows, WorkflowLockScheduledJobs)
 	assert.Contains(t, workflows, WorkflowUnlockScheduledJobs)
@@ -82,22 +81,22 @@ func TestListRegisteredWorkflows(t *testing.T) {
 func TestGetWorkflowDescriptions(t *testing.T) {
 	descriptions := GetWorkflowDescriptions()
 
-	assert.Len(t, descriptions, 10, "Should return 10 workflow descriptions")
+	assert.Len(t, descriptions, 9, "Should return 9 workflow descriptions")
 
-	// Check extension_install
-	var extensionInstall *WorkflowDescription
+	// Check extension_remove
+	var extensionRemove *WorkflowDescription
 	for i := range descriptions {
-		if descriptions[i].ID == WorkflowExtensionInstall {
-			extensionInstall = &descriptions[i]
+		if descriptions[i].ID == WorkflowExtensionRemove {
+			extensionRemove = &descriptions[i]
 			break
 		}
 	}
 
-	require.NotNil(t, extensionInstall, "Should have extension_install workflow")
-	assert.Equal(t, "Install Extension", extensionInstall.Name)
-	assert.Equal(t, "extensions", extensionInstall.Category)
-	assert.NotEmpty(t, extensionInstall.Description)
-	assert.Greater(t, len(extensionInstall.Steps), 0, "Should have steps")
+	require.NotNil(t, extensionRemove, "Should have extension_remove workflow")
+	assert.Equal(t, "Remove Extension", extensionRemove.Name)
+	assert.Equal(t, "extensions", extensionRemove.Category)
+	assert.NotEmpty(t, extensionRemove.Description)
+	assert.Greater(t, len(extensionRemove.Steps), 0, "Should have steps")
 }
 
 // TestWorkflowRegistryRegisterAll tests registering all workflows.
@@ -123,10 +122,9 @@ func TestWorkflowRegistryRegisterAll(t *testing.T) {
 
 	// Verify
 	require.NoError(t, err)
-	assert.Len(t, orchestrator.registered, 10, "Should register all 10 workflows")
+	assert.Len(t, orchestrator.registered, 9, "Should register all 9 workflows")
 
 	// Check specific workflows
-	assert.Contains(t, orchestrator.registered, WorkflowExtensionInstall)
 	assert.Contains(t, orchestrator.registered, WorkflowODataBatch)
 	assert.Contains(t, orchestrator.registered, WorkflowConfigUpdate)
 }
@@ -147,8 +145,8 @@ func TestWorkflowRegistryRegisterSubset(t *testing.T) {
 		},
 		{
 			name:        "multiple workflows",
-			workflowIDs: []string{WorkflowExtensionInstall, WorkflowExtensionRemove, WorkflowODataBatch},
-			wantCount:   3,
+			workflowIDs: []string{WorkflowExtensionRemove, WorkflowODataBatch},
+			wantCount:   2,
 			wantErr:     false,
 		},
 		{

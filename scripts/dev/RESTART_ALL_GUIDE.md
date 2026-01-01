@@ -13,6 +13,7 @@
 - **Force Rebuild**: Принудительная пересборка всех Go сервисов
 - **No Rebuild Mode**: Только перезапуск без проверки/пересборки
 - **Parallel Build**: Параллельная сборка для ускорения
+- **Makemigrations**: Создание миграций Django перед применением
 
 ## Использование
 
@@ -68,6 +69,14 @@
 
 Использовать параллельную сборку Go сервисов (быстрее при пересборке нескольких сервисов).
 
+### Создание миграций Django
+
+```bash
+./scripts/dev/restart-all.sh --makemigrations
+```
+
+Создать миграции перед запуском (если есть изменения моделей).
+
 ### Детальный вывод (для отладки)
 
 ```bash
@@ -81,6 +90,9 @@
 ```bash
 # Принудительная параллельная пересборка с детальным выводом
 ./scripts/dev/restart-all.sh --force-rebuild --parallel-build --verbose
+
+# Принудительное создание миграций перед запуском
+./scripts/dev/restart-all.sh --makemigrations
 
 # Перезапуск одного сервиса без rebuild
 ./scripts/dev/restart-all.sh --service=worker --no-rebuild

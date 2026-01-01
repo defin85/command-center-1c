@@ -226,6 +226,7 @@ Docker Services:
 | `--force-rebuild` | Принудительно пересобрать все Go сервисы |
 | `--no-rebuild` | Только перезапуск, без проверки/пересборки |
 | `--parallel-build` | Параллельная пересборка (быстрее, но сложнее отлаживать) |
+| `--makemigrations` | Создать миграции Django перед migrate |
 | `--service=<name>` | Перезапустить только один сервис (с проверкой изменений) |
 | `--verbose` | Детальный вывод для отладки |
 
@@ -246,6 +247,9 @@ Docker Services:
 
 # Параллельная пересборка (быстрее)
 ./scripts/dev/restart-all.sh --parallel-build
+
+# Создать миграции перед запуском
+./scripts/dev/restart-all.sh --makemigrations
 
 # Детальный вывод для отладки
 ./scripts/dev/restart-all.sh --verbose
@@ -824,7 +828,7 @@ command-center-1c/
 | `start-all.sh` | нет | нет | Запуск ВСЕХ сервисов (app + infra + monitoring) |
 | `stop-all.sh` | нет | нет | Остановка ВСЕХ сервисов (app + infra + monitoring) |
 | `restart.sh` | нет | `<service-name>` | Перезапуск одного сервиса |
-| `restart-all.sh` | `--help`, `--force-rebuild`, `--no-rebuild`, `--parallel-build`, `--service=<name>`, `--verbose` | нет | Умный перезапуск с автопересборкой |
+| `restart-all.sh` | `--help`, `--force-rebuild`, `--no-rebuild`, `--parallel-build`, `--makemigrations`, `--service=<name>`, `--verbose` | нет | Умный перезапуск с автопересборкой |
 | `logs.sh` | нет | `<service-name>` `[lines]` | Просмотр логов |
 | `start-monitoring.sh` | нет | нет | Запуск только мониторинга (опционально) |
 | `stop-monitoring.sh` | нет | нет | Остановка только мониторинга (опционально) |

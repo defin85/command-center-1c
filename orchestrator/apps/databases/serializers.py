@@ -3,7 +3,7 @@
 from typing import Optional
 
 from rest_framework import serializers
-from .models import Database, DatabaseGroup, ExtensionInstallation, Cluster, InfobaseUserMapping
+from .models import Database, DatabaseGroup, Cluster, InfobaseUserMapping
 
 
 class DatabaseSerializer(serializers.ModelSerializer):
@@ -132,23 +132,6 @@ class DatabaseGroupSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-
-
-class ExtensionInstallationSerializer(serializers.ModelSerializer):
-    """Serializer для ExtensionInstallation model."""
-
-    database_name = serializers.CharField(source='database.name', read_only=True)
-    database_id = serializers.CharField(source='database.id', read_only=True)
-
-    class Meta:
-        model = ExtensionInstallation
-        fields = [
-            'id', 'database_id', 'database_name', 'extension_name',
-            'status', 'started_at', 'completed_at', 'error_message',
-            'duration_seconds', 'retry_count', 'metadata',
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at', 'started_at', 'completed_at']
 
 
 class ClusterSerializer(serializers.ModelSerializer):

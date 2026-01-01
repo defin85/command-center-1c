@@ -9,10 +9,8 @@ import {
   Typography,
   Form,
   Input,
-  AutoComplete,
   DatePicker,
   InputNumber,
-  Switch,
   Checkbox,
   Card,
   Alert,
@@ -31,7 +29,7 @@ import { OPERATION_TYPES } from './types'
 import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
-import { useCliCommandCatalog } from '../../../../hooks/useCliCommandCatalog'
+import { DesignerCliBuilder } from '../../../../components/cli/DesignerCliBuilder'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -190,71 +188,11 @@ const DesignerCliForm = ({
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
 }) => {
-  const { commands, loading } = useCliCommandCatalog()
-  const commandOptions = commands.map((cmd) => ({
-    value: cmd.id,
-    label: cmd.label,
-  }))
-
-  const disableStartupMessages = config.disable_startup_messages ?? true
-  const disableStartupDialogs = config.disable_startup_dialogs ?? true
-
   return (
-    <Form layout="vertical">
-      <Form.Item
-        label="Command"
-        required
-        help="DESIGNER batch command (e.g., LoadCfg, UpdateDBCfg)"
-        htmlFor="wizard-designer-command"
-      >
-        <AutoComplete
-          options={commandOptions}
-          value={config.command || ''}
-          onChange={(value) => onChange({ command: value })}
-          placeholder="Enter command"
-        >
-          <Input id="wizard-designer-command" />
-        </AutoComplete>
-      </Form.Item>
-
-      <Form.Item
-        label="Arguments"
-        help="One argument per line (will be appended after /<command>)"
-        htmlFor="wizard-designer-args"
-      >
-        <TextArea
-          id="wizard-designer-args"
-          rows={6}
-          placeholder="/path/to/file.cfe\n-Extension\nMyExtension"
-          value={config.args || ''}
-          onChange={(e) => onChange({ args: e.target.value })}
-        />
-      </Form.Item>
-
-      <Form.Item label="Disable startup messages" htmlFor="wizard-designer-disable-messages">
-        <Switch
-          id="wizard-designer-disable-messages"
-          checked={disableStartupMessages}
-          onChange={(checked) => onChange({ disable_startup_messages: checked })}
-        />
-      </Form.Item>
-
-      <Form.Item label="Disable startup dialogs" htmlFor="wizard-designer-disable-dialogs">
-        <Switch
-          id="wizard-designer-disable-dialogs"
-          checked={disableStartupDialogs}
-          onChange={(checked) => onChange({ disable_startup_dialogs: checked })}
-        />
-      </Form.Item>
-
-      {loading && (
-        <Alert
-          message="Loading command catalog"
-          type="info"
-          showIcon
-        />
-      )}
-    </Form>
+    <DesignerCliBuilder
+      config={config}
+      onChange={onChange}
+    />
   )
 }
 

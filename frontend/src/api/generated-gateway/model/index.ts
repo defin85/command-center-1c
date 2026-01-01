@@ -42,7 +42,6 @@ export * from "./healthStatusStatus";
 export * from "./jaegerTrace";
 export * from "./jaegerTraceProcesses";
 export * from "./jaegerTraceSpansItem";
-export * from "./jaegerTraceWarnings";
 export * from "./jaegerTracesResponse";
 export * from "./notFoundResponse";
 export * from "./operation";
