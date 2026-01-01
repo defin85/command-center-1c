@@ -277,7 +277,8 @@ class DiscoverClustersResponseSerializer(serializers.Serializer):
 
 class DiscoverClustersRequestSerializer(serializers.Serializer):
     """Request body for discover_clusters endpoint."""
-    ras_server = serializers.CharField(help_text="RAS server address (host:port)")
+    ras_host = serializers.CharField(help_text="RAS host")
+    ras_port = serializers.IntegerField(help_text="RAS port")
     cluster_service_url = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -695,7 +696,7 @@ def sync_cluster(request):
 @extend_schema(
     tags=['v2'],
     summary='Create a new cluster',
-    description='Create a new cluster. Requires name, ras_server, and cluster_service_url.',
+    description='Create a new cluster. Requires name, ras_host, ras_port, rmngr_host, rmngr_port, and cluster_service_url.',
     request=ClusterSerializer,
     responses={
         201: ClusterCreateResponseSerializer,
@@ -715,7 +716,10 @@ def create_cluster(request):
     Request Body:
         {
             "name": "cluster-name",
-            "ras_server": "localhost:1545",
+            "ras_host": "localhost",
+            "ras_port": 1545,
+            "rmngr_host": "localhost",
+            "rmngr_port": 1541,
             "cluster_service_url": "http://localhost:8087",
             "cluster_user": "admin",  // optional
             "cluster_pwd": "password",  // optional
@@ -732,11 +736,14 @@ def create_cluster(request):
 
     Errors:
         400 - Missing required fields or validation error
-        409 - Cluster with same ras_server + name already exists
+        409 - Cluster with same ras_host/ras_port + name already exists
     """
     # Validate required fields
     name = request.data.get('name')
-    ras_server = request.data.get('ras_server')
+    ras_host = request.data.get('ras_host')
+    ras_port = request.data.get('ras_port')
+    rmngr_host = request.data.get('rmngr_host')
+    rmngr_port = request.data.get('rmngr_port')
     cluster_service_url = request.data.get('cluster_service_url')
 
     if not name:
@@ -748,12 +755,36 @@ def create_cluster(request):
             }
         }, status=400)
 
-    if not ras_server:
+    if not ras_host:
         return Response({
             'success': False,
             'error': {
                 'code': 'MISSING_PARAMETER',
-                'message': 'ras_server is required'
+                'message': 'ras_host is required'
+            }
+        }, status=400)
+    if not ras_port:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ras_port is required'
+            }
+        }, status=400)
+    if not rmngr_host:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'rmngr_host is required'
+            }
+        }, status=400)
+    if not rmngr_port:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'rmngr_port is required'
             }
         }, status=400)
 
@@ -794,7 +825,7 @@ def create_cluster(request):
             'success': False,
             'error': {
                 'code': 'DUPLICATE_CLUSTER',
-                'message': f'Cluster with ras_server={ras_server} and name={name} already exists'
+                'message': f'Cluster with ras_host={ras_host} and ras_port={ras_port} and name={name} already exists'
             }
         }, status=409)
 
@@ -908,7 +939,7 @@ def update_cluster(request):
             'success': False,
             'error': {
                 'code': 'DUPLICATE_CLUSTER',
-                'message': 'Cluster with this ras_server and name already exists'
+                'message': 'Cluster with this ras_host/ras_port and name already exists'
             }
         }, status=409)
 
@@ -1402,7 +1433,8 @@ def discover_clusters(request):
 
     Request Body:
         {
-            "ras_server": "localhost:1545",
+            "ras_host": "localhost",
+            "ras_port": 1545,
             "cluster_service_url": "http://localhost:8188",  // optional, for future use
             "cluster_user": "admin",  // optional
             "cluster_pwd": "password"  // optional
@@ -1416,21 +1448,32 @@ def discover_clusters(request):
         }
 
     Errors:
-        400 - Missing ras_server
+        400 - Missing ras_host/ras_port
         409 - Discovery already in progress
         500 - Failed to enqueue operation
     """
-    # Get ras_server from body
-    ras_server = request.data.get('ras_server')
+    # Get RAS host/port from body
+    ras_host = request.data.get('ras_host')
+    ras_port = request.data.get('ras_port')
 
-    if not ras_server:
+    if not ras_host:
         return Response({
             'success': False,
             'error': {
                 'code': 'MISSING_PARAMETER',
-                'message': 'ras_server is required'
+                'message': 'ras_host is required'
             }
         }, status=400)
+    if not ras_port:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'ras_port is required'
+            }
+        }, status=400)
+
+    ras_server = f"{ras_host}:{ras_port}"
 
     # Optional fields
     cluster_service_url = request.data.get('cluster_service_url', '')  # For future Worker use
@@ -1459,7 +1502,6 @@ def discover_clusters(request):
 
     result = OperationsService.enqueue_discover_clusters(
         ras_server=ras_server,
-        cluster_service_url=cluster_service_url,
         operation_id=str(operation.id),
         cluster_user=cluster_user,
         cluster_pwd=cluster_pwd,

@@ -204,14 +204,19 @@ func (c *StreamsClient) request(ctx context.Context, databaseID string) (*creden
 		c.mu.Unlock()
 	}()
 
+	requestPayload := map[string]interface{}{
+		"correlation_id": correlationID,
+		"database_id":    databaseID,
+		"timestamp":      time.Now().UTC().Format(time.RFC3339),
+	}
+	if requestedBy := RequestedByFromContext(ctx); requestedBy != "" {
+		requestPayload["created_by"] = requestedBy
+	}
+
 	// Publish request
 	if err := c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: events.StreamCommandsGetDatabaseCredentials,
-		Values: map[string]interface{}{
-			"correlation_id": correlationID,
-			"database_id":    databaseID,
-			"timestamp":      time.Now().UTC().Format(time.RFC3339),
-		},
+		Values: requestPayload,
 	}).Err(); err != nil {
 		return nil, fmt.Errorf("failed to publish credentials request: %w", err)
 	}

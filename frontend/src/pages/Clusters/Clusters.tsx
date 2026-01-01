@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App } from 'antd'
+import { Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App, InputNumber, Row, Col } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
@@ -7,6 +7,13 @@ import { DiscoverClustersModal } from '../../components/clusters/DiscoverCluster
 import {
     DEFAULT_CLUSTER_SERVICE_URL,
     DEFAULT_RAS_SERVER,
+    DEFAULT_RAS_PORT,
+    DEFAULT_RMNGR_PORT,
+    DEFAULT_RAGENT_PORT,
+    DEFAULT_RPHOST_PORT_FROM,
+    DEFAULT_RPHOST_PORT_TO,
+    formatHostPort,
+    parseHostPort,
     useClusters,
     useSystemConfig,
     useCreateCluster,
@@ -65,10 +72,18 @@ export const Clusters = () => {
     const updateClusterCredentials = useUpdateClusterCredentials()
 
     const handleCreate = () => {
+        const rasDefaults = parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER)
         setEditingCluster(null)
         form.resetFields()
         form.setFieldsValue({
-            ras_server: systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER,
+            ras_host: rasDefaults.host,
+            ras_port: rasDefaults.port || DEFAULT_RAS_PORT,
+            rmngr_host: rasDefaults.host,
+            rmngr_port: DEFAULT_RMNGR_PORT,
+            ragent_host: rasDefaults.host,
+            ragent_port: DEFAULT_RAGENT_PORT,
+            rphost_port_from: DEFAULT_RPHOST_PORT_FROM,
+            rphost_port_to: DEFAULT_RPHOST_PORT_TO,
             cluster_service_url: DEFAULT_CLUSTER_SERVICE_URL,
             status: 'active',
         })
@@ -76,9 +91,21 @@ export const Clusters = () => {
     }
 
     const handleEdit = (cluster: Cluster) => {
+        const rasDefaults = parseHostPort(cluster.ras_server ?? systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER)
         setEditingCluster(cluster)
         form.resetFields()
-        form.setFieldsValue({ ...cluster, cluster_pwd: '' })
+        form.setFieldsValue({
+            ...cluster,
+            ras_host: cluster.ras_host || rasDefaults.host,
+            ras_port: cluster.ras_port || rasDefaults.port || DEFAULT_RAS_PORT,
+            rmngr_host: cluster.rmngr_host || rasDefaults.host,
+            rmngr_port: cluster.rmngr_port || DEFAULT_RMNGR_PORT,
+            ragent_host: cluster.ragent_host || rasDefaults.host,
+            ragent_port: cluster.ragent_port || DEFAULT_RAGENT_PORT,
+            rphost_port_from: cluster.rphost_port_from || DEFAULT_RPHOST_PORT_FROM,
+            rphost_port_to: cluster.rphost_port_to || DEFAULT_RPHOST_PORT_TO,
+            cluster_pwd: '',
+        })
         setModalVisible(true)
     }
 
@@ -297,6 +324,8 @@ export const Clusters = () => {
             dataIndex: 'ras_server',
             key: 'ras_server',
             width: 180,
+            render: (_: unknown, record: Cluster) =>
+                formatHostPort(record.ras_host, record.ras_port, record.ras_server),
         },
         {
             title: 'Status',
@@ -508,13 +537,100 @@ export const Clusters = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="RAS Server"
-                        name="ras_server"
-                        rules={[{ required: true, message: 'Please enter RAS server address' }]}
-                        htmlFor="cluster-ras-server"
+                        label="RAS Host"
+                        name="ras_host"
+                        rules={[{ required: true, message: 'Please enter RAS host' }]}
+                        htmlFor="cluster-ras-host"
                     >
-                        <Input id="cluster-ras-server" placeholder={systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER} />
+                        <Input id="cluster-ras-host" placeholder={parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER).host} />
                     </Form.Item>
+                    <Form.Item
+                        label="RAS Port"
+                        name="ras_port"
+                        rules={[{ required: true, message: 'Please enter RAS port' }]}
+                        htmlFor="cluster-ras-port"
+                    >
+                        <InputNumber
+                            id="cluster-ras-port"
+                            min={1}
+                            max={65535}
+                            style={{ width: '100%' }}
+                            placeholder={String(DEFAULT_RAS_PORT)}
+                        />
+                    </Form.Item>
+
+                    <Row gutter={12}>
+                        <Col span={16}>
+                            <Form.Item
+                                label="RMNGR Host"
+                                name="rmngr_host"
+                                rules={[{ required: true, message: 'Please enter RMNGR host' }]}
+                                htmlFor="cluster-rmngr-host"
+                            >
+                                <Input id="cluster-rmngr-host" placeholder="localhost" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item
+                                label="RMNGR Port"
+                                name="rmngr_port"
+                                rules={[{ required: true, message: 'Please enter RMNGR port' }]}
+                                htmlFor="cluster-rmngr-port"
+                            >
+                                <InputNumber
+                                    id="cluster-rmngr-port"
+                                    min={1}
+                                    max={65535}
+                                    style={{ width: '100%' }}
+                                    placeholder={String(DEFAULT_RMNGR_PORT)}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                        <Col span={16}>
+                            <Form.Item label="RAGENT Host" name="ragent_host" htmlFor="cluster-ragent-host">
+                                <Input id="cluster-ragent-host" placeholder="localhost" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item label="RAGENT Port" name="ragent_port" htmlFor="cluster-ragent-port">
+                                <InputNumber
+                                    id="cluster-ragent-port"
+                                    min={1}
+                                    max={65535}
+                                    style={{ width: '100%' }}
+                                    placeholder={String(DEFAULT_RAGENT_PORT)}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Form.Item label="RPHOST Port From" name="rphost_port_from" htmlFor="cluster-rphost-port-from">
+                                <InputNumber
+                                    id="cluster-rphost-port-from"
+                                    min={1}
+                                    max={65535}
+                                    style={{ width: '100%' }}
+                                    placeholder={String(DEFAULT_RPHOST_PORT_FROM)}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item label="RPHOST Port To" name="rphost_port_to" htmlFor="cluster-rphost-port-to">
+                                <InputNumber
+                                    id="cluster-rphost-port-to"
+                                    min={1}
+                                    max={65535}
+                                    style={{ width: '100%' }}
+                                    placeholder={String(DEFAULT_RPHOST_PORT_TO)}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
 
                     <Form.Item
                         label="Cluster Service URL"

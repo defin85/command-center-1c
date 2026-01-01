@@ -152,7 +152,7 @@ payload (restore):
 env (Worker):
 - `IBSRV_ENABLED=true`
 - `APP_ENV=development`
-- `EXE_1CV8_PATH=/opt/1c/8.3.27/bin/1cv8`
+- `PLATFORM_1C_BIN_PATH=/opt/1c/8.3.27/bin`
 
 payload:
 ```json

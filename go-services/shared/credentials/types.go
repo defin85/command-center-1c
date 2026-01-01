@@ -8,6 +8,9 @@ type DatabaseCredentials struct {
 	ODataURL string `json:"odata_url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Infobase (DESIGNER) credentials, mapped per CC user
+	IBUsername string `json:"ib_username,omitempty"`
+	IBPassword string `json:"ib_password,omitempty"`
 	// Legacy fields (for OData)
 	Host     string `json:"host"`
 	Port     int    `json:"port"`

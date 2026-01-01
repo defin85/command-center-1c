@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react'
-import { Modal, Form, Input, App } from 'antd'
+import { Modal, Form, Input, InputNumber, App, Row, Col } from 'antd'
 import type { DiscoverClustersRequest } from '../../api/generated/model/discoverClustersRequest'
 import {
     DEFAULT_CLUSTER_SERVICE_URL,
     DEFAULT_RAS_SERVER,
+    DEFAULT_RAS_PORT,
+    parseHostPort,
     useDiscoverClusters,
     useSystemConfig,
 } from '../../api/queries/clusters'
@@ -27,8 +29,10 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
     // Set default values when modal opens
     useEffect(() => {
         if (!visible) return
+        const rasDefaults = parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER)
         form.setFieldsValue({
-            ras_server: systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER,
+            ras_host: rasDefaults.host,
+            ras_port: rasDefaults.port || DEFAULT_RAS_PORT,
             cluster_service_url: DEFAULT_CLUSTER_SERVICE_URL,
         })
     }, [visible, systemConfig, form])
@@ -82,15 +86,34 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
             cancelText="Cancel"
         >
             <Form form={form} layout="vertical">
-                <Form.Item
-                    label="RAS Server Address"
-                    name="ras_server"
-                    rules={[{ required: true, message: 'RAS server address is required' }]}
-                    extra="Format: host:port (e.g., localhost:1545)"
-                    htmlFor="discover-ras-server"
-                >
-                    <Input id="discover-ras-server" placeholder="localhost:1545" />
-                </Form.Item>
+                <Row gutter={12}>
+                    <Col span={16}>
+                        <Form.Item
+                            label="RAS Host"
+                            name="ras_host"
+                            rules={[{ required: true, message: 'RAS host is required' }]}
+                            htmlFor="discover-ras-host"
+                        >
+                            <Input id="discover-ras-host" placeholder="localhost" />
+                        </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                        <Form.Item
+                            label="RAS Port"
+                            name="ras_port"
+                            rules={[{ required: true, message: 'RAS port is required' }]}
+                            htmlFor="discover-ras-port"
+                        >
+                            <InputNumber
+                                id="discover-ras-port"
+                                min={1}
+                                max={65535}
+                                style={{ width: '100%' }}
+                                placeholder={String(DEFAULT_RAS_PORT)}
+                            />
+                        </Form.Item>
+                    </Col>
+                </Row>
                 <Form.Item
                     label="Cluster Service URL"
                     name="cluster_service_url"

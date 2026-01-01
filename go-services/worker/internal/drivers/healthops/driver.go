@@ -63,7 +63,8 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return result, nil
 	}
 
-	creds, err := d.credsClient.Fetch(ctx, databaseID)
+	credsCtx := credentials.WithRequestedBy(ctx, strings.TrimSpace(msg.Metadata.CreatedBy))
+	creds, err := d.credsClient.Fetch(credsCtx, databaseID)
 	if err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("failed to fetch credentials: %v", err)
@@ -105,12 +106,12 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			zap.Error(err),
 		)
 		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
-			"database_id":     databaseID,
-			"error":           result.Error,
-			"error_code":      errorCode,
-			"response_time":   responseTimeMs,
-			"duration_ms":     time.Since(start).Milliseconds(),
-			"operation_type":  msg.OperationType,
+			"database_id":    databaseID,
+			"error":          result.Error,
+			"error_code":     errorCode,
+			"response_time":  responseTimeMs,
+			"duration_ms":    time.Since(start).Milliseconds(),
+			"operation_type": msg.OperationType,
 		}, workflowMetadata))
 		return result, nil
 	}
@@ -119,10 +120,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	result.Duration = time.Since(start).Seconds()
 
 	d.timeline.Record(ctx, msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
-		"database_id":     databaseID,
-		"response_time":   responseTimeMs,
-		"duration_ms":     time.Since(start).Milliseconds(),
-		"operation_type":  msg.OperationType,
+		"database_id":    databaseID,
+		"response_time":  responseTimeMs,
+		"duration_ms":    time.Since(start).Milliseconds(),
+		"operation_type": msg.OperationType,
 	}, workflowMetadata))
 
 	return result, nil

@@ -41,12 +41,14 @@ class ValidationIssue:
     Represents a single validation issue found in the DAG.
 
     Attributes:
+        code: Machine-readable issue code
         severity: Issue severity level (ERROR, WARNING, INFO)
         message: Human-readable description of the issue
         node_ids: List of node IDs related to this issue (optional)
         details: Additional metadata about the issue (optional)
     """
 
+    code: str
     severity: ValidationSeverity
     message: str
     node_ids: List[str] = field(default_factory=list)
@@ -56,6 +58,12 @@ class ValidationIssue:
         """Format issue as human-readable string."""
         nodes_str = f" (nodes: {', '.join(self.node_ids)})" if self.node_ids else ""
         return f"[{self.severity.value.upper()}] {self.message}{nodes_str}"
+
+    @property
+    def node_id(self) -> Optional[str]:
+        if self.node_ids:
+            return self.node_ids[0]
+        return None
 
 
 # ============================================================================
@@ -85,7 +93,11 @@ class ValidationResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def add_error(
-        self, message: str, node_ids: Optional[List[str]] = None, details: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        node_ids: Optional[List[str]] = None,
+        details: Optional[Dict[str, Any]] = None,
+        code: str = "VALIDATION_ERROR",
     ) -> None:
         """
         Add an error issue to the validation result.
@@ -97,6 +109,7 @@ class ValidationResult:
         """
         self.is_valid = False
         issue = ValidationIssue(
+            code=code,
             severity=ValidationSeverity.ERROR,
             message=message,
             node_ids=node_ids or [],
@@ -105,7 +118,11 @@ class ValidationResult:
         self.errors.append(issue)
 
     def add_warning(
-        self, message: str, node_ids: Optional[List[str]] = None, details: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        node_ids: Optional[List[str]] = None,
+        details: Optional[Dict[str, Any]] = None,
+        code: str = "VALIDATION_WARNING",
     ) -> None:
         """
         Add a warning issue to the validation result.
@@ -116,6 +133,7 @@ class ValidationResult:
             details: Additional metadata (optional)
         """
         issue = ValidationIssue(
+            code=code,
             severity=ValidationSeverity.WARNING,
             message=message,
             node_ids=node_ids or [],
@@ -124,7 +142,11 @@ class ValidationResult:
         self.warnings.append(issue)
 
     def add_info(
-        self, message: str, node_ids: Optional[List[str]] = None, details: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        node_ids: Optional[List[str]] = None,
+        details: Optional[Dict[str, Any]] = None,
+        code: str = "VALIDATION_INFO",
     ) -> None:
         """
         Add an informational message to the validation result.
@@ -135,6 +157,7 @@ class ValidationResult:
             details: Additional metadata (optional)
         """
         issue = ValidationIssue(
+            code=code,
             severity=ValidationSeverity.INFO,
             message=message,
             node_ids=node_ids or [],

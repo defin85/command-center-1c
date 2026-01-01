@@ -15,6 +15,9 @@ export interface DesignerCliConfig {
   args?: string | string[]
   disable_startup_messages?: boolean
   disable_startup_dialogs?: boolean
+  log_capture?: boolean
+  log_path?: string
+  log_no_truncate?: boolean
   cli_mode?: CliBuilderMode
   cli_params?: Record<string, string | boolean>
 }
@@ -335,6 +338,18 @@ export function DesignerCliBuilder({ config, onChange, readOnly }: DesignerCliBu
       onChange({ [field]: checked })
     }
 
+  const handleLogCaptureChange = (checked: boolean) => {
+    onChange({ log_capture: checked })
+  }
+
+  const handleLogPathChange = (value: string) => {
+    onChange({ log_path: value })
+  }
+
+  const handleLogNoTruncateChange = (checked: boolean) => {
+    onChange({ log_no_truncate: checked })
+  }
+
   const argsPreview = Array.isArray(config.args) ? config.args : []
 
   return (
@@ -451,6 +466,36 @@ export function DesignerCliBuilder({ config, onChange, readOnly }: DesignerCliBu
           />
           <Text>Disable startup dialogs</Text>
         </Space>
+      </Space>
+
+      <Space direction="vertical" size="small">
+        <Text strong>Logging</Text>
+        <Space>
+          <Switch
+            checked={config.log_capture === true}
+            disabled={readOnly}
+            onChange={handleLogCaptureChange}
+          />
+          <Text>Capture 1C log (/Out)</Text>
+        </Space>
+        {config.log_capture && (
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Input
+              value={config.log_path || ''}
+              disabled={readOnly}
+              placeholder="Log file path (optional, auto if empty)"
+              onChange={(event) => handleLogPathChange(event.target.value)}
+            />
+            <Space>
+              <Switch
+                checked={config.log_no_truncate === true}
+                disabled={readOnly}
+                onChange={handleLogNoTruncateChange}
+              />
+              <Text>Append log (-NoTruncate)</Text>
+            </Space>
+          </Space>
+        )}
       </Space>
     </Space>
   )

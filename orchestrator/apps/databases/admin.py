@@ -207,7 +207,7 @@ class ClusterAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         'created_at'
     ]
     list_filter = ['status', 'last_sync_status', 'created_at']
-    search_fields = ['name', 'description', 'ras_server']
+    search_fields = ['name', 'description', 'ras_server', 'ras_host', 'rmngr_host']
     readonly_fields = [
         'last_sync',
         'last_sync_status',
@@ -217,7 +217,8 @@ class ClusterAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         'created_at',
         'updated_at',
         'infobase_count',
-        'healthy_infobase_count'
+        'healthy_infobase_count',
+        'ras_server',
     ]
 
     fieldsets = (
@@ -225,9 +226,13 @@ class ClusterAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
             'fields': ('name', 'description', 'status')
         }),
         ('RAS Connection', {
-            'fields': ('ras_server', 'ras_cluster_uuid', 'cluster_user', 'cluster_pwd'),
+            'fields': ('ras_host', 'ras_port', 'ras_server', 'ras_cluster_uuid', 'cluster_user', 'cluster_pwd'),
             'description': 'ras_cluster_uuid заполняется автоматически при первой синхронизации. '
                            'Укажите вручную если на RAS сервере несколько кластеров.'
+        }),
+        ('1C Server Ports', {
+            'fields': ('rmngr_host', 'rmngr_port', 'ragent_host', 'ragent_port', 'rphost_port_from', 'rphost_port_to'),
+            'description': 'RMNGR используется для пакетного запуска (Designer/IBCMD).'
         }),
         ('Cluster Service', {
             'fields': ('cluster_service_url',)
@@ -301,7 +306,11 @@ class ClusterAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     def health_badge(self, obj):
         """Badge для health check статуса."""
         if not obj.last_health_check:
-            return format_html('<span style="color: gray;">●</span> Never checked')
+            return format_html(
+                '<span style="color: {};">●</span> {}',
+                'gray',
+                'Never checked',
+            )
 
         if obj.consecutive_failures == 0:
             color = 'green'

@@ -371,9 +371,34 @@ components:
         name:
           type: string
           example: "Production Cluster"
+        ras_host:
+          type: string
+          example: "localhost"
+        ras_port:
+          type: integer
+          example: 1545
         ras_server:
           type: string
           example: "localhost:1545"
+          readOnly: true
+        rmngr_host:
+          type: string
+          example: "localhost"
+        rmngr_port:
+          type: integer
+          example: 1541
+        ragent_host:
+          type: string
+          example: "localhost"
+        ragent_port:
+          type: integer
+          example: 1540
+        rphost_port_from:
+          type: integer
+          example: 1560
+        rphost_port_to:
+          type: integer
+          example: 1591
         cluster_service_url:
           type: string
           example: "http://localhost:8088"
@@ -389,15 +414,39 @@ components:
       type: object
       required:
         - name
-        - ras_server
+        - ras_host
+        - ras_port
+        - rmngr_host
+        - rmngr_port
         - cluster_service_url
       properties:
         name:
           type: string
           example: "New Cluster"
-        ras_server:
+        ras_host:
           type: string
-          example: "localhost:1545"
+          example: "localhost"
+        ras_port:
+          type: integer
+          example: 1545
+        rmngr_host:
+          type: string
+          example: "localhost"
+        rmngr_port:
+          type: integer
+          example: 1541
+        ragent_host:
+          type: string
+          example: "localhost"
+        ragent_port:
+          type: integer
+          example: 1540
+        rphost_port_from:
+          type: integer
+          example: 1560
+        rphost_port_to:
+          type: integer
+          example: 1591
         cluster_service_url:
           type: string
           example: "http://localhost:8088"

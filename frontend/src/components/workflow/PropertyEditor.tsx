@@ -59,12 +59,16 @@ interface PropertyEditorProps {
 // Form for Operation node
 const OperationForm = ({
   config,
+  templateId,
+  onTemplateChange,
   onChange,
   templates,
   readOnly,
   idPrefix,
 }: {
   config: NodeConfig
+  templateId?: string
+  onTemplateChange: (templateId?: string) => void
   onChange: (config: NodeConfig) => void
   templates: OperationTemplateListItem[]
   readOnly: boolean
@@ -74,16 +78,17 @@ const OperationForm = ({
     <Form.Item label="Template" htmlFor={`${idPrefix}-operation-template`} required>
       <Select
         id={`${idPrefix}-operation-template`}
-        value={config.timeout ? undefined : undefined}
+        value={templateId}
         placeholder="Select operation template"
         disabled={readOnly}
         showSearch
         optionFilterProp="children"
-        onChange={(_value) => onChange({ ...config })}
+        onChange={(value) => onTemplateChange(value || undefined)}
         options={templates.map((t) => ({
           value: t.id,
           label: `${t.name} (${t.operation_type})`
         }))}
+        allowClear
       />
     </Form.Item>
 
@@ -421,6 +426,11 @@ const PropertyEditor = ({
     onNodeUpdate(nodeId, { config })
   }
 
+  const handleTemplateChange = (templateId?: string) => {
+    setLocalData({ ...localData, templateId })
+    onNodeUpdate(nodeId, { templateId })
+  }
+
   const handleDelete = () => {
     onNodeDelete(nodeId)
   }
@@ -440,6 +450,8 @@ const PropertyEditor = ({
         return (
           <OperationForm
             config={config}
+            templateId={localData.templateId}
+            onTemplateChange={handleTemplateChange}
             onChange={handleConfigChange}
             templates={operationTemplates}
             readOnly={readOnly}

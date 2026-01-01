@@ -222,6 +222,9 @@ export interface OperationConfig {
   args?: string | string[]
   disable_startup_messages?: boolean
   disable_startup_dialogs?: boolean
+  log_capture?: boolean
+  log_path?: string
+  log_no_truncate?: boolean
   cli_mode?: 'manual' | 'guided'
   cli_params?: Record<string, string | boolean>
   // OData - query

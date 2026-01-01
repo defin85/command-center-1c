@@ -15,6 +15,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	cliutil "github.com/commandcenter1c/commandcenter/worker/internal/drivers/cli"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibcmd"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibsrv"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
@@ -74,7 +75,8 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("ibcmd executor not configured: %v", err), "IBCMD_NOT_CONFIGURED"), nil
 	}
 
-	creds, err := d.fetchCredentials(ctx, databaseID)
+	credsCtx := credentials.WithRequestedBy(ctx, strings.TrimSpace(msg.Metadata.CreatedBy))
+	creds, err := d.fetchCredentials(credsCtx, databaseID)
 	if err != nil {
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("failed to fetch credentials: %v", err), "CREDENTIALS_ERROR"), nil
 	}
@@ -227,9 +229,9 @@ func validateIbsrvAllowed() error {
 }
 
 func buildAgentConfig(data map[string]interface{}, creds *credentials.DatabaseCredentials) (ibsrv.AgentConfig, error) {
-	exePath := os.Getenv("EXE_1CV8_PATH")
-	if exePath == "" {
-		return ibsrv.AgentConfig{}, fmt.Errorf("EXE_1CV8_PATH is not configured")
+	exePath, err := cliutil.Resolve1cv8PathFromEnv()
+	if err != nil {
+		return ibsrv.AgentConfig{}, err
 	}
 
 	server := ""
@@ -270,8 +272,8 @@ func buildAgentConfig(data map[string]interface{}, creds *credentials.DatabaseCr
 		ExecPath:        exePath,
 		Server:          server,
 		Infobase:        infobase,
-		Username:        creds.Username,
-		Password:        creds.Password,
+		Username:        pickIBUsername(creds),
+		Password:        pickIBPassword(creds),
 		Port:            port,
 		ListenAddress:   listen,
 		SSHHostKeyPath:  hostKey,
@@ -432,10 +434,10 @@ func extractDBConfig(data map[string]interface{}, creds *credentials.DatabaseCre
 	}
 
 	if cfg.User == "" && creds != nil {
-		cfg.User = creds.Username
+		cfg.User = pickIBUsername(creds)
 	}
 	if cfg.Password == "" && creds != nil {
-		cfg.Password = creds.Password
+		cfg.Password = pickIBPassword(creds)
 	}
 
 	missing := []string{}
@@ -459,6 +461,20 @@ func extractDBConfig(data map[string]interface{}, creds *credentials.DatabaseCre
 	}
 
 	return cfg, nil
+}
+
+func pickIBUsername(creds *credentials.DatabaseCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	return strings.TrimSpace(creds.IBUsername)
+}
+
+func pickIBPassword(creds *credentials.DatabaseCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	return strings.TrimSpace(creds.IBPassword)
 }
 
 func extractReplicateTargetConfig(data map[string]interface{}) (replicateTargetConfig, error) {

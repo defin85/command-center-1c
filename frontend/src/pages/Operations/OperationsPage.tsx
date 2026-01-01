@@ -393,6 +393,11 @@ export const OperationsPage = () => {
             options: {
               disable_startup_messages: data.config.disable_startup_messages !== false,
               disable_startup_dialogs: data.config.disable_startup_dialogs !== false,
+              log_capture: data.config.log_capture === true,
+              log_path: typeof data.config.log_path === 'string' && data.config.log_path.trim().length > 0
+                ? data.config.log_path.trim()
+                : undefined,
+              log_no_truncate: data.config.log_no_truncate === true,
             },
           },
         })

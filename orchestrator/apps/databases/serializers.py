@@ -107,7 +107,10 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'avg_response_time',
             'created_at',
             'updated_at',
-            'password_configured'
+            'password_configured',
+            'server_address',
+            'server_port',
+            'infobase_name',
         ]
 
 
@@ -141,6 +144,7 @@ class ClusterSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     cluster_pwd = serializers.CharField(write_only=True, required=False, allow_blank=True)
     cluster_pwd_configured = serializers.SerializerMethodField()
+    ras_server = serializers.CharField(read_only=True)
 
     def get_cluster_pwd_configured(self, obj: Cluster) -> bool:
         return bool(obj.cluster_pwd)
@@ -151,7 +155,15 @@ class ClusterSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
+            'ras_host',
+            'ras_port',
             'ras_server',
+            'rmngr_host',
+            'rmngr_port',
+            'ragent_host',
+            'ragent_port',
+            'rphost_port_from',
+            'rphost_port_to',
             'cluster_service_url',
             'cluster_user',
             'cluster_pwd',  # write-only
@@ -166,11 +178,48 @@ class ClusterSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id',
+            'ras_server',
             'last_sync',
             'created_at',
             'updated_at',
             'cluster_pwd_configured',
         ]
+
+    def validate(self, attrs):
+        if self.instance is None:
+            ras_host = attrs.get('ras_host')
+            ras_port = attrs.get('ras_port')
+            rmngr_host = attrs.get('rmngr_host')
+            rmngr_port = attrs.get('rmngr_port')
+            missing = []
+            if not ras_host:
+                missing.append('ras_host')
+            if not ras_port:
+                missing.append('ras_port')
+            if not rmngr_host:
+                missing.append('rmngr_host')
+            if not rmngr_port:
+                missing.append('rmngr_port')
+            if missing:
+                raise serializers.ValidationError(
+                    {key: 'This field is required.' for key in missing}
+                )
+        return attrs
+
+    def _apply_ras_server(self, attrs):
+        ras_host = attrs.get('ras_host') or (self.instance.ras_host if self.instance else "")
+        ras_port = attrs.get('ras_port') or (self.instance.ras_port if self.instance else None)
+        if ras_host and ras_port:
+            attrs['ras_server'] = f"{ras_host}:{ras_port}"
+        return attrs
+
+    def create(self, validated_data):
+        validated_data = self._apply_ras_server(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data = self._apply_ras_server(validated_data)
+        return super().update(instance, validated_data)
 
 
 class UserRefSerializer(serializers.Serializer):

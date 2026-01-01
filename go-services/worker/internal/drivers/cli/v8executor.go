@@ -56,11 +56,11 @@ func DefaultCommandOptions() CommandOptions {
 }
 
 // NewV8ExecutorFromEnv creates a V8Executor using environment configuration.
-// Requires EXE_1CV8_PATH to be set.
+// Requires PLATFORM_1C_BIN_PATH to be set.
 func NewV8ExecutorFromEnv() (*V8Executor, error) {
-	exePath := os.Getenv("EXE_1CV8_PATH")
-	if exePath == "" {
-		return nil, fmt.Errorf("EXE_1CV8_PATH is not configured")
+	exePath, err := Resolve1cv8PathFromEnv()
+	if err != nil {
+		return nil, err
 	}
 
 	timeout := 5 * time.Minute
@@ -197,6 +197,7 @@ func BuildDesignerCommandArgs(
 	command string,
 	args []string,
 	options CommandOptions,
+	preArgs []string,
 ) ([]string, error) {
 	if strings.TrimSpace(server) == "" {
 		return nil, fmt.Errorf("server cannot be empty")
@@ -218,12 +219,20 @@ func BuildDesignerCommandArgs(
 	if options.DisableStartupDialogs {
 		cmdArgs = append(cmdArgs, "/DisableStartupDialogs")
 	}
-	cmdArgs = append(cmdArgs,
-		fmt.Sprintf("/S%s\\%s", server, infobase),
-		fmt.Sprintf("/N%s", username),
-		fmt.Sprintf("/P%s", password),
-		fmt.Sprintf("/%s", cmd),
-	)
+	if strings.TrimSpace(password) != "" && strings.TrimSpace(username) == "" {
+		return nil, fmt.Errorf("username is required when password is provided")
+	}
+	cmdArgs = append(cmdArgs, fmt.Sprintf("/S%s\\%s", server, infobase))
+	if strings.TrimSpace(username) != "" {
+		cmdArgs = append(cmdArgs, fmt.Sprintf("/N%s", username))
+	}
+	if strings.TrimSpace(password) != "" {
+		cmdArgs = append(cmdArgs, fmt.Sprintf("/P%s", password))
+	}
+	if len(preArgs) > 0 {
+		cmdArgs = append(cmdArgs, preArgs...)
+	}
+	cmdArgs = append(cmdArgs, fmt.Sprintf("/%s", cmd))
 	cmdArgs = append(cmdArgs, args...)
 	return cmdArgs, nil
 }

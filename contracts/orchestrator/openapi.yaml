@@ -450,7 +450,8 @@ paths:
   /api/v2/clusters/create-cluster/:
     post:
       operationId: v2_clusters_create_cluster_create
-      description: Create a new cluster. Requires name, ras_server, and cluster_service_url.
+      description: Create a new cluster. Requires name, ras_host, ras_port, rmngr_host,
+        rmngr_port, and cluster_service_url.
       summary: Create a new cluster
       tags:
       - v2
@@ -4722,11 +4723,51 @@ components:
         description:
           type: string
           description: Optional description
+        ras_host:
+          type: string
+          description: RAS host (e.g., localhost, srv1c, 192.168.1.100)
+          maxLength: 255
+        ras_port:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+          description: 'RAS port (default: 1545)'
         ras_server:
           type: string
-          default: localhost:1545
-          description: RAS server address (host:port)
+          readOnly: true
+        rmngr_host:
+          type: string
+          description: RMNGR host (cluster manager)
           maxLength: 255
+        rmngr_port:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+          description: 'RMNGR port (default: 1541)'
+        ragent_host:
+          type: string
+          description: RAGENT host (server agent)
+          maxLength: 255
+        ragent_port:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+          description: 'RAGENT port (default: 1540)'
+        rphost_port_from:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+          description: 'RPHOST port range start (default: 1560)'
+        rphost_port_to:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+          description: 'RPHOST port range end (default: 1591)'
         cluster_service_url:
           type: string
           format: uri
@@ -4774,6 +4815,7 @@ components:
       - id
       - last_sync
       - name
+      - ras_server
       - status_display
       - updated_at
     ClusterCreateResponse:
@@ -5253,17 +5295,16 @@ components:
           readOnly: true
         server_address:
           type: string
+          readOnly: true
           description: 'Адрес сервера 1С (например: localhost, srv1c, 192.168.1.100)'
-          maxLength: 255
         server_port:
           type: integer
-          maximum: 2147483647
-          minimum: -2147483648
+          readOnly: true
           description: Порт сервера 1С (обычно 1540 или 1541)
         infobase_name:
           type: string
+          readOnly: true
           description: Имя информационной базы на сервере 1С (если отличается от name)
-          maxLength: 255
         status:
           $ref: '#/components/schemas/StatusC5cEnum'
         status_display:
@@ -5366,6 +5407,7 @@ components:
       - denied_to
       - host
       - id
+      - infobase_name
       - is_healthy
       - last_check
       - last_check_status
@@ -5377,6 +5419,8 @@ components:
       - password_configured
       - permission_code
       - scheduled_jobs_deny
+      - server_address
+      - server_port
       - sessions_deny
       - status_display
       - updated_at
@@ -5579,9 +5623,12 @@ components:
       type: object
       description: Request body for discover_clusters endpoint.
       properties:
-        ras_server:
+        ras_host:
           type: string
-          description: RAS server address (host:port)
+          description: RAS host
+        ras_port:
+          type: integer
+          description: RAS port
         cluster_service_url:
           type: string
           description: RAS adapter URL (optional, reserved for worker usage)
@@ -5591,7 +5638,8 @@ components:
           type: string
           writeOnly: true
       required:
-      - ras_server
+      - ras_host
+      - ras_port
     DiscoverClustersResponse:
       type: object
       description: Response for discover_clusters endpoint.
@@ -7989,11 +8037,15 @@ components:
           type: string
         message:
           type: string
-        node_id:
-          type: string
-          nullable: true
+        node_ids:
+          type: array
+          items:
+            type: string
         severity:
           type: string
+        details:
+          type: object
+          additionalProperties: {}
       required:
       - code
       - message

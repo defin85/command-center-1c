@@ -114,6 +114,19 @@ const formatConfigForDisplay = (
         label: 'Disable Dialogs',
         value: config.disable_startup_dialogs === false ? 'No' : 'Yes',
       })
+      items.push({
+        label: 'Capture Log',
+        value: config.log_capture ? 'Yes' : 'No',
+      })
+      if (config.log_capture && config.log_path) {
+        items.push({ label: 'Log Path', value: config.log_path })
+      }
+      if (config.log_capture) {
+        items.push({
+          label: 'Append Log',
+          value: config.log_no_truncate ? 'Yes' : 'No',
+        })
+      }
       break
 
     case 'query':

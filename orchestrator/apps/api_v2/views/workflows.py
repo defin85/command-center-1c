@@ -217,8 +217,9 @@ class ValidationIssueSerializer(serializers.Serializer):
     """Validation issue detail."""
     code = serializers.CharField()
     message = serializers.CharField()
-    node_id = serializers.CharField(allow_null=True, required=False)
+    node_ids = serializers.ListField(child=serializers.CharField(), required=False)
     severity = serializers.CharField(required=False)
+    details = serializers.DictField(required=False)
 
 
 class WorkflowValidateResponseSerializer(serializers.Serializer):
@@ -1217,26 +1218,20 @@ def validate_workflow(request):
         validator = DAGValidator(dag)
         result = validator.validate()
 
-        # Format errors and warnings
-        errors = [
-            {
-                'code': issue.code,
+        def _issue_payload(issue):
+            node_ids = list(getattr(issue, "node_ids", []) or [])
+            severity = issue.severity.value if hasattr(issue.severity, "value") else issue.severity
+            return {
+                'code': getattr(issue, "code", "VALIDATION_ERROR"),
                 'message': issue.message,
-                'node_id': issue.node_id,
-                'severity': issue.severity
+                'node_ids': node_ids,
+                'severity': severity,
+                'details': getattr(issue, "details", {}) or {},
             }
-            for issue in result.errors
-        ]
 
-        warnings = [
-            {
-                'code': issue.code,
-                'message': issue.message,
-                'node_id': issue.node_id,
-                'severity': issue.severity
-            }
-            for issue in result.warnings
-        ]
+        # Format errors and warnings
+        errors = [_issue_payload(issue) for issue in result.errors]
+        warnings = [_issue_payload(issue) for issue in result.warnings]
 
         # Update workflow is_valid if validating by ID
         if workflow_id and result.is_valid:

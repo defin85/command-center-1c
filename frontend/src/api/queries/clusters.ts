@@ -23,7 +23,41 @@ import { queryKeys, type ClusterFilters } from './index'
 const api = getV2()
 
 export const DEFAULT_RAS_SERVER = 'localhost:1545'
+export const DEFAULT_RAS_HOST = 'localhost'
+export const DEFAULT_RAS_PORT = 1545
+export const DEFAULT_RMNGR_PORT = 1541
+export const DEFAULT_RAGENT_PORT = 1540
+export const DEFAULT_RPHOST_PORT_FROM = 1560
+export const DEFAULT_RPHOST_PORT_TO = 1591
 export const DEFAULT_CLUSTER_SERVICE_URL = 'http://localhost:8188'
+
+export const parseHostPort = (value?: string, fallbackHost = DEFAULT_RAS_HOST, fallbackPort = DEFAULT_RAS_PORT) => {
+  if (!value) {
+    return { host: fallbackHost, port: fallbackPort }
+  }
+  const trimmed = value.trim()
+  const lastColon = trimmed.lastIndexOf(':')
+  if (lastColon <= 0) {
+    return { host: trimmed || fallbackHost, port: fallbackPort }
+  }
+  const host = trimmed.slice(0, lastColon).trim()
+  const portRaw = trimmed.slice(lastColon + 1).trim()
+  const port = Number(portRaw)
+  if (!Number.isFinite(port)) {
+    return { host: host || fallbackHost, port: fallbackPort }
+  }
+  return { host: host || fallbackHost, port }
+}
+
+export const formatHostPort = (host?: string | null, port?: number | null, fallback?: string) => {
+  if (host && port) {
+    return `${host}:${port}`
+  }
+  if (host) {
+    return host
+  }
+  return fallback ?? ''
+}
 
 // =============================================================================
 // Types
@@ -32,7 +66,7 @@ export const DEFAULT_CLUSTER_SERVICE_URL = 'http://localhost:8188'
 // Cluster create/update uses the Cluster type without readonly fields
 export type ClusterInput = Omit<
   Cluster,
-  'id' | 'status_display' | 'last_sync' | 'databases_count' | 'created_at' | 'updated_at' | 'cluster_pwd_configured'
+  'id' | 'ras_server' | 'status_display' | 'last_sync' | 'databases_count' | 'created_at' | 'updated_at' | 'cluster_pwd_configured'
 >
 export type ClusterCredentialsUpdateRequest = {
   cluster_id: string

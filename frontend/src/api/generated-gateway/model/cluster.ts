@@ -25,7 +25,15 @@ import type { ClusterStatus } from "./clusterStatus";
 export interface Cluster {
   id?: string;
   name?: string;
-  ras_server?: string;
+  ras_host?: string;
+  ras_port?: number;
+  readonly ras_server?: string;
+  rmngr_host?: string;
+  rmngr_port?: number;
+  ragent_host?: string;
+  ragent_port?: number;
+  rphost_port_from?: number;
+  rphost_port_to?: number;
   cluster_service_url?: string;
   status?: ClusterStatus;
   /** @nullable */

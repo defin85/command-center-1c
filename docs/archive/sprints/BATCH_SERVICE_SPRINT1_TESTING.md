@@ -257,7 +257,7 @@ curl -X POST http://localhost:8000/api/v1/databases/extensions/installation/call
 ```bash
 # Batch Service Configuration
 ORCHESTRATOR_URL=http://localhost:8000
-EXE_1CV8_PATH=C:\Program Files\1cv8\8.3.27.1786\bin\1cv8.exe
+PLATFORM_1C_BIN_PATH=C:\Program Files\1cv8\8.3.27.1786\bin
 V8_DEFAULT_TIMEOUT=300
 ```
 

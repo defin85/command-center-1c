@@ -379,7 +379,10 @@ async function createCluster(data: ClusterCreate): Promise<Cluster> {
 // Использование
 const newCluster = await createCluster({
   name: 'Production Cluster',
-  ras_server: 'localhost:1545',
+  ras_host: 'localhost',
+  ras_port: 1545,
+  rmngr_host: 'localhost',
+  rmngr_port: 1541,
   cluster_service_url: 'http://localhost:8088',
   cluster_user: 'admin',
   cluster_pwd: 'secure_password'

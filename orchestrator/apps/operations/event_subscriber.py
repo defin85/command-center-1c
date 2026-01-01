@@ -525,6 +525,20 @@ class EventSubscriber:
         updated = 0
 
         try:
+            def _parse_host_port(value: str):
+                if not value:
+                    return "", None
+                if ":" not in value:
+                    return value, None
+                host, port_str = value.rsplit(":", 1)
+                try:
+                    port = int(port_str)
+                except (ValueError, TypeError):
+                    port = None
+                return host, port
+
+            ras_host, ras_port = _parse_host_port(ras_server or "")
+            ras_port = ras_port or 1545
             with transaction.atomic():
                 if success and clusters_data:
                     for cluster_data in clusters_data:
@@ -533,16 +547,52 @@ class EventSubscriber:
 
                         # Try to find existing cluster by ras_cluster_uuid
                         cluster_service_url = f"http://{ras_server}" if ras_server else "http://localhost"
-                        cluster, is_new = Cluster.objects.update_or_create(
+                        rmngr_host = (cluster_data.get('host') or ras_host or "").strip()
+                        rmngr_port = cluster_data.get('port') or 1541
+                        ragent_host = rmngr_host or ras_host or ""
+
+                        cluster, is_new = Cluster.objects.get_or_create(
                             ras_cluster_uuid=cluster_uuid,
                             defaults={
                                 'name': cluster_name,
                                 'ras_server': ras_server,
+                                'ras_host': ras_host,
+                                'ras_port': ras_port,
+                                'rmngr_host': rmngr_host,
+                                'rmngr_port': rmngr_port,
+                                'ragent_host': ragent_host,
+                                'ragent_port': 1540,
+                                'rphost_port_from': 1560,
+                                'rphost_port_to': 1591,
                                 'cluster_service_url': cluster_service_url,
                                 'status': 'active',
                                 'metadata': cluster_data,
                             }
                         )
+
+                        if not is_new:
+                            updates = {
+                                'name': cluster_name,
+                                'ras_server': ras_server,
+                                'ras_host': ras_host,
+                                'ras_port': ras_port,
+                                'cluster_service_url': cluster_service_url,
+                                'status': 'active',
+                                'metadata': cluster_data,
+                            }
+                            if not cluster.rmngr_host and rmngr_host:
+                                updates['rmngr_host'] = rmngr_host
+                            if not cluster.rmngr_port and rmngr_port:
+                                updates['rmngr_port'] = rmngr_port
+                            if not cluster.ragent_host and ragent_host:
+                                updates['ragent_host'] = ragent_host
+                            if not cluster.ragent_port:
+                                updates['ragent_port'] = 1540
+                            if not cluster.rphost_port_from:
+                                updates['rphost_port_from'] = 1560
+                            if not cluster.rphost_port_to:
+                                updates['rphost_port_to'] = 1591
+                            Cluster.objects.filter(pk=cluster.pk).update(**updates)
 
                         if is_new:
                             created += 1
@@ -1377,11 +1427,13 @@ class EventSubscriber:
         Response is published to events:orchestrator:database-credentials-response.
         Credentials payload is encrypted via apps.databases.encryption.encrypt_credentials_for_transport.
         """
-        from apps.databases.models import Database
+        from django.contrib.auth import get_user_model
+        from apps.databases.models import Database, InfobaseUserMapping
         from apps.databases.encryption import encrypt_credentials_for_transport
 
         request_correlation_id = data.get('correlation_id', correlation_id)
         database_id = data.get('database_id', '')
+        created_by = (data.get('created_by') or '').strip()
 
         logger.info(
             f"Processing get-database-credentials request: database_id={database_id}, "
@@ -1401,10 +1453,40 @@ class EventSubscriber:
 
         try:
             try:
-                database = Database.objects.get(id=database_id)
+                database = Database.objects.select_related('cluster').get(id=database_id)
             except Database.DoesNotExist:
                 response['error'] = f'Database {database_id} not found'
                 logger.warning(f"Database not found: {database_id}")
+                self._publish_database_credentials_response(response)
+                return
+
+            ib_username = ''
+            ib_password = ''
+            if created_by:
+                user_model = get_user_model()
+                user = user_model.objects.filter(username=created_by).first()
+                if user:
+                    mapping = InfobaseUserMapping.objects.filter(database=database, user=user).first()
+                    if mapping:
+                        ib_username = mapping.ib_username
+                        ib_password = mapping.ib_password
+
+            if not database.cluster:
+                response['error'] = 'Database cluster is not configured'
+                logger.warning(
+                    f"Database {database_id} has no cluster configured for DESIGNER credentials"
+                )
+                self._publish_database_credentials_response(response)
+                return
+
+            cluster = database.cluster
+            rmngr_host = (cluster.rmngr_host or '').strip()
+            rmngr_port = cluster.rmngr_port or 0
+            if not rmngr_host or not rmngr_port:
+                response['error'] = 'Cluster RMNGR host/port is not configured'
+                logger.warning(
+                    f"Cluster {cluster.id} has no RMNGR host/port configured"
+                )
                 self._publish_database_credentials_response(response)
                 return
 
@@ -1413,11 +1495,13 @@ class EventSubscriber:
                 "odata_url": database.odata_url,
                 "username": database.username,
                 "password": database.password,  # EncryptedCharField auto-decrypts
+                "ib_username": ib_username,
+                "ib_password": ib_password,
                 "host": database.host,
                 "port": database.port,
                 "base_name": database.base_name,
-                "server_address": database.server_address,
-                "server_port": database.server_port,
+                "server_address": rmngr_host,
+                "server_port": rmngr_port,
                 "infobase_name": database.infobase_name or database.name,
             }
 

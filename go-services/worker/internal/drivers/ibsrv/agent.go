@@ -45,7 +45,7 @@ type AgentProcess struct {
 func StartAgent(ctx context.Context, cfg AgentConfig) (*AgentProcess, error) {
 	exe := strings.TrimSpace(cfg.ExecPath)
 	if exe == "" {
-		return nil, fmt.Errorf("EXE_1CV8_PATH is not configured")
+		return nil, fmt.Errorf("1cv8 executable path is not configured")
 	}
 	if _, err := os.Stat(exe); os.IsNotExist(err) {
 		return nil, fmt.Errorf("1cv8.exe not found at path: %s", exe)

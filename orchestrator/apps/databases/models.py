@@ -37,6 +37,17 @@ class Cluster(models.Model):
     )
 
     # RAS Connection
+    ras_host = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="RAS host (e.g., localhost, srv1c, 192.168.1.100)"
+    )
+    ras_port = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="RAS port (default: 1545)"
+    )
     ras_server = models.CharField(
         max_length=255,
         default="localhost:1545",
@@ -64,6 +75,40 @@ class Cluster(models.Model):
         max_length=255,
         blank=True,
         help_text="Cluster admin password (encrypted)"
+    )
+
+    # 1C Server Ports (for DESIGNER/IBCMD)
+    rmngr_host = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="RMNGR host (cluster manager)"
+    )
+    rmngr_port = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="RMNGR port (default: 1541)"
+    )
+    ragent_host = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="RAGENT host (server agent)"
+    )
+    ragent_port = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="RAGENT port (default: 1540)"
+    )
+    rphost_port_from = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="RPHOST port range start (default: 1560)"
+    )
+    rphost_port_to = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="RPHOST port range end (default: 1591)"
     )
 
     # Status
@@ -148,6 +193,59 @@ class Cluster(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.ras_server})"
+
+    @staticmethod
+    def _parse_host_port(value: str):
+        if not value:
+            return "", None
+        if ":" not in value:
+            return value, None
+        host, port_str = value.rsplit(":", 1)
+        try:
+            port = int(port_str)
+        except (ValueError, TypeError):
+            port = None
+        return host, port
+
+    @staticmethod
+    def _compose_host_port(host: str, port: int) -> str:
+        if host and port:
+            return f"{host}:{port}"
+        if host:
+            return host
+        return ""
+
+    def _normalize_ports(self):
+        if not self.ras_port:
+            self.ras_port = 1545
+        if not self.rmngr_port:
+            self.rmngr_port = 1541
+        if not self.ragent_port:
+            self.ragent_port = 1540
+        if not self.rphost_port_from:
+            self.rphost_port_from = 1560
+        if not self.rphost_port_to:
+            self.rphost_port_to = 1591
+
+    def _normalize_hosts(self):
+        if self.ras_server and not self.ras_host:
+            host, port = self._parse_host_port(self.ras_server)
+            if host:
+                self.ras_host = host
+            if port and not self.ras_port:
+                self.ras_port = port
+        if self.ras_host:
+            if not self.rmngr_host:
+                self.rmngr_host = self.ras_host
+            if not self.ragent_host:
+                self.ragent_host = self.ras_host
+
+    def save(self, *args, **kwargs):
+        self._normalize_hosts()
+        self._normalize_ports()
+        if self.ras_host and self.ras_port:
+            self.ras_server = self._compose_host_port(self.ras_host, self.ras_port)
+        super().save(*args, **kwargs)
 
     @property
     def infobase_count(self) -> int:
@@ -421,10 +519,13 @@ class Database(models.Model):
         """
         # Используем infobase_name если задано, иначе name
         ib_name = self.infobase_name if self.infobase_name else self.name
-
-        # Добавляем порт только если не default (1540)
-        if self.server_port and self.server_port != 1540:
-            server_part = f"{self.server_address}:{self.server_port}"
+        if self.cluster and self.cluster.rmngr_host and self.cluster.rmngr_port:
+            server_part = f"{self.cluster.rmngr_host}:{self.cluster.rmngr_port}"
+        elif self.server_port and self.server_address:
+            if self.server_port != 1540:
+                server_part = f"{self.server_address}:{self.server_port}"
+            else:
+                server_part = self.server_address
         else:
             server_part = self.server_address
 
@@ -437,11 +538,11 @@ class Database(models.Model):
         Формат: server\infobase или server:port\infobase
         """
         ib_name = self.infobase_name if self.infobase_name else self.name
-
+        if self.cluster and self.cluster.rmngr_host and self.cluster.rmngr_port:
+            return f"{self.cluster.rmngr_host}:{self.cluster.rmngr_port}\\{ib_name}"
         if self.server_port and self.server_port != 1540:
             return f"{self.server_address}:{self.server_port}\\{ib_name}"
-        else:
-            return f"{self.server_address}\\{ib_name}"
+        return f"{self.server_address}\\{ib_name}"
 
 
 class DatabaseGroup(models.Model):

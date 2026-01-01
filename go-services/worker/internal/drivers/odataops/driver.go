@@ -93,7 +93,8 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return result, nil
 	}
 
-	creds, err := d.credsClient.Fetch(ctx, databaseID)
+	credsCtx := credentials.WithRequestedBy(ctx, strings.TrimSpace(msg.Metadata.CreatedBy))
+	creds, err := d.credsClient.Fetch(credsCtx, databaseID)
 	if err != nil {
 		result := models.DatabaseResultV2{
 			DatabaseID: databaseID,

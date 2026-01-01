@@ -121,10 +121,7 @@ func resolveArtifactArgs(
 		return nil, func() {}, err
 	}
 
-	baseDir := strings.TrimSpace(os.Getenv("CLI_ARTIFACT_TMP_DIR"))
-	if baseDir == "" {
-		baseDir = filepath.Join(os.TempDir(), "cc1c-cli-artifacts")
-	}
+	baseDir := resolveArtifactBaseDir()
 	tempDir := filepath.Join(baseDir, operationID, databaseID)
 
 	cleanup := func() {
@@ -152,5 +149,66 @@ func resolveArtifactArgs(
 		resolved[idx] = localPath
 	}
 
+	if isWindowsInterop() {
+		for idx, arg := range resolved {
+			resolved[idx] = toWindowsPath(arg)
+		}
+	}
+
 	return resolved, cleanup, nil
+}
+
+func resolveArtifactBaseDir() string {
+	baseDir := strings.TrimSpace(os.Getenv("CLI_ARTIFACT_TMP_DIR"))
+	if baseDir != "" {
+		return baseDir
+	}
+
+	if drive, ok := detectWindowsDrive(); ok {
+		return filepath.Join("/mnt", drive, "cc1c-cli-artifacts")
+	}
+
+	return filepath.Join(os.TempDir(), "cc1c-cli-artifacts")
+}
+
+func detectWindowsDrive() (string, bool) {
+	binPath := strings.TrimSpace(os.Getenv("PLATFORM_1C_BIN_PATH"))
+	if strings.HasPrefix(binPath, "/mnt/") && len(binPath) > 6 {
+		return strings.ToLower(binPath[5:6]), true
+	}
+	if len(binPath) >= 2 && binPath[1] == ':' {
+		return strings.ToLower(binPath[:1]), true
+	}
+	return "", false
+}
+
+func isWindowsInterop() bool {
+	_, ok := detectWindowsDrive()
+	return ok
+}
+
+func toWindowsPath(path string) string {
+	if strings.HasPrefix(path, "/mnt/") && len(path) > 6 {
+		drive := strings.ToUpper(path[5:6])
+		rest := strings.TrimPrefix(path[6:], "/")
+		rest = strings.ReplaceAll(rest, "/", "\\")
+		if rest == "" {
+			return drive + ":\\"
+		}
+		return drive + ":\\" + rest
+	}
+	return path
+}
+
+func fromWindowsPath(path string) string {
+	if len(path) > 2 && path[1] == ':' {
+		drive := strings.ToLower(path[:1])
+		rest := strings.TrimPrefix(path[2:], "\\")
+		rest = strings.ReplaceAll(rest, "\\", "/")
+		if rest == "" {
+			return "/mnt/" + drive
+		}
+		return "/mnt/" + drive + "/" + rest
+	}
+	return path
 }
