@@ -147,7 +147,30 @@ func TestWorkflowHandler_ConvertDAGFormat(t *testing.T) {
 			ID:            "wf-1",
 			VersionNumber: 2,
 			Name:          "Test Workflow",
-			DAGStructure:  map[string]interface{}{},
+			DAGStructure: map[string]interface{}{
+				"nodes": []interface{}{
+					map[string]interface{}{
+						"id":          "node-1",
+						"type":        "operation",
+						"name":        "Node 1",
+						"template_id": "tpl-1",
+					},
+					map[string]interface{}{
+						"node_id": "node-2",
+						"type":    "condition",
+						"name":    "Node 2",
+					},
+				},
+				"edges": []interface{}{
+					map[string]interface{}{
+						"from_node": "node-1",
+						"to_node":   "node-2",
+					},
+				},
+			},
+			Config: map[string]interface{}{
+				"timeout_seconds": 120,
+			},
 		},
 	}
 
@@ -155,6 +178,20 @@ func TestWorkflowHandler_ConvertDAGFormat(t *testing.T) {
 	assert.Equal(t, "wf-1", dag["id"])
 	assert.Equal(t, 2, dag["version"])
 	assert.Equal(t, "Test Workflow", dag["name"])
+	assert.Equal(t, exec.WorkflowTemplate.Config, dag["config"])
+
+	nodes, ok := dag["nodes"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Contains(t, nodes, "node-1")
+	assert.Contains(t, nodes, "node-2")
+
+	edges, ok := dag["edges"].([]interface{})
+	assert.True(t, ok)
+	assert.NotEmpty(t, edges)
+	edge, ok := edges[0].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "node-1", edge["from"])
+	assert.Equal(t, "node-2", edge["to"])
 }
 
 func TestWorkflowHandler_ResultDurationSet(t *testing.T) {

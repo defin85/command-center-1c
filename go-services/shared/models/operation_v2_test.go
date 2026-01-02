@@ -61,6 +61,16 @@ func TestOperationMessage_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "execute_workflow allows empty target_databases",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+			},
+			wantErr: false,
+		},
+		{
 			name: "target_database with empty id",
 			msg: OperationMessage{
 				Version:         "2.0",

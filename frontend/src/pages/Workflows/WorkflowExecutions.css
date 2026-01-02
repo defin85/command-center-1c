@@ -1,0 +1,117 @@
+/**
+ * WorkflowExecutions Page Styles
+ */
+
+.workflow-executions-page {
+  padding: 24px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.page-header h3 {
+  margin: 0;
+}
+
+.execution-filters-card {
+  margin-bottom: 16px;
+}
+
+.execution-filters-card .ant-card-body {
+  padding: 16px;
+}
+
+.execution-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.execution-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 240px;
+}
+
+.execution-filter-actions {
+  min-width: 140px;
+}
+
+.execution-summary {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.execution-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.execution-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.execution-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.execution-id {
+  font-size: 12px;
+}
+
+.execution-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.execution-error {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.execution-node {
+  font-size: 12px;
+}
+
+.execution-timing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.execution-error-alert {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .execution-summary {
+    margin-left: 0;
+  }
+
+  .execution-filter {
+    min-width: 100%;
+  }
+}

@@ -96,10 +96,11 @@ type ResultSummary struct {
 // ========== Validation ==========
 
 // Operation types that don't require target_databases
-// These are meta-operations that operate on clusters, not individual databases
+// These are meta-operations or workflow executions that determine targets internally.
 var metaOperationTypes = map[string]bool{
 	"sync_cluster":      true,
 	"discover_clusters": true,
+	"execute_workflow":  true,
 	// Future: "health_check_cluster", "backup_cluster", etc.
 }
 

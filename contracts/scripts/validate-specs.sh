@@ -82,6 +82,14 @@ if [[ -f "$CONTRACTS_DIR/api-gateway/openapi.yaml" ]]; then
     echo ""
 fi
 
+# orchestrator (if exists)
+if [[ -f "$CONTRACTS_DIR/orchestrator/openapi.yaml" ]]; then
+    if ! validate_spec "$CONTRACTS_DIR/orchestrator/openapi.yaml" "orchestrator"; then
+        FAILED=$((FAILED + 1))
+    fi
+    echo ""
+fi
+
 # worker (if exists)
 if [[ -f "$CONTRACTS_DIR/worker/openapi.yaml" ]]; then
     if ! validate_spec "$CONTRACTS_DIR/worker/openapi.yaml" "worker"; then

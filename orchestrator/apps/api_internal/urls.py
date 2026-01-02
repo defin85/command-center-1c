@@ -109,6 +109,20 @@ urlpatterns = [
     ),
 
     # ========================================================================
+    # Workflows (Go Workflow Engine)
+    # ========================================================================
+    path(
+        'workflows/get-execution',
+        views.get_workflow_execution,
+        name='get-workflow-execution'
+    ),
+    path(
+        'workflows/update-execution-status',
+        views.update_workflow_execution_status,
+        name='update-workflow-execution-status'
+    ),
+
+    # ========================================================================
     # Timeline (Operation Observability)
     # ========================================================================
     path(

@@ -184,3 +184,23 @@ class TimelineResponseSerializer(serializers.Serializer):
     timeline = TimelineEventSerializer(many=True)
     total_events = serializers.IntegerField()
     duration_ms = serializers.IntegerField(allow_null=True)
+
+
+# =============================================================================
+# Workflow Execution Serializers (Go Workflow Engine)
+# =============================================================================
+
+
+class WorkflowExecutionStatusUpdateSerializer(serializers.Serializer):
+    """Input serializer for workflow execution status updates."""
+
+    execution_id = serializers.UUIDField()
+    status = serializers.ChoiceField(choices=[
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+    ])
+    error_message = serializers.CharField(required=False, allow_blank=True, default="")
+    result = serializers.JSONField(required=False, default=dict)

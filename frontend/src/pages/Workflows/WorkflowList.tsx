@@ -25,6 +25,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
+  ClockCircleOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
 } from '@ant-design/icons'
@@ -214,13 +215,21 @@ const WorkflowList = () => {
     <div className="workflow-list-page">
       <div className="page-header">
         <Title level={3}>Workflows</Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => navigate('/workflows/new')}
-        >
-          New Workflow
-        </Button>
+        <Space>
+          <Button
+            icon={<ClockCircleOutlined />}
+            onClick={() => navigate('/workflows/executions')}
+          >
+            Executions
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => navigate('/workflows/new')}
+          >
+            New Workflow
+          </Button>
+        </Space>
       </div>
 
       <TableToolkit

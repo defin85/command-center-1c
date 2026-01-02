@@ -8125,10 +8125,10 @@ components:
       type: object
       description: Serializer for WorkflowEdge Pydantic model.
       properties:
-        from_node:
+        from:
           type: string
           description: Source node ID
-        to_node:
+        to:
           type: string
           description: Destination node ID
         condition:
@@ -8136,8 +8136,8 @@ components:
           nullable: true
           description: Jinja2 expression for conditional edges
       required:
-      - from_node
-      - to_node
+      - from
+      - to
     WorkflowExecutionDetail:
       type: object
       description: |-

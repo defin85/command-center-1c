@@ -186,10 +186,12 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 
 	// Add operation metadata to input vars
 	inputVars["operation_id"] = msg.OperationID
-	// Pass TargetDatabases as objects ([]models.TargetDatabase)
-	inputVars["target_databases"] = msg.TargetDatabases
-	// Also pass IDs for backward compatibility
-	inputVars["target_database_ids"] = msg.GetTargetDatabaseIDs()
+	if len(msg.TargetDatabases) > 0 {
+		// Pass TargetDatabases as objects ([]models.TargetDatabase)
+		inputVars["target_databases"] = msg.TargetDatabases
+		// Also pass IDs for backward compatibility
+		inputVars["target_database_ids"] = msg.GetTargetDatabaseIDs()
+	}
 
 	// Execute workflow synchronously
 	h.timeline.Record(ctx, msg.OperationID, "external.workflow_engine.execute.started", events.MergeMetadata(map[string]interface{}{
@@ -258,6 +260,9 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 // convertDAGToEngineFormat converts Orchestrator's DAG structure to Go Workflow Engine format.
 func (h *WorkflowHandler) convertDAGToEngineFormat(execution *orchestrator.WorkflowExecutionData) map[string]interface{} {
 	dag := execution.WorkflowTemplate.DAGStructure
+	if dag == nil {
+		dag = map[string]interface{}{}
+	}
 
 	// The DAG structure from Orchestrator should match the engine format
 	// Add ID and version if not present
@@ -269,6 +274,58 @@ func (h *WorkflowHandler) convertDAGToEngineFormat(execution *orchestrator.Workf
 	}
 	if _, ok := dag["name"]; !ok {
 		dag["name"] = execution.WorkflowTemplate.Name
+	}
+	if _, ok := dag["config"]; !ok && len(execution.WorkflowTemplate.Config) > 0 {
+		dag["config"] = execution.WorkflowTemplate.Config
+	}
+
+	if rawNodes, ok := dag["nodes"]; ok {
+		if nodeList, ok := rawNodes.([]interface{}); ok {
+			nodeMap := make(map[string]interface{}, len(nodeList))
+			for _, node := range nodeList {
+				nodeObj, ok := node.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				nodeID, _ := nodeObj["id"].(string)
+				if nodeID == "" {
+					if legacyID, ok := nodeObj["node_id"].(string); ok && legacyID != "" {
+						nodeID = legacyID
+						nodeObj["id"] = legacyID
+					}
+				}
+				if nodeID == "" {
+					continue
+				}
+				nodeMap[nodeID] = nodeObj
+			}
+			if len(nodeMap) > 0 {
+				dag["nodes"] = nodeMap
+			}
+		}
+	}
+
+	if rawEdges, ok := dag["edges"]; ok {
+		if edgeList, ok := rawEdges.([]interface{}); ok {
+			for _, edge := range edgeList {
+				edgeObj, ok := edge.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if _, ok := edgeObj["from"]; !ok {
+					if legacyFrom, ok := edgeObj["from_node"]; ok {
+						edgeObj["from"] = legacyFrom
+						delete(edgeObj, "from_node")
+					}
+				}
+				if _, ok := edgeObj["to"]; !ok {
+					if legacyTo, ok := edgeObj["to_node"]; ok {
+						edgeObj["to"] = legacyTo
+						delete(edgeObj, "to_node")
+					}
+				}
+			}
+		}
 	}
 
 	return dag

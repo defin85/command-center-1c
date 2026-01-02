@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"net/url"
 )
 
 // WorkflowExecutionData represents workflow execution data from Orchestrator.
@@ -32,7 +33,10 @@ type WorkflowTemplateData struct {
 // GetWorkflowExecution fetches workflow execution by ID from Orchestrator.
 // Returns the execution data including DAG structure for workflow execution.
 func (c *Client) GetWorkflowExecution(ctx context.Context, executionID string) (*WorkflowExecutionData, error) {
-	path := fmt.Sprintf("/api/v2/internal/workflow-executions/%s/", executionID)
+	path := fmt.Sprintf(
+		"/api/v2/internal/workflows/get-execution?execution_id=%s",
+		url.QueryEscape(executionID),
+	)
 
 	var execution WorkflowExecutionData
 	if err := c.get(ctx, path, &execution); err != nil {
@@ -56,10 +60,11 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, templateID string) (*W
 
 // UpdateWorkflowExecutionStatus updates execution status in Orchestrator.
 func (c *Client) UpdateWorkflowExecutionStatus(ctx context.Context, executionID string, status string, errorMessage string) error {
-	path := fmt.Sprintf("/api/v2/internal/workflow-executions/%s/status/", executionID)
+	path := "/api/v2/internal/workflows/update-execution-status"
 
 	payload := map[string]interface{}{
-		"status": status,
+		"execution_id": executionID,
+		"status":       status,
 	}
 	if errorMessage != "" {
 		payload["error_message"] = errorMessage

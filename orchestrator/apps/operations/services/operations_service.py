@@ -302,6 +302,9 @@ class OperationsService:
         Returns:
             EnqueueResult with execution_id
         """
+        data = dict(workflow_config or {})
+        data["execution_id"] = execution_id
+
         message = {
             "version": cls.VERSION,
             "operation_id": execution_id,
@@ -310,7 +313,7 @@ class OperationsService:
             "entity": "Workflow",
             "target_databases": [],  # Workflow determines targets
             "payload": {
-                "data": workflow_config or {},
+                "data": data,
                 "filters": {},
                 "options": {}
             },

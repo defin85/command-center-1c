@@ -5,7 +5,7 @@
  * Generated API types and Legacy frontend types for workflow-related entities.
  *
  * The transformations handle:
- * - Edge: from_node/to_node (generated) <-> from/to (legacy)
+ * - Edge: from/to (generated) <-> from/to (legacy)
  * - Node config: split configs (generated) <-> unified config (legacy)
  * - progress_percent: string (generated) -> number (legacy)
  * - completed_nodes: Record (generated) -> string[] (legacy)
@@ -41,13 +41,13 @@ import type {
 
 /**
  * Convert generated DAG edge to legacy format.
- * Generated: { from_node, to_node, condition }
+ * Generated: { from, to, condition }
  * Legacy: { from, to, condition }
  */
 export function convertEdgeToLegacy(edge: GeneratedWorkflowEdge): LegacyDAGEdge {
   return {
-    from: edge.from_node,
-    to: edge.to_node,
+    from: edge.from,
+    to: edge.to,
     condition: edge.condition ?? undefined,
   }
 }
@@ -55,12 +55,12 @@ export function convertEdgeToLegacy(edge: GeneratedWorkflowEdge): LegacyDAGEdge 
 /**
  * Convert legacy DAG edge to generated format for API calls.
  * Legacy: { from, to, condition }
- * Generated: { from_node, to_node, condition }
+ * Generated: { from, to, condition }
  */
 export function convertEdgeToGenerated(edge: LegacyDAGEdge): GeneratedWorkflowEdge {
   return {
-    from_node: edge.from,
-    to_node: edge.to,
+    from: edge.from,
+    to: edge.to,
     condition: edge.condition ?? null,
   }
 }

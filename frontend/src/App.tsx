@@ -8,7 +8,7 @@ import { Operations } from './pages/Operations'
 import { Databases } from './pages/Databases/Databases'
 import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
-import { WorkflowList, WorkflowDesigner, WorkflowMonitor } from './pages/Workflows'
+import { WorkflowList, WorkflowDesigner, WorkflowMonitor, WorkflowExecutions } from './pages/Workflows'
 import { ServiceMeshPage } from './pages/ServiceMesh'
 import { RBACPage } from './pages/RBAC/RBACPage'
 import { UsersPage } from './pages/Users/UsersPage'
@@ -182,6 +182,13 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <WorkflowList />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/workflows/executions" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <WorkflowExecutions />
               </MainLayout>
             </ProtectedRoute>
           } />

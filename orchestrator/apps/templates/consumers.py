@@ -277,15 +277,25 @@ class WorkflowExecutionConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _get_execution_status(self, execution) -> Dict[str, Any]:
         """Get status data from execution object."""
+        progress_value = 0.0
+        if execution.progress_percent is not None:
+            try:
+                progress_value = float(execution.progress_percent) / 100.0
+            except (TypeError, ValueError):
+                progress_value = 0.0
+
+        created_at = execution.started_at
+        updated_at = execution.completed_at or execution.started_at
+
         return {
             "status": execution.status,
-            "progress": execution.progress_percent / 100.0,
+            "progress": progress_value,
             "current_node_id": execution.current_node_id,
             "trace_id": execution.trace_id,
             "error_message": execution.error_message,
             "node_statuses": execution.node_statuses or {},
-            "created_at": execution.created_at.isoformat() if execution.created_at else None,
-            "updated_at": execution.updated_at.isoformat() if execution.updated_at else None,
+            "created_at": created_at.isoformat() if created_at else None,
+            "updated_at": updated_at.isoformat() if updated_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         }
 
@@ -412,4 +422,3 @@ async def broadcast_execution_completed(
     )
 
     logger.info(f"Broadcast execution_completed: execution={execution_id}, status={status}")
-

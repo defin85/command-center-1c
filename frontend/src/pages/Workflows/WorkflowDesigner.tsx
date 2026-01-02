@@ -233,6 +233,10 @@ const WorkflowDesigner = () => {
       message.warning('Save the workflow first to validate')
       return
     }
+    if (state.isModified) {
+      message.warning('Save the workflow first to validate')
+      return
+    }
 
     setState((prev) => ({ ...prev, isValidating: true }))
 
@@ -389,7 +393,7 @@ const WorkflowDesigner = () => {
               icon={<CheckCircleOutlined />}
               onClick={handleValidate}
               loading={state.isValidating}
-              disabled={!state.template?.id}
+              disabled={!state.template?.id || state.isModified}
             >
               Validate
             </Button>

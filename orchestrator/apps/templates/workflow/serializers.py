@@ -136,17 +136,17 @@ class WorkflowNodeSerializer(serializers.Serializer):
 class WorkflowEdgeSerializer(serializers.Serializer):
     """Serializer for WorkflowEdge Pydantic model."""
 
-    # Use 'from' and 'to' in JSON, but avoid Python keyword conflict
-    from_node = serializers.CharField(
-        source='from', help_text="Source node ID"
-    )
-    to_node = serializers.CharField(
-        source='to', help_text="Destination node ID"
-    )
     condition = serializers.CharField(
         required=False, allow_null=True, allow_blank=True,
         help_text="Jinja2 expression for conditional edges"
     )
+
+    def get_fields(self):
+        """Expose 'from'/'to' in schema while keeping Python-safe field names."""
+        fields = super().get_fields()
+        fields["from"] = serializers.CharField(help_text="Source node ID")
+        fields["to"] = serializers.CharField(help_text="Destination node ID")
+        return fields
 
     def to_representation(self, instance):
         """Handle both dict and Pydantic model."""

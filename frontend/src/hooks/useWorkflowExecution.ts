@@ -133,6 +133,19 @@ export const useWorkflowExecution = (
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const statusRef = useRef<WorkflowStatusType>('pending')
+  const reconnectAttemptsRef = useRef<number>(0)
+
+  const setReconnectAttemptsSafe = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      setReconnectAttempts((prev) => {
+        const value = typeof next === 'function' ? next(prev) : next
+        reconnectAttemptsRef.current = value
+        return value
+      })
+    },
+    []
+  )
 
   // Get WebSocket URL
   const getWebSocketUrl = useCallback((execId: string): string => {
@@ -147,7 +160,9 @@ export const useWorkflowExecution = (
       case 'workflow_status':
         // Full workflow status update
         if (message.status) {
-          setStatus(message.status as WorkflowStatusType)
+          const nextStatus = message.status as WorkflowStatusType
+          setStatus(nextStatus)
+          statusRef.current = nextStatus
         }
         if (message.progress !== undefined) {
           setProgress(message.progress)
@@ -210,7 +225,9 @@ export const useWorkflowExecution = (
       case 'execution_completed':
         // Workflow finished
         if (message.status) {
-          setStatus(message.status as WorkflowStatusType)
+          const nextStatus = message.status as WorkflowStatusType
+          setStatus(nextStatus)
+          statusRef.current = nextStatus
         }
         if (message.result) {
           setResult(message.result)
@@ -262,12 +279,13 @@ export const useWorkflowExecution = (
 
     try {
       const ws = new WebSocket(url)
+      wsRef.current = ws
 
       ws.onopen = () => {
         console.log('WebSocket connected')
         setIsConnected(true)
         setConnectionError(null)
-        setReconnectAttempts(0)
+        setReconnectAttemptsSafe(0)
       }
 
       ws.onmessage = (event) => {
@@ -285,38 +303,41 @@ export const useWorkflowExecution = (
       }
 
       ws.onclose = (event) => {
+        if (wsRef.current !== ws) {
+          return
+        }
+
         console.log('WebSocket closed:', event.code, event.reason)
         setIsConnected(false)
         wsRef.current = null
 
         // Check if we should reconnect
-        const isTerminalStatus = ['completed', 'failed', 'cancelled'].includes(status)
+        const isTerminalStatus = ['completed', 'failed', 'cancelled'].includes(statusRef.current)
+        const attempts = reconnectAttemptsRef.current
 
-        if (!isTerminalStatus && reconnectAttempts < RECONNECT_MAX_ATTEMPTS) {
+        if (!isTerminalStatus && attempts < RECONNECT_MAX_ATTEMPTS) {
           // Schedule reconnection with exponential backoff
           const delay = Math.min(
-            RECONNECT_INITIAL_DELAY * Math.pow(2, reconnectAttempts),
+            RECONNECT_INITIAL_DELAY * Math.pow(2, attempts),
             RECONNECT_MAX_DELAY
           )
 
-          console.log(`WebSocket reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1})`)
+          console.log(`WebSocket reconnecting in ${delay}ms (attempt ${attempts + 1})`)
           setConnectionError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s...`)
 
           reconnectTimeoutRef.current = setTimeout(() => {
-            setReconnectAttempts((prev) => prev + 1)
+            setReconnectAttemptsSafe((prev) => prev + 1)
             connect()
           }, delay)
-        } else if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+        } else if (attempts >= RECONNECT_MAX_ATTEMPTS) {
           setConnectionError('Max reconnection attempts reached. Please refresh the page.')
         }
       }
-
-      wsRef.current = ws
     } catch (err) {
       console.error('WebSocket connection failed:', err)
       setConnectionError('Failed to establish WebSocket connection')
     }
-  }, [executionId, getWebSocketUrl, handleMessage, reconnectAttempts, status])
+  }, [executionId, getWebSocketUrl, handleMessage, setReconnectAttemptsSafe])
 
   // Request current status from server
   const requestStatus = useCallback(() => {
@@ -355,13 +376,14 @@ export const useWorkflowExecution = (
     if (executionId) {
       // Reset state for new execution
       setStatus('pending')
+      statusRef.current = 'pending'
       setProgress(0)
       setCurrentNodeId(undefined)
       setTraceId(undefined)
       setErrorMessage(undefined)
       setResult(undefined)
       setNodeStatuses({})
-      setReconnectAttempts(0)
+      setReconnectAttemptsSafe(0)
 
       connect()
     }
