@@ -183,7 +183,10 @@ class IBCMDBackend(AbstractOperationBackend):
                 target_databases=target_databases,
                 workflow_execution_id=str(execution.id) if execution else None,
                 node_id=context.get('node_id'),
-                created_by=context.get('user_id', 'workflow'),
+                created_by=(
+                    context.get('executed_by')
+                    or context.get('user_id', 'workflow')
+                ),
             )
 
             from apps.operations.services import OperationsService
@@ -215,6 +218,7 @@ class IBCMDBackend(AbstractOperationBackend):
                         'operation_id': str(operation.id),
                         'queued': enqueue_result.success,
                         'status': operation.status,
+                        'backend': 'ibcmd',
                     },
                     error=None,
                     mode=mode,
@@ -223,25 +227,16 @@ class IBCMDBackend(AbstractOperationBackend):
                     task_id=task_id,
                 )
 
-            timeout = context.get('timeout_seconds') or self.DEFAULT_TIMEOUT_SECONDS
-            waiter = ResultWaiter(operation.id, timeout_seconds=timeout)
-
-            try:
-                result = waiter.wait()
-            except OperationTimeoutError:
-                logger.warning(
-                    "IBCMD operation timed out",
-                    extra={
-                        'operation_id': operation.id,
-                        'timeout_seconds': timeout,
-                    },
-                )
-                raise
-
+            timeout_seconds = context.get('timeout_seconds', self.DEFAULT_TIMEOUT_SECONDS)
+            wait_result = ResultWaiter.wait(
+                operation_id=operation.id,
+                timeout_seconds=timeout_seconds,
+            )
+            output = {**wait_result, 'backend': 'ibcmd'}
             return NodeExecutionResult(
-                success=result.success,
-                output=result.output,
-                error=result.error,
+                success=wait_result['success'],
+                output=output,
+                error=wait_result.get('error'),
                 mode=mode,
                 duration_seconds=time.time() - start_time,
                 operation_id=str(operation.id),

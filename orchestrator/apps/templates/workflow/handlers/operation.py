@@ -125,16 +125,29 @@ class OperationHandler(BaseNodeHandler):
             target_databases = self._extract_target_databases(context, node)
 
             if not target_databases:
-                # No target databases - return rendered data only (backwards compatibility)
+                if context.get('dry_run'):
+                    logger.info(
+                        "Dry run enabled: skipping operation execution (no target databases specified)",
+                        extra={'node_id': node.id}
+                    )
+                    return self._return_rendered_only(
+                        rendered_data=rendered_data,
+                        step_result=step_result,
+                        start_time=start_time
+                    )
+
                 logger.warning(
-                    f"No target_databases in context for node {node.id} - "
-                    f"returning rendered data without execution",
+                    "Missing target databases for operation node; failing execution",
                     extra={'node_id': node.id}
                 )
-                return self._return_rendered_only(
-                    rendered_data=rendered_data,
+                return self._return_error(
+                    error_msg=(
+                        "No target databases specified for operation execution. "
+                        "Provide 'database_ids' (list) or 'target_databases' in workflow input_context, "
+                        "or set 'dry_run': true to render only."
+                    ),
                     step_result=step_result,
-                    start_time=start_time
+                    start_time=start_time,
                 )
 
             # 4. Select backend based on operation_type
@@ -265,7 +278,8 @@ class OperationHandler(BaseNodeHandler):
         Checks multiple sources:
         1. context['target_databases'] - explicit list
         2. node.config.get('target_databases') - node-level config
-        3. context['database_id'] - single database (wrapped in list)
+        3. context['database_ids'] - list of database IDs (UI compatibility)
+        4. context['database_id'] - single database (wrapped in list)
 
         Args:
             context: Execution context
@@ -288,7 +302,12 @@ class OperationHandler(BaseNodeHandler):
             if node_target_dbs:
                 return [str(db) for db in node_target_dbs]
 
-        # 3. Single database fallback
+        # 3. UI compatibility: database_ids list
+        db_ids = context.get('database_ids')
+        if db_ids:
+            return [str(db) for db in db_ids]
+
+        # 4. Single database fallback
         single_db = context.get('database_id')
         if single_db:
             return [str(single_db)]
@@ -309,7 +328,7 @@ class OperationHandler(BaseNodeHandler):
             output={
                 'rendered_data': rendered_data,
                 'execution_skipped': True,
-                'reason': 'No target databases specified'
+                'reason': 'Dry run: no target databases specified'
             },
             error=None,
             mode=NodeExecutionMode.SYNC,

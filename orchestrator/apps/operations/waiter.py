@@ -7,8 +7,6 @@ import logging
 import time
 from typing import Any, Dict, List
 
-from django.db import connection
-
 from apps.operations.models import BatchOperation, Task
 
 logger = logging.getLogger(__name__)
@@ -87,9 +85,6 @@ class ResultWaiter:
         )
 
         while elapsed < timeout_seconds:
-            # Close old DB connections to get fresh data
-            connection.close_if_unusable_or_obsolete()
-
             try:
                 # Fetch operation from DB
                 operation = BatchOperation.objects.get(id=operation_id)
@@ -163,12 +158,19 @@ class ResultWaiter:
         # Build error message if failed
         error = None
         if operation.status == BatchOperation.STATUS_FAILED:
-            failed_tasks = [t for t in task_results if not t.get('success', False)]
-            if failed_tasks:
-                error_messages = [t.get('error', 'Unknown error') for t in failed_tasks]
-                error = "; ".join(set(error_messages))  # Unique errors
+            metadata_error = None
+            if isinstance(operation.metadata, dict):
+                metadata_error = operation.metadata.get("error")
+
+            if metadata_error:
+                error = str(metadata_error)
             else:
-                error = "Operation failed with unknown error"
+                failed_tasks = [t for t in task_results if t.get("status") == Task.STATUS_FAILED]
+                if failed_tasks:
+                    error_messages = [t.get("error", "Unknown error") for t in failed_tasks]
+                    error = "; ".join(sorted(set(error_messages)))
+                else:
+                    error = "Operation failed with unknown error"
         elif operation.status == BatchOperation.STATUS_CANCELLED:
             error = "Operation was cancelled"
 

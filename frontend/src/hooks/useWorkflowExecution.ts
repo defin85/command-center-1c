@@ -132,9 +132,11 @@ export const useWorkflowExecution = (
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null)
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const statusRef = useRef<WorkflowStatusType>('pending')
   const reconnectAttemptsRef = useRef<number>(0)
+  const manualDisconnectRef = useRef<boolean>(false)
 
   const setReconnectAttemptsSafe = useCallback(
     (next: number | ((prev: number) => number)) => {
@@ -262,6 +264,8 @@ export const useWorkflowExecution = (
       return
     }
 
+    manualDisconnectRef.current = false
+
     // Clear any existing reconnect timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
@@ -270,25 +274,33 @@ export const useWorkflowExecution = (
 
     // Close existing connection
     if (wsRef.current) {
+      manualDisconnectRef.current = true
       wsRef.current.close()
       wsRef.current = null
+      manualDisconnectRef.current = false
     }
 
     const url = getWebSocketUrl(executionId)
-    console.log('WebSocket connecting to:', url)
+    console.debug('WebSocket connecting to:', url)
 
     try {
       const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('WebSocket connected')
+        if (wsRef.current !== ws) {
+          return
+        }
+        console.debug('WebSocket connected')
         setIsConnected(true)
         setConnectionError(null)
         setReconnectAttemptsSafe(0)
       }
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) {
+          return
+        }
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
           handleMessage(message)
@@ -298,7 +310,13 @@ export const useWorkflowExecution = (
       }
 
       ws.onerror = (event) => {
-        console.error('WebSocket error:', event)
+        if (wsRef.current !== ws) {
+          return
+        }
+        if (manualDisconnectRef.current) {
+          return
+        }
+        console.debug('WebSocket error:', event)
         setConnectionError('WebSocket connection error')
       }
 
@@ -307,9 +325,13 @@ export const useWorkflowExecution = (
           return
         }
 
-        console.log('WebSocket closed:', event.code, event.reason)
+        console.debug('WebSocket closed:', event.code, event.reason)
         setIsConnected(false)
         wsRef.current = null
+
+        if (manualDisconnectRef.current) {
+          return
+        }
 
         // Check if we should reconnect
         const isTerminalStatus = ['completed', 'failed', 'cancelled'].includes(statusRef.current)
@@ -322,7 +344,7 @@ export const useWorkflowExecution = (
             RECONNECT_MAX_DELAY
           )
 
-          console.log(`WebSocket reconnecting in ${delay}ms (attempt ${attempts + 1})`)
+          console.debug(`WebSocket reconnecting in ${delay}ms (attempt ${attempts + 1})`)
           setConnectionError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s...`)
 
           reconnectTimeoutRef.current = setTimeout(() => {
@@ -334,7 +356,7 @@ export const useWorkflowExecution = (
         }
       }
     } catch (err) {
-      console.error('WebSocket connection failed:', err)
+      console.debug('WebSocket connection failed:', err)
       setConnectionError('Failed to establish WebSocket connection')
     }
   }, [executionId, getWebSocketUrl, handleMessage, setReconnectAttemptsSafe])
@@ -358,6 +380,13 @@ export const useWorkflowExecution = (
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
+    manualDisconnectRef.current = true
+
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current)
+      connectTimeoutRef.current = null
+    }
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
@@ -385,7 +414,13 @@ export const useWorkflowExecution = (
       setNodeStatuses({})
       setReconnectAttemptsSafe(0)
 
-      connect()
+      // React StrictMode mounts/unmounts effects in DEV, which can create a transient
+      // "WebSocket is closed before the connection is established" noise in console.
+      // Deferring the actual connection to the next tick makes it cancelable on cleanup.
+      connectTimeoutRef.current = setTimeout(() => {
+        connectTimeoutRef.current = null
+        connect()
+      }, 0)
     }
 
     return () => {

@@ -23,6 +23,7 @@ import {
   Timeline,
   Spin,
   Alert,
+  Collapse,
   Drawer,
   Result,
   Badge,
@@ -389,16 +390,26 @@ const WorkflowMonitor = () => {
 
           {/* Result alert */}
           {displayStatus === 'completed' && liveResult && (
-            <Alert
-              type="success"
-              message="Execution Completed"
-              description={
-                <pre className="result-json">
-                  {JSON.stringify(liveResult, null, 2)}
-                </pre>
-              }
-              showIcon
-              className="result-alert"
+            <Collapse
+              size="small"
+              defaultActiveKey={[]}
+              className="result-collapse"
+              items={[
+                {
+                  key: 'result',
+                  label: (
+                    <Space size={8}>
+                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                      Execution Completed
+                    </Space>
+                  ),
+                  children: (
+                    <pre className="result-json">
+                      {JSON.stringify(liveResult, null, 2)}
+                    </pre>
+                  )
+                }
+              ]}
             />
           )}
 
@@ -419,8 +430,11 @@ const WorkflowMonitor = () => {
           <Card title="Execution Info" size="small" className="info-card">
             <Descriptions column={1} size="small">
               <Descriptions.Item label="ID">
-                <Text copyable className="mono-text">
-                  {executionId?.slice(0, 8)}...
+                <Text
+                  copyable={executionId ? { text: executionId } : false}
+                  className="mono-text"
+                >
+                  {executionId ? `${executionId.slice(0, 8)}...` : ''}
                 </Text>
               </Descriptions.Item>
               <Descriptions.Item label="Template">
@@ -440,7 +454,10 @@ const WorkflowMonitor = () => {
               )}
               {traceId && (
                 <Descriptions.Item label="Trace ID">
-                  <Text copyable className="mono-text">
+                  <Text
+                    copyable={{ text: traceId }}
+                    className="mono-text"
+                  >
                     {traceId.slice(0, 8)}...
                   </Text>
                 </Descriptions.Item>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App, Button, Card, Input, Space, Tabs, Typography, Upload } from 'antd'
+import { Alert, App, Button, Card, Space, Tabs, Typography, Upload } from 'antd'
 import { ReloadOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
 
 import {
@@ -9,9 +9,9 @@ import {
   updateDriverCatalog,
   type DriverCatalogListItem,
 } from '../../api/driverCatalogs'
+import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 
 const { Title, Text } = Typography
-const { TextArea } = Input
 
 interface CatalogState {
   raw: string
@@ -214,11 +214,9 @@ export function DriverCatalogsPage() {
             {activeCatalog?.error && (
               <Alert type="warning" showIcon message="Catalog error" description={activeCatalog.error} />
             )}
-            <TextArea
-              rows={18}
+            <LazyJsonCodeEditor
               value={activeCatalog?.raw ?? DEFAULT_CATALOG}
-              onChange={(event) => {
-                const raw = event.target.value
+              onChange={(raw) => {
                 setCatalogs((prev) => ({
                   ...prev,
                   [activeDriver]: {
@@ -228,6 +226,8 @@ export function DriverCatalogsPage() {
                   },
                 }))
               }}
+              height={480}
+              path={`driver-catalog-${activeDriver}.json`}
             />
           </Space>
         </Card>

@@ -144,7 +144,7 @@ class TestOperationHandler:
             type="operation",
             template_id="test_template"
         )
-        context = {"user_id": 123}
+        context = {"user_id": 123, "dry_run": True}
 
         handler = OperationHandler()
 
@@ -156,7 +156,7 @@ class TestOperationHandler:
         result = handler.execute(node, context, workflow_execution)
 
         assert result.success is True
-        # Week 17: Without target_databases, returns wrapped result with execution_skipped
+        # Without target_databases, requires explicit dry_run=true for render-only execution
         assert result.output['rendered_data'] == {"result": "rendered_data"}
         assert result.output['execution_skipped'] is True
         assert result.mode == NodeExecutionMode.SYNC
@@ -166,6 +166,18 @@ class TestOperationHandler:
 
         # Verify renderer was called
         mock_renderer.render.assert_called_once()
+
+    def test_extract_target_databases_accepts_database_ids(self):
+        handler = OperationHandler()
+        node = WorkflowNode(
+            id="op1",
+            name="Test Operation",
+            type="operation",
+            template_id="test_template",
+        )
+
+        target = handler._extract_target_databases({"database_ids": ["db1", "db2"]}, node)
+        assert target == ["db1", "db2"]
 
     def test_operation_handler_render_error(self, admin_user, workflow_execution):
         """Test error handling when template rendering fails."""
@@ -441,7 +453,7 @@ class TestHandlersIntegration:
             template_id="context_test"
         )
 
-        context = {"initial": "data"}
+        context = {"initial": "data", "dry_run": True}
         handler = OperationHandler()
 
         # Mock renderer
@@ -451,10 +463,10 @@ class TestHandlersIntegration:
 
         result = handler.execute(node, context, execution)
 
-        # Check result stored in context
-        # Note: Context storage happens in handler but may need workflow execution started
-        # For now just check result is correct
+        # Dry-run: rendered_data should be returned without creating operation
         assert result.success is True
+        assert result.output["execution_skipped"] is True
+        assert result.output["rendered_data"] == {"result": "operation_output"}
 
     def test_condition_handler_with_previous_node_output(self, admin_user, simple_workflow_template):
         """Test condition using output from previous node."""
@@ -541,7 +553,7 @@ class TestHandlersEdgeCases:
 
     @pytest.mark.django_db
     def test_operation_handler_empty_context(self, admin_user, workflow_execution):
-        """Test operation with empty context."""
+        """Test operation fails with empty context (no target databases)."""
         from apps.templates.models import OperationTemplate
 
         OperationTemplate.objects.create(
@@ -564,7 +576,8 @@ class TestHandlersEdgeCases:
         with patch.object(handler.renderer, 'render', return_value={"ok": True}):
             result = handler.execute(node, {}, workflow_execution)  # Empty context
 
-        assert result.success is True
+        assert result.success is False
+        assert "No target databases specified" in (result.error or "")
 
     def test_condition_handler_missing_expression_validation(self):
         """Test that Pydantic validation catches missing expression for condition nodes."""
@@ -618,9 +631,10 @@ class TestHandlersEdgeCases:
         handler = OperationHandler()
 
         with patch.object(handler.renderer, 'render', return_value={"результат": "успех"}):
-            result = handler.execute(node, {}, workflow_execution)
+            result = handler.execute(node, {"dry_run": True}, workflow_execution)
 
         assert result.success is True
+        assert result.output["rendered_data"] == {"результат": "успех"}
 
 
 # ========== Thread Safety Tests ==========

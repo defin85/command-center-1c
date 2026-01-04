@@ -4,9 +4,11 @@ Workflow endpoints for API v2.
 Provides action-based endpoints for workflow management.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 
+from django.db import close_old_connections
 from django.db.models import Count, Q
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -25,8 +27,48 @@ from apps.templates.workflow.serializers import (
     WorkflowStepResultSerializer,
 )
 from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.operations.utils.feature_flags import is_go_workflow_engine_enabled
 
 logger = logging.getLogger(__name__)
+
+_WORKFLOW_ASYNC_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+
+
+def _execute_workflow_in_background(execution_id: str) -> None:
+    close_old_connections()
+    try:
+        from apps.templates.workflow.engine import WorkflowEngine
+
+        execution = WorkflowExecution.objects.select_related('workflow_template').get(
+            id=execution_id
+        )
+        engine = WorkflowEngine()
+        engine.execute_sync(execution)
+    except WorkflowExecution.DoesNotExist:
+        logger.error(
+            "Async workflow execution not found",
+            extra={'execution_id': execution_id},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Async workflow execution failed",
+            extra={'execution_id': execution_id, 'error': str(exc)},
+        )
+    finally:
+        close_old_connections()
+
+
+def _start_async_workflow_execution(execution_id: str) -> bool:
+    try:
+        _WORKFLOW_ASYNC_EXECUTOR.submit(_execute_workflow_in_background, execution_id)
+        return True
+    except RuntimeError as exc:
+        logger.error(
+            "Async workflow executor unavailable",
+            extra={'execution_id': execution_id, 'error': str(exc)},
+        )
+        return False
+
 
 WORKFLOW_FILTER_FIELDS = {
     "name": {"field": "name", "type": "text"},
@@ -572,7 +614,7 @@ def get_workflow(request):
 @extend_schema(
     tags=['v2'],
     summary='Execute workflow',
-    description='Execute a workflow template. Supports sync (blocking) and async (background via Celery) modes.',
+    description='Execute a workflow template. Supports sync (blocking) and async (Go Worker if enabled, else in-process background runner) modes.',
     request=ExecuteWorkflowRequestSerializer,
     responses={
         200: ExecuteWorkflowResponseSerializer,
@@ -606,8 +648,22 @@ def execute_workflow(request):
         }
     """
     workflow_id = request.data.get('workflow_id')
-    input_context = request.data.get('input_context', {})
+    raw_input_context = request.data.get('input_context', {}) or {}
     mode = request.data.get('mode', 'async')
+
+    if not isinstance(raw_input_context, dict):
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'INVALID_INPUT_CONTEXT',
+                'message': 'input_context must be a JSON object',
+            }
+        }, status=400)
+
+    input_context = dict(raw_input_context)
+
+    if request.user and getattr(request.user, "is_authenticated", False):
+        input_context["executed_by"] = request.user.get_username() or request.user.username
 
     if not workflow_id:
         return Response({
@@ -688,7 +744,7 @@ def execute_workflow(request):
                     'message': 'Workflow execution failed',
                 }, status=500)
 
-        # Execute asynchronously via Go Worker (or Celery fallback)
+        # Execute asynchronously via Go Worker (feature-flag), legacy Celery, or in-process runner
         execution = workflow.create_execution(input_context)
 
         from apps.operations.services import OperationsService
@@ -718,9 +774,9 @@ def execute_workflow(request):
                     'message': 'Workflow execution started (Celery)',
                 })
             except Exception as e:
-                logger.warning(f"Celery unavailable, falling back to sync: {e}")
-        else:
-            # New Go Worker path
+                logger.warning(f"Celery unavailable, falling back to background runner: {e}")
+        elif is_go_workflow_engine_enabled():
+            # Go Workflow Engine path (Go Worker executes workflow DAG)
             try:
                 result = OperationsService.enqueue_workflow_execution(str(execution.id))
 
@@ -744,11 +800,33 @@ def execute_workflow(request):
                         'message': 'Workflow execution started (Go Worker)',
                     })
                 else:
-                    logger.warning(f"Go Worker enqueue failed: {result.error}, falling back to sync")
+                    logger.warning(
+                        f"Go Worker enqueue failed: {result.error}, falling back to sync"
+                    )
             except Exception as e:
                 logger.warning(f"Go Worker unavailable, falling back to sync: {e}")
+        else:
+            logger.info(
+                "Go workflow engine disabled (ENABLE_GO_WORKFLOW_ENGINE=false), falling back to background runner",
+                extra={
+                    'execution_id': str(execution.id),
+                    'workflow_id': str(workflow_id),
+                    'executed_by': request.user.username if request.user else 'anonymous',
+                    'mode': 'async_runner_disabled_go_engine',
+                }
+            )
 
-        # Fallback to sync execution
+        # Async fallback: execute in-process without blocking the request.
+        # Celery is removed; this is a lightweight background runner for dev/hybrid mode.
+        if _start_async_workflow_execution(str(execution.id)):
+            return Response({
+                'execution_id': str(execution.id),
+                'status': 'pending',
+                'mode': 'async',
+                'message': 'Workflow execution started (Orchestrator background runner)',
+            })
+
+        # Last resort: synchronous fallback execution
         from apps.templates.workflow.engine import WorkflowEngine
         engine = WorkflowEngine()
         engine.execute_sync(execution)

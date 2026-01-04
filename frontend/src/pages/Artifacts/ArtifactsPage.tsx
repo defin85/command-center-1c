@@ -40,6 +40,7 @@ import type { Artifact, ArtifactAlias, ArtifactVersion, ArtifactKind, UploadProg
 import { createArtifact, downloadArtifactVersion, uploadArtifactVersion, upsertArtifactAlias } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
 import { queryKeys } from '../../api/queries'
 
 const { Text, Title } = Typography
@@ -1067,10 +1068,10 @@ export const ArtifactsPage = () => {
                       rules={[{ required: true, message: 'Metadata is required' }]}
                       extra="Use JSON for build notes, labels, and future metadata."
                     >
-                      <Input.TextArea
+                      <LazyJsonCodeEditorFormField
                         id="artifact-create-metadata"
-                        rows={6}
-                        autoComplete="off"
+                        height={220}
+                        path="artifact-create-metadata.json"
                       />
                     </Form.Item>
                     <Form.Item

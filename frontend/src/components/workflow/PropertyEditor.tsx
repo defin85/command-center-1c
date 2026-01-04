@@ -8,7 +8,7 @@
  * - Expression editor for conditions
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Card,
   Form,
@@ -32,6 +32,7 @@ import type {
   OperationTemplateListItem
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
+import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
 import './PropertyEditor.css'
 
 const { Text } = Typography
@@ -325,66 +326,119 @@ const SubWorkflowForm = ({
   workflows: { id: string; name: string }[]
   readOnly: boolean
   idPrefix: string
-}) => (
-  <>
-    <Form.Item label="Sub-Workflow" htmlFor={`${idPrefix}-subworkflow`} required>
-      <Select
-        id={`${idPrefix}-subworkflow`}
-        value={config.subworkflow_id}
-        placeholder="Select workflow"
-        disabled={readOnly}
-        showSearch
-        optionFilterProp="children"
-        onChange={(value) => onChange({ ...config, subworkflow_id: value })}
-        options={workflows.map((w) => ({
-          value: w.id,
-          label: w.name
-        }))}
-      />
-    </Form.Item>
+}) => {
+  const [inputMappingRaw, setInputMappingRaw] = useState<string>(() => JSON.stringify(config.input_mapping || {}, null, 2))
+  const [outputMappingRaw, setOutputMappingRaw] = useState<string>(() => JSON.stringify(config.output_mapping || {}, null, 2))
+  const [inputMappingError, setInputMappingError] = useState<string | null>(null)
+  const [outputMappingError, setOutputMappingError] = useState<string | null>(null)
+  const lastIdPrefixRef = useRef<string>(idPrefix)
 
-    <Collapse ghost>
-      <Panel header="Input Mapping" key="input">
-        <Form.Item help="Map parent context to sub-workflow input">
-          <TextArea
-            id={`${idPrefix}-subworkflow-input-mapping`}
-            value={JSON.stringify(config.input_mapping || {}, null, 2)}
-            placeholder='{"sub_var": "{{ parent_var }}"}'
-            disabled={readOnly}
-            rows={4}
-            onChange={(e) => {
-              try {
-                const mapping = JSON.parse(e.target.value)
-                onChange({ ...config, input_mapping: mapping })
-              } catch {
-                // Invalid JSON, ignore
-              }
-            }}
-          />
-        </Form.Item>
-      </Panel>
-      <Panel header="Output Mapping" key="output">
-        <Form.Item help="Map sub-workflow output to parent context">
-          <TextArea
-            id={`${idPrefix}-subworkflow-output-mapping`}
-            value={JSON.stringify(config.output_mapping || {}, null, 2)}
-            placeholder='{"parent_var": "{{ sub_result }}"}'
-            disabled={readOnly}
-            rows={4}
-            onChange={(e) => {
-              try {
-                const mapping = JSON.parse(e.target.value)
-                onChange({ ...config, output_mapping: mapping })
-              } catch {
-                // Invalid JSON, ignore
-              }
-            }}
-          />
-        </Form.Item>
-      </Panel>
-    </Collapse>
-  </>
-)
+  useEffect(() => {
+    if (lastIdPrefixRef.current === idPrefix) {
+      return
+    }
+    lastIdPrefixRef.current = idPrefix
+    setInputMappingRaw(JSON.stringify(config.input_mapping || {}, null, 2))
+    setOutputMappingRaw(JSON.stringify(config.output_mapping || {}, null, 2))
+    setInputMappingError(null)
+    setOutputMappingError(null)
+  }, [idPrefix, config.input_mapping, config.output_mapping])
+
+  const parseMappingObject = (raw: string): Record<string, string> => {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      return {}
+    }
+    const parsed: unknown = JSON.parse(trimmed)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Mapping must be a JSON object')
+    }
+
+    const record: Record<string, string> = {}
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value !== 'string') {
+        throw new Error(`Mapping value for "${key}" must be a string`)
+      }
+      record[key] = value
+    }
+    return record
+  }
+
+  const handleInputMappingChange = (raw: string) => {
+    setInputMappingRaw(raw)
+    try {
+      const mapping = parseMappingObject(raw)
+      setInputMappingError(null)
+      onChange({ ...config, input_mapping: mapping })
+    } catch (err) {
+      setInputMappingError(err instanceof Error ? err.message : 'Invalid JSON')
+    }
+  }
+
+  const handleOutputMappingChange = (raw: string) => {
+    setOutputMappingRaw(raw)
+    try {
+      const mapping = parseMappingObject(raw)
+      setOutputMappingError(null)
+      onChange({ ...config, output_mapping: mapping })
+    } catch (err) {
+      setOutputMappingError(err instanceof Error ? err.message : 'Invalid JSON')
+    }
+  }
+
+  return (
+    <>
+      <Form.Item label="Sub-Workflow" htmlFor={`${idPrefix}-subworkflow`} required>
+        <Select
+          id={`${idPrefix}-subworkflow`}
+          value={config.subworkflow_id}
+          placeholder="Select workflow"
+          disabled={readOnly}
+          showSearch
+          optionFilterProp="children"
+          onChange={(value) => onChange({ ...config, subworkflow_id: value })}
+          options={workflows.map((w) => ({
+            value: w.id,
+            label: w.name
+          }))}
+        />
+      </Form.Item>
+
+      <Collapse ghost>
+        <Panel header="Input Mapping" key="input">
+            <Form.Item
+              help={inputMappingError ? inputMappingError : 'Map parent context to sub-workflow input'}
+              validateStatus={inputMappingError ? 'error' : undefined}
+            >
+            <LazyJsonCodeEditor
+              id={`${idPrefix}-subworkflow-input-mapping`}
+              value={inputMappingRaw}
+              onChange={handleInputMappingChange}
+              readOnly={readOnly}
+              height={180}
+              path={`${idPrefix}-subworkflow-input-mapping.json`}
+            />
+          </Form.Item>
+        </Panel>
+        <Panel header="Output Mapping" key="output">
+          <Form.Item
+            help={outputMappingError ? outputMappingError : 'Map sub-workflow output to parent context'}
+            validateStatus={outputMappingError ? 'error' : undefined}
+          >
+            <LazyJsonCodeEditor
+              id={`${idPrefix}-subworkflow-output-mapping`}
+              value={outputMappingRaw}
+              onChange={handleOutputMappingChange}
+              readOnly={readOnly}
+              height={180}
+              path={`${idPrefix}-subworkflow-output-mapping.json`}
+            />
+          </Form.Item>
+        </Panel>
+      </Collapse>
+    </>
+  )
+}
 
 const PropertyEditor = ({
   nodeId,

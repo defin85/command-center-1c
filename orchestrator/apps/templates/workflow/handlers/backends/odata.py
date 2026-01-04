@@ -177,7 +177,10 @@ class ODataBackend(AbstractOperationBackend):
                 target_databases=target_databases,
                 workflow_execution_id=str(execution.id) if execution else None,
                 node_id=context.get('node_id'),
-                created_by=context.get('user_id', 'workflow')
+                created_by=(
+                    context.get('executed_by')
+                    or context.get('user_id', 'workflow')
+                ),
             )
 
             logger.info(

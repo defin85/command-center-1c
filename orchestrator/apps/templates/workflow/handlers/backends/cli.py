@@ -97,7 +97,10 @@ class CLIBackend(AbstractOperationBackend):
                 target_databases=target_databases,
                 workflow_execution_id=str(execution.id) if execution else None,
                 node_id=context.get('node_id'),
-                created_by=context.get('user_id', 'workflow'),
+                created_by=(
+                    context.get('executed_by')
+                    or context.get('user_id', 'workflow')
+                ),
             )
 
             from apps.operations.services import OperationsService
@@ -111,60 +114,75 @@ class CLIBackend(AbstractOperationBackend):
                     extra={
                         'operation_id': operation.id,
                         'target_databases_count': len(target_databases),
+                        'mode': mode.value,
+                    },
+                )
+            else:
+                logger.warning(
+                    "Go Worker enqueue failed for CLI operation",
+                    extra={
+                        'operation_id': operation.id,
+                        'status': enqueue_result.status,
+                        'error': enqueue_result.error,
+                        'mode': mode.value,
                     },
                 )
 
-                if mode == NodeExecutionMode.ASYNC:
+            if mode == NodeExecutionMode.ASYNC:
+                if not enqueue_result.success:
                     return NodeExecutionResult(
-                        success=True,
-                        status='queued',
-                        data={
-                            'operation_id': str(operation.id),
-                            'task_id': task_id,
-                        },
+                        success=False,
+                        output=None,
+                        error=enqueue_result.error or 'Failed to enqueue operation',
+                        mode=NodeExecutionMode.ASYNC,
+                        duration_seconds=time.time() - start_time,
+                        operation_id=str(operation.id),
+                        task_id=None,
                     )
+                return self._return_async(operation=operation, task_id=task_id, start_time=start_time)
 
-                timeout_seconds = getattr(template, 'timeout_seconds', None) or self.DEFAULT_TIMEOUT_SECONDS
-                waiter = ResultWaiter(str(operation.id), timeout_seconds=timeout_seconds)
-                result = waiter.wait()
-
+            if not enqueue_result.success and enqueue_result.status != 'duplicate':
                 return NodeExecutionResult(
-                    success=result.get('success', False),
-                    status=result.get('status', 'unknown'),
-                    data=result,
-                    error=result.get('error'),
+                    success=False,
+                    output=None,
+                    error=enqueue_result.error or 'Failed to enqueue operation',
+                    mode=NodeExecutionMode.SYNC,
+                    duration_seconds=time.time() - start_time,
+                    operation_id=str(operation.id),
+                    task_id=None,
                 )
 
-            logger.error(
-                "Failed to enqueue CLI operation to Go Worker",
-                extra={'operation_id': operation.id, 'error': enqueue_result.error},
-            )
-
-            return NodeExecutionResult(
-                success=False,
-                status='failed',
-                error=enqueue_result.error or 'Failed to enqueue operation',
-            )
+            return self._return_sync(operation=operation, task_id=task_id, context=context, start_time=start_time)
 
         except OperationTimeoutError as exc:
+            error_msg = f"CLI operation timed out: {str(exc)}"
             logger.error(
                 "CLI operation timed out",
-                extra={'error': str(exc), 'template_id': template.id},
+                extra={'error': str(exc), 'template_id': template.id, 'operation_id': exc.operation_id},
             )
             return NodeExecutionResult(
                 success=False,
-                status='timeout',
-                error=str(exc),
+                output=None,
+                error=error_msg,
+                mode=mode,
+                duration_seconds=time.time() - start_time,
+                operation_id=exc.operation_id,
+                task_id=None,
             )
         except Exception as exc:  # noqa: BLE001
+            error_msg = f"CLI operation failed: {str(exc)}"
             logger.exception(
                 "CLI operation execution failed",
                 extra={'error': str(exc), 'template_id': template.id},
             )
             return NodeExecutionResult(
                 success=False,
-                status='failed',
-                error=str(exc),
+                output=None,
+                error=error_msg,
+                mode=mode,
+                duration_seconds=time.time() - start_time,
+                operation_id=None,
+                task_id=None,
             )
         finally:
             duration = time.time() - start_time
@@ -176,6 +194,53 @@ class CLIBackend(AbstractOperationBackend):
                     'status': 'done',
                 },
             )
+
+    def _return_async(
+        self,
+        operation,
+        task_id: str,
+        start_time: float,
+    ) -> NodeExecutionResult:
+        duration = time.time() - start_time
+        return NodeExecutionResult(
+            success=True,
+            output={
+                'operation_id': str(operation.id),
+                'status': 'queued',
+                'task_id': task_id,
+                'total_tasks': operation.total_tasks,
+                'backend': 'cli',
+            },
+            error=None,
+            mode=NodeExecutionMode.ASYNC,
+            duration_seconds=duration,
+            operation_id=str(operation.id),
+            task_id=task_id,
+        )
+
+    def _return_sync(
+        self,
+        operation,
+        task_id: str,
+        context: Dict[str, Any],
+        start_time: float,
+    ) -> NodeExecutionResult:
+        timeout_seconds = context.get('timeout_seconds', self.DEFAULT_TIMEOUT_SECONDS)
+        wait_result = ResultWaiter.wait(
+            operation_id=operation.id,
+            timeout_seconds=timeout_seconds,
+        )
+        duration = time.time() - start_time
+        output = {**wait_result, 'backend': 'cli'}
+        return NodeExecutionResult(
+            success=wait_result['success'],
+            output=output,
+            error=wait_result.get('error'),
+            mode=NodeExecutionMode.SYNC,
+            duration_seconds=duration,
+            operation_id=str(operation.id),
+            task_id=task_id,
+        )
 
     def supports_operation_type(self, operation_type: str) -> bool:
         return operation_type in self.SUPPORTED_TYPES

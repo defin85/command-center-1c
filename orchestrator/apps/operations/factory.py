@@ -4,8 +4,8 @@ BatchOperationFactory - фабрика для создания BatchOperation и
 Используется WorkflowEngine для создания операций из шаблонов.
 """
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from django.db import transaction
 
@@ -152,7 +152,13 @@ class BatchOperationFactory:
         """
         Генерирует уникальный ID операции.
 
-        Формат: batch-{workflow_execution_id or 'manual'}-{node_id or 'single'}-{timestamp}
+        Важно: BatchOperation.id и Task.id имеют ограничение max_length=64,
+        поэтому ID должен быть коротким и не включать execution_id / node_id.
+        Эти значения сохраняются в metadata.
+
+        Формат:
+          - workflow: batch-wf-{uuid4hex}
+          - manual:   batch-manual-{uuid4hex}
 
         Args:
             workflow_execution_id: ID выполнения workflow
@@ -161,8 +167,7 @@ class BatchOperationFactory:
         Returns:
             Уникальный ID операции
         """
-        workflow_part = workflow_execution_id or 'manual'
-        node_part = node_id or 'single'
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+        prefix = 'batch-wf' if workflow_execution_id else 'batch-manual'
+        suffix = uuid4().hex
 
-        return f"batch-{workflow_part}-{node_part}-{timestamp}"
+        return f"{prefix}-{suffix}"

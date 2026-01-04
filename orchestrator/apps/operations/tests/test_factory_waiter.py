@@ -20,6 +20,7 @@ from apps.databases.models import Database
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation, Task
 from apps.operations.waiter import ResultWaiter, OperationTimeoutError
+from apps.operations.services import EnqueueResult
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowTemplate
 
@@ -204,28 +205,34 @@ class TestBatchOperationFactory:
         assert operation.target_databases.count() == 1
 
     def test_operation_id_generation_workflow(self, operation_template, test_database):
-        """Test operation ID format for workflow operations."""
+        """Test operation ID format/length for workflow operations."""
         operation = BatchOperationFactory.create(
             template=operation_template,
             rendered_data={},
             target_databases=[str(test_database.id)],
-            workflow_execution_id="exec_123",
-            node_id="node_456",
+            workflow_execution_id=str(uuid4()),
+            node_id="node_" + ("x" * 80),
         )
 
-        # Check ID format: batch-{workflow}-{node}-{timestamp}
-        assert operation.id.startswith("batch-exec_123-node_456-")
+        # ID must fit into BatchOperation.id (varchar(64)).
+        assert operation.id.startswith("batch-wf-")
+        assert len(operation.id) <= 64
+
+        # Task IDs must also fit (varchar(64)).
+        tasks = Task.objects.filter(batch_operation=operation)
+        assert tasks.count() == 1
+        assert len(tasks[0].id) <= 64
 
     def test_operation_id_generation_manual(self, operation_template, test_database):
-        """Test operation ID format for manual operations."""
+        """Test operation ID format/length for manual operations."""
         operation = BatchOperationFactory.create(
             template=operation_template,
             rendered_data={},
             target_databases=[str(test_database.id)],
         )
 
-        # Check ID format: batch-manual-single-{timestamp}
-        assert operation.id.startswith("batch-manual-single-")
+        assert operation.id.startswith("batch-manual-")
+        assert len(operation.id) <= 64
 
     def test_tasks_created_with_correct_status(self, operation_template, test_database):
         """Test that tasks are created with correct initial status."""
@@ -321,6 +328,24 @@ class TestResultWaiter:
         assert result["status"] == BatchOperation.STATUS_FAILED
         assert result["error"] is not None
         assert "Database connection timeout" in result["error"]
+
+    def test_wait_failed_operation_uses_metadata_error(self, operation_template, test_database):
+        """Prefer BatchOperation.metadata['error'] when tasks don't have error_message yet."""
+        operation = BatchOperationFactory.create(
+            template=operation_template,
+            rendered_data={},
+            target_databases=[str(test_database.id)],
+        )
+
+        operation.status = BatchOperation.STATUS_FAILED
+        operation.metadata = {**(operation.metadata or {}), "error": "command is required"}
+        operation.save(update_fields=["status", "metadata", "updated_at"])
+
+        result = ResultWaiter.wait(operation.id, timeout_seconds=5)
+
+        assert result["success"] is False
+        assert result["status"] == BatchOperation.STATUS_FAILED
+        assert result["error"] == "command is required"
 
     def test_wait_cancelled_operation(self, operation_template, test_database):
         """Test waiting for cancelled operation."""
@@ -484,9 +509,12 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"result": "test_data"}
 
-            # Mock enqueue_operation (now in backends.odata)
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_enqueue.delay.return_value = MagicMock(id="test_task_id")
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.side_effect = lambda operation_id: EnqueueResult(
+                    success=True,
+                    operation_id=str(operation_id),
+                    status="queued",
+                )
 
                 # Use ASYNC mode to test BatchOperation creation without waiting
                 result = handler.execute(
@@ -526,8 +554,12 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"data": "test"}
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_enqueue.delay.return_value = MagicMock(id="celery_123")
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.side_effect = lambda operation_id: EnqueueResult(
+                    success=True,
+                    operation_id=str(operation_id),
+                    status="queued",
+                )
 
                 result = handler.execute(
                     node=node,
@@ -540,7 +572,7 @@ class TestOperationHandlerTargetDatabases:
         assert result.mode == NodeExecutionMode.ASYNC
         assert result.output["status"] == "queued"
         assert result.operation_id is not None
-        assert result.task_id == "celery_123"
+        assert result.task_id == result.operation_id
 
     def test_handler_sync_mode_waits_for_completion(
         self, operation_template, test_database, workflow_execution
@@ -578,8 +610,12 @@ class TestOperationHandlerTargetDatabases:
         with patch.object(handler.renderer, 'render') as mock_render:
             mock_render.return_value = {"test": "data"}
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_enqueue.delay.return_value = MagicMock(id="celery_456")
+            with patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
+                mock_enqueue.side_effect = lambda operation_id: EnqueueResult(
+                    success=True,
+                    operation_id=str(operation_id),
+                    status="queued",
+                )
 
                 with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory.create') as mock_factory:
                     mock_factory.return_value = operation
@@ -598,7 +634,7 @@ class TestOperationHandlerTargetDatabases:
     def test_handler_no_target_databases_skips_execution(
         self, operation_template, workflow_execution
     ):
-        """Test that missing target_databases skips execution."""
+        """Test that missing target_databases skips execution when dry_run is enabled."""
         from apps.templates.workflow.handlers import OperationHandler, NodeExecutionMode
         from apps.templates.workflow.models import WorkflowNode
 
@@ -609,7 +645,7 @@ class TestOperationHandlerTargetDatabases:
             template_id=operation_template.id,
         )
 
-        context = {}  # No target_databases
+        context = {"dry_run": True}  # No target_databases
 
         handler = OperationHandler()
 

@@ -21,7 +21,12 @@ from apps.templates.workflow.models import (
     DAGStructure,
     WorkflowNode,
     WorkflowEdge,
+    WorkflowStepResult,
+    WorkflowTemplate,
+    WorkflowType,
 )
+
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 class TestDAGExecutorInit:
@@ -599,3 +604,45 @@ class TestDAGExecutorEdgeCases:
         next_nodes = executor.get_next_nodes('A', context)
         assert 'B' in next_nodes
         assert 'C' not in next_nodes
+
+
+class TestDAGExecutorStepResults:
+    """Regression tests for WorkflowStepResult behavior in DAGExecutor."""
+
+    def test_executor_does_not_create_duplicate_terminal_step_results(self, db, admin_user):
+        template = WorkflowTemplate.objects.create(
+            name="Condition Workflow",
+            description="",
+            workflow_type=WorkflowType.CONDITIONAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "cond1",
+                        "name": "Condition 1",
+                        "type": "condition",
+                        "config": {"expression": "true"},
+                    },
+                ],
+                "edges": [],
+            },
+            created_by=admin_user,
+            is_valid=True,
+            is_active=True,
+        )
+
+        execution = template.create_execution({})
+        executor = DAGExecutor(template.dag_structure, execution)
+
+        success, _result = asyncio.run(executor.execute(ContextManager({})))
+        assert success is True
+
+        terminal_steps = WorkflowStepResult.objects.filter(
+            workflow_execution=execution,
+            node_id="cond1",
+            status__in=[
+                WorkflowStepResult.STATUS_COMPLETED,
+                WorkflowStepResult.STATUS_FAILED,
+                WorkflowStepResult.STATUS_SKIPPED,
+            ],
+        )
+        assert terminal_steps.count() == 1

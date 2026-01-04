@@ -14,12 +14,10 @@ import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from asgiref.sync import sync_to_async
-from django.utils import timezone
 
 from apps.templates.tracing import (
     add_span_event,
     get_current_span_id,
-    get_current_trace_id,
     set_span_attribute,
     set_span_error,
     start_node_span,
@@ -35,7 +33,6 @@ from apps.templates.workflow.models import (
     WorkflowEdge,
     WorkflowExecution,
     WorkflowNode,
-    WorkflowStepResult,
 )
 from apps.templates.workflow.validator import DAGValidator
 
@@ -431,7 +428,13 @@ class DAGExecutor:
                 else:
                     result = await sync_to_async(
                         handler.execute,
-                        thread_sensitive=True
+                        # IMPORTANT: do not run long-running node handlers in the
+                        # global "thread_sensitive" executor. Operation nodes may
+                        # synchronously wait for Go Worker completion, and that
+                        # would starve other thread_sensitive DB tasks (including
+                        # WebSocket handshake/status queries), causing frequent
+                        # WS disconnect/reconnect during workflow execution.
+                        thread_sensitive=False
                     )(
                         node=node,
                         context=context.to_dict(),
@@ -457,15 +460,6 @@ class DAGExecutor:
                     )(
                         node_id, 'completed',
                         result={'output': result.output, 'duration': result.duration_seconds}
-                    )
-
-                    # Create WorkflowStepResult with tracing info
-                    await self._create_step_result(
-                        node_id=node_id,
-                        node=node,
-                        status='completed',
-                        output_data=result.output,
-                        duration_seconds=result.duration_seconds
                     )
 
                     logger.info(
@@ -517,15 +511,6 @@ class DAGExecutor:
                         result={'error': result.error, 'duration': result.duration_seconds}
                     )
 
-                    # Create WorkflowStepResult with error
-                    await self._create_step_result(
-                        node_id=node_id,
-                        node=node,
-                        status='failed',
-                        error_message=result.error,
-                        duration_seconds=result.duration_seconds
-                    )
-
                     logger.error(
                         f"Node {node_id} failed: {result.error}",
                         extra={
@@ -562,14 +547,6 @@ class DAGExecutor:
                     result={'error': error_msg}
                 )
 
-                # Create WorkflowStepResult with error
-                await self._create_step_result(
-                    node_id=node_id,
-                    node=node,
-                    status='failed',
-                    error_message=error_msg
-                )
-
                 error_context = context.set('_last_error', {
                     'node_id': node_id,
                     'message': error_msg
@@ -593,14 +570,6 @@ class DAGExecutor:
                     result={'error': error_msg}
                 )
 
-                # Create WorkflowStepResult with error
-                await self._create_step_result(
-                    node_id=node_id,
-                    node=node,
-                    status='failed',
-                    error_message=error_msg
-                )
-
                 error_context = context.set('_last_error', {
                     'node_id': node_id,
                     'message': error_msg
@@ -610,52 +579,6 @@ class DAGExecutor:
                     set_span_error(exc)
 
                 return False, error_context
-
-    async def _create_step_result(
-        self,
-        node_id: str,
-        node: WorkflowNode,
-        status: str,
-        output_data: Optional[Dict[str, Any]] = None,
-        error_message: str = "",
-        duration_seconds: Optional[float] = None
-    ) -> WorkflowStepResult:
-        """
-        Create WorkflowStepResult with OpenTelemetry tracing context.
-
-        Args:
-            node_id: Node identifier
-            node: WorkflowNode being executed
-            status: Execution status (completed/failed)
-            output_data: Optional output data
-            error_message: Optional error message
-            duration_seconds: Optional duration
-
-        Returns:
-            WorkflowStepResult: Created step result with trace context
-        """
-        # Get current trace context
-        trace_id = get_current_trace_id()
-        span_id = get_current_span_id()
-
-        step_result = await sync_to_async(
-            WorkflowStepResult.objects.create,
-            thread_sensitive=True
-        )(
-            workflow_execution=self.execution,
-            node_id=node_id,
-            node_name=node.name,
-            node_type=node.type,
-            status=status,
-            output_data=output_data,
-            error_message=error_message,
-            started_at=timezone.now() - timezone.timedelta(seconds=duration_seconds or 0),
-            completed_at=timezone.now(),
-            trace_id=trace_id,
-            span_id=span_id
-        )
-
-        return step_result
 
     def get_next_nodes(
         self,

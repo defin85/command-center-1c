@@ -178,11 +178,19 @@ const WorkflowCanvasInner = ({
       return edges
     }
 
+    const hasRunningNodes = !!nodeStatuses && Object.values(nodeStatuses).some((s) => s.status === 'running')
+    if (!hasRunningNodes) {
+      return edges.map((edge) => ({
+        ...edge,
+        animated: false
+      }))
+    }
+
     return edges.map((edge) => ({
       ...edge,
       animated: edge.target === currentNodeId
     }))
-  }, [edges, currentNodeId, mode])
+  }, [edges, currentNodeId, mode, nodeStatuses])
 
   // Handle connection (design mode only)
   const onConnect: OnConnect = useCallback(

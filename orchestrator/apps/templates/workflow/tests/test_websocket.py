@@ -50,10 +50,8 @@ def mock_execution(execution_id):
     mock.trace_id = 'trace-123'
     mock.error_message = None
     mock.node_statuses = {'node_1': {'status': 'completed'}}
-    mock.created_at = MagicMock()
-    mock.created_at.isoformat.return_value = '2025-01-01T00:00:00Z'
-    mock.updated_at = MagicMock()
-    mock.updated_at.isoformat.return_value = '2025-01-01T00:00:00Z'
+    mock.started_at = MagicMock()
+    mock.started_at.isoformat.return_value = '2025-01-01T00:00:00Z'
     mock.completed_at = None
     return mock
 

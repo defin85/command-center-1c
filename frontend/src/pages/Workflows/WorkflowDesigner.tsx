@@ -34,6 +34,7 @@ import {
   ArrowLeftOutlined
 } from '@ant-design/icons'
 import { WorkflowCanvas, NodePalette, PropertyEditor } from '../../components/workflow'
+import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 
 // Types from types/workflow (legacy format for UI components)
 import type {
@@ -491,20 +492,18 @@ const WorkflowDesigner = () => {
         onOk={handleExecute}
         onCancel={() => setExecuteModalVisible(false)}
         okText="Execute"
+        destroyOnHidden
       >
-        <div style={{ marginBottom: 8 }}>
-          <label htmlFor="workflow-execute-input" style={{ fontWeight: 500 }}>
-            Input Context (JSON)
-          </label>
-        </div>
-        <Input.TextArea
-          id="workflow-execute-input"
-          rows={6}
-          value={executeInput}
-          onChange={(e) => setExecuteInput(e.target.value)}
-          placeholder='{"database_id": "123", "extension_path": "/path/to/ext.cfe"}'
-          style={{ fontFamily: 'monospace' }}
-        />
+        {executeModalVisible && (
+          <LazyJsonCodeEditor
+            id="workflow-execute-input"
+            title="Input Context (JSON)"
+            value={executeInput}
+            onChange={setExecuteInput}
+            height={220}
+            path="workflow-execute-input.json"
+          />
+        )}
         <div style={{ marginTop: 4, color: 'rgba(0, 0, 0, 0.45)', fontSize: 12 }}>
           Provide input variables for the workflow
         </div>

@@ -551,6 +551,26 @@ class OperationsService:
         Returns:
             dict conforming to Message Protocol v2.0
         """
+        payload: Any = operation.payload or {}
+        payload_data: dict[str, Any] = {}
+        payload_filters: dict[str, Any] = {}
+        payload_options: dict[str, Any] = {}
+
+        # Support both payload shapes:
+        # 1) Protocol-like: {"data": {...}, "filters": {...}, "options": {...}}
+        # 2) Legacy: arbitrary dict rendered from template_data (e.g., designer_cli/ibcmd params)
+        if isinstance(payload, dict):
+            is_protocol_shape = ("data" in payload) or ("filters" in payload) or (set(payload.keys()) <= {"options"})
+            if is_protocol_shape:
+                raw_data = payload.get("data", {})
+                raw_filters = payload.get("filters", {})
+                raw_options = payload.get("options", {})
+                payload_data = raw_data if isinstance(raw_data, dict) else {}
+                payload_filters = raw_filters if isinstance(raw_filters, dict) else {}
+                payload_options = raw_options if isinstance(raw_options, dict) else {}
+            else:
+                payload_data = payload
+
         return {
             "version": cls.VERSION,
             "operation_id": str(operation.id),
@@ -562,9 +582,9 @@ class OperationsService:
                 for db in operation.target_databases.all()
             ],
             "payload": {
-                "data": operation.payload.get("data", {}),
-                "filters": operation.payload.get("filters", {}),
-                "options": operation.payload.get("options", {})
+                "data": payload_data,
+                "filters": payload_filters,
+                "options": payload_options,
             },
             "execution_config": {
                 "batch_size": operation.config.get("batch_size", 100),
