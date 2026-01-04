@@ -2018,7 +2018,7 @@ paths:
         \   **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n
         \   - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`
         - Replicate infobase to another server\n    - `ibcmd_create` - Create new
-        infobase\n    "
+        infobase\n    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension (*.cfe) into infobase\n    - `ibcmd_extension_update` - Update extension properties (safe-mode, scope, etc.)\n    "
       summary: Execute IBCMD operation
       tags:
       - v2
@@ -5830,12 +5830,16 @@ components:
       - ibcmd_restore
       - ibcmd_replicate
       - ibcmd_create
+      - ibcmd_load_cfg
+      - ibcmd_extension_update
       type: string
       description: |-
         * `ibcmd_backup` - IBCMD Backup
         * `ibcmd_restore` - IBCMD Restore
         * `ibcmd_replicate` - IBCMD Replicate
         * `ibcmd_create` - IBCMD Create
+        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+        * `ibcmd_extension_update` - IBCMD Extension Update
     ExecuteOperationRequest:
       type: object
       description: Request body for execute_operation endpoint.
@@ -5890,6 +5894,8 @@ components:
       - ibcmd_restore
       - ibcmd_replicate
       - ibcmd_create
+      - ibcmd_load_cfg
+      - ibcmd_extension_update
       - designer_cli
       type: string
       description: |-
@@ -5906,6 +5912,8 @@ components:
         * `ibcmd_restore` - IBCMD Restore
         * `ibcmd_replicate` - IBCMD Replicate
         * `ibcmd_create` - IBCMD Create
+        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+        * `ibcmd_extension_update` - IBCMD Extension Update
         * `designer_cli` - Designer CLI
     ExecuteOperationResponse:
       type: object

@@ -47,6 +47,8 @@ func (d *Driver) OperationTypes() []string {
 		"ibcmd_restore",
 		"ibcmd_replicate",
 		"ibcmd_create",
+		"ibcmd_load_cfg",
+		"ibcmd_extension_update",
 	}
 }
 
@@ -315,9 +317,14 @@ type replicateTargetConfig struct {
 func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials, store storage) (*ibcmdRequest, error) {
 	data := msg.Payload.Data
 	if args := extractStringSlice(data, "args"); len(args) > 0 {
+		resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, args, msg.OperationID, databaseID)
+		if err != nil {
+			return nil, err
+		}
 		return &ibcmdRequest{
-			Args:  args,
-			Stdin: extractString(data, "stdin"),
+			Args:         resolvedArgs,
+			Stdin:        extractString(data, "stdin"),
+			inputCleanup: cleanup,
 		}, nil
 	}
 
@@ -329,6 +336,79 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 	additionalArgs := extractStringSlice(data, "additional_args")
 
 	switch msg.OperationType {
+	case "ibcmd_load_cfg":
+		filePath := extractString(data, "file")
+		if filePath == "" {
+			filePath = extractString(data, "file_path")
+		}
+		if strings.TrimSpace(filePath) == "" {
+			return nil, fmt.Errorf("file is required")
+		}
+
+		resolvedFile, cleanup, err := resolveArtifactPath(ctx, filePath, msg.OperationID, databaseID)
+		if err != nil {
+			return nil, err
+		}
+
+		args := append([]string{"infobase", "config", "load-cfg"}, buildDBArgs(cfg)...)
+		args = append(args, fmt.Sprintf("--file=%s", resolvedFile))
+		if ext := strings.TrimSpace(extractString(data, "extension")); ext != "" {
+			args = append(args, fmt.Sprintf("--extension=%s", ext))
+		}
+		args = append(args, additionalArgs...)
+		return &ibcmdRequest{
+			Args:         args,
+			Stdin:        extractString(data, "stdin"),
+			inputCleanup: cleanup,
+		}, nil
+	case "ibcmd_extension_update":
+		extName := strings.TrimSpace(extractString(data, "name"))
+		if extName == "" {
+			extName = strings.TrimSpace(extractString(data, "extension"))
+		}
+		if extName == "" {
+			return nil, fmt.Errorf("name is required")
+		}
+
+		args := append([]string{"infobase", "extension", "update"}, buildDBArgs(cfg)...)
+		args = append(args, fmt.Sprintf("--name=%s", extName))
+
+		if flag, ok, err := extractYesNoOption(data, "active"); err != nil {
+			return nil, err
+		} else if ok {
+			args = append(args, fmt.Sprintf("--active=%s", flag))
+		}
+		if flag, ok, err := extractYesNoOption(data, "safe_mode"); err != nil {
+			return nil, err
+		} else if ok {
+			args = append(args, fmt.Sprintf("--safe-mode=%s", flag))
+		}
+		if scopeRaw, ok, err := extractEnumOption(data, "scope", []string{"infobase", "data-separation"}); err != nil {
+			return nil, err
+		} else if ok {
+			args = append(args, fmt.Sprintf("--scope=%s", scopeRaw))
+		}
+
+		if profile := strings.TrimSpace(extractString(data, "security_profile_name")); profile != "" {
+			args = append(args, fmt.Sprintf("--security-profile-name=%s", profile))
+		}
+
+		if flag, ok, err := extractYesNoOption(data, "unsafe_action_protection"); err != nil {
+			return nil, err
+		} else if ok {
+			args = append(args, fmt.Sprintf("--unsafe-action-protection=%s", flag))
+		}
+		if flag, ok, err := extractYesNoOption(data, "used_in_distributed_infobase"); err != nil {
+			return nil, err
+		} else if ok {
+			args = append(args, fmt.Sprintf("--used-in-distributed-infobase=%s", flag))
+		}
+
+		args = append(args, additionalArgs...)
+		return &ibcmdRequest{
+			Args:  args,
+			Stdin: extractString(data, "stdin"),
+		}, nil
 	case "ibcmd_backup":
 		requestedPath := extractString(data, "output_path")
 		outputPath, artifactPath, finalize, cleanup, err := store.PrepareOutput(ctx, requestedPath, databaseID, ".dt")
@@ -595,4 +675,65 @@ func extractStringSlice(data map[string]interface{}, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func extractYesNoOption(data map[string]interface{}, key string) (string, bool, error) {
+	if data == nil {
+		return "", false, nil
+	}
+	raw, ok := data[key]
+	if !ok || raw == nil {
+		return "", false, nil
+	}
+
+	switch value := raw.(type) {
+	case bool:
+		if value {
+			return "yes", true, nil
+		}
+		return "no", true, nil
+	case string:
+		v := strings.TrimSpace(strings.ToLower(value))
+		if v == "" {
+			return "", false, nil
+		}
+		switch v {
+		case "yes", "true", "1":
+			return "yes", true, nil
+		case "no", "false", "0":
+			return "no", true, nil
+		default:
+			return "", false, fmt.Errorf("invalid %s: %q (expected yes/no)", key, value)
+		}
+	case int:
+		if value != 0 {
+			return "yes", true, nil
+		}
+		return "no", true, nil
+	case int64:
+		if value != 0 {
+			return "yes", true, nil
+		}
+		return "no", true, nil
+	case float64:
+		if value != 0 {
+			return "yes", true, nil
+		}
+		return "no", true, nil
+	default:
+		return "", false, fmt.Errorf("invalid %s type: %T", key, raw)
+	}
+}
+
+func extractEnumOption(data map[string]interface{}, key string, allowed []string) (string, bool, error) {
+	raw := strings.TrimSpace(extractString(data, key))
+	if raw == "" {
+		return "", false, nil
+	}
+	for _, a := range allowed {
+		if raw == a {
+			return raw, true, nil
+		}
+	}
+	return "", false, fmt.Errorf("invalid %s: %q (allowed: %s)", key, raw, strings.Join(allowed, ", "))
 }

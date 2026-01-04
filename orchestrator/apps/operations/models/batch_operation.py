@@ -48,6 +48,8 @@ class BatchOperation(models.Model):
     TYPE_IBCMD_RESTORE = 'ibcmd_restore'
     TYPE_IBCMD_REPLICATE = 'ibcmd_replicate'
     TYPE_IBCMD_CREATE = 'ibcmd_create'
+    TYPE_IBCMD_LOAD_CFG = 'ibcmd_load_cfg'
+    TYPE_IBCMD_EXTENSION_UPDATE = 'ibcmd_extension_update'
     # CLI operation types
     TYPE_DESIGNER_CLI = 'designer_cli'
 
@@ -72,6 +74,8 @@ class BatchOperation(models.Model):
         (TYPE_IBCMD_RESTORE, 'IBCMD Restore'),
         (TYPE_IBCMD_REPLICATE, 'IBCMD Replicate'),
         (TYPE_IBCMD_CREATE, 'IBCMD Create'),
+        (TYPE_IBCMD_LOAD_CFG, 'IBCMD Load Config/Extension'),
+        (TYPE_IBCMD_EXTENSION_UPDATE, 'IBCMD Extension Update'),
         # CLI operations
         (TYPE_DESIGNER_CLI, 'Designer CLI'),
     ]

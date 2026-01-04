@@ -154,6 +154,22 @@ export const NewOperationWizard = ({
       // Built-in operations
       if (!operationType) return false
 
+      // IBCMD: allow manual args (raw ibcmd invocation) as an alternative to structured fields
+      if (String(operationType).startsWith('ibcmd_')) {
+        const args = config.args
+        if (Array.isArray(args)) {
+          const hasAny = args.some(
+            (item) => typeof item === 'string' && item.trim().length > 0
+          )
+          if (hasAny) {
+            return true
+          }
+        }
+        if (typeof args === 'string' && args.trim().length > 0) {
+          return true
+        }
+      }
+
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]
       if (!requiredFields || requiredFields.length === 0) {
         return true // No required fields for this operation

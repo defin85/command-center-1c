@@ -28,6 +28,8 @@ export type OperationType =
   | 'ibcmd_restore'
   | 'ibcmd_replicate'
   | 'ibcmd_create'
+  | 'ibcmd_load_cfg'
+  | 'ibcmd_extension_update'
   // CLI Operations
   | 'designer_cli'
 
@@ -232,6 +234,37 @@ export interface OperationConfig {
   filter?: string
   select?: string
   top?: number
+  // IBCMD
+  ibcmd_mode?: 'guided' | 'manual'
+  dbms?: string
+  db_server?: string
+  db_name?: string
+  db_user?: string
+  db_password?: string
+  user?: string
+  password?: string
+  output_path?: string
+  input_path?: string
+  create_database?: boolean
+  force?: boolean
+  target_dbms?: string
+  target_db_server?: string
+  target_db_name?: string
+  target_db_user?: string
+  target_db_password?: string
+  jobs_count?: number
+  target_jobs_count?: number
+  file?: string
+  extension?: string
+  name?: string
+  active?: boolean
+  safe_mode?: boolean
+  scope?: 'infobase' | 'data-separation'
+  security_profile_name?: string
+  unsafe_action_protection?: boolean
+  used_in_distributed_infobase?: boolean
+  additional_args?: string[] | string
+  stdin?: string
   // Allow custom fields for workflow templates
   [key: string]: unknown
 }
@@ -252,6 +285,23 @@ export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof Operat
   query: ['entity'],
   block_sessions: ['message'],
   designer_cli: ['command'],
+  ibcmd_backup: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password'],
+  ibcmd_restore: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'input_path'],
+  ibcmd_replicate: [
+    'dbms',
+    'db_server',
+    'db_name',
+    'db_user',
+    'db_password',
+    'target_dbms',
+    'target_db_server',
+    'target_db_name',
+    'target_db_user',
+    'target_db_password',
+  ],
+  ibcmd_create: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password'],
+  ibcmd_load_cfg: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'file'],
+  ibcmd_extension_update: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'name'],
 }
 
 /**

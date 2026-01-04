@@ -22,6 +22,8 @@ database:
 - `ibcmd_restore` — восстановление (`infobase restore`)
 - `ibcmd_replicate` — репликация (`infobase replicate`)
 - `ibcmd_create` — создание базы (`infobase create`)
+- `ibcmd_load_cfg` — загрузка конфигурации/расширения из файла (`infobase config load-cfg`)
+- `ibcmd_extension_update` — обновление свойств расширения (`infobase extension update`)
 
 ### Payload (пример)
 
@@ -37,6 +39,35 @@ database:
   "create_database": true,
   "force": true,
   "additional_args": ["--jobs-count=4"]
+}
+```
+
+Пример `ibcmd_load_cfg` (загрузка расширения из артефакта MinIO):
+
+```json
+{
+  "dbms": "PostgreSQL",
+  "db_server": "db-host:5432",
+  "db_name": "mydb",
+  "db_user": "dbuser",
+  "db_password": "secret",
+  "file": "artifact://artifacts/<artifact_id>/<version_id>/myext.cfe",
+  "extension": "MyExtension"
+}
+```
+
+Пример `ibcmd_extension_update` (включить safe-mode и защиту от опасных действий):
+
+```json
+{
+  "dbms": "PostgreSQL",
+  "db_server": "db-host:5432",
+  "db_name": "mydb",
+  "db_user": "dbuser",
+  "db_password": "secret",
+  "name": "MyExtension",
+  "safe_mode": true,
+  "unsafe_action_protection": true
 }
 ```
 

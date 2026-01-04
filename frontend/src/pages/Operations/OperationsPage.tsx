@@ -431,7 +431,13 @@ export const OperationsPage = () => {
 
       if (String(data.operationType).startsWith('ibcmd_')) {
         await api.postOperationsExecuteIbcmd({
-          operation_type: data.operationType as 'ibcmd_backup' | 'ibcmd_restore' | 'ibcmd_replicate' | 'ibcmd_create',
+          operation_type: data.operationType as
+            | 'ibcmd_backup'
+            | 'ibcmd_restore'
+            | 'ibcmd_replicate'
+            | 'ibcmd_create'
+            | 'ibcmd_load_cfg'
+            | 'ibcmd_extension_update',
           database_ids: data.databaseIds,
           config: data.config,
         })

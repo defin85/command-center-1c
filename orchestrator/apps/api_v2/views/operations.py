@@ -135,6 +135,30 @@ OPERATION_CATALOG_UI_META = {
         "icon": "HeartOutlined",
         "requires_config": False,
     },
+    "ibcmd_backup": {
+        "icon": "DatabaseOutlined",
+        "requires_config": True,
+    },
+    "ibcmd_restore": {
+        "icon": "DatabaseOutlined",
+        "requires_config": True,
+    },
+    "ibcmd_replicate": {
+        "icon": "SyncOutlined",
+        "requires_config": True,
+    },
+    "ibcmd_create": {
+        "icon": "DatabaseOutlined",
+        "requires_config": True,
+    },
+    "ibcmd_load_cfg": {
+        "icon": "FileOutlined",
+        "requires_config": True,
+    },
+    "ibcmd_extension_update": {
+        "icon": "SettingOutlined",
+        "requires_config": True,
+    },
 }
 
 CLI_OPERATION_IDS = {
@@ -476,6 +500,8 @@ class ExecuteOperationRequestSerializer(serializers.Serializer):
         ('ibcmd_restore', 'IBCMD Restore'),
         ('ibcmd_replicate', 'IBCMD Replicate'),
         ('ibcmd_create', 'IBCMD Create'),
+        ('ibcmd_load_cfg', 'IBCMD Load Config/Extension'),
+        ('ibcmd_extension_update', 'IBCMD Extension Update'),
     ]
     CLI_OPERATION_TYPES = [
         ('designer_cli', 'Designer CLI'),
@@ -524,6 +550,8 @@ class ExecuteIbcmdOperationRequestSerializer(serializers.Serializer):
         ('ibcmd_restore', 'IBCMD Restore'),
         ('ibcmd_replicate', 'IBCMD Replicate'),
         ('ibcmd_create', 'IBCMD Create'),
+        ('ibcmd_load_cfg', 'IBCMD Load Config/Extension'),
+        ('ibcmd_extension_update', 'IBCMD Extension Update'),
     ]
 
     operation_type = serializers.ChoiceField(
@@ -1242,6 +1270,8 @@ def execute_operation(request):
     - `ibcmd_restore` - Restore infobase from backup
     - `ibcmd_replicate` - Replicate infobase to another server
     - `ibcmd_create` - Create new infobase
+    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension (*.cfe) into infobase
+    - `ibcmd_extension_update` - Update extension properties (safe-mode, scope, etc.)
     ''',
     request=ExecuteIbcmdOperationRequestSerializer,
     responses={

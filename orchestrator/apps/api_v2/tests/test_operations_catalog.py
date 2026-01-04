@@ -58,3 +58,27 @@ def test_operations_catalog_returns_items(client, isolated_registry):
     assert found["has_ui_form"] is True
     assert found["deprecated"] is False
     assert "cli" in (found.get("tags") or [])
+
+
+@pytest.mark.django_db
+def test_operations_catalog_marks_ibcmd_as_ui_available(client, isolated_registry):
+    isolated_registry.register(OperationType(
+        id="ibcmd_backup",
+        name="IBCMD Backup Infobase",
+        description="Backup infobase using ibcmd.",
+        backend=BackendType.IBCMD,
+        target_entity=TargetEntity.INFOBASE,
+        is_async=True,
+        category="admin",
+        tags=[],
+    ))
+
+    resp = client.get("/api/v2/operations/catalog/")
+    assert resp.status_code == 200
+    payload = resp.json()
+
+    found = next((item for item in payload["items"] if item["id"] == "ibcmd_backup"), None)
+    assert found is not None
+    assert found["kind"] == "operation"
+    assert found["driver"] == "ibcmd"
+    assert found["has_ui_form"] is True

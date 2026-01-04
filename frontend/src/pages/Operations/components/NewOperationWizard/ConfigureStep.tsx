@@ -30,6 +30,7 @@ import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
 import { DesignerCliBuilder } from '../../../../components/cli/DesignerCliBuilder'
+import { IbcmdOperationBuilder, type IbcmdOperationType } from '../../../../components/ibcmd/IbcmdOperationBuilder'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -437,6 +438,16 @@ export const ConfigureStep = ({
     }
 
     // Built-in operation with legacy form
+    if (operationType && String(operationType).startsWith('ibcmd_')) {
+      return (
+        <IbcmdOperationBuilder
+          operationType={operationType as IbcmdOperationType}
+          config={config}
+          onChange={handleChange}
+        />
+      )
+    }
+
     switch (operationType) {
       case 'block_sessions':
         return <BlockSessionsForm config={config} onChange={handleChange} />
