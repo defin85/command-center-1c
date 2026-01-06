@@ -15,6 +15,7 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	runnerartifacts "github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/artifacts"
 	cliutil "github.com/commandcenter1c/commandcenter/worker/internal/drivers/cli"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibcmd"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/ibsrv"
@@ -190,6 +191,9 @@ func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, st
 		data["exit_code"] = res.ExitCode
 		data["stdout"] = res.Stdout
 		data["stderr"] = res.Stderr
+		data["stdout_truncated"] = res.StdoutTruncated
+		data["stderr_truncated"] = res.StderrTruncated
+		data["wait_delay_hit"] = res.WaitDelayHit
 	}
 	if artifactPath != "" {
 		data["artifact_path"] = artifactPath
@@ -333,6 +337,11 @@ type replicateTargetConfig struct {
 
 func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials, store storage) (*ibcmdRequest, error) {
 	data := msg.Payload.Data
+	meta := runnerartifacts.Meta{
+		Driver:      runnerartifacts.DriverIBCMD,
+		OperationID: msg.OperationID,
+		DatabaseID:  databaseID,
+	}
 
 	if msg.OperationType == "ibcmd_cli" {
 		argv := extractStringSlice(data, "argv")
@@ -340,7 +349,7 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			return nil, fmt.Errorf("argv is required")
 		}
 
-		resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, argv, msg.OperationID, databaseID)
+		resolvedArgs, cleanup, err := runnerartifacts.ResolveArgs(ctx, argv, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +363,7 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 	}
 
 	if args := extractStringSlice(data, "args"); len(args) > 0 {
-		resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, args, msg.OperationID, databaseID)
+		resolvedArgs, cleanup, err := runnerartifacts.ResolveArgs(ctx, args, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -382,7 +391,7 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			return nil, fmt.Errorf("file is required")
 		}
 
-		resolvedFile, cleanup, err := resolveArtifactPath(ctx, filePath, msg.OperationID, databaseID)
+		resolvedFile, cleanup, err := runnerartifacts.ResolvePath(ctx, filePath, meta)
 		if err != nil {
 			return nil, err
 		}

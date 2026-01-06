@@ -90,6 +90,14 @@ database:
 - `IBCMD_STORAGE_BACKEND` — `local` или `s3`
 - `IBCMD_STORAGE_PATH` — база для local
 
+Общие настройки выполнения команд (лимиты вывода и защита от зависаний пайпов):
+- `COMMANDRUNNER_STDOUT_MAX_BYTES` — максимум bytes для stdout (по умолчанию `1048576`, сохраняется tail)
+- `COMMANDRUNNER_STDERR_MAX_BYTES` — максимум bytes для stderr (по умолчанию `1048576`, сохраняется tail)
+- `COMMANDRUNNER_WAIT_DELAY` — `time.ParseDuration`, ожидание закрытия stdout/stderr после exit (по умолчанию `2s`)
+
+Флаги попадают в `result.data`:
+- `stdout_truncated`, `stderr_truncated`, `wait_delay_hit`
+
 S3:
 - `IBCMD_S3_ENDPOINT`
 - `IBCMD_S3_BUCKET`

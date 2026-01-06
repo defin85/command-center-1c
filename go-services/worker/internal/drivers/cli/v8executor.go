@@ -2,15 +2,13 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/process"
 )
 
 // ExecutionResult contains the result of subprocess execution.
@@ -19,6 +17,10 @@ type ExecutionResult struct {
 	Stderr   string
 	ExitCode int
 	Duration time.Duration
+
+	StdoutTruncated bool
+	StderrTruncated bool
+	WaitDelayHit    bool
 }
 
 // CombinedOutput returns stdout+stderr as a single string.
@@ -88,104 +90,24 @@ func NewV8Executor(exe1cv8Path string, timeout time.Duration) *V8Executor {
 // Execute runs a subprocess with the given arguments and returns the result.
 // Uses async stdout/stderr reading to prevent deadlocks on large output.
 func (e *V8Executor) Execute(ctx context.Context, args []string) (*ExecutionResult, error) {
-	startTime := time.Now()
+	runResult, err := process.Run(ctx, process.Spec{
+		ExePath:   e.exe1cv8Path,
+		Args:      args,
+		Timeout:   e.timeout,
+		WaitDelay: 0,
+	})
 
-	if e.exe1cv8Path == "" {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("1cv8.exe path is not configured")
-	}
-
-	if _, err := os.Stat(e.exe1cv8Path); os.IsNotExist(err) {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("1cv8.exe not found at path: %s", e.exe1cv8Path)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, e.exe1cv8Path, args...)
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to start subprocess: %w", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&stdoutBuf, stdoutPipe)
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&stderrBuf, stderrPipe)
-	}()
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- cmd.Wait()
-	}()
-
-	var cmdErr error
-	select {
-	case cmdErr = <-errChan:
-	case <-ctx.Done():
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		<-errChan
-		wg.Wait()
-		return &ExecutionResult{
-			Stdout:   stdoutBuf.String(),
-			Stderr:   stderrBuf.String(),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("operation cancelled: %w", ctx.Err())
-	}
-
-	wg.Wait()
-
-	duration := time.Since(startTime)
 	result := &ExecutionResult{
-		Stdout:   stdoutBuf.String(),
-		Stderr:   stderrBuf.String(),
-		ExitCode: 0,
-		Duration: duration,
+		Stdout:          runResult.Stdout,
+		Stderr:          runResult.Stderr,
+		ExitCode:        runResult.ExitCode,
+		Duration:        runResult.Duration,
+		StdoutTruncated: runResult.StdoutTruncated,
+		StderrTruncated: runResult.StderrTruncated,
+		WaitDelayHit:    runResult.WaitDelayHit,
 	}
 
-	if cmdErr != nil {
-		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			return result, cmdErr
-		}
-	}
-
-	return result, cmdErr
+	return result, err
 }
 
 // BuildDesignerCommandArgs builds full DESIGNER command arguments.
@@ -235,17 +157,4 @@ func BuildDesignerCommandArgs(
 	cmdArgs = append(cmdArgs, fmt.Sprintf("/%s", cmd))
 	cmdArgs = append(cmdArgs, args...)
 	return cmdArgs, nil
-}
-
-// MaskSensitiveArgs replaces password arguments with placeholder.
-func MaskSensitiveArgs(args []string) []string {
-	masked := make([]string, 0, len(args))
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "/P") {
-			masked = append(masked, "/P***")
-			continue
-		}
-		masked = append(masked, arg)
-	}
-	return masked
 }

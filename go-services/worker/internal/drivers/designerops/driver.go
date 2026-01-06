@@ -16,6 +16,8 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
+	runnerartifacts "github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/artifacts"
+	runnermasking "github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/masking"
 	"github.com/commandcenter1c/commandcenter/worker/internal/drivers/cli"
 	"github.com/commandcenter1c/commandcenter/worker/internal/events"
 )
@@ -85,7 +87,11 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return d.failResult(msg, databaseID, start, err.Error(), "VALIDATION_ERROR"), nil
 	}
 
-	resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, args, msg.OperationID, databaseID)
+	resolvedArgs, cleanup, err := runnerartifacts.ResolveArgs(ctx, args, runnerartifacts.Meta{
+		Driver:      runnerartifacts.DriverCLI,
+		OperationID: msg.OperationID,
+		DatabaseID:  databaseID,
+	})
 	if err != nil {
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("artifact resolve failed: %v", err), "ARTIFACT_ERROR"), nil
 	}
@@ -195,7 +201,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	if logCapture && logPathLocal != "" {
 		logOutput = readCliLog(logPathLocal)
 	}
-	maskedArgs := cli.MaskSensitiveArgs(cmdArgs)
+	maskedArgs := runnermasking.MaskArgs(cmdArgs)
 	return d.buildResult(msg, databaseID, start, command, args, maskedArgs, res, err, logOutput), nil
 }
 
@@ -244,6 +250,9 @@ func (d *Driver) buildResult(
 		data["exit_code"] = res.ExitCode
 		data["stdout"] = res.Stdout
 		data["stderr"] = res.Stderr
+		data["stdout_truncated"] = res.StdoutTruncated
+		data["stderr_truncated"] = res.StderrTruncated
+		data["wait_delay_hit"] = res.WaitDelayHit
 	}
 	if logOutput != "" {
 		data["log_output"] = logOutput
@@ -417,7 +426,7 @@ func extractStringOption(data map[string]interface{}, key string) string {
 }
 
 func prepareCliLogPath(operationID, databaseID, customPath string) (string, string, func(), error) {
-	baseDir := resolveArtifactBaseDir()
+	baseDir := runnerartifacts.BaseDir(runnerartifacts.DriverCLI)
 	tempDir := filepath.Join(baseDir, operationID, databaseID)
 
 	path := strings.TrimSpace(customPath)
@@ -429,7 +438,7 @@ func prepareCliLogPath(operationID, databaseID, customPath string) (string, stri
 
 	localPath := path
 	if isWindowsPath(path) {
-		localPath = fromWindowsPath(path)
+		localPath = runnerartifacts.FromWindowsPath(path)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
@@ -451,8 +460,8 @@ func prepareCliLogPath(operationID, databaseID, customPath string) (string, stri
 	}
 
 	cliPath := localPath
-	if isWindowsInterop() {
-		cliPath = toWindowsPath(localPath)
+	if runnerartifacts.IsWindowsInterop(runnerartifacts.DriverCLI) {
+		cliPath = runnerartifacts.ToWindowsPath(localPath)
 	}
 	if isWindowsPath(path) {
 		cliPath = path

@@ -2,14 +2,12 @@
 package ibcmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
-	"sync"
 	"time"
+
+	"github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/process"
 )
 
 // ExecutionResult contains the result of subprocess execution.
@@ -18,6 +16,10 @@ type ExecutionResult struct {
 	Stderr   string
 	ExitCode int
 	Duration time.Duration
+
+	StdoutTruncated bool
+	StderrTruncated bool
+	WaitDelayHit    bool
 }
 
 // CombinedOutput returns stdout+stderr as a single string.
@@ -72,105 +74,23 @@ func NewExecutorFromEnv() (*Executor, error) {
 // Execute runs a subprocess with the given arguments and optional stdin.
 // Uses async stdout/stderr reading to prevent deadlocks on large output.
 func (e *Executor) Execute(ctx context.Context, args []string, stdin string) (*ExecutionResult, error) {
-	startTime := time.Now()
+	runResult, err := process.Run(ctx, process.Spec{
+		ExePath:   e.exePath,
+		Args:      args,
+		Stdin:     stdin,
+		Timeout:   e.timeout,
+		WaitDelay: 0,
+	})
 
-	if e.exePath == "" {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("ibcmd path is not configured")
-	}
-
-	if _, err := os.Stat(e.exePath); os.IsNotExist(err) {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("ibcmd not found at path: %s", e.exePath)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, e.exePath, args...)
-	if stdin != "" {
-		cmd.Stdin = bytes.NewBufferString(stdin)
-	}
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return &ExecutionResult{
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("failed to start subprocess: %w", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&stdoutBuf, stdoutPipe)
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&stderrBuf, stderrPipe)
-	}()
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- cmd.Wait()
-	}()
-
-	var cmdErr error
-	select {
-	case cmdErr = <-errChan:
-	case <-ctx.Done():
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		<-errChan
-		wg.Wait()
-		return &ExecutionResult{
-			Stdout:   stdoutBuf.String(),
-			Stderr:   stderrBuf.String(),
-			ExitCode: -1,
-			Duration: time.Since(startTime),
-		}, fmt.Errorf("operation cancelled: %w", ctx.Err())
-	}
-
-	wg.Wait()
-
-	duration := time.Since(startTime)
 	result := &ExecutionResult{
-		Stdout:   stdoutBuf.String(),
-		Stderr:   stderrBuf.String(),
-		ExitCode: 0,
-		Duration: duration,
+		Stdout:          runResult.Stdout,
+		Stderr:          runResult.Stderr,
+		ExitCode:        runResult.ExitCode,
+		Duration:        runResult.Duration,
+		StdoutTruncated: runResult.StdoutTruncated,
+		StderrTruncated: runResult.StderrTruncated,
+		WaitDelayHit:    runResult.WaitDelayHit,
 	}
 
-	if cmdErr != nil {
-		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			return result, cmdErr
-		}
-	}
-
-	return result, cmdErr
+	return result, err
 }
