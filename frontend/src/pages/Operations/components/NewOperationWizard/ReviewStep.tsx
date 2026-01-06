@@ -23,6 +23,7 @@ import {
 import type { ReviewStepProps, OperationConfig, OperationType } from './types'
 import { OPERATION_TYPES, OPERATION_CATEGORIES } from './types'
 import dayjs from 'dayjs'
+import { maskArgv, maskArgvTextLines } from '../../../../lib/masking'
 
 const { Title, Text } = Typography
 
@@ -103,8 +104,22 @@ const formatConfigForDisplay = (
           items.push({ label: 'Command', value: dc.command_label ? `${dc.command_label} (${dc.command_id})` : dc.command_id })
         }
         items.push({ label: 'Mode', value: dc.mode || 'guided' })
-        if (dc.mode === 'manual' && dc.args_text) {
-          items.push({ label: 'Args', value: dc.args_text })
+
+        const commandId = typeof dc.command_id === 'string' ? dc.command_id.trim() : ''
+        const args = Array.isArray(dc.resolved_args) && dc.resolved_args.every((item) => typeof item === 'string')
+          ? dc.resolved_args
+          : typeof dc.args_text === 'string'
+            ? dc.args_text
+              .split('\n')
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0)
+            : []
+
+        if (commandId) {
+          const preview = maskArgv([commandId, ...args]).join('\n')
+          if (preview) {
+            items.push({ label: 'Preview', value: preview })
+          }
         }
         const opt = dc.cli_options ?? {}
         items.push({
@@ -191,15 +206,16 @@ const formatConfigForDisplay = (
           if (offline.db_server) offlineParts.push(`db_server=${offline.db_server}`)
           if (offline.db_name) offlineParts.push(`db_name=${offline.db_name}`)
           if (offline.db_user) offlineParts.push(`db_user=${offline.db_user}`)
-          if (offlineParts.length > 0) {
-            items.push({ label: 'Offline', value: offlineParts.join('\n') })
-          }
+        if (offlineParts.length > 0) {
+          items.push({ label: 'Offline', value: offlineParts.join('\n') })
         }
+      }
         if (dc.args_text) {
-          items.push({ label: 'Additional args', value: dc.args_text })
+          const maskedArgs = maskArgvTextLines(dc.args_text)
+          items.push({ label: 'Additional args', value: maskedArgs || '***' })
         }
         if (dc.stdin) {
-          items.push({ label: 'Stdin', value: dc.stdin })
+          items.push({ label: 'Stdin', value: '***' })
         }
         if (dc.command_risk_level === 'dangerous') {
           items.push({

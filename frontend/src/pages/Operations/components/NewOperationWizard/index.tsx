@@ -21,6 +21,7 @@ import type {
   DynamicFormValidationError,
 } from './types'
 import { REQUIRED_CONFIG_FIELDS } from './types'
+import { isSensitiveKey, maskDeep } from '../../../../lib/masking'
 
 // Initialize API
 const api = getV2()
@@ -79,17 +80,54 @@ export const NewOperationWizard = ({
       if (Array.isArray(value) && value.length === 0) return false
       return true
     })
+
+    const summarizeDriverCommand = (value: unknown): string | null => {
+      if (!value || typeof value !== 'object') return null
+      const dc = value as Record<string, unknown>
+
+      const driver = typeof dc.driver === 'string' ? dc.driver.trim() : ''
+      const commandId = typeof dc.command_id === 'string' ? dc.command_id.trim() : ''
+      if (!driver && !commandId) return null
+
+      const parts: string[] = []
+      if (driver) parts.push(driver.toUpperCase())
+      if (commandId) parts.push(commandId)
+
+      const mode = typeof dc.mode === 'string' ? dc.mode.trim() : ''
+      if (mode) parts.push(mode)
+
+      const scope = typeof dc.command_scope === 'string' ? dc.command_scope.trim() : ''
+      if (scope) parts.push(scope)
+
+      const risk = typeof dc.command_risk_level === 'string' ? dc.command_risk_level.trim() : ''
+      if (risk) parts.push(risk)
+
+      if (dc.confirm_dangerous === true) parts.push('confirmed')
+
+      return `driver_command: ${parts.join(' ')}`
+    }
+
     return entries.map(([key, value]) => {
+      if (key === 'driver_command') {
+        return summarizeDriverCommand(value) ?? 'driver_command: [invalid]'
+      }
+
+      if (isSensitiveKey(key)) {
+        return `${key}: ***`
+      }
+
       if (value instanceof File) {
         return `${key}: ${value.name}`
       }
+
       if (typeof value === 'object') {
         try {
-          return `${key}: ${JSON.stringify(value)}`
+          return `${key}: ${JSON.stringify(maskDeep(value))}`
         } catch {
           return `${key}: [object]`
         }
       }
+
       return `${key}: ${String(value)}`
     })
   }, [state.config])

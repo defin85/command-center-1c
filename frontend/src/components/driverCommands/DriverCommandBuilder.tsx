@@ -5,6 +5,7 @@ import { Alert, App, Checkbox, Divider, Form, Input, InputNumber, Radio, Select,
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 
+import { maskArgv } from '../../lib/masking'
 import { useDriverCommands, useArtifacts, useArtifactAliases, useArtifactVersions } from '../../api/queries'
 import type {
   DriverCommandParamV2,
@@ -90,18 +91,6 @@ const IBCMD_CONNECTION_PARAM_NAMES = new Set([
   'db_user',
   'db_pwd',
 ])
-
-const IBCMD_SENSITIVE_FLAG_PREFIXES = [
-  '--db-pwd=',
-  '--db-password=',
-  '--password=',
-  '--target-database-password=',
-  '--target-db-password=',
-  '--target-db-pwd=',
-  '--secret=',
-  '--token=',
-  '--api-key=',
-]
 
 const ensureArgvLanguage = (monaco: MonacoInstance) => {
   if (argvLanguageRegistered) return
@@ -224,14 +213,24 @@ const buildCliArgsPreview = (paramsByName: Record<string, DriverCommandParamV2>,
   const flags: string[] = []
   const positionals: Array<{ position: number; value: string }> = []
 
+  const normalizeValues = (raw: unknown): string[] => {
+    if (raw === null || raw === undefined) return []
+    if (Array.isArray(raw)) {
+      return raw
+        .map((item) => safeString(item).trim())
+        .filter((item) => item.length > 0)
+    }
+    const v = safeString(raw).trim()
+    return v ? [v] : []
+  }
+
   for (const [name, schema] of Object.entries(paramsByName)) {
     if (!schema || schema.disabled) continue
 
     const rawValue = values[name]
     if (schema.kind === 'positional') {
-      const value = safeString(rawValue).trim()
       const pos = typeof schema.position === 'number' ? schema.position : 999
-      if (value) {
+      for (const value of normalizeValues(rawValue)) {
         positionals.push({ position: pos, value })
       }
       continue
@@ -245,15 +244,89 @@ const buildCliArgsPreview = (paramsByName: Record<string, DriverCommandParamV2>,
       continue
     }
 
-    const value = safeString(rawValue).trim()
-    if (value) {
-      flags.push(flag)
-      flags.push(value)
+    const normalizedValues = normalizeValues(rawValue)
+    if (normalizedValues.length === 0) continue
+
+    if (schema.repeatable) {
+      for (const value of normalizedValues) {
+        flags.push(flag)
+        flags.push(value)
+      }
+      continue
     }
+
+    flags.push(flag)
+    flags.push(normalizedValues[0])
   }
 
   positionals.sort((a, b) => a.position - b.position)
   return [...flags, ...positionals.map((item) => item.value)]
+}
+
+const stringifyIbcmdValue = (value: unknown): string => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+const buildIbcmdArgvPreview = (
+  command: DriverCommandV2,
+  params: Record<string, unknown>,
+  additionalArgs: string[],
+) => {
+  const paramsByName = command.params_by_name ?? {}
+  const flags: string[] = []
+  const positionals: Array<{ position: number; value: string }> = []
+
+  const normalizeValues = (raw: unknown): string[] => {
+    if (raw === null || raw === undefined) return []
+    if (Array.isArray(raw)) {
+      return raw
+        .map((item) => stringifyIbcmdValue(item).trim())
+        .filter((item) => item.length > 0)
+    }
+    const v = stringifyIbcmdValue(raw).trim()
+    return v ? [v] : []
+  }
+
+  for (const [name, schema] of Object.entries(paramsByName)) {
+    if (!schema || schema.disabled) continue
+    if (!(name in params)) continue
+
+    const rawValue = params[name]
+    if (rawValue === null || rawValue === undefined || rawValue === '') continue
+
+    if (schema.kind === 'positional') {
+      const pos = typeof schema.position === 'number' ? schema.position : 999
+      for (const value of normalizeValues(rawValue)) {
+        positionals.push({ position: pos, value })
+      }
+      continue
+    }
+
+    const flag = typeof schema.flag === 'string' ? schema.flag : ''
+    if (!flag) continue
+
+    if (!schema.expects_value) {
+      if (rawValue === true) {
+        flags.push(flag)
+      }
+      continue
+    }
+
+    for (const value of normalizeValues(rawValue)) {
+      flags.push(`${flag}=${value}`)
+    }
+  }
+
+  positionals.sort((a, b) => a.position - b.position)
+  flags.sort()
+  const argv = [...(command.argv ?? []), ...flags, ...positionals.map((item) => item.value), ...additionalArgs]
+  return {
+    argv,
+    argv_masked: maskArgv(argv),
+  }
 }
 
 const flattenIbcmdConnection = (connection?: IbcmdCliConnection): Record<string, unknown> => {
@@ -278,80 +351,6 @@ const flattenIbcmdConnection = (connection?: IbcmdCliConnection): Record<string,
   }
 
   return out
-}
-
-const stringifyIbcmdValue = (value: unknown): string => {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return ''
-}
-
-const maskIbcmdArgv = (argv: string[]): string[] => {
-  return argv.map((token) => {
-    const lowered = token.toLowerCase()
-    for (const prefix of IBCMD_SENSITIVE_FLAG_PREFIXES) {
-      if (lowered.startsWith(prefix)) {
-        const eqIdx = token.indexOf('=')
-        if (eqIdx >= 0) {
-          return `${token.slice(0, eqIdx + 1)}***`
-        }
-        return `${token}***`
-      }
-    }
-    return token
-  })
-}
-
-const buildIbcmdArgvPreview = (
-  command: DriverCommandV2,
-  params: Record<string, unknown>,
-  additionalArgs: string[],
-) => {
-  const paramsByName = command.params_by_name ?? {}
-  const flags: string[] = []
-  const positionals: Array<{ position: number; value: string }> = []
-
-  for (const [name, schema] of Object.entries(paramsByName)) {
-    if (!schema || schema.disabled) continue
-    if (!(name in params)) continue
-
-    const rawValue = params[name]
-    if (rawValue === null || rawValue === undefined || rawValue === '') continue
-
-    if (schema.kind === 'positional') {
-      const pos = typeof schema.position === 'number' ? schema.position : 999
-      const value = stringifyIbcmdValue(rawValue).trim()
-      if (value) {
-        positionals.push({ position: pos, value })
-      }
-      continue
-    }
-
-    const flag = typeof schema.flag === 'string' ? schema.flag : ''
-    if (!flag) continue
-
-    if (!schema.expects_value) {
-      if (rawValue === true) {
-        flags.push(flag)
-      }
-      continue
-    }
-
-    const value = stringifyIbcmdValue(rawValue).trim()
-    if (value) {
-      flags.push(`${flag}=${value}`)
-    }
-  }
-
-  flags.sort()
-  positionals.sort((a, b) => a.position - b.position)
-
-  const argv = [...(command.argv ?? []), ...flags, ...positionals.map((item) => item.value), ...additionalArgs]
-  return {
-    argv,
-    argv_masked: maskIbcmdArgv(argv),
-  }
 }
 
 const sortParams = (entries: Array<{ name: string; schema: DriverCommandParamV2 }>) =>
@@ -920,7 +919,8 @@ export function DriverCommandBuilder({
     if (driver === 'cli') {
       const paramsByName = selectedCommand.params_by_name ?? {}
       const args = mode === 'guided' ? buildCliArgsPreview(paramsByName, params) : additionalArgs
-      return { argv: [commandId, ...args], argv_masked: [commandId, ...args] }
+      const argv = [commandId, ...args]
+      return { argv, argv_masked: maskArgv(argv) }
     }
 
     const mergedParams = {
@@ -1009,9 +1009,9 @@ export function DriverCommandBuilder({
 
   const handleDangerousConfirmChange = (checked: boolean) => {
     if (!checked) {
-    onChange({ confirm_dangerous: false })
-    return
-  }
+      onChange({ confirm_dangerous: false })
+      return
+    }
 
     modal.confirm({
       title: 'Confirm dangerous command',
