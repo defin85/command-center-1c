@@ -22,8 +22,8 @@ import type {
  */
 export interface UITask {
   id: string
-  database: string
-  database_name: string
+  database: string | null
+  database_name: string | null
   status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'retry' | 'cancelled'
   result: unknown
   error_message: string
@@ -106,8 +106,8 @@ export function parseNumericField(value: string | number | null | undefined): nu
 export function transformTask(task: GeneratedTask): UITask {
   return {
     id: task.id,
-    database: task.database,
-    database_name: task.database_name,
+    database: task.database ?? null,
+    database_name: task.database_name ?? null,
     status: task.status as UITask['status'],
     result: task.result,
     error_message: task.error_message ?? '',

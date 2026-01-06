@@ -330,6 +330,77 @@ class EventSubscriberTest(TestCase):
         self.assertNotIn('denied_to', self.database.metadata)
         self.assertNotIn('denied_parameter', self.database.metadata)
 
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_completed_updates_global_task(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        global_op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Global Operation',
+            operation_type=BatchOperation.TYPE_DESIGNER_CLI,
+            target_entity='Infobase',
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={"target_scope": "global", "target_ref": "deadbeef"},
+        )
+        global_task = Task.objects.create(
+            id='task-global',
+            batch_operation=global_op,
+            database=None,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': global_op.id,
+                'status': 'completed',
+                'results': [{'database_id': '', 'success': True, 'data': {'ok': True}}],
+                'summary': {'total': 1, 'succeeded': 1, 'failed': 0},
+            },
+            'corr-789',
+        )
+
+        global_task.refresh_from_db()
+        self.assertEqual(global_task.status, Task.STATUS_COMPLETED)
+        self.assertEqual(global_task.result, {'ok': True})
+        self.assertEqual(global_task.error_message, '')
+        self.assertEqual(global_task.error_code, '')
+        mock_ops_redis.release_global_target_lock.assert_called_with("deadbeef")
+
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_failed_updates_global_task(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        global_op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Global Operation Failed',
+            operation_type=BatchOperation.TYPE_DESIGNER_CLI,
+            target_entity='Infobase',
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={"target_scope": "global", "target_ref": "deadbeef"},
+        )
+        global_task = Task.objects.create(
+            id='task-global-fail',
+            batch_operation=global_op,
+            database=None,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_failed(
+            {
+                'operation_id': global_op.id,
+                'error': 'boom',
+            },
+            'corr-790',
+        )
+
+        global_task.refresh_from_db()
+        self.assertEqual(global_task.status, Task.STATUS_FAILED)
+        self.assertEqual(global_task.error_message, 'boom')
+        self.assertEqual(global_task.error_code, 'WORKER_FAILED')
+        mock_ops_redis.release_global_target_lock.assert_called_with("deadbeef")
+
     @patch('apps.operations.event_subscriber.redis.Redis')
     @patch('apps.operations.event_subscriber.time.sleep')
     def test_run_forever_handles_connection_error(self, mock_sleep, mock_redis_class):

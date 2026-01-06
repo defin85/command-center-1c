@@ -85,6 +85,8 @@ class OperationHandler(BaseNodeHandler):
             NodeExecutionResult with operation result or queued status
         """
         start_time = time.time()
+        if mode is None:
+            mode = NodeExecutionMode.SYNC
 
         # Create step result for audit
         step_result = self._create_step_result(
@@ -123,6 +125,11 @@ class OperationHandler(BaseNodeHandler):
 
             # 3. Extract target_databases from context
             target_databases = self._extract_target_databases(context, node)
+            target_scope = ""
+            if isinstance(rendered_data, dict):
+                options = rendered_data.get("options")
+                if isinstance(options, dict):
+                    target_scope = str(options.get("target_scope") or "").strip().lower()
 
             if not target_databases:
                 if context.get('dry_run'):
@@ -135,20 +142,25 @@ class OperationHandler(BaseNodeHandler):
                         step_result=step_result,
                         start_time=start_time
                     )
-
-                logger.warning(
-                    "Missing target databases for operation node; failing execution",
-                    extra={'node_id': node.id}
-                )
-                return self._return_error(
-                    error_msg=(
-                        "No target databases specified for operation execution. "
-                        "Provide 'database_ids' (list) or 'target_databases' in workflow input_context, "
-                        "or set 'dry_run': true to render only."
-                    ),
-                    step_result=step_result,
-                    start_time=start_time,
-                )
+                if target_scope == "global":
+                    logger.info(
+                        "Global scope operation node: executing without target databases",
+                        extra={"node_id": node.id, "template_id": node.template_id},
+                    )
+                else:
+                    logger.warning(
+                        "Missing target databases for operation node; failing execution",
+                        extra={'node_id': node.id}
+                    )
+                    return self._return_error(
+                        error_msg=(
+                            "No target databases specified for operation execution. "
+                            "Provide 'database_ids' (list) or 'target_databases' in workflow input_context, "
+                            "or set 'dry_run': true to render only."
+                        ),
+                        step_result=step_result,
+                        start_time=start_time,
+                    )
 
             # 4. Select backend based on operation_type
             backend = self._get_backend(template.operation_type)
@@ -256,7 +268,8 @@ class OperationHandler(BaseNodeHandler):
             f"No backend supports operation type: {operation_type}. "
             f"Available types: OData={ODataBackend.get_supported_types()}, "
             f"RAS={RASBackend.get_supported_types()}, "
-            f"IBCMD={IBCMDBackend.get_supported_types()}"
+            f"IBCMD={IBCMDBackend.get_supported_types()}, "
+            f"CLI={CLIBackend.get_supported_types()}"
         )
 
     def _get_timeout(self, node: WorkflowNode) -> int:

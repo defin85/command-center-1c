@@ -10,7 +10,7 @@ import time
 from typing import Any, Dict, List, Set
 
 from apps.operations.factory import BatchOperationFactory
-from apps.operations.waiter import OperationTimeoutError, ResultWaiter
+from apps.operations.waiter import ResultWaiter
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
 

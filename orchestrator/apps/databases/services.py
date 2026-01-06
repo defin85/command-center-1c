@@ -55,26 +55,43 @@ class DatabaseService:
             # Выполняем health check (простой GET запрос к metadata)
             health_result = client.health_check()
 
+            is_healthy = False
+            status_code: Optional[int] = None
+            if isinstance(health_result, dict):
+                is_healthy = bool(health_result.get('healthy'))
+                status_code = health_result.get('status_code')
+            else:
+                is_healthy = bool(health_result)
+
+            if status_code is None:
+                status_code = 200 if is_healthy else 500
+
             # Вычисляем время ответа
             end_time = timezone.now()
             response_time = (end_time - start_time).total_seconds() * 1000  # Convert to milliseconds
 
             result.update({
-                'healthy': health_result,
+                'healthy': is_healthy,
                 'response_time': response_time,
-                'status_code': 200 if health_result else 500
+                'status_code': status_code,
             })
 
             # Используем существующий метод вместо дублирования
             database.mark_health_check(
-                success=True,
+                success=is_healthy,
                 response_time=response_time
             )
 
-            logger.info(
-                f"Database {database.name} health check: OK "
-                f"(response_time={response_time:.3f}ms)"
-            )
+            if is_healthy:
+                logger.info(
+                    f"Database {database.name} health check: OK "
+                    f"(response_time={response_time:.3f}ms)"
+                )
+            else:
+                logger.warning(
+                    f"Database {database.name} health check: FAILED "
+                    f"(response_time={response_time:.3f}ms)"
+                )
 
         except ODataError as e:
             # OData-specific errors

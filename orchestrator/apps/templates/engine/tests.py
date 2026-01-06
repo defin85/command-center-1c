@@ -6,6 +6,8 @@ Jinja2 tests are used in {% if %} conditions like:
     {% if database is production_database %}...{% endif %}
 """
 
+__test__ = False
+
 
 def register_custom_tests(env):
     """Register all custom tests."""

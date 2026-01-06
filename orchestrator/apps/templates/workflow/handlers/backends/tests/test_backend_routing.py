@@ -11,6 +11,7 @@ import pytest
 from uuid import uuid4
 
 from apps.templates.workflow.handlers.operation import OperationHandler
+from apps.templates.workflow.handlers.base import NodeExecutionMode, NodeExecutionResult
 from apps.templates.workflow.handlers.backends import (
     CLIBackend,
     IBCMDBackend,
@@ -275,7 +276,7 @@ class TestBackendRoutingIntegration:
             name="Test Lock",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(
@@ -289,7 +290,13 @@ class TestBackendRoutingIntegration:
 
         # Mock RASBackend.execute
         with patch.object(RASBackend, 'execute') as mock_execute:
-            mock_execute.return_value = MagicMock(success=True)
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'ras', 'status': 'completed'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.0,
+            )
 
             handler.execute(
                 node=node,
@@ -320,7 +327,7 @@ class TestBackendRoutingIntegration:
             name="Test Create",
             operation_type='create',
             target_entity="Users",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(
@@ -334,7 +341,13 @@ class TestBackendRoutingIntegration:
 
         # Mock ODataBackend.execute
         with patch.object(ODataBackend, 'execute') as mock_execute:
-            mock_execute.return_value = MagicMock(success=True)
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'status': 'completed'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.0,
+            )
 
             handler.execute(
                 node=node,

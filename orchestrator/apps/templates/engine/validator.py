@@ -201,10 +201,14 @@ class TemplateValidator:
         valid_types = set(self.VALID_OPERATION_TYPES)
         try:
             from apps.templates.registry import get_registry, TargetEntity
+            from apps.templates.registry.bootstrap import ensure_registry_populated
 
             registry = get_registry()
+            if not registry.get_all():
+                ensure_registry_populated()
+
             if registry.get_all():
-                valid_types = set(registry.get_ids())
+                valid_types |= set(registry.get_ids())
         except Exception:
             registry = None
 
@@ -216,16 +220,21 @@ class TemplateValidator:
             )
 
         # 2. Validate target_entity if operation requires it
-        if registry and registry.get_all():
-            op = registry.get(template.operation_type)
-            if op and op.target_entity == TargetEntity.ENTITY and not template.target_entity:
-                errors.append(
-                    f"target_entity is required for operation_type '{template.operation_type}'"
-                )
-        elif template.operation_type in ['create', 'update', 'delete'] and not template.target_entity:
+        if template.operation_type in ['create', 'update', 'delete'] and not template.target_entity:
             errors.append(
                 f"target_entity is required for operation_type '{template.operation_type}'"
             )
+        elif registry and registry.get_all():
+            op = registry.get(template.operation_type)
+            if (
+                op
+                and op.target_entity == TargetEntity.ENTITY
+                and template.operation_type not in {'query', 'batch_create', 'batch_update', 'batch_delete'}
+                and not template.target_entity
+            ):
+                errors.append(
+                    f"target_entity is required for operation_type '{template.operation_type}'"
+                )
 
         return errors
 

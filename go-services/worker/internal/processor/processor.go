@@ -4,6 +4,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -163,6 +164,12 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 	_ = processor.driverRegistry.RegisterMeta(
 		rasops.NewMetaDriver(processor.workerID, redisClient, processor.eventPublisher, processor.timeline),
 	)
+	_ = processor.driverRegistry.RegisterMeta(
+		ibcmdops.NewCLIMetaDriver(
+			processor.credsClient,
+			processor.timeline,
+		),
+	)
 
 	// Database operations
 	_ = processor.driverRegistry.RegisterDatabase(
@@ -207,6 +214,7 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 	log := logger.GetLogger()
 	taskStart := time.Now()
 	workflowMetadata := events.WorkflowMetadataFromMessage(msg)
+	targetScope := getTargetScope(msg)
 
 	// Record operation start in timeline
 	p.timeline.Record(ctx, msg.OperationID, "operation.started", appendWorkflowMetadata(map[string]interface{}{
@@ -222,8 +230,148 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 		Results:     []models.DatabaseResultV2{},
 	}
 
+	// Global-scope operations (single execution unit, no target_databases).
+	if targetScope == "global" && !models.IsMetaOperation(msg.OperationType) {
+		driverStart := time.Now()
+
+		metaDriver, ok := p.driverRegistry.LookupMeta(msg.OperationType)
+		if !ok {
+			errMsg := fmt.Sprintf("unknown operation type (global): %s", msg.OperationType)
+			res := &models.OperationResultV2{
+				OperationID: msg.OperationID,
+				WorkerID:    p.workerID,
+				Timestamp:   time.Now(),
+				Status:      "failed",
+				Results: []models.DatabaseResultV2{{
+					DatabaseID: "",
+					Success:    false,
+					Error:      errMsg,
+					ErrorCode:  "INVALID_OPERATION",
+					Duration:   time.Since(taskStart).Seconds(),
+				}},
+				Summary: models.ResultSummary{Total: 1, Succeeded: 0, Failed: 1, AvgDuration: time.Since(taskStart).Seconds()},
+			}
+			p.timeline.Record(ctx, msg.OperationID, "driver.failed", appendWorkflowMetadata(map[string]interface{}{
+				"driver":         "unknown",
+				"operation_type": msg.OperationType,
+				"error":          errMsg,
+			}, workflowMetadata))
+			p.recordDriverMetrics("unknown", msg.OperationType, "failed", time.Since(driverStart).Seconds())
+			p.recordTaskMetrics(msg.OperationType, res.Status, time.Since(taskStart).Seconds())
+			p.timeline.Record(ctx, msg.OperationID, "operation.completed", appendWorkflowMetadata(map[string]interface{}{
+				"status":      res.Status,
+				"succeeded":   0,
+				"failed":      1,
+				"duration_ms": time.Since(taskStart).Milliseconds(),
+			}, workflowMetadata))
+			return res
+		}
+
+		p.timeline.Record(ctx, msg.OperationID, "driver.started", appendWorkflowMetadata(map[string]interface{}{
+			"driver":         metaDriver.Name(),
+			"operation_type": msg.OperationType,
+			"scope":          "global",
+		}, workflowMetadata))
+
+		metaResult, err := metaDriver.Execute(ctx, msg)
+		if err != nil || metaResult == nil {
+			errorText := ""
+			if err != nil {
+				errorText = err.Error()
+			} else {
+				errorText = "driver returned nil result"
+			}
+			metaResult = &models.OperationResultV2{
+				OperationID: msg.OperationID,
+				WorkerID:    p.workerID,
+				Timestamp:   time.Now(),
+				Status:      "failed",
+				Results: []models.DatabaseResultV2{{
+					DatabaseID: "",
+					Success:    false,
+					Error:      errorText,
+					ErrorCode:  "EXECUTION_ERROR",
+					Duration:   time.Since(taskStart).Seconds(),
+				}},
+			}
+			p.timeline.Record(ctx, msg.OperationID, "driver.failed", appendWorkflowMetadata(map[string]interface{}{
+				"driver":         metaDriver.Name(),
+				"operation_type": msg.OperationType,
+				"error":          errorText,
+			}, workflowMetadata))
+		}
+
+		// Normalize global result to exactly one "database-like" entry for Orchestrator Task update.
+		if len(metaResult.Results) == 0 {
+			success := metaResult.Status == "completed"
+			metaResult.Results = []models.DatabaseResultV2{{
+				DatabaseID: "",
+				Success:    success,
+				Duration:   time.Since(taskStart).Seconds(),
+			}}
+		}
+		if len(metaResult.Results) > 1 {
+			metaResult.Results = metaResult.Results[:1]
+		}
+		metaResult.Results[0].DatabaseID = ""
+		if metaResult.Results[0].Duration <= 0 {
+			metaResult.Results[0].Duration = time.Since(taskStart).Seconds()
+		}
+
+		succeeded := 0
+		failed := 0
+		if metaResult.Results[0].Success {
+			succeeded = 1
+		} else {
+			failed = 1
+		}
+		metaResult.Summary = models.ResultSummary{
+			Total:       1,
+			Succeeded:   succeeded,
+			Failed:      failed,
+			AvgDuration: metaResult.Results[0].Duration,
+		}
+		if metaResult.OperationID == "" {
+			metaResult.OperationID = msg.OperationID
+		}
+		if metaResult.WorkerID == "" {
+			metaResult.WorkerID = p.workerID
+		}
+		if metaResult.Timestamp.IsZero() {
+			metaResult.Timestamp = time.Now()
+		}
+		if metaResult.Status == "" {
+			if failed == 0 {
+				metaResult.Status = "completed"
+			} else {
+				metaResult.Status = "failed"
+			}
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			metaResult.Status = "timeout"
+		} else if failed > 0 && strings.ToLower(strings.TrimSpace(metaResult.Status)) == "completed" {
+			metaResult.Status = "failed"
+		}
+
+		p.timeline.Record(ctx, msg.OperationID, "driver.finished", appendWorkflowMetadata(map[string]interface{}{
+			"driver":         metaDriver.Name(),
+			"operation_type": msg.OperationType,
+			"status":         metaResult.Status,
+			"duration_ms":    time.Since(driverStart).Milliseconds(),
+		}, workflowMetadata))
+		p.recordDriverMetrics(metaDriver.Name(), msg.OperationType, metaResult.Status, time.Since(driverStart).Seconds())
+		p.recordTaskMetrics(msg.OperationType, metaResult.Status, time.Since(taskStart).Seconds())
+		p.timeline.Record(ctx, msg.OperationID, "operation.completed", appendWorkflowMetadata(map[string]interface{}{
+			"status":      metaResult.Status,
+			"succeeded":   succeeded,
+			"failed":      failed,
+			"duration_ms": time.Since(taskStart).Milliseconds(),
+		}, workflowMetadata))
+		return metaResult
+	}
+
 	// Meta-operations (not per-database) via drivers registry
-	if metaDriver, ok := p.driverRegistry.LookupMeta(msg.OperationType); ok {
+	if metaDriver, ok := p.driverRegistry.LookupMeta(msg.OperationType); ok && models.IsMetaOperation(msg.OperationType) {
 		driverStart := time.Now()
 		p.timeline.Record(ctx, msg.OperationID, "driver.started", appendWorkflowMetadata(map[string]interface{}{
 			"driver":         metaDriver.Name(),
@@ -277,13 +425,13 @@ func (p *TaskProcessor) Process(ctx context.Context, msg *models.OperationMessag
 			progressPercent = int(float64(processed) / float64(totalDatabases) * 100)
 		}
 		metadata := map[string]interface{}{
-			"database_id":     databaseID,
-			"task_status":     taskStatus,
-			"total_tasks":     totalDatabases,
-			"completed_tasks": completedCount,
-			"failed_tasks":    failedCount,
+			"database_id":      databaseID,
+			"task_status":      taskStatus,
+			"total_tasks":      totalDatabases,
+			"completed_tasks":  completedCount,
+			"failed_tasks":     failedCount,
 			"processing_tasks": processingCount,
-			"queued_tasks":    queued,
+			"queued_tasks":     queued,
 			"progress_percent": progressPercent,
 		}
 		if durationSeconds > 0 {
@@ -494,6 +642,18 @@ func appendWorkflowMetadata(
 		base[key] = value
 	}
 	return base
+}
+
+func getTargetScope(msg *models.OperationMessage) string {
+	if msg == nil {
+		return ""
+	}
+	raw := msg.Payload.Options["target_scope"]
+	rawStr, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(rawStr))
 }
 
 // GetFeatureFlags returns current feature flags configuration

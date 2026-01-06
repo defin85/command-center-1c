@@ -9,6 +9,8 @@ Tests cover:
 """
 
 import pytest
+import asyncio
+from concurrent.futures import Future
 from unittest.mock import Mock, patch
 
 from apps.templates.workflow.handlers import (
@@ -34,8 +36,8 @@ from apps.templates.workflow.models import (
 class TestParallelHandler:
     """Tests for ParallelHandler."""
 
-    def test_execute_not_implemented_week8(self, db):
-        """Test that execute fails gracefully when Celery not available (Week 8)."""
+    def test_execute_marks_failed_when_any_child_failed(self, db):
+        """Parallel node should fail when any child node failed."""
         handler = ParallelHandler()
 
         # Create mock execution and node
@@ -58,13 +60,18 @@ class TestParallelHandler:
         # Mock step result creation
         with patch.object(handler, '_create_step_result') as mock_create:
             with patch.object(handler, '_update_step_result'):
-                # Mock the import to raise ImportError directly
-                with patch('builtins.__import__', side_effect=ImportError("apps.templates.tasks not found")):
-                    mock_create.return_value = Mock(spec=WorkflowStepResult)
+                mock_create.return_value = Mock(spec=WorkflowStepResult)
+
+                with patch.object(handler, '_execute_parallel') as mock_execute_parallel:
+                    mock_execute_parallel.return_value = {
+                        'mode': 'all',
+                        'completed': [],
+                        'failed': [{'node_id': 'node_2', 'error': 'boom'}],
+                        'timed_out': False,
+                    }
 
                     result = handler.execute(node, context, execution)
 
-                    # Should fail gracefully (either NotImplementedError or ImportError)
                     assert result.success is False
                     assert result.error is not None
                     assert result.mode == NodeExecutionMode.SYNC
@@ -95,41 +102,33 @@ class TestParallelHandler:
         """Test _wait_for_all method logic."""
         handler = ParallelHandler()
 
-        # Mock GroupResult
-        mock_group_result = Mock()
-        mock_group_result.get.return_value = ["result1", "result2", "result3"]
-
         node_ids = ["node_1", "node_2", "node_3"]
+        f1 = Future()
+        f2 = Future()
+        f3 = Future()
+        f1.set_result({'success': True})
+        f2.set_result({'success': True})
+        f3.set_result({'success': True})
 
-        result = handler._wait_for_all(mock_group_result, 300, node_ids)
+        future_to_node = {f1: "node_1", f2: "node_2", f3: "node_3"}
+        result = handler._wait_for_all(future_to_node, 300, node_ids)
 
         assert result['mode'] == 'all'
         assert len(result['completed']) == 3
         assert result['timed_out'] is False
-        mock_group_result.get.assert_called_once_with(timeout=300)
 
     def test_wait_for_all_timeout(self):
         """Test _wait_for_all with timeout."""
         handler = ParallelHandler()
 
-        # Mock GroupResult with timeout
-        mock_group_result = Mock()
-        mock_group_result.get.side_effect = Exception("Timeout")
-
-        # Mock partial results
-        mock_result1 = Mock()
-        mock_result1.ready.return_value = True
-        mock_result1.successful.return_value = True
-        mock_result1.result = "result1"
-
-        mock_result2 = Mock()
-        mock_result2.ready.return_value = False
-
-        mock_group_result.results = [mock_result1, mock_result2]
-
         node_ids = ["node_1", "node_2"]
 
-        result = handler._wait_for_all(mock_group_result, 300, node_ids)
+        done_future = Future()
+        pending_future = Future()
+        done_future.set_result({'success': True})
+
+        future_to_node = {done_future: "node_1", pending_future: "node_2"}
+        result = handler._wait_for_all(future_to_node, 0, node_ids)
 
         assert result['mode'] == 'all'
         assert len(result['completed']) == 1
@@ -139,20 +138,25 @@ class TestParallelHandler:
         """Test task cancellation logic."""
         handler = ParallelHandler()
 
-        # Mock async results
-        mock_result1 = Mock()
-        mock_result2 = Mock()
-        mock_result3 = Mock()
+        f1 = Future()
+        f2 = Future()
+        f3 = Future()
+        f1.cancel = Mock(wraps=f1.cancel)
+        f2.cancel = Mock(wraps=f2.cancel)
+        f3.cancel = Mock(wraps=f3.cancel)
 
-        mock_group_result = Mock()
-        mock_group_result.results = [mock_result1, mock_result2, mock_result3]
+        # f3 already completed, should not be cancelled
+        f3.set_result({'success': True})
 
-        # Cancel all except index 1
-        handler._cancel_tasks(mock_group_result, exclude_index=1)
+        future_to_node = {f1: "node_1", f2: "node_2", f3: "node_3"}
+        cancelled = handler._cancel_tasks(future_to_node, exclude_node_ids={"node_2"})
 
-        mock_result1.revoke.assert_called_once_with(terminate=True)
-        mock_result2.revoke.assert_not_called()
-        mock_result3.revoke.assert_called_once_with(terminate=True)
+        assert "node_1" in cancelled
+        assert "node_2" not in cancelled
+        assert "node_3" not in cancelled
+        f1.cancel.assert_called_once()
+        f2.cancel.assert_not_called()
+        f3.cancel.assert_not_called()
 
 
 # ========== LoopHandler Tests ==========
@@ -318,7 +322,7 @@ class TestSubWorkflowHandler:
             with patch.object(handler, '_update_step_result'):
                 mock_create.return_value = Mock(spec=WorkflowStepResult)
 
-                result = handler.execute(node, context, execution)
+                result = asyncio.run(handler.execute(node, context, execution))
 
                 assert result.success is False
                 # Week 8: Should fail due to WorkflowTemplate not found (valid behavior)

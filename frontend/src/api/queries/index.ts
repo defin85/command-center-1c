@@ -1,6 +1,10 @@
 import type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
 
 export const queryKeys = {
+  driverCommands: {
+    all: ['driver-commands'] as const,
+    byDriver: (driver: string) => [...queryKeys.driverCommands.all, driver] as const,
+  },
   operations: {
     all: ['operations'] as const,
     list: (filters?: OperationFilters) => [...queryKeys.operations.all, 'list', filters] as const,
@@ -96,3 +100,5 @@ export {
   useDeleteArtifact,
   useRestoreArtifact,
 } from './artifacts'
+
+export { useDriverCommands } from './driverCommands'

@@ -6,6 +6,10 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from encrypted_model_fields.fields import EncryptedCharField
 
 
+def generate_database_id() -> str:
+    return str(uuid.uuid4())
+
+
 class Cluster(models.Model):
     """
     Represents a 1C:Enterprise server cluster.
@@ -241,6 +245,8 @@ class Cluster(models.Model):
                 self.ragent_host = self.ras_host
 
     def save(self, *args, **kwargs):
+        if isinstance(self.id, str):
+            self.id = uuid.UUID(self.id)
         self._normalize_hosts()
         self._normalize_ports()
         if self.ras_host and self.ras_port:
@@ -348,7 +354,7 @@ class Database(models.Model):
     ]
 
     # Identity
-    id = models.CharField(max_length=64, primary_key=True)
+    id = models.CharField(max_length=64, primary_key=True, default=generate_database_id, editable=False)
     name = models.CharField(max_length=255, unique=True, db_index=True)
     description = models.TextField(blank=True)
 

@@ -154,14 +154,13 @@ class TestEndToEndTemplateFlow:
 
 
 @pytest.mark.django_db
-class TestCeleryTaskIntegration:
-    """Test Celery task integration with Template Engine."""
+class TestBatchOperationFactoryIntegration:
+    """Test integration between templates and BatchOperationFactory (Go Worker path)."""
 
-    def test_process_operation_with_template_task(self):
-        """Test Celery task processes template correctly."""
+    def test_render_template_and_create_batch_operation(self):
         from apps.databases.models import Database
+        from apps.operations.factory import BatchOperationFactory
 
-        # 1. Create database
         database = Database.objects.create(
             id='test-db-001',
             name='test-db-001',
@@ -173,9 +172,8 @@ class TestCeleryTaskIntegration:
             password='test_password'
         )
 
-        # 2. Create template
         template = OperationTemplate.objects.create(
-            name='Celery Test Template',
+            name='Factory Template',
             operation_type='create',
             target_entity='Catalog_Users',
             template_data={
@@ -184,97 +182,51 @@ class TestCeleryTaskIntegration:
             }
         )
 
-        # 3. Create operation
-        operation = BatchOperation.objects.create(
-            id='test-op-001',
-            name='Test Operation',
-            operation_type='create',
+        renderer = TemplateRenderer()
+        rendered_data = renderer.render(template, {"user_name": "Alice", "database_name": database.name})
+
+        operation = BatchOperationFactory.create(
             template=template,
-            payload={"user_name": "Alice"}
+            rendered_data=rendered_data,
+            target_databases=[str(database.id)],
+            created_by='tester',
         )
-        operation.target_databases.add(database)
 
-        # 4. Process operation (call Celery task)
-        from apps.operations.tasks import process_operation_with_template
-
-        result = process_operation_with_template(str(operation.id))
-
-        # 5. Verify result
-        assert result['status'] == 'success'
-        assert result['template_rendered'] is True
-
-        # 6. Verify operation updated
         operation.refresh_from_db()
+        assert operation.status == BatchOperation.STATUS_PENDING
         assert operation.payload['Name'] == "Alice"
         assert operation.payload['Database'] == "test-db-001"
-        assert operation.status == 'completed'
+        assert operation.total_tasks == 1
+        assert operation.tasks.count() == 1
 
-        # Cleanup
-        operation.delete()
-        template.delete()
-        database.delete()
+        task = operation.tasks.first()
+        assert task is not None
+        assert task.database_id == database.id
 
-    def test_process_operation_without_template(self):
-        """Test Celery task with operation that has no template."""
-        from apps.databases.models import Database
+    def test_create_batch_operation_without_targets_raises(self):
+        from apps.operations.factory import BatchOperationFactory
 
-        # Create database
-        database = Database.objects.create(
-            id='test-db-002',
-            name='test-db-002',
-            host='localhost',
-            port=80,
-            base_name='test_db',
-            odata_url='http://localhost/test_db/odata/standard.odata',
-            username='admin',
-            password='test_password'
-        )
-
-        # Create operation WITHOUT template
-        operation = BatchOperation.objects.create(
-            id='test-op-002',
-            name='Test Operation No Template',
+        template = OperationTemplate.objects.create(
+            name='No Targets Template',
             operation_type='create',
-            template=None,  # No template!
-            payload={"name": "Bob"}
-        )
-        operation.target_databases.add(database)
-
-        # Process operation
-        from apps.operations.tasks import process_operation_with_template
-
-        result = process_operation_with_template(str(operation.id))
-
-        # Should still succeed
-        assert result['status'] == 'success'
-        assert result['template_rendered'] is False
-
-        # Payload should remain unchanged
-        operation.refresh_from_db()
-        assert operation.payload['name'] == "Bob"
-        assert operation.status == 'completed'
-
-        # Cleanup
-        operation.delete()
-        database.delete()
-
-    def test_process_operation_with_invalid_template(self):
-        """Test Celery task with invalid template (should fail gracefully)."""
-        from apps.databases.models import Database
-
-        # Create database
-        database = Database.objects.create(
-            id='test-db-003',
-            name='test-db-003',
-            host='localhost',
-            port=80,
-            base_name='test_db',
-            odata_url='http://localhost/test_db/odata/standard.odata',
-            username='admin',
-            password='test_password'
+            target_entity='Catalog_Users',
+            template_data={"Name": "{{user_name}}"},
         )
 
-        # Create template with INVALID syntax
+        renderer = TemplateRenderer()
+        rendered_data = renderer.render(template, {"user_name": "Alice"})
+
+        with pytest.raises(ValueError):
+            BatchOperationFactory.create(
+                template=template,
+                rendered_data=rendered_data,
+                target_databases=[],
+                created_by='tester',
+            )
+
+    def test_invalid_template_syntax_raises(self):
+        from apps.templates.engine.exceptions import TemplateRenderError
+
         template = OperationTemplate.objects.create(
             name='Invalid Template',
             operation_type='create',
@@ -284,30 +236,9 @@ class TestCeleryTaskIntegration:
             }
         )
 
-        # Create operation
-        operation = BatchOperation.objects.create(
-            id='test-op-003',
-            name='Test Invalid Template',
-            operation_type='create',
-            template=template,
-            payload={"user_name": "Charlie"}
-        )
-        operation.target_databases.add(database)
-
-        # Process operation - should raise exception
-        from apps.operations.tasks import process_operation_with_template
-
-        with pytest.raises(Exception):
-            process_operation_with_template(str(operation.id))
-
-        # Operation should be marked as failed
-        operation.refresh_from_db()
-        assert operation.status == 'failed'
-
-        # Cleanup
-        operation.delete()
-        template.delete()
-        database.delete()
+        renderer = TemplateRenderer()
+        with pytest.raises(TemplateRenderError):
+            renderer.render(template, {"user_name": "Charlie"})
 
 
 @pytest.mark.django_db

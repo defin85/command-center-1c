@@ -7,7 +7,7 @@ from django.utils import timezone
 class Task(models.Model):
     """
     Represents a single task within a batch operation.
-    One task = one operation on one database.
+    One task = one operation on one database (or a global task when database is null).
     """
 
     STATUS_PENDING = 'pending'
@@ -40,7 +40,9 @@ class Task(models.Model):
     database = models.ForeignKey(
         'databases.Database',
         on_delete=models.CASCADE,
-        related_name='tasks'
+        related_name='tasks',
+        null=True,
+        blank=True,
     )
 
     # Status
@@ -83,7 +85,9 @@ class Task(models.Model):
         verbose_name_plural = 'Tasks'
 
     def __str__(self):
-        return f"Task {self.id} on {self.database.name} ({self.status})"
+        if self.database_id:
+            return f"Task {self.id} on {self.database.name} ({self.status})"
+        return f"Task {self.id} (global) ({self.status})"
 
     def mark_started(self, worker_id: str = None):
         """Mark task as started."""

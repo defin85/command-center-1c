@@ -68,6 +68,7 @@ django-extensions==4.1
 pytest==9.0.2
 pytest-django==4.11.1
 pytest-cov==7.0.0
+pytest-benchmark==5.2.3
 ipython==9.8.0
 ruff==0.14.10
 

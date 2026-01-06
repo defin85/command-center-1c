@@ -111,6 +111,10 @@ func resolveArtifactArgs(
 			hasArtifact = true
 			break
 		}
+		if key, _, ok := splitArtifactFlagArg(arg); ok && key != "" {
+			hasArtifact = true
+			break
+		}
 	}
 	if !hasArtifact {
 		return args, func() {}, nil
@@ -130,28 +134,39 @@ func resolveArtifactArgs(
 
 	resolved := make([]string, len(args))
 	for idx, arg := range args {
-		if !strings.HasPrefix(arg, artifactPrefix) {
-			resolved[idx] = arg
+		if strings.HasPrefix(arg, artifactPrefix) {
+			key := strings.TrimPrefix(arg, artifactPrefix)
+			key = strings.TrimLeft(key, "/")
+			if key == "" {
+				cleanup()
+				return nil, cleanup, fmt.Errorf("artifact path is empty")
+			}
+
+			localPath, err := storage.download(ctx, key, tempDir)
+			if err != nil {
+				cleanup()
+				return nil, cleanup, err
+			}
+			resolved[idx] = localPath
 			continue
 		}
-		key := strings.TrimPrefix(arg, artifactPrefix)
-		key = strings.TrimLeft(key, "/")
-		if key == "" {
-			cleanup()
-			return nil, cleanup, fmt.Errorf("artifact path is empty")
+
+		if key, prefix, ok := splitArtifactFlagArg(arg); ok {
+			localPath, err := storage.download(ctx, key, tempDir)
+			if err != nil {
+				cleanup()
+				return nil, cleanup, err
+			}
+			resolved[idx] = prefix + localPath
+			continue
 		}
 
-		localPath, err := storage.download(ctx, key, tempDir)
-		if err != nil {
-			cleanup()
-			return nil, cleanup, err
-		}
-		resolved[idx] = localPath
+		resolved[idx] = arg
 	}
 
 	if isWindowsInterop() {
 		for idx, arg := range resolved {
-			resolved[idx] = toWindowsPath(arg)
+			resolved[idx] = convertFlagPathToWindows(arg)
 		}
 	}
 
@@ -225,3 +240,43 @@ func toWindowsPath(path string) string {
 	return path
 }
 
+func splitArtifactFlagArg(arg string) (key string, prefix string, ok bool) {
+	raw := strings.TrimSpace(arg)
+	if raw == "" {
+		return "", "", false
+	}
+	idx := strings.Index(raw, "=")
+	if idx < 0 {
+		return "", "", false
+	}
+	value := raw[idx+1:]
+	if !strings.HasPrefix(value, artifactPrefix) {
+		return "", "", false
+	}
+	key = strings.TrimPrefix(value, artifactPrefix)
+	key = strings.TrimLeft(key, "/")
+	if key == "" {
+		return "", "", false
+	}
+	return key, raw[:idx+1], true
+}
+
+func convertFlagPathToWindows(arg string) string {
+	raw := strings.TrimSpace(arg)
+	if raw == "" {
+		return raw
+	}
+	if strings.HasPrefix(raw, "/mnt/") {
+		return toWindowsPath(raw)
+	}
+	idx := strings.Index(raw, "=")
+	if idx < 0 {
+		return raw
+	}
+	prefix := raw[:idx+1]
+	value := raw[idx+1:]
+	if strings.HasPrefix(value, "/mnt/") {
+		return prefix + toWindowsPath(value)
+	}
+	return raw
+}

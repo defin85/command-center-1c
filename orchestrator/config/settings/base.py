@@ -340,6 +340,7 @@ REDIS_QUEUE_DLQ = "cc1c:operations:dlq:v1"
 # REDIS_KEY_TASK_LOCK - Worker uses this for processing idempotency (different key!)
 REDIS_KEY_ENQUEUE_LOCK = "cc1c:enqueue:{task_id}:lock"
 REDIS_KEY_TASK_LOCK = "cc1c:task:{task_id}:lock"
+REDIS_KEY_GLOBAL_TARGET_LOCK = "cc1c:global_target:{target_ref}:lock"
 REDIS_KEY_TASK_PROGRESS = "cc1c:task:{task_id}:progress"
 REDIS_KEY_WORKER_HEARTBEAT = "cc1c:worker:{worker_id}:heartbeat"
 

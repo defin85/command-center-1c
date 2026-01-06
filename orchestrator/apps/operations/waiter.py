@@ -203,10 +203,12 @@ class ResultWaiter:
         results = []
 
         for task in operation.tasks.select_related('database').all():
+            database_id = str(task.database.id) if task.database_id else None
+            database_name = task.database.name if task.database_id else None
             task_result = {
                 'task_id': task.id,
-                'database_id': str(task.database.id),
-                'database_name': task.database.name,
+                'database_id': database_id,
+                'database_name': database_name,
                 'success': task.status == Task.STATUS_COMPLETED,
                 'status': task.status,
                 'duration_seconds': task.duration_seconds,

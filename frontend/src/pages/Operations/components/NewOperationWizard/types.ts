@@ -4,6 +4,7 @@
  */
 
 import type { Database } from '../../../../api/generated/model/database'
+import type { DriverCommandOperationConfig } from '../../../../components/driverCommands/DriverCommandBuilder'
 
 /**
  * Available operation types categorized by their execution method
@@ -30,6 +31,7 @@ export type OperationType =
   | 'ibcmd_create'
   | 'ibcmd_load_cfg'
   | 'ibcmd_extension_update'
+  | 'ibcmd_cli'
   // CLI Operations
   | 'designer_cli'
 
@@ -265,6 +267,8 @@ export interface OperationConfig {
   used_in_distributed_infobase?: boolean
   additional_args?: string[] | string
   stdin?: string
+  // Schema-driven commands (cli + ibcmd)
+  driver_command?: DriverCommandOperationConfig
   // Allow custom fields for workflow templates
   [key: string]: unknown
 }
@@ -284,24 +288,6 @@ export interface DynamicFormValidationError {
 export const REQUIRED_CONFIG_FIELDS: Partial<Record<OperationType, (keyof OperationConfig)[]>> = {
   query: ['entity'],
   block_sessions: ['message'],
-  designer_cli: ['command'],
-  ibcmd_backup: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password'],
-  ibcmd_restore: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'input_path'],
-  ibcmd_replicate: [
-    'dbms',
-    'db_server',
-    'db_name',
-    'db_user',
-    'db_password',
-    'target_dbms',
-    'target_db_server',
-    'target_db_name',
-    'target_db_user',
-    'target_db_password',
-  ],
-  ibcmd_create: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password'],
-  ibcmd_load_cfg: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'file'],
-  ibcmd_extension_update: ['dbms', 'db_server', 'db_name', 'db_user', 'db_password', 'name'],
 }
 
 /**
@@ -311,6 +297,10 @@ export interface ConfigureStepProps {
   operationType: OperationType | null
   /** Template ID if using a custom workflow template */
   templateId: string | null
+  /** Selected database IDs from Step 2 (used for global scope auth_database_id) */
+  selectedDatabases: string[]
+  /** Optional mapping for nicer labels */
+  databaseNamesById?: Record<string, string>
   config: OperationConfig
   onConfigChange: (config: OperationConfig) => void
   /** Uploaded file IDs for file fields in custom templates */

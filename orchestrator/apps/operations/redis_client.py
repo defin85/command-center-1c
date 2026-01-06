@@ -177,6 +177,31 @@ class RedisClient:
         key = settings.REDIS_KEY_ENQUEUE_LOCK.format(task_id=task_id)
         return self.client.exists(key) > 0
 
+    # ========== Global Target Locks (Phase 3: global scope) ==========
+    # Prevent duplicates for global-scope commands sharing the same target_ref.
+    # Key format: cc1c:global_target:{target_ref}:lock
+
+    def acquire_global_target_lock(self, target_ref: str, ttl_seconds: int = 3600) -> bool:
+        target_ref = str(target_ref or "").strip()
+        if not target_ref:
+            return False
+        key = settings.REDIS_KEY_GLOBAL_TARGET_LOCK.format(target_ref=target_ref)
+        return bool(self.client.set(key, "orchestrator", nx=True, ex=ttl_seconds))
+
+    def release_global_target_lock(self, target_ref: str) -> bool:
+        target_ref = str(target_ref or "").strip()
+        if not target_ref:
+            return False
+        key = settings.REDIS_KEY_GLOBAL_TARGET_LOCK.format(target_ref=target_ref)
+        return self.client.delete(key) > 0
+
+    def check_global_target_lock(self, target_ref: str) -> bool:
+        target_ref = str(target_ref or "").strip()
+        if not target_ref:
+            return False
+        key = settings.REDIS_KEY_GLOBAL_TARGET_LOCK.format(target_ref=target_ref)
+        return self.client.exists(key) > 0
+
     # ========== Legacy Task Locks (kept for backward compatibility) ==========
     # WARNING: These use cc1c:task:{task_id}:lock which conflicts with Worker!
     # Use acquire_enqueue_lock() for Orchestrator-side locking instead.

@@ -7,9 +7,11 @@ Tests:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
+
+from apps.operations.services.prometheus_client import ServiceMetrics
 
 
 @pytest.fixture
@@ -22,15 +24,22 @@ def authenticated_client():
 
 
 @pytest.fixture
-def mock_service_health():
-    """Mock external service health checks."""
-    with patch('apps.api_v2.views.service_mesh.fetch_service_health') as mock:
-        mock.return_value = {
-            'name': 'test-service',
-            'type': 'backend',
-            'status': 'healthy',
-            'response_time_ms': 50.0,
-        }
+def mock_prometheus_client():
+    """Mock Prometheus client used by service mesh endpoints."""
+    with patch("apps.api_v2.views.service_mesh.get_prometheus_client") as mock:
+        client = MagicMock()
+        client.get_all_services_metrics = AsyncMock(return_value=[
+            ServiceMetrics(
+                name="api-gateway",
+                display_name="API Gateway",
+                status="healthy",
+                ops_per_minute=120.0,
+                active_operations=1,
+                p95_latency_ms=50.0,
+                error_rate=0.0,
+            )
+        ])
+        mock.return_value = client
         yield mock
 
 
@@ -44,7 +53,7 @@ class TestServiceMeshGetMetrics:
         assert response.status_code in [401, 403]
 
     @pytest.mark.django_db
-    def test_get_metrics_success(self, authenticated_client, mock_service_health):
+    def test_get_metrics_success(self, authenticated_client, mock_prometheus_client):
         """Test successful metrics retrieval."""
         response = authenticated_client.get('/api/v2/service-mesh/get-metrics/')
         assert response.status_code == 200

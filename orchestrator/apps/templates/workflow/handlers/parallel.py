@@ -98,10 +98,15 @@ class ParallelHandler(BaseNodeHandler):
             duration = time.time() - start_time
 
             # 3. Return success result
+            success, error = self._evaluate_result(
+                wait_for=wait_for,
+                total_nodes=len(parallel_nodes),
+                result_data=result_data,
+            )
             result = NodeExecutionResult(
-                success=True,
+                success=success,
                 output=result_data,
-                error=None,
+                error=error,
                 mode=NodeExecutionMode.SYNC,
                 duration_seconds=duration
             )
@@ -136,6 +141,37 @@ class ParallelHandler(BaseNodeHandler):
             )
             self._update_step_result(step_result, result)
             return result
+
+    @staticmethod
+    def _evaluate_result(wait_for: str, total_nodes: int, result_data: Dict[str, Any]) -> tuple[bool, str | None]:
+        timed_out = bool(result_data.get('timed_out'))
+        failed = result_data.get('failed') or []
+        completed = result_data.get('completed') or []
+
+        if timed_out:
+            return False, "Parallel execution timed out"
+
+        if failed:
+            return False, f"{len(failed)} parallel nodes failed"
+
+        if wait_for == "all":
+            if len(completed) != total_nodes:
+                return False, "Not all parallel nodes completed"
+            return True, None
+
+        if wait_for == "any":
+            if len(completed) == 0:
+                return False, "No parallel nodes completed"
+            return True, None
+
+        try:
+            expected = int(wait_for)
+        except ValueError:
+            return False, f"Invalid wait_for value: {wait_for}"
+
+        if len(completed) < expected:
+            return False, f"Only {len(completed)}/{expected} parallel nodes completed"
+        return True, None
 
     def _execute_parallel(
         self,
@@ -185,6 +221,19 @@ class ParallelHandler(BaseNodeHandler):
                 except ValueError:
                     raise ValueError(f"Invalid wait_for value: {wait_for}")
 
+    @staticmethod
+    def _cancel_tasks(future_to_node: Dict[Future, str], exclude_node_ids: set[str] | None = None) -> List[str]:
+        cancelled: List[str] = []
+        excluded = exclude_node_ids or set()
+        for future, node_id in future_to_node.items():
+            if node_id in excluded:
+                continue
+            if future.done():
+                continue
+            if future.cancel():
+                cancelled.append(node_id)
+        return cancelled
+
     def _wait_for_all(
         self,
         future_to_node: Dict[Future, str],
@@ -205,9 +254,11 @@ class ParallelHandler(BaseNodeHandler):
         completed = []
         failed = []
         timed_out = False
+        processed_futures: set[Future] = set()
 
         try:
             for future in as_completed(future_to_node.keys(), timeout=timeout_seconds):
+                processed_futures.add(future)
                 node_id = future_to_node[future]
                 try:
                     result = future.result()
@@ -223,6 +274,8 @@ class ParallelHandler(BaseNodeHandler):
             timed_out = True
             # Check which futures completed
             for future, node_id in future_to_node.items():
+                if future in processed_futures:
+                    continue
                 if future.done():
                     try:
                         result = future.result(timeout=0)
@@ -267,11 +320,7 @@ class ParallelHandler(BaseNodeHandler):
                     result = future.result()
                     if result.get('success', False):
                         # Cancel remaining futures
-                        cancelled = []
-                        for other_future, other_node_id in future_to_node.items():
-                            if other_future != future and not other_future.done():
-                                other_future.cancel()
-                                cancelled.append(other_node_id)
+                        cancelled = self._cancel_tasks(future_to_node, exclude_node_ids={node_id})
 
                         return {
                             'mode': 'any',
@@ -286,10 +335,7 @@ class ParallelHandler(BaseNodeHandler):
             pass
 
         # Timeout or all failed - cancel remaining
-        for future in future_to_node.keys():
-            if not future.done():
-                future.cancel()
-
+        self._cancel_tasks(future_to_node)
         return {
             'mode': 'any',
             'completed': [],
@@ -333,11 +379,10 @@ class ParallelHandler(BaseNodeHandler):
 
                         if len(completed) >= count:
                             # Cancel remaining futures
-                            cancelled = []
-                            for other_future, other_node_id in future_to_node.items():
-                                if other_node_id not in completed_node_ids and not other_future.done():
-                                    other_future.cancel()
-                                    cancelled.append(other_node_id)
+                            cancelled = self._cancel_tasks(
+                                future_to_node,
+                                exclude_node_ids=completed_node_ids,
+                            )
 
                             return {
                                 'mode': f'count_{count}',
@@ -352,12 +397,7 @@ class ParallelHandler(BaseNodeHandler):
             pass
 
         # Timeout - cancel remaining
-        cancelled = []
-        for future, node_id in future_to_node.items():
-            if node_id not in completed_node_ids:
-                if not future.done():
-                    future.cancel()
-                cancelled.append(node_id)
+        cancelled = self._cancel_tasks(future_to_node, exclude_node_ids=completed_node_ids)
 
         return {
             'mode': f'count_{count}',

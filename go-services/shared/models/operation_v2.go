@@ -3,6 +3,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -124,7 +125,16 @@ func (om *OperationMessage) Validate() error {
 	}
 
 	// Meta-operations (sync_cluster, etc.) don't require target_databases
-	if !IsMetaOperation(om.OperationType) && len(om.TargetDatabases) == 0 {
+	targetScope := ""
+	if om.Payload.Options != nil {
+		if rawScope, ok := om.Payload.Options["target_scope"]; ok {
+			if rawScopeStr, ok := rawScope.(string); ok {
+				targetScope = strings.ToLower(strings.TrimSpace(rawScopeStr))
+			}
+		}
+	}
+
+	if !IsMetaOperation(om.OperationType) && len(om.TargetDatabases) == 0 && targetScope != "global" {
 		return fmt.Errorf("target_databases cannot be empty")
 	}
 

@@ -12,6 +12,7 @@ class ArtifactKind(models.TextChoices):
     EPF = "epf", "EPF"
     ERF = "erf", "ERF"
     IBCMD_PACKAGE = "ibcmd_package", "IBCMD Package"
+    DRIVER_CATALOG = "driver_catalog", "Driver Catalog"
     RAS_SCRIPT = "ras_script", "RAS Script"
     OTHER = "other", "Other"
 

@@ -142,6 +142,7 @@ export const NewOperationWizard = ({
     (
       operationType: OperationType | null,
       templateId: string | null,
+      selectedDatabases: string[],
       config: OperationConfig,
       validationErrors: DynamicFormValidationError[]
     ): boolean => {
@@ -154,20 +155,61 @@ export const NewOperationWizard = ({
       // Built-in operations
       if (!operationType) return false
 
-      // IBCMD: allow manual args (raw ibcmd invocation) as an alternative to structured fields
-      if (String(operationType).startsWith('ibcmd_')) {
-        const args = config.args
-        if (Array.isArray(args)) {
-          const hasAny = args.some(
-            (item) => typeof item === 'string' && item.trim().length > 0
+      // Schema-driven command builders (cli + ibcmd)
+      if (operationType === 'designer_cli' || operationType === 'ibcmd_cli') {
+        const dc = config.driver_command
+        if (!dc || typeof dc !== 'object') {
+          return false
+        }
+
+        if (operationType === 'designer_cli' && dc.driver !== 'cli') {
+          return false
+        }
+        if (operationType === 'ibcmd_cli' && dc.driver !== 'ibcmd') {
+          return false
+        }
+
+        const commandId = typeof dc.command_id === 'string' ? dc.command_id.trim() : ''
+        if (!commandId) {
+          return false
+        }
+
+        if (dc.command_risk_level === 'dangerous' && dc.confirm_dangerous !== true) {
+          return false
+        }
+
+        if (operationType === 'ibcmd_cli' && dc.command_scope === 'global') {
+          const authDb = typeof dc.auth_database_id === 'string' ? dc.auth_database_id : ''
+          if (!authDb || !selectedDatabases.includes(authDb)) {
+            return false
+          }
+
+          const connection = dc.connection
+          const hasRemote = typeof connection?.remote === 'string' && connection.remote.trim().length > 0
+          const hasPid = typeof connection?.pid === 'number'
+          const offline = connection?.offline
+          const hasOffline = Boolean(
+            offline
+            && typeof offline === 'object'
+            && Object.values(offline).some((value) => typeof value === 'string' && value.trim().length > 0)
           )
-          if (hasAny) {
-            return true
+          if (!hasRemote && !hasPid && !hasOffline) {
+            return false
           }
         }
-        if (typeof args === 'string' && args.trim().length > 0) {
-          return true
+
+        // Guard: forbid --pid in raw args (must be provided via connection.pid)
+        if (operationType === 'ibcmd_cli' && typeof dc.args_text === 'string') {
+          const lines = dc.args_text
+            .split('\n')
+            .map((item) => item.trim().toLowerCase())
+            .filter((item) => item.length > 0)
+          if (lines.some((item) => item === '--pid' || item.startsWith('--pid='))) {
+            return false
+          }
         }
+
+        return true
       }
 
       const requiredFields = REQUIRED_CONFIG_FIELDS[operationType]
@@ -193,7 +235,7 @@ export const NewOperationWizard = ({
       case 1: // Database selection
         return state.selectedDatabases.length > 0
       case 2: // Configuration
-        return validateConfig(state.operationType, state.selectedTemplateId, state.config, templateValidationErrors)
+        return validateConfig(state.operationType, state.selectedTemplateId, state.selectedDatabases, state.config, templateValidationErrors)
       case 3: // Review
         return true
       default:
@@ -203,7 +245,7 @@ export const NewOperationWizard = ({
     state.currentStep,
     state.operationType,
     state.selectedTemplateId,
-    state.selectedDatabases.length,
+    state.selectedDatabases,
     state.config,
     templateValidationErrors,
     validateConfig,
@@ -379,6 +421,8 @@ export const NewOperationWizard = ({
           <ConfigureStep
             operationType={state.operationType}
             templateId={state.selectedTemplateId}
+            selectedDatabases={state.selectedDatabases}
+            databaseNamesById={databaseNamesById}
             config={state.config}
             onConfigChange={handleConfigChange}
             uploadedFiles={state.uploadedFiles}

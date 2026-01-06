@@ -96,3 +96,26 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["filters"] == {}
         assert message["payload"]["options"] == {"filter": "Code eq 'X'"}
 
+    def test_build_message_legacy_payload_copies_target_scope_to_payload_options(self, db):
+        template = OperationTemplate.objects.create(
+            id="tpl_cli_global_" + str(uuid4())[:8],
+            name="CLI Global Template",
+            operation_type="designer_cli",
+            target_entity="Infobase",
+            template_data={},
+        )
+        rendered_data = {
+            "command": "Any",
+            "args": [],
+            "options": {"target_scope": "global", "disable_startup_messages": True},
+        }
+
+        operation = BatchOperationFactory.create(
+            template=template,
+            rendered_data=rendered_data,
+            target_databases=[],
+        )
+
+        message = OperationsService._build_message(operation)
+        assert message["target_databases"] == []
+        assert message["payload"]["options"] == {"target_scope": "global"}

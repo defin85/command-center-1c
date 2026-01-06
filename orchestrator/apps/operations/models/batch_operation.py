@@ -50,6 +50,7 @@ class BatchOperation(models.Model):
     TYPE_IBCMD_CREATE = 'ibcmd_create'
     TYPE_IBCMD_LOAD_CFG = 'ibcmd_load_cfg'
     TYPE_IBCMD_EXTENSION_UPDATE = 'ibcmd_extension_update'
+    TYPE_IBCMD_CLI = 'ibcmd_cli'
     # CLI operation types
     TYPE_DESIGNER_CLI = 'designer_cli'
 
@@ -76,6 +77,7 @@ class BatchOperation(models.Model):
         (TYPE_IBCMD_CREATE, 'IBCMD Create'),
         (TYPE_IBCMD_LOAD_CFG, 'IBCMD Load Config/Extension'),
         (TYPE_IBCMD_EXTENSION_UPDATE, 'IBCMD Extension Update'),
+        (TYPE_IBCMD_CLI, 'IBCMD CLI (schema-driven)'),
         # CLI operations
         (TYPE_DESIGNER_CLI, 'Designer CLI'),
     ]

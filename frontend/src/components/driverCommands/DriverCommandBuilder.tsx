@@ -1,0 +1,1121 @@
+import '../../lib/monacoEnv'
+
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
+import Editor from '@monaco-editor/react'
+import type * as Monaco from 'monaco-editor'
+
+import { useDriverCommands, useArtifacts, useArtifactAliases, useArtifactVersions } from '../../api/queries'
+import type {
+  DriverCommandParamV2,
+  DriverCommandV2,
+  DriverName,
+  DriverCommandScope,
+  DriverCommandRiskLevel,
+} from '../../api/driverCommands'
+import type { ArtifactKind } from '../../api/artifacts'
+
+const { Text } = Typography
+
+export type DriverCommandBuilderMode = 'guided' | 'manual'
+
+export interface IbcmdCliConnectionOffline {
+  config?: string
+  data?: string
+  dbms?: string
+  db_server?: string
+  db_name?: string
+  db_user?: string
+  db_pwd?: string
+}
+
+export interface IbcmdCliConnection {
+  remote?: string
+  pid?: number | null
+  offline?: IbcmdCliConnectionOffline
+}
+
+export interface CliExtraOptions {
+  disable_startup_messages?: boolean
+  disable_startup_dialogs?: boolean
+  log_capture?: boolean
+  log_path?: string
+  log_no_truncate?: boolean
+}
+
+export interface DriverCommandOperationConfig {
+  driver: DriverName
+  mode?: DriverCommandBuilderMode
+  command_id?: string
+  command_label?: string
+  command_scope?: DriverCommandScope
+  command_risk_level?: DriverCommandRiskLevel
+  params?: Record<string, unknown>
+  args_text?: string
+  /** Precomputed args list for CLI execution/template payloads */
+  resolved_args?: string[]
+  confirm_dangerous?: boolean
+
+  // IBCMD-only execution context
+  connection?: IbcmdCliConnection
+  stdin?: string
+  timeout_seconds?: number
+  auth_database_id?: string
+
+  // CLI-only options
+  cli_options?: CliExtraOptions
+}
+
+const ARTIFACT_PREFIX = 'artifact://'
+
+const EMPTY_COMMANDS_BY_ID: Record<string, DriverCommandV2> = {}
+const EMPTY_PARAMS: Record<string, unknown> = {}
+const EMPTY_DB_IDS: string[] = []
+
+const IBCMD_CONNECTION_PARAM_NAMES = new Set([
+  'remote',
+  'pid',
+  'config',
+  'data',
+  'dbms',
+  'db_server',
+  'db_name',
+  'db_user',
+  'db_pwd',
+])
+
+const IBCMD_SENSITIVE_FLAG_PREFIXES = [
+  '--db-pwd=',
+  '--db-password=',
+  '--password=',
+  '--target-database-password=',
+  '--target-db-password=',
+  '--target-db-pwd=',
+  '--secret=',
+  '--token=',
+  '--api-key=',
+]
+
+const normalizeText = (value: unknown): string => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .join('\n')
+  }
+  return ''
+}
+
+const parseLines = (value: string | undefined): string[] => {
+  if (!value) return []
+  return value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+const parseArtifactKey = (value: string | boolean | number | undefined): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  if (!value.startsWith(ARTIFACT_PREFIX)) {
+    return undefined
+  }
+  const key = value.slice(ARTIFACT_PREFIX.length).replace(/^\/+/, '')
+  return key || undefined
+}
+
+const parseArtifactIdFromKey = (key?: string): string | undefined => {
+  if (!key) {
+    return undefined
+  }
+  const parts = key.split('/')
+  if (parts.length >= 2 && parts[0] === 'artifacts') {
+    return parts[1]
+  }
+  return undefined
+}
+
+const safeString = (value: unknown): string => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+const buildCliArgsPreview = (paramsByName: Record<string, DriverCommandParamV2>, values: Record<string, unknown>) => {
+  const flags: string[] = []
+  const positionals: Array<{ position: number; value: string }> = []
+
+  for (const [name, schema] of Object.entries(paramsByName)) {
+    if (!schema || schema.disabled) continue
+
+    const rawValue = values[name]
+    if (schema.kind === 'positional') {
+      const value = safeString(rawValue).trim()
+      const pos = typeof schema.position === 'number' ? schema.position : 999
+      if (value) {
+        positionals.push({ position: pos, value })
+      }
+      continue
+    }
+
+    const flag = typeof schema.flag === 'string' && schema.flag ? schema.flag : `-${name}`
+    if (!schema.expects_value) {
+      if (rawValue === true) {
+        flags.push(flag)
+      }
+      continue
+    }
+
+    const value = safeString(rawValue).trim()
+    if (value) {
+      flags.push(flag)
+      flags.push(value)
+    }
+  }
+
+  positionals.sort((a, b) => a.position - b.position)
+  return [...flags, ...positionals.map((item) => item.value)]
+}
+
+const flattenIbcmdConnection = (connection?: IbcmdCliConnection): Record<string, unknown> => {
+  if (!connection) return {}
+
+  const out: Record<string, unknown> = {}
+  if (typeof connection.remote === 'string' && connection.remote.trim().length > 0) {
+    out.remote = connection.remote.trim()
+  }
+  if (typeof connection.pid === 'number') {
+    out.pid = connection.pid
+  }
+
+  const offline = connection.offline
+  if (offline && typeof offline === 'object') {
+    for (const key of ['config', 'data', 'dbms', 'db_server', 'db_name', 'db_user', 'db_pwd'] as const) {
+      const value = offline[key]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        out[key] = value.trim()
+      }
+    }
+  }
+
+  return out
+}
+
+const stringifyIbcmdValue = (value: unknown): string => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+const maskIbcmdArgv = (argv: string[]): string[] => {
+  return argv.map((token) => {
+    const lowered = token.toLowerCase()
+    for (const prefix of IBCMD_SENSITIVE_FLAG_PREFIXES) {
+      if (lowered.startsWith(prefix)) {
+        const eqIdx = token.indexOf('=')
+        if (eqIdx >= 0) {
+          return `${token.slice(0, eqIdx + 1)}***`
+        }
+        return `${token}***`
+      }
+    }
+    return token
+  })
+}
+
+const buildIbcmdArgvPreview = (
+  command: DriverCommandV2,
+  params: Record<string, unknown>,
+  additionalArgs: string[],
+) => {
+  const paramsByName = command.params_by_name ?? {}
+  const flags: string[] = []
+  const positionals: Array<{ position: number; value: string }> = []
+
+  for (const [name, schema] of Object.entries(paramsByName)) {
+    if (!schema || schema.disabled) continue
+    if (!(name in params)) continue
+
+    const rawValue = params[name]
+    if (rawValue === null || rawValue === undefined || rawValue === '') continue
+
+    if (schema.kind === 'positional') {
+      const pos = typeof schema.position === 'number' ? schema.position : 999
+      const value = stringifyIbcmdValue(rawValue).trim()
+      if (value) {
+        positionals.push({ position: pos, value })
+      }
+      continue
+    }
+
+    const flag = typeof schema.flag === 'string' ? schema.flag : ''
+    if (!flag) continue
+
+    if (!schema.expects_value) {
+      if (rawValue === true) {
+        flags.push(flag)
+      }
+      continue
+    }
+
+    const value = stringifyIbcmdValue(rawValue).trim()
+    if (value) {
+      flags.push(`${flag}=${value}`)
+    }
+  }
+
+  flags.sort()
+  positionals.sort((a, b) => a.position - b.position)
+
+  const argv = [...(command.argv ?? []), ...flags, ...positionals.map((item) => item.value), ...additionalArgs]
+  return {
+    argv,
+    argv_masked: maskIbcmdArgv(argv),
+  }
+}
+
+const sortParams = (entries: Array<{ name: string; schema: DriverCommandParamV2 }>) =>
+  entries.sort((a, b) => {
+    const ak = a.schema.kind
+    const bk = b.schema.kind
+    if (ak !== bk) {
+      return ak === 'positional' ? -1 : 1
+    }
+    if (ak === 'positional') {
+      const ap = typeof a.schema.position === 'number' ? a.schema.position : 999
+      const bp = typeof b.schema.position === 'number' ? b.schema.position : 999
+      if (ap !== bp) return ap - bp
+    }
+    const af = typeof a.schema.flag === 'string' ? a.schema.flag : a.name
+    const bf = typeof b.schema.flag === 'string' ? b.schema.flag : b.name
+    return af.localeCompare(bf)
+  })
+
+const detectCommandGroup = (commandId: string) => {
+  const parts = commandId.split('.').filter(Boolean)
+  return parts.length > 0 ? parts[0] : 'general'
+}
+
+const buildCommandOptions = (commandsById: Record<string, DriverCommandV2>) => {
+  const groups = new Map<string, Array<{ label: string; value: string }>>()
+  for (const [id, cmd] of Object.entries(commandsById)) {
+    if (!cmd || cmd.disabled) continue
+    const group = detectCommandGroup(id)
+    const list = groups.get(group) ?? []
+    list.push({ value: id, label: cmd.label || id })
+    groups.set(group, list)
+  }
+
+  return Array.from(groups.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([group, list]) => ({
+      label: group,
+      options: list.sort((a, b) => a.label.localeCompare(b.label)),
+    }))
+}
+
+const hasIbcmdConnection = (connection?: IbcmdCliConnection) => {
+  const flat = flattenIbcmdConnection(connection)
+  return Object.keys(flat).length > 0
+}
+
+function ArtifactValueField({
+  label,
+  value,
+  required,
+  artifactKinds,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string | undefined
+  required?: boolean
+  artifactKinds: ArtifactKind[]
+  disabled?: boolean
+  onChange: (next: string) => void
+}) {
+  const artifactKey = parseArtifactKey(value)
+  const [source, setSource] = useState<'artifact' | 'path'>(artifactKey ? 'artifact' : 'path')
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(
+    parseArtifactIdFromKey(artifactKey)
+  )
+
+  useEffect(() => {
+    setSource(artifactKey ? 'artifact' : 'path')
+    if (artifactKey) {
+      setSelectedArtifactId((current) => current || parseArtifactIdFromKey(artifactKey))
+    }
+  }, [artifactKey])
+
+  const artifactsQuery = useArtifacts(
+    { kind: artifactKinds.length === 1 ? artifactKinds[0] : undefined },
+    { enabled: source === 'artifact' }
+  )
+  const versionsQuery = useArtifactVersions(selectedArtifactId)
+  const aliasesQuery = useArtifactAliases(selectedArtifactId)
+
+  const artifacts = useMemo(() => {
+    const list = artifactsQuery.data?.artifacts ?? []
+    if (artifactKinds.length <= 1) {
+      return list
+    }
+    return list.filter((artifact) => artifactKinds.includes(artifact.kind))
+  }, [artifactKinds, artifactsQuery.data])
+
+  const artifactOptions = useMemo(
+    () =>
+      artifacts.map((artifact) => ({
+        label: `${artifact.name} (${artifact.kind})`,
+        value: artifact.id,
+      })),
+    [artifacts]
+  )
+
+  const aliasByVersion = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const alias of aliasesQuery.data?.aliases ?? []) {
+      map.set(alias.version_id, alias.alias)
+    }
+    return map
+  }, [aliasesQuery.data])
+
+  const versionOptions = useMemo(
+    () =>
+      (versionsQuery.data?.versions ?? []).map((version) => {
+        const alias = aliasByVersion.get(version.id)
+        const versionLabel = alias
+          ? `${alias} (${version.version}) • ${version.filename}`
+          : `${version.version} • ${version.filename}`
+        return {
+          label: versionLabel,
+          value: version.storage_key,
+        }
+      }),
+    [aliasByVersion, versionsQuery.data]
+  )
+
+  const handleSourceChange = (next: 'artifact' | 'path') => {
+    setSource(next)
+    onChange('')
+  }
+
+  const handleArtifactChange = (nextArtifactId?: string) => {
+    setSelectedArtifactId(nextArtifactId)
+    onChange('')
+  }
+
+  const handleArtifactVersionChange = (storageKey?: string) => {
+    if (!storageKey) {
+      onChange('')
+      return
+    }
+    onChange(`${ARTIFACT_PREFIX}${storageKey}`)
+  }
+
+  return (
+    <Form.Item label={label} required={required} style={{ marginBottom: 12 }}>
+      <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Radio.Group
+          value={source}
+          disabled={disabled}
+          onChange={(event) => handleSourceChange(event.target.value)}
+        >
+          <Radio.Button value="artifact">Artifact</Radio.Button>
+          <Radio.Button value="path">Path</Radio.Button>
+        </Radio.Group>
+
+        {source === 'path' && (
+          <Input
+            value={value || ''}
+            disabled={disabled}
+            placeholder="/path/to/file"
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )}
+
+        {source === 'artifact' && (
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            {artifactsQuery.error && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Artifact list unavailable"
+                description={artifactsQuery.error.message}
+              />
+            )}
+            <Select
+              showSearch
+              placeholder="Select artifact"
+              disabled={disabled || artifactsQuery.isLoading}
+              value={selectedArtifactId}
+              options={artifactOptions}
+              optionFilterProp="label"
+              onChange={handleArtifactChange}
+              notFoundContent={artifactsQuery.isLoading ? <Spin size="small" /> : null}
+            />
+            <Select
+              showSearch
+              placeholder="Select version"
+              disabled={disabled || versionsQuery.isLoading || !selectedArtifactId}
+              value={parseArtifactKey(value)}
+              options={versionOptions}
+              optionFilterProp="label"
+              onChange={handleArtifactVersionChange}
+              notFoundContent={versionsQuery.isLoading ? <Spin size="small" /> : null}
+            />
+          </Space>
+        )}
+      </Space>
+    </Form.Item>
+  )
+}
+
+function ParamField({
+  name,
+  schema,
+  value,
+  disabled,
+  onChange,
+}: {
+  name: string
+  schema: DriverCommandParamV2
+  value: unknown
+  disabled?: boolean
+  onChange: (next: unknown) => void
+}) {
+  const label = (schema.label || name).trim()
+  const description = typeof schema.description === 'string' ? schema.description : undefined
+  const isRequired = schema.required === true
+
+  const artifactKinds = useMemo(() => {
+    const artifact = schema.artifact as { kinds?: unknown } | undefined
+    const rawKinds = artifact?.kinds
+    if (!Array.isArray(rawKinds)) return []
+    return rawKinds.filter((item): item is ArtifactKind => typeof item === 'string' && item.length > 0)
+  }, [schema.artifact])
+
+  if (artifactKinds.length > 0) {
+    return (
+      <ArtifactValueField
+        label={label}
+        value={typeof value === 'string' ? value : ''}
+        required={isRequired}
+        disabled={disabled}
+        artifactKinds={artifactKinds}
+        onChange={(next) => onChange(next)}
+      />
+    )
+  }
+
+  if (schema.kind === 'flag' && !schema.expects_value) {
+    return (
+      <Form.Item
+        label={label}
+        style={{ marginBottom: 12 }}
+        help={description}
+      >
+        <Switch checked={value === true} disabled={disabled} onChange={(checked) => onChange(checked)} />
+      </Form.Item>
+    )
+  }
+
+  if (schema.enum && Array.isArray(schema.enum) && schema.enum.length > 0) {
+    const options = schema.enum.map((item) => ({ value: item, label: item }))
+    const mode = schema.repeatable ? 'multiple' : undefined
+    return (
+      <Form.Item
+        label={label}
+        required={isRequired}
+        style={{ marginBottom: 12 }}
+        help={description}
+      >
+        <Select
+          showSearch
+          allowClear
+          mode={mode as 'multiple' | undefined}
+          disabled={disabled}
+          value={schema.repeatable ? (Array.isArray(value) ? value : undefined) : safeString(value) || undefined}
+          options={options}
+          onChange={(next) => onChange(next)}
+          optionFilterProp="value"
+        />
+      </Form.Item>
+    )
+  }
+
+  if (schema.repeatable && schema.expects_value) {
+    return (
+      <Form.Item
+        label={label}
+        required={isRequired}
+        style={{ marginBottom: 12 }}
+        help={description || 'One value per line'}
+      >
+        <Input.TextArea
+          rows={4}
+          disabled={disabled}
+          value={normalizeText(value)}
+          onChange={(event) => onChange(parseLines(event.target.value))}
+        />
+      </Form.Item>
+    )
+  }
+
+  if (schema.value_type === 'int' || schema.value_type === 'float') {
+    const numericValue = typeof value === 'number' ? value : undefined
+    return (
+      <Form.Item
+        label={label}
+        required={isRequired}
+        style={{ marginBottom: 12 }}
+        help={description}
+      >
+        <InputNumber
+          style={{ width: '100%' }}
+          disabled={disabled}
+          value={numericValue}
+          onChange={(next) => onChange(typeof next === 'number' ? next : undefined)}
+        />
+      </Form.Item>
+    )
+  }
+
+  return (
+    <Form.Item
+      label={label}
+      required={isRequired}
+      style={{ marginBottom: 12 }}
+      help={description}
+    >
+      <Input
+        disabled={disabled}
+        value={safeString(value)}
+        placeholder={schema.kind === 'flag' ? schema.flag : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </Form.Item>
+  )
+}
+
+function IbcmdConnectionForm({
+  connection,
+  onChange,
+  readOnly,
+}: {
+  connection: IbcmdCliConnection
+  onChange: (next: IbcmdCliConnection) => void
+  readOnly?: boolean
+}) {
+  const offline = connection.offline ?? {}
+
+  const update = (updates: Partial<IbcmdCliConnection>) => {
+    onChange({ ...connection, ...updates })
+  }
+
+  const updateOffline = (updates: Partial<IbcmdCliConnectionOffline>) => {
+    update({ offline: { ...offline, ...updates } })
+  }
+
+  return (
+    <Form layout="vertical">
+      <Form.Item label="Remote (optional)" style={{ marginBottom: 12 }}>
+        <Input
+          value={connection.remote || ''}
+          disabled={readOnly}
+          placeholder="http://host:port"
+          onChange={(event) => update({ remote: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="PID (optional)" style={{ marginBottom: 12 }}>
+        <InputNumber
+          style={{ width: '100%' }}
+          value={typeof connection.pid === 'number' ? connection.pid : undefined}
+          disabled={readOnly}
+          onChange={(value) => update({ pid: typeof value === 'number' ? value : null })}
+        />
+      </Form.Item>
+
+      <Divider style={{ margin: '8px 0 16px' }} />
+      <Text strong>Offline (optional)</Text>
+
+      <Form.Item label="Config path" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.config || ''}
+          disabled={readOnly}
+          placeholder="/path/to/config"
+          onChange={(event) => updateOffline({ config: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="Data path" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.data || ''}
+          disabled={readOnly}
+          placeholder="/path/to/data"
+          onChange={(event) => updateOffline({ data: event.target.value })}
+        />
+      </Form.Item>
+
+      <Form.Item label="DBMS" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.dbms || ''}
+          disabled={readOnly}
+          placeholder="PostgreSQL"
+          onChange={(event) => updateOffline({ dbms: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="DB server" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.db_server || ''}
+          disabled={readOnly}
+          placeholder="db-host:5432"
+          onChange={(event) => updateOffline({ db_server: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="DB name" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.db_name || ''}
+          disabled={readOnly}
+          placeholder="infobase_db"
+          onChange={(event) => updateOffline({ db_name: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="DB user" style={{ marginBottom: 12 }}>
+        <Input
+          value={offline.db_user || ''}
+          disabled={readOnly}
+          placeholder="dbuser"
+          onChange={(event) => updateOffline({ db_user: event.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="DB password" style={{ marginBottom: 12 }}>
+        <Input.Password
+          value={offline.db_pwd || ''}
+          disabled={readOnly}
+          placeholder="db password"
+          onChange={(event) => updateOffline({ db_pwd: event.target.value })}
+        />
+      </Form.Item>
+    </Form>
+  )
+}
+
+function buildEditorOptions(readOnly?: boolean): Monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
+    readOnly,
+    domReadOnly: readOnly,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    wordWrap: 'on',
+    tabSize: 2,
+    insertSpaces: true,
+    automaticLayout: true,
+    lineNumbers: 'on',
+    renderWhitespace: 'selection',
+    fontSize: 13,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  }
+}
+
+export function DriverCommandBuilder({
+  driver,
+  config,
+  onChange,
+  readOnly,
+  availableDatabaseIds,
+  databaseNamesById,
+}: {
+  driver: DriverName
+  config: DriverCommandOperationConfig
+  onChange: (updates: Partial<DriverCommandOperationConfig>) => void
+  readOnly?: boolean
+  availableDatabaseIds?: string[]
+  databaseNamesById?: Record<string, string>
+}) {
+  const driverCommandsQuery = useDriverCommands(driver, true)
+  const catalog = driverCommandsQuery.data?.catalog
+  const commandsById = useMemo(() => catalog?.commands_by_id ?? EMPTY_COMMANDS_BY_ID, [catalog?.commands_by_id])
+
+  const mode: DriverCommandBuilderMode = config.mode ?? 'guided'
+  const commandId = (config.command_id || '').trim()
+  const params = useMemo(() => (config.params ?? EMPTY_PARAMS) as Record<string, unknown>, [config.params])
+
+  const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
+  const selectedCommand: DriverCommandV2 | undefined = commandId ? commandsById[commandId] : undefined
+
+  const scope: DriverCommandScope | undefined = selectedCommand?.scope
+  const risk: DriverCommandRiskLevel | undefined = selectedCommand?.risk_level
+
+  useEffect(() => {
+    const nextLabel = selectedCommand?.label
+    const nextScope = selectedCommand?.scope
+    const nextRisk = selectedCommand?.risk_level
+
+    const currentLabel = config.command_label
+    const currentScope = config.command_scope
+    const currentRisk = config.command_risk_level
+
+    if (currentLabel === nextLabel && currentScope === nextScope && currentRisk === nextRisk) {
+      return
+    }
+
+    onChange({
+      command_label: nextLabel,
+      command_scope: nextScope,
+      command_risk_level: nextRisk,
+    })
+  }, [config.command_label, config.command_risk_level, config.command_scope, onChange, selectedCommand])
+
+  const availableDbIds = useMemo(() => availableDatabaseIds ?? EMPTY_DB_IDS, [availableDatabaseIds])
+  const databaseOptions = useMemo(
+    () =>
+      availableDbIds.map((id) => ({
+        value: id,
+        label: databaseNamesById?.[id] ? `${databaseNamesById[id]} (${id})` : id,
+      })),
+    [availableDbIds, databaseNamesById]
+  )
+
+  useEffect(() => {
+    if (driver !== 'ibcmd') return
+    if (scope !== 'global') {
+      if (config.auth_database_id) {
+        onChange({ auth_database_id: undefined })
+      }
+      return
+    }
+    if (availableDbIds.length === 0) return
+
+    const current = config.auth_database_id
+    if (typeof current === 'string' && availableDbIds.includes(current)) return
+    onChange({ auth_database_id: availableDbIds[0] })
+  }, [availableDbIds, config.auth_database_id, driver, onChange, scope])
+
+  const handleModeChange = (nextMode: string) => {
+    onChange({ mode: nextMode as DriverCommandBuilderMode })
+  }
+
+  const handleCommandChange = (next: string) => {
+    onChange({
+      command_id: next,
+      params: {},
+      confirm_dangerous: false,
+    })
+  }
+
+  const setParamValue = (name: string, value: unknown) => {
+    onChange({ params: { ...params, [name]: value } })
+  }
+
+  const additionalArgs = useMemo(() => parseLines(config.args_text), [config.args_text])
+
+  const preview = useMemo(() => {
+    if (!selectedCommand) {
+      return { argv: [] as string[], argv_masked: [] as string[] }
+    }
+
+    if (driver === 'cli') {
+      const paramsByName = selectedCommand.params_by_name ?? {}
+      const args = mode === 'guided' ? buildCliArgsPreview(paramsByName, params) : additionalArgs
+      return { argv: [commandId, ...args], argv_masked: [commandId, ...args] }
+    }
+
+    const mergedParams = {
+      ...params,
+      ...flattenIbcmdConnection(config.connection),
+    }
+    return buildIbcmdArgvPreview(selectedCommand, mergedParams, additionalArgs)
+  }, [additionalArgs, commandId, config.connection, driver, mode, params, selectedCommand])
+
+  useEffect(() => {
+    if (driver !== 'cli') return
+    if (!selectedCommand || !commandId) {
+      if (config.resolved_args) {
+        onChange({ resolved_args: undefined })
+      }
+      return
+    }
+
+    const paramsByName = selectedCommand.params_by_name ?? {}
+    const nextArgs = mode === 'guided' ? buildCliArgsPreview(paramsByName, params) : additionalArgs
+
+    const currentArgs = config.resolved_args ?? []
+    if (currentArgs.length === nextArgs.length && currentArgs.every((item, idx) => item === nextArgs[idx])) {
+      return
+    }
+    onChange({ resolved_args: nextArgs })
+  }, [additionalArgs, commandId, config.resolved_args, driver, mode, onChange, params, selectedCommand])
+
+  const renderCliOptions = () => {
+    const opt = config.cli_options ?? {}
+    const update = (updates: Partial<CliExtraOptions>) => {
+      onChange({ cli_options: { ...opt, ...updates } })
+    }
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Text strong>Startup options</Text>
+        <Space>
+          <Switch
+            checked={opt.disable_startup_messages !== false}
+            disabled={readOnly}
+            onChange={(checked) => update({ disable_startup_messages: checked })}
+          />
+          <Text>Disable startup messages</Text>
+        </Space>
+        <Space>
+          <Switch
+            checked={opt.disable_startup_dialogs !== false}
+            disabled={readOnly}
+            onChange={(checked) => update({ disable_startup_dialogs: checked })}
+          />
+          <Text>Disable startup dialogs</Text>
+        </Space>
+
+        <Divider style={{ margin: '12px 0' }} />
+        <Text strong>Logging</Text>
+        <Space>
+          <Switch
+            checked={opt.log_capture === true}
+            disabled={readOnly}
+            onChange={(checked) => update({ log_capture: checked })}
+          />
+          <Text>Capture 1C log (/Out)</Text>
+        </Space>
+        {opt.log_capture && (
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Input
+              value={opt.log_path || ''}
+              disabled={readOnly}
+              placeholder="Log file path (optional, auto if empty)"
+              onChange={(event) => update({ log_path: event.target.value })}
+            />
+            <Space>
+              <Switch
+                checked={opt.log_no_truncate === true}
+                disabled={readOnly}
+                onChange={(checked) => update({ log_no_truncate: checked })}
+              />
+              <Text>Append log (-NoTruncate)</Text>
+            </Space>
+          </Space>
+        )}
+      </Space>
+    )
+  }
+
+  const renderIbcmdExecution = () => {
+    const connection = config.connection ?? {}
+    const timeout = typeof config.timeout_seconds === 'number' ? config.timeout_seconds : 900
+    const confirmDangerous = config.confirm_dangerous === true
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {scope === 'global' && (
+          <Alert
+            type="info"
+            showIcon
+            message="Global scope command"
+            description="This command will run once. Selected databases are used only for RBAC and infobase user mapping (auth_database_id)."
+          />
+        )}
+
+        {scope === 'global' && (
+          <Form layout="vertical">
+            <Form.Item label="Auth database" required style={{ marginBottom: 12 }}>
+              <Select
+                showSearch
+                disabled={readOnly}
+                value={config.auth_database_id}
+                options={databaseOptions}
+                onChange={(next) => onChange({ auth_database_id: next })}
+                optionFilterProp="label"
+              />
+            </Form.Item>
+          </Form>
+        )}
+
+        <Text strong>Connection</Text>
+        <IbcmdConnectionForm
+          connection={connection}
+          readOnly={readOnly}
+          onChange={(next) => onChange({ connection: next })}
+        />
+
+        {scope === 'global' && !hasIbcmdConnection(connection) && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Connection required for global scope"
+            description="Set remote, pid, or offline connection parameters."
+          />
+        )}
+
+        <Divider style={{ margin: '12px 0' }} />
+        <Form layout="vertical">
+          <Form.Item label="Timeout (seconds)" style={{ marginBottom: 12 }}>
+            <InputNumber
+              min={1}
+              max={3600}
+              style={{ width: '100%' }}
+              disabled={readOnly}
+              value={timeout}
+              onChange={(value) => onChange({ timeout_seconds: typeof value === 'number' ? value : 900 })}
+            />
+          </Form.Item>
+          <Form.Item label="Stdin (optional)" style={{ marginBottom: 12 }}>
+            <Input.TextArea
+              rows={4}
+              disabled={readOnly}
+              value={config.stdin || ''}
+              onChange={(event) => onChange({ stdin: event.target.value })}
+            />
+          </Form.Item>
+
+          {risk === 'dangerous' && (
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Checkbox
+                checked={confirmDangerous}
+                disabled={readOnly}
+                onChange={(event) => onChange({ confirm_dangerous: event.target.checked })}
+              >
+                I confirm this dangerous command
+              </Checkbox>
+            </Form.Item>
+          )}
+        </Form>
+      </Space>
+    )
+  }
+
+  const renderGuidedParams = () => {
+    if (!selectedCommand) {
+      return null
+    }
+
+    const paramsByName = selectedCommand.params_by_name ?? {}
+    const entries = sortParams(
+      Object.entries(paramsByName)
+        .filter(([, schema]) => Boolean(schema))
+        .filter(([name]) => driver !== 'ibcmd' || !IBCMD_CONNECTION_PARAM_NAMES.has(name))
+        .map(([name, schema]) => ({ name, schema }))
+    )
+
+    if (entries.length === 0) {
+      return null
+    }
+
+    return (
+      <Form layout="vertical">
+        {entries.map(({ name, schema }) => (
+          <ParamField
+            key={name}
+            name={name}
+            schema={schema}
+            value={params[name]}
+            disabled={readOnly}
+            onChange={(next) => setParamValue(name, next)}
+          />
+        ))}
+      </Form>
+    )
+  }
+
+  const argsEditorTitle = driver === 'cli' ? 'Args (one per line)' : 'Additional args (one per line)'
+  const argsEditorDescription = driver === 'cli'
+    ? 'Manual mode: you are responsible for the command syntax and parameters.'
+    : 'Extra ibcmd arguments appended after canonical argv.'
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Tabs
+        activeKey={mode}
+        onChange={handleModeChange}
+        items={[
+          { key: 'guided', label: 'Guided' },
+          { key: 'manual', label: 'Manual' },
+        ]}
+      />
+
+      {driverCommandsQuery.isLoading && <Spin tip="Loading driver commands..." />}
+      {driverCommandsQuery.error && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Driver commands unavailable"
+          description={driverCommandsQuery.error.message}
+        />
+      )}
+
+      <Form layout="vertical">
+        <Form.Item label="Command" required style={{ marginBottom: 12 }}>
+          <Select
+            showSearch
+            placeholder="Select command"
+            disabled={readOnly || driverCommandsQuery.isLoading}
+            value={commandId || undefined}
+            options={commandOptions}
+            optionFilterProp="label"
+            onChange={handleCommandChange}
+          />
+        </Form.Item>
+      </Form>
+
+      {selectedCommand && selectedCommand.description && (
+        <Text type="secondary">{selectedCommand.description}</Text>
+      )}
+      {selectedCommand && selectedCommand.source_section && (
+        <Text type="secondary">Source: {selectedCommand.source_section}</Text>
+      )}
+
+      {risk === 'dangerous' && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Dangerous command"
+          description="This command is marked as dangerous. Review carefully before execution."
+        />
+      )}
+
+      {driver === 'ibcmd' && renderIbcmdExecution()}
+
+      {driver === 'cli' && renderCliOptions()}
+
+      {mode === 'guided' && renderGuidedParams()}
+
+      {(mode === 'manual' || driver === 'ibcmd') && (
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+          {mode === 'manual' && (
+            <Alert type="warning" showIcon message="Manual mode" description={argsEditorDescription} />
+          )}
+          <Text strong>{argsEditorTitle}</Text>
+          <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}>
+            <Editor
+              height={driver === 'cli' ? 220 : 160}
+              language="plaintext"
+              theme="vs"
+              value={config.args_text || ''}
+              onChange={(next) => onChange({ args_text: next ?? '' })}
+              options={buildEditorOptions(readOnly)}
+            />
+          </div>
+        </Space>
+      )}
+
+      {commandId && preview.argv_masked.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          message="Preview"
+          description={preview.argv_masked.join('\n')}
+        />
+      )}
+    </Space>
+  )
+}
+
+export default DriverCommandBuilder

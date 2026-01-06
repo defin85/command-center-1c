@@ -1966,6 +1966,43 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/driver-commands/:
+    get:
+      operationId: v2_operations_driver_commands_retrieve
+      description: |-
+        Return schema-driven command catalog for the requested driver.
+
+        Supports conditional requests via ETag/If-None-Match (returns 304).
+      summary: Get driver command catalog (v2)
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ibcmd)
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCommandsResponseV2'
+          description: ''
+        '304':
+          description: Not Modified
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
@@ -2018,7 +2055,9 @@ paths:
         \   **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n
         \   - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`
         - Replicate infobase to another server\n    - `ibcmd_create` - Create new
-        infobase\n    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension (*.cfe) into infobase\n    - `ibcmd_extension_update` - Update extension properties (safe-mode, scope, etc.)\n    "
+        infobase\n    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension
+        (*.cfe) into infobase\n    - `ibcmd_extension_update` - Update extension properties
+        (safe-mode, scope, etc.)\n    "
       summary: Execute IBCMD operation
       tags:
       - v2
@@ -2052,6 +2091,52 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/execute-ibcmd-cli/:
+    post:
+      operationId: v2_operations_execute_ibcmd_cli_create
+      description: "\n    Queue schema-driven IBCMD command for execution.\n\n    Uses
+        driver catalog v2 (base@approved + overrides@active) to validate `command_id`\n
+        \   and build canonical `argv[]`.\n\n    Supports both scopes:\n    - per_database:
+        executes per selected database\n    - global: executes once (requires `auth_database_id`
+        for RBAC + IB user mapping)\n\n    Dangerous commands require `confirm_dangerous=true`.\n
+        \   "
+      summary: Execute schema-driven IBCMD command (ibcmd_cli)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdCliOperationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdCliOperationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecuteIbcmdCliOperationRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteOperationResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
   /api/v2/operations/get-operation/:
     get:
       operationId: v2_operations_get_operation_retrieve
@@ -2891,8 +2976,12 @@ paths:
   /api/v2/settings/driver-catalogs/import-its/:
     post:
       operationId: v2_settings_driver_catalogs_import_its_create
-      description: Parse ITS JSON into CLI command catalog and optionally save (staff-only).
-      summary: Import ITS catalog for CLI
+      description: |-
+        Parse ITS JSON into driver command catalog and optionally save (staff-only).
+
+        driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.
+        driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact.
+      summary: Import ITS catalog
       tags:
       - v2
       requestBody:
@@ -2916,6 +3005,112 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DriverCatalogImportResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/overrides/get/:
+    get:
+      operationId: v2_settings_driver_catalogs_overrides_get_retrieve
+      description: Return active overrides catalog for the requested driver (staff-only).
+      summary: Get driver catalog overrides (v2)
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ibcmd)
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogOverridesGetResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/overrides/update/:
+    post:
+      operationId: v2_settings_driver_catalogs_overrides_update_create
+      description: Upload new overrides catalog version and move alias active (staff-only).
+      summary: Update driver catalog overrides (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogOverridesUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/driver-catalogs/promote/:
+    post:
+      operationId: v2_settings_driver_catalogs_promote_create
+      description: Move base alias (approved/latest) to a specific version (staff-only).
+      summary: Promote driver catalog base alias
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCatalogPromoteResponse'
           description: ''
         '400':
           content:
@@ -3735,7 +3930,7 @@ paths:
     post:
       operationId: v2_workflows_execute_workflow_create
       description: Execute a workflow template. Supports sync (blocking) and async
-        (background via Celery) modes.
+        (Go Worker if enabled, else in-process background runner) modes.
       summary: Execute workflow
       tags:
       - v2
@@ -4361,6 +4556,7 @@ components:
       - epf
       - erf
       - ibcmd_package
+      - driver_catalog
       - ras_script
       - other
       type: string
@@ -4372,6 +4568,7 @@ components:
         * `epf` - EPF
         * `erf` - ERF
         * `ibcmd_package` - IBCMD Package
+        * `driver_catalog` - Driver Catalog
         * `ras_script` - RAS Script
         * `other` - Other
     ArtifactCreateResponse:
@@ -4593,6 +4790,9 @@ components:
       - ibcmd_restore
       - ibcmd_replicate
       - ibcmd_create
+      - ibcmd_load_cfg
+      - ibcmd_extension_update
+      - ibcmd_cli
       - designer_cli
       type: string
       description: |-
@@ -4612,6 +4812,9 @@ components:
         * `ibcmd_restore` - IBCMD Restore
         * `ibcmd_replicate` - IBCMD Replicate
         * `ibcmd_create` - IBCMD Create
+        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+        * `ibcmd_extension_update` - IBCMD Extension Update
+        * `ibcmd_cli` - IBCMD CLI (schema-driven)
         * `designer_cli` - Designer CLI
     BatchOperationStatusEnum:
       enum:
@@ -5671,7 +5874,8 @@ components:
       type: object
       properties:
         driver:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DriverEnum'
           default: cli
         its_payload:
           type: object
@@ -5719,6 +5923,71 @@ components:
       required:
       - count
       - items
+    DriverCatalogOverridesGetResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        overrides_version:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+      - overrides_version
+    DriverCatalogOverridesUpdateRequest:
+      type: object
+      properties:
+        driver:
+          $ref: '#/components/schemas/DriverEnum'
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+    DriverCatalogOverridesUpdateResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        overrides_version:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+      - overrides_version
+    DriverCatalogPromoteRequest:
+      type: object
+      properties:
+        driver:
+          $ref: '#/components/schemas/DriverEnum'
+        version:
+          type: string
+        alias:
+          type: string
+          default: approved
+      required:
+      - driver
+      - version
+    DriverCatalogPromoteResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        alias:
+          type: string
+        version:
+          type: string
+      required:
+      - alias
+      - driver
+      - version
     DriverCatalogUpdateRequest:
       type: object
       properties:
@@ -5730,6 +5999,142 @@ components:
       required:
       - catalog
       - driver
+    DriverCatalogV2:
+      type: object
+      properties:
+        catalog_version:
+          type: integer
+        driver:
+          type: string
+        platform_version:
+          type: string
+        source:
+          $ref: '#/components/schemas/DriverCatalogV2Source'
+        generated_at:
+          type: string
+        commands_by_id:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DriverCommandV2'
+      required:
+      - catalog_version
+      - commands_by_id
+      - driver
+    DriverCatalogV2Source:
+      type: object
+      properties:
+        type:
+          type: string
+        doc_id:
+          type: string
+        section_prefix:
+          type: string
+        doc_url:
+          type: string
+        hint:
+          type: string
+    DriverCommandParamV2:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/DriverCommandParamV2KindEnum'
+        flag:
+          type: string
+        position:
+          type: integer
+          nullable: true
+        required:
+          type: boolean
+        expects_value:
+          type: boolean
+        label:
+          type: string
+        description:
+          type: string
+        value_type:
+          oneOf:
+          - $ref: '#/components/schemas/ValueTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        enum:
+          type: array
+          items:
+            type: string
+        default: {}
+        repeatable:
+          type: boolean
+        sensitive:
+          type: boolean
+        artifact: {}
+        ui: {}
+        disabled:
+          type: boolean
+      required:
+      - expects_value
+      - kind
+      - required
+    DriverCommandParamV2KindEnum:
+      enum:
+      - flag
+      - positional
+      type: string
+      description: |-
+        * `flag` - flag
+        * `positional` - positional
+    DriverCommandV2:
+      type: object
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+        argv:
+          type: array
+          items:
+            type: string
+        scope:
+          $ref: '#/components/schemas/ScopeEnum'
+        risk_level:
+          $ref: '#/components/schemas/RiskLevelEnum'
+        params_by_name:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DriverCommandParamV2'
+        ui: {}
+        source_section:
+          type: string
+        disabled:
+          type: boolean
+        permissions: {}
+      required:
+      - argv
+      - label
+      - risk_level
+      - scope
+    DriverCommandsResponseV2:
+      type: object
+      properties:
+        driver:
+          type: string
+        base_version:
+          type: string
+        overrides_version:
+          type: string
+          nullable: true
+        generated_at:
+          type: string
+        catalog:
+          $ref: '#/components/schemas/DriverCatalogV2'
+      required:
+      - catalog
+      - driver
+    DriverEnum:
+      enum:
+      - cli
+      - ibcmd
+      type: string
+      description: |-
+        * `cli` - cli
+        * `ibcmd` - ibcmd
     EffectiveAccessClusterItem:
       type: object
       properties:
@@ -5794,6 +6199,58 @@ components:
           $ref: '#/components/schemas/ErrorDetail'
       required:
       - error
+    ExecuteIbcmdCliOperationRequest:
+      type: object
+      description: Request body for execute_ibcmd_cli_operation endpoint.
+      properties:
+        command_id:
+          type: string
+          description: IBCMD command id from driver catalog v2
+        mode:
+          allOf:
+          - $ref: '#/components/schemas/ExecuteIbcmdCliOperationRequestModeEnum'
+          default: guided
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Target databases for per_database commands (empty for global)
+          maxItems: 500
+        auth_database_id:
+          type: string
+          format: uuid
+          description: Anchor database for global commands (RBAC + infobase user mapping)
+        connection:
+          $ref: '#/components/schemas/IbcmdCliConnection'
+        params:
+          type: object
+          additionalProperties: {}
+        additional_args:
+          type: array
+          items:
+            type: string
+        stdin:
+          type: string
+          default: ''
+        confirm_dangerous:
+          type: boolean
+          default: false
+        timeout_seconds:
+          type: integer
+          maximum: 3600
+          minimum: 1
+          default: 900
+      required:
+      - command_id
+    ExecuteIbcmdCliOperationRequestModeEnum:
+      enum:
+      - guided
+      - manual
+      type: string
+      description: |-
+        * `guided` - guided
+        * `manual` - manual
     ExecuteIbcmdOperationRequest:
       type: object
       description: Request body for execute_ibcmd_operation endpoint.
@@ -5808,6 +6265,8 @@ components:
             * `ibcmd_restore` - IBCMD Restore
             * `ibcmd_replicate` - IBCMD Replicate
             * `ibcmd_create` - IBCMD Create
+            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+            * `ibcmd_extension_update` - IBCMD Extension Update
         database_ids:
           type: array
           items:
@@ -5863,6 +6322,8 @@ components:
             * `ibcmd_restore` - IBCMD Restore
             * `ibcmd_replicate` - IBCMD Replicate
             * `ibcmd_create` - IBCMD Create
+            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+            * `ibcmd_extension_update` - IBCMD Extension Update
             * `designer_cli` - Designer CLI
         database_ids:
           type: array
@@ -6239,6 +6700,34 @@ components:
           description: Error rate (0.0 to 1.0)
       required:
       - timestamp
+    IbcmdCliConnection:
+      type: object
+      properties:
+        remote:
+          type: string
+        pid:
+          type: integer
+          nullable: true
+        offline:
+          $ref: '#/components/schemas/IbcmdCliConnectionOffline'
+    IbcmdCliConnectionOffline:
+      type: object
+      properties:
+        config:
+          type: string
+        data:
+          type: string
+        dbms:
+          type: string
+        db_server:
+          type: string
+        db_name:
+          type: string
+        db_user:
+          type: string
+        db_pwd:
+          type: string
+          writeOnly: true
     InfobaseUserListResponse:
       type: object
       description: Response for list_infobase_users endpoint.
@@ -6459,6 +6948,9 @@ components:
           type: string
           nullable: true
           description: Jinja2 boolean expression for Condition nodes
+    NullEnum:
+      enum:
+      - null
     OperationCancelResponse:
       type: object
       description: Response for cancel_operation endpoint.
@@ -6996,6 +7488,14 @@ components:
           type: boolean
       required:
       - deleted
+    RiskLevelEnum:
+      enum:
+      - safe
+      - dangerous
+      type: string
+      description: |-
+        * `safe` - safe
+        * `dangerous` - dangerous
     RuntimeSetting:
       type: object
       properties:
@@ -7057,6 +7557,14 @@ components:
       - expires_in
       - stream_url
       - ticket
+    ScopeEnum:
+      enum:
+      - per_database
+      - global
+      type: string
+      description: |-
+        * `per_database` - per_database
+        * `global` - global
     ServiceHealth:
       type: object
       description: Health status of a single service.
@@ -7563,8 +8071,10 @@ components:
           type: string
         database:
           type: string
+          nullable: true
         database_name:
           type: string
+          nullable: true
           readOnly: true
         status:
           allOf:
@@ -7619,7 +8129,6 @@ components:
       required:
       - batch_operation
       - created_at
-      - database
       - database_name
       - duration_seconds
       - error_message
@@ -8057,6 +8566,18 @@ components:
       required:
       - code
       - message
+    ValueTypeEnum:
+      enum:
+      - string
+      - int
+      - float
+      - bool
+      type: string
+      description: |-
+        * `string` - string
+        * `int` - int
+        * `float` - float
+        * `bool` - bool
     WorkflowCloneResponse:
       type: object
       description: Response for clone_workflow endpoint.
@@ -8133,16 +8654,16 @@ components:
       type: object
       description: Serializer for WorkflowEdge Pydantic model.
       properties:
+        condition:
+          type: string
+          nullable: true
+          description: Jinja2 expression for conditional edges
         from:
           type: string
           description: Source node ID
         to:
           type: string
           description: Destination node ID
-        condition:
-          type: string
-          nullable: true
-          description: Jinja2 expression for conditional edges
       required:
       - from
       - to

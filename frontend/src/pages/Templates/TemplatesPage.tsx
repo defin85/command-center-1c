@@ -12,7 +12,7 @@ import {
 } from '../../api/queries/templates'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
-import { DesignerCliBuilder, type DesignerCliConfig } from '../../components/cli/DesignerCliBuilder'
+import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../components/driverCommands/DriverCommandBuilder'
 import { useMe } from '../../api/queries/me'
 
 const { Title, Text } = Typography
@@ -24,7 +24,7 @@ export function TemplatesPage() {
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<OperationTemplate | null>(null)
-  const [cliConfig, setCliConfig] = useState<DesignerCliConfig>({})
+  const [cliConfig, setCliConfig] = useState<DriverCommandOperationConfig>({ driver: 'cli', mode: 'guided', params: {} })
   const [form] = Form.useForm<{ name: string; description?: string; is_active?: boolean }>()
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -42,27 +42,25 @@ export function TemplatesPage() {
 
   const isStaff = Boolean(meQuery.data?.is_staff)
 
-  const normalizeArgs = (value: DesignerCliConfig['args']): string[] | undefined => {
-    if (Array.isArray(value)) {
-      const list = value.filter((item) => typeof item === 'string' && item.trim().length > 0)
-      return list.length > 0 ? list : undefined
+  const normalizeArgs = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) {
+      return undefined
     }
-    if (typeof value === 'string') {
-      const list = value
-        .split('\n')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0)
-      return list.length > 0 ? list : undefined
-    }
-    return undefined
+    const list = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    return list.length > 0 ? list : undefined
   }
 
   const openCreateModal = useCallback(() => {
     setEditingTemplate(null)
     setCliConfig({
-      cli_mode: 'guided',
-      disable_startup_messages: true,
-      disable_startup_dialogs: true,
+      driver: 'cli',
+      mode: 'guided',
+      params: {},
+      args_text: '',
+      cli_options: {
+        disable_startup_messages: true,
+        disable_startup_dialogs: true,
+      },
     })
     form.setFieldsValue({ name: '', description: '', is_active: true })
     setModalOpen(true)
@@ -72,21 +70,36 @@ export function TemplatesPage() {
     setEditingTemplate(template)
     const data = (template.template_data as Record<string, unknown>) || {}
     const options = (data.options as Record<string, unknown>) || {}
+    const args = Array.isArray(data.args) ? (data.args as unknown[]) : []
+    const argsList = args.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    const mode = (data.cli_mode as DriverCommandOperationConfig['mode']) || 'guided'
+    const rawParams = (data.cli_params as Record<string, unknown>) || {}
+    const params: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(rawParams)) {
+      if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+        params[key] = value
+      }
+    }
+
     setCliConfig({
-      command: typeof data.command === 'string' ? data.command : undefined,
-      args: Array.isArray(data.args) ? (data.args as string[]) : undefined,
-      disable_startup_messages: typeof options.disable_startup_messages === 'boolean'
-        ? (options.disable_startup_messages as boolean)
-        : typeof data.disable_startup_messages === 'boolean'
-          ? (data.disable_startup_messages as boolean)
-          : true,
-      disable_startup_dialogs: typeof options.disable_startup_dialogs === 'boolean'
-        ? (options.disable_startup_dialogs as boolean)
-        : typeof data.disable_startup_dialogs === 'boolean'
-          ? (data.disable_startup_dialogs as boolean)
-          : true,
-      cli_mode: (data.cli_mode as DesignerCliConfig['cli_mode']) || 'guided',
-      cli_params: (data.cli_params as Record<string, string | boolean>) || {},
+      driver: 'cli',
+      mode,
+      command_id: typeof data.command === 'string' ? data.command : undefined,
+      args_text: mode === 'manual' ? argsList.join('\n') : '',
+      params,
+      resolved_args: argsList.length > 0 ? argsList : undefined,
+      cli_options: {
+        disable_startup_messages: typeof options.disable_startup_messages === 'boolean'
+          ? (options.disable_startup_messages as boolean)
+          : typeof data.disable_startup_messages === 'boolean'
+            ? (data.disable_startup_messages as boolean)
+            : true,
+        disable_startup_dialogs: typeof options.disable_startup_dialogs === 'boolean'
+          ? (options.disable_startup_dialogs as boolean)
+          : typeof data.disable_startup_dialogs === 'boolean'
+            ? (data.disable_startup_dialogs as boolean)
+            : true,
+      },
     })
     form.setFieldsValue({
       name: template.name,
@@ -99,11 +112,28 @@ export function TemplatesPage() {
   const handleSaveTemplate = useCallback(async () => {
     try {
       const values = await form.validateFields()
-      const command = typeof cliConfig.command === 'string' ? cliConfig.command.trim() : ''
+      const command = typeof cliConfig.command_id === 'string' ? cliConfig.command_id.trim() : ''
       if (!command) {
         message.error('Command is required')
         return
       }
+
+      const args = normalizeArgs(cliConfig.resolved_args) ?? []
+      const opt = cliConfig.cli_options ?? {}
+
+      const cliParams: Record<string, string | boolean> = {}
+      for (const [key, value] of Object.entries(cliConfig.params ?? {})) {
+        if (typeof value === 'boolean') {
+          cliParams[key] = value
+        } else if (typeof value === 'string') {
+          if (value.trim().length > 0) {
+            cliParams[key] = value
+          }
+        } else if (typeof value === 'number' && Number.isFinite(value)) {
+          cliParams[key] = String(value)
+        }
+      }
+
       const payload = {
         id: editingTemplate?.id,
         name: values.name,
@@ -112,13 +142,13 @@ export function TemplatesPage() {
         target_entity: 'infobase',
         template_data: {
           command,
-          args: normalizeArgs(cliConfig.args),
+          args: args.length > 0 ? args : undefined,
           options: {
-            disable_startup_messages: cliConfig.disable_startup_messages !== false,
-            disable_startup_dialogs: cliConfig.disable_startup_dialogs !== false,
+            disable_startup_messages: opt.disable_startup_messages !== false,
+            disable_startup_dialogs: opt.disable_startup_dialogs !== false,
           },
-          cli_mode: cliConfig.cli_mode,
-          cli_params: cliConfig.cli_params,
+          cli_mode: cliConfig.mode || 'guided',
+          cli_params: cliParams,
         },
         is_active: values.is_active !== false,
       }
@@ -323,7 +353,8 @@ export function TemplatesPage() {
           </Form.Item>
         </Form>
 
-        <DesignerCliBuilder
+        <DriverCommandBuilder
+          driver="cli"
           config={cliConfig}
           onChange={(updates) => setCliConfig((prev) => ({ ...prev, ...updates }))}
         />

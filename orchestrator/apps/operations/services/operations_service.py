@@ -6,6 +6,8 @@ to Go Workers, replacing Celery tasks for better performance and control.
 
 Message Protocol v2.0 compliance - see go-services/shared/models/operation_v2.go
 """
+import hashlib
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -64,6 +66,7 @@ class OperationsService:
 
     QUEUE_KEY = "cc1c:operations:v1"
     VERSION = "2.0"
+    TARGET_SCOPE_GLOBAL = "global"
 
     # Conflicting operation types - cannot run concurrently on same databases
     CONFLICTING_OPERATIONS = {
@@ -156,6 +159,53 @@ class OperationsService:
             # 1. Get operation from DB
             operation = BatchOperation.objects.get(id=operation_id)
 
+            # 1.1 Optional: global scope lock (per standalone target_ref)
+            global_target_ref = None
+            target_scope = cls._extract_target_scope(operation.payload)
+            if target_scope == cls.TARGET_SCOPE_GLOBAL:
+                target_ref = cls._compute_global_target_ref(operation.payload)
+                if target_ref:
+                    global_target_ref = target_ref
+                    lock_acquired = redis_client.acquire_global_target_lock(
+                        target_ref,
+                        ttl_seconds=3600,  # 1 hour safety TTL; released on completion when possible
+                    )
+                    if not lock_acquired:
+                        logger.warning(
+                            "Global target already locked (duplicate submission)",
+                            extra={
+                                "operation_id": operation_id,
+                                "operation_type": operation.operation_type,
+                                "target_ref": target_ref,
+                            },
+                        )
+                        return EnqueueResult(
+                            success=False,
+                            operation_id=operation_id,
+                            status="duplicate",
+                            error="Global target already in progress",
+                        )
+
+                    metadata = operation.metadata or {}
+                    metadata["target_scope"] = cls.TARGET_SCOPE_GLOBAL
+                    metadata["target_ref"] = target_ref
+                    operation.metadata = metadata
+
+                    if isinstance(operation.payload, dict):
+                        payload_options = operation.payload.get("options")
+                        if not isinstance(payload_options, dict):
+                            payload_options = {}
+                            operation.payload["options"] = payload_options
+                        payload_options["target_scope"] = cls.TARGET_SCOPE_GLOBAL
+                        payload_options["target_ref"] = target_ref
+
+                    operation.save(update_fields=["metadata", "payload", "updated_at"])
+                else:
+                    logger.info(
+                        "Global scope operation without target_ref: skipping global lock",
+                        extra={"operation_id": operation_id, "operation_type": operation.operation_type},
+                    )
+
             # 2. Idempotency check - acquire enqueue lock (separate from Worker's task lock)
             lock_acquired = redis_client.acquire_enqueue_lock(
                 task_id=operation_id,
@@ -166,6 +216,11 @@ class OperationsService:
                 logger.warning(
                     f"Operation {operation_id} already locked (duplicate submission)"
                 )
+                if global_target_ref:
+                    try:
+                        redis_client.release_global_target_lock(global_target_ref)
+                    except Exception:
+                        pass
                 return EnqueueResult(
                     success=False,
                     operation_id=operation_id,
@@ -252,6 +307,13 @@ class OperationsService:
 
             # Release enqueue lock on error
             redis_client.release_enqueue_lock(operation_id)
+
+            # Release global lock (if acquired) on error before queue
+            try:
+                if 'global_target_ref' in locals() and global_target_ref:
+                    redis_client.release_global_target_lock(global_target_ref)
+            except Exception:
+                pass
 
             # Record error metric (use operation type if available from local scope)
             try:
@@ -570,6 +632,13 @@ class OperationsService:
                 payload_options = raw_options if isinstance(raw_options, dict) else {}
             else:
                 payload_data = payload
+                raw_options = payload.get("options")
+                if isinstance(raw_options, dict):
+                    # Preserve legacy payload shape (drivers may rely on payload.data.options),
+                    # but expose scope hints in payload.options for protocol-level routing.
+                    for key in ("target_scope", "target_ref"):
+                        if key in raw_options:
+                            payload_options[key] = raw_options.get(key)
 
         return {
             "version": cls.VERSION,
@@ -603,6 +672,66 @@ class OperationsService:
                 "trace_id": operation.metadata.get("trace_id"),
             }
         }
+
+    @classmethod
+    def _extract_target_scope(cls, payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return ""
+        options = payload.get("options")
+        if isinstance(options, dict):
+            return str(options.get("target_scope") or "").strip().lower()
+        return ""
+
+    @classmethod
+    def _compute_global_target_ref(cls, payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return ""
+
+        options = payload.get("options")
+        if isinstance(options, dict):
+            explicit = options.get("target_ref")
+            if isinstance(explicit, str):
+                explicit = explicit.strip()
+                if explicit:
+                    return explicit
+
+        data_section = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if not isinstance(data_section, dict):
+            return ""
+
+        connection = data_section.get("connection")
+        if not isinstance(connection, dict):
+            connection = {}
+
+        remote = str(connection.get("remote") or data_section.get("remote") or "").strip().lower()
+        pid = connection.get("pid")
+        if pid is None:
+            pid = data_section.get("pid")
+        pid_str = str(pid).strip() if pid is not None else ""
+
+        offline = connection.get("offline")
+        if not isinstance(offline, dict):
+            offline = data_section.get("offline") if isinstance(data_section.get("offline"), dict) else {}
+
+        offline_ref: dict[str, str] = {}
+        for key in ("config", "data", "dbms", "db_server", "db_name", "db_user"):
+            value = offline.get(key)
+            if value is None:
+                continue
+            offline_ref[key] = str(value).strip()
+
+        if not remote and not pid_str and not offline_ref:
+            return ""
+
+        normalized = {
+            "remote": remote,
+            "pid": pid_str,
+            "offline": offline_ref,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(normalized, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return fingerprint[:12]
 
     @classmethod
     def enqueue_health_check(

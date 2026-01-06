@@ -12,7 +12,7 @@ Tests cover:
 
 import pytest
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from uuid import uuid4
 
 
@@ -133,6 +133,19 @@ class TestBatchOperationFactory:
         assert operation.status == BatchOperation.STATUS_PENDING
         assert operation.total_tasks == 1
         assert operation.created_by == "system"
+
+    def test_create_global_scope_creates_single_task_without_database(self, operation_template):
+        operation = BatchOperationFactory.create(
+            template=operation_template,
+            rendered_data={"options": {"target_scope": "global"}},
+            target_databases=[],
+        )
+
+        assert operation.target_databases.count() == 0
+        assert operation.total_tasks == 1
+        task = operation.tasks.get()
+        assert task.database_id is None
+        assert task.status == Task.STATUS_PENDING
 
     def test_create_with_workflow_context(
         self, operation_template, test_database, workflow_execution
@@ -666,6 +679,56 @@ class TestOperationHandlerTargetDatabases:
 
         # No operation should be created
         assert BatchOperation.objects.count() == 0
+
+    def test_handler_allows_global_scope_without_target_databases(self, workflow_execution):
+        from apps.templates.workflow.handlers import OperationHandler, NodeExecutionMode
+        from apps.templates.workflow.models import WorkflowNode
+
+        template = OperationTemplate.objects.create(
+            id="tpl_global_cli_" + str(uuid4())[:8],
+            name="Global CLI Template",
+            operation_type="designer_cli",
+            target_entity="Infobase",
+            template_data={},
+        )
+
+        node = WorkflowNode(
+            id="global_cli_node",
+            name="Global CLI Node",
+            type="operation",
+            template_id=template.id,
+        )
+
+        handler = OperationHandler()
+        with patch.object(handler.renderer, "render") as mock_render:
+            mock_render.return_value = {
+                "command": "Any",
+                "args": [],
+                "options": {"target_scope": "global"},
+            }
+
+            with patch("apps.operations.services.OperationsService.enqueue_operation") as mock_enqueue:
+                mock_enqueue.side_effect = lambda operation_id: EnqueueResult(
+                    success=True,
+                    operation_id=str(operation_id),
+                    status="queued",
+                )
+
+                result = handler.execute(
+                    node=node,
+                    context={"user_id": "test_user"},
+                    execution=workflow_execution,
+                    mode=NodeExecutionMode.ASYNC,
+                )
+
+        assert result.success is True
+        assert result.operation_id is not None
+
+        operation = BatchOperation.objects.get(id=result.operation_id)
+        assert operation.target_databases.count() == 0
+        assert operation.total_tasks == 1
+        task = operation.tasks.get()
+        assert task.database_id is None
 
 
 # ============================================================================

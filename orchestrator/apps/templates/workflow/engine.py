@@ -14,7 +14,7 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
-from asgiref.sync import sync_to_async
+from asgiref.sync import async_to_sync, sync_to_async
 from django.db import transaction
 
 from apps.templates.tracing import (
@@ -518,7 +518,10 @@ class WorkflowEngine:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(coro)
+            async def runner():
+                return await coro
+
+            return async_to_sync(runner)()
         raise RuntimeError("Cannot call sync wrapper from async context")
 
     def execute_workflow_sync(

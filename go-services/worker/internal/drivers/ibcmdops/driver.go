@@ -49,6 +49,7 @@ func (d *Driver) OperationTypes() []string {
 		"ibcmd_create",
 		"ibcmd_load_cfg",
 		"ibcmd_extension_update",
+		"ibcmd_cli",
 	}
 }
 
@@ -81,6 +82,22 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	creds, err := d.fetchCredentials(credsCtx, databaseID)
 	if err != nil {
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("failed to fetch credentials: %v", err), "CREDENTIALS_ERROR"), nil
+	}
+	if msg.OperationType == "ibcmd_cli" {
+		username := strings.TrimSpace(creds.IBUsername)
+		if username == "" {
+			createdBy := strings.TrimSpace(msg.Metadata.CreatedBy)
+			if createdBy == "" {
+				createdBy = "unknown"
+			}
+			return d.failResult(
+				msg,
+				databaseID,
+				start,
+				fmt.Sprintf("infobase user mapping not configured for created_by=%s", createdBy),
+				"CREDENTIALS_ERROR",
+			), nil
+		}
 	}
 
 	var agent *ibsrv.AgentProcess
@@ -316,6 +333,26 @@ type replicateTargetConfig struct {
 
 func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials, store storage) (*ibcmdRequest, error) {
 	data := msg.Payload.Data
+
+	if msg.OperationType == "ibcmd_cli" {
+		argv := extractStringSlice(data, "argv")
+		if len(argv) == 0 {
+			return nil, fmt.Errorf("argv is required")
+		}
+
+		resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, argv, msg.OperationID, databaseID)
+		if err != nil {
+			return nil, err
+		}
+
+		credsArgs := injectInfobaseAuthArgs(resolvedArgs, creds)
+		return &ibcmdRequest{
+			Args:         credsArgs,
+			Stdin:        extractString(data, "stdin"),
+			inputCleanup: cleanup,
+		}, nil
+	}
+
 	if args := extractStringSlice(data, "args"); len(args) > 0 {
 		resolvedArgs, cleanup, err := resolveArtifactArgs(ctx, args, msg.OperationID, databaseID)
 		if err != nil {
@@ -555,6 +592,58 @@ func pickIBPassword(creds *credentials.DatabaseCredentials) string {
 		return ""
 	}
 	return strings.TrimSpace(creds.IBPassword)
+}
+
+func injectInfobaseAuthArgs(args []string, creds *credentials.DatabaseCredentials) []string {
+	if len(args) == 0 {
+		return args
+	}
+
+	cleaned := stripInfobaseAuthArgs(args)
+	if creds == nil {
+		return cleaned
+	}
+
+	username := strings.TrimSpace(creds.IBUsername)
+	if username == "" {
+		return cleaned
+	}
+	password := strings.TrimSpace(creds.IBPassword)
+
+	cleaned = append(cleaned, fmt.Sprintf("--user=%s", username))
+	cleaned = append(cleaned, fmt.Sprintf("--password=%s", password))
+	return cleaned
+}
+
+func stripInfobaseAuthArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+
+	result := make([]string, 0, len(args))
+	skipNext := false
+	for _, raw := range args {
+		token := strings.TrimSpace(raw)
+		if token == "" {
+			continue
+		}
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		lowered := strings.ToLower(token)
+		if strings.HasPrefix(lowered, "--user") || strings.HasPrefix(lowered, "--password") {
+			if strings.Contains(token, "=") {
+				continue
+			}
+			skipNext = true
+			continue
+		}
+		result = append(result, token)
+	}
+
+	return result
 }
 
 func extractReplicateTargetConfig(data map[string]interface{}) (replicateTargetConfig, error) {

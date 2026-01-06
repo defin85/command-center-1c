@@ -513,8 +513,7 @@ class TestServiceConnections:
     async def test_get_service_connections(self, client):
         """Test retrieving service connections."""
         with patch.object(client, 'query', new_callable=AsyncMock) as mock_query:
-            # SERVICE_TOPOLOGY has 8 connections, each needs 2 queries (rpm + latency)
-            # Total: 16 query results needed
+            # SERVICE_TOPOLOGY connections, each needs 2 queries (rpm + latency)
             mock_query.side_effect = [
                 # For each connection, provide rpm result and latency result
                 # frontend->api-gateway
@@ -529,6 +528,9 @@ class TestServiceConnections:
                 # orchestrator->redis
                 {'data': {'result': [{'value': ['1234567890', '2000']}]}}, # rpm
                 {'data': {'result': [{'value': ['1234567890', '5']}]}},    # latency
+                # orchestrator->minio
+                {'data': {'result': [{'value': ['1234567890', '300']}]}},  # rpm
+                {'data': {'result': [{'value': ['1234567890', '20']}]}},   # latency
                 # redis->worker
                 {'data': {'result': [{'value': ['1234567890', '800']}]}},  # rpm
                 {'data': {'result': [{'value': ['1234567890', '4']}]}},    # latency
@@ -541,6 +543,9 @@ class TestServiceConnections:
                 # worker->ras-server
                 {'data': {'result': [{'value': ['1234567890', '60']}]}},   # rpm
                 {'data': {'result': [{'value': ['1234567890', '25']}]}},   # latency
+                # worker->minio
+                {'data': {'result': [{'value': ['1234567890', '40']}]}},   # rpm
+                {'data': {'result': [{'value': ['1234567890', '18']}]}},   # latency
             ]
 
             connections = await client.get_service_connections()

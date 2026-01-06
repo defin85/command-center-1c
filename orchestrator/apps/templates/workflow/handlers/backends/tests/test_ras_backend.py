@@ -31,7 +31,7 @@ class TestRASBackendExecution:
         operation.total_tasks = 2
 
         with patch('apps.templates.workflow.handlers.backends.ras.BatchOperationFactory.create', return_value=operation), \
-             patch('apps.templates.workflow.handlers.backends.ras.OperationsService.enqueue_operation') as mock_enqueue:
+             patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue:
             mock_enqueue.return_value = MagicMock(success=True, operation_id='op-1')
 
             result = backend.execute(
@@ -54,7 +54,7 @@ class TestRASBackendExecution:
         operation.total_tasks = 1
 
         with patch('apps.templates.workflow.handlers.backends.ras.BatchOperationFactory.create', return_value=operation), \
-             patch('apps.templates.workflow.handlers.backends.ras.OperationsService.enqueue_operation') as mock_enqueue, \
+             patch('apps.operations.services.OperationsService.enqueue_operation') as mock_enqueue, \
              patch('apps.templates.workflow.handlers.backends.ras.ResultWaiter.wait') as mock_wait:
             mock_enqueue.return_value = MagicMock(success=True, operation_id='op-2')
             mock_wait.return_value = {'success': True, 'status': 'completed'}

@@ -16,6 +16,19 @@ from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
 
+TARGET_SCOPE_GLOBAL = "global"
+
+
+def _extract_target_scope(rendered_data: Dict[str, Any]) -> str:
+    if not isinstance(rendered_data, dict):
+        return ""
+    options = rendered_data.get("options")
+    if isinstance(options, dict):
+        value = str(options.get("target_scope") or "").strip().lower()
+        if value:
+            return value
+    return ""
+
 
 class BatchOperationFactory:
     """
@@ -54,8 +67,10 @@ class BatchOperationFactory:
             ValueError: Если target_databases пустой
             Database.DoesNotExist: Если база данных не найдена
         """
+        target_scope = _extract_target_scope(rendered_data)
+
         # Валидация
-        if not target_databases:
+        if not target_databases and target_scope != TARGET_SCOPE_GLOBAL:
             raise ValueError("target_databases cannot be empty")
 
         # Генерация operation_id
@@ -103,6 +118,21 @@ class BatchOperationFactory:
                 created_by=created_by,
                 metadata=metadata,
             )
+
+            if target_scope == TARGET_SCOPE_GLOBAL:
+                task_id = f"{operation_id}-global"
+                Task.objects.create(
+                    id=task_id,
+                    batch_operation=operation,
+                    database=None,
+                    status=Task.STATUS_PENDING,
+                )
+                operation.total_tasks = 1
+                operation.save(update_fields=['total_tasks', 'updated_at'])
+                logger.info(
+                    f"BatchOperation created: id={operation_id}, tasks=1 (global)"
+                )
+                return operation
 
             # Получаем объекты Database
             databases = list(Database.objects.filter(id__in=target_databases))

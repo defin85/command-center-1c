@@ -728,8 +728,11 @@ class EventSubscriber:
             if results:
                 for result in results:
                     database_id = result.get("database_id")
-                    if not database_id:
-                        continue
+                    task_qs = Task.objects.filter(batch_operation=batch_op)
+                    if database_id:
+                        task_qs = task_qs.filter(database_id=database_id)
+                    else:
+                        task_qs = task_qs.filter(database__isnull=True)
 
                     status = Task.STATUS_COMPLETED if result.get("success") else Task.STATUS_FAILED
                     duration_seconds = result.get("duration_seconds")
@@ -748,10 +751,7 @@ class EventSubscriber:
                         update_fields["error_code"] = result.get("error_code") or "UNKNOWN_ERROR"
                         update_fields["result"] = None
 
-                    Task.objects.filter(
-                        batch_operation=batch_op,
-                        database_id=database_id
-                    ).update(**update_fields)
+                    task_qs.update(**update_fields)
 
                 successful = sum(1 for result in results if result.get("success"))
                 failed = len(results) - successful
@@ -810,6 +810,22 @@ class EventSubscriber:
 
             # Record Prometheus metric for completed operation
             _record_batch_metric(batch_op.operation_type, 'completed')
+
+            metadata = batch_op.metadata or {}
+            target_scope = str(metadata.get("target_scope") or "").strip().lower()
+            target_ref = str(metadata.get("target_ref") or "").strip()
+            if target_scope == "global" and target_ref:
+                try:
+                    operations_redis_client.release_global_target_lock(target_ref)
+                except Exception:
+                    pass
+            else:
+                global_lock_key = metadata.get("global_lock_key")
+                if global_lock_key:
+                    try:
+                        operations_redis_client.release_lock(global_lock_key)
+                    except Exception:
+                        pass
 
             _publish_completion_flow(
                 operation_id=operation_id,
@@ -877,6 +893,16 @@ class EventSubscriber:
             batch_op.metadata['error'] = error_msg
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
             workflow_metadata = _get_workflow_metadata(batch_op)
+            now = timezone.now()
+            Task.objects.filter(batch_operation=batch_op, database__isnull=True).update(
+                status=Task.STATUS_FAILED,
+                completed_at=now,
+                updated_at=now,
+                duration_seconds=None,
+                error_message=error_msg or "Unknown error",
+                error_code="WORKER_FAILED",
+                result=None,
+            )
             try:
                 operations_redis_client.add_timeline_event(
                     operation_id,
@@ -895,6 +921,22 @@ class EventSubscriber:
 
             # Record Prometheus metric for failed operation
             _record_batch_metric(batch_op.operation_type, 'failed')
+
+            metadata = batch_op.metadata or {}
+            target_scope = str(metadata.get("target_scope") or "").strip().lower()
+            target_ref = str(metadata.get("target_ref") or "").strip()
+            if target_scope == "global" and target_ref:
+                try:
+                    operations_redis_client.release_global_target_lock(target_ref)
+                except Exception:
+                    pass
+            else:
+                global_lock_key = metadata.get("global_lock_key")
+                if global_lock_key:
+                    try:
+                        operations_redis_client.release_lock(global_lock_key)
+                    except Exception:
+                        pass
 
             _publish_completion_flow(
                 operation_id=operation_id,

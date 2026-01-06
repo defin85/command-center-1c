@@ -99,7 +99,7 @@ class TestRASBackendIntegration:
             name="Terminate Sessions",
             operation_type='terminate_sessions',
             target_entity="Infobase",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(
@@ -146,7 +146,7 @@ class TestRASBackendIntegration:
             name="Block Sessions",
             operation_type='block_sessions',
             target_entity="Infobase",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(
@@ -218,37 +218,28 @@ class TestODataBackendIntegration:
 
         handler = OperationHandler()
 
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_operation.total_tasks = 2
-            mock_factory.create.return_value = mock_operation
+        with patch('apps.templates.workflow.handlers.backends.odata.ODataBackend.execute') as mock_execute:
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'operation_type': 'create'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.1,
+                operation_id='op-odata-create',
+                task_id=None,
+            )
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-123'
-                mock_enqueue.delay.return_value = mock_celery_result
-
-                with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
-                    mock_waiter.wait.return_value = {
-                        'success': True,
-                        'status': 'completed',
-                        'total_tasks': 2,
-                        'completed_tasks': 2,
-                        'error': None
-                    }
-
-                    result = handler.execute(
-                        node=node,
-                        context={
-                            'target_databases': [str(database.id)],
-                            'user_id': 'admin',
-                            'name': 'John Doe',
-                            'email': 'john@example.com'
-                        },
-                        execution=workflow_execution,
-                        mode=NodeExecutionMode.SYNC
-                    )
+            result = handler.execute(
+                node=node,
+                context={
+                    'target_databases': [str(database.id)],
+                    'user_id': 'admin',
+                    'name': 'John Doe',
+                    'email': 'john@example.com'
+                },
+                execution=workflow_execution,
+                mode=NodeExecutionMode.SYNC
+            )
 
         assert result.success is True
         assert result.output['backend'] == 'odata'
@@ -288,35 +279,27 @@ class TestODataBackendIntegration:
 
         handler = OperationHandler()
 
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_factory.create.return_value = mock_operation
+        with patch('apps.templates.workflow.handlers.backends.odata.ODataBackend.execute') as mock_execute:
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'operation_type': 'update'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.1,
+                operation_id='op-odata-update',
+                task_id=None,
+            )
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-456'
-                mock_enqueue.delay.return_value = mock_celery_result
-
-                with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
-                    mock_waiter.wait.return_value = {
-                        'success': True,
-                        'status': 'completed',
-                        'total_tasks': 1,
-                        'completed_tasks': 1,
-                        'error': None
-                    }
-
-                    result = handler.execute(
-                        node=node,
-                        context={
-                            'target_databases': [str(database.id)],
-                            'user_id': '123',
-                            'status': 'active'
-                        },
-                        execution=workflow_execution,
-                        mode=NodeExecutionMode.SYNC
-                    )
+            result = handler.execute(
+                node=node,
+                context={
+                    'target_databases': [str(database.id)],
+                    'user_id': '123',
+                    'status': 'active'
+                },
+                execution=workflow_execution,
+                mode=NodeExecutionMode.SYNC
+            )
 
         assert result.success is True
         assert result.output['operation_type'] == 'update'
@@ -347,35 +330,27 @@ class TestODataBackendIntegration:
 
         handler = OperationHandler()
 
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_factory.create.return_value = mock_operation
+        with patch('apps.templates.workflow.handlers.backends.odata.ODataBackend.execute') as mock_execute:
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'operation_type': 'delete'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.1,
+                operation_id='op-odata-delete',
+                task_id=None,
+            )
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-del'
-                mock_enqueue.delay.return_value = mock_celery_result
-
-                with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
-                    mock_waiter.wait.return_value = {
-                        'success': True,
-                        'status': 'completed',
-                        'total_tasks': 1,
-                        'completed_tasks': 1,
-                        'error': None
-                    }
-
-                    result = handler.execute(
-                        node=node,
-                        context={
-                            'target_databases': [str(database.id)],
-                            'user_id': 'admin',
-                            'record_id': '456'
-                        },
-                        execution=workflow_execution,
-                        mode=NodeExecutionMode.SYNC
-                    )
+            result = handler.execute(
+                node=node,
+                context={
+                    'target_databases': [str(database.id)],
+                    'user_id': 'admin',
+                    'record_id': '456'
+                },
+                execution=workflow_execution,
+                mode=NodeExecutionMode.SYNC
+            )
 
         assert result.success is True
         assert result.output['operation_type'] == 'delete'
@@ -391,7 +366,7 @@ class TestODataBackendIntegration:
             name="Async Create",
             operation_type='create',
             target_entity="Reports",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(
@@ -403,26 +378,26 @@ class TestODataBackendIntegration:
 
         handler = OperationHandler()
 
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_operation.total_tasks = 10
-            mock_factory.create.return_value = mock_operation
+        with patch('apps.templates.workflow.handlers.backends.odata.ODataBackend.execute') as mock_execute:
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'status': 'queued', 'operation_type': 'create'},
+                error=None,
+                mode=NodeExecutionMode.ASYNC,
+                duration_seconds=None,
+                operation_id='op-odata-async',
+                task_id='task-async-123',
+            )
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-async-123'
-                mock_enqueue.delay.return_value = mock_celery_result
-
-                result = handler.execute(
-                    node=node,
-                    context={
-                        'target_databases': [str(database.id)],
-                        'user_id': 'admin'
-                    },
-                    execution=workflow_execution,
-                    mode=NodeExecutionMode.ASYNC
-                )
+            result = handler.execute(
+                node=node,
+                context={
+                    'target_databases': [str(database.id)],
+                    'user_id': 'admin'
+                },
+                execution=workflow_execution,
+                mode=NodeExecutionMode.ASYNC
+            )
 
         # ASYNC should return immediately
         assert result.success is True
@@ -447,7 +422,7 @@ class TestMixedWorkflowIntegration:
             name="Lock for Maintenance",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         ras_node = WorkflowNode(
@@ -463,7 +438,7 @@ class TestMixedWorkflowIntegration:
             name="Update Status",
             operation_type='update',
             target_entity="Systems",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         odata_node = WorkflowNode(
@@ -500,35 +475,26 @@ class TestMixedWorkflowIntegration:
         assert ras_result.success is True
         assert ras_result.output['backend'] == 'ras'
 
-        # Execute OData operation
-        with patch('apps.templates.workflow.handlers.backends.odata.BatchOperationFactory') as mock_factory:
-            mock_operation = MagicMock()
-            mock_operation.id = str(uuid4())
-            mock_factory.create.return_value = mock_operation
+        with patch('apps.templates.workflow.handlers.backends.odata.ODataBackend.execute') as mock_execute:
+            mock_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={'backend': 'odata', 'operation_type': 'update'},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.1,
+                operation_id='op-odata-update',
+                task_id=None,
+            )
 
-            with patch('apps.templates.workflow.handlers.backends.odata.enqueue_operation') as mock_enqueue:
-                mock_celery_result = MagicMock()
-                mock_celery_result.id = 'task-update'
-                mock_enqueue.delay.return_value = mock_celery_result
-
-                with patch('apps.templates.workflow.handlers.backends.odata.ResultWaiter') as mock_waiter:
-                    mock_waiter.wait.return_value = {
-                        'success': True,
-                        'status': 'completed',
-                        'total_tasks': 1,
-                        'completed_tasks': 1,
-                        'error': None
-                    }
-
-                    odata_result = handler.execute(
-                        node=odata_node,
-                        context={
-                            'target_databases': [str(database.id)],
-                            'user_id': 'admin'
-                        },
-                        execution=workflow_execution,
-                        mode=NodeExecutionMode.SYNC
-                    )
+            odata_result = handler.execute(
+                node=odata_node,
+                context={
+                    'target_databases': [str(database.id)],
+                    'user_id': 'admin'
+                },
+                execution=workflow_execution,
+                mode=NodeExecutionMode.SYNC
+            )
 
         assert odata_result.success is True
         assert odata_result.output['backend'] == 'odata'
@@ -563,8 +529,7 @@ class TestMixedWorkflowIntegration:
             ras_cluster_id=cluster.ras_cluster_uuid,
             ras_infobase_id=uuid4(),
             username="admin",
-            password="password",
-            is_active=True
+            password="password"
         )
 
         template = OperationTemplate.objects.create(
@@ -572,7 +537,7 @@ class TestMixedWorkflowIntegration:
             name="Lock Multiple",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={}
+            template_data={"noop": "ok"}
         )
 
         node = WorkflowNode(

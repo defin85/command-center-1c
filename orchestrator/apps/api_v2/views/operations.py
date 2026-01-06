@@ -6,14 +6,17 @@ Provides action-based endpoints for batch operations management.
 
 import json
 import logging
+import os
 import secrets
 import time
 import asyncio
+import uuid
+from typing import Any
 
 import redis as redis_module
 import redis.asyncio as redis_async
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Count, F, Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from django.utils import timezone
@@ -33,6 +36,16 @@ from apps.operations.models import BatchOperation, Task
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
 from apps.operations.cli_catalog import load_cli_command_catalog
+from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2, compute_etag
+from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
+from apps.operations.driver_catalog_effective import (
+    compute_driver_catalog_etag,
+    filter_catalog_for_user,
+    get_effective_driver_catalog,
+    get_effective_driver_catalog_lkg,
+    resolve_driver_catalog_versions,
+)
+from apps.artifacts.storage import ArtifactStorageError
 from apps.databases.permissions import CanExecuteOperation
 from apps.databases.services import PermissionService
 from apps.databases.models import Database, PermissionLevel
@@ -159,6 +172,10 @@ OPERATION_CATALOG_UI_META = {
         "icon": "SettingOutlined",
         "requires_config": True,
     },
+    "ibcmd_cli": {
+        "icon": "CodeOutlined",
+        "requires_config": True,
+    },
 }
 
 CLI_OPERATION_IDS = {
@@ -187,6 +204,17 @@ EXTRA_OPERATION_CATALOG = [
         "requires_config": False,
         "has_ui_form": True,
         "icon": "HeartOutlined",
+    },
+    {
+        "id": "ibcmd_cli",
+        "label": "IBCMD CLI",
+        "description": "Schema-driven IBCMD command execution.",
+        "driver": "ibcmd",
+        "category": "ibcmd",
+        "tags": ["ibcmd", "cli"],
+        "requires_config": True,
+        "has_ui_form": True,
+        "icon": "CodeOutlined",
     },
 ]
 
@@ -477,6 +505,70 @@ class CliCommandCatalogResponseSerializer(serializers.Serializer):
 
 
 # =============================================================================
+# Driver Catalog v2 (schema-driven commands)
+# =============================================================================
+
+class DriverCatalogV2SourceSerializer(serializers.Serializer):
+    type = serializers.CharField(required=False)
+    doc_id = serializers.CharField(required=False, allow_blank=True)
+    section_prefix = serializers.CharField(required=False, allow_blank=True)
+    doc_url = serializers.CharField(required=False, allow_blank=True)
+    hint = serializers.CharField(required=False, allow_blank=True)
+
+
+class DriverCommandParamV2Serializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=["flag", "positional"])
+    flag = serializers.CharField(required=False, allow_blank=True)
+    position = serializers.IntegerField(required=False, allow_null=True)
+    required = serializers.BooleanField()
+    expects_value = serializers.BooleanField()
+    label = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    value_type = serializers.ChoiceField(
+        choices=["string", "int", "float", "bool"],
+        required=False,
+        allow_null=True,
+    )
+    enum = serializers.ListField(child=serializers.CharField(), required=False)
+    default = serializers.JSONField(required=False)
+    repeatable = serializers.BooleanField(required=False)
+    sensitive = serializers.BooleanField(required=False)
+    artifact = serializers.JSONField(required=False)
+    ui = serializers.JSONField(required=False)
+    disabled = serializers.BooleanField(required=False)
+
+
+class DriverCommandV2Serializer(serializers.Serializer):
+    label = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    argv = serializers.ListField(child=serializers.CharField())
+    scope = serializers.ChoiceField(choices=["per_database", "global"])
+    risk_level = serializers.ChoiceField(choices=["safe", "dangerous"])
+    params_by_name = serializers.DictField(child=DriverCommandParamV2Serializer(), required=False)
+    ui = serializers.JSONField(required=False)
+    source_section = serializers.CharField(required=False, allow_blank=True)
+    disabled = serializers.BooleanField(required=False)
+    permissions = serializers.JSONField(required=False)
+
+
+class DriverCatalogV2Serializer(serializers.Serializer):
+    catalog_version = serializers.IntegerField()
+    driver = serializers.CharField()
+    platform_version = serializers.CharField(required=False, allow_blank=True)
+    source = DriverCatalogV2SourceSerializer(required=False)
+    generated_at = serializers.CharField(required=False, allow_blank=True)
+    commands_by_id = serializers.DictField(child=DriverCommandV2Serializer())
+
+
+class DriverCommandsResponseV2Serializer(serializers.Serializer):
+    driver = serializers.CharField()
+    base_version = serializers.CharField(required=False, allow_blank=True)
+    overrides_version = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    generated_at = serializers.CharField(required=False, allow_blank=True)
+    catalog = DriverCatalogV2Serializer()
+
+
+# =============================================================================
 # Execute Operation Serializers
 # =============================================================================
 
@@ -575,6 +667,60 @@ class ExecuteIbcmdOperationThrottle(UserRateThrottle):
     """Rate limit: 10 IBCMD operations per minute per user."""
     rate = '10/min'
     scope = 'execute_ibcmd_operation'
+
+
+class IbcmdCliConnectionOfflineSerializer(serializers.Serializer):
+    config = serializers.CharField(required=False, allow_blank=False)
+    data = serializers.CharField(required=False, allow_blank=False)
+    dbms = serializers.CharField(required=False, allow_blank=False)
+    db_server = serializers.CharField(required=False, allow_blank=False)
+    db_name = serializers.CharField(required=False, allow_blank=False)
+    db_user = serializers.CharField(required=False, allow_blank=False)
+    db_pwd = serializers.CharField(required=False, allow_blank=False, write_only=True)
+
+
+class IbcmdCliConnectionSerializer(serializers.Serializer):
+    remote = serializers.CharField(required=False, allow_blank=False)
+    pid = serializers.IntegerField(required=False, allow_null=True)
+    offline = IbcmdCliConnectionOfflineSerializer(required=False)
+
+
+class ExecuteIbcmdCliOperationRequestSerializer(serializers.Serializer):
+    """Request body for execute_ibcmd_cli_operation endpoint."""
+
+    MODE_CHOICES = [
+        ("guided", "guided"),
+        ("manual", "manual"),
+    ]
+
+    command_id = serializers.CharField(help_text="IBCMD command id from driver catalog v2")
+    mode = serializers.ChoiceField(choices=MODE_CHOICES, default="guided", required=False)
+
+    database_ids = serializers.ListField(
+        child=serializers.UUIDField(format='hex_verbose'),
+        required=False,
+        allow_empty=True,
+        max_length=500,
+        help_text="Target databases for per_database commands (empty for global)",
+    )
+    auth_database_id = serializers.UUIDField(
+        required=False,
+        help_text="Anchor database for global commands (RBAC + infobase user mapping)",
+    )
+
+    connection = IbcmdCliConnectionSerializer(required=False)
+    params = serializers.DictField(required=False, default=dict)
+    additional_args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    stdin = serializers.CharField(required=False, allow_blank=True, default="")
+
+    confirm_dangerous = serializers.BooleanField(required=False, default=False)
+    timeout_seconds = serializers.IntegerField(required=False, min_value=1, max_value=3600, default=900)
+
+
+class ExecuteIbcmdCliOperationThrottle(UserRateThrottle):
+    """Rate limit: 10 ibcmd_cli operations per minute per user."""
+    rate = '10/min'
+    scope = 'execute_ibcmd_cli_operation'
 
 
 def _split_select(value):
@@ -851,6 +997,25 @@ def list_operations(request):
         # Order by most recent first
         qs = qs.order_by('-created_at')
 
+    if not request.user.is_staff:
+        accessible_db_ids = PermissionService.filter_accessible_databases(
+            request.user,
+            Database.objects.all(),
+            PermissionLevel.VIEW,
+        ).values_list("id", flat=True)
+
+        qs = qs.annotate(
+            total_db_count=Count("target_databases", distinct=True),
+            accessible_db_count=Count(
+                "target_databases",
+                filter=Q(target_databases__id__in=accessible_db_ids),
+                distinct=True,
+            ),
+        ).filter(
+            Q(created_by=request.user.username)
+            | Q(total_db_count=F("accessible_db_count"), total_db_count__gt=0)
+        )
+
     total = qs.count()
     qs = qs[offset:offset + limit]
 
@@ -980,6 +1145,16 @@ def get_operation(request):
             }
         }, status=404)
 
+    allowed, _denied = _resolve_operation_access(request.user, [operation])
+    if str(operation.id) not in allowed:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'FORBIDDEN',
+                'message': 'You do not have permission to view this operation',
+            }
+        }, status=403)
+
     serializer = BatchOperationSerializer(operation)
 
     # Build progress info
@@ -1081,6 +1256,35 @@ def cancel_operation(request):
                 'message': 'Operation not found'
             }
         }, status=404)
+
+    if not request.user.is_staff and operation.created_by != request.user.username:
+        target_ids = list(operation.target_databases.values_list("id", flat=True))
+        if not target_ids:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'FORBIDDEN',
+                    'message': 'You do not have permission to cancel this operation',
+                }
+            }, status=403)
+
+        allowed, denied = PermissionService.check_bulk_permission(
+            request.user,
+            [str(db_id) for db_id in target_ids],
+            PermissionLevel.MANAGE,
+        )
+        if not allowed:
+            denied_str = ", ".join(denied[:5])
+            msg = f"Access denied for databases: {denied_str}"
+            if len(denied) > 5:
+                msg += f" and {len(denied) - 5} more"
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 'FORBIDDEN',
+                    'message': msg,
+                }
+            }, status=403)
 
     # Check if operation can be cancelled
     if operation.status in [BatchOperation.STATUS_COMPLETED, BatchOperation.STATUS_CANCELLED]:
@@ -1340,6 +1544,340 @@ def execute_ibcmd_operation(request):
             }
         }, status=500)
 
+
+# =============================================================================
+# Execute IBCMD CLI (schema-driven)
+# =============================================================================
+
+@extend_schema(
+    tags=['v2'],
+    summary='Execute schema-driven IBCMD command (ibcmd_cli)',
+    description='''
+    Queue schema-driven IBCMD command for execution.
+
+    Uses driver catalog v2 (base@approved + overrides@active) to validate `command_id`
+    and build canonical `argv[]`.
+
+    Supports both scopes:
+    - per_database: executes per selected database
+    - global: executes once (requires `auth_database_id` for RBAC + IB user mapping)
+
+    Dangerous commands require `confirm_dangerous=true`.
+    ''',
+    request=ExecuteIbcmdCliOperationRequestSerializer,
+    responses={
+        202: ExecuteOperationResponseSerializer,
+        400: OperationErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        409: OpenApiResponse(description='Conflict'),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ExecuteIbcmdCliOperationThrottle])
+def execute_ibcmd_cli_operation(request):
+    from apps.databases.models import Database, PermissionLevel
+    from apps.databases.services import PermissionService
+    from apps.operations.models import BatchOperation, Task
+
+    serializer = ExecuteIbcmdCliOperationRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    command_id = str(serializer.validated_data['command_id'] or '').strip()
+    mode = str(serializer.validated_data.get('mode') or 'guided').strip().lower()
+    database_ids = [str(db_id) for db_id in (serializer.validated_data.get('database_ids') or [])]
+    auth_database_id = serializer.validated_data.get('auth_database_id')
+    connection = serializer.validated_data.get('connection') or {}
+    params = serializer.validated_data.get('params') or {}
+    additional_args = serializer.validated_data.get('additional_args') or []
+    stdin = serializer.validated_data.get('stdin') or ""
+    confirm_dangerous = bool(serializer.validated_data.get('confirm_dangerous') or False)
+    timeout_seconds = int(serializer.validated_data.get('timeout_seconds') or 900)
+
+    if not command_id:
+        return Response({
+            "success": False,
+            "error": {"code": "MISSING_COMMAND_ID", "message": "command_id is required"},
+        }, status=400)
+
+    resolved = resolve_driver_catalog_versions("ibcmd")
+    if resolved.base_version is None:
+        return Response({
+            "success": False,
+            "error": {"code": "CATALOG_NOT_AVAILABLE", "message": "ibcmd catalog is not imported yet"},
+        }, status=400)
+
+    effective = get_effective_driver_catalog(
+        driver="ibcmd",
+        base_version=resolved.base_version,
+        overrides_version=resolved.overrides_version,
+    )
+    catalog = filter_catalog_for_user(request.user, effective.catalog)
+
+    commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
+    if not isinstance(commands_by_id, dict):
+        return Response({
+            "success": False,
+            "error": {"code": "CATALOG_INVALID", "message": "ibcmd catalog is invalid"},
+        }, status=500)
+
+    command = commands_by_id.get(command_id)
+    if not isinstance(command, dict):
+        return Response({
+            "success": False,
+            "error": {"code": "UNKNOWN_COMMAND", "message": f"Unknown command_id: {command_id}"},
+        }, status=400)
+
+    if command.get("disabled") is True:
+        return Response({
+            "success": False,
+            "error": {"code": "COMMAND_DISABLED", "message": f"Command is disabled: {command_id}"},
+        }, status=400)
+
+    scope = str(command.get("scope") or "").strip().lower()
+    if scope not in {"per_database", "global"}:
+        return Response({
+            "success": False,
+            "error": {"code": "COMMAND_INVALID", "message": "Command scope is invalid"},
+        }, status=500)
+
+    risk_level = str(command.get("risk_level") or "").strip().lower()
+    if risk_level == "dangerous" and not confirm_dangerous:
+        return Response({
+            "success": False,
+            "error": {
+                "code": "DANGEROUS_CONFIRM_REQUIRED",
+                "message": "confirm_dangerous=true is required for dangerous commands",
+            },
+        }, status=400)
+
+    required_level = PermissionLevel.OPERATE
+    if risk_level == "dangerous":
+        required_level = PermissionLevel.MANAGE
+
+    if scope == "global":
+        if database_ids:
+            return Response({
+                "success": False,
+                "error": {"code": "DATABASE_IDS_NOT_ALLOWED", "message": "database_ids must be empty for global scope"},
+            }, status=400)
+        if auth_database_id is None:
+            return Response({
+                "success": False,
+                "error": {"code": "MISSING_AUTH_DATABASE", "message": "auth_database_id is required for global scope"},
+            }, status=400)
+
+        auth_db_id = str(auth_database_id)
+        allowed, denied = PermissionService.check_bulk_permission(
+            request.user,
+            [auth_db_id],
+            required_level,
+        )
+        if not allowed:
+            return Response({
+                "success": False,
+                "error": {"code": "PERMISSION_DENIED", "message": f"Access denied for database: {', '.join(denied)}"},
+            }, status=403)
+
+        if not Database.objects.filter(id=auth_db_id).exists():
+            return Response({
+                "success": False,
+                "error": {"code": "UNKNOWN_DATABASE", "message": f"Unknown auth_database_id: {auth_db_id}"},
+            }, status=400)
+    else:
+        if not database_ids:
+            return Response({
+                "success": False,
+                "error": {"code": "MISSING_DATABASE_IDS", "message": "database_ids cannot be empty for per_database scope"},
+            }, status=400)
+
+        allowed, denied = PermissionService.check_bulk_permission(
+            request.user,
+            database_ids,
+            required_level,
+        )
+        if not allowed:
+            denied_str = ", ".join(denied[:5])
+            msg = f"Access denied for databases: {denied_str}"
+            if len(denied) > 5:
+                msg += f" and {len(denied) - 5} more"
+            return Response({
+                "success": False,
+                "error": {"code": "PERMISSION_DENIED", "message": msg},
+            }, status=403)
+
+    merged_params = dict(params) if isinstance(params, dict) else {}
+    connection_dict = dict(connection) if isinstance(connection, dict) else {}
+
+    for token in additional_args:
+        t = str(token or "").strip().lower()
+        if t == "--pid" or t.startswith("--pid="):
+            return Response({
+                "success": False,
+                "error": {"code": "PID_IN_ARGS_NOT_ALLOWED", "message": "Use connection.pid instead of --pid in additional_args"},
+            }, status=400)
+
+    if "pid" not in connection_dict:
+        for key, value in (params or {}).items():
+            if str(key or "").strip().lower() != "pid":
+                continue
+            if value is None or value == "":
+                break
+            try:
+                connection_dict["pid"] = int(value)
+            except (TypeError, ValueError):
+                return Response({
+                    "success": False,
+                    "error": {"code": "PID_INVALID", "message": "pid must be an integer"},
+                }, status=400)
+            break
+
+    if connection_dict.get("pid") is not None:
+        env = (os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
+        if env in {"prod", "production"}:
+            return Response({
+                "success": False,
+                "error": {"code": "PID_NOT_ALLOWED", "message": "--pid is not allowed in production"},
+            }, status=400)
+
+    if connection_dict:
+        for key, value in flatten_connection_params(connection_dict).items():
+            merged_params.setdefault(key, value)
+
+    try:
+        builder = build_ibcmd_cli_argv_manual if mode == "manual" else build_ibcmd_cli_argv
+        argv, argv_masked = builder(command=command, params=merged_params, additional_args=additional_args)
+    except ValueError as exc:
+        return Response({
+            "success": False,
+            "error": {"code": "VALIDATION_ERROR", "message": str(exc)},
+        }, status=400)
+
+    payload_data = {
+        "command_id": command_id,
+        "mode": mode,
+        "argv": argv,
+        "argv_masked": argv_masked,
+        "stdin": stdin,
+        "connection": connection_dict,
+    }
+    payload_options: dict[str, Any] = {}
+    if scope == "global":
+        payload_options["target_scope"] = "global"
+        payload_data["auth_database_id"] = str(auth_database_id)
+
+        tmp_payload = {"data": payload_data, "filters": {}, "options": {}}
+        target_ref = OperationsService._compute_global_target_ref(tmp_payload)
+        if not target_ref:
+            return Response({
+                "success": False,
+                "error": {"code": "MISSING_CONNECTION", "message": "connection is required for global scope"},
+            }, status=400)
+
+        payload_options["target_ref"] = target_ref
+
+        if hasattr(OperationsService, "_extract_target_scope"):
+            try:
+                from apps.operations.redis_client import redis_client
+                if redis_client.check_global_target_lock(target_ref):
+                    return Response({
+                        "success": False,
+                        "error": {"code": "GLOBAL_TARGET_LOCKED", "message": "Global target already in progress"},
+                    }, status=409)
+            except Exception:
+                pass
+
+    payload = {"data": payload_data, "filters": {}, "options": payload_options}
+
+    databases = []
+    if scope == "per_database":
+        databases = list(Database.objects.filter(id__in=database_ids))
+        found = {str(db.id) for db in databases}
+        missing = [db_id for db_id in database_ids if db_id not in found]
+        if missing:
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "UNKNOWN_DATABASE",
+                    "message": f"Unknown database_ids: {', '.join(missing[:5])}",
+                },
+            }, status=400)
+
+    operation_id = str(uuid.uuid4())
+    operation_name = f"ibcmd_cli {command_id}"
+    if scope == "per_database":
+        operation_name = f"{operation_name} - {len(databases)} databases"
+    else:
+        operation_name = f"{operation_name} (global)"
+
+    batch_operation = BatchOperation.objects.create(
+        id=operation_id,
+        name=operation_name,
+        operation_type=BatchOperation.TYPE_IBCMD_CLI,
+        target_entity="Infobase" if scope == "per_database" else "StandaloneServer",
+        status=BatchOperation.STATUS_PENDING,
+        payload=payload,
+        config={
+            "batch_size": 1,
+            "timeout_seconds": timeout_seconds,
+            "retry_count": 1,
+            "priority": "normal",
+        },
+        total_tasks=1 if scope == "global" else len(databases),
+        created_by=request.user.username if request.user else "system",
+        metadata={
+            "tags": ["ibcmd", "ibcmd_cli", command_id],
+            "risk_level": risk_level,
+            "scope": scope,
+            "mode": mode,
+        },
+    )
+
+    if scope == "global":
+        Task.objects.create(
+            id=str(uuid.uuid4()),
+            batch_operation=batch_operation,
+            database=None,
+            status=Task.STATUS_PENDING,
+        )
+    else:
+        batch_operation.target_databases.set(databases)
+        Task.objects.bulk_create([
+            Task(
+                id=str(uuid.uuid4()),
+                batch_operation=batch_operation,
+                database=db,
+                status=Task.STATUS_PENDING,
+            )
+            for db in databases
+        ])
+
+    enqueue_res = OperationsService.enqueue_operation(operation_id)
+    if not enqueue_res.success:
+        if enqueue_res.status == "duplicate":
+            batch_operation.status = BatchOperation.STATUS_CANCELLED
+            batch_operation.metadata["error"] = enqueue_res.error or "duplicate"
+            batch_operation.save(update_fields=["status", "metadata", "updated_at"])
+            return Response({
+                "success": False,
+                "error": {"code": "DUPLICATE", "message": enqueue_res.error or "duplicate"},
+            }, status=409)
+
+        batch_operation.status = BatchOperation.STATUS_FAILED
+        batch_operation.metadata["error"] = enqueue_res.error or "enqueue_failed"
+        batch_operation.save(update_fields=["status", "metadata", "updated_at"])
+        return Response({
+            "success": False,
+            "error": {"code": "ENQUEUE_FAILED", "message": "Failed to queue operation"},
+        }, status=500)
+
+    return Response({
+        "operation_id": operation_id,
+        "status": "queued",
+        "total_tasks": batch_operation.total_tasks,
+        "message": f"ibcmd_cli queued: {command_id}",
+    }, status=http_status.HTTP_202_ACCEPTED)
 
 # =============================================================================
 # SSE Streaming
@@ -1873,6 +2411,167 @@ def get_operation_catalog(request):
 def get_cli_command_catalog(request):
     catalog = load_cli_command_catalog()
     return Response(catalog)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Get driver command catalog (v2)",
+    description=(
+        "Return schema-driven command catalog for the requested driver.\n\n"
+        "Supports conditional requests via ETag/If-None-Match (returns 304)."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="driver",
+            type=str,
+            required=True,
+            description="Driver name (cli/ibcmd)",
+        ),
+    ],
+    responses={
+        200: DriverCommandsResponseV2Serializer,
+        304: OpenApiResponse(description="Not Modified"),
+        400: OperationErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_driver_commands(request):
+    driver = str(request.query_params.get("driver") or "").strip()
+    if not driver:
+        return Response({
+            "success": False,
+            "error": {"code": "MISSING_DRIVER", "message": "driver is required"},
+        }, status=400)
+
+    driver = driver.lower()
+    if driver not in {"cli", "ibcmd"}:
+        return Response({
+            "success": False,
+            "error": {"code": "UNKNOWN_DRIVER", "message": f"Unknown driver: {driver}"},
+        }, status=400)
+
+    resolved = resolve_driver_catalog_versions(driver)
+    if resolved.base_version is not None:
+        base_version_id = str(resolved.base_version.id)
+        overrides_version_id = str(resolved.overrides_version.id) if resolved.overrides_version is not None else None
+        current_etag = compute_driver_catalog_etag(
+            driver=driver,
+            base_version_id=base_version_id,
+            overrides_version_id=overrides_version_id,
+        )
+        if request.headers.get("If-None-Match") == current_etag:
+            response = Response(status=304)
+            response["ETag"] = current_etag
+            return response
+
+        try:
+            effective = get_effective_driver_catalog(
+                driver=driver,
+                base_version=resolved.base_version,
+                overrides_version=resolved.overrides_version,
+            )
+            catalog = filter_catalog_for_user(request.user, effective.catalog)
+            etag = compute_driver_catalog_etag(
+                driver=driver,
+                base_version_id=effective.base_version_id,
+                overrides_version_id=effective.overrides_version_id,
+            )
+
+            payload = {
+                "driver": driver,
+                "base_version": str(effective.base_version),
+                "overrides_version": str(effective.overrides_version) if effective.overrides_version else None,
+                "generated_at": str(catalog.get("generated_at") or ""),
+                "catalog": catalog,
+            }
+            response = Response(payload)
+            response["ETag"] = etag
+            response["Cache-Control"] = "private, max-age=0"
+            return response
+        except (ArtifactStorageError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            error_message = str(exc)
+            if isinstance(exc, ArtifactStorageError):
+                logger.warning(
+                    "Failed to load driver catalog from storage",
+                    extra={"driver": driver, "error": error_message},
+                )
+                error_code = "STORAGE_ERROR"
+            else:
+                logger.warning(
+                    "Failed to parse driver catalog",
+                    extra={"driver": driver, "error": error_message},
+                )
+                error_code = "CATALOG_INVALID"
+
+        lkg = get_effective_driver_catalog_lkg(driver)
+        if lkg is not None:
+            etag = compute_driver_catalog_etag(
+                driver=driver,
+                base_version_id=lkg.base_version_id,
+                overrides_version_id=lkg.overrides_version_id,
+            )
+            if request.headers.get("If-None-Match") == etag:
+                response = Response(status=304)
+                response["ETag"] = etag
+                return response
+
+            catalog = filter_catalog_for_user(request.user, lkg.catalog)
+            payload = {
+                "driver": driver,
+                "base_version": str(lkg.base_version),
+                "overrides_version": str(lkg.overrides_version) if lkg.overrides_version else None,
+                "generated_at": str(catalog.get("generated_at") or ""),
+                "catalog": catalog,
+            }
+            response = Response(payload)
+            response["ETag"] = etag
+            response["Cache-Control"] = "private, max-age=0"
+            return response
+
+        return Response(
+            {"success": False, "error": {"code": error_code, "message": error_message}},
+            status=500,
+        )
+
+    if driver == "cli":
+        raw_catalog = load_cli_command_catalog()
+        catalog_v2 = cli_catalog_v1_to_v2(raw_catalog)
+        payload = {
+            "driver": driver,
+            "base_version": str(raw_catalog.get("version") or "unknown"),
+            "overrides_version": None,
+            "generated_at": str(raw_catalog.get("generated_at") or ""),
+            "catalog": catalog_v2,
+        }
+        etag = compute_etag(payload)
+    else:
+        payload = {
+            "driver": driver,
+            "base_version": "unknown",
+            "overrides_version": None,
+            "generated_at": "",
+            "catalog": {
+                "catalog_version": 2,
+                "driver": "ibcmd",
+                "platform_version": "",
+                "source": {"type": "not_available", "hint": "ibcmd catalog is not imported yet"},
+                "generated_at": "",
+                "commands_by_id": {},
+            },
+        }
+        etag = compute_driver_catalog_etag(driver=driver, base_version_id=None, overrides_version_id=None)
+
+    if request.headers.get("If-None-Match") == etag:
+        response = Response(status=304)
+        response["ETag"] = etag
+        return response
+
+    response = Response(payload)
+    response["ETag"] = etag
+    response["Cache-Control"] = "private, max-age=0"
+    return response
 
 
 @extend_schema(

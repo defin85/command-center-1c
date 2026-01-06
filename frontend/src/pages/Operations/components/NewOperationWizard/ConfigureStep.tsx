@@ -29,8 +29,7 @@ import { OPERATION_TYPES } from './types'
 import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
-import { DesignerCliBuilder } from '../../../../components/cli/DesignerCliBuilder'
-import { IbcmdOperationBuilder, type IbcmdOperationType } from '../../../../components/ibcmd/IbcmdOperationBuilder'
+import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../../../components/driverCommands/DriverCommandBuilder'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -179,20 +178,42 @@ const TerminateSessionsForm = ({
   </Form>
 )
 
-/**
- * Form for designer_cli operation
- */
-const DesignerCliForm = ({
+const DriverCommandsForm = ({
+  driver,
   config,
   onChange,
+  selectedDatabases,
+  databaseNamesById,
 }: {
+  driver: 'cli' | 'ibcmd'
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
+  selectedDatabases: string[]
+  databaseNamesById?: Record<string, string>
 }) => {
+  const current: DriverCommandOperationConfig = (
+    config.driver_command && config.driver_command.driver === driver
+      ? config.driver_command
+      : { driver, mode: 'guided', params: {} }
+  )
+
+  const handleDriverCommandChange = (updates: Partial<DriverCommandOperationConfig>) => {
+    onChange({
+      driver_command: {
+        ...current,
+        ...updates,
+        driver,
+      },
+    })
+  }
+
   return (
-    <DesignerCliBuilder
-      config={config}
-      onChange={onChange}
+    <DriverCommandBuilder
+      driver={driver}
+      config={current}
+      onChange={handleDriverCommandChange}
+      availableDatabaseIds={selectedDatabases}
+      databaseNamesById={databaseNamesById}
     />
   )
 }
@@ -370,6 +391,8 @@ const CustomTemplateForm = ({
 export const ConfigureStep = ({
   operationType,
   templateId,
+  selectedDatabases,
+  databaseNamesById,
   config,
   onConfigChange,
   uploadedFiles,
@@ -438,23 +461,31 @@ export const ConfigureStep = ({
     }
 
     // Built-in operation with legacy form
-    if (operationType && String(operationType).startsWith('ibcmd_')) {
-      return (
-        <IbcmdOperationBuilder
-          operationType={operationType as IbcmdOperationType}
-          config={config}
-          onChange={handleChange}
-        />
-      )
-    }
-
     switch (operationType) {
       case 'block_sessions':
         return <BlockSessionsForm config={config} onChange={handleChange} />
       case 'terminate_sessions':
         return <TerminateSessionsForm config={config} onChange={handleChange} />
       case 'designer_cli':
-        return <DesignerCliForm config={config} onChange={handleChange} />
+        return (
+          <DriverCommandsForm
+            driver="cli"
+            config={config}
+            selectedDatabases={selectedDatabases}
+            databaseNamesById={databaseNamesById}
+            onChange={handleChange}
+          />
+        )
+      case 'ibcmd_cli':
+        return (
+          <DriverCommandsForm
+            driver="ibcmd"
+            config={config}
+            selectedDatabases={selectedDatabases}
+            databaseNamesById={databaseNamesById}
+            onChange={handleChange}
+          />
+        )
       case 'query':
         return <QueryForm config={config} onChange={handleChange} />
       default:

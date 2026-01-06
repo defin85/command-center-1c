@@ -71,6 +71,21 @@ func TestOperationMessage_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "global scope allows empty target_databases",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "create",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Options: map[string]interface{}{
+						"target_scope": "global",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "target_database with empty id",
 			msg: OperationMessage{
 				Version:         "2.0",

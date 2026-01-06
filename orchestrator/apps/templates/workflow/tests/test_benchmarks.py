@@ -437,10 +437,12 @@ class TestSimpleWorkflowBenchmarks:
         context = ContextManager({"benchmark": True})
 
         def execute_single():
-            return executor._execute_node(
-                "start",
-                simple_dag.nodes[0],
-                context
+            return WorkflowEngine._run_async(
+                executor._execute_node(
+                    "start",
+                    simple_dag.nodes[0],
+                    context
+                )
             )
 
         result = benchmark(execute_single)

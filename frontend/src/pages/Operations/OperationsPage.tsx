@@ -365,6 +365,40 @@ export const OperationsPage = () => {
       }
 
       if (data.operationType === 'designer_cli') {
+        const dc = data.config.driver_command
+        if (dc && dc.driver === 'cli') {
+          const command = typeof dc.command_id === 'string' ? dc.command_id.trim() : ''
+          if (!command) {
+            throw new Error('command is required')
+          }
+
+          const args = Array.isArray(dc.resolved_args)
+            ? dc.resolved_args.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            : []
+
+          const opt = dc.cli_options ?? {}
+          await apiClient.post('/api/v2/operations/execute/', {
+            operation_type: 'designer_cli',
+            database_ids: data.databaseIds,
+            config: {
+              command,
+              args: args.length > 0 ? args : undefined,
+              options: {
+                disable_startup_messages: opt.disable_startup_messages !== false,
+                disable_startup_dialogs: opt.disable_startup_dialogs !== false,
+                log_capture: opt.log_capture === true,
+                log_path: typeof opt.log_path === 'string' && opt.log_path.trim().length > 0
+                  ? opt.log_path.trim()
+                  : undefined,
+                log_no_truncate: opt.log_no_truncate === true,
+              },
+            },
+          })
+          handleRefresh()
+          return
+        }
+
+        // Fallback to legacy payload fields (backward-compatible)
         const command = typeof data.config.command === 'string' ? data.config.command.trim() : ''
         if (!command) {
           throw new Error('command is required')
@@ -383,7 +417,6 @@ export const OperationsPage = () => {
           }
           return undefined
         }
-
         await apiClient.post('/api/v2/operations/execute/', {
           operation_type: 'designer_cli',
           database_ids: data.databaseIds,
@@ -401,6 +434,49 @@ export const OperationsPage = () => {
             },
           },
         })
+        handleRefresh()
+        return
+      }
+
+      if (data.operationType === 'ibcmd_cli') {
+        const dc = data.config.driver_command
+        if (!dc || dc.driver !== 'ibcmd') {
+          throw new Error('driver_command is required')
+        }
+
+        const commandId = typeof dc.command_id === 'string' ? dc.command_id.trim() : ''
+        if (!commandId) {
+          throw new Error('command_id is required')
+        }
+
+        const parseLines = (value: unknown): string[] => {
+          if (typeof value !== 'string') return []
+          return value
+            .split('\n')
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)
+        }
+
+        const additionalArgs = parseLines(dc.args_text)
+        const scope = dc.command_scope === 'global' ? 'global' : 'per_database'
+        const authDatabaseId = typeof dc.auth_database_id === 'string' ? dc.auth_database_id : undefined
+
+        const timeoutSeconds = typeof dc.timeout_seconds === 'number' ? dc.timeout_seconds : 900
+        const boundedTimeout = Math.min(Math.max(timeoutSeconds, 1), 3600)
+
+        await apiClient.post('/api/v2/operations/execute-ibcmd-cli/', {
+          command_id: commandId,
+          mode: dc.mode || 'guided',
+          database_ids: scope === 'global' ? [] : data.databaseIds,
+          auth_database_id: scope === 'global' ? authDatabaseId : undefined,
+          connection: dc.connection,
+          params: dc.params ?? {},
+          additional_args: additionalArgs,
+          stdin: typeof dc.stdin === 'string' ? dc.stdin : '',
+          confirm_dangerous: dc.confirm_dangerous === true,
+          timeout_seconds: boundedTimeout,
+        })
+
         handleRefresh()
         return
       }

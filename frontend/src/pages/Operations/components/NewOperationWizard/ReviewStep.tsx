@@ -66,6 +66,7 @@ const formatConfigForDisplay = (
   if (!operationType) return []
 
   const items: { label: string; value: string }[] = []
+  const dc = config.driver_command
 
   switch (operationType) {
     case 'block_sessions':
@@ -97,35 +98,47 @@ const formatConfigForDisplay = (
       break
 
     case 'designer_cli':
+      if (dc && dc.driver === 'cli') {
+        if (dc.command_id) {
+          items.push({ label: 'Command', value: dc.command_label ? `${dc.command_label} (${dc.command_id})` : dc.command_id })
+        }
+        items.push({ label: 'Mode', value: dc.mode || 'guided' })
+        if (dc.mode === 'manual' && dc.args_text) {
+          items.push({ label: 'Args', value: dc.args_text })
+        }
+        const opt = dc.cli_options ?? {}
+        items.push({
+          label: 'Disable Messages',
+          value: opt.disable_startup_messages === false ? 'No' : 'Yes',
+        })
+        items.push({
+          label: 'Disable Dialogs',
+          value: opt.disable_startup_dialogs === false ? 'No' : 'Yes',
+        })
+        items.push({
+          label: 'Capture Log',
+          value: opt.log_capture ? 'Yes' : 'No',
+        })
+        if (opt.log_capture && opt.log_path) {
+          items.push({ label: 'Log Path', value: opt.log_path })
+        }
+        if (opt.log_capture) {
+          items.push({
+            label: 'Append Log',
+            value: opt.log_no_truncate ? 'Yes' : 'No',
+          })
+        }
+        if (dc.command_risk_level === 'dangerous') {
+          items.push({
+            label: 'Dangerous Confirmed',
+            value: dc.confirm_dangerous === true ? 'Yes' : 'No',
+          })
+        }
+        break
+      }
+
       if (config.command) {
         items.push({ label: 'Command', value: config.command })
-      }
-      if (config.args) {
-        const argsValue = Array.isArray(config.args)
-          ? config.args.join(' ')
-          : config.args
-        items.push({ label: 'Args', value: argsValue })
-      }
-      items.push({
-        label: 'Disable Messages',
-        value: config.disable_startup_messages === false ? 'No' : 'Yes',
-      })
-      items.push({
-        label: 'Disable Dialogs',
-        value: config.disable_startup_dialogs === false ? 'No' : 'Yes',
-      })
-      items.push({
-        label: 'Capture Log',
-        value: config.log_capture ? 'Yes' : 'No',
-      })
-      if (config.log_capture && config.log_path) {
-        items.push({ label: 'Log Path', value: config.log_path })
-      }
-      if (config.log_capture) {
-        items.push({
-          label: 'Append Log',
-          value: config.log_no_truncate ? 'Yes' : 'No',
-        })
       }
       break
 
@@ -143,6 +156,60 @@ const formatConfigForDisplay = (
         items.push({ label: 'Limit', value: String(config.top) })
       }
       break
+
+    case 'ibcmd_cli': {
+      if (dc && dc.driver === 'ibcmd') {
+        if (dc.command_id) {
+          items.push({ label: 'Command', value: dc.command_label ? `${dc.command_label} (${dc.command_id})` : dc.command_id })
+        }
+        items.push({ label: 'Mode', value: dc.mode || 'guided' })
+        if (dc.command_scope) {
+          items.push({ label: 'Scope', value: dc.command_scope })
+        }
+        if (dc.command_risk_level) {
+          items.push({ label: 'Risk', value: dc.command_risk_level })
+        }
+        if (dc.command_scope === 'global' && dc.auth_database_id) {
+          items.push({ label: 'Auth database', value: dc.auth_database_id })
+        }
+        if (typeof dc.timeout_seconds === 'number') {
+          items.push({ label: 'Timeout', value: `${dc.timeout_seconds}s` })
+        }
+        const connection = dc.connection
+        if (connection?.remote) {
+          items.push({ label: 'Remote', value: connection.remote })
+        }
+        if (typeof connection?.pid === 'number') {
+          items.push({ label: 'PID', value: String(connection.pid) })
+        }
+        const offline = connection?.offline
+        if (offline && typeof offline === 'object') {
+          const offlineParts: string[] = []
+          if (offline.config) offlineParts.push(`config=${offline.config}`)
+          if (offline.data) offlineParts.push(`data=${offline.data}`)
+          if (offline.dbms) offlineParts.push(`dbms=${offline.dbms}`)
+          if (offline.db_server) offlineParts.push(`db_server=${offline.db_server}`)
+          if (offline.db_name) offlineParts.push(`db_name=${offline.db_name}`)
+          if (offline.db_user) offlineParts.push(`db_user=${offline.db_user}`)
+          if (offlineParts.length > 0) {
+            items.push({ label: 'Offline', value: offlineParts.join('\n') })
+          }
+        }
+        if (dc.args_text) {
+          items.push({ label: 'Additional args', value: dc.args_text })
+        }
+        if (dc.stdin) {
+          items.push({ label: 'Stdin', value: dc.stdin })
+        }
+        if (dc.command_risk_level === 'dangerous') {
+          items.push({
+            label: 'Dangerous Confirmed',
+            value: dc.confirm_dangerous === true ? 'Yes' : 'No',
+          })
+        }
+      }
+      break
+    }
 
     default:
       // No config items for other operation types
@@ -176,6 +243,8 @@ const getWarningMessage = (
       return `This operation will terminate active sessions on ${dbText}. Users may lose unsaved work!`
     case 'designer_cli':
       return `This operation will execute DESIGNER CLI on ${dbText}.`
+    case 'ibcmd_cli':
+      return `This operation will execute IBCMD CLI command. Selected databases: ${dbText}.`
     case 'query':
       return `This operation will execute OData query on ${dbText}.`
     case 'sync_cluster':
