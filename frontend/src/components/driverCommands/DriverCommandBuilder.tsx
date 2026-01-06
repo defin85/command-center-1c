@@ -1,7 +1,7 @@
 import '../../lib/monacoEnv'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 
@@ -72,6 +72,13 @@ const EMPTY_COMMANDS_BY_ID: Record<string, DriverCommandV2> = {}
 const EMPTY_PARAMS: Record<string, unknown> = {}
 const EMPTY_DB_IDS: string[] = []
 
+type MonacoInstance = typeof import('monaco-editor')
+
+const ARGV_LANGUAGE_ID = 'argv-lines'
+const ARGV_MARKER_OWNER = 'driver-command-args'
+
+let argvLanguageRegistered = false
+
 const IBCMD_CONNECTION_PARAM_NAMES = new Set([
   'remote',
   'pid',
@@ -96,6 +103,27 @@ const IBCMD_SENSITIVE_FLAG_PREFIXES = [
   '--api-key=',
 ]
 
+const ensureArgvLanguage = (monaco: MonacoInstance) => {
+  if (argvLanguageRegistered) return
+  argvLanguageRegistered = true
+
+  const exists = monaco.languages.getLanguages().some((lang) => lang.id === ARGV_LANGUAGE_ID)
+  if (!exists) {
+    monaco.languages.register({ id: ARGV_LANGUAGE_ID })
+  }
+
+  monaco.languages.setMonarchTokensProvider(ARGV_LANGUAGE_ID, {
+    tokenizer: {
+      root: [
+        [/artifact:\/\/\S+/, 'string'],
+        [/--?[a-zA-Z0-9][a-zA-Z0-9_-]*(?:=.*)?/, 'keyword'],
+        [/\d+/, 'number'],
+        [/\S+/, 'identifier'],
+      ],
+    },
+  })
+}
+
 const normalizeText = (value: unknown): string => {
   if (typeof value === 'string') {
     return value
@@ -114,6 +142,53 @@ const parseLines = (value: string | undefined): string[] => {
     .split('\n')
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
+}
+
+const detectIbcmdPidInArgs = (value: string | undefined): number[] => {
+  if (!value) return []
+  const badLines: number[] = []
+  const lines = value.split('\n')
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const token = lines[idx].trim().toLowerCase()
+    if (!token) continue
+    if (token === '--pid' || token.startsWith('--pid=')) {
+      badLines.push(idx + 1)
+    }
+  }
+  return badLines
+}
+
+const buildArgsMarkers = (
+  monaco: MonacoInstance,
+  driver: DriverName,
+  value: string | undefined,
+): Monaco.editor.IMarkerData[] => {
+  if (!value) return []
+
+  if (driver === 'ibcmd') {
+    const markers: Monaco.editor.IMarkerData[] = []
+    const lines = value.split('\n')
+    for (let idx = 0; idx < lines.length; idx += 1) {
+      const raw = lines[idx]
+      const token = raw.trim()
+      const lowered = token.toLowerCase()
+      if (!lowered) continue
+
+      if (lowered === '--pid' || lowered.startsWith('--pid=')) {
+        markers.push({
+          severity: monaco.MarkerSeverity.Error,
+          message: '--pid is not allowed here; set PID via Connection form.',
+          startLineNumber: idx + 1,
+          endLineNumber: idx + 1,
+          startColumn: 1,
+          endColumn: Math.max(raw.length, 1) + 1,
+        })
+      }
+    }
+    return markers
+  }
+
+  return []
 }
 
 const parseArtifactKey = (value: string | boolean | number | undefined): string | undefined => {
@@ -736,6 +811,7 @@ export function DriverCommandBuilder({
   availableDatabaseIds?: string[]
   databaseNamesById?: Record<string, string>
 }) {
+  const { modal } = App.useApp()
   const driverCommandsQuery = useDriverCommands(driver, true)
   const catalog = driverCommandsQuery.data?.catalog
   const commandsById = useMemo(() => catalog?.commands_by_id ?? EMPTY_COMMANDS_BY_ID, [catalog?.commands_by_id])
@@ -743,6 +819,8 @@ export function DriverCommandBuilder({
   const mode: DriverCommandBuilderMode = config.mode ?? 'guided'
   const commandId = (config.command_id || '').trim()
   const params = useMemo(() => (config.params ?? EMPTY_PARAMS) as Record<string, unknown>, [config.params])
+  const confirmDangerous = config.confirm_dangerous === true
+  const pidInArgsLines = useMemo(() => (driver === 'ibcmd' ? detectIbcmdPidInArgs(config.args_text) : []), [config.args_text, driver])
 
   const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
   const selectedCommand: DriverCommandV2 | undefined = commandId ? commandsById[commandId] : undefined
@@ -769,6 +847,27 @@ export function DriverCommandBuilder({
       command_risk_level: nextRisk,
     })
   }, [config.command_label, config.command_risk_level, config.command_scope, onChange, selectedCommand])
+
+  useEffect(() => {
+    if (risk !== 'dangerous' && confirmDangerous) {
+      onChange({ confirm_dangerous: false })
+    }
+  }, [confirmDangerous, onChange, risk])
+
+  const [argsEditorRef, setArgsEditorRef] = useState<{
+    monaco: MonacoInstance
+    model: Monaco.editor.ITextModel
+  } | null>(null)
+
+  useEffect(() => {
+    if (!argsEditorRef) return
+    const { monaco, model } = argsEditorRef
+    const markers = buildArgsMarkers(monaco, driver, config.args_text)
+    monaco.editor.setModelMarkers(model, ARGV_MARKER_OWNER, markers)
+    return () => {
+      monaco.editor.setModelMarkers(model, ARGV_MARKER_OWNER, [])
+    }
+  }, [argsEditorRef, config.args_text, driver])
 
   const availableDbIds = useMemo(() => availableDatabaseIds ?? EMPTY_DB_IDS, [availableDatabaseIds])
   const databaseOptions = useMemo(
@@ -908,10 +1007,36 @@ export function DriverCommandBuilder({
     )
   }
 
+  const handleDangerousConfirmChange = (checked: boolean) => {
+    if (!checked) {
+    onChange({ confirm_dangerous: false })
+    return
+  }
+
+    modal.confirm({
+      title: 'Confirm dangerous command',
+      okText: 'Confirm',
+      cancelText: 'Cancel',
+      okButtonProps: { danger: true },
+      content: (
+        <Space direction="vertical" size="small">
+          <Text>
+            This command is marked as dangerous and may cause irreversible changes. Review the command and its
+            parameters before proceeding.
+          </Text>
+          {selectedCommand?.description && <Text type="secondary">{selectedCommand.description}</Text>}
+          {selectedCommand?.source_section && <Text type="secondary">Source: {selectedCommand.source_section}</Text>}
+          <Text type="secondary">Command: {selectedCommand?.label || commandId}</Text>
+        </Space>
+      ),
+      onOk: () => onChange({ confirm_dangerous: true }),
+      onCancel: () => onChange({ confirm_dangerous: false }),
+    })
+  }
+
   const renderIbcmdExecution = () => {
     const connection = config.connection ?? {}
     const timeout = typeof config.timeout_seconds === 'number' ? config.timeout_seconds : 900
-    const confirmDangerous = config.confirm_dangerous === true
 
     return (
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -975,18 +1100,6 @@ export function DriverCommandBuilder({
               onChange={(event) => onChange({ stdin: event.target.value })}
             />
           </Form.Item>
-
-          {risk === 'dangerous' && (
-            <Form.Item style={{ marginBottom: 0 }}>
-              <Checkbox
-                checked={confirmDangerous}
-                disabled={readOnly}
-                onChange={(event) => onChange({ confirm_dangerous: event.target.checked })}
-              >
-                I confirm this dangerous command
-              </Checkbox>
-            </Form.Item>
-          )}
         </Form>
       </Space>
     )
@@ -1081,6 +1194,20 @@ export function DriverCommandBuilder({
         />
       )}
 
+      {risk === 'dangerous' && (
+        <Form layout="vertical">
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Checkbox
+              checked={confirmDangerous}
+              disabled={readOnly}
+              onChange={(event) => handleDangerousConfirmChange(event.target.checked)}
+            >
+              I confirm this dangerous command
+            </Checkbox>
+          </Form.Item>
+        </Form>
+      )}
+
       {driver === 'ibcmd' && renderIbcmdExecution()}
 
       {driver === 'cli' && renderCliOptions()}
@@ -1092,14 +1219,29 @@ export function DriverCommandBuilder({
           {mode === 'manual' && (
             <Alert type="warning" showIcon message="Manual mode" description={argsEditorDescription} />
           )}
+          {driver === 'ibcmd' && pidInArgsLines.length > 0 && (
+            <Alert
+              type="error"
+              showIcon
+              message="--pid is not allowed in args"
+              description={`Remove --pid from args and set it via Connection → PID. Lines: ${pidInArgsLines.join(', ')}`}
+            />
+          )}
           <Text strong>{argsEditorTitle}</Text>
           <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}>
             <Editor
               height={driver === 'cli' ? 220 : 160}
-              language="plaintext"
+              language={ARGV_LANGUAGE_ID}
               theme="vs"
               value={config.args_text || ''}
               onChange={(next) => onChange({ args_text: next ?? '' })}
+              beforeMount={ensureArgvLanguage}
+              onMount={(editor, monaco) => {
+                const model = editor.getModel()
+                if (model) {
+                  setArgsEditorRef({ monaco, model })
+                }
+              }}
               options={buildEditorOptions(readOnly)}
             />
           </div>
