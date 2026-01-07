@@ -62,6 +62,50 @@ class OperationTemplate(models.Model):
         return self.name
 
 
+class OperationTemplatePermission(models.Model):
+    """
+    User permission for a specific operation template.
+    """
+    from django.conf import settings as django_settings
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='operation_template_permissions'
+    )
+    template = models.ForeignKey(
+        OperationTemplate,
+        on_delete=models.CASCADE,
+        related_name='user_permissions'
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW
+    )
+
+    # Audit fields
+    granted_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'templates_operation_template_permissions'
+        unique_together = ['user', 'template']
+        indexes = [
+            models.Index(fields=['user', 'template'], name='otp_user_tpl_idx'),
+            models.Index(fields=['template', 'level'], name='otp_tpl_level_idx'),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} -> {self.template.id} ({self.get_level_display()})"
+
+
 class OperationTemplateGroupPermission(models.Model):
     """
     Group permission for a specific operation template.
@@ -104,6 +148,51 @@ class OperationTemplateGroupPermission(models.Model):
 
     def __str__(self) -> str:
         return f"{self.group.name} -> {self.template.id} ({self.get_level_display()})"
+
+
+class WorkflowTemplatePermission(models.Model):
+    """
+    User permission for a workflow template.
+    Rights on the template apply to its executions (inheritance).
+    """
+    from django.conf import settings as django_settings
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='workflow_template_permissions'
+    )
+    workflow_template = models.ForeignKey(
+        WorkflowTemplate,
+        on_delete=models.CASCADE,
+        related_name='user_permissions'
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW
+    )
+
+    # Audit fields
+    granted_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'templates_workflow_template_permissions'
+        unique_together = ['user', 'workflow_template']
+        indexes = [
+            models.Index(fields=['user', 'workflow_template'], name='wtp_user_wf_idx'),
+            models.Index(fields=['workflow_template', 'level'], name='wtp_wf_level_idx'),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} -> {self.workflow_template.name} ({self.get_level_display()})"
 
 
 class WorkflowTemplateGroupPermission(models.Model):

@@ -120,9 +120,13 @@ Casbin/OPA рассматриваются как опции на будущее,
 - Добавить group-level аналоги:
   - `ClusterGroupPermission(group, cluster, level, granted_by, notes, granted_at)`
   - `DatabaseGroupPermission(group, database, level, ...)`
-- Для остальных доменов добавить универсальную модель (CT binding) либо отдельные таблицы (решение по перф):
-  - MVP: отдельные таблицы для массовых сущностей (`WorkflowTemplate`, `Artifact`)
-  - либо универсальная `AccessBinding(subject_type, subject_id, content_type, object_id, level, ...)`
+- Для остальных доменов использовать отдельные таблицы (по перф и простоте):
+  - `OperationTemplatePermission(user, template, level, ...)`
+  - `OperationTemplateGroupPermission(group, template, level, ...)`
+  - `WorkflowTemplatePermission(user, workflow_template, level, ...)` (наследуется на executions)
+  - `WorkflowTemplateGroupPermission(group, workflow_template, level, ...)` (наследуется на executions)
+  - `ArtifactPermission(user, artifact, level, ...)` (наследуется на versions/aliases)
+  - `ArtifactGroupPermission(group, artifact, level, ...)` (наследуется на versions/aliases)
 
 Почему так:
 - кластеры/базы уже оптимизированы под batch и фильтрацию,

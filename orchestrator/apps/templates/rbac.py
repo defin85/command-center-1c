@@ -1,11 +1,13 @@
 from typing import Optional
 
-from django.db.models import Max
+from django.db.models import Max, Q
 
 from apps.databases.models import PermissionLevel
 from apps.templates.models import (
     OperationTemplate,
     OperationTemplateGroupPermission,
+    OperationTemplatePermission,
+    WorkflowTemplatePermission,
     WorkflowTemplateGroupPermission,
 )
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
@@ -30,7 +32,12 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return PermissionLevel.ADMIN
 
-        level = (
+        user_level = OperationTemplatePermission.objects.filter(
+            user=user,
+            template=template,
+        ).values_list("level", flat=True).first()
+
+        group_level = (
             OperationTemplateGroupPermission.objects.filter(
                 group__user=user,
                 template=template,
@@ -38,7 +45,8 @@ class TemplatePermissionService:
             .aggregate(level=Max("level"))
             .get("level")
         )
-        return level
+        levels = [lvl for lvl in [user_level, group_level] if lvl is not None]
+        return max(levels) if levels else None
 
     @classmethod
     def get_user_level_for_workflow_template(
@@ -51,7 +59,12 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return PermissionLevel.ADMIN
 
-        level = (
+        user_level = WorkflowTemplatePermission.objects.filter(
+            user=user,
+            workflow_template=workflow_template,
+        ).values_list("level", flat=True).first()
+
+        group_level = (
             WorkflowTemplateGroupPermission.objects.filter(
                 group__user=user,
                 workflow_template=workflow_template,
@@ -59,7 +72,8 @@ class TemplatePermissionService:
             .aggregate(level=Max("level"))
             .get("level")
         )
-        return level
+        levels = [lvl for lvl in [user_level, group_level] if lvl is not None]
+        return max(levels) if levels else None
 
     @classmethod
     def get_user_level_for_workflow_execution(
@@ -105,11 +119,15 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        template_ids = OperationTemplateGroupPermission.objects.filter(
+        user_template_ids = OperationTemplatePermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("template_id", flat=True)
+        group_template_ids = OperationTemplateGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("template_id", flat=True)
-        return queryset.filter(id__in=template_ids)
+        return queryset.filter(Q(id__in=user_template_ids) | Q(id__in=group_template_ids))
 
     @classmethod
     def filter_accessible_workflow_templates(
@@ -125,11 +143,15 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        workflow_ids = WorkflowTemplateGroupPermission.objects.filter(
+        user_workflow_ids = WorkflowTemplatePermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("workflow_template_id", flat=True)
+        group_workflow_ids = WorkflowTemplateGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("workflow_template_id", flat=True)
-        return queryset.filter(id__in=workflow_ids)
+        return queryset.filter(Q(id__in=user_workflow_ids) | Q(id__in=group_workflow_ids))
 
     @classmethod
     def filter_accessible_workflow_executions(
@@ -145,9 +167,15 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        workflow_ids = WorkflowTemplateGroupPermission.objects.filter(
+        user_workflow_ids = WorkflowTemplatePermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("workflow_template_id", flat=True)
+        group_workflow_ids = WorkflowTemplateGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("workflow_template_id", flat=True)
-        return queryset.filter(workflow_template_id__in=workflow_ids)
-
+        return queryset.filter(
+            Q(workflow_template_id__in=user_workflow_ids)
+            | Q(workflow_template_id__in=group_workflow_ids)
+        )

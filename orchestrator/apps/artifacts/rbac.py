@@ -1,9 +1,15 @@
 from typing import Optional
 
-from django.db.models import Max
+from django.db.models import Max, Q
 
 from apps.databases.models import PermissionLevel
-from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactGroupPermission, ArtifactVersion
+from apps.artifacts.models import (
+    Artifact,
+    ArtifactAlias,
+    ArtifactGroupPermission,
+    ArtifactPermission,
+    ArtifactVersion,
+)
 
 
 class ArtifactPermissionService:
@@ -28,7 +34,12 @@ class ArtifactPermissionService:
         if getattr(user, "is_staff", False):
             return PermissionLevel.ADMIN
 
-        level = (
+        user_level = ArtifactPermission.objects.filter(
+            user=user,
+            artifact=artifact,
+        ).values_list("level", flat=True).first()
+
+        group_level = (
             ArtifactGroupPermission.objects.filter(
                 group__user=user,
                 artifact=artifact,
@@ -36,7 +47,8 @@ class ArtifactPermissionService:
             .aggregate(level=Max("level"))
             .get("level")
         )
-        return level
+        levels = [lvl for lvl in [user_level, group_level] if lvl is not None]
+        return max(levels) if levels else None
 
     @classmethod
     def get_user_level_for_artifact_version(
@@ -78,11 +90,15 @@ class ArtifactPermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        artifact_ids = ArtifactGroupPermission.objects.filter(
+        user_artifact_ids = ArtifactPermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("artifact_id", flat=True)
+        group_artifact_ids = ArtifactGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("artifact_id", flat=True)
-        return queryset.filter(id__in=artifact_ids)
+        return queryset.filter(Q(id__in=user_artifact_ids) | Q(id__in=group_artifact_ids))
 
     @classmethod
     def filter_accessible_artifact_versions(
@@ -98,11 +114,17 @@ class ArtifactPermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        artifact_ids = ArtifactGroupPermission.objects.filter(
+        user_artifact_ids = ArtifactPermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("artifact_id", flat=True)
+        group_artifact_ids = ArtifactGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("artifact_id", flat=True)
-        return queryset.filter(artifact_id__in=artifact_ids)
+        return queryset.filter(
+            Q(artifact_id__in=user_artifact_ids) | Q(artifact_id__in=group_artifact_ids)
+        )
 
     @classmethod
     def filter_accessible_artifact_aliases(
@@ -118,9 +140,14 @@ class ArtifactPermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        artifact_ids = ArtifactGroupPermission.objects.filter(
+        user_artifact_ids = ArtifactPermission.objects.filter(
+            user=user,
+            level__gte=min_level,
+        ).values_list("artifact_id", flat=True)
+        group_artifact_ids = ArtifactGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
         ).values_list("artifact_id", flat=True)
-        return queryset.filter(artifact_id__in=artifact_ids)
-
+        return queryset.filter(
+            Q(artifact_id__in=user_artifact_ids) | Q(artifact_id__in=group_artifact_ids)
+        )

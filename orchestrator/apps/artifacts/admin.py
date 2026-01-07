@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import Artifact, ArtifactAlias, ArtifactGroupPermission, ArtifactUsage, ArtifactVersion
+from .models import (
+    Artifact,
+    ArtifactAlias,
+    ArtifactGroupPermission,
+    ArtifactPermission,
+    ArtifactUsage,
+    ArtifactVersion,
+)
 
 
 @admin.register(Artifact)
@@ -27,6 +34,15 @@ class ArtifactAliasAdmin(admin.ModelAdmin):
 class ArtifactUsageAdmin(admin.ModelAdmin):
     list_display = ("artifact", "version", "operation", "database", "used_at")
     list_filter = ("artifact",)
+
+
+@admin.register(ArtifactPermission)
+class ArtifactPermissionAdmin(admin.ModelAdmin):
+    list_display = ("user", "artifact", "level", "granted_by", "granted_at")
+    list_filter = ("level", "artifact__kind")
+    search_fields = ("user__username", "artifact__name")
+    autocomplete_fields = ("user", "artifact")
+    readonly_fields = ("granted_at",)
 
 
 @admin.register(ArtifactGroupPermission)

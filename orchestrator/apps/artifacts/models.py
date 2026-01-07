@@ -166,6 +166,50 @@ class ArtifactUsage(models.Model):
         return f"{self.artifact.name}@{self.version.version}"
 
 
+class ArtifactPermission(models.Model):
+    """
+    User permission for a specific artifact.
+    Rights on the artifact apply to its versions and aliases (inheritance).
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="artifact_permissions",
+    )
+    artifact = models.ForeignKey(
+        Artifact,
+        on_delete=models.CASCADE,
+        related_name="user_permissions",
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW,
+    )
+
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "artifacts_artifact_permissions"
+        unique_together = [
+            ("user", "artifact"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "artifact"], name="ap_user_art_idx"),
+            models.Index(fields=["artifact", "level"], name="ap_art_level_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} -> {self.artifact.name} ({self.get_level_display()})"
+
+
 class ArtifactGroupPermission(models.Model):
     """
     Group permission for a specific artifact.

@@ -12,10 +12,12 @@ from django_json_widget.widgets import JSONEditorWidget
 from .models import (
     OperationTemplate,
     OperationTemplateGroupPermission,
+    OperationTemplatePermission,
     WorkflowExecution,
     WorkflowStepResult,
     WorkflowTemplate,
     WorkflowTemplateGroupPermission,
+    WorkflowTemplatePermission,
 )
 
 
@@ -509,6 +511,22 @@ class WorkflowStepResultAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     ]
 
 
+@admin.register(OperationTemplatePermission)
+class OperationTemplatePermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for OperationTemplatePermission model (RBAC)."""
+
+    list_display = ['user', 'template', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level']
+    search_fields = ['user__username', 'template__name', 'template__id']
+    autocomplete_fields = ['user', 'template']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
 @admin.register(OperationTemplateGroupPermission)
 class OperationTemplateGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     """Admin for OperationTemplateGroupPermission model (RBAC)."""
@@ -517,6 +535,22 @@ class OperationTemplateGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdm
     list_filter = ['level']
     search_fields = ['group__name', 'template__name', 'template__id']
     autocomplete_fields = ['group', 'template']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(WorkflowTemplatePermission)
+class WorkflowTemplatePermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for WorkflowTemplatePermission model (RBAC)."""
+
+    list_display = ['user', 'workflow_template', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'workflow_template__workflow_type']
+    search_fields = ['user__username', 'workflow_template__name']
+    autocomplete_fields = ['user', 'workflow_template']
     readonly_fields = ['granted_at']
 
     def save_model(self, request, obj, form, change):
