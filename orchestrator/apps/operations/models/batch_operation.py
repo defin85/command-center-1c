@@ -148,6 +148,13 @@ class BatchOperation(models.Model):
         ]
         verbose_name = 'Batch Operation'
         verbose_name_plural = 'Batch Operations'
+        permissions = (
+            ("execute_safe_operation", "Can execute safe operations"),
+            ("execute_dangerous_operation", "Can execute dangerous operations"),
+            ("cancel_operation", "Can cancel operations"),
+            ("view_operation_logs", "Can view operation logs"),
+            ("manage_driver_catalogs", "Can manage driver catalogs"),
+        )
 
     def __str__(self):
         return f"Batch {self.name} ({self.status})"

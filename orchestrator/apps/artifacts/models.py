@@ -49,6 +49,9 @@ class Artifact(models.Model):
         unique_together = [
             ("name", "kind"),
         ]
+        permissions = (
+            ("manage_artifact", "Can manage artifacts"),
+        )
 
     def __str__(self) -> str:
         return f"{self.name} ({self.kind})"
@@ -86,6 +89,10 @@ class ArtifactVersion(models.Model):
         unique_together = [
             ("artifact", "version"),
         ]
+        permissions = (
+            ("upload_artifact_version", "Can upload artifact versions"),
+            ("download_artifact_version", "Can download artifact versions"),
+        )
 
     def __str__(self) -> str:
         return f"{self.artifact.name}@{self.version}"

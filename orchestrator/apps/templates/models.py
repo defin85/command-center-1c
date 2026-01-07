@@ -52,7 +52,9 @@ class OperationTemplate(models.Model):
     class Meta:
         db_table = 'operation_templates'
         ordering = ['name']
+        permissions = (
+            ("manage_operation_template", "Can manage operation templates"),
+        )
 
     def __str__(self):
         return self.name
-

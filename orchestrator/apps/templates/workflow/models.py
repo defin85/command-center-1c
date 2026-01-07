@@ -424,6 +424,10 @@ class WorkflowTemplate(models.Model):
             models.Index(fields=["is_active", "is_valid"]),
             models.Index(fields=["created_by", "-created_at"]),
         ]
+        permissions = (
+            ("manage_workflow_template", "Can manage workflow templates"),
+            ("execute_workflow_template", "Can execute workflow templates"),
+        )
         constraints = [
             models.UniqueConstraint(
                 fields=["name", "version_number"], name="unique_workflow_name_version"

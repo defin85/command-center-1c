@@ -188,6 +188,11 @@ class Cluster(models.Model):
         ]
         verbose_name = '1C Cluster'
         verbose_name_plural = '1C Clusters'
+        permissions = (
+            ("operate_cluster", "Can operate cluster"),
+            ("manage_cluster", "Can manage cluster"),
+            ("admin_cluster", "Can administer cluster"),
+        )
         constraints = [
             models.UniqueConstraint(
                 fields=['ras_server', 'name'],
@@ -452,6 +457,11 @@ class Database(models.Model):
         ]
         verbose_name = '1C Database'
         verbose_name_plural = '1C Databases'
+        permissions = (
+            ("operate_database", "Can operate database"),
+            ("manage_database", "Can manage database"),
+            ("admin_database", "Can administer database"),
+        )
 
     def __str__(self):
         if self.cluster:
@@ -676,6 +686,9 @@ class ClusterPermission(models.Model):
             models.Index(fields=['user', 'cluster'], name='cp_user_cluster_idx'),
             models.Index(fields=['cluster', 'level'], name='cp_cluster_level_idx'),
         ]
+        permissions = (
+            ("manage_rbac", "Can manage RBAC"),
+        )
 
     def __str__(self):
         return f"{self.user.username} -> {self.cluster.name} ({self.get_level_display()})"
