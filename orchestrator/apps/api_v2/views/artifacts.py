@@ -19,9 +19,12 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.core import permission_codes as perms
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
+from apps.artifacts.rbac import ArtifactPermissionService
 from apps.artifacts.services import ArtifactService
 from apps.artifacts.storage import ArtifactStorageClient, ArtifactStorageError
+from apps.databases.models import PermissionLevel
 from apps.files.services import FileStorageService
 
 
@@ -110,13 +113,17 @@ class ArtifactAliasUpsertRequestSerializer(serializers.Serializer):
 # Permissions
 # =============================================================================
 
-def _ensure_staff(request):
-    if not request.user.is_staff:
-        return Response(
-            {"success": False, "error": {"code": "FORBIDDEN", "message": "Staff only"}},
-            status=http_status.HTTP_403_FORBIDDEN,
-        )
-    return None
+def _permission_denied(message: str):
+    return Response(
+        {"success": False, "error": {"code": "PERMISSION_DENIED", "message": message}},
+        status=http_status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _ensure_permission(request, perm: str, obj=None, message: str = "Forbidden"):
+    if request.user.has_perm(perm, obj):
+        return None
+    return _permission_denied(message)
 
 
 def _get_active_artifact(artifact_id):
@@ -141,9 +148,13 @@ def _get_active_artifact(artifact_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_artifact(request):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+        message="You do not have permission to manage artifacts.",
+    )
+    if denied:
+        return denied
 
     serializer = ArtifactCreateRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -192,9 +203,13 @@ def create_artifact(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_artifacts(request):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_VIEW_ARTIFACT,
+        message="You do not have permission to view artifacts.",
+    )
+    if denied:
+        return denied
 
     include_deleted = request.query_params.get("include_deleted") == "true"
     only_deleted = request.query_params.get("only_deleted") == "true"
@@ -215,6 +230,13 @@ def list_artifacts(request):
     if tag:
         queryset = queryset.filter(tags__contains=[tag])
 
+    if not request.user.is_staff:
+        queryset = ArtifactPermissionService.filter_accessible_artifacts(
+            request.user,
+            queryset,
+            min_level=PermissionLevel.VIEW,
+        )
+
     artifacts = list(queryset.order_by("-created_at"))
     response = ArtifactListResponseSerializer({"artifacts": artifacts, "count": len(artifacts)})
     return Response(response.data)
@@ -233,11 +255,16 @@ def list_artifacts(request):
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_artifact(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to manage this artifact.",
+    )
+    if denied:
+        return denied
+
     artifact.is_deleted = True
     artifact.deleted_at = timezone.now()
     artifact.deleted_by = request.user
@@ -259,11 +286,16 @@ def delete_artifact(request, artifact_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def restore_artifact(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = get_object_or_404(Artifact, id=artifact_id, is_deleted=True)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to manage this artifact.",
+    )
+    if denied:
+        return denied
+
     artifact.is_deleted = False
     artifact.deleted_at = None
     artifact.deleted_by = None
@@ -288,11 +320,16 @@ def restore_artifact(request, artifact_id):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser])
 def upload_artifact_version(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_UPLOAD_ARTIFACT_VERSION,
+        obj=artifact,
+        message="You do not have permission to upload artifact versions.",
+    )
+    if denied:
+        return denied
+
     file = request.FILES.get("file")
     if not file:
         return Response(
@@ -368,11 +405,16 @@ def upload_artifact_version(request, artifact_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_artifact_versions(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_VIEW_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to access this artifact.",
+    )
+    if denied:
+        return denied
+
     versions = list(artifact.versions.order_by("-created_at"))
     response = ArtifactVersionListResponseSerializer({"versions": versions, "count": len(versions)})
     return Response(response.data)
@@ -392,11 +434,16 @@ def list_artifact_versions(request, artifact_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upsert_artifact_alias(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to manage this artifact.",
+    )
+    if denied:
+        return denied
+
     serializer = ArtifactAliasUpsertRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(
@@ -441,11 +488,16 @@ def upsert_artifact_alias(request, artifact_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_artifact_aliases(request, artifact_id):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_VIEW_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to access this artifact.",
+    )
+    if denied:
+        return denied
+
     aliases = list(artifact.aliases.select_related("version").order_by("alias"))
     response = ArtifactAliasListResponseSerializer(
         {
@@ -477,12 +529,17 @@ def list_artifact_aliases(request, artifact_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def download_artifact_version(request, artifact_id, version):
-    staff_check = _ensure_staff(request)
-    if staff_check:
-        return staff_check
-
     artifact = _get_active_artifact(artifact_id)
     version_obj = get_object_or_404(ArtifactVersion, artifact=artifact, version=version)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_DOWNLOAD_ARTIFACT_VERSION,
+        obj=version_obj,
+        message="You do not have permission to download this artifact version.",
+    )
+    if denied:
+        return denied
+
     storage = ArtifactStorageClient()
     try:
         data = storage.get_object(version_obj.storage_key)

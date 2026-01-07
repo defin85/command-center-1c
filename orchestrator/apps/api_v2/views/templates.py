@@ -14,17 +14,27 @@ from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 from drf_spectacular.utils import OpenApiResponse
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.core import permission_codes as perms
+from apps.databases.models import PermissionLevel
 from apps.templates.models import OperationTemplate
+from apps.templates.rbac import TemplatePermissionService
 from apps.templates.registry import get_registry
 from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
+
+
+def _permission_denied(message: str):
+    return Response(
+        {"success": False, "error": {"code": "PERMISSION_DENIED", "message": message}},
+        status=403,
+    )
 
 
 class OperationTemplateSerializer(serializers.ModelSerializer):
@@ -270,6 +280,9 @@ def list_templates(request):
             "total": N
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_OPERATION_TEMPLATE):
+        return _permission_denied("You do not have permission to view templates.")
+
     operation_type = request.query_params.get('operation_type')
     target_entity = request.query_params.get('target_entity')
     is_active = request.query_params.get('is_active')
@@ -323,6 +336,13 @@ def list_templates(request):
     else:
         qs = qs.order_by('name')
 
+    if not request.user.is_staff:
+        qs = TemplatePermissionService.filter_accessible_operation_templates(
+            request.user,
+            qs,
+            min_level=PermissionLevel.VIEW,
+        )
+
     total = qs.count()
 
     # Apply pagination
@@ -363,7 +383,7 @@ def _validate_operation_type(value: str) -> dict | None:
 @extend_schema(
     tags=['v2'],
     summary='Create operation template',
-    description='Create a custom operation template (staff-only).',
+    description='Create a custom operation template. Requires templates.manage_operation_template.',
     request=OperationTemplateWriteSerializer,
     responses={
         200: OperationTemplateDetailResponseSerializer,
@@ -373,8 +393,11 @@ def _validate_operation_type(value: str) -> dict | None:
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def create_template(request):
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE):
+        return _permission_denied("You do not have permission to manage templates.")
+
     serializer = OperationTemplateWriteSerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"success": False, "error": serializer.errors}, status=400)
@@ -415,7 +438,7 @@ def create_template(request):
 @extend_schema(
     tags=['v2'],
     summary='Update operation template',
-    description='Update an existing operation template (staff-only).',
+    description='Update an existing operation template. Requires templates.manage_operation_template.',
     request=OperationTemplateWriteSerializer,
     responses={
         200: OperationTemplateDetailResponseSerializer,
@@ -425,7 +448,7 @@ def create_template(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def update_template(request):
     serializer = OperationTemplateWriteSerializer(data=request.data)
     if not serializer.is_valid():
@@ -449,6 +472,9 @@ def update_template(request):
             "success": False,
             "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, template):
+        return _permission_denied("You do not have permission to manage this template.")
 
     fields = ["name", "description", "operation_type", "target_entity", "template_data", "is_active"]
     changed = []
@@ -475,7 +501,7 @@ def update_template(request):
 @extend_schema(
     tags=['v2'],
     summary='Delete operation template',
-    description='Delete an operation template (staff-only).',
+    description='Delete an operation template. Requires templates.manage_operation_template.',
     request=OperationTemplateIdSerializer,
     responses={
         200: OperationTemplateDetailResponseSerializer,
@@ -485,7 +511,7 @@ def update_template(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def delete_template(request):
     serializer = OperationTemplateIdSerializer(data=request.data)
     if not serializer.is_valid():
@@ -499,6 +525,9 @@ def delete_template(request):
             "success": False,
             "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, template):
+        return _permission_denied("You do not have permission to manage this template.")
 
     template.delete()
 
@@ -527,7 +556,7 @@ class OperationTemplateSyncResponseSerializer(serializers.Serializer):
 @extend_schema(
     tags=['v2'],
     summary='Sync templates from registry',
-    description='Synchronize OperationTemplate records with the in-code operation registry. Staff-only.',
+    description='Synchronize OperationTemplate records with the in-code operation registry. Requires templates.manage_operation_template.',
     request=OperationTemplateSyncRequestSerializer,
     responses={
         200: OperationTemplateSyncResponseSerializer,
@@ -537,8 +566,11 @@ class OperationTemplateSyncResponseSerializer(serializers.Serializer):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def sync_from_registry(request):
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE):
+        return _permission_denied("You do not have permission to manage templates.")
+
     """
     POST /api/v2/templates/sync-from-registry/
 

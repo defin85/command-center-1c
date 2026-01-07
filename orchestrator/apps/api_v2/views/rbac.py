@@ -15,9 +15,10 @@ from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.core import permission_codes as perms
 from apps.databases.models import (
     Cluster,
     ClusterPermission,
@@ -26,6 +27,15 @@ from apps.databases.models import (
     PermissionLevel,
 )
 from apps.operations.services.admin_action_audit import log_admin_action
+
+
+def _ensure_manage_rbac(request):
+    if request.user.has_perm(perms.PERM_DATABASES_MANAGE_RBAC):
+        return None
+    return Response(
+        {"success": False, "error": {"code": "PERMISSION_DENIED", "message": "Forbidden"}},
+        status=403,
+    )
 
 
 @extend_schema_field(OpenApiTypes.STR)
@@ -225,8 +235,12 @@ def _parse_pagination(request, default_limit: int = 50, max_limit: int = 200) ->
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def list_cluster_permissions(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     pagination = _parse_pagination(request)
     qs = ClusterPermission.objects.select_related("user", "cluster", "granted_by").all()
 
@@ -284,8 +298,12 @@ def list_cluster_permissions(request):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def grant_cluster_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     serializer = GrantClusterPermissionRequestSerializer(data=request.data)
     if not serializer.is_valid():
         log_admin_action(
@@ -392,8 +410,12 @@ def grant_cluster_permission(request):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def revoke_cluster_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     serializer = RevokeClusterPermissionRequestSerializer(data=request.data)
     if not serializer.is_valid():
         log_admin_action(
@@ -444,8 +466,12 @@ def revoke_cluster_permission(request):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def list_database_permissions(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     pagination = _parse_pagination(request)
     qs = DatabasePermission.objects.select_related("user", "database", "database__cluster", "granted_by").all()
 
@@ -507,8 +533,12 @@ def list_database_permissions(request):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def grant_database_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     serializer = GrantDatabasePermissionRequestSerializer(data=request.data)
     if not serializer.is_valid():
         log_admin_action(
@@ -615,8 +645,12 @@ def grant_database_permission(request):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def revoke_database_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     serializer = RevokeDatabasePermissionRequestSerializer(data=request.data)
     if not serializer.is_valid():
         log_admin_action(
@@ -664,8 +698,12 @@ def revoke_database_permission(request):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def list_users(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
     search = (request.query_params.get("search") or "").strip()
     try:
         limit = int(request.query_params.get("limit", 100))
@@ -705,7 +743,7 @@ def list_users(request):
             name="user_id",
             type=int,
             required=False,
-            description="Optional (default: current user). Staff-only.",
+            description="Optional (default: current user). Requires databases.manage_rbac for other users.",
         ),
         OpenApiParameter(name="include_databases", type=bool, required=False, default=True),
         OpenApiParameter(name="include_clusters", type=bool, required=False, default=True),
@@ -720,8 +758,10 @@ def list_users(request):
 @permission_classes([IsAuthenticated])
 def get_effective_access(request):
     requested_user_id = request.query_params.get("user_id")
-    if requested_user_id and not request.user.is_staff:
-        return Response({"detail": "Forbidden"}, status=403)
+    if requested_user_id and int(requested_user_id) != request.user.id:
+        denied = _ensure_manage_rbac(request)
+        if denied:
+            return denied
 
     target_user = request.user
     if requested_user_id:

@@ -18,6 +18,9 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 import uuid
 
+from apps.core import permission_codes as perms
+from apps.databases.models import PermissionLevel
+from apps.templates.rbac import TemplatePermissionService
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution, WorkflowStepResult
 from apps.templates.workflow.serializers import (
     WorkflowTemplateListSerializer,
@@ -30,6 +33,13 @@ from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.operations.utils.feature_flags import is_go_workflow_engine_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _permission_denied(message: str):
+    return Response(
+        {"success": False, "error": {"code": "PERMISSION_DENIED", "message": message}},
+        status=403,
+    )
 
 _WORKFLOW_ASYNC_EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
@@ -448,6 +458,9 @@ def list_workflows(request):
             "total": 100
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE):
+        return _permission_denied("You do not have permission to view workflows.")
+
     workflow_type = request.query_params.get('workflow_type')
     is_active = request.query_params.get('is_active')
     is_valid = request.query_params.get('is_valid')
@@ -498,6 +511,13 @@ def list_workflows(request):
             return Response({"success": False, "error": apply_sort_error}, status=400)
     else:
         qs = qs.order_by('-created_at')
+
+    if not request.user.is_staff:
+        qs = TemplatePermissionService.filter_accessible_workflow_templates(
+            request.user,
+            qs,
+            min_level=PermissionLevel.VIEW,
+        )
 
     total = qs.count()
     qs = qs[offset:offset + limit]
@@ -578,6 +598,9 @@ def get_workflow(request):
                 'message': 'Workflow not found'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE, workflow):
+        return _permission_denied("You do not have permission to access this workflow.")
 
     serializer = WorkflowTemplateDetailSerializer(workflow)
 
@@ -684,6 +707,9 @@ def execute_workflow(request):
                 'message': 'Workflow not found'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_EXECUTE_WORKFLOW_TEMPLATE, workflow):
+        return _permission_denied("You do not have permission to execute this workflow.")
 
     # Validate workflow is executable
     if not workflow.is_active:
@@ -905,6 +931,9 @@ def create_workflow(request):
             "message": "Workflow created successfully"
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE):
+        return _permission_denied("You do not have permission to manage workflows.")
+
     name = request.data.get('name')
     description = request.data.get('description', '')
     workflow_type = request.data.get('workflow_type', 'general')
@@ -1029,6 +1058,9 @@ def update_workflow(request):
                 'message': 'Workflow not found'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
+        return _permission_denied("You do not have permission to manage this workflow.")
 
     # Check for running executions
     running_count = workflow.executions.filter(
@@ -1162,6 +1194,9 @@ def delete_workflow(request):
             }
         }, status=404)
 
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
+        return _permission_denied("You do not have permission to manage this workflow.")
+
     workflow_name = workflow.name
 
     # Check for running executions
@@ -1249,6 +1284,9 @@ def validate_workflow(request):
             "metadata": {...}
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE):
+        return _permission_denied("You do not have permission to manage workflows.")
+
     workflow_id = request.data.get('workflow_id')
     dag_structure = request.data.get('dag_structure')
 
@@ -1277,6 +1315,8 @@ def validate_workflow(request):
                         'message': 'Workflow not found'
                     }
                 }, status=404)
+            if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
+                return _permission_denied("You do not have permission to manage this workflow.")
         else:
             # Parse dag_structure directly
             try:
@@ -1393,6 +1433,9 @@ def clone_workflow(request):
             }
         }, status=404)
 
+    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, source_workflow):
+        return _permission_denied("You do not have permission to manage this workflow.")
+
     try:
         if new_name:
             # Create with new name (fresh workflow, version 1)
@@ -1489,6 +1532,9 @@ def list_executions(request):
             "total": 100
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE):
+        return _permission_denied("You do not have permission to view workflows.")
+
     workflow_id = request.query_params.get('workflow_id')
     status_filter = request.query_params.get('status')
 
@@ -1544,6 +1590,13 @@ def list_executions(request):
         qs = qs.filter(status=status_filter)
 
     qs = qs.order_by('-started_at')
+
+    if not request.user.is_staff:
+        qs = TemplatePermissionService.filter_accessible_workflow_executions(
+            request.user,
+            qs,
+            min_level=PermissionLevel.VIEW,
+        )
 
     total = qs.count()
     qs = qs[offset:offset + limit]
@@ -1640,6 +1693,9 @@ def get_execution(request):
             }
         }, status=404)
 
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE, execution):
+        return _permission_denied("You do not have permission to access this execution.")
+
     execution_serializer = WorkflowExecutionDetailSerializer(execution)
     steps_serializer = WorkflowStepResultSerializer(
         execution.step_results.order_by('started_at'),
@@ -1729,6 +1785,9 @@ def cancel_execution(request):
                 'message': 'Execution not found'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_EXECUTE_WORKFLOW_TEMPLATE, execution):
+        return _permission_denied("You do not have permission to cancel this execution.")
 
     # Check if execution can be cancelled (FSM allows pending or running)
     cancellable_statuses = [
@@ -1860,8 +1919,11 @@ def get_execution_steps(request):
             }
         }, status=400)
 
-    # Verify execution exists
-    if not WorkflowExecution.objects.filter(id=execution_id).exists():
+    try:
+        execution = WorkflowExecution.objects.select_related("workflow_template").get(
+            id=execution_id
+        )
+    except WorkflowExecution.DoesNotExist:
         return Response({
             'success': False,
             'error': {
@@ -1869,6 +1931,9 @@ def get_execution_steps(request):
                 'message': 'Execution not found'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE, execution):
+        return _permission_denied("You do not have permission to access this execution.")
 
     # Build queryset
     qs = WorkflowStepResult.objects.filter(workflow_execution_id=execution_id)
@@ -1969,6 +2034,9 @@ def list_templates(request):
             "count": 10
         }
     """
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE):
+        return _permission_denied("You do not have permission to view workflows.")
+
     category = request.query_params.get('category')
     search = request.query_params.get('search')
 
@@ -1989,6 +2057,13 @@ def list_templates(request):
         )
 
     qs = qs.order_by('category', 'name')
+
+    if not request.user.is_staff:
+        qs = TemplatePermissionService.filter_accessible_workflow_templates(
+            request.user,
+            qs,
+            min_level=PermissionLevel.VIEW,
+        )
 
     templates_data = []
     for template in qs:
@@ -2094,6 +2169,9 @@ def get_template_schema(request):
                 'message': 'Workflow template not found or not available for Operations Center'
             }
         }, status=404)
+
+    if not request.user.has_perm(perms.PERM_TEMPLATES_VIEW_WORKFLOW_TEMPLATE, template):
+        return _permission_denied("You do not have permission to access this workflow.")
 
     logger.info(
         "Retrieved workflow template schema",

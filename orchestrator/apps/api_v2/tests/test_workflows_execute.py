@@ -1,16 +1,24 @@
 import pytest
 from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from unittest.mock import patch
 
 from apps.operations.services import EnqueueResult
+from apps.databases.models import PermissionLevel
+from apps.templates.models import WorkflowTemplatePermission
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="workflow_user", password="pass")
+    user = User.objects.create_user(username="workflow_user", password="pass")
+    ct = ContentType.objects.get(app_label="templates", model="workflowtemplate")
+    perm = Permission.objects.get(content_type=ct, codename="execute_workflow_template")
+    user.user_permissions.add(perm)
+    return user
 
 
 @pytest.fixture
@@ -22,7 +30,7 @@ def client(user):
 
 @pytest.fixture
 def workflow_template(user):
-    return WorkflowTemplate.objects.create(
+    template = WorkflowTemplate.objects.create(
         name="Test Workflow",
         description="",
         workflow_type=WorkflowType.SEQUENTIAL,
@@ -36,6 +44,13 @@ def workflow_template(user):
         is_active=True,
         created_by=user,
     )
+    WorkflowTemplatePermission.objects.create(
+        user=user,
+        workflow_template=template,
+        level=PermissionLevel.OPERATE,
+        notes="",
+    )
+    return template
 
 
 @pytest.mark.django_db

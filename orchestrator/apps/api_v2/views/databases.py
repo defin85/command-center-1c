@@ -27,6 +27,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
+from apps.core import permission_codes as perms
 from apps.databases.models import Cluster, Database, InfobaseUserMapping, PermissionLevel
 from apps.databases.services import PermissionService
 from apps.databases.serializers import (
@@ -444,6 +445,9 @@ def list_databases(request):
             "total": 700
         }
     """
+    if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE):
+        return _permission_denied("You do not have permission to view databases.")
+
     cluster_id = request.query_params.get('cluster_id')
     status = request.query_params.get('status')
     health_status = request.query_params.get('health_status')
@@ -592,14 +596,8 @@ def get_database(request):
             }
         }, status=404)
 
-    if not _is_staff(request.user):
-        allowed = PermissionService.has_permission(
-            request.user,
-            db,
-            PermissionLevel.VIEW,
-        )
-        if not allowed:
-            return _permission_denied("You do not have permission to access this database.")
+    if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, db):
+        return _permission_denied("You do not have permission to access this database.")
 
     serializer = DatabaseSerializer(db)
 
@@ -673,14 +671,8 @@ def update_database_credentials(request):
             }
         }, status=404)
 
-    if not _is_staff(request.user):
-        allowed = PermissionService.has_permission(
-            request.user,
-            db,
-            PermissionLevel.MANAGE,
-        )
-        if not allowed:
-            return _permission_denied("You do not have permission to update database credentials.")
+    if not request.user.has_perm(perms.PERM_DATABASES_MANAGE_DATABASE, db):
+        return _permission_denied("You do not have permission to update database credentials.")
 
     reset = data.get('reset', False)
     updated_fields = []
@@ -802,14 +794,8 @@ def health_check(request):
             }
         }, status=404)
 
-    if not _is_staff(request.user):
-        allowed = PermissionService.has_permission(
-            request.user,
-            db,
-            PermissionLevel.OPERATE,
-        )
-        if not allowed:
-            return _permission_denied("You do not have permission to run health check.")
+    if not request.user.has_perm(perms.PERM_DATABASES_OPERATE_DATABASE, db):
+        return _permission_denied("You do not have permission to run health check.")
 
     enqueue_result = OperationsService.enqueue_health_check(
         database_ids=[database_id],
@@ -1310,6 +1296,9 @@ def bulk_health_check(request):
     database_ids = request.data.get('database_ids', [])
     cluster_id = request.data.get('cluster_id')
 
+    if not request.user.has_perm(perms.PERM_DATABASES_OPERATE_DATABASE):
+        return _permission_denied("You do not have permission to run health check.")
+
     # Build queryset
     if database_ids:
         qs = Database.objects.filter(id__in=database_ids)
@@ -1490,13 +1479,7 @@ def get_database_stream_ticket(request):
             return _permission_denied("cluster_id is required for non-staff users.")
 
         cluster = Cluster.objects.get(id=cluster_id)
-        allowed = PermissionService.has_cluster_permission(
-            request.user,
-            cluster,
-            PermissionLevel.VIEW,
-            allow_database_permissions=True,
-        )
-        if not allowed:
+        if not request.user.has_perm(perms.PERM_DATABASES_VIEW_CLUSTER, cluster):
             return _permission_denied("You do not have permission to access this cluster.")
 
     redis_conn = _get_redis_connection()

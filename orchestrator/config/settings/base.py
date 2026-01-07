@@ -163,6 +163,12 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Django auth backends
+# Keep ModelBackend behavior, but extend user.has_perm(..., obj) with RBAC scope checks.
+AUTHENTICATION_BACKENDS = [
+    "apps.core.rbac_backend.RBACPermissionBackend",
+]
+
 # Internationalization
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
