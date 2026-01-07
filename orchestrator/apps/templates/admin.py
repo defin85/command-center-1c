@@ -9,7 +9,14 @@ from django import forms
 
 from django_json_widget.widgets import JSONEditorWidget
 
-from .models import OperationTemplate, WorkflowTemplate, WorkflowExecution, WorkflowStepResult
+from .models import (
+    OperationTemplate,
+    OperationTemplateGroupPermission,
+    WorkflowExecution,
+    WorkflowStepResult,
+    WorkflowTemplate,
+    WorkflowTemplateGroupPermission,
+)
 
 
 class StaffWriteAdminMixin:
@@ -500,3 +507,35 @@ class WorkflowStepResultAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         'status', 'input_data', 'output_data', 'error_message',
         'started_at', 'completed_at', 'span_id', 'trace_id'
     ]
+
+
+@admin.register(OperationTemplateGroupPermission)
+class OperationTemplateGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for OperationTemplateGroupPermission model (RBAC)."""
+
+    list_display = ['group', 'template', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level']
+    search_fields = ['group__name', 'template__name', 'template__id']
+    autocomplete_fields = ['group', 'template']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(WorkflowTemplateGroupPermission)
+class WorkflowTemplateGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for WorkflowTemplateGroupPermission model (RBAC)."""
+
+    list_display = ['group', 'workflow_template', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'workflow_template__workflow_type']
+    search_fields = ['group__name', 'workflow_template__name']
+    autocomplete_fields = ['group', 'workflow_template']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
