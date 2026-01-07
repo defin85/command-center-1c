@@ -4,15 +4,13 @@ package ibcmdops
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	runnerartifacts "github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/artifacts"
 )
 
 type storage interface {
@@ -25,13 +23,10 @@ type localStorage struct {
 }
 
 type s3Storage struct {
-	client   *minio.Client
-	bucket   string
-	prefix   string
-	tempDir  string
-	region   string
-	useSSL   bool
-	endpoint string
+	client  *runnerartifacts.Storage
+	bucket  string
+	prefix  string
+	tempDir string
 }
 
 func newStorageFromEnv() (storage, error) {
@@ -100,10 +95,13 @@ func newS3StorageFromEnv() (*s3Storage, error) {
 		useSSL = raw != "false"
 	}
 
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-		Region: region,
+	client, err := runnerartifacts.NewStorage(runnerartifacts.StorageConfig{
+		Endpoint:  endpoint,
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		Bucket:    bucket,
+		Secure:    useSSL,
+		Region:    region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to init S3 client: %w", err)
@@ -115,47 +113,26 @@ func newS3StorageFromEnv() (*s3Storage, error) {
 	}
 
 	return &s3Storage{
-		client:   client,
-		bucket:   bucket,
-		prefix:   prefix,
-		tempDir:  tempDir,
-		region:   region,
-		useSSL:   useSSL,
-		endpoint: endpoint,
+		client:  client,
+		bucket:  bucket,
+		prefix:  prefix,
+		tempDir: tempDir,
 	}, nil
 }
 
 func (s *s3Storage) ResolveInput(ctx context.Context, inputPath string) (string, func(), error) {
-	bucket, key, err := s.normalizeInputKey(inputPath)
+	_, key, err := s.normalizeInputKey(inputPath)
 	if err != nil {
 		return "", nil, err
 	}
 
-	tempFile, err := os.CreateTemp(s.tempDir, "ibcmd-input-*")
+	localPath, err := s.client.DownloadToTempFile(ctx, key, s.tempDir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	localPath := tempFile.Name()
-
-	cleanup := func() {
-		_ = tempFile.Close()
-		_ = os.Remove(localPath)
-	}
-
-	object, err := s.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
-	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to download s3 object: %w", err)
 	}
-	defer object.Close()
 
-	if _, err := io.Copy(tempFile, object); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("failed to write s3 object to temp file: %w", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("failed to close temp file: %w", err)
+	cleanup := func() {
+		_ = os.Remove(localPath)
 	}
 
 	return localPath, cleanup, nil
@@ -180,14 +157,7 @@ func (s *s3Storage) PrepareOutput(ctx context.Context, outputPath, databaseID, e
 	artifactPath := fmt.Sprintf("s3://%s/%s", s.bucket, key)
 
 	finalize := func(ctx context.Context) error {
-		file, err := os.Open(localPath)
-		if err != nil {
-			return fmt.Errorf("failed to open temp output file: %w", err)
-		}
-		defer file.Close()
-
-		_, err = s.client.PutObject(ctx, s.bucket, key, file, -1, minio.PutObjectOptions{})
-		if err != nil {
+		if err := s.client.UploadFile(ctx, key, localPath, ""); err != nil {
 			return fmt.Errorf("failed to upload to s3: %w", err)
 		}
 		return nil
