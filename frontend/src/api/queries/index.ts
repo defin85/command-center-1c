@@ -27,10 +27,34 @@ export const queryKeys = {
     all: ['rbac'] as const,
     clusterPermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'cluster', filters] as const,
     databasePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'database', filters] as const,
+    operationTemplatePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'operation-template', filters] as const,
+    workflowTemplatePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'workflow-template', filters] as const,
+    artifactPermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'artifact', filters] as const,
     effectiveAccess: (userId?: number) => [...queryKeys.rbac.all, 'effective-access', userId] as const,
+    canManage: () => [...queryKeys.rbac.all, 'can-manage'] as const,
     users: (filters?: { search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.rbac.all, 'users', filters] as const
     ),
+    roles: (filters?: { search?: string; limit?: number; offset?: number }) => (
+      [...queryKeys.rbac.all, 'roles', filters] as const
+    ),
+    capabilities: () => [...queryKeys.rbac.all, 'capabilities'] as const,
+    userRoles: (userId?: number) => [...queryKeys.rbac.all, 'user-roles', userId] as const,
+    audit: (filters?: unknown) => [...queryKeys.rbac.all, 'audit', filters] as const,
+    refs: {
+      clusters: (filters?: unknown) => [...queryKeys.rbac.all, 'ref-clusters', filters] as const,
+      databases: (filters?: unknown) => [...queryKeys.rbac.all, 'ref-databases', filters] as const,
+      operationTemplates: (filters?: unknown) => [...queryKeys.rbac.all, 'ref-operation-templates', filters] as const,
+      workflowTemplates: (filters?: unknown) => [...queryKeys.rbac.all, 'ref-workflow-templates', filters] as const,
+      artifacts: (filters?: unknown) => [...queryKeys.rbac.all, 'ref-artifacts', filters] as const,
+    },
+    groupPermissions: {
+      clusters: (filters?: unknown) => [...queryKeys.rbac.all, 'cluster-groups', filters] as const,
+      databases: (filters?: unknown) => [...queryKeys.rbac.all, 'database-groups', filters] as const,
+      operationTemplates: (filters?: unknown) => [...queryKeys.rbac.all, 'operation-template-groups', filters] as const,
+      workflowTemplates: (filters?: unknown) => [...queryKeys.rbac.all, 'workflow-template-groups', filters] as const,
+      artifacts: (filters?: unknown) => [...queryKeys.rbac.all, 'artifact-groups', filters] as const,
+    },
   },
   templates: {
     all: ['templates'] as const,

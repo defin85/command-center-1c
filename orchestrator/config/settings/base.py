@@ -226,6 +226,9 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API для управления операциями в 700+ базах 1С',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'POSTPROCESSING_HOOKS': [
+        'config.spectacular_hooks.remove_nullable_oneof_nullenum',
+    ],
     'ENUM_NAME_OVERRIDES': {
         'DatabaseStatusEnum': ['active', 'inactive', 'error', 'maintenance'],
         'OperationStatusEnum': ['pending', 'running', 'completed', 'failed', 'cancelled'],

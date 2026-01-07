@@ -2516,11 +2516,110 @@ paths:
           description: Subscription updated
         '401':
           description: Unauthorized
+  /api/v2/rbac/create-role/:
+    post:
+      operationId: v2_rbac_create_role_create
+      summary: Create role (Django group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacGroupRef'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+  /api/v2/rbac/delete-role/:
+    post:
+      operationId: v2_rbac_delete_role_create
+      summary: Delete role (safe delete)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleDeleteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoleDeleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoleDeleteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
   /api/v2/rbac/get-effective-access/:
     get:
       operationId: v2_rbac_get_effective_access_retrieve
       summary: Get effective access
       parameters:
+      - in: query
+        name: include_artifacts
+        schema:
+          type: boolean
+          default: false
       - in: query
         name: include_clusters
         schema:
@@ -2532,10 +2631,21 @@ paths:
           type: boolean
           default: true
       - in: query
+        name: include_templates
+        schema:
+          type: boolean
+          default: false
+      - in: query
+        name: include_workflows
+        schema:
+          type: boolean
+          default: false
+      - in: query
         name: user_id
         schema:
           type: integer
-        description: 'Optional (default: current user). Staff-only.'
+        description: 'Optional (default: current user). Requires databases.manage_rbac
+          for other users.'
       tags:
       - v2
       security:
@@ -2552,6 +2662,121 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/get-user-roles/:
+    get:
+      operationId: v2_rbac_get_user_roles_retrieve
+      summary: Get user roles (groups)
+      parameters:
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRolesGetResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+  /api/v2/rbac/grant-artifact-group-permission/:
+    post:
+      operationId: v2_rbac_grant_artifact_group_permission_create
+      summary: Grant artifact permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactGroupPermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/grant-artifact-permission/:
+    post:
+      operationId: v2_rbac_grant_artifact_permission_create
+      summary: Grant artifact permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantArtifactPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/grant-cluster-group-permission/:
+    post:
+      operationId: v2_rbac_grant_cluster_group_permission_create
+      summary: Grant cluster group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantClusterGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantClusterGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantClusterGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterGroupPermissionUpsertResponse'
+          description: ''
   /api/v2/rbac/grant-cluster-permission/:
     post:
       operationId: v2_rbac_grant_cluster_permission_create
@@ -2596,6 +2821,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+  /api/v2/rbac/grant-database-group-permission/:
+    post:
+      operationId: v2_rbac_grant_database_group_permission_create
+      summary: Grant database group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantDatabaseGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantDatabaseGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantDatabaseGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseGroupPermissionUpsertResponse'
+          description: ''
   /api/v2/rbac/grant-database-permission/:
     post:
       operationId: v2_rbac_grant_database_permission_create
@@ -2639,6 +2892,319 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+  /api/v2/rbac/grant-operation-template-group-permission/:
+    post:
+      operationId: v2_rbac_grant_operation_template_group_permission_create
+      summary: Grant operation template permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateGroupPermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/grant-operation-template-permission/:
+    post:
+      operationId: v2_rbac_grant_operation_template_permission_create
+      summary: Grant operation template permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplatePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplatePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantOperationTemplatePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplatePermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/grant-workflow-template-group-permission/:
+    post:
+      operationId: v2_rbac_grant_workflow_template_group_permission_create
+      summary: Grant workflow template permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTemplateGroupPermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/grant-workflow-template-permission/:
+    post:
+      operationId: v2_rbac_grant_workflow_template_permission_create
+      summary: Grant workflow template permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplatePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplatePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GrantWorkflowTemplatePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTemplatePermissionUpsertResponse'
+          description: ''
+  /api/v2/rbac/list-admin-audit/:
+    get:
+      operationId: v2_rbac_list_admin_audit_retrieve
+      summary: List admin audit log entries
+      parameters:
+      - in: query
+        name: action
+        schema:
+          type: string
+      - in: query
+        name: actor
+        schema:
+          type: string
+        description: Filter by actor_username (contains)
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: outcome
+        schema:
+          type: string
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: since
+        schema:
+          type: string
+      - in: query
+        name: target_id
+        schema:
+          type: string
+      - in: query
+        name: target_type
+        schema:
+          type: string
+      - in: query
+        name: until
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditLogListResponse'
+          description: ''
+  /api/v2/rbac/list-artifact-group-permissions/:
+    get:
+      operationId: v2_rbac_list_artifact_group_permissions_retrieve
+      summary: List artifact permissions (group)
+      parameters:
+      - in: query
+        name: artifact_id
+        schema:
+          type: string
+      - in: query
+        name: group_id
+        schema:
+          type: integer
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactGroupPermissionListResponse'
+          description: ''
+  /api/v2/rbac/list-artifact-permissions/:
+    get:
+      operationId: v2_rbac_list_artifact_permissions_retrieve
+      summary: List artifact permissions (user)
+      parameters:
+      - in: query
+        name: artifact_id
+        schema:
+          type: string
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPermissionListResponse'
+          description: ''
+  /api/v2/rbac/list-capabilities/:
+    get:
+      operationId: v2_rbac_list_capabilities_retrieve
+      summary: List supported capability permissions (curated)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/rbac/list-cluster-group-permissions/:
+    get:
+      operationId: v2_rbac_list_cluster_group_permissions_retrieve
+      summary: List cluster group permissions
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+      - in: query
+        name: group_id
+        schema:
+          type: integer
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterGroupPermissionListResponse'
           description: ''
   /api/v2/rbac/list-cluster-permissions/:
     get:
@@ -2685,6 +3251,51 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/list-database-group-permissions/:
+    get:
+      operationId: v2_rbac_list_database_group_permissions_retrieve
+      summary: List database group permissions
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+      - in: query
+        name: database_id
+        schema:
+          type: string
+      - in: query
+        name: group_id
+        schema:
+          type: integer
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseGroupPermissionListResponse'
+          description: ''
   /api/v2/rbac/list-database-permissions/:
     get:
       operationId: v2_rbac_list_database_permissions_retrieve
@@ -2734,6 +3345,121 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/list-operation-template-group-permissions/:
+    get:
+      operationId: v2_rbac_list_operation_template_group_permissions_retrieve
+      summary: List operation template permissions (group)
+      parameters:
+      - in: query
+        name: group_id
+        schema:
+          type: integer
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: template_id
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplateGroupPermissionListResponse'
+          description: ''
+  /api/v2/rbac/list-operation-template-permissions/:
+    get:
+      operationId: v2_rbac_list_operation_template_permissions_retrieve
+      summary: List operation template permissions (user)
+      parameters:
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: template_id
+        schema:
+          type: string
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTemplatePermissionListResponse'
+          description: ''
+  /api/v2/rbac/list-roles/:
+    get:
+      operationId: v2_rbac_list_roles_retrieve
+      summary: List roles (Django groups)
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/rbac/list-users/:
     get:
       operationId: v2_rbac_list_users_retrieve
@@ -2771,6 +3497,321 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/list-workflow-template-group-permissions/:
+    get:
+      operationId: v2_rbac_list_workflow_template_group_permissions_retrieve
+      summary: List workflow template permissions (group)
+      parameters:
+      - in: query
+        name: group_id
+        schema:
+          type: integer
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: template_id
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTemplateGroupPermissionListResponse'
+          description: ''
+  /api/v2/rbac/list-workflow-template-permissions/:
+    get:
+      operationId: v2_rbac_list_workflow_template_permissions_retrieve
+      summary: List workflow template permissions (user)
+      parameters:
+      - in: query
+        name: level
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: template_id
+        schema:
+          type: string
+      - in: query
+        name: user_id
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTemplatePermissionListResponse'
+          description: ''
+  /api/v2/rbac/ref-artifacts/:
+    get:
+      operationId: v2_rbac_ref_artifacts_retrieve
+      summary: List artifacts (RBAC ref)
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefArtifactsResponse'
+          description: ''
+  /api/v2/rbac/ref-clusters/:
+    get:
+      operationId: v2_rbac_ref_clusters_retrieve
+      summary: List clusters (RBAC ref)
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefClustersResponse'
+          description: ''
+  /api/v2/rbac/ref-databases/:
+    get:
+      operationId: v2_rbac_ref_databases_retrieve
+      summary: List databases (RBAC ref)
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefDatabasesResponse'
+          description: ''
+  /api/v2/rbac/ref-operation-templates/:
+    get:
+      operationId: v2_rbac_ref_operation_templates_retrieve
+      summary: List operation templates (RBAC ref)
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefOperationTemplatesResponse'
+          description: ''
+  /api/v2/rbac/ref-workflow-templates/:
+    get:
+      operationId: v2_rbac_ref_workflow_templates_retrieve
+      summary: List workflow templates (RBAC ref)
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefWorkflowTemplatesResponse'
+          description: ''
+  /api/v2/rbac/revoke-artifact-group-permission/:
+    post:
+      operationId: v2_rbac_revoke_artifact_group_permission_create
+      summary: Revoke artifact permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/revoke-artifact-permission/:
+    post:
+      operationId: v2_rbac_revoke_artifact_permission_create
+      summary: Revoke artifact permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeArtifactPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/revoke-cluster-group-permission/:
+    post:
+      operationId: v2_rbac_revoke_cluster_group_permission_create
+      summary: Revoke cluster group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeClusterGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
   /api/v2/rbac/revoke-cluster-permission/:
     post:
       operationId: v2_rbac_revoke_cluster_permission_create
@@ -2809,6 +3850,34 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/revoke-database-group-permission/:
+    post:
+      operationId: v2_rbac_revoke_database_group_permission_create
+      summary: Revoke database group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabaseGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabaseGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeDatabaseGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
   /api/v2/rbac/revoke-database-permission/:
     post:
       operationId: v2_rbac_revoke_database_permission_create
@@ -2847,6 +3916,256 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/rbac/revoke-operation-template-group-permission/:
+    post:
+      operationId: v2_rbac_revoke_operation_template_group_permission_create
+      summary: Revoke operation template permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/revoke-operation-template-permission/:
+    post:
+      operationId: v2_rbac_revoke_operation_template_permission_create
+      summary: Revoke operation template permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplatePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplatePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeOperationTemplatePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/revoke-workflow-template-group-permission/:
+    post:
+      operationId: v2_rbac_revoke_workflow_template_group_permission_create
+      summary: Revoke workflow template permission (group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/revoke-workflow-template-permission/:
+    post:
+      operationId: v2_rbac_revoke_workflow_template_permission_create
+      summary: Revoke workflow template permission (user)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplatePermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplatePermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RevokeWorkflowTemplatePermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokePermissionResponse'
+          description: ''
+  /api/v2/rbac/set-role-capabilities/:
+    post:
+      operationId: v2_rbac_set_role_capabilities_create
+      summary: Update role capabilities (group permissions)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCapabilitiesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoleCapabilitiesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoleCapabilitiesUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleCapabilitiesUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+  /api/v2/rbac/set-user-roles/:
+    post:
+      operationId: v2_rbac_set_user_roles_create
+      summary: Update user roles (group membership)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRolesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserRolesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserRolesUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRolesGetResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+  /api/v2/rbac/update-role/:
+    post:
+      operationId: v2_rbac_update_role_create
+      summary: Update role (rename Django group)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacGroupRef'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
   /api/v2/service-mesh/get-history/:
     get:
       operationId: v2_service_mesh_get_history_retrieve
@@ -3050,6 +4369,7 @@ paths:
     post:
       operationId: v2_settings_driver_catalogs_overrides_update_create
       description: Upload new overrides catalog version and move alias active (staff-only).
+        Requires reason.
       summary: Update driver catalog overrides (v2)
       tags:
       - v2
@@ -3087,6 +4407,7 @@ paths:
     post:
       operationId: v2_settings_driver_catalogs_promote_create
       description: Move base alias (approved/latest) to a specific version (staff-only).
+        Requires reason.
       summary: Promote driver catalog base alias
       tags:
       - v2
@@ -3123,7 +4444,7 @@ paths:
   /api/v2/settings/driver-catalogs/update/:
     post:
       operationId: v2_settings_driver_catalogs_update_create
-      description: Update driver catalog file (staff-only).
+      description: Update driver catalog file (staff-only). Requires reason.
       summary: Update driver catalog
       tags:
       - v2
@@ -3288,7 +4609,7 @@ paths:
   /api/v2/templates/create-template/:
     post:
       operationId: v2_templates_create_template_create
-      description: Create a custom operation template (staff-only).
+      description: Create a custom operation template. Requires templates.manage_operation_template.
       summary: Create operation template
       tags:
       - v2
@@ -3327,7 +4648,7 @@ paths:
   /api/v2/templates/delete-template/:
     post:
       operationId: v2_templates_delete_template_create
-      description: Delete an operation template (staff-only).
+      description: Delete an operation template. Requires templates.manage_operation_template.
       summary: Delete operation template
       tags:
       - v2
@@ -3434,7 +4755,7 @@ paths:
     post:
       operationId: v2_templates_sync_from_registry_create
       description: Synchronize OperationTemplate records with the in-code operation
-        registry. Staff-only.
+        registry. Requires templates.manage_operation_template.
       summary: Sync templates from registry
       tags:
       - v2
@@ -3472,7 +4793,7 @@ paths:
   /api/v2/templates/update-template/:
     post:
       operationId: v2_templates_update_template_create
-      description: Update an existing operation template (staff-only).
+      description: Update an existing operation template. Requires templates.manage_operation_template.
       summary: Update operation template
       tags:
       - v2
@@ -4459,6 +5780,58 @@ paths:
           description: Stream already active
 components:
   schemas:
+    AdminAuditLogItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        action:
+          type: string
+        outcome:
+          type: string
+        actor_username:
+          type: string
+        actor_id:
+          type: integer
+          nullable: true
+        target_type:
+          type: string
+        target_id:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: {}
+        error_message:
+          type: string
+      required:
+      - action
+      - actor_id
+      - actor_username
+      - created_at
+      - error_message
+      - id
+      - metadata
+      - outcome
+      - target_id
+      - target_type
+    AdminAuditLogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAuditLogItem'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - items
+      - total
     Artifact:
       type: object
       properties:
@@ -4536,7 +5909,30 @@ components:
         name:
           type: string
         kind:
-          $ref: '#/components/schemas/ArtifactCreateRequestKindEnum'
+          enum:
+          - extension
+          - config_cf
+          - config_xml
+          - dt_backup
+          - epf
+          - erf
+          - ibcmd_package
+          - driver_catalog
+          - ras_script
+          - other
+          type: string
+          description: |-
+            * `extension` - Extension
+            * `config_cf` - Config CF
+            * `config_xml` - Config XML
+            * `dt_backup` - DT Backup
+            * `epf` - EPF
+            * `erf` - ERF
+            * `ibcmd_package` - IBCMD Package
+            * `driver_catalog` - Driver Catalog
+            * `ras_script` - RAS Script
+            * `other` - Other
+          x-spec-enum-id: a47d928e0c6b9959
         is_versioned:
           type: boolean
           default: true
@@ -4547,30 +5943,6 @@ components:
       required:
       - kind
       - name
-    ArtifactCreateRequestKindEnum:
-      enum:
-      - extension
-      - config_cf
-      - config_xml
-      - dt_backup
-      - epf
-      - erf
-      - ibcmd_package
-      - driver_catalog
-      - ras_script
-      - other
-      type: string
-      description: |-
-        * `extension` - Extension
-        * `config_cf` - Config CF
-        * `config_xml` - Config XML
-        * `dt_backup` - DT Backup
-        * `epf` - EPF
-        * `erf` - ERF
-        * `ibcmd_package` - IBCMD Package
-        * `driver_catalog` - Driver Catalog
-        * `ras_script` - RAS Script
-        * `other` - Other
     ArtifactCreateResponse:
       type: object
       properties:
@@ -4581,6 +5953,55 @@ components:
       required:
       - artifact
       - message
+    ArtifactGroupPermission:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        artifact:
+          $ref: '#/components/schemas/ArtifactRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - artifact
+      - granted_at
+      - granted_by
+      - group
+      - level
+    ArtifactGroupPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactGroupPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    ArtifactGroupPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/ArtifactGroupPermission'
+      required:
+      - created
+      - permission
     ArtifactListResponse:
       type: object
       properties:
@@ -4593,6 +6014,66 @@ components:
       required:
       - artifacts
       - count
+    ArtifactPermission:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/RbacUserRef'
+        artifact:
+          $ref: '#/components/schemas/ArtifactRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - artifact
+      - granted_at
+      - granted_by
+      - level
+      - user
+    ArtifactPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    ArtifactPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/ArtifactPermission'
+      required:
+      - created
+      - permission
+    ArtifactRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     ArtifactVersion:
       type: object
       properties:
@@ -4653,18 +6134,6 @@ components:
           type: string
       required:
       - file
-    AuthTypeEnum:
-      enum:
-      - local
-      - ad
-      - service
-      - other
-      type: string
-      description: |-
-        * `local` - Local
-        * `ad` - Active Directory
-        * `service` - Service
-        * `other` - Other
     BatchOperation:
       type: object
       description: Serializer for BatchOperation model.
@@ -4678,14 +6147,71 @@ components:
         description:
           type: string
         operation_type:
-          $ref: '#/components/schemas/BatchOperationOperationTypeEnum'
+          enum:
+          - create
+          - update
+          - delete
+          - query
+          - lock_scheduled_jobs
+          - unlock_scheduled_jobs
+          - terminate_sessions
+          - block_sessions
+          - unblock_sessions
+          - sync_cluster
+          - discover_clusters
+          - health_check
+          - ibcmd_backup
+          - ibcmd_restore
+          - ibcmd_replicate
+          - ibcmd_create
+          - ibcmd_load_cfg
+          - ibcmd_extension_update
+          - ibcmd_cli
+          - designer_cli
+          type: string
+          description: |-
+            * `create` - Create
+            * `update` - Update
+            * `delete` - Delete
+            * `query` - Query
+            * `lock_scheduled_jobs` - Lock Scheduled Jobs
+            * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+            * `terminate_sessions` - Terminate Sessions
+            * `block_sessions` - Block Sessions
+            * `unblock_sessions` - Unblock Sessions
+            * `sync_cluster` - Sync Cluster
+            * `discover_clusters` - Discover Clusters
+            * `health_check` - Health Check
+            * `ibcmd_backup` - IBCMD Backup
+            * `ibcmd_restore` - IBCMD Restore
+            * `ibcmd_replicate` - IBCMD Replicate
+            * `ibcmd_create` - IBCMD Create
+            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
+            * `ibcmd_extension_update` - IBCMD Extension Update
+            * `ibcmd_cli` - IBCMD CLI (schema-driven)
+            * `designer_cli` - Designer CLI
+          x-spec-enum-id: 19bb048cbbb997a2
         target_entity:
           type: string
           description: 1C entity name (e.g., Справочник_Пользователи)
           maxLength: 255
         status:
-          allOf:
-          - $ref: '#/components/schemas/BatchOperationStatusEnum'
+          enum:
+          - pending
+          - queued
+          - processing
+          - completed
+          - failed
+          - cancelled
+          type: string
+          description: |-
+            * `pending` - Pending
+            * `queued` - Queued
+            * `processing` - Processing
+            * `completed` - Completed
+            * `failed` - Failed
+            * `cancelled` - Cancelled
+          x-spec-enum-id: 8a19812b789b972e
           readOnly: true
         progress:
           type: integer
@@ -4772,66 +6298,6 @@ components:
       - tasks
       - total_tasks
       - updated_at
-    BatchOperationOperationTypeEnum:
-      enum:
-      - create
-      - update
-      - delete
-      - query
-      - lock_scheduled_jobs
-      - unlock_scheduled_jobs
-      - terminate_sessions
-      - block_sessions
-      - unblock_sessions
-      - sync_cluster
-      - discover_clusters
-      - health_check
-      - ibcmd_backup
-      - ibcmd_restore
-      - ibcmd_replicate
-      - ibcmd_create
-      - ibcmd_load_cfg
-      - ibcmd_extension_update
-      - ibcmd_cli
-      - designer_cli
-      type: string
-      description: |-
-        * `create` - Create
-        * `update` - Update
-        * `delete` - Delete
-        * `query` - Query
-        * `lock_scheduled_jobs` - Lock Scheduled Jobs
-        * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
-        * `terminate_sessions` - Terminate Sessions
-        * `block_sessions` - Block Sessions
-        * `unblock_sessions` - Unblock Sessions
-        * `sync_cluster` - Sync Cluster
-        * `discover_clusters` - Discover Clusters
-        * `health_check` - Health Check
-        * `ibcmd_backup` - IBCMD Backup
-        * `ibcmd_restore` - IBCMD Restore
-        * `ibcmd_replicate` - IBCMD Replicate
-        * `ibcmd_create` - IBCMD Create
-        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-        * `ibcmd_extension_update` - IBCMD Extension Update
-        * `ibcmd_cli` - IBCMD CLI (schema-driven)
-        * `designer_cli` - Designer CLI
-    BatchOperationStatusEnum:
-      enum:
-      - pending
-      - queued
-      - processing
-      - completed
-      - failed
-      - cancelled
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `queued` - Queued
-        * `processing` - Processing
-        * `completed` - Completed
-        * `failed` - Failed
-        * `cancelled` - Cancelled
     BulkHealthCheckRequest:
       type: object
       description: Request body for bulk_health_check endpoint.
@@ -4854,6 +6320,37 @@ components:
           description: ID of the operation to cancel (UUID)
       required:
       - operation_id
+    Capability:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        app_label:
+          type: string
+        codename:
+          type: string
+        exists:
+          type: boolean
+      required:
+      - app_label
+      - code
+      - codename
+      - exists
+      - name
+    CapabilityListResponse:
+      type: object
+      properties:
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+        count:
+          type: integer
+      required:
+      - capabilities
+      - count
     CliCommand:
       type: object
       description: Single CLI command descriptor.
@@ -4987,7 +6484,18 @@ components:
           type: boolean
           readOnly: true
         status:
-          $ref: '#/components/schemas/StatusC5cEnum'
+          enum:
+          - active
+          - inactive
+          - error
+          - maintenance
+          type: string
+          description: |-
+            * `active` - Active
+            * `inactive` - Inactive
+            * `error` - Error
+            * `maintenance` - Maintenance
+          x-spec-enum-id: c5c3d7086c0dc2cb
         status_display:
           type: string
           readOnly: true
@@ -5147,6 +6655,55 @@ components:
           type: string
         health_status:
           type: string
+    ClusterGroupPermission:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        cluster:
+          $ref: '#/components/schemas/ClusterRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - cluster
+      - granted_at
+      - granted_by
+      - group
+      - level
+    ClusterGroupPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterGroupPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    ClusterGroupPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/ClusterGroupPermission'
+      required:
+      - created
+      - permission
     ClusterListResponse:
       type: object
       description: Response for list_clusters endpoint.
@@ -5509,7 +7066,18 @@ components:
           readOnly: true
           description: Имя информационной базы на сервере 1С (если отличается от name)
         status:
-          $ref: '#/components/schemas/StatusC5cEnum'
+          enum:
+          - active
+          - inactive
+          - error
+          - maintenance
+          type: string
+          description: |-
+            * `active` - Active
+            * `inactive` - Inactive
+            * `error` - Error
+            * `maintenance` - Maintenance
+          x-spec-enum-id: c5c3d7086c0dc2cb
         status_display:
           type: string
           readOnly: true
@@ -5522,8 +7090,18 @@ components:
           readOnly: true
           nullable: true
         last_check_status:
-          allOf:
-          - $ref: '#/components/schemas/LastCheckStatusEnum'
+          enum:
+          - ok
+          - degraded
+          - down
+          - unknown
+          type: string
+          description: |-
+            * `ok` - OK
+            * `degraded` - Degraded
+            * `down` - Down
+            * `unknown` - Unknown
+          x-spec-enum-id: b8b0456794b97d0a
           readOnly: true
         consecutive_failures:
           type: integer
@@ -5697,6 +7275,55 @@ components:
           $ref: '#/components/schemas/DatabaseErrorDetail'
       required:
       - error
+    DatabaseGroupPermission:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        database:
+          $ref: '#/components/schemas/DatabaseRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - database
+      - granted_at
+      - granted_by
+      - group
+      - level
+    DatabaseGroupPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseGroupPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    DatabaseGroupPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/DatabaseGroupPermission'
+      required:
+      - created
+      - permission
     DatabaseListResponse:
       type: object
       description: Response for list_databases endpoint.
@@ -5874,8 +7501,14 @@ components:
       type: object
       properties:
         driver:
-          allOf:
-          - $ref: '#/components/schemas/DriverEnum'
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
           default: cli
         its_payload:
           type: object
@@ -5941,13 +7574,23 @@ components:
       type: object
       properties:
         driver:
-          $ref: '#/components/schemas/DriverEnum'
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
         catalog:
           type: object
           additionalProperties: {}
+        reason:
+          type: string
       required:
       - catalog
       - driver
+      - reason
     DriverCatalogOverridesUpdateResponse:
       type: object
       properties:
@@ -5966,14 +7609,24 @@ components:
       type: object
       properties:
         driver:
-          $ref: '#/components/schemas/DriverEnum'
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
         version:
           type: string
         alias:
           type: string
           default: approved
+        reason:
+          type: string
       required:
       - driver
+      - reason
       - version
     DriverCatalogPromoteResponse:
       type: object
@@ -5996,9 +7649,12 @@ components:
         catalog:
           type: object
           additionalProperties: {}
+        reason:
+          type: string
       required:
       - catalog
       - driver
+      - reason
     DriverCatalogV2:
       type: object
       properties:
@@ -6037,7 +7693,14 @@ components:
       type: object
       properties:
         kind:
-          $ref: '#/components/schemas/DriverCommandParamV2KindEnum'
+          enum:
+          - flag
+          - positional
+          type: string
+          description: |-
+            * `flag` - flag
+            * `positional` - positional
+          x-spec-enum-id: 6bafa55ecb0406ba
         flag:
           type: string
         position:
@@ -6052,9 +7715,20 @@ components:
         description:
           type: string
         value_type:
-          oneOf:
-          - $ref: '#/components/schemas/ValueTypeEnum'
-          - $ref: '#/components/schemas/NullEnum'
+          enum:
+          - string
+          - int
+          - float
+          - bool
+          - null
+          type: string
+          description: |-
+            * `string` - string
+            * `int` - int
+            * `float` - float
+            * `bool` - bool
+          x-spec-enum-id: b0c0b04a584ed9d8
+          nullable: true
         enum:
           type: array
           items:
@@ -6072,14 +7746,6 @@ components:
       - expects_value
       - kind
       - required
-    DriverCommandParamV2KindEnum:
-      enum:
-      - flag
-      - positional
-      type: string
-      description: |-
-        * `flag` - flag
-        * `positional` - positional
     DriverCommandV2:
       type: object
       properties:
@@ -6092,9 +7758,23 @@ components:
           items:
             type: string
         scope:
-          $ref: '#/components/schemas/ScopeEnum'
+          enum:
+          - per_database
+          - global
+          type: string
+          description: |-
+            * `per_database` - per_database
+            * `global` - global
+          x-spec-enum-id: 7203fc0d89fbc902
         risk_level:
-          $ref: '#/components/schemas/RiskLevelEnum'
+          enum:
+          - safe
+          - dangerous
+          type: string
+          description: |-
+            * `safe` - safe
+            * `dangerous` - dangerous
+          x-spec-enum-id: 13de6e877a80d4a5
         params_by_name:
           type: object
           additionalProperties:
@@ -6127,14 +7807,26 @@ components:
       required:
       - catalog
       - driver
-    DriverEnum:
-      enum:
-      - cli
-      - ibcmd
-      type: string
-      description: |-
-        * `cli` - cli
-        * `ibcmd` - ibcmd
+    EffectiveAccessArtifactItem:
+      type: object
+      properties:
+        artifact:
+          $ref: '#/components/schemas/ArtifactRef'
+        level:
+          type: string
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+          x-spec-enum-id: 95cc5059aa03e762
+      required:
+      - artifact
+      - level
+      - source
     EffectiveAccessClusterItem:
       type: object
       properties:
@@ -6153,11 +7845,38 @@ components:
         level:
           type: string
         source:
-          $ref: '#/components/schemas/SourceEnum'
+          enum:
+          - direct
+          - cluster
+          type: string
+          description: |-
+            * `direct` - direct
+            * `cluster` - cluster
+          x-spec-enum-id: 0894567b731e1544
       required:
       - database
       - level
       - source
+    EffectiveAccessOperationTemplateItem:
+      type: object
+      properties:
+        template:
+          $ref: '#/components/schemas/OperationTemplateRef'
+        level:
+          type: string
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+          x-spec-enum-id: 95cc5059aa03e762
+      required:
+      - level
+      - source
+      - template
     EffectiveAccessResponse:
       type: object
       properties:
@@ -6171,10 +7890,42 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EffectiveAccessDatabaseItem'
+        operation_templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessOperationTemplateItem'
+        workflow_templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessWorkflowTemplateItem'
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessArtifactItem'
       required:
       - clusters
       - databases
       - user
+    EffectiveAccessWorkflowTemplateItem:
+      type: object
+      properties:
+        template:
+          $ref: '#/components/schemas/WorkflowTemplateRef'
+        level:
+          type: string
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+          x-spec-enum-id: 95cc5059aa03e762
+      required:
+      - level
+      - source
+      - template
     ErrorDetail:
       type: object
       description: Error detail structure.
@@ -6207,8 +7958,14 @@ components:
           type: string
           description: IBCMD command id from driver catalog v2
         mode:
-          allOf:
-          - $ref: '#/components/schemas/ExecuteIbcmdCliOperationRequestModeEnum'
+          enum:
+          - guided
+          - manual
+          type: string
+          description: |-
+            * `guided` - guided
+            * `manual` - manual
+          x-spec-enum-id: bd50d848143873c7
           default: guided
         database_ids:
           type: array
@@ -6243,21 +8000,20 @@ components:
           default: 900
       required:
       - command_id
-    ExecuteIbcmdCliOperationRequestModeEnum:
-      enum:
-      - guided
-      - manual
-      type: string
-      description: |-
-        * `guided` - guided
-        * `manual` - manual
     ExecuteIbcmdOperationRequest:
       type: object
       description: Request body for execute_ibcmd_operation endpoint.
       properties:
         operation_type:
-          allOf:
-          - $ref: '#/components/schemas/ExecuteIbcmdOperationRequestOperationTypeEnum'
+          enum:
+          - ibcmd_backup
+          - ibcmd_restore
+          - ibcmd_replicate
+          - ibcmd_create
+          - ibcmd_load_cfg
+          - ibcmd_extension_update
+          type: string
+          x-spec-enum-id: 01ca97775301f3a8
           description: |-
             Type of IBCMD operation to execute
 
@@ -6283,29 +8039,30 @@ components:
       required:
       - database_ids
       - operation_type
-    ExecuteIbcmdOperationRequestOperationTypeEnum:
-      enum:
-      - ibcmd_backup
-      - ibcmd_restore
-      - ibcmd_replicate
-      - ibcmd_create
-      - ibcmd_load_cfg
-      - ibcmd_extension_update
-      type: string
-      description: |-
-        * `ibcmd_backup` - IBCMD Backup
-        * `ibcmd_restore` - IBCMD Restore
-        * `ibcmd_replicate` - IBCMD Replicate
-        * `ibcmd_create` - IBCMD Create
-        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-        * `ibcmd_extension_update` - IBCMD Extension Update
     ExecuteOperationRequest:
       type: object
       description: Request body for execute_operation endpoint.
       properties:
         operation_type:
-          allOf:
-          - $ref: '#/components/schemas/ExecuteOperationRequestOperationTypeEnum'
+          enum:
+          - lock_scheduled_jobs
+          - unlock_scheduled_jobs
+          - block_sessions
+          - unblock_sessions
+          - terminate_sessions
+          - create
+          - update
+          - delete
+          - query
+          - ibcmd_backup
+          - ibcmd_restore
+          - ibcmd_replicate
+          - ibcmd_create
+          - ibcmd_load_cfg
+          - ibcmd_extension_update
+          - designer_cli
+          type: string
+          x-spec-enum-id: d03a6bfe4762dcec
           description: |-
             Operation type to execute
 
@@ -6340,42 +8097,6 @@ components:
       required:
       - database_ids
       - operation_type
-    ExecuteOperationRequestOperationTypeEnum:
-      enum:
-      - lock_scheduled_jobs
-      - unlock_scheduled_jobs
-      - block_sessions
-      - unblock_sessions
-      - terminate_sessions
-      - create
-      - update
-      - delete
-      - query
-      - ibcmd_backup
-      - ibcmd_restore
-      - ibcmd_replicate
-      - ibcmd_create
-      - ibcmd_load_cfg
-      - ibcmd_extension_update
-      - designer_cli
-      type: string
-      description: |-
-        * `lock_scheduled_jobs` - Lock Scheduled Jobs
-        * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
-        * `block_sessions` - Block Sessions
-        * `unblock_sessions` - Unblock Sessions
-        * `terminate_sessions` - Terminate Sessions
-        * `create` - Create Records
-        * `update` - Update Records
-        * `delete` - Delete Records
-        * `query` - Query Records
-        * `ibcmd_backup` - IBCMD Backup
-        * `ibcmd_restore` - IBCMD Restore
-        * `ibcmd_replicate` - IBCMD Replicate
-        * `ibcmd_create` - IBCMD Create
-        * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-        * `ibcmd_extension_update` - IBCMD Extension Update
-        * `designer_cli` - Designer CLI
     ExecuteOperationResponse:
       type: object
       description: Response for execute_operation endpoint.
@@ -6410,8 +8131,11 @@ components:
           additionalProperties: {}
           description: Initial context for workflow
         mode:
-          allOf:
-          - $ref: '#/components/schemas/ExecuteWorkflowRequestModeEnum'
+          enum:
+          - sync
+          - async
+          type: string
+          x-spec-enum-id: fe1f80f0d1c48fc2
           default: async
           description: |-
             Execution mode: sync (blocking) or async (background)
@@ -6420,14 +8144,6 @@ components:
             * `async` - async
       required:
       - workflow_id
-    ExecuteWorkflowRequestModeEnum:
-      enum:
-      - sync
-      - async
-      type: string
-      description: |-
-        * `sync` - sync
-        * `async` - async
     ExecuteWorkflowResponse:
       type: object
       description: Response for execute_workflow endpoint.
@@ -6553,7 +8269,16 @@ components:
           type: string
           format: uri
         purpose:
-          $ref: '#/components/schemas/PurposeEnum'
+          enum:
+          - operation_input
+          - extension
+          - export
+          type: string
+          description: |-
+            * `operation_input` - Operation Input
+            * `extension` - Extension File
+            * `export` - Export File
+          x-spec-enum-id: 3022bda57e4d40fb
         expiry_hours:
           type: integer
       required:
@@ -6614,6 +8339,63 @@ components:
       - operation_id
       - timeline
       - total_events
+    GrantArtifactGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        artifact_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - artifact_id
+      - group_id
+      - level
+      - reason
+    GrantArtifactPermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        artifact_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - artifact_id
+      - level
+      - reason
+      - user_id
+    GrantClusterGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        cluster_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - cluster_id
+      - group_id
+      - level
+      - reason
     GrantClusterPermissionRequest:
       type: object
       properties:
@@ -6630,6 +8412,24 @@ components:
       - cluster_id
       - level
       - user_id
+    GrantDatabaseGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        database_id:
+          type: string
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - database_id
+      - group_id
+      - level
+      - reason
     GrantDatabasePermissionRequest:
       type: object
       properties:
@@ -6644,6 +8444,80 @@ components:
       required:
       - database_id
       - level
+      - user_id
+    GrantOperationTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_id:
+          type: string
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - level
+      - reason
+      - template_id
+    GrantOperationTemplatePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        template_id:
+          type: string
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - level
+      - reason
+      - template_id
+      - user_id
+    GrantWorkflowTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - level
+      - reason
+      - template_id
+    GrantWorkflowTemplatePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        template_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - level
+      - reason
+      - template_id
       - user_id
     HealthCheckEnqueueResponse:
       type: object
@@ -6768,7 +8642,18 @@ components:
           type: boolean
           readOnly: true
         auth_type:
-          $ref: '#/components/schemas/AuthTypeEnum'
+          enum:
+          - local
+          - ad
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `ad` - Active Directory
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 562ca2bc45b62724
         is_service:
           type: boolean
         notes:
@@ -6808,7 +8693,18 @@ components:
           type: string
           writeOnly: true
         auth_type:
-          $ref: '#/components/schemas/AuthTypeEnum'
+          enum:
+          - local
+          - ad
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `ad` - Active Directory
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 562ca2bc45b62724
         is_service:
           type: boolean
         notes:
@@ -6840,7 +8736,18 @@ components:
           items:
             type: string
         auth_type:
-          $ref: '#/components/schemas/AuthTypeEnum'
+          enum:
+          - local
+          - ad
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `ad` - Active Directory
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 562ca2bc45b62724
         is_service:
           type: boolean
         notes:
@@ -6865,25 +8772,17 @@ components:
       required:
       - id
       - password
-    LastCheckStatusEnum:
-      enum:
-      - ok
-      - degraded
-      - down
-      - unknown
-      type: string
-      description: |-
-        * `ok` - OK
-        * `degraded` - Degraded
-        * `down` - Down
-        * `unknown` - Unknown
     LoopConfig:
       type: object
       description: Serializer for LoopConfig Pydantic model.
       properties:
         mode:
-          allOf:
-          - $ref: '#/components/schemas/LoopConfigModeEnum'
+          enum:
+          - count
+          - while
+          - foreach
+          type: string
+          x-spec-enum-id: c71adaa5d1874252
           description: |-
             Loop mode
 
@@ -6912,16 +8811,6 @@ components:
       required:
       - loop_node_id
       - mode
-    LoopConfigModeEnum:
-      enum:
-      - count
-      - while
-      - foreach
-      type: string
-      description: |-
-        * `count` - count
-        * `while` - while
-        * `foreach` - foreach
     NodeConfig:
       type: object
       description: Serializer for NodeConfig Pydantic model.
@@ -6948,9 +8837,6 @@ components:
           type: string
           nullable: true
           description: Jinja2 boolean expression for Condition nodes
-    NullEnum:
-      enum:
-      - null
     OperationCancelResponse:
       type: object
       description: Response for cancel_operation endpoint.
@@ -6976,7 +8862,14 @@ components:
           type: string
           description: Catalog item identifier
         kind:
-          $ref: '#/components/schemas/OperationCatalogItemKindEnum'
+          enum:
+          - operation
+          - template
+          type: string
+          description: |-
+            * `operation` - operation
+            * `template` - template
+          x-spec-enum-id: 40ee2d2766dee835
         operation_type:
           type: string
           nullable: true
@@ -7018,14 +8911,6 @@ components:
       - kind
       - label
       - requires_config
-    OperationCatalogItemKindEnum:
-      enum:
-      - operation
-      - template
-      type: string
-      description: |-
-        * `operation` - operation
-        * `template` - template
     OperationCatalogResponse:
       type: object
       description: Response for operation catalog endpoint.
@@ -7236,6 +9121,55 @@ components:
           $ref: '#/components/schemas/OperationTemplate'
       required:
       - template
+    OperationTemplateGroupPermission:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        template:
+          $ref: '#/components/schemas/OperationTemplateRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - granted_at
+      - granted_by
+      - group
+      - level
+      - template
+    OperationTemplateGroupPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTemplateGroupPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    OperationTemplateGroupPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/OperationTemplateGroupPermission'
+      required:
+      - created
+      - permission
     OperationTemplateId:
       type: object
       properties:
@@ -7262,6 +9196,65 @@ components:
       - count
       - templates
       - total
+    OperationTemplatePermission:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/RbacUserRef'
+        template:
+          $ref: '#/components/schemas/OperationTemplateRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - granted_at
+      - granted_by
+      - level
+      - template
+      - user
+    OperationTemplatePermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTemplatePermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    OperationTemplatePermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/OperationTemplatePermission'
+      required:
+      - created
+      - permission
+    OperationTemplateRef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+      - id
+      - name
     OperationTemplateSyncRequest:
       type: object
       properties:
@@ -7306,16 +9299,6 @@ components:
       - operation_type
       - target_entity
       - template_data
-    OverallStatusEnum:
-      enum:
-      - healthy
-      - degraded
-      - critical
-      type: string
-      description: |-
-        * `healthy` - healthy
-        * `degraded` - degraded
-        * `critical` - critical
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.
@@ -7365,16 +9348,6 @@ components:
       required:
       - metrics
       - service
-    PurposeEnum:
-      enum:
-      - operation_input
-      - extension
-      - export
-      type: string
-      description: |-
-        * `operation_input` - Operation Input
-        * `extension` - Extension File
-        * `export` - Export File
     RbacErrorDetail:
       type: object
       properties:
@@ -7395,6 +9368,16 @@ components:
           $ref: '#/components/schemas/RbacErrorDetail'
       required:
       - error
+    RbacGroupRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+      - id
+      - name
     RbacUserListResponse:
       type: object
       properties:
@@ -7420,6 +9403,81 @@ components:
       required:
       - id
       - username
+    RefArtifactsResponse:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - artifacts
+      - count
+      - total
+    RefClustersResponse:
+      type: object
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - clusters
+      - count
+      - total
+    RefDatabasesResponse:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - databases
+      - total
+    RefOperationTemplatesResponse:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTemplateRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - templates
+      - total
+    RefWorkflowTemplatesResponse:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowTemplateRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - templates
+      - total
     ResetClusterInfo:
       type: object
       description: Info about reset cluster.
@@ -7460,6 +9518,48 @@ components:
       - clusters
       - message
       - reset_count
+    RevokeArtifactGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        artifact_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+      required:
+      - artifact_id
+      - group_id
+      - reason
+    RevokeArtifactPermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        artifact_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+      required:
+      - artifact_id
+      - reason
+      - user_id
+    RevokeClusterGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        cluster_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+      required:
+      - cluster_id
+      - group_id
+      - reason
     RevokeClusterPermissionRequest:
       type: object
       properties:
@@ -7471,6 +9571,19 @@ components:
       required:
       - cluster_id
       - user_id
+    RevokeDatabaseGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        database_id:
+          type: string
+        reason:
+          type: string
+      required:
+      - database_id
+      - group_id
+      - reason
     RevokeDatabasePermissionRequest:
       type: object
       properties:
@@ -7481,6 +9594,32 @@ components:
       required:
       - database_id
       - user_id
+    RevokeOperationTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_id:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - reason
+      - template_id
+    RevokeOperationTemplatePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        template_id:
+          type: string
+        reason:
+          type: string
+      required:
+      - reason
+      - template_id
+      - user_id
     RevokePermissionResponse:
       type: object
       properties:
@@ -7488,14 +9627,142 @@ components:
           type: boolean
       required:
       - deleted
-    RiskLevelEnum:
-      enum:
-      - safe
-      - dangerous
-      type: string
-      description: |-
-        * `safe` - safe
-        * `dangerous` - dangerous
+    RevokeWorkflowTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+      required:
+      - group_id
+      - reason
+      - template_id
+    RevokeWorkflowTemplatePermissionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        template_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+      required:
+      - reason
+      - template_id
+      - user_id
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        users_count:
+          type: integer
+        permissions_count:
+          type: integer
+        permission_codes:
+          type: array
+          items:
+            type: string
+      required:
+      - id
+      - name
+      - permission_codes
+      - permissions_count
+      - users_count
+    RoleCapabilitiesUpdateRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        permission_codes:
+          type: array
+          items:
+            type: string
+        mode:
+          enum:
+          - replace
+          - add
+          - remove
+          type: string
+          description: |-
+            * `replace` - replace
+            * `add` - add
+            * `remove` - remove
+          x-spec-enum-id: 93f4a33fb738abdd
+          default: replace
+        reason:
+          type: string
+      required:
+      - group_id
+      - permission_codes
+      - reason
+    RoleCapabilitiesUpdateResponse:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        permission_codes:
+          type: array
+          items:
+            type: string
+      required:
+      - group
+      - permission_codes
+    RoleCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        reason:
+          type: string
+      required:
+      - name
+      - reason
+    RoleDeleteRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        reason:
+          type: string
+      required:
+      - group_id
+      - reason
+    RoleListResponse:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - roles
+      - total
+    RoleUpdateRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        name:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - name
+      - reason
     RuntimeSetting:
       type: object
       properties:
@@ -7557,14 +9824,6 @@ components:
       - expires_in
       - stream_url
       - ticket
-    ScopeEnum:
-      enum:
-      - per_database
-      - global
-      type: string
-      description: |-
-        * `per_database` - per_database
-        * `global` - global
     ServiceHealth:
       type: object
       description: Health status of a single service.
@@ -7580,8 +9839,12 @@ components:
           type: string
           description: Health check URL
         status:
-          allOf:
-          - $ref: '#/components/schemas/ServiceHealthStatusEnum'
+          enum:
+          - online
+          - offline
+          - degraded
+          type: string
+          x-spec-enum-id: 3d90d98f53f4bd85
           description: |-
             Service status
 
@@ -7606,16 +9869,6 @@ components:
       - name
       - status
       - type
-    ServiceHealthStatusEnum:
-      enum:
-      - online
-      - offline
-      - degraded
-      type: string
-      description: |-
-        * `online` - online
-        * `offline` - offline
-        * `degraded` - degraded
     ServiceHistoryResponse:
       type: object
       description: Response for get_history endpoint.
@@ -7704,8 +9957,15 @@ components:
           type: string
           description: Service type (backend, internal)
         status:
-          allOf:
-          - $ref: '#/components/schemas/ServiceMetricStatusEnum'
+          enum:
+          - healthy
+          - degraded
+          - timeout
+          - unreachable
+          - error
+          - unknown
+          type: string
+          x-spec-enum-id: dd0ce21dc8e37ee5
           description: |-
             Service health status
 
@@ -7732,29 +9992,17 @@ components:
       - name
       - status
       - type
-    ServiceMetricStatusEnum:
-      enum:
-      - healthy
-      - degraded
-      - timeout
-      - unreachable
-      - error
-      - unknown
-      type: string
-      description: |-
-        * `healthy` - healthy
-        * `degraded` - degraded
-        * `timeout` - timeout
-        * `unreachable` - unreachable
-        * `error` - error
-        * `unknown` - unknown
     ServiceMetricsResponse:
       type: object
       description: Response for get_metrics endpoint.
       properties:
         status:
-          allOf:
-          - $ref: '#/components/schemas/ServiceMetricsResponseStatusEnum'
+          enum:
+          - healthy
+          - degraded
+          - unhealthy
+          type: string
+          x-spec-enum-id: 4708a1ae8a2a7bbf
           description: |-
             Overall service mesh status
 
@@ -7784,16 +10032,6 @@ components:
       - status
       - summary
       - timestamp
-    ServiceMetricsResponseStatusEnum:
-      enum:
-      - healthy
-      - degraded
-      - unhealthy
-      type: string
-      description: |-
-        * `healthy` - healthy
-        * `degraded` - degraded
-        * `unhealthy` - unhealthy
     SetDatabaseStatusRequest:
       type: object
       description: Request body for set_status endpoint.
@@ -7806,8 +10044,12 @@ components:
           maxItems: 500
           minItems: 1
         status:
-          allOf:
-          - $ref: '#/components/schemas/SetDatabaseStatusRequestStatusEnum'
+          enum:
+          - active
+          - inactive
+          - maintenance
+          type: string
+          x-spec-enum-id: 57acec3bba8f977c
           description: |-
             New database status (active, inactive, maintenance)
 
@@ -7819,16 +10061,6 @@ components:
       required:
       - database_ids
       - status
-    SetDatabaseStatusRequestStatusEnum:
-      enum:
-      - active
-      - inactive
-      - maintenance
-      type: string
-      description: |-
-        * `active` - active
-        * `inactive` - inactive
-        * `maintenance` - maintenance
     SetDatabaseStatusResponse:
       type: object
       description: Response for set_status endpoint.
@@ -7845,40 +10077,6 @@ components:
       - not_found
       - status
       - updated
-    SourceEnum:
-      enum:
-      - direct
-      - cluster
-      type: string
-      description: |-
-        * `direct` - direct
-        * `cluster` - cluster
-    Status1b7Enum:
-      enum:
-      - pending
-      - running
-      - completed
-      - failed
-      - cancelled
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `running` - Running
-        * `completed` - Completed
-        * `failed` - Failed
-        * `cancelled` - Cancelled
-    StatusC5cEnum:
-      enum:
-      - active
-      - inactive
-      - error
-      - maintenance
-      type: string
-      description: |-
-        * `active` - Active
-        * `inactive` - Inactive
-        * `error` - Error
-        * `maintenance` - Maintenance
     StoreFailedEventRequest:
       type: object
       properties:
@@ -7950,8 +10148,12 @@ components:
           format: date-time
           description: Current timestamp
         overall_status:
-          allOf:
-          - $ref: '#/components/schemas/OverallStatusEnum'
+          enum:
+          - healthy
+          - degraded
+          - critical
+          type: string
+          x-spec-enum-id: 5ea7e0918a689e75
           description: |-
             Overall system status
 
@@ -8077,8 +10279,24 @@ components:
           nullable: true
           readOnly: true
         status:
-          allOf:
-          - $ref: '#/components/schemas/TaskStatusEnum'
+          enum:
+          - pending
+          - queued
+          - processing
+          - completed
+          - failed
+          - retry
+          - cancelled
+          type: string
+          description: |-
+            * `pending` - Pending
+            * `queued` - Queued
+            * `processing` - Processing
+            * `completed` - Completed
+            * `failed` - Failed
+            * `retry` - Retry
+            * `cancelled` - Cancelled
+          x-spec-enum-id: 4ebd79ea9fb09c30
           readOnly: true
         result:
           readOnly: true
@@ -8137,24 +10355,6 @@ components:
       - status
       - updated_at
       - worker_id
-    TaskStatusEnum:
-      enum:
-      - pending
-      - queued
-      - processing
-      - completed
-      - failed
-      - retry
-      - cancelled
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `queued` - Queued
-        * `processing` - Processing
-        * `completed` - Completed
-        * `failed` - Failed
-        * `retry` - Retry
-        * `cancelled` - Cancelled
     TemplateListItem:
       type: object
       description: Serializer for template list items.
@@ -8301,20 +10501,6 @@ components:
           writeOnly: true
       required:
       - token
-    TypeEnum:
-      enum:
-      - operation
-      - condition
-      - parallel
-      - loop
-      - subworkflow
-      type: string
-      description: |-
-        * `operation` - operation
-        * `condition` - condition
-        * `parallel` - parallel
-        * `loop` - loop
-        * `subworkflow` - subworkflow
     UiErrorDetail:
       type: object
       description: Error detail structure.
@@ -8517,6 +10703,45 @@ components:
       required:
       - id
       - username
+    UserRolesGetResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/RbacUserRef'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RbacGroupRef'
+      required:
+      - roles
+      - user
+    UserRolesUpdateRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        group_ids:
+          type: array
+          items:
+            type: integer
+        mode:
+          enum:
+          - replace
+          - add
+          - remove
+          type: string
+          description: |-
+            * `replace` - replace
+            * `add` - add
+            * `remove` - remove
+          x-spec-enum-id: 93f4a33fb738abdd
+          default: replace
+        reason:
+          type: string
+      required:
+      - group_ids
+      - reason
+      - user_id
     UserUpdateRequest:
       type: object
       properties:
@@ -8566,18 +10791,6 @@ components:
       required:
       - code
       - message
-    ValueTypeEnum:
-      enum:
-      - string
-      - int
-      - float
-      - bool
-      type: string
-      description: |-
-        * `string` - string
-        * `int` - int
-        * `float` - float
-        * `bool` - bool
     WorkflowCloneResponse:
       type: object
       description: Response for clone_workflow endpoint.
@@ -8689,8 +10902,14 @@ components:
           type: integer
           readOnly: true
         status:
-          allOf:
-          - $ref: '#/components/schemas/Status1b7Enum'
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - cancelled
+          type: string
+          x-spec-enum-id: 1b7374f2553d22cc
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8798,8 +11017,14 @@ components:
           type: integer
           readOnly: true
         status:
-          allOf:
-          - $ref: '#/components/schemas/Status1b7Enum'
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - cancelled
+          type: string
+          x-spec-enum-id: 1b7374f2553d22cc
           readOnly: true
           description: |-
             Current execution status (FSM-protected)
@@ -8891,8 +11116,14 @@ components:
           maxLength: 200
           minLength: 1
         type:
-          allOf:
-          - $ref: '#/components/schemas/TypeEnum'
+          enum:
+          - operation
+          - condition
+          - parallel
+          - loop
+          - subworkflow
+          type: string
+          x-spec-enum-id: ebf82c1de5d17dd6
           description: |-
             Node type
 
@@ -8969,8 +11200,20 @@ components:
           readOnly: true
           description: Node type (operation/condition/etc)
         status:
-          allOf:
-          - $ref: '#/components/schemas/WorkflowStepResultStatusEnum'
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - skipped
+          type: string
+          description: |-
+            * `pending` - Pending
+            * `running` - Running
+            * `completed` - Completed
+            * `failed` - Failed
+            * `skipped` - Skipped
+          x-spec-enum-id: 7ff15d3113147cc7
           readOnly: true
         input_data:
           readOnly: true
@@ -9019,20 +11262,6 @@ components:
       - started_at
       - status
       - trace_id
-    WorkflowStepResultStatusEnum:
-      enum:
-      - pending
-      - running
-      - completed
-      - failed
-      - skipped
-      type: string
-      description: |-
-        * `pending` - Pending
-        * `running` - Running
-        * `completed` - Completed
-        * `failed` - Failed
-        * `skipped` - Skipped
     WorkflowTemplateDetail:
       type: object
       description: |-
@@ -9052,8 +11281,13 @@ components:
           type: string
           description: Workflow description
         workflow_type:
-          allOf:
-          - $ref: '#/components/schemas/WorkflowTypeEnum'
+          enum:
+          - sequential
+          - conditional
+          - parallel
+          - complex
+          type: string
+          x-spec-enum-id: ed82a65c83be653d
           description: |-
             Workflow type: sequential, conditional, parallel, complex
 
@@ -9116,6 +11350,55 @@ components:
       - parent_version_name
       - updated_at
       - version_number
+    WorkflowTemplateGroupPermission:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/RbacGroupRef'
+        template:
+          $ref: '#/components/schemas/WorkflowTemplateRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - granted_at
+      - granted_by
+      - group
+      - level
+      - template
+    WorkflowTemplateGroupPermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowTemplateGroupPermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    WorkflowTemplateGroupPermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/WorkflowTemplateGroupPermission'
+      required:
+      - created
+      - permission
     WorkflowTemplateList:
       type: object
       description: |-
@@ -9135,8 +11418,13 @@ components:
           type: string
           description: Workflow description
         workflow_type:
-          allOf:
-          - $ref: '#/components/schemas/WorkflowTypeEnum'
+          enum:
+          - sequential
+          - conditional
+          - parallel
+          - complex
+          type: string
+          x-spec-enum-id: ed82a65c83be653d
           description: |-
             Workflow type: sequential, conditional, parallel, complex
 
@@ -9198,18 +11486,66 @@ components:
       - node_count
       - updated_at
       - version_number
-    WorkflowTypeEnum:
-      enum:
-      - sequential
-      - conditional
-      - parallel
-      - complex
-      type: string
-      description: |-
-        * `sequential` - Sequential
-        * `conditional` - Conditional
-        * `parallel` - Parallel
-        * `complex` - Complex
+    WorkflowTemplatePermission:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/RbacUserRef'
+        template:
+          $ref: '#/components/schemas/WorkflowTemplateRef'
+        level:
+          type: string
+        granted_by:
+          allOf:
+          - $ref: '#/components/schemas/RbacUserRef'
+          nullable: true
+        granted_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+      - granted_at
+      - granted_by
+      - level
+      - template
+      - user
+    WorkflowTemplatePermissionListResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowTemplatePermission'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - permissions
+      - total
+    WorkflowTemplatePermissionUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: boolean
+        permission:
+          $ref: '#/components/schemas/WorkflowTemplatePermission'
+      required:
+      - created
+      - permission
+    WorkflowTemplateRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     WorkflowUpdateResponse:
       type: object
       description: Response for update_workflow endpoint.

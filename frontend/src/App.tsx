@@ -23,6 +23,7 @@ import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useMe } from './api/queries/me'
+import { useCanManageRbac } from './api/queries/rbac'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
 
@@ -50,6 +51,25 @@ const StaffRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!meQuery.data?.is_staff) {
+    return <Navigate to="/forbidden" replace />
+  }
+
+  return <>{children}</>
+}
+
+const RbacRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('auth_token')
+  const canManageRbacQuery = useCanManageRbac({ enabled: Boolean(token) })
+
+  if (!token) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (canManageRbacQuery.isLoading) {
+    return <div />
+  }
+
+  if (!canManageRbacQuery.data) {
     return <Navigate to="/forbidden" replace />
   }
 
@@ -223,11 +243,11 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/rbac" element={
-            <StaffRoute>
+            <RbacRoute>
               <MainLayout>
                 <RBACPage />
               </MainLayout>
-            </StaffRoute>
+            </RbacRoute>
           } />
           <Route path="/users" element={
             <StaffRoute>

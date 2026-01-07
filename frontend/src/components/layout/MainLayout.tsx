@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
+import { useCanManageRbac } from '../../api/queries/rbac'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
@@ -20,6 +21,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const navigate = useNavigate()
   const location = useLocation()
   const meQuery = useMe()
+  const hasToken = Boolean(localStorage.getItem('auth_token'))
+  const canManageRbacQuery = useCanManageRbac({ enabled: hasToken })
   const {
     isConnected: isDatabaseStreamConnected,
     isConnecting: isDatabaseStreamConnecting,
@@ -30,6 +33,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canSeeArtifacts = Boolean(meQuery.data?.is_staff)
   const canManageUsers = Boolean(meQuery.data?.is_staff)
   const canManageAdmin = Boolean(meQuery.data?.is_staff)
+  const canManageRbac = Boolean(canManageRbacQuery.data)
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -97,7 +101,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       icon: <DeploymentUnitOutlined />,
       label: 'Service Mesh',
     },
-    ...(canManageAdmin
+    ...(canManageRbac
       ? [{
         key: '/rbac',
         icon: <SafetyCertificateOutlined />,
