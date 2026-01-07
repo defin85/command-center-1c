@@ -10,7 +10,8 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
     Cluster, Database, DatabaseGroup, StatusHistory,
-    ClusterPermission, DatabasePermission
+    ClusterGroupPermission, ClusterPermission,
+    DatabaseGroupPermission, DatabasePermission,
 )
 from .services import DatabaseService
 
@@ -734,6 +735,38 @@ class DatabasePermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     list_filter = ['level', 'database__cluster']
     search_fields = ['user__username', 'database__name']
     autocomplete_fields = ['user', 'database']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(ClusterGroupPermission)
+class ClusterGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for ClusterGroupPermission model (RBAC)."""
+
+    list_display = ['group', 'cluster', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'cluster']
+    search_fields = ['group__name', 'cluster__name']
+    autocomplete_fields = ['group', 'cluster']
+    readonly_fields = ['granted_at']
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(DatabaseGroupPermission)
+class DatabaseGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
+    """Admin for DatabaseGroupPermission model (RBAC)."""
+
+    list_display = ['group', 'database', 'level', 'granted_by', 'granted_at']
+    list_filter = ['level', 'database__cluster']
+    search_fields = ['group__name', 'database__name']
+    autocomplete_fields = ['group', 'database']
     readonly_fields = ['granted_at']
 
     def save_model(self, request, obj, form, change):

@@ -709,6 +709,51 @@ class PermissionService:
     """
 
     @classmethod
+    def _get_group_permission_maps(
+        cls,
+        user,
+        database_ids: List[str] = None,
+        cluster_ids: List[str] = None,
+    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+        """
+        Load all group-based permissions for user in batch.
+
+        Returns:
+            (database_permissions, cluster_permissions) - dicts mapping ID to max level
+        """
+        from django.db.models import Max
+        from .models import ClusterGroupPermission, DatabaseGroupPermission
+
+        db_permissions: Dict[str, int] = {}
+        cluster_permissions: Dict[str, int] = {}
+
+        if database_ids:
+            db_perms = (
+                DatabaseGroupPermission.objects.filter(
+                    group__user=user,
+                    database_id__in=database_ids,
+                )
+                .values('database_id')
+                .annotate(level=Max('level'))
+                .values_list('database_id', 'level')
+            )
+            db_permissions = {str(db_id): level for db_id, level in db_perms if level is not None}
+
+        if cluster_ids:
+            cluster_perms = (
+                ClusterGroupPermission.objects.filter(
+                    group__user=user,
+                    cluster_id__in=cluster_ids,
+                )
+                .values('cluster_id')
+                .annotate(level=Max('level'))
+                .values_list('cluster_id', 'level')
+            )
+            cluster_permissions = {str(c_id): level for c_id, level in cluster_perms if level is not None}
+
+        return db_permissions, cluster_permissions
+
+    @classmethod
     def _get_user_permission_maps(
         cls,
         user,
@@ -779,6 +824,11 @@ class PermissionService:
             user, database_ids, cluster_ids
         )
 
+        # Batch load group permissions (2 queries)
+        group_db_perms, group_cluster_perms = cls._get_group_permission_maps(
+            user, database_ids, cluster_ids
+        )
+
         # Calculate effective levels
         result: Dict[str, Optional[int]] = {}
         for db in databases:
@@ -789,11 +839,17 @@ class PermissionService:
             if db_id in db_perms:
                 levels.append(db_perms[db_id])
 
+            # Group database permission
+            if db_id in group_db_perms:
+                levels.append(group_db_perms[db_id])
+
             # Inherited cluster permission
             if db.cluster_id:
                 cluster_id = str(db.cluster_id)
                 if cluster_id in cluster_perms:
                     levels.append(cluster_perms[cluster_id])
+                if cluster_id in group_cluster_perms:
+                    levels.append(group_cluster_perms[cluster_id])
 
             result[db_id] = max(levels) if levels else None
 
@@ -822,15 +878,28 @@ class PermissionService:
         cluster: Cluster
     ) -> 'Optional[int]':
         """Get permission level for user on cluster."""
-        from .models import ClusterPermission, PermissionLevel
+        from django.db.models import Max
+        from .models import ClusterGroupPermission, ClusterPermission, PermissionLevel
 
         if user.is_staff:
             return PermissionLevel.ADMIN
 
-        return ClusterPermission.objects.filter(
+        direct_level = ClusterPermission.objects.filter(
             user=user,
             cluster=cluster
         ).values_list('level', flat=True).first()
+
+        group_level = (
+            ClusterGroupPermission.objects.filter(
+                group__user=user,
+                cluster=cluster,
+            )
+            .aggregate(level=Max('level'))
+            .get('level')
+        )
+
+        levels = [lvl for lvl in [direct_level, group_level] if lvl is not None]
+        return max(levels) if levels else None
 
     @classmethod
     def has_cluster_permission(
@@ -840,7 +909,13 @@ class PermissionService:
         required_level: int,
         allow_database_permissions: bool = False,
     ) -> bool:
-        from .models import ClusterPermission, DatabasePermission
+        from django.db.models import Max
+        from .models import (
+            ClusterGroupPermission,
+            ClusterPermission,
+            DatabaseGroupPermission,
+            DatabasePermission,
+        )
 
         if user.is_staff:
             return True
@@ -850,15 +925,35 @@ class PermissionService:
             cluster=cluster
         ).values_list('level', flat=True).first()
 
-        if level is not None and level >= required_level:
+        group_level = (
+            ClusterGroupPermission.objects.filter(
+                group__user=user,
+                cluster=cluster,
+            )
+            .aggregate(level=Max('level'))
+            .get('level')
+        )
+
+        effective_levels = [lvl for lvl in [level, group_level] if lvl is not None]
+        effective_level = max(effective_levels) if effective_levels else None
+
+        if effective_level is not None and effective_level >= required_level:
             return True
 
         if allow_database_permissions:
-            return DatabasePermission.objects.filter(
+            if DatabasePermission.objects.filter(
                 user=user,
                 level__gte=required_level,
                 database__cluster=cluster,
-            ).exists()
+            ).exists():
+                return True
+
+            if DatabaseGroupPermission.objects.filter(
+                group__user=user,
+                level__gte=required_level,
+                database__cluster=cluster,
+            ).exists():
+                return True
 
         return False
 
@@ -888,7 +983,13 @@ class PermissionService:
             qs = PermissionService.filter_accessible_databases(user, qs)
         """
         from django.db.models import Q
-        from .models import ClusterPermission, DatabasePermission, PermissionLevel
+        from .models import (
+            ClusterGroupPermission,
+            ClusterPermission,
+            DatabaseGroupPermission,
+            DatabasePermission,
+            PermissionLevel,
+        )
 
         if min_level is None:
             min_level = PermissionLevel.VIEW
@@ -902,14 +1003,28 @@ class PermissionService:
             level__gte=min_level
         ).values_list('database_id', flat=True)
 
+        # Group database permissions
+        group_db_ids = DatabaseGroupPermission.objects.filter(
+            group__user=user,
+            level__gte=min_level,
+        ).values_list('database_id', flat=True)
+
         # Get cluster IDs with permission
         cluster_ids = ClusterPermission.objects.filter(
             user=user,
             level__gte=min_level
         ).values_list('cluster_id', flat=True)
 
+        group_cluster_ids = ClusterGroupPermission.objects.filter(
+            group__user=user,
+            level__gte=min_level,
+        ).values_list('cluster_id', flat=True)
+
         return queryset.filter(
-            Q(id__in=db_ids) | Q(cluster_id__in=cluster_ids)
+            Q(id__in=db_ids)
+            | Q(id__in=group_db_ids)
+            | Q(cluster_id__in=cluster_ids)
+            | Q(cluster_id__in=group_cluster_ids)
         )
 
     @classmethod
@@ -920,7 +1035,13 @@ class PermissionService:
         min_level: int = None,
     ):
         from django.db.models import Q
-        from .models import ClusterPermission, DatabasePermission, PermissionLevel
+        from .models import (
+            ClusterGroupPermission,
+            ClusterPermission,
+            DatabaseGroupPermission,
+            DatabasePermission,
+            PermissionLevel,
+        )
 
         if min_level is None:
             min_level = PermissionLevel.VIEW
@@ -933,14 +1054,28 @@ class PermissionService:
             level__gte=min_level
         ).values_list('cluster_id', flat=True)
 
+        group_cluster_ids = ClusterGroupPermission.objects.filter(
+            group__user=user,
+            level__gte=min_level
+        ).values_list('cluster_id', flat=True)
+
         db_cluster_ids = DatabasePermission.objects.filter(
             user=user,
             level__gte=min_level,
             database__cluster_id__isnull=False,
         ).values_list('database__cluster_id', flat=True)
 
+        group_db_cluster_ids = DatabaseGroupPermission.objects.filter(
+            group__user=user,
+            level__gte=min_level,
+            database__cluster_id__isnull=False,
+        ).values_list('database__cluster_id', flat=True)
+
         return queryset.filter(
-            Q(id__in=cluster_ids) | Q(id__in=db_cluster_ids)
+            Q(id__in=cluster_ids)
+            | Q(id__in=group_cluster_ids)
+            | Q(id__in=db_cluster_ids)
+            | Q(id__in=group_db_cluster_ids)
         ).distinct()
 
     @classmethod
