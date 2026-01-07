@@ -93,6 +93,7 @@ class DriverCatalogGetResponseSerializer(serializers.Serializer):
 class DriverCatalogUpdateRequestSerializer(serializers.Serializer):
     driver = serializers.CharField()
     catalog = serializers.DictField()
+    reason = serializers.CharField()
 
 
 class DriverCatalogImportRequestSerializer(serializers.Serializer):
@@ -115,6 +116,7 @@ class DriverCatalogOverridesGetResponseSerializer(serializers.Serializer):
 class DriverCatalogOverridesUpdateRequestSerializer(serializers.Serializer):
     driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
     catalog = serializers.DictField()
+    reason = serializers.CharField()
 
 
 class DriverCatalogOverridesUpdateResponseSerializer(serializers.Serializer):
@@ -127,6 +129,7 @@ class DriverCatalogPromoteRequestSerializer(serializers.Serializer):
     driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
     version = serializers.CharField()
     alias = serializers.CharField(required=False, default="approved")
+    reason = serializers.CharField()
 
 
 class DriverCatalogPromoteResponseSerializer(serializers.Serializer):
@@ -208,7 +211,7 @@ def get_driver_catalog(request):
 @extend_schema(
     tags=["v2"],
     summary="Update driver catalog",
-    description="Update driver catalog file (staff-only).",
+    description="Update driver catalog file (staff-only). Requires reason.",
     request=DriverCatalogUpdateRequestSerializer,
     responses={
         200: DriverCatalogGetResponseSerializer,
@@ -227,6 +230,7 @@ def update_driver_catalog(request):
         }, status=400)
     driver = serializer.validated_data["driver"]
     catalog = serializer.validated_data["catalog"]
+    reason = serializer.validated_data["reason"]
     if driver not in DRIVER_CATALOGS:
         return Response({
             "success": False,
@@ -250,7 +254,7 @@ def update_driver_catalog(request):
         outcome="success",
         target_type="driver_catalog",
         target_id=driver,
-        metadata={"driver": driver},
+        metadata={"driver": driver, "reason": reason},
     )
     return Response({"driver": driver, "catalog": catalog})
 
@@ -419,7 +423,7 @@ def get_driver_catalog_overrides(request):
 @extend_schema(
     tags=["v2"],
     summary="Update driver catalog overrides (v2)",
-    description="Upload new overrides catalog version and move alias active (staff-only).",
+    description="Upload new overrides catalog version and move alias active (staff-only). Requires reason.",
     request=DriverCatalogOverridesUpdateRequestSerializer,
     responses={
         200: DriverCatalogOverridesUpdateResponseSerializer,
@@ -447,6 +451,7 @@ def update_driver_catalog_overrides(request):
 
     driver = serializer.validated_data["driver"]
     catalog = serializer.validated_data["catalog"]
+    reason = serializer.validated_data["reason"]
     errors = _validate_overrides_catalog_v2(driver, catalog)
     if errors:
         log_admin_action(
@@ -471,7 +476,7 @@ def update_driver_catalog_overrides(request):
         outcome="success",
         target_type="driver_catalog",
         target_id=driver,
-        metadata={"driver": driver, "version": version_obj.version},
+        metadata={"driver": driver, "version": version_obj.version, "reason": reason},
     )
     return Response({"driver": driver, "overrides_version": version_obj.version, "catalog": catalog})
 
@@ -479,7 +484,7 @@ def update_driver_catalog_overrides(request):
 @extend_schema(
     tags=["v2"],
     summary="Promote driver catalog base alias",
-    description="Move base alias (approved/latest) to a specific version (staff-only).",
+    description="Move base alias (approved/latest) to a specific version (staff-only). Requires reason.",
     request=DriverCatalogPromoteRequestSerializer,
     responses={
         200: DriverCatalogPromoteResponseSerializer,
@@ -508,6 +513,7 @@ def promote_driver_catalog_base(request):
     driver = serializer.validated_data["driver"]
     version = str(serializer.validated_data["version"] or "").strip()
     alias = str(serializer.validated_data.get("alias") or "approved").strip() or "approved"
+    reason = serializer.validated_data["reason"]
     if alias not in {"approved", "latest"}:
         return Response({
             "success": False,
@@ -538,6 +544,6 @@ def promote_driver_catalog_base(request):
         outcome="success",
         target_type="driver_catalog",
         target_id=driver,
-        metadata={"driver": driver, "alias": alias, "version": version},
+        metadata={"driver": driver, "alias": alias, "version": version, "reason": reason},
     )
     return Response({"driver": driver, "alias": alias, "version": version})

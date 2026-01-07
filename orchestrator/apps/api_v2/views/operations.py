@@ -39,13 +39,18 @@ from apps.operations.cli_catalog import load_cli_command_catalog
 from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2, compute_etag
 from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
 from apps.operations.driver_catalog_effective import (
+    compute_actor_roles_hash,
     compute_driver_catalog_etag,
+    explain_command_denied,
     filter_catalog_for_user,
+    get_actor_roles,
+    get_command_min_db_level,
     get_effective_driver_catalog,
     get_effective_driver_catalog_lkg,
     resolve_driver_catalog_versions,
 )
 from apps.artifacts.storage import ArtifactStorageError
+from apps.core import permission_codes as perms
 from apps.databases.permissions import CanExecuteOperation
 from apps.databases.services import PermissionService
 from apps.databases.models import Database, PermissionLevel
@@ -61,6 +66,7 @@ from apps.operations.prometheus_metrics import (
     sse_connection_close,
     record_sse_stream_error,
     record_sse_loop_duration,
+    record_driver_command_denied,
 )
 
 logger = logging.getLogger(__name__)
@@ -1615,6 +1621,10 @@ def execute_ibcmd_cli_operation(request):
     )
     catalog = filter_catalog_for_user(request.user, effective.catalog)
 
+    raw_commands_by_id = effective.catalog.get("commands_by_id") if isinstance(effective.catalog, dict) else None
+    if not isinstance(raw_commands_by_id, dict):
+        raw_commands_by_id = None
+
     commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
     if not isinstance(commands_by_id, dict):
         return Response({
@@ -1624,15 +1634,30 @@ def execute_ibcmd_cli_operation(request):
 
     command = commands_by_id.get(command_id)
     if not isinstance(command, dict):
+        raw_command = raw_commands_by_id.get(command_id) if raw_commands_by_id else None
+        if isinstance(raw_command, dict):
+            reason = explain_command_denied(request.user, raw_command) or "denied"
+            record_driver_command_denied("ibcmd", reason)
+            logger.warning(
+                "Driver command denied by RBAC filter",
+                extra={
+                    "driver": "ibcmd",
+                    "command_id": command_id,
+                    "reason": reason,
+                    "user": getattr(request.user, "username", None),
+                    "roles": get_actor_roles(request.user),
+                },
+            )
         return Response({
             "success": False,
             "error": {"code": "UNKNOWN_COMMAND", "message": f"Unknown command_id: {command_id}"},
         }, status=400)
 
     if command.get("disabled") is True:
+        record_driver_command_denied("ibcmd", "disabled")
         return Response({
             "success": False,
-            "error": {"code": "COMMAND_DISABLED", "message": f"Command is disabled: {command_id}"},
+            "error": {"code": "UNKNOWN_COMMAND", "message": f"Unknown command_id: {command_id}"},
         }, status=400)
 
     scope = str(command.get("scope") or "").strip().lower()
@@ -1643,6 +1668,23 @@ def execute_ibcmd_cli_operation(request):
         }, status=500)
 
     risk_level = str(command.get("risk_level") or "").strip().lower()
+
+    required_capability_perm = (
+        perms.PERM_OPERATIONS_EXECUTE_DANGEROUS_OPERATION
+        if risk_level == "dangerous"
+        else perms.PERM_OPERATIONS_EXECUTE_SAFE_OPERATION
+    )
+    if not request.user.has_perm(required_capability_perm):
+        reason = "capability_dangerous_denied" if risk_level == "dangerous" else "capability_safe_denied"
+        record_driver_command_denied("ibcmd", reason)
+        message = "You do not have permission to execute dangerous operations."
+        if risk_level != "dangerous":
+            message = "You do not have permission to execute operations."
+        return Response(
+            {"success": False, "error": {"code": "PERMISSION_DENIED", "message": message}},
+            status=403,
+        )
+
     if risk_level == "dangerous" and not confirm_dangerous:
         return Response({
             "success": False,
@@ -1655,6 +1697,13 @@ def execute_ibcmd_cli_operation(request):
     required_level = PermissionLevel.OPERATE
     if risk_level == "dangerous":
         required_level = PermissionLevel.MANAGE
+    min_db_level = get_command_min_db_level(command)
+    if min_db_level in {"operate", "manage", "admin"}:
+        required_level = {
+            "operate": PermissionLevel.OPERATE,
+            "manage": PermissionLevel.MANAGE,
+            "admin": PermissionLevel.ADMIN,
+        }[min_db_level]
 
     if scope == "global":
         if database_ids:
@@ -1828,9 +1877,17 @@ def execute_ibcmd_cli_operation(request):
         created_by=request.user.username if request.user else "system",
         metadata={
             "tags": ["ibcmd", "ibcmd_cli", command_id],
+            "command_id": command_id,
             "risk_level": risk_level,
             "scope": scope,
             "mode": mode,
+            "actor_roles": get_actor_roles(request.user),
+            "catalog_base_version": str(effective.base_version),
+            "catalog_base_version_id": str(effective.base_version_id),
+            "catalog_overrides_version": str(effective.overrides_version) if effective.overrides_version else None,
+            "catalog_overrides_version_id": (
+                str(effective.overrides_version_id) if effective.overrides_version_id else None
+            ),
         },
     )
 
@@ -2452,6 +2509,8 @@ def get_driver_commands(request):
             "error": {"code": "UNKNOWN_DRIVER", "message": f"Unknown driver: {driver}"},
         }, status=400)
 
+    roles_hash = compute_actor_roles_hash(request.user)
+
     resolved = resolve_driver_catalog_versions(driver)
     if resolved.base_version is not None:
         base_version_id = str(resolved.base_version.id)
@@ -2460,6 +2519,7 @@ def get_driver_commands(request):
             driver=driver,
             base_version_id=base_version_id,
             overrides_version_id=overrides_version_id,
+            roles_hash=roles_hash,
         )
         if request.headers.get("If-None-Match") == current_etag:
             response = Response(status=304)
@@ -2477,6 +2537,7 @@ def get_driver_commands(request):
                 driver=driver,
                 base_version_id=effective.base_version_id,
                 overrides_version_id=effective.overrides_version_id,
+                roles_hash=roles_hash,
             )
 
             payload = {
@@ -2511,6 +2572,7 @@ def get_driver_commands(request):
                 driver=driver,
                 base_version_id=lkg.base_version_id,
                 overrides_version_id=lkg.overrides_version_id,
+                roles_hash=roles_hash,
             )
             if request.headers.get("If-None-Match") == etag:
                 response = Response(status=304)
@@ -2537,7 +2599,7 @@ def get_driver_commands(request):
 
     if driver == "cli":
         raw_catalog = load_cli_command_catalog()
-        catalog_v2 = cli_catalog_v1_to_v2(raw_catalog)
+        catalog_v2 = filter_catalog_for_user(request.user, cli_catalog_v1_to_v2(raw_catalog))
         payload = {
             "driver": driver,
             "base_version": str(raw_catalog.get("version") or "unknown"),
@@ -2561,7 +2623,12 @@ def get_driver_commands(request):
                 "commands_by_id": {},
             },
         }
-        etag = compute_driver_catalog_etag(driver=driver, base_version_id=None, overrides_version_id=None)
+        etag = compute_driver_catalog_etag(
+            driver=driver,
+            base_version_id=None,
+            overrides_version_id=None,
+            roles_hash=roles_hash,
+        )
 
     if request.headers.get("If-None-Match") == etag:
         response = Response(status=304)

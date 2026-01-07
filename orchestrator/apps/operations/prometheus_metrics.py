@@ -127,6 +127,16 @@ api_v2_errors_total = Counter(
 )
 
 # =============================================================================
+# Driver Catalog / Schema-driven Commands Metrics
+# =============================================================================
+
+driver_commands_denied_total = Counter(
+    'cc1c_orchestrator_driver_commands_denied_total',
+    'Total schema-driven driver commands denied (RBAC filter)',
+    ['driver', 'reason']
+)
+
+# =============================================================================
 # Redis Events Metrics
 # =============================================================================
 
@@ -366,6 +376,11 @@ def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:
 def record_api_v2_error(endpoint: str, error: str) -> None:
     """Record API v2 endpoint error."""
     api_v2_errors_total.labels(endpoint=endpoint, error=error).inc()
+
+
+def record_driver_command_denied(driver: str, reason: str) -> None:
+    """Record RBAC deny for schema-driven driver command (by reason)."""
+    driver_commands_denied_total.labels(driver=driver, reason=reason).inc()
 
 
 def record_sse_ticket(stream: str, status: str) -> None:

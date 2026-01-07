@@ -55,7 +55,7 @@ def test_driver_catalogs_overrides_update_and_get(client, monkeypatch):
 
     update_resp = client.post(
         "/api/v2/settings/driver-catalogs/overrides/update/",
-        data={"driver": "ibcmd", "catalog": overrides_catalog},
+        data={"driver": "ibcmd", "catalog": overrides_catalog, "reason": "test update"},
         format="json",
     )
     assert update_resp.status_code == 200
@@ -105,7 +105,7 @@ def test_driver_catalogs_promote_changes_approved_alias(client, monkeypatch):
 
     resp = client.post(
         "/api/v2/settings/driver-catalogs/promote/",
-        data={"driver": "ibcmd", "version": "v2", "alias": "approved"},
+        data={"driver": "ibcmd", "version": "v2", "alias": "approved", "reason": "test promote"},
         format="json",
     )
     assert resp.status_code == 200

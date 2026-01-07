@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -50,8 +51,9 @@ def compute_driver_catalog_etag(
     driver: str,
     base_version_id: str | None,
     overrides_version_id: str | None,
+    roles_hash: str | None,
 ) -> str:
-    payload = f"{driver}:{base_version_id or ''}:{overrides_version_id or ''}".encode("utf-8")
+    payload = f"{driver}:{base_version_id or ''}:{overrides_version_id or ''}:{roles_hash or ''}".encode("utf-8")
     return f"\"{hashlib.sha256(payload).hexdigest()}\""
 
 
@@ -90,9 +92,137 @@ def invalidate_driver_catalog_cache(driver: str) -> None:
             _EFFECTIVE_CACHE_TS.pop(key, None)
 
 
+def get_current_environment() -> str:
+    return (os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
+
+
+def get_actor_roles(user) -> list[str]:
+    if not user or not getattr(user, "is_authenticated", False):
+        return []
+
+    roles: list[str] = []
+    if getattr(user, "is_staff", False):
+        roles.append("staff")
+
+    try:
+        group_names = user.groups.values_list("name", flat=True)
+    except Exception:
+        group_names = []
+
+    for name in group_names:
+        value = str(name or "").strip()
+        if value:
+            roles.append(value)
+
+    return sorted(set(roles))
+
+
+def compute_actor_roles_hash(user) -> str:
+    roles = get_actor_roles(user)
+    env = get_current_environment()
+    payload = f"{env}|{'|'.join(roles)}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _parse_str_list(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    items: set[str] = set()
+    for item in value:
+        s = str(item or "").strip()
+        if s:
+            items.add(s)
+    return items
+
+
+def _command_permissions(command: dict[str, Any]) -> dict[str, Any] | None:
+    raw = command.get("permissions")
+    if isinstance(raw, dict):
+        return raw
+    return None
+
+
+def _is_command_visible(
+    *,
+    roles: set[str],
+    command: dict[str, Any],
+    env: str,
+) -> tuple[bool, str | None]:
+    if command.get("disabled") is True:
+        return False, "disabled"
+
+    risk_level = str(command.get("risk_level") or "").strip().lower()
+    if "staff" not in roles and risk_level == "dangerous":
+        return False, "dangerous_non_staff"
+
+    permissions = _command_permissions(command) or {}
+
+    allowed_envs = _parse_str_list(permissions.get("allowed_envs"))
+    denied_envs = _parse_str_list(permissions.get("denied_envs") or permissions.get("deny_envs"))
+    if env and denied_envs and env in denied_envs:
+        return False, "env_denied"
+    if allowed_envs:
+        if not env:
+            return False, "env_unknown"
+        if env not in allowed_envs:
+            return False, "env_not_allowed"
+
+    denied_roles = _parse_str_list(permissions.get("denied_roles") or permissions.get("deny_roles"))
+    if denied_roles and roles.intersection(denied_roles):
+        return False, "role_denied"
+
+    allowed_roles = _parse_str_list(permissions.get("allowed_roles"))
+    if allowed_roles and not roles.intersection(allowed_roles):
+        return False, "role_not_allowed"
+
+    return True, None
+
+
+def get_command_min_db_level(command: dict[str, Any]) -> str | None:
+    permissions = _command_permissions(command)
+    if not permissions:
+        return None
+    raw = permissions.get("min_db_level")
+    if raw is None:
+        return None
+    value = str(raw or "").strip().lower()
+    return value or None
+
+
+def explain_command_denied(user, command: dict[str, Any]) -> str | None:
+    env = get_current_environment()
+    roles = set(get_actor_roles(user))
+    allowed, reason = _is_command_visible(roles=roles, command=command, env=env)
+    if allowed:
+        return None
+    return reason or "denied"
+
+
 def filter_catalog_for_user(user, catalog: dict[str, Any]) -> dict[str, Any]:
-    _ = user
-    return catalog
+    if not isinstance(catalog, dict):
+        return catalog
+
+    commands_by_id = catalog.get("commands_by_id")
+    if not isinstance(commands_by_id, dict):
+        return catalog
+
+    env = get_current_environment()
+    roles = set(get_actor_roles(user))
+
+    filtered_commands: dict[str, Any] = {}
+    for command_id, command in commands_by_id.items():
+        if not isinstance(command_id, str) or not command_id:
+            continue
+        if not isinstance(command, dict):
+            continue
+        allowed, _reason = _is_command_visible(roles=roles, command=command, env=env)
+        if not allowed:
+            continue
+        filtered_commands[command_id] = command
+
+    filtered = dict(catalog)
+    filtered["commands_by_id"] = filtered_commands
+    return filtered
 
 
 def get_effective_driver_catalog(

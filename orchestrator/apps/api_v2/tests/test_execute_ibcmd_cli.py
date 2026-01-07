@@ -3,7 +3,8 @@ import json
 import uuid
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
+from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
@@ -65,6 +66,13 @@ def _seed_ibcmd_catalog(monkeypatch, *, base_catalog: dict, overrides_catalog: d
 
     monkeypatch.setattr(ArtifactStorageClient, "get_object", fake_get_object)
     return base_version, overrides_version
+
+
+def _grant_operation_permission(client: APIClient, user: User, codename: str) -> None:
+    ct = ContentType.objects.get(app_label="operations", model="batchoperation")
+    perm = Permission.objects.get(content_type=ct, codename=codename)
+    user.user_permissions.add(perm)
+    client.force_authenticate(user=User.objects.get(pk=user.pk))
 
 
 @pytest.fixture
@@ -163,7 +171,83 @@ def test_execute_ibcmd_cli_unknown_command_returns_400(client, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_execute_ibcmd_cli_dangerous_requires_confirm(client, monkeypatch):
+def test_execute_ibcmd_cli_safe_requires_capability(client, user, auth_db, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "server.config.init": {
+                "label": "server config init",
+                "description": "Init server config",
+                "argv": ["server", "config", "init"],
+                "scope": "global",
+                "risk_level": "safe",
+                "params_by_name": {
+                    "remote": {"kind": "flag", "flag": "--remote", "expects_value": True, "required": True},
+                },
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _allow_operate(user, auth_db)
+    monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "server.config.init",
+            "database_ids": [],
+            "auth_database_id": auth_db.id,
+            "connection": {"remote": "http://host:1545"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 403
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_dangerous_requires_confirm(staff_client, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "server.config.drop": {
+                "label": "drop config",
+                "description": "dangerous",
+                "argv": ["server", "config", "drop"],
+                "scope": "global",
+                "risk_level": "dangerous",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    resp = staff_client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {"command_id": "server.config.drop", "auth_database_id": str(uuid.uuid4())},
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "DANGEROUS_CONFIRM_REQUIRED"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_dangerous_hidden_for_non_staff(client, monkeypatch):
     base_catalog = {
         "catalog_version": 2,
         "driver": "ibcmd",
@@ -186,14 +270,13 @@ def test_execute_ibcmd_cli_dangerous_requires_confirm(client, monkeypatch):
 
     resp = client.post(
         "/api/v2/operations/execute-ibcmd-cli/",
-        {"command_id": "server.config.drop", "auth_database_id": str(uuid.uuid4())},
+        {"command_id": "server.config.drop", "auth_database_id": str(uuid.uuid4()), "confirm_dangerous": True},
         format="json",
     )
     assert resp.status_code == 400
     payload = resp.json()
     assert payload["success"] is False
-    assert payload["error"]["code"] == "DANGEROUS_CONFIRM_REQUIRED"
-
+    assert payload["error"]["code"] == "UNKNOWN_COMMAND"
 
 @pytest.mark.django_db
 def test_execute_ibcmd_cli_per_database_success_creates_tasks(client, user, target_dbs, monkeypatch):
@@ -219,6 +302,7 @@ def test_execute_ibcmd_cli_per_database_success_creates_tasks(client, user, targ
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
 
+    _grant_operation_permission(client, user, "execute_safe_operation")
     for db in target_dbs:
         _allow_operate(user, db)
 
@@ -284,6 +368,7 @@ def test_execute_ibcmd_cli_global_success_creates_global_task(client, user, auth
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
 
+    _grant_operation_permission(client, user, "execute_safe_operation")
     _allow_operate(user, auth_db)
     monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
 
@@ -345,6 +430,7 @@ def test_execute_ibcmd_cli_global_locked_returns_409(client, user, auth_db, monk
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
 
+    _grant_operation_permission(client, user, "execute_safe_operation")
     _allow_operate(user, auth_db)
     monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: True)
 
@@ -388,6 +474,7 @@ def test_execute_ibcmd_cli_pid_in_args_not_allowed(client, user, auth_db, monkey
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
 
+    _grant_operation_permission(client, user, "execute_safe_operation")
     _allow_operate(user, auth_db)
     monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
 
@@ -433,6 +520,7 @@ def test_execute_ibcmd_cli_pid_not_allowed_in_production(client, user, auth_db, 
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
 
+    _grant_operation_permission(client, user, "execute_safe_operation")
     _allow_operate(user, auth_db)
     monkeypatch.setenv("APP_ENV", "production")
 
