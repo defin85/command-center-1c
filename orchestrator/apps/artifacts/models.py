@@ -1,7 +1,10 @@
 import uuid
 
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.db import models
+
+from apps.databases.models import PermissionLevel
 
 
 class ArtifactKind(models.TextChoices):
@@ -161,3 +164,47 @@ class ArtifactUsage(models.Model):
 
     def __str__(self) -> str:
         return f"{self.artifact.name}@{self.version.version}"
+
+
+class ArtifactGroupPermission(models.Model):
+    """
+    Group permission for a specific artifact.
+    Rights on the artifact apply to its versions and aliases (inheritance).
+    """
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="artifact_permissions",
+    )
+    artifact = models.ForeignKey(
+        Artifact,
+        on_delete=models.CASCADE,
+        related_name="group_permissions",
+    )
+    level = models.IntegerField(
+        choices=PermissionLevel.choices,
+        default=PermissionLevel.VIEW,
+    )
+
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "artifacts_artifact_group_permissions"
+        unique_together = [
+            ("group", "artifact"),
+        ]
+        indexes = [
+            models.Index(fields=["group", "artifact"], name="agp_group_art_idx"),
+            models.Index(fields=["artifact", "level"], name="agp_art_level_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.group.name} -> {self.artifact.name} ({self.get_level_display()})"
