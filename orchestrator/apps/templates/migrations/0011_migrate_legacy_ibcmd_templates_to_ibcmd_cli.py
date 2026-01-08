@@ -26,6 +26,70 @@ LEGACY_TO_COMMAND_ID = {
 }
 
 
+def _is_registry_schema_template_data(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if not isinstance(value.get("parameter_schemas"), dict):
+        return False
+    if not isinstance(value.get("required_parameters"), list):
+        return False
+    if not isinstance(value.get("optional_parameters"), list):
+        return False
+    return True
+
+
+def _var(name: str) -> str:
+    return "{{ " + name + " }}"
+
+
+def _var_optional(name: str) -> str:
+    return "{{ " + name + " | default('') }}"
+
+
+def _legacy_ibcmd_schema_to_ibcmd_cli_template_data(operation_type: str, schema_data: dict[str, Any]) -> dict[str, Any]:
+    op = str(operation_type or "").strip()
+    command_id = LEGACY_TO_COMMAND_ID.get(op)
+    if not command_id:
+        raise ValueError(f"Unsupported legacy ibcmd operation_type: {op}")
+
+    params: dict[str, Any] = {
+        "dbms": _var("dbms"),
+        "db_server": _var("db_server"),
+        "db_name": _var("db_name"),
+        "db_user": _var("db_user"),
+        "db_pwd": _var("db_password"),
+    }
+
+    if op == "ibcmd_backup":
+        params["arg1"] = _var_optional("output_path")
+    elif op == "ibcmd_restore":
+        params["arg1"] = _var("input_path")
+        params["create_database"] = _var_optional("create_database")
+        params["force"] = _var_optional("force")
+    elif op == "ibcmd_replicate":
+        params["target_dbms"] = _var("target_dbms")
+        params["target_database_server"] = _var("target_db_server")
+        params["target_database_name"] = _var("target_db_name")
+        params["target_database_user"] = _var("target_db_user")
+        params["target_database_password"] = _var("target_db_password")
+        params["jobs_count"] = _var_optional("jobs_count")
+        params["target_jobs_count"] = _var_optional("target_jobs_count")
+
+    timeout_seconds = schema_data.get("timeout_seconds")
+    if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
+        timeout_seconds = 900
+
+    return {
+        "command_id": command_id,
+        "mode": "guided",
+        "params": params,
+        "additional_args": [],
+        "stdin": "",
+        "confirm_dangerous": True,
+        "timeout_seconds": timeout_seconds,
+    }
+
+
 def _coerce_yes_no(value: Any, *, name: str) -> str:
     if isinstance(value, bool):
         return "yes" if value else "no"
@@ -60,6 +124,9 @@ def _legacy_ibcmd_config_to_ibcmd_cli_template_data(operation_type: str, config:
     if not isinstance(config, dict):
         raise ValueError("config must be an object")
 
+    if _is_registry_schema_template_data(config):
+        return _legacy_ibcmd_schema_to_ibcmd_cli_template_data(op, config)
+
     params: dict[str, Any] = {
         "dbms": config.get("dbms"),
         "db_server": config.get("db_server"),
@@ -77,9 +144,8 @@ def _legacy_ibcmd_config_to_ibcmd_cli_template_data(operation_type: str, config:
         input_path = config.get("input_path")
         if not input_path:
             input_path = config.get("backup_path")
-        if not isinstance(input_path, str) or not input_path.strip():
-            raise ValueError("input_path is required")
-        params["arg1"] = input_path.strip()
+        if isinstance(input_path, str) and input_path.strip():
+            params["arg1"] = input_path.strip()
 
         if config.get("create_database") is True:
             params["create_database"] = True
@@ -187,11 +253,11 @@ def migrate_legacy_ibcmd_templates(apps, schema_editor) -> None:
 
         template.operation_type = "ibcmd_cli"
         template.target_entity = "Infobase"
-        template.template_data = {
-            "data": mapped,
-            "filters": filters,
-            "options": options,
-        }
+        template_data = dict(raw)
+        template_data["data"] = mapped
+        template_data.setdefault("filters", filters)
+        template_data.setdefault("options", options)
+        template.template_data = template_data
         template.save(update_fields=["operation_type", "target_entity", "template_data", "updated_at"])
 
 
