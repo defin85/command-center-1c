@@ -2516,6 +2516,286 @@ paths:
           description: Subscription updated
         '401':
           description: Unauthorized
+  /api/v2/rbac/bulk-grant-artifact-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_grant_artifact_group_permission_create
+      summary: Bulk grant artifact group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGrantArtifactGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkGrantArtifactGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkGrantArtifactGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUpsertResponse'
+          description: ''
+  /api/v2/rbac/bulk-grant-cluster-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_grant_cluster_group_permission_create
+      summary: Bulk grant cluster group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGrantClusterGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkGrantClusterGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkGrantClusterGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUpsertResponse'
+          description: ''
+  /api/v2/rbac/bulk-grant-database-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_grant_database_group_permission_create
+      summary: Bulk grant database group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGrantDatabaseGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkGrantDatabaseGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkGrantDatabaseGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUpsertResponse'
+          description: ''
+  /api/v2/rbac/bulk-grant-operation-template-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_grant_operation_template_group_permission_create
+      summary: Bulk grant operation template group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGrantOperationTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkGrantOperationTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkGrantOperationTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUpsertResponse'
+          description: ''
+  /api/v2/rbac/bulk-grant-workflow-template-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_grant_workflow_template_group_permission_create
+      summary: Bulk grant workflow template group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGrantWorkflowTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkGrantWorkflowTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkGrantWorkflowTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUpsertResponse'
+          description: ''
+  /api/v2/rbac/bulk-revoke-artifact-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_revoke_artifact_group_permission_create
+      summary: Bulk revoke artifact group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeArtifactGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeArtifactGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeArtifactGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+          description: ''
+  /api/v2/rbac/bulk-revoke-cluster-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_revoke_cluster_group_permission_create
+      summary: Bulk revoke cluster group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeClusterGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeClusterGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeClusterGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+          description: ''
+  /api/v2/rbac/bulk-revoke-database-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_revoke_database_group_permission_create
+      summary: Bulk revoke database group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeDatabaseGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeDatabaseGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeDatabaseGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+          description: ''
+  /api/v2/rbac/bulk-revoke-operation-template-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_revoke_operation_template_group_permission_create
+      summary: Bulk revoke operation template group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeOperationTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeOperationTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeOperationTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+          description: ''
+  /api/v2/rbac/bulk-revoke-workflow-template-group-permission/:
+    post:
+      operationId: v2_rbac_bulk_revoke_workflow_template_group_permission_create
+      summary: Bulk revoke workflow template group permission
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeWorkflowTemplateGroupPermissionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeWorkflowTemplateGroupPermissionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkRevokeWorkflowTemplateGroupPermissionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+          description: ''
   /api/v2/rbac/create-role/:
     post:
       operationId: v2_rbac_create_role_create
@@ -2640,6 +2920,16 @@ paths:
         schema:
           type: boolean
           default: false
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Optional pagination for databases
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Optional pagination for databases
       - in: query
         name: user_id
         schema:
@@ -4072,6 +4362,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
   /api/v2/rbac/set-user-roles/:
     post:
       operationId: v2_rbac_set_user_roles_create
@@ -4111,6 +4407,12 @@ paths:
         '403':
           description: Forbidden
         '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RbacErrorResponse'
+          description: ''
+        '409':
           content:
             application/json:
               schema:
@@ -6298,6 +6600,123 @@ components:
       - tasks
       - total_tasks
       - updated_at
+    BulkDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: integer
+        skipped:
+          type: integer
+        total:
+          type: integer
+      required:
+      - deleted
+      - skipped
+      - total
+    BulkGrantArtifactGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        artifact_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - artifact_ids
+      - group_id
+      - level
+      - reason
+    BulkGrantClusterGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        cluster_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - cluster_ids
+      - group_id
+      - level
+      - reason
+    BulkGrantDatabaseGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        database_ids:
+          type: array
+          items:
+            type: string
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - database_ids
+      - group_id
+      - level
+      - reason
+    BulkGrantOperationTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - level
+      - reason
+      - template_ids
+    BulkGrantWorkflowTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        level:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+      required:
+      - group_id
+      - level
+      - reason
+      - template_ids
     BulkHealthCheckRequest:
       type: object
       description: Request body for bulk_health_check endpoint.
@@ -6311,6 +6730,101 @@ components:
           type: string
           format: uuid
           description: Check all databases in this cluster
+    BulkRevokeArtifactGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        artifact_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+      required:
+      - artifact_ids
+      - group_id
+      - reason
+    BulkRevokeClusterGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        cluster_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+      required:
+      - cluster_ids
+      - group_id
+      - reason
+    BulkRevokeDatabaseGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        database_ids:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+      required:
+      - database_ids
+      - group_id
+      - reason
+    BulkRevokeOperationTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+      required:
+      - group_id
+      - reason
+      - template_ids
+    BulkRevokeWorkflowTemplateGroupPermissionRequest:
+      type: object
+      properties:
+        group_id:
+          type: integer
+        template_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+      required:
+      - group_id
+      - reason
+      - template_ids
+    BulkUpsertResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+        updated:
+          type: integer
+        skipped:
+          type: integer
+        total:
+          type: integer
+      required:
+      - created
+      - skipped
+      - total
+      - updated
     CancelOperationRequest:
       type: object
       description: Request body for cancel_operation endpoint.
@@ -7847,12 +8361,18 @@ components:
         source:
           enum:
           - direct
+          - group
           - cluster
           type: string
           description: |-
             * `direct` - direct
+            * `group` - group
             * `cluster` - cluster
-          x-spec-enum-id: 0894567b731e1544
+          x-spec-enum-id: edab6beb8a874d70
+        via_cluster_id:
+          type: string
+          format: uuid
+          nullable: true
       required:
       - database
       - level
@@ -7890,6 +8410,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EffectiveAccessDatabaseItem'
+        databases_count:
+          type: integer
+        databases_total:
+          type: integer
+        databases_limit:
+          type: integer
+        databases_offset:
+          type: integer
         operation_templates:
           type: array
           items:
@@ -8408,9 +8936,12 @@ components:
           type: string
         notes:
           type: string
+        reason:
+          type: string
       required:
       - cluster_id
       - level
+      - reason
       - user_id
     GrantDatabaseGroupPermissionRequest:
       type: object
@@ -8441,9 +8972,12 @@ components:
           type: string
         notes:
           type: string
+        reason:
+          type: string
       required:
       - database_id
       - level
+      - reason
       - user_id
     GrantOperationTemplateGroupPermissionRequest:
       type: object
@@ -9568,8 +10102,11 @@ components:
         cluster_id:
           type: string
           format: uuid
+        reason:
+          type: string
       required:
       - cluster_id
+      - reason
       - user_id
     RevokeDatabaseGroupPermissionRequest:
       type: object
@@ -9591,8 +10128,11 @@ components:
           type: integer
         database_id:
           type: string
+        reason:
+          type: string
       required:
       - database_id
+      - reason
       - user_id
     RevokeOperationTemplateGroupPermissionRequest:
       type: object

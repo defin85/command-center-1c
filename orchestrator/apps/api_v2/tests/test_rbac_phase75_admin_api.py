@@ -200,3 +200,153 @@ def test_template_and_artifact_bindings_user(rbac_admin_client):
     )
     assert grant_art.status_code == 200
     assert grant_art.json()["permission"]["level"] == "MANAGE"
+
+
+@pytest.mark.django_db
+def test_direct_bindings_clusters_and_databases_require_reason(rbac_admin_client, cluster, database):
+    target = User.objects.create_user(username="u_direct", password="pass")
+
+    grant_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/grant-cluster-permission/",
+        {"user_id": target.id, "cluster_id": str(cluster.id), "level": "VIEW", "reason": "TICKET-1"},
+        format="json",
+    )
+    assert grant_cluster.status_code == 200
+    assert grant_cluster.json()["permission"]["level"] == "VIEW"
+
+    revoke_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/revoke-cluster-permission/",
+        {"user_id": target.id, "cluster_id": str(cluster.id), "reason": "TICKET-2"},
+        format="json",
+    )
+    assert revoke_cluster.status_code == 200
+    assert revoke_cluster.json()["deleted"] is True
+
+    grant_db = rbac_admin_client.post(
+        "/api/v2/rbac/grant-database-permission/",
+        {"user_id": target.id, "database_id": database.id, "level": "OPERATE", "reason": "TICKET-3"},
+        format="json",
+    )
+    assert grant_db.status_code == 200
+    assert grant_db.json()["permission"]["level"] == "OPERATE"
+
+    revoke_db = rbac_admin_client.post(
+        "/api/v2/rbac/revoke-database-permission/",
+        {"user_id": target.id, "database_id": database.id, "reason": "TICKET-4"},
+        format="json",
+    )
+    assert revoke_db.status_code == 200
+    assert revoke_db.json()["deleted"] is True
+
+
+@pytest.mark.django_db
+def test_bulk_group_permissions_clusters_and_databases(rbac_admin_client, cluster, database):
+    group = Group.objects.create(name="bulk_ops")
+
+    bulk_grant_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/bulk-grant-cluster-group-permission/",
+        {"group_id": group.id, "cluster_ids": [str(cluster.id), str(cluster.id)], "level": "VIEW", "reason": "TICKET-1"},
+        format="json",
+    )
+    assert bulk_grant_cluster.status_code == 200
+    assert bulk_grant_cluster.json()["created"] == 1
+    assert bulk_grant_cluster.json()["total"] == 1
+
+    bulk_grant_cluster_again = rbac_admin_client.post(
+        "/api/v2/rbac/bulk-grant-cluster-group-permission/",
+        {"group_id": group.id, "cluster_ids": [str(cluster.id)], "level": "VIEW", "reason": "TICKET-2"},
+        format="json",
+    )
+    assert bulk_grant_cluster_again.status_code == 200
+    assert bulk_grant_cluster_again.json()["skipped"] == 1
+
+    bulk_revoke_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/bulk-revoke-cluster-group-permission/",
+        {"group_id": group.id, "cluster_ids": [str(cluster.id)], "reason": "TICKET-3"},
+        format="json",
+    )
+    assert bulk_revoke_cluster.status_code == 200
+    assert bulk_revoke_cluster.json()["deleted"] == 1
+    assert bulk_revoke_cluster.json()["total"] == 1
+
+    bulk_grant_db = rbac_admin_client.post(
+        "/api/v2/rbac/bulk-grant-database-group-permission/",
+        {"group_id": group.id, "database_ids": [database.id], "level": "OPERATE", "reason": "TICKET-4"},
+        format="json",
+    )
+    assert bulk_grant_db.status_code == 200
+    assert bulk_grant_db.json()["created"] == 1
+
+    bulk_revoke_db = rbac_admin_client.post(
+        "/api/v2/rbac/bulk-revoke-database-group-permission/",
+        {"group_id": group.id, "database_ids": [database.id], "reason": "TICKET-5"},
+        format="json",
+    )
+    assert bulk_revoke_db.status_code == 200
+    assert bulk_revoke_db.json()["deleted"] == 1
+
+
+@pytest.mark.django_db
+def test_guardrail_last_rbac_admin(rbac_admin_client):
+    admin_group = Group.objects.get(name="rbac_admins")
+    admin_user = User.objects.get(username="rbac_admin")
+
+    set_caps = rbac_admin_client.post(
+        "/api/v2/rbac/set-role-capabilities/",
+        {"group_id": admin_group.id, "permission_codes": [], "mode": "replace", "reason": "TICKET-1"},
+        format="json",
+    )
+    assert set_caps.status_code == 409
+    assert set_caps.json()["error"]["code"] == "LAST_RBAC_ADMIN"
+
+    set_roles = rbac_admin_client.post(
+        "/api/v2/rbac/set-user-roles/",
+        {"user_id": admin_user.id, "group_ids": [admin_group.id], "mode": "remove", "reason": "TICKET-2"},
+        format="json",
+    )
+    assert set_roles.status_code == 409
+    assert set_roles.json()["error"]["code"] == "LAST_RBAC_ADMIN"
+
+
+@pytest.mark.django_db
+def test_effective_access_database_pagination(rbac_admin_client, cluster, database):
+    Database.objects.create(
+        id="db-2",
+        name="test_db_2",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+        cluster=cluster,
+    )
+    Database.objects.create(
+        id="db-3",
+        name="test_db_3",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+        cluster=cluster,
+    )
+
+    admin_user = User.objects.get(username="rbac_admin")
+    grant_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/grant-cluster-permission/",
+        {"user_id": admin_user.id, "cluster_id": str(cluster.id), "level": "VIEW", "reason": "TICKET-1"},
+        format="json",
+    )
+    assert grant_cluster.status_code == 200
+
+    effective = rbac_admin_client.get(
+        "/api/v2/rbac/get-effective-access/",
+        {"include_clusters": False, "include_databases": True, "limit": 1, "offset": 0},
+    )
+    assert effective.status_code == 200
+    payload = effective.json()
+    assert payload["databases_count"] == 1
+    assert payload["databases_total"] == 3
+    assert len(payload["databases"]) == 1
+    assert payload["databases"][0]["source"] == "cluster"
+    assert payload["databases"][0]["via_cluster_id"] == str(cluster.id)

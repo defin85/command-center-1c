@@ -11,10 +11,14 @@ import {
   useCapabilities,
   useClusterPermissions,
   useClusterGroupPermissions,
+  useBulkGrantClusterGroupPermission,
+  useBulkRevokeClusterGroupPermission,
   useCreateRole,
   useDeleteRole,
   useDatabasePermissions,
   useDatabaseGroupPermissions,
+  useBulkGrantDatabaseGroupPermission,
+  useBulkRevokeDatabaseGroupPermission,
   useGrantClusterPermission,
   useGrantClusterGroupPermission,
   useGrantDatabasePermission,
@@ -130,8 +134,12 @@ export function RBACPage() {
   const revokeDatabase = useRevokeDatabasePermission()
   const grantClusterGroup = useGrantClusterGroupPermission()
   const revokeClusterGroup = useRevokeClusterGroupPermission()
+  const bulkGrantClusterGroup = useBulkGrantClusterGroupPermission()
+  const bulkRevokeClusterGroup = useBulkRevokeClusterGroupPermission()
   const grantDatabaseGroup = useGrantDatabaseGroupPermission()
   const revokeDatabaseGroup = useRevokeDatabaseGroupPermission()
+  const bulkGrantDatabaseGroup = useBulkGrantDatabaseGroupPermission()
+  const bulkRevokeDatabaseGroup = useBulkRevokeDatabaseGroupPermission()
 
   const grantOperationTemplate = useGrantOperationTemplatePermission()
   const revokeOperationTemplate = useRevokeOperationTemplatePermission()
@@ -262,6 +270,7 @@ export function RBACPage() {
     cluster_id: string
     level: PermissionLevelCode
     notes?: string
+    reason: string
   }>()
 
   const [grantClusterGroupForm] = Form.useForm<{
@@ -277,6 +286,7 @@ export function RBACPage() {
     database_id: string
     level: PermissionLevelCode
     notes?: string
+    reason: string
   }>()
 
   const [grantDatabaseGroupForm] = Form.useForm<{
@@ -284,6 +294,34 @@ export function RBACPage() {
     database_id: string
     level: PermissionLevelCode
     notes?: string
+    reason: string
+  }>()
+
+  const [bulkGrantClusterGroupForm] = Form.useForm<{
+    group_id: number
+    cluster_ids: string
+    level: PermissionLevelCode
+    notes?: string
+    reason: string
+  }>()
+
+  const [bulkRevokeClusterGroupForm] = Form.useForm<{
+    group_id: number
+    cluster_ids: string
+    reason: string
+  }>()
+
+  const [bulkGrantDatabaseGroupForm] = Form.useForm<{
+    group_id: number
+    database_ids: string
+    level: PermissionLevelCode
+    notes?: string
+    reason: string
+  }>()
+
+  const [bulkRevokeDatabaseGroupForm] = Form.useForm<{
+    group_id: number
+    database_ids: string
     reason: string
   }>()
 
@@ -367,6 +405,71 @@ export function RBACPage() {
     const trimmed = value.trim()
     return trimmed ? trimmed : undefined
   }
+
+  const parseIdListFromText = (value: unknown): string[] => {
+    if (typeof value !== 'string') return []
+    const parts = value
+      .split(/[\n\r\t ,;]+/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const part of parts) {
+      if (seen.has(part)) continue
+      seen.add(part)
+      out.push(part)
+    }
+    return out
+  }
+
+  const levelsHintClustersDatabases = (
+    <Alert
+      type="info"
+      showIcon
+      message="Подсказка по уровням доступа (Clusters/Databases)"
+      description={(
+        <div>
+          <div><Text strong>VIEW</Text>: видеть и читать (списки/детали/метаданные/статусы).</div>
+          <div><Text strong>OPERATE</Text>: выполнять операции без изменения конфигурации.</div>
+          <div><Text strong>MANAGE</Text>: менять настройки/конфигурацию объекта.</div>
+          <div><Text strong>ADMIN</Text>: самый высокий уровень, потенциально разрушительные действия (если поддерживаются).</div>
+        </div>
+      )}
+    />
+  )
+
+  const levelsHintTemplatesWorkflows = (
+    <Alert
+      type="info"
+      showIcon
+      message="Подсказка по уровням доступа (Templates/Workflows)"
+      description={(
+        <div>
+          <div><Text strong>VIEW</Text>: читать шаблон.</div>
+          <div><Text strong>OPERATE</Text>: исполнять (запускать) workflow/операции по шаблону.</div>
+          <div><Text strong>MANAGE</Text>: создавать/редактировать/публиковать.</div>
+          <div><Text strong>ADMIN</Text>: самый высокий уровень (если домен не разделяет отдельно).</div>
+        </div>
+      )}
+    />
+  )
+
+  const levelsHintArtifacts = (
+    <Alert
+      type="info"
+      showIcon
+      message="Подсказка по уровням доступа (Artifacts)"
+      description={(
+        <div>
+          <div><Text strong>VIEW</Text>: видеть артефакт и версии (read).</div>
+          <div><Text strong>OPERATE</Text>: upload/публикация версий (операционные действия).</div>
+          <div><Text strong>MANAGE</Text>: управлять артефактом (настройки/алиасы/soft-delete).</div>
+          <div><Text strong>ADMIN</Text>: самый высокий уровень (если домен не разделяет отдельно).</div>
+        </div>
+      )}
+    />
+  )
 
   const handleIbUserEdit = (record: InfobaseUserMapping) => {
     setSelectedIbDatabaseId(record.database_id)
@@ -545,7 +648,9 @@ export function RBACPage() {
             loading={revokeCluster.isPending}
             onClick={() => {
               if (!row.user?.id || !row.cluster?.id) return
-              revokeCluster.mutate({ user_id: row.user.id, cluster_id: row.cluster.id })
+              confirmReason('Revoke cluster user permission?', async (reason) => {
+                await revokeCluster.mutateAsync({ user_id: row.user.id, cluster_id: row.cluster.id, reason })
+              })
             }}
           >
             Revoke
@@ -553,7 +658,7 @@ export function RBACPage() {
         ),
       },
     ],
-    [revokeCluster]
+    [confirmReason, revokeCluster]
   )
 
   const databaseColumns: ColumnsType<DatabasePermission> = useMemo(
@@ -587,7 +692,9 @@ export function RBACPage() {
             loading={revokeDatabase.isPending}
             onClick={() => {
               if (!row.user?.id || !row.database?.id) return
-              revokeDatabase.mutate({ user_id: row.user.id, database_id: row.database.id })
+              confirmReason('Revoke database user permission?', async (reason) => {
+                await revokeDatabase.mutateAsync({ user_id: row.user.id, database_id: row.database.id, reason })
+              })
             }}
           >
             Revoke
@@ -595,7 +702,7 @@ export function RBACPage() {
         ),
       },
     ],
-    [revokeDatabase]
+    [confirmReason, revokeDatabase]
   )
 
   const clusterGroupColumns: ColumnsType<ClusterGroupPermission> = useMemo(
@@ -1657,11 +1764,12 @@ export function RBACPage() {
             label: 'Cluster Permissions',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {levelsHintClustersDatabases}
                 <Card title="Grant Cluster Permission" size="small">
                   <Form
                     form={grantClusterForm}
                     layout="inline"
-                    onFinish={(values) => grantCluster.mutate(values)}
+                    onFinish={(values) => grantCluster.mutate(values, { onSuccess: () => grantClusterForm.resetFields() })}
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
@@ -1692,6 +1800,9 @@ export function RBACPage() {
                     </Form.Item>
                     <Form.Item name="notes">
                       <Input id="rbac-cluster-notes" placeholder="Notes (optional)" style={{ width: 260 }} />
+                    </Form.Item>
+                    <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                      <Input id="rbac-cluster-reason" placeholder="Reason" style={{ width: 260 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" loading={grantCluster.isPending}>
@@ -1774,6 +1885,126 @@ export function RBACPage() {
                   )}
                 </Card>
 
+                <Card title="Bulk Cluster Permission (Role)" size="small">
+                  <Tabs
+                    items={[
+                      {
+                        key: 'grant',
+                        label: 'Bulk Grant',
+                        children: (
+                          <Form
+                            form={bulkGrantClusterGroupForm}
+                            layout="vertical"
+                            onFinish={async (values) => {
+                              const clusterIds = parseIdListFromText(values.cluster_ids)
+                              if (clusterIds.length === 0) {
+                                message.error('cluster_ids required')
+                                return
+                              }
+                              try {
+                                const result = await bulkGrantClusterGroup.mutateAsync({
+                                  group_id: values.group_id,
+                                  cluster_ids: clusterIds,
+                                  level: values.level,
+                                  notes: values.notes,
+                                  reason: values.reason,
+                                })
+                                message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
+                                bulkGrantClusterGroupForm.resetFields()
+                              } catch {
+                                message.error('Bulk grant failed')
+                              }
+                            }}
+                            initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
+                          >
+                            <Space wrap>
+                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                                <Select
+                                  style={{ width: 240 }}
+                                  placeholder="Role"
+                                  options={roleOptions}
+                                  showSearch
+                                  optionFilterProp="label"
+                                />
+                              </Form.Item>
+                              <Form.Item name="level" rules={[{ required: true }]}>
+                                <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
+                              </Form.Item>
+                              <Form.Item name="notes">
+                                <Input placeholder="Notes (optional)" style={{ width: 260 }} />
+                              </Form.Item>
+                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                                <Input placeholder="Reason" style={{ width: 320 }} />
+                              </Form.Item>
+                            </Space>
+                            <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
+                              <Input.TextArea
+                                placeholder="Cluster UUIDs (one per line)"
+                                autoSize={{ minRows: 3, maxRows: 6 }}
+                              />
+                            </Form.Item>
+                            <Button type="primary" htmlType="submit" loading={bulkGrantClusterGroup.isPending}>
+                              Bulk Grant
+                            </Button>
+                          </Form>
+                        ),
+                      },
+                      {
+                        key: 'revoke',
+                        label: 'Bulk Revoke',
+                        children: (
+                          <Form
+                            form={bulkRevokeClusterGroupForm}
+                            layout="vertical"
+                            onFinish={async (values) => {
+                              const clusterIds = parseIdListFromText(values.cluster_ids)
+                              if (clusterIds.length === 0) {
+                                message.error('cluster_ids required')
+                                return
+                              }
+                              try {
+                                const result = await bulkRevokeClusterGroup.mutateAsync({
+                                  group_id: values.group_id,
+                                  cluster_ids: clusterIds,
+                                  reason: values.reason,
+                                })
+                                message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
+                                bulkRevokeClusterGroupForm.resetFields()
+                              } catch {
+                                message.error('Bulk revoke failed')
+                              }
+                            }}
+                          >
+                            <Space wrap>
+                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                                <Select
+                                  style={{ width: 240 }}
+                                  placeholder="Role"
+                                  options={roleOptions}
+                                  showSearch
+                                  optionFilterProp="label"
+                                />
+                              </Form.Item>
+                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                                <Input placeholder="Reason" style={{ width: 320 }} />
+                              </Form.Item>
+                            </Space>
+                            <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
+                              <Input.TextArea
+                                placeholder="Cluster UUIDs (one per line)"
+                                autoSize={{ minRows: 3, maxRows: 6 }}
+                              />
+                            </Form.Item>
+                            <Button type="primary" danger htmlType="submit" loading={bulkRevokeClusterGroup.isPending}>
+                              Bulk Revoke
+                            </Button>
+                          </Form>
+                        ),
+                      },
+                    ]}
+                  />
+                </Card>
+
                 <Card title="Cluster Permissions (Role)" size="small">
                   <Space wrap style={{ marginBottom: 12 }}>
                     <Select
@@ -1837,11 +2068,12 @@ export function RBACPage() {
             label: 'Database Permissions',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {levelsHintClustersDatabases}
                 <Card title="Grant Database Permission" size="small">
                   <Form
                     form={grantDatabaseForm}
                     layout="inline"
-                    onFinish={(values) => grantDatabase.mutate(values)}
+                    onFinish={(values) => grantDatabase.mutate(values, { onSuccess: () => grantDatabaseForm.resetFields() })}
                     initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user_id required' }]}>
@@ -1872,6 +2104,9 @@ export function RBACPage() {
                     </Form.Item>
                     <Form.Item name="notes">
                       <Input id="rbac-database-notes" placeholder="Notes (optional)" style={{ width: 260 }} />
+                    </Form.Item>
+                    <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                      <Input id="rbac-database-reason" placeholder="Reason" style={{ width: 260 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" loading={grantDatabase.isPending}>
@@ -1954,6 +2189,126 @@ export function RBACPage() {
                   )}
                 </Card>
 
+                <Card title="Bulk Database Permission (Role)" size="small">
+                  <Tabs
+                    items={[
+                      {
+                        key: 'grant',
+                        label: 'Bulk Grant',
+                        children: (
+                          <Form
+                            form={bulkGrantDatabaseGroupForm}
+                            layout="vertical"
+                            onFinish={async (values) => {
+                              const databaseIds = parseIdListFromText(values.database_ids)
+                              if (databaseIds.length === 0) {
+                                message.error('database_ids required')
+                                return
+                              }
+                              try {
+                                const result = await bulkGrantDatabaseGroup.mutateAsync({
+                                  group_id: values.group_id,
+                                  database_ids: databaseIds,
+                                  level: values.level,
+                                  notes: values.notes,
+                                  reason: values.reason,
+                                })
+                                message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
+                                bulkGrantDatabaseGroupForm.resetFields()
+                              } catch {
+                                message.error('Bulk grant failed')
+                              }
+                            }}
+                            initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
+                          >
+                            <Space wrap>
+                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                                <Select
+                                  style={{ width: 240 }}
+                                  placeholder="Role"
+                                  options={roleOptions}
+                                  showSearch
+                                  optionFilterProp="label"
+                                />
+                              </Form.Item>
+                              <Form.Item name="level" rules={[{ required: true }]}>
+                                <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
+                              </Form.Item>
+                              <Form.Item name="notes">
+                                <Input placeholder="Notes (optional)" style={{ width: 260 }} />
+                              </Form.Item>
+                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                                <Input placeholder="Reason" style={{ width: 320 }} />
+                              </Form.Item>
+                            </Space>
+                            <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
+                              <Input.TextArea
+                                placeholder="Database IDs (one per line)"
+                                autoSize={{ minRows: 3, maxRows: 8 }}
+                              />
+                            </Form.Item>
+                            <Button type="primary" htmlType="submit" loading={bulkGrantDatabaseGroup.isPending}>
+                              Bulk Grant
+                            </Button>
+                          </Form>
+                        ),
+                      },
+                      {
+                        key: 'revoke',
+                        label: 'Bulk Revoke',
+                        children: (
+                          <Form
+                            form={bulkRevokeDatabaseGroupForm}
+                            layout="vertical"
+                            onFinish={async (values) => {
+                              const databaseIds = parseIdListFromText(values.database_ids)
+                              if (databaseIds.length === 0) {
+                                message.error('database_ids required')
+                                return
+                              }
+                              try {
+                                const result = await bulkRevokeDatabaseGroup.mutateAsync({
+                                  group_id: values.group_id,
+                                  database_ids: databaseIds,
+                                  reason: values.reason,
+                                })
+                                message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
+                                bulkRevokeDatabaseGroupForm.resetFields()
+                              } catch {
+                                message.error('Bulk revoke failed')
+                              }
+                            }}
+                          >
+                            <Space wrap>
+                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                                <Select
+                                  style={{ width: 240 }}
+                                  placeholder="Role"
+                                  options={roleOptions}
+                                  showSearch
+                                  optionFilterProp="label"
+                                />
+                              </Form.Item>
+                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
+                                <Input placeholder="Reason" style={{ width: 320 }} />
+                              </Form.Item>
+                            </Space>
+                            <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
+                              <Input.TextArea
+                                placeholder="Database IDs (one per line)"
+                                autoSize={{ minRows: 3, maxRows: 8 }}
+                              />
+                            </Form.Item>
+                            <Button type="primary" danger htmlType="submit" loading={bulkRevokeDatabaseGroup.isPending}>
+                              Bulk Revoke
+                            </Button>
+                          </Form>
+                        ),
+                      },
+                    ]}
+                  />
+                </Card>
+
                 <Card title="Database Permissions (Role)" size="small">
                   <Space wrap style={{ marginBottom: 12 }}>
                     <Select
@@ -2017,6 +2372,7 @@ export function RBACPage() {
             label: 'Operation Templates',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {levelsHintTemplatesWorkflows}
                 <Card title="Grant Operation Template Permission (User)" size="small">
                   <Form
                     form={grantOperationTemplateForm}
@@ -2237,6 +2593,7 @@ export function RBACPage() {
             label: 'Workflow Templates',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {levelsHintTemplatesWorkflows}
                 <Card title="Grant Workflow Template Permission (User)" size="small">
                   <Form
                     form={grantWorkflowTemplateForm}
@@ -2457,6 +2814,7 @@ export function RBACPage() {
             label: 'Artifacts',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {levelsHintArtifacts}
                 <Card title="Grant Artifact Permission (User)" size="small">
                   <Form
                     form={grantArtifactForm}

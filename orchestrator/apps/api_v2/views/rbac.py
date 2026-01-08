@@ -484,6 +484,89 @@ class RevokeArtifactGroupPermissionRequestSerializer(serializers.Serializer):
     reason = serializers.CharField()
 
 
+class BulkUpsertResponseSerializer(serializers.Serializer):
+    created = serializers.IntegerField()
+    updated = serializers.IntegerField()
+    skipped = serializers.IntegerField()
+    total = serializers.IntegerField()
+
+
+class BulkDeleteResponseSerializer(serializers.Serializer):
+    deleted = serializers.IntegerField()
+    skipped = serializers.IntegerField()
+    total = serializers.IntegerField()
+
+
+class BulkGrantClusterGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    cluster_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    level = PermissionLevelCodeField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
+
+
+class BulkRevokeClusterGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    cluster_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    reason = serializers.CharField()
+
+
+class BulkGrantDatabaseGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    database_ids = serializers.ListField(child=serializers.CharField(), allow_empty=False)
+    level = PermissionLevelCodeField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
+
+
+class BulkRevokeDatabaseGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    database_ids = serializers.ListField(child=serializers.CharField(), allow_empty=False)
+    reason = serializers.CharField()
+
+
+class BulkGrantOperationTemplateGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    level = PermissionLevelCodeField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
+
+
+class BulkRevokeOperationTemplateGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    reason = serializers.CharField()
+
+
+class BulkGrantWorkflowTemplateGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    level = PermissionLevelCodeField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
+
+
+class BulkRevokeWorkflowTemplateGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    reason = serializers.CharField()
+
+
+class BulkGrantArtifactGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    artifact_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    level = PermissionLevelCodeField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
+
+
+class BulkRevokeArtifactGroupPermissionRequestSerializer(serializers.Serializer):
+    group_id = serializers.IntegerField()
+    artifact_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    reason = serializers.CharField()
+
+
 class ClusterPermissionListResponseSerializer(serializers.Serializer):
     permissions = ClusterPermissionSerializer(many=True)
     count = serializers.IntegerField()
@@ -507,11 +590,13 @@ class GrantClusterPermissionRequestSerializer(serializers.Serializer):
     cluster_id = serializers.UUIDField()
     level = PermissionLevelCodeField()
     notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
 
 
 class RevokeClusterPermissionRequestSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     cluster_id = serializers.UUIDField()
+    reason = serializers.CharField()
 
 
 class GrantDatabasePermissionRequestSerializer(serializers.Serializer):
@@ -519,11 +604,13 @@ class GrantDatabasePermissionRequestSerializer(serializers.Serializer):
     database_id = serializers.CharField()
     level = PermissionLevelCodeField()
     notes = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField()
 
 
 class RevokeDatabasePermissionRequestSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     database_id = serializers.CharField()
+    reason = serializers.CharField()
 
 
 class RevokePermissionResponseSerializer(serializers.Serializer):
@@ -588,7 +675,8 @@ class EffectiveAccessClusterItemSerializer(serializers.Serializer):
 class EffectiveAccessDatabaseItemSerializer(serializers.Serializer):
     database = DatabaseRefSerializer()
     level = PermissionLevelCodeField()
-    source = serializers.ChoiceField(choices=["direct", "cluster"])
+    source = serializers.ChoiceField(choices=["direct", "group", "cluster"])
+    via_cluster_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class EffectiveAccessOperationTemplateItemSerializer(serializers.Serializer):
@@ -613,6 +701,10 @@ class EffectiveAccessResponseSerializer(serializers.Serializer):
     user = RbacUserRefSerializer()
     clusters = EffectiveAccessClusterItemSerializer(many=True)
     databases = EffectiveAccessDatabaseItemSerializer(many=True)
+    databases_count = serializers.IntegerField(required=False)
+    databases_total = serializers.IntegerField(required=False)
+    databases_limit = serializers.IntegerField(required=False)
+    databases_offset = serializers.IntegerField(required=False)
     operation_templates = EffectiveAccessOperationTemplateItemSerializer(many=True, required=False)
     workflow_templates = EffectiveAccessWorkflowTemplateItemSerializer(many=True, required=False)
     artifacts = EffectiveAccessArtifactItemSerializer(many=True, required=False)
@@ -664,6 +756,97 @@ def _parse_pagination(request, default_limit: int = 50, max_limit: int = 200) ->
     limit = max(1, min(limit, max_limit))
     offset = max(0, offset)
     return _Pagination(limit=limit, offset=offset)
+
+
+def _dedupe_keep_order(items: list[Any]) -> list[Any]:
+    return list(dict.fromkeys(items))
+
+
+def _bulk_upsert_group_permissions(
+    *,
+    model,
+    group: Group,
+    object_ids: list[Any],
+    object_id_field: str,
+    level: int,
+    notes: str,
+    granted_by: User,
+) -> dict[str, int]:
+    ids = _dedupe_keep_order(object_ids)
+    if not ids:
+        return {"created": 0, "updated": 0, "skipped": 0, "total": 0}
+
+    existing_rows = list(
+        model.objects.select_for_update().filter(group=group, **{f"{object_id_field}__in": ids})
+    )
+    existing_map = {getattr(row, object_id_field): row for row in existing_rows}
+
+    to_create = []
+    to_update = []
+
+    created = 0
+    updated = 0
+    skipped = 0
+
+    for object_id in ids:
+        row = existing_map.get(object_id)
+        if row is None:
+            to_create.append(
+                model(
+                    group=group,
+                    **{
+                        object_id_field: object_id,
+                        "level": level,
+                        "notes": notes,
+                        "granted_by": granted_by,
+                    },
+                )
+            )
+            created += 1
+            continue
+
+        changed = False
+        if row.level is None or int(row.level) != int(level):
+            row.level = level
+            changed = True
+        if (row.notes or "") != notes:
+            row.notes = notes
+            changed = True
+        if row.granted_by_id != granted_by.id:
+            row.granted_by = granted_by
+            changed = True
+
+        if changed:
+            to_update.append(row)
+            updated += 1
+        else:
+            skipped += 1
+
+    if to_create:
+        model.objects.bulk_create(to_create, batch_size=1000)
+    if to_update:
+        model.objects.bulk_update(to_update, ["level", "notes", "granted_by"])
+
+    return {"created": created, "updated": updated, "skipped": skipped, "total": len(ids)}
+
+
+def _bulk_delete_group_permissions(
+    *,
+    model,
+    group: Group,
+    object_ids: list[Any],
+    object_id_field: str,
+) -> dict[str, int]:
+    ids = _dedupe_keep_order(object_ids)
+    if not ids:
+        return {"deleted": 0, "skipped": 0, "total": 0}
+
+    qs = model.objects.filter(group=group, **{f"{object_id_field}__in": ids})
+    existing_count = qs.count()
+    qs.delete()
+    deleted = existing_count
+    skipped = len(ids) - deleted
+    return {"deleted": deleted, "skipped": skipped, "total": len(ids)}
 
 
 @extend_schema(
@@ -772,6 +955,7 @@ def grant_cluster_permission(request):
     cluster_id = serializer.validated_data["cluster_id"]
     level = serializer.validated_data["level"]
     notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
 
     try:
         user = User.objects.get(id=user_id)
@@ -838,6 +1022,7 @@ def grant_cluster_permission(request):
         target_type="cluster",
         target_id=str(cluster_id),
         metadata={
+            "reason": reason,
             "user_id": user_id,
             "level": _level_code(level),
             "created": created,
@@ -882,6 +1067,7 @@ def revoke_cluster_permission(request):
 
     user_id = serializer.validated_data["user_id"]
     cluster_id = serializer.validated_data["cluster_id"]
+    reason = str(serializer.validated_data.get("reason") or "").strip()
 
     deleted, _ = ClusterPermission.objects.filter(user_id=user_id, cluster_id=cluster_id).delete()
 
@@ -891,7 +1077,7 @@ def revoke_cluster_permission(request):
         outcome="success",
         target_type="cluster",
         target_id=str(cluster_id),
-        metadata={"user_id": user_id, "deleted": deleted > 0},
+        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
     )
     return Response({"deleted": deleted > 0})
 
@@ -1007,6 +1193,7 @@ def grant_database_permission(request):
     database_id = serializer.validated_data["database_id"]
     level = serializer.validated_data["level"]
     notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
 
     try:
         user = User.objects.get(id=user_id)
@@ -1073,6 +1260,7 @@ def grant_database_permission(request):
         target_type="database",
         target_id=str(database_id),
         metadata={
+            "reason": reason,
             "user_id": user_id,
             "level": _level_code(level),
             "created": created,
@@ -1117,6 +1305,7 @@ def revoke_database_permission(request):
 
     user_id = serializer.validated_data["user_id"]
     database_id = serializer.validated_data["database_id"]
+    reason = str(serializer.validated_data.get("reason") or "").strip()
 
     deleted, _ = DatabasePermission.objects.filter(user_id=user_id, database_id=database_id).delete()
 
@@ -1126,7 +1315,7 @@ def revoke_database_permission(request):
         outcome="success",
         target_type="database",
         target_id=str(database_id),
-        metadata={"user_id": user_id, "deleted": deleted > 0},
+        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
     )
     return Response({"deleted": deleted > 0})
 
@@ -1199,6 +1388,8 @@ def list_users(request):
         OpenApiParameter(name="include_templates", type=bool, required=False, default=False),
         OpenApiParameter(name="include_workflows", type=bool, required=False, default=False),
         OpenApiParameter(name="include_artifacts", type=bool, required=False, default=False),
+        OpenApiParameter(name="limit", type=int, required=False, description="Optional pagination for databases"),
+        OpenApiParameter(name="offset", type=int, required=False, description="Optional pagination for databases"),
     ],
     responses={
         200: EffectiveAccessResponseSerializer,
@@ -1230,6 +1421,9 @@ def get_effective_access(request):
     include_templates = str(request.query_params.get("include_templates", "false")).lower() == "true"
     include_workflows = str(request.query_params.get("include_workflows", "false")).lower() == "true"
     include_artifacts = str(request.query_params.get("include_artifacts", "false")).lower() == "true"
+
+    use_db_pagination = include_databases and ("limit" in request.query_params or "offset" in request.query_params)
+    db_pagination = _parse_pagination(request) if use_db_pagination else None
 
     direct_cluster_perms = []
     direct_cluster_level_map: dict[str, int] = {}
@@ -1291,11 +1485,14 @@ def get_effective_access(request):
         clusters_out.sort(key=lambda x: x["cluster"]["name"])
 
     databases_out = []
+    databases_total: Optional[int] = None
     if include_databases:
         direct_db_perms = list(
             DatabasePermission.objects.select_related("database", "database__cluster").filter(user=target_user)
         )
-        direct_db_level_map: dict[str, int] = {str(p.database_id): int(p.level) for p in direct_db_perms if p.level is not None}
+        user_db_level_map: dict[str, int] = {
+            str(p.database_id): int(p.level) for p in direct_db_perms if p.level is not None
+        }
 
         rows = (
             DatabaseGroupPermission.objects.filter(group__user=target_user)
@@ -1305,7 +1502,7 @@ def get_effective_access(request):
         )
         group_db_level_map: dict[str, int] = {str(db_id): int(level) for db_id, level in rows if level is not None}
 
-        database_ids_direct = set(direct_db_level_map.keys()).union(group_db_level_map.keys())
+        database_ids_direct = set(user_db_level_map.keys()).union(group_db_level_map.keys())
         cluster_ids_explicit = list(cluster_explicit_level_map.keys())
 
         qs = Database.objects.select_related("cluster")
@@ -1317,15 +1514,26 @@ def get_effective_access(request):
         else:
             qs = qs.none()
 
-        databases = list(qs.order_by("name").only("id", "name", "cluster_id"))
+        qs = qs.order_by("name").only("id", "name", "cluster_id")
+        if db_pagination is not None:
+            databases_total = qs.count()
+            qs = qs[db_pagination.offset: db_pagination.offset + db_pagination.limit]
+        databases = list(qs)
 
         for db in databases:
             db_id = str(db.id)
+            user_level = user_db_level_map.get(db_id)
+            group_level = group_db_level_map.get(db_id)
+
             direct_level = None
-            if db_id in direct_db_level_map:
-                direct_level = direct_db_level_map[db_id]
-            if db_id in group_db_level_map:
-                direct_level = max(direct_level, group_db_level_map[db_id]) if direct_level is not None else group_db_level_map[db_id]
+            direct_source = None
+            levels_direct = [lvl for lvl in [user_level, group_level] if lvl is not None]
+            if levels_direct:
+                direct_level = max(levels_direct)
+                if user_level is not None and (group_level is None or user_level >= group_level):
+                    direct_source = "direct"
+                else:
+                    direct_source = "group"
 
             cluster_level = None
             if db.cluster_id:
@@ -1335,12 +1543,19 @@ def get_effective_access(request):
             if not levels:
                 continue
             effective_level = max(levels)
-            source = "direct"
+            source = direct_source or "direct"
+            via_cluster_id = None
             if cluster_level is not None and (direct_level is None or cluster_level > direct_level):
                 source = "cluster"
+                via_cluster_id = db.cluster_id
 
             databases_out.append(
-                {"database": _database_ref(db), "level": _level_code(effective_level), "source": source}
+                {
+                    "database": _database_ref(db),
+                    "level": _level_code(effective_level),
+                    "source": source,
+                    "via_cluster_id": via_cluster_id,
+                }
             )
 
     operation_templates_out = []
@@ -1449,16 +1664,21 @@ def get_effective_access(request):
                 {"artifact": {"id": art.id, "name": art.name}, "level": _level_code(effective_level), "source": source}
             )
 
-    return Response(
-        {
-            "user": _user_ref(target_user),
-            "clusters": clusters_out,
-            "databases": databases_out,
-            "operation_templates": operation_templates_out,
-            "workflow_templates": workflow_templates_out,
-            "artifacts": artifacts_out,
-        }
-    )
+    response_payload: dict[str, Any] = {
+        "user": _user_ref(target_user),
+        "clusters": clusters_out,
+        "databases": databases_out,
+        "operation_templates": operation_templates_out,
+        "workflow_templates": workflow_templates_out,
+        "artifacts": artifacts_out,
+    }
+    if db_pagination is not None:
+        response_payload["databases_count"] = len(databases_out)
+        response_payload["databases_total"] = databases_total or 0
+        response_payload["databases_limit"] = db_pagination.limit
+        response_payload["databases_offset"] = db_pagination.offset
+
+    return Response(response_payload)
 
 
 # =============================================================================
@@ -1487,6 +1707,24 @@ def _split_permission_code(code: str) -> tuple[str, str] | None:
     if not app_label or not codename:
         return None
     return app_label, codename
+
+
+def _get_permission_by_code(code: str) -> Permission | None:
+    split = _split_permission_code(code)
+    if split is None:
+        return None
+    app_label, codename = split
+    try:
+        return Permission.objects.select_related("content_type").get(
+            content_type__app_label=app_label,
+            codename=codename,
+        )
+    except Permission.DoesNotExist:
+        return None
+
+
+def _get_manage_rbac_permission() -> Permission | None:
+    return _get_permission_by_code(perms.PERM_DATABASES_MANAGE_RBAC)
 
 
 @extend_schema(
@@ -1818,6 +2056,7 @@ def list_capabilities(request):
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
         404: RbacErrorResponseSerializer,
+        409: RbacErrorResponseSerializer,
     },
 )
 @api_view(["POST"])
@@ -1887,6 +2126,51 @@ def set_role_capabilities(request):
         )
 
     resolved = [perm_map[(app_label, codename)] for _, app_label, codename in parsed]
+
+    manage_perm = _get_manage_rbac_permission()
+    if manage_perm is not None and not request.user.is_superuser:
+        existing_has_manage = group.permissions.filter(id=manage_perm.id).exists()
+        resolved_ids = {p.id for p in resolved}
+
+        will_have_manage = existing_has_manage
+        if mode == "replace":
+            will_have_manage = manage_perm.id in resolved_ids
+        elif mode == "add":
+            will_have_manage = existing_has_manage or manage_perm.id in resolved_ids
+        elif mode == "remove":
+            will_have_manage = existing_has_manage and manage_perm.id not in resolved_ids
+
+        if existing_has_manage and not will_have_manage:
+            manage_group_ids = set(Group.objects.filter(permissions=manage_perm).values_list("id", flat=True))
+            manage_group_ids.discard(group.id)
+            remaining_admin_exists = User.objects.filter(is_superuser=False).filter(
+                Q(user_permissions=manage_perm) | Q(groups__id__in=list(manage_group_ids))
+            ).distinct().exists()
+            if not remaining_admin_exists:
+                log_admin_action(
+                    request,
+                    action="rbac.set_role_capabilities",
+                    outcome="error",
+                    target_type="group",
+                    target_id=str(group.id),
+                    metadata={
+                        "reason": reason,
+                        "mode": mode,
+                        "permission_codes": permission_codes,
+                        "error": "LAST_RBAC_ADMIN",
+                    },
+                    error_message="LAST_RBAC_ADMIN",
+                )
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "LAST_RBAC_ADMIN",
+                            "message": "Refusing to remove the last non-superuser RBAC admin (databases.manage_rbac)",
+                        },
+                    },
+                    status=409,
+                )
 
     if mode == "replace":
         group.permissions.set(resolved)
@@ -1960,6 +2244,7 @@ def get_user_roles(request):
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
         404: RbacErrorResponseSerializer,
+        409: RbacErrorResponseSerializer,
     },
 )
 @api_view(["POST"])
@@ -2003,6 +2288,50 @@ def set_user_roles(request):
             {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "One or more roles not found"}},
             status=404,
         )
+
+    manage_perm = _get_manage_rbac_permission()
+    if manage_perm is not None and not request.user.is_superuser and not target_user.is_superuser:
+        manage_group_ids = set(Group.objects.filter(permissions=manage_perm).values_list("id", flat=True))
+
+        current_group_ids = set(target_user.groups.values_list("id", flat=True))
+        requested_group_ids = set(group_ids)
+
+        new_group_ids = set(current_group_ids)
+        if mode == "replace":
+            new_group_ids = set(requested_group_ids)
+        elif mode == "add":
+            new_group_ids = set(current_group_ids).union(requested_group_ids)
+        elif mode == "remove":
+            new_group_ids = set(current_group_ids).difference(requested_group_ids)
+
+        has_direct_manage_perm = target_user.user_permissions.filter(id=manage_perm.id).exists()
+        currently_has_manage = has_direct_manage_perm or bool(current_group_ids.intersection(manage_group_ids))
+        will_have_manage = has_direct_manage_perm or bool(new_group_ids.intersection(manage_group_ids))
+
+        if currently_has_manage and not will_have_manage:
+            remaining_admin_exists = User.objects.exclude(id=target_user.id).filter(is_superuser=False).filter(
+                Q(user_permissions=manage_perm) | Q(groups__id__in=list(manage_group_ids))
+            ).distinct().exists()
+            if not remaining_admin_exists:
+                log_admin_action(
+                    request,
+                    action="rbac.set_user_roles",
+                    outcome="error",
+                    target_type="user",
+                    target_id=str(target_user.id),
+                    metadata={"reason": reason, "mode": mode, "group_ids": group_ids, "error": "LAST_RBAC_ADMIN"},
+                    error_message="LAST_RBAC_ADMIN",
+                )
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "LAST_RBAC_ADMIN",
+                            "message": "Refusing to remove the last non-superuser RBAC admin (databases.manage_rbac)",
+                        },
+                    },
+                    status=409,
+                )
 
     if mode == "replace":
         target_user.groups.set(groups)
@@ -2385,6 +2714,159 @@ def revoke_cluster_group_permission(request):
 
 @extend_schema(
     tags=["v2"],
+    summary="Bulk grant cluster group permission",
+    request=BulkGrantClusterGroupPermissionRequestSerializer,
+    responses={200: BulkUpsertResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_grant_cluster_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkGrantClusterGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_grant_cluster_group_permission",
+            outcome="error",
+            target_type="cluster",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    cluster_ids = _dedupe_keep_order(serializer.validated_data["cluster_ids"])
+    level = serializer.validated_data["level"]
+    notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(Cluster.objects.filter(id__in=cluster_ids).values_list("id", flat=True))
+    missing = [str(cid) for cid in cluster_ids if cid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "CLUSTER_NOT_FOUND", "message": f"Clusters not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_upsert_group_permissions(
+            model=ClusterGroupPermission,
+            group=group,
+            object_ids=cluster_ids,
+            object_id_field="cluster_id",
+            level=level,
+            notes=notes,
+            granted_by=request.user,
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_grant_cluster_group_permission",
+        outcome="success",
+        target_type="cluster",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "notes": notes,
+            **result,
+            "cluster_ids_sample": [str(cid) for cid in cluster_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk revoke cluster group permission",
+    request=BulkRevokeClusterGroupPermissionRequestSerializer,
+    responses={200: BulkDeleteResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_revoke_cluster_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkRevokeClusterGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_revoke_cluster_group_permission",
+            outcome="error",
+            target_type="cluster",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    cluster_ids = _dedupe_keep_order(serializer.validated_data["cluster_ids"])
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(Cluster.objects.filter(id__in=cluster_ids).values_list("id", flat=True))
+    missing = [str(cid) for cid in cluster_ids if cid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "CLUSTER_NOT_FOUND", "message": f"Clusters not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_delete_group_permissions(
+            model=ClusterGroupPermission,
+            group=group,
+            object_ids=cluster_ids,
+            object_id_field="cluster_id",
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_revoke_cluster_group_permission",
+        outcome="success",
+        target_type="cluster",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            **result,
+            "cluster_ids_sample": [str(cid) for cid in cluster_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
     summary="List database group permissions",
     parameters=[
         OpenApiParameter(name="group_id", type=int, required=False),
@@ -2577,6 +3059,159 @@ def revoke_database_group_permission(request):
         metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
     )
     return Response({"deleted": deleted > 0})
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk grant database group permission",
+    request=BulkGrantDatabaseGroupPermissionRequestSerializer,
+    responses={200: BulkUpsertResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_grant_database_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkGrantDatabaseGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_grant_database_group_permission",
+            outcome="error",
+            target_type="database",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    database_ids = _dedupe_keep_order([str(v) for v in serializer.validated_data["database_ids"]])
+    level = serializer.validated_data["level"]
+    notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(str(v) for v in Database.objects.filter(id__in=database_ids).values_list("id", flat=True))
+    missing = [str(dbid) for dbid in database_ids if str(dbid) not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": f"Databases not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_upsert_group_permissions(
+            model=DatabaseGroupPermission,
+            group=group,
+            object_ids=database_ids,
+            object_id_field="database_id",
+            level=level,
+            notes=notes,
+            granted_by=request.user,
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_grant_database_group_permission",
+        outcome="success",
+        target_type="database",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "notes": notes,
+            **result,
+            "database_ids_sample": [str(dbid) for dbid in database_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk revoke database group permission",
+    request=BulkRevokeDatabaseGroupPermissionRequestSerializer,
+    responses={200: BulkDeleteResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_revoke_database_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkRevokeDatabaseGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_revoke_database_group_permission",
+            outcome="error",
+            target_type="database",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    database_ids = _dedupe_keep_order([str(v) for v in serializer.validated_data["database_ids"]])
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(str(v) for v in Database.objects.filter(id__in=database_ids).values_list("id", flat=True))
+    missing = [str(dbid) for dbid in database_ids if str(dbid) not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": f"Databases not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_delete_group_permissions(
+            model=DatabaseGroupPermission,
+            group=group,
+            object_ids=database_ids,
+            object_id_field="database_id",
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_revoke_database_group_permission",
+        outcome="success",
+        target_type="database",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            **result,
+            "database_ids_sample": [str(dbid) for dbid in database_ids[:20]],
+        },
+    )
+    return Response(result)
 
 
 # =============================================================================
@@ -2960,6 +3595,159 @@ def revoke_operation_template_group_permission(request):
 
 @extend_schema(
     tags=["v2"],
+    summary="Bulk grant operation template group permission",
+    request=BulkGrantOperationTemplateGroupPermissionRequestSerializer,
+    responses={200: BulkUpsertResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_grant_operation_template_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkGrantOperationTemplateGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_grant_operation_template_group_permission",
+            outcome="error",
+            target_type="operation_template",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    template_ids = _dedupe_keep_order(serializer.validated_data["template_ids"])
+    level = serializer.validated_data["level"]
+    notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(OperationTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
+    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_upsert_group_permissions(
+            model=OperationTemplateGroupPermission,
+            group=group,
+            object_ids=template_ids,
+            object_id_field="template_id",
+            level=level,
+            notes=notes,
+            granted_by=request.user,
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_grant_operation_template_group_permission",
+        outcome="success",
+        target_type="operation_template",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "notes": notes,
+            **result,
+            "template_ids_sample": [str(tid) for tid in template_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk revoke operation template group permission",
+    request=BulkRevokeOperationTemplateGroupPermissionRequestSerializer,
+    responses={200: BulkDeleteResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_revoke_operation_template_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkRevokeOperationTemplateGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_revoke_operation_template_group_permission",
+            outcome="error",
+            target_type="operation_template",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    template_ids = _dedupe_keep_order(serializer.validated_data["template_ids"])
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(OperationTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
+    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_delete_group_permissions(
+            model=OperationTemplateGroupPermission,
+            group=group,
+            object_ids=template_ids,
+            object_id_field="template_id",
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_revoke_operation_template_group_permission",
+        outcome="success",
+        target_type="operation_template",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            **result,
+            "template_ids_sample": [str(tid) for tid in template_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
     summary="List workflow template permissions (user)",
     parameters=[
         OpenApiParameter(name="user_id", type=int, required=False),
@@ -3334,6 +4122,159 @@ def revoke_workflow_template_group_permission(request):
 
 @extend_schema(
     tags=["v2"],
+    summary="Bulk grant workflow template group permission",
+    request=BulkGrantWorkflowTemplateGroupPermissionRequestSerializer,
+    responses={200: BulkUpsertResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_grant_workflow_template_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkGrantWorkflowTemplateGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_grant_workflow_template_group_permission",
+            outcome="error",
+            target_type="workflow_template",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    template_ids = _dedupe_keep_order(serializer.validated_data["template_ids"])
+    level = serializer.validated_data["level"]
+    notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(WorkflowTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
+    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_upsert_group_permissions(
+            model=WorkflowTemplateGroupPermission,
+            group=group,
+            object_ids=template_ids,
+            object_id_field="workflow_template_id",
+            level=level,
+            notes=notes,
+            granted_by=request.user,
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_grant_workflow_template_group_permission",
+        outcome="success",
+        target_type="workflow_template",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "notes": notes,
+            **result,
+            "template_ids_sample": [str(tid) for tid in template_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk revoke workflow template group permission",
+    request=BulkRevokeWorkflowTemplateGroupPermissionRequestSerializer,
+    responses={200: BulkDeleteResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_revoke_workflow_template_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkRevokeWorkflowTemplateGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_revoke_workflow_template_group_permission",
+            outcome="error",
+            target_type="workflow_template",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    template_ids = _dedupe_keep_order(serializer.validated_data["template_ids"])
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(WorkflowTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
+    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_delete_group_permissions(
+            model=WorkflowTemplateGroupPermission,
+            group=group,
+            object_ids=template_ids,
+            object_id_field="workflow_template_id",
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_revoke_workflow_template_group_permission",
+        outcome="success",
+        target_type="workflow_template",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            **result,
+            "template_ids_sample": [str(tid) for tid in template_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
     summary="List artifact permissions (user)",
     parameters=[
         OpenApiParameter(name="user_id", type=int, required=False),
@@ -3704,6 +4645,159 @@ def revoke_artifact_group_permission(request):
         metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
     )
     return Response({"deleted": deleted > 0})
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk grant artifact group permission",
+    request=BulkGrantArtifactGroupPermissionRequestSerializer,
+    responses={200: BulkUpsertResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_grant_artifact_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkGrantArtifactGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_grant_artifact_group_permission",
+            outcome="error",
+            target_type="artifact",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    artifact_ids = _dedupe_keep_order(serializer.validated_data["artifact_ids"])
+    level = serializer.validated_data["level"]
+    notes = serializer.validated_data.get("notes", "")
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(Artifact.objects.filter(id__in=artifact_ids, is_deleted=False).values_list("id", flat=True))
+    missing = [str(aid) for aid in artifact_ids if aid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "ARTIFACT_NOT_FOUND", "message": f"Artifacts not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_upsert_group_permissions(
+            model=ArtifactGroupPermission,
+            group=group,
+            object_ids=artifact_ids,
+            object_id_field="artifact_id",
+            level=level,
+            notes=notes,
+            granted_by=request.user,
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_grant_artifact_group_permission",
+        outcome="success",
+        target_type="artifact",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "notes": notes,
+            **result,
+            "artifact_ids_sample": [str(aid) for aid in artifact_ids[:20]],
+        },
+    )
+    return Response(result)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bulk revoke artifact group permission",
+    request=BulkRevokeArtifactGroupPermissionRequestSerializer,
+    responses={200: BulkDeleteResponseSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_revoke_artifact_group_permission(request):
+    denied = _ensure_manage_rbac(request)
+    if denied:
+        return denied
+
+    serializer = BulkRevokeArtifactGroupPermissionRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        log_admin_action(
+            request,
+            action="rbac.bulk_revoke_artifact_group_permission",
+            outcome="error",
+            target_type="artifact",
+            target_id="bulk",
+            metadata={"error": "VALIDATION_ERROR"},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(serializer.errors)}},
+            status=400,
+        )
+
+    group_id = serializer.validated_data["group_id"]
+    artifact_ids = _dedupe_keep_order(serializer.validated_data["artifact_ids"])
+    reason = str(serializer.validated_data.get("reason") or "").strip()
+
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response(
+            {"success": False, "error": {"code": "GROUP_NOT_FOUND", "message": "Role not found"}},
+            status=404,
+        )
+
+    found_ids = set(Artifact.objects.filter(id__in=artifact_ids, is_deleted=False).values_list("id", flat=True))
+    missing = [str(aid) for aid in artifact_ids if aid not in found_ids]
+    if missing:
+        return Response(
+            {"success": False, "error": {"code": "ARTIFACT_NOT_FOUND", "message": f"Artifacts not found: {missing}"}},
+            status=404,
+        )
+
+    with transaction.atomic():
+        result = _bulk_delete_group_permissions(
+            model=ArtifactGroupPermission,
+            group=group,
+            object_ids=artifact_ids,
+            object_id_field="artifact_id",
+        )
+
+    log_admin_action(
+        request,
+        action="rbac.bulk_revoke_artifact_group_permission",
+        outcome="success",
+        target_type="artifact",
+        target_id="bulk",
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            **result,
+            "artifact_ids_sample": [str(aid) for aid in artifact_ids[:20]],
+        },
+    )
+    return Response(result)
 
 
 # =============================================================================

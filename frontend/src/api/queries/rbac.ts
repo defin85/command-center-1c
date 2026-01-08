@@ -406,6 +406,19 @@ export type DatabaseGroupPermission = {
   notes?: string
 }
 
+export type BulkUpsertResult = {
+  created: number
+  updated: number
+  skipped: number
+  total: number
+}
+
+export type BulkDeleteResult = {
+  deleted: number
+  skipped: number
+  total: number
+}
+
 export function useClusterGroupPermissions(
   filters?: { group_id?: number; cluster_id?: string; level?: string; search?: string; limit?: number; offset?: number },
   options?: { enabled?: boolean }
@@ -444,6 +457,38 @@ export function useRevokeClusterGroupPermission() {
   return useMutation({
     mutationFn: async (data: { group_id: number; cluster_id: string; reason: string }): Promise<{ deleted: boolean }> => {
       const response = await apiClient.post('/api/v2/rbac/revoke-cluster-group-permission/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rbac.all })
+    },
+  })
+}
+
+export function useBulkGrantClusterGroupPermission() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: {
+      group_id: number
+      cluster_ids: string[]
+      level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
+      notes?: string
+      reason: string
+    }): Promise<BulkUpsertResult> => {
+      const response = await apiClient.post('/api/v2/rbac/bulk-grant-cluster-group-permission/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rbac.all })
+    },
+  })
+}
+
+export function useBulkRevokeClusterGroupPermission() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: { group_id: number; cluster_ids: string[]; reason: string }): Promise<BulkDeleteResult> => {
+      const response = await apiClient.post('/api/v2/rbac/bulk-revoke-cluster-group-permission/', data)
       return response.data
     },
     onSuccess: () => {
@@ -498,6 +543,38 @@ export function useRevokeDatabaseGroupPermission() {
   return useMutation({
     mutationFn: async (data: { group_id: number; database_id: string; reason: string }): Promise<{ deleted: boolean }> => {
       const response = await apiClient.post('/api/v2/rbac/revoke-database-group-permission/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rbac.all })
+    },
+  })
+}
+
+export function useBulkGrantDatabaseGroupPermission() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: {
+      group_id: number
+      database_ids: string[]
+      level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
+      notes?: string
+      reason: string
+    }): Promise<BulkUpsertResult> => {
+      const response = await apiClient.post('/api/v2/rbac/bulk-grant-database-group-permission/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rbac.all })
+    },
+  })
+}
+
+export function useBulkRevokeDatabaseGroupPermission() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: { group_id: number; database_ids: string[]; reason: string }): Promise<BulkDeleteResult> => {
+      const response = await apiClient.post('/api/v2/rbac/bulk-revoke-database-group-permission/', data)
       return response.data
     },
     onSuccess: () => {

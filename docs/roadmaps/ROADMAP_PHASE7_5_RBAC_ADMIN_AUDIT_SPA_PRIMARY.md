@@ -1,10 +1,10 @@
 # Roadmap: Phase 7.5 — Администрирование RBAC (SPA-primary) и аудит
-> **Статус:** DONE (MVP)
-> **Версия:** 1.1
+> **Статус:** DONE
+> **Версия:** 1.2
 > **Создан:** 2026-01-07
 > **Обновлён:** 2026-01-08
 > **Автор:** Codex
-> **Реализация:** `5ceaee1` (Phase 7.5: RBAC admin SPA + audit)
+> **Реализация:** `5ceaee1` (MVP) + последующие коммиты Phase 7.5
 
 Связанные документы/код:
 - `docs/roadmaps/ROADMAP_PHASE7_RBAC_GOVERNANCE.md` (родительский roadmap Phase 7)
@@ -17,19 +17,20 @@
 
 ## Реальный статус (фикс)
 
-Реализовано (MVP):
+Реализовано (DONE):
 - SPA RBAC админка и доступ к ней гейтится по `databases.manage_rbac` (через `user.has_perm`), а не по `is_staff`.
 - RBAC API v2 расширен: роли/capabilities, назначение ролей пользователям, refs для селектов SPA, bindings (user+group) для Clusters/Databases/Templates/Workflows/Artifacts, read‑API аудита.
-- Audit: для большей части write‑операций RBAC API добавлены `reason` и запись в `AdminActionAuditLog`; добавлен просмотр аудита из SPA.
+- Write‑операции RBAC API: везде обязателен `reason` (включая direct user‑bindings для Cluster/Database и bulk endpoints); пишется `AdminActionAuditLog`.
+- Self‑lockout guardrail: защита “последний RBAC admin” для `set-user-roles` и `set-role-capabilities` (409 `LAST_RBAC_ADMIN`, break-glass через superuser).
+- Bulk endpoints: массовые grant/revoke group bindings (Clusters/Databases/Templates/Workflows/Artifacts) + агрегированный audit (без N событий на каждый объект).
+- Effective access: include‑флаги + пагинация по databases через `limit/offset` + `source=direct|group|cluster` (+ `via_cluster_id` для наследования).
+- SPA UX: доменно‑специфичные подсказки уровней `VIEW/OPERATE/MANAGE/ADMIN` + bulk‑формы для Clusters/Databases (role bindings).
 - Contracts/generation: актуализирован OpenAPI, добавлен `drf-spectacular` postprocessing hook (orval‑friendly), генерация клиентов/роутов проходит.
 - Тесты: добавлен pytest coverage для RBAC admin API.
 
-Осталось (если доводить до “полного DONE” из текста ниже):
-- Привести к единому правилу `reason` для всех write (в т.ч. direct user‑bindings для Cluster/Database) и доработать соответствующие формы в SPA.
-- Добавить guardrail против self-lockout (“последний админ RBAC”) для операций, меняющих источник `databases.manage_rbac` (минимум `set-user-roles`).
-- Реализовать bulk endpoints + (опц.) `preview-change` для массовых назначений (особенно для `Database`).
-- Добавить пагинацию/лимиты для high-cardinality (например effective access по DB) + (опц.) UI‑preview “effective access”.
-- Улучшить доменно‑специфичные подсказки уровней в UI (сейчас MVP-уровень).
+Опционально (можно делать позже, не блокирует Phase 7.5):
+- `preview-change` (dry-run) для bulk операций.
+- UI‑tab “Effective access preview” (пользователь‑центричный просмотр с пагинацией).
 
 ## Analysis
 
