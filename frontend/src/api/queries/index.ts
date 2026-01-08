@@ -30,7 +30,7 @@ export const queryKeys = {
     operationTemplatePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'operation-template', filters] as const,
     workflowTemplatePermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'workflow-template', filters] as const,
     artifactPermissions: (filters?: unknown) => [...queryKeys.rbac.all, 'artifact', filters] as const,
-    effectiveAccess: (userId?: number) => [...queryKeys.rbac.all, 'effective-access', userId] as const,
+    effectiveAccess: (filters?: unknown) => [...queryKeys.rbac.all, 'effective-access', filters] as const,
     canManage: () => [...queryKeys.rbac.all, 'can-manage'] as const,
     users: (filters?: { search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.rbac.all, 'users', filters] as const

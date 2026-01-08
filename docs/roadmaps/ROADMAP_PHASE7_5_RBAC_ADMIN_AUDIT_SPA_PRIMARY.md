@@ -24,13 +24,12 @@
 - Self‑lockout guardrail: защита “последний RBAC admin” для `set-user-roles` и `set-role-capabilities` (409 `LAST_RBAC_ADMIN`, break-glass через superuser).
 - Bulk endpoints: массовые grant/revoke group bindings (Clusters/Databases/Templates/Workflows/Artifacts) + агрегированный audit (без N событий на каждый объект).
 - Effective access: include‑флаги + пагинация по databases через `limit/offset` + `source=direct|group|cluster` (+ `via_cluster_id` для наследования).
-- SPA UX: доменно‑специфичные подсказки уровней `VIEW/OPERATE/MANAGE/ADMIN` + bulk‑формы для Clusters/Databases (role bindings).
+- SPA UX: доменно‑специфичные подсказки уровней `VIEW/OPERATE/MANAGE/ADMIN`, bulk‑формы для Clusters/Databases (role bindings) и UI‑tab “Effective access preview”.
 - Contracts/generation: актуализирован OpenAPI, добавлен `drf-spectacular` postprocessing hook (orval‑friendly), генерация клиентов/роутов проходит.
 - Тесты: добавлен pytest coverage для RBAC admin API.
 
 Опционально (можно делать позже, не блокирует Phase 7.5):
 - `preview-change` (dry-run) для bulk операций.
-- UI‑tab “Effective access preview” (пользователь‑центричный просмотр с пагинацией).
 
 ## Analysis
 

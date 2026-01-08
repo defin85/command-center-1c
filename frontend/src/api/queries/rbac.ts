@@ -60,18 +60,42 @@ export function useEffectiveAccess(
   options?: {
     includeDatabases?: boolean
     includeClusters?: boolean
+    includeTemplates?: boolean
+    includeWorkflows?: boolean
+    includeArtifacts?: boolean
+    limit?: number
+    offset?: number
     enabled?: boolean
   }
 ) {
   const includeDatabases = options?.includeDatabases ?? false
   const includeClusters = options?.includeClusters ?? true
+  const includeTemplates = options?.includeTemplates ?? false
+  const includeWorkflows = options?.includeWorkflows ?? false
+  const includeArtifacts = options?.includeArtifacts ?? false
+  const limit = options?.limit
+  const offset = options?.offset
   return useQuery({
-    queryKey: queryKeys.rbac.effectiveAccess(userId),
+    queryKey: queryKeys.rbac.effectiveAccess({
+      user_id: userId,
+      include_databases: includeDatabases,
+      include_clusters: includeClusters,
+      include_templates: includeTemplates,
+      include_workflows: includeWorkflows,
+      include_artifacts: includeArtifacts,
+      limit,
+      offset,
+    }),
     queryFn: (): Promise<EffectiveAccessResponse> =>
       api.getRbacGetEffectiveAccess({
         user_id: userId,
         include_databases: includeDatabases,
         include_clusters: includeClusters,
+        include_templates: includeTemplates,
+        include_workflows: includeWorkflows,
+        include_artifacts: includeArtifacts,
+        limit,
+        offset,
       }),
     enabled: options?.enabled ?? true,
   })

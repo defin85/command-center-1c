@@ -4,6 +4,11 @@ import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
 import type { DatabasePermission } from '../../api/generated/model/databasePermission'
+import type { EffectiveAccessClusterItem } from '../../api/generated/model/effectiveAccessClusterItem'
+import type { EffectiveAccessDatabaseItem } from '../../api/generated/model/effectiveAccessDatabaseItem'
+import type { EffectiveAccessOperationTemplateItem } from '../../api/generated/model/effectiveAccessOperationTemplateItem'
+import type { EffectiveAccessWorkflowTemplateItem } from '../../api/generated/model/effectiveAccessWorkflowTemplateItem'
+import type { EffectiveAccessArtifactItem } from '../../api/generated/model/effectiveAccessArtifactItem'
 import { useMe } from '../../api/queries/me'
 import {
   useAdminAuditLog,
@@ -11,6 +16,7 @@ import {
   useCapabilities,
   useClusterPermissions,
   useClusterGroupPermissions,
+  useEffectiveAccess,
   useBulkGrantClusterGroupPermission,
   useBulkRevokeClusterGroupPermission,
   useCreateRole,
@@ -178,6 +184,16 @@ export function RBACPage() {
   const [userSearch, setUserSearch] = useState<string>('')
   const [roleSearch, setRoleSearch] = useState<string>('')
   const [selectedRolesUserId, setSelectedRolesUserId] = useState<number | undefined>()
+
+  const [selectedEffectiveUserId, setSelectedEffectiveUserId] = useState<number | undefined>()
+  const [effectiveIncludeClusters, setEffectiveIncludeClusters] = useState<boolean>(true)
+  const [effectiveIncludeDatabases, setEffectiveIncludeDatabases] = useState<boolean>(true)
+  const [effectiveIncludeOperationTemplates, setEffectiveIncludeOperationTemplates] = useState<boolean>(false)
+  const [effectiveIncludeWorkflowTemplates, setEffectiveIncludeWorkflowTemplates] = useState<boolean>(false)
+  const [effectiveIncludeArtifacts, setEffectiveIncludeArtifacts] = useState<boolean>(false)
+  const [effectiveDbPage, setEffectiveDbPage] = useState<number>(1)
+  const [effectiveDbPageSize, setEffectiveDbPageSize] = useState<number>(50)
+
   const [roleEditorOpen, setRoleEditorOpen] = useState<boolean>(false)
   const [roleEditorRoleId, setRoleEditorRoleId] = useState<number | null>(null)
   const [roleEditorPermissionCodes, setRoleEditorPermissionCodes] = useState<string[]>([])
@@ -1418,6 +1434,17 @@ export function RBACPage() {
 
   const userRolesQuery = useUserRoles(selectedRolesUserId, { enabled: canManageRbac && Boolean(selectedRolesUserId) })
 
+  const effectiveAccessQuery = useEffectiveAccess(selectedEffectiveUserId, {
+    includeDatabases: effectiveIncludeDatabases,
+    includeClusters: effectiveIncludeClusters,
+    includeTemplates: effectiveIncludeOperationTemplates,
+    includeWorkflows: effectiveIncludeWorkflowTemplates,
+    includeArtifacts: effectiveIncludeArtifacts,
+    limit: effectiveIncludeDatabases ? effectiveDbPageSize : undefined,
+    offset: effectiveIncludeDatabases ? (effectiveDbPage - 1) * effectiveDbPageSize : undefined,
+    enabled: canManageRbac && Boolean(selectedEffectiveUserId),
+  })
+
   const clusterGroupPermissionsQuery = useClusterGroupPermissions({
     group_id: clusterGroupList.group_id,
     cluster_id: clusterGroupList.cluster_id,
@@ -1527,6 +1554,10 @@ export function RBACPage() {
     return Array.from(map.values())
   }, [usersQuery.data?.users, editingIbUser?.user, userRolesQuery.data?.user])
 
+  const clusterNameById = useMemo(() => (
+    new Map(clusters.map((c) => [c.id, c.name]))
+  ), [clusters])
+
   const roles = rolesQuery.data?.roles ?? []
   const visibleRoles = useMemo(() => {
     const query = roleSearch.trim().toLowerCase()
@@ -1541,6 +1572,124 @@ export function RBACPage() {
   const capabilityOptions = useMemo(() => (
     capabilities.map((cap) => ({ label: cap.exists ? cap.code : `${cap.code} (missing)`, value: cap.code }))
   ), [capabilities])
+
+  const effectiveClustersColumns: ColumnsType<EffectiveAccessClusterItem> = useMemo(() => [
+    {
+      title: 'Cluster',
+      key: 'cluster',
+      render: (_: unknown, row) => (
+        <span>
+          {row.cluster.name} <Text type="secondary">#{row.cluster.id}</Text>
+        </span>
+      ),
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+  ], [])
+
+  const effectiveDatabasesColumns: ColumnsType<EffectiveAccessDatabaseItem> = useMemo(() => [
+    {
+      title: 'Database',
+      key: 'database',
+      render: (_: unknown, row) => (
+        <span>
+          {row.database.name} <Text type="secondary">#{row.database.id}</Text>
+        </span>
+      ),
+    },
+    {
+      title: 'Cluster',
+      key: 'cluster',
+      render: (_: unknown, row) => {
+        const clusterId = row.database.cluster_id
+        if (!clusterId) return '-'
+        const name = clusterNameById.get(clusterId)
+        return (
+          <span>
+            {name ?? '-'} <Text type="secondary">#{clusterId}</Text>
+          </span>
+        )
+      },
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => {
+        const source = row.source
+        const color = source === 'direct' ? 'blue' : source === 'group' ? 'purple' : 'gold'
+        return <Tag color={color}>{source}</Tag>
+      },
+    },
+    {
+      title: 'Via cluster',
+      key: 'via_cluster_id',
+      render: (_: unknown, row) => {
+        if (row.source !== 'cluster') return '-'
+        const viaId = row.via_cluster_id
+        if (!viaId) return '-'
+        const name = clusterNameById.get(viaId)
+        return (
+          <span>
+            {name ?? '-'} <Text type="secondary">#{viaId}</Text>
+          </span>
+        )
+      },
+    },
+  ], [clusterNameById])
+
+  const effectiveOperationTemplatesColumns: ColumnsType<EffectiveAccessOperationTemplateItem> = useMemo(() => [
+    {
+      title: 'Template',
+      key: 'template',
+      render: (_: unknown, row) => (
+        <span>
+          {row.template.name} <Text type="secondary">#{row.template.id}</Text>
+        </span>
+      ),
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+    },
+  ], [])
+
+  const effectiveWorkflowTemplatesColumns: ColumnsType<EffectiveAccessWorkflowTemplateItem> = useMemo(() => [
+    {
+      title: 'Template',
+      key: 'template',
+      render: (_: unknown, row) => (
+        <span>
+          {row.template.name} <Text type="secondary">#{row.template.id}</Text>
+        </span>
+      ),
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+    },
+  ], [])
+
+  const effectiveArtifactsColumns: ColumnsType<EffectiveAccessArtifactItem> = useMemo(() => [
+    {
+      title: 'Artifact',
+      key: 'artifact',
+      render: (_: unknown, row) => (
+        <span>
+          {row.artifact.name} <Text type="secondary">#{row.artifact.id}</Text>
+        </span>
+      ),
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+    },
+  ], [])
 
   const selectedRoleForEditor = roleEditorRoleId
     ? roles.find((role) => role.id === roleEditorRoleId) ?? null
@@ -1756,6 +1905,177 @@ export function RBACPage() {
                     pagination={{ pageSize: 50 }}
                   />
                 </Card>
+              </Space>
+            ),
+          },
+          {
+            key: 'effective-access',
+            label: 'Effective access',
+            children: (
+              <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                <Card title="Effective access preview" size="small">
+                  <Space wrap align="start">
+                    <Select
+                      style={{ width: 260 }}
+                      placeholder="User"
+                      allowClear
+                      showSearch
+                      filterOption={false}
+                      onSearch={setUserSearch}
+                      value={selectedEffectiveUserId}
+                      onChange={(value) => {
+                        setSelectedEffectiveUserId(value)
+                        setEffectiveDbPage(1)
+                      }}
+                      options={userOptions}
+                      loading={usersQuery.isFetching}
+                    />
+
+                    <Space>
+                      <Text>Clusters</Text>
+                      <Switch
+                        checked={effectiveIncludeClusters}
+                        onChange={(checked) => setEffectiveIncludeClusters(checked)}
+                      />
+                    </Space>
+                    <Space>
+                      <Text>Databases</Text>
+                      <Switch
+                        checked={effectiveIncludeDatabases}
+                        onChange={(checked) => {
+                          setEffectiveIncludeDatabases(checked)
+                          setEffectiveDbPage(1)
+                        }}
+                      />
+                    </Space>
+                    <Space>
+                      <Text>Operation templates</Text>
+                      <Switch
+                        checked={effectiveIncludeOperationTemplates}
+                        onChange={(checked) => setEffectiveIncludeOperationTemplates(checked)}
+                      />
+                    </Space>
+                    <Space>
+                      <Text>Workflow templates</Text>
+                      <Switch
+                        checked={effectiveIncludeWorkflowTemplates}
+                        onChange={(checked) => setEffectiveIncludeWorkflowTemplates(checked)}
+                      />
+                    </Space>
+                    <Space>
+                      <Text>Artifacts</Text>
+                      <Switch
+                        checked={effectiveIncludeArtifacts}
+                        onChange={(checked) => setEffectiveIncludeArtifacts(checked)}
+                      />
+                    </Space>
+
+                    <Button
+                      onClick={() => effectiveAccessQuery.refetch()}
+                      loading={effectiveAccessQuery.isFetching}
+                      disabled={!selectedEffectiveUserId}
+                    >
+                      Refresh
+                    </Button>
+                  </Space>
+
+                  {!selectedEffectiveUserId && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="info"
+                      message="Выберите пользователя для preview"
+                      description="Показывает итоговый доступ с учётом direct/group/inherited (cluster) источников."
+                    />
+                  )}
+
+                  {effectiveAccessQuery.error && selectedEffectiveUserId && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="warning"
+                      message="Не удалось загрузить effective access"
+                    />
+                  )}
+                </Card>
+
+                {selectedEffectiveUserId && (
+                  <>
+                    {effectiveIncludeClusters && (
+                      <Card title={`Clusters (${effectiveAccessQuery.data?.clusters?.length ?? 0})`} size="small">
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.cluster.id}
+                          columns={effectiveClustersColumns}
+                          dataSource={effectiveAccessQuery.data?.clusters ?? []}
+                          loading={effectiveAccessQuery.isFetching}
+                          pagination={{ pageSize: 50 }}
+                        />
+                      </Card>
+                    )}
+
+                    {effectiveIncludeDatabases && (
+                      <Card title="Databases" size="small">
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.database.id}
+                          columns={effectiveDatabasesColumns}
+                          dataSource={effectiveAccessQuery.data?.databases ?? []}
+                          loading={effectiveAccessQuery.isFetching}
+                          pagination={{
+                            current: effectiveDbPage,
+                            pageSize: effectiveDbPageSize,
+                            total: typeof effectiveAccessQuery.data?.databases_total === 'number'
+                              ? effectiveAccessQuery.data.databases_total
+                              : (effectiveAccessQuery.data?.databases ?? []).length,
+                            showSizeChanger: true,
+                            onChange: (page, pageSize) => {
+                              setEffectiveDbPage(page)
+                              setEffectiveDbPageSize(pageSize)
+                            },
+                          }}
+                        />
+                      </Card>
+                    )}
+
+                    {effectiveIncludeOperationTemplates && (
+                      <Card title="Operation templates" size="small">
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.template.id}
+                          columns={effectiveOperationTemplatesColumns}
+                          dataSource={effectiveAccessQuery.data?.operation_templates ?? []}
+                          loading={effectiveAccessQuery.isFetching}
+                          pagination={{ pageSize: 50 }}
+                        />
+                      </Card>
+                    )}
+
+                    {effectiveIncludeWorkflowTemplates && (
+                      <Card title="Workflow templates" size="small">
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.template.id}
+                          columns={effectiveWorkflowTemplatesColumns}
+                          dataSource={effectiveAccessQuery.data?.workflow_templates ?? []}
+                          loading={effectiveAccessQuery.isFetching}
+                          pagination={{ pageSize: 50 }}
+                        />
+                      </Card>
+                    )}
+
+                    {effectiveIncludeArtifacts && (
+                      <Card title="Artifacts" size="small">
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.artifact.id}
+                          columns={effectiveArtifactsColumns}
+                          dataSource={effectiveAccessQuery.data?.artifacts ?? []}
+                          loading={effectiveAccessQuery.isFetching}
+                          pagination={{ pageSize: 50 }}
+                        />
+                      </Card>
+                    )}
+                  </>
+                )}
               </Space>
             ),
           },
