@@ -5,11 +5,45 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/commandcenter1c/commandcenter/shared/credentials"
 	"github.com/commandcenter1c/commandcenter/shared/models"
 )
+
+type fakeStorage struct {
+	resolveInputRequested string
+	resolveInputResolved  string
+	resolveInputCleanup   func()
+	resolveInputErr       error
+
+	prepareRequestedPath string
+	prepareOutputPath    string
+	prepareArtifactPath  string
+	prepareFinalize      func(ctx context.Context) error
+	prepareCleanup       func()
+	prepareErr           error
+}
+
+func (s *fakeStorage) ResolveInput(_ context.Context, inputPath string) (string, func(), error) {
+	s.resolveInputRequested = inputPath
+	if s.resolveInputCleanup == nil {
+		s.resolveInputCleanup = func() {}
+	}
+	return s.resolveInputResolved, s.resolveInputCleanup, s.resolveInputErr
+}
+
+func (s *fakeStorage) PrepareOutput(_ context.Context, outputPath, _ string, _ string) (string, string, func(ctx context.Context) error, func(), error) {
+	s.prepareRequestedPath = outputPath
+	if s.prepareFinalize == nil {
+		s.prepareFinalize = func(context.Context) error { return nil }
+	}
+	if s.prepareCleanup == nil {
+		s.prepareCleanup = func() {}
+	}
+	return s.prepareOutputPath, s.prepareArtifactPath, s.prepareFinalize, s.prepareCleanup, s.prepareErr
+}
 
 func TestExtractDBConfigMissingFields(t *testing.T) {
 	_, err := extractDBConfig(map[string]interface{}{}, &credentials.DatabaseCredentials{})
@@ -106,6 +140,157 @@ func TestBuildRequestIbcmdCliRejectsEmptyArgv(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestBuildRequestIbcmdCliInfobaseDumpUsesStoragePrepareOutput(t *testing.T) {
+	store := &fakeStorage{
+		prepareOutputPath:   "/tmp/out.dt",
+		prepareArtifactPath: "s3://bucket/out.dt",
+	}
+
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.dump",
+				"argv": []string{
+					"infobase",
+					"dump",
+					"--dbms=PostgreSQL",
+					"--db-pwd=secret",
+					"db-1/backup.dt",
+				},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		store,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+	if req.ArtifactPath != "s3://bucket/out.dt" {
+		t.Fatalf("expected artifact path, got %q", req.ArtifactPath)
+	}
+	if store.prepareRequestedPath != "db-1/backup.dt" {
+		t.Fatalf("expected PrepareOutput requested path to match argv positional, got %q", store.prepareRequestedPath)
+	}
+	expected := []string{
+		"infobase",
+		"dump",
+		"--dbms=PostgreSQL",
+		"--db-pwd=secret",
+		"/tmp/out.dt",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+}
+
+func TestBuildRequestIbcmdCliInfobaseRestoreUsesStorageResolveInput(t *testing.T) {
+	cleanupCalled := false
+	store := &fakeStorage{
+		resolveInputCleanup: func() { cleanupCalled = true },
+		resolveInputResolved: "/tmp/input.dt",
+	}
+
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.restore",
+				"argv": []string{
+					"infobase",
+					"restore",
+					"--dbms=PostgreSQL",
+					"--db-pwd=secret",
+					"s3://bucket/db-1/input.dt",
+				},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		store,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+	if store.resolveInputRequested != "s3://bucket/db-1/input.dt" {
+		t.Fatalf("expected ResolveInput requested path, got %q", store.resolveInputRequested)
+	}
+	expected := []string{
+		"infobase",
+		"restore",
+		"--dbms=PostgreSQL",
+		"--db-pwd=secret",
+		"/tmp/input.dt",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+
+	if req.inputCleanup == nil {
+		t.Fatalf("expected input cleanup")
+	}
+	req.inputCleanup()
+	if !cleanupCalled {
+		t.Fatalf("expected cleanup to be called")
+	}
+}
+
+func TestBuildRequestIbcmdCliInfobaseDumpRejectsArtifactOutput(t *testing.T) {
+	store := &fakeStorage{prepareOutputPath: "/tmp/out.dt", prepareArtifactPath: "s3://bucket/out.dt"}
+
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.dump",
+				"argv": []string{
+					"infobase",
+					"dump",
+					"artifact://out.dt",
+				},
+			},
+		},
+	}
+
+	_, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		store,
+	)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "artifact:// output is not supported") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

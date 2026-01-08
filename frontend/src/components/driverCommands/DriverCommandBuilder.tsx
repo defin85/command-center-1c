@@ -1,12 +1,20 @@
 import '../../lib/monacoEnv'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 
 import { maskArgv } from '../../lib/masking'
-import { useDriverCommands, useArtifacts, useArtifactAliases, useArtifactVersions } from '../../api/queries'
+import {
+  useDriverCommands,
+  useArtifacts,
+  useArtifactAliases,
+  useArtifactVersions,
+  useDriverCommandShortcuts,
+  useCreateDriverCommandShortcut,
+  useDeleteDriverCommandShortcut,
+} from '../../api/queries'
 import type {
   DriverCommandParamV2,
   DriverCommandV2,
@@ -815,6 +823,11 @@ export function DriverCommandBuilder({
   const catalog = driverCommandsQuery.data?.catalog
   const commandsById = useMemo(() => catalog?.commands_by_id ?? EMPTY_COMMANDS_BY_ID, [catalog?.commands_by_id])
 
+  const shortcutsEnabled = driver === 'ibcmd'
+  const shortcutsQuery = useDriverCommandShortcuts('ibcmd', shortcutsEnabled)
+  const createShortcutMutation = useCreateDriverCommandShortcut('ibcmd')
+  const deleteShortcutMutation = useDeleteDriverCommandShortcut('ibcmd')
+
   const mode: DriverCommandBuilderMode = config.mode ?? 'guided'
   const commandId = (config.command_id || '').trim()
   const params = useMemo(() => (config.params ?? EMPTY_PARAMS) as Record<string, unknown>, [config.params])
@@ -823,6 +836,20 @@ export function DriverCommandBuilder({
 
   const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
   const selectedCommand: DriverCommandV2 | undefined = commandId ? commandsById[commandId] : undefined
+
+  const shortcutItems = shortcutsQuery.data?.items ?? []
+  const shortcutsById = useMemo(() => {
+    const map: Record<string, { id: string; command_id: string; title: string }> = {}
+    for (const item of shortcutItems) {
+      map[item.id] = { id: item.id, command_id: item.command_id, title: item.title }
+    }
+    return map
+  }, [shortcutItems])
+  const shortcutOptions = useMemo(
+    () => shortcutItems.map((item) => ({ value: item.id, label: item.title })),
+    [shortcutItems]
+  )
+  const [selectedShortcutId, setSelectedShortcutId] = useState<string | undefined>(undefined)
 
   const scope: DriverCommandScope | undefined = selectedCommand?.scope
   const risk: DriverCommandRiskLevel | undefined = selectedCommand?.risk_level
@@ -852,6 +879,13 @@ export function DriverCommandBuilder({
       onChange({ confirm_dangerous: false })
     }
   }, [confirmDangerous, onChange, risk])
+
+  useEffect(() => {
+    if (!selectedShortcutId) return
+    if (!shortcutsById[selectedShortcutId]) {
+      setSelectedShortcutId(undefined)
+    }
+  }, [selectedShortcutId, shortcutsById])
 
   const [argsEditorRef, setArgsEditorRef] = useState<{
     monaco: MonacoInstance
@@ -1143,6 +1177,84 @@ export function DriverCommandBuilder({
     ? 'Manual mode: you are responsible for the command syntax and parameters.'
     : 'Extra ibcmd arguments appended after canonical argv.'
 
+  const handleShortcutSelect = (shortcutId?: string) => {
+    if (!shortcutId) {
+      setSelectedShortcutId(undefined)
+      return
+    }
+    const shortcut = shortcutsById[shortcutId]
+    if (!shortcut) {
+      setSelectedShortcutId(undefined)
+      return
+    }
+    setSelectedShortcutId(shortcutId)
+    onChange({ command_id: shortcut.command_id, mode: 'guided' })
+  }
+
+  const handleSaveShortcut = () => {
+    if (!shortcutsEnabled) return
+    if (readOnly) return
+    if (!commandId) {
+      modal.error({ title: 'Select command', content: 'Pick a command first.' })
+      return
+    }
+
+    let nextTitle = (selectedCommand?.label || commandId).trim()
+
+    modal.confirm({
+      title: 'Save shortcut',
+      okText: 'Save',
+      cancelText: 'Cancel',
+      content: (
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          <div>
+            <Text type="secondary">Command</Text>
+            <div>{selectedCommand?.label || commandId}</div>
+          </div>
+          <Input
+            defaultValue={nextTitle}
+            placeholder="Shortcut title"
+            onChange={(event) => {
+              nextTitle = event.target.value
+            }}
+          />
+        </Space>
+      ),
+      onOk: async () => {
+        const title = nextTitle.trim()
+        if (!title) {
+          modal.error({ title: 'Title required', content: 'Shortcut title cannot be empty.' })
+          return
+        }
+        await createShortcutMutation.mutateAsync({ driver: 'ibcmd', command_id: commandId, title })
+      },
+    })
+  }
+
+  const handleDeleteShortcut = () => {
+    if (!shortcutsEnabled) return
+    if (readOnly) return
+    if (!selectedShortcutId) {
+      modal.info({ title: 'Select shortcut', content: 'Pick a shortcut to delete.' })
+      return
+    }
+
+    const shortcut = shortcutsById[selectedShortcutId]
+    const label = shortcut?.title || selectedShortcutId
+
+    modal.confirm({
+      title: 'Delete shortcut?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      okButtonProps: { danger: true },
+      content: <Text>Shortcut: {label}</Text>,
+      onOk: async () => {
+        await deleteShortcutMutation.mutateAsync(selectedShortcutId)
+        setSelectedShortcutId(undefined)
+      },
+    })
+  }
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       <Tabs
@@ -1177,6 +1289,47 @@ export function DriverCommandBuilder({
           />
         </Form.Item>
       </Form>
+
+      {shortcutsEnabled && (
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+          {shortcutsQuery.isError && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Shortcuts unavailable"
+              description={(shortcutsQuery.error as Error).message}
+            />
+          )}
+          <Space wrap>
+            <Select
+              allowClear
+              showSearch
+              placeholder="Load shortcut"
+              style={{ minWidth: 260 }}
+              disabled={readOnly || shortcutsQuery.isLoading}
+              value={selectedShortcutId}
+              options={shortcutOptions}
+              optionFilterProp="label"
+              onChange={(value) => handleShortcutSelect(value || undefined)}
+            />
+            <Button
+              disabled={!commandId || readOnly || createShortcutMutation.isPending}
+              loading={createShortcutMutation.isPending}
+              onClick={handleSaveShortcut}
+            >
+              Save shortcut
+            </Button>
+            <Button
+              danger
+              disabled={!selectedShortcutId || readOnly || deleteShortcutMutation.isPending}
+              loading={deleteShortcutMutation.isPending}
+              onClick={handleDeleteShortcut}
+            >
+              Delete
+            </Button>
+          </Space>
+        </Space>
+      )}
 
       {selectedCommand && selectedCommand.description && (
         <Text type="secondary">{selectedCommand.description}</Text>

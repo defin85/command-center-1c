@@ -137,6 +137,16 @@ driver_commands_denied_total = Counter(
 )
 
 # =============================================================================
+# Deprecation Metrics
+# =============================================================================
+
+deprecated_operations_total = Counter(
+    'cc1c_orchestrator_deprecated_operations_total',
+    'Total deprecated operations invoked via API',
+    ['operation_type', 'endpoint']
+)
+
+# =============================================================================
 # Redis Events Metrics
 # =============================================================================
 
@@ -381,6 +391,11 @@ def record_api_v2_error(endpoint: str, error: str) -> None:
 def record_driver_command_denied(driver: str, reason: str) -> None:
     """Record RBAC deny for schema-driven driver command (by reason)."""
     driver_commands_denied_total.labels(driver=driver, reason=reason).inc()
+
+
+def record_deprecated_operation(operation_type: str, endpoint: str) -> None:
+    """Record deprecated operation usage (migration/deprecation telemetry)."""
+    deprecated_operations_total.labels(operation_type=operation_type, endpoint=endpoint).inc()
 
 
 def record_sse_ticket(stream: str, status: str) -> None:

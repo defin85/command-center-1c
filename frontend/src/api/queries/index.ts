@@ -1,6 +1,10 @@
 import type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
 
 export const queryKeys = {
+  commandShortcuts: {
+    all: ['command-shortcuts'] as const,
+    byDriver: (driver: string) => [...queryKeys.commandShortcuts.all, driver] as const,
+  },
   driverCommands: {
     all: ['driver-commands'] as const,
     byDriver: (driver: string) => [...queryKeys.driverCommands.all, driver] as const,
@@ -126,3 +130,4 @@ export {
 } from './artifacts'
 
 export { useDriverCommands } from './driverCommands'
+export { useDriverCommandShortcuts, useCreateDriverCommandShortcut, useDeleteDriverCommandShortcut } from './commandShortcuts'

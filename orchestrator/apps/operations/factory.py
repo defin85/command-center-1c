@@ -91,6 +91,9 @@ class BatchOperationFactory:
         # Определяем целевую сущность
         target_entity = rendered_data.get('entity', template.name)
 
+        operation_payload: Dict[str, Any] = rendered_data
+        operation_config: Dict[str, Any] = {}
+
         # Формируем метаданные
         trace_id = get_current_trace_id()
         metadata = {
@@ -99,6 +102,80 @@ class BatchOperationFactory:
         }
         if trace_id:
             metadata['trace_id'] = trace_id
+
+        if operation_type.startswith("ibcmd_") and operation_type != BatchOperation.TYPE_IBCMD_CLI:
+            from apps.operations.driver_catalog_effective import get_effective_driver_catalog, resolve_driver_catalog_versions
+            from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual
+            from apps.operations.ibcmd_legacy import LEGACY_IBCMD_OPERATION_TO_COMMAND_ID, legacy_ibcmd_config_to_ibcmd_cli_request
+            from apps.operations.prometheus_metrics import record_deprecated_operation
+
+            if operation_type in LEGACY_IBCMD_OPERATION_TO_COMMAND_ID:
+                legacy_operation_type = operation_type
+                record_deprecated_operation(operation_type, "workflow_batch_factory")
+                legacy_config = rendered_data.get("data") if isinstance(rendered_data.get("data"), dict) else rendered_data
+                mapped = legacy_ibcmd_config_to_ibcmd_cli_request(legacy_operation_type, legacy_config)
+                command_id = str(mapped.get("command_id") or "").strip()
+                mode = str(mapped.get("mode") or "guided").strip().lower()
+                params = mapped.get("params") or {}
+                additional_args = mapped.get("additional_args") or []
+                stdin = mapped.get("stdin") or ""
+
+                resolved = resolve_driver_catalog_versions("ibcmd")
+                if resolved.base_version is None:
+                    raise ValueError("ibcmd catalog is not imported yet (required for legacy ibcmd_* templates)")
+
+                effective = get_effective_driver_catalog(
+                    driver="ibcmd",
+                    base_version=resolved.base_version,
+                    overrides_version=resolved.overrides_version,
+                )
+                commands_by_id = effective.catalog.get("commands_by_id") if isinstance(effective.catalog, dict) else None
+                if not isinstance(commands_by_id, dict):
+                    raise ValueError("ibcmd catalog is invalid")
+
+                command = commands_by_id.get(command_id)
+                if not isinstance(command, dict) or command.get("disabled") is True:
+                    raise ValueError(f"Unknown command_id: {command_id}")
+
+                try:
+                    builder = build_ibcmd_cli_argv_manual if mode == "manual" else build_ibcmd_cli_argv
+                    argv, argv_masked = builder(command=command, params=params, additional_args=additional_args)
+                except ValueError as exc:
+                    raise ValueError(str(exc)) from exc
+
+                operation_type = BatchOperation.TYPE_IBCMD_CLI
+                target_entity = "Infobase"
+                operation_config = {
+                    "batch_size": 1,
+                    "timeout_seconds": 900,
+                    "retry_count": 1,
+                    "priority": "normal",
+                }
+                operation_payload = {
+                    "data": {
+                        "command_id": command_id,
+                        "mode": mode,
+                        "argv": argv,
+                        "argv_masked": argv_masked,
+                        "stdin": stdin,
+                        "connection": {},
+                    },
+                    "filters": {},
+                    "options": {},
+                }
+                metadata.update({
+                    "tags": ["ibcmd", "ibcmd_cli", command_id, f"legacy:{legacy_operation_type}"],
+                    "command_id": command_id,
+                    "legacy_operation_type": legacy_operation_type,
+                    "catalog_base_version": str(effective.base_version),
+                    "catalog_base_version_id": str(effective.base_version_id),
+                    "catalog_overrides_version": (
+                        str(effective.overrides_version) if effective.overrides_version else None
+                    ),
+                    "catalog_overrides_version_id": (
+                        str(effective.overrides_version_id) if effective.overrides_version_id else None
+                    ),
+                })
 
         logger.info(
             f"Creating BatchOperation: id={operation_id}, "
@@ -112,7 +189,8 @@ class BatchOperationFactory:
                 name=operation_name,
                 operation_type=operation_type,
                 target_entity=target_entity,
-                payload=rendered_data,
+                payload=operation_payload,
+                config=operation_config,
                 template=template,
                 status=BatchOperation.STATUS_PENDING,
                 created_by=created_by,

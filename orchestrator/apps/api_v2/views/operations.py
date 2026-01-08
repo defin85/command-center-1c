@@ -11,6 +11,7 @@ import secrets
 import time
 import asyncio
 import uuid
+from datetime import datetime, timezone as dt_timezone
 from typing import Any
 
 import redis as redis_module
@@ -21,6 +22,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.http import http_date
 from asgiref.sync import sync_to_async
 from rest_framework import serializers
 from rest_framework import status as http_status
@@ -32,12 +34,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from apps.operations.models import BatchOperation, Task
+from apps.operations.models import BatchOperation, Task, DriverCommandShortcut
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
 from apps.operations.cli_catalog import load_cli_command_catalog
 from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2, compute_etag
 from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
+from apps.operations.ibcmd_legacy import legacy_ibcmd_config_to_ibcmd_cli_request
 from apps.operations.driver_catalog_effective import (
     compute_actor_roles_hash,
     compute_driver_catalog_etag,
@@ -67,6 +70,7 @@ from apps.operations.prometheus_metrics import (
     record_sse_stream_error,
     record_sse_loop_duration,
     record_driver_command_denied,
+    record_deprecated_operation,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,6 +120,21 @@ OPERATION_CATALOG_DRIVER_ORDER = {
     "ibcmd": 4,
     "workflow": 5,
 }
+
+LEGACY_IBCMD_SUNSET_AT = datetime(2026, 4, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+
+
+def _apply_legacy_ibcmd_deprecation_headers(
+    response: Response,
+    *,
+    legacy_operation_type: str,
+    endpoint: str,
+) -> Response:
+    response["Deprecation"] = "true"
+    response["Sunset"] = http_date(LEGACY_IBCMD_SUNSET_AT.timestamp())
+    response["X-CC1C-Legacy-Operation-Type"] = str(legacy_operation_type or "")
+    response["X-CC1C-Legacy-Endpoint"] = str(endpoint or "")
+    return response
 
 OPERATION_CATALOG_UI_META = {
     "lock_scheduled_jobs": {
@@ -224,7 +243,14 @@ EXTRA_OPERATION_CATALOG = [
     },
 ]
 
-DEPRECATED_OPERATIONS = {}
+DEPRECATED_OPERATIONS = {
+    "ibcmd_backup": "Deprecated. Use ibcmd_cli command infobase.dump (or create a shortcut).",
+    "ibcmd_restore": "Deprecated. Use ibcmd_cli command infobase.restore (or create a shortcut).",
+    "ibcmd_replicate": "Deprecated. Use ibcmd_cli command infobase.replicate (or create a shortcut).",
+    "ibcmd_create": "Deprecated. Use ibcmd_cli command infobase.create (or create a shortcut).",
+    "ibcmd_load_cfg": "Deprecated. Use ibcmd_cli command infobase.config.load-cfg (or create a shortcut).",
+    "ibcmd_extension_update": "Deprecated. Use ibcmd_cli command infobase.extension.update (or create a shortcut).",
+}
 
 
 # =============================================================================
@@ -572,6 +598,30 @@ class DriverCommandsResponseV2Serializer(serializers.Serializer):
     overrides_version = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     generated_at = serializers.CharField(required=False, allow_blank=True)
     catalog = DriverCatalogV2Serializer()
+
+
+class DriverCommandShortcutSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    driver = serializers.CharField()
+    command_id = serializers.CharField()
+    title = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class ListDriverCommandShortcutsResponseSerializer(serializers.Serializer):
+    items = DriverCommandShortcutSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+class CreateDriverCommandShortcutRequestSerializer(serializers.Serializer):
+    driver = serializers.ChoiceField(choices=[("ibcmd", "ibcmd")])
+    command_id = serializers.CharField()
+    title = serializers.CharField(max_length=255)
+
+
+class DeleteDriverCommandShortcutRequestSerializer(serializers.Serializer):
+    shortcut_id = serializers.UUIDField()
 
 
 # =============================================================================
@@ -1402,11 +1452,20 @@ def execute_operation(request):
                 user=request.user,
             )
         elif operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
-            batch_operation = OperationsService.enqueue_ibcmd_operation(
-                operation_type=operation_type,
-                database_ids=database_ids,
-                config=config,
-                user=request.user,
+            record_deprecated_operation(operation_type, "execute_operation")
+            mapped = legacy_ibcmd_config_to_ibcmd_cli_request(operation_type, config)
+            mapped["database_ids"] = database_ids
+            cli_serializer = ExecuteIbcmdCliOperationRequestSerializer(data=mapped)
+            cli_serializer.is_valid(raise_exception=True)
+            response = _execute_ibcmd_cli_validated(
+                request,
+                cli_serializer.validated_data,
+                legacy_operation_type=operation_type,
+            )
+            return _apply_legacy_ibcmd_deprecation_headers(
+                response,
+                legacy_operation_type=operation_type,
+                endpoint="execute_operation",
             )
         elif operation_type in dict(ExecuteOperationRequestSerializer.CLI_OPERATION_TYPES):
             if not config.get("command"):
@@ -1446,23 +1505,37 @@ def execute_operation(request):
         }, status=http_status.HTTP_202_ACCEPTED)
 
     except ValueError as e:
-        return Response({
+        response = Response({
             'success': False,
             'error': {
                 'code': 'VALIDATION_ERROR',
                 'message': str(e)
             }
         }, status=400)
+        if operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
+            return _apply_legacy_ibcmd_deprecation_headers(
+                response,
+                legacy_operation_type=operation_type,
+                endpoint="execute_operation",
+            )
+        return response
 
     except Exception as e:
         logger.error(f"Error executing RAS operation: {e}", exc_info=True)
-        return Response({
+        response = Response({
             'success': False,
             'error': {
                 'code': 'INTERNAL_ERROR',
                 'message': 'Failed to queue operation'
             }
         }, status=500)
+        if operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
+            return _apply_legacy_ibcmd_deprecation_headers(
+                response,
+                legacy_operation_type=operation_type,
+                endpoint="execute_operation",
+            )
+        return response
 
 
 # =============================================================================
@@ -1507,48 +1580,50 @@ def execute_ibcmd_operation(request):
     config = serializer.validated_data.get('config', {})
 
     try:
-        batch_operation = OperationsService.enqueue_ibcmd_operation(
-            operation_type=operation_type,
-            database_ids=database_ids,
-            config=config,
-            user=request.user,
+        record_deprecated_operation(operation_type, "execute_ibcmd_operation")
+        mapped = legacy_ibcmd_config_to_ibcmd_cli_request(operation_type, config)
+        mapped["database_ids"] = database_ids
+        cli_serializer = ExecuteIbcmdCliOperationRequestSerializer(data=mapped)
+        cli_serializer.is_valid(raise_exception=True)
+        response = _execute_ibcmd_cli_validated(
+            request,
+            cli_serializer.validated_data,
+            legacy_operation_type=operation_type,
         )
-
-        logger.info(
-            f"IBCMD operation {operation_type} queued",
-            extra={
-                'operation_id': str(batch_operation.id),
-                'operation_type': operation_type,
-                'database_count': len(database_ids),
-                'created_by': request.user.username if request.user else 'anonymous',
-            }
+        return _apply_legacy_ibcmd_deprecation_headers(
+            response,
+            legacy_operation_type=operation_type,
+            endpoint="execute_ibcmd_operation",
         )
-
-        return Response({
-            'operation_id': str(batch_operation.id),
-            'status': batch_operation.status,
-            'total_tasks': batch_operation.total_tasks,
-            'message': f'{operation_type} queued for {len(database_ids)} database(s)',
-        }, status=http_status.HTTP_202_ACCEPTED)
 
     except ValueError as e:
-        return Response({
+        response = Response({
             'success': False,
             'error': {
                 'code': 'VALIDATION_ERROR',
                 'message': str(e)
             }
         }, status=400)
+        return _apply_legacy_ibcmd_deprecation_headers(
+            response,
+            legacy_operation_type=operation_type,
+            endpoint="execute_ibcmd_operation",
+        )
 
     except Exception as e:
         logger.error(f"Error executing IBCMD operation: {e}", exc_info=True)
-        return Response({
+        response = Response({
             'success': False,
             'error': {
                 'code': 'INTERNAL_ERROR',
                 'message': 'Failed to queue operation'
             }
         }, status=500)
+        return _apply_legacy_ibcmd_deprecation_headers(
+            response,
+            legacy_operation_type=operation_type,
+            endpoint="execute_ibcmd_operation",
+        )
 
 
 # =============================================================================
@@ -1583,23 +1658,31 @@ def execute_ibcmd_operation(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([ExecuteIbcmdCliOperationThrottle])
 def execute_ibcmd_cli_operation(request):
+    serializer = ExecuteIbcmdCliOperationRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    return _execute_ibcmd_cli_validated(request, serializer.validated_data)
+
+
+def _execute_ibcmd_cli_validated(
+    request,
+    validated_data: dict[str, Any],
+    *,
+    legacy_operation_type: str | None = None,
+):
     from apps.databases.models import Database, PermissionLevel
     from apps.databases.services import PermissionService
     from apps.operations.models import BatchOperation, Task
 
-    serializer = ExecuteIbcmdCliOperationRequestSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    command_id = str(serializer.validated_data['command_id'] or '').strip()
-    mode = str(serializer.validated_data.get('mode') or 'guided').strip().lower()
-    database_ids = [str(db_id) for db_id in (serializer.validated_data.get('database_ids') or [])]
-    auth_database_id = serializer.validated_data.get('auth_database_id')
-    connection = serializer.validated_data.get('connection') or {}
-    params = serializer.validated_data.get('params') or {}
-    additional_args = serializer.validated_data.get('additional_args') or []
-    stdin = serializer.validated_data.get('stdin') or ""
-    confirm_dangerous = bool(serializer.validated_data.get('confirm_dangerous') or False)
-    timeout_seconds = int(serializer.validated_data.get('timeout_seconds') or 900)
+    command_id = str(validated_data.get('command_id') or '').strip()
+    mode = str(validated_data.get('mode') or 'guided').strip().lower()
+    database_ids = [str(db_id) for db_id in (validated_data.get('database_ids') or [])]
+    auth_database_id = validated_data.get('auth_database_id')
+    connection = validated_data.get('connection') or {}
+    params = validated_data.get('params') or {}
+    additional_args = validated_data.get('additional_args') or []
+    stdin = validated_data.get('stdin') or ""
+    confirm_dangerous = bool(validated_data.get('confirm_dangerous') or False)
+    timeout_seconds = int(validated_data.get('timeout_seconds') or 900)
 
     if not command_id:
         return Response({
@@ -1876,7 +1959,11 @@ def execute_ibcmd_cli_operation(request):
         total_tasks=1 if scope == "global" else len(databases),
         created_by=request.user.username if request.user else "system",
         metadata={
-            "tags": ["ibcmd", "ibcmd_cli", command_id],
+            "tags": (
+                ["ibcmd", "ibcmd_cli", command_id]
+                if not legacy_operation_type
+                else ["ibcmd", "ibcmd_cli", command_id, f"legacy:{legacy_operation_type}"]
+            ),
             "command_id": command_id,
             "risk_level": risk_level,
             "scope": scope,
@@ -1888,6 +1975,7 @@ def execute_ibcmd_cli_operation(request):
             "catalog_overrides_version_id": (
                 str(effective.overrides_version_id) if effective.overrides_version_id else None
             ),
+            "legacy_operation_type": legacy_operation_type,
         },
     )
 
@@ -2452,6 +2540,173 @@ def get_operation_catalog(request):
         "items": items,
         "count": len(items),
     })
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="List driver command shortcuts",
+    description="List current user's saved command shortcuts (per driver).",
+    parameters=[
+        OpenApiParameter(
+            name="driver",
+            type=str,
+            required=False,
+            description="Driver name (currently: ibcmd).",
+        ),
+    ],
+    responses={
+        200: ListDriverCommandShortcutsResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_driver_command_shortcuts(request):
+    driver = str(request.query_params.get("driver") or "ibcmd").strip().lower()
+    if driver != "ibcmd":
+        return Response(
+            {"success": False, "error": {"code": "INVALID_DRIVER", "message": "Only driver=ibcmd is supported"}},
+            status=400,
+        )
+
+    qs = DriverCommandShortcut.objects.filter(user=request.user, driver=driver).order_by("title", "created_at")
+
+    resolved = resolve_driver_catalog_versions(driver)
+    if resolved.base_version is not None:
+        try:
+            effective = get_effective_driver_catalog(
+                driver=driver,
+                base_version=resolved.base_version,
+                overrides_version=resolved.overrides_version,
+            )
+            catalog = filter_catalog_for_user(request.user, effective.catalog)
+            commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
+            if isinstance(commands_by_id, dict) and commands_by_id:
+                qs = qs.filter(command_id__in=list(commands_by_id.keys()))
+        except Exception:
+            pass
+    items = [
+        {
+            "id": row.id,
+            "driver": row.driver,
+            "command_id": row.command_id,
+            "title": row.title,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        for row in qs
+    ]
+
+    return Response({"items": items, "count": len(items)})
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Create driver command shortcut",
+    description="Create a per-user shortcut to a schema-driven driver command (command_id).",
+    request=CreateDriverCommandShortcutRequestSerializer,
+    responses={
+        201: DriverCommandShortcutSerializer,
+        400: OperationErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_driver_command_shortcut(request):
+    serializer = CreateDriverCommandShortcutRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    driver = str(serializer.validated_data["driver"] or "").strip().lower()
+    command_id = str(serializer.validated_data["command_id"] or "").strip()
+    title = str(serializer.validated_data["title"] or "").strip()
+
+    if not command_id:
+        return Response(
+            {"success": False, "error": {"code": "MISSING_COMMAND_ID", "message": "command_id is required"}},
+            status=400,
+        )
+    if not title:
+        return Response(
+            {"success": False, "error": {"code": "MISSING_TITLE", "message": "title is required"}},
+            status=400,
+        )
+
+    resolved = resolve_driver_catalog_versions(driver)
+    if resolved.base_version is None:
+        return Response(
+            {"success": False, "error": {"code": "CATALOG_NOT_AVAILABLE", "message": f"{driver} catalog is not imported yet"}},
+            status=400,
+        )
+
+    effective = get_effective_driver_catalog(
+        driver=driver,
+        base_version=resolved.base_version,
+        overrides_version=resolved.overrides_version,
+    )
+    catalog = filter_catalog_for_user(request.user, effective.catalog)
+    commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
+    if not isinstance(commands_by_id, dict):
+        return Response(
+            {"success": False, "error": {"code": "CATALOG_INVALID", "message": f"{driver} catalog is invalid"}},
+            status=500,
+        )
+
+    cmd = commands_by_id.get(command_id)
+    if not isinstance(cmd, dict) or cmd.get("disabled") is True:
+        return Response(
+            {"success": False, "error": {"code": "UNKNOWN_COMMAND", "message": f"Unknown command_id: {command_id}"}},
+            status=400,
+        )
+
+    shortcut = DriverCommandShortcut.objects.create(
+        user=request.user,
+        driver=driver,
+        command_id=command_id,
+        title=title,
+    )
+
+    return Response(
+        {
+            "id": shortcut.id,
+            "driver": shortcut.driver,
+            "command_id": shortcut.command_id,
+            "title": shortcut.title,
+            "created_at": shortcut.created_at,
+            "updated_at": shortcut.updated_at,
+        },
+        status=201,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Delete driver command shortcut",
+    description="Delete a per-user command shortcut by id.",
+    request=DeleteDriverCommandShortcutRequestSerializer,
+    responses={
+        200: OpenApiResponse(description="OK"),
+        400: OperationErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: OperationErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def delete_driver_command_shortcut(request):
+    serializer = DeleteDriverCommandShortcutRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    shortcut_id = serializer.validated_data["shortcut_id"]
+    qs = DriverCommandShortcut.objects.filter(id=shortcut_id, user=request.user)
+    if not qs.exists():
+        return Response(
+            {"success": False, "error": {"code": "NOT_FOUND", "message": "Shortcut not found"}},
+            status=404,
+        )
+
+    qs.delete()
+    return Response({"success": True, "deleted": True})
 
 
 @extend_schema(

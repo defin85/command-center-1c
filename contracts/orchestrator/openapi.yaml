@@ -2003,6 +2003,113 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/operations/list-command-shortcuts/:
+    get:
+      operationId: v2_operations_list_command_shortcuts_retrieve
+      description: List current user's saved command shortcuts (per driver).
+      summary: List driver command shortcuts
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+          default: ibcmd
+        description: Driver name (currently ibcmd).
+        required: false
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDriverCommandShortcutsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/operations/create-command-shortcut/:
+    post:
+      operationId: v2_operations_create_command_shortcut_create
+      description: Create a per-user shortcut to a schema-driven driver command (command_id).
+      summary: Create driver command shortcut
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDriverCommandShortcutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateDriverCommandShortcutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateDriverCommandShortcutRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverCommandShortcut'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/operations/delete-command-shortcut/:
+    post:
+      operationId: v2_operations_delete_command_shortcut_create
+      description: Delete a per-user command shortcut by id.
+      summary: Delete driver command shortcut
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteDriverCommandShortcutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeleteDriverCommandShortcutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeleteDriverCommandShortcutRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDriverCommandShortcutResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationErrorResponse'
+          description: ''
   /api/v2/operations/execute/:
     post:
       operationId: v2_operations_execute_create
@@ -2010,7 +2117,9 @@ paths:
         \   **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,
         `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    - OData:
         `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n    - IBCMD:
-        `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`\n\n    **Config
+        legacy (DEPRECATED): `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`, `ibcmd_load_cfg`, `ibcmd_extension_update`\n\n
+        Sunset for legacy IBCMD: 2026-04-01 (responses include `Deprecation`/`Sunset` headers).\n\n
+        Prefer schema-driven endpoint: `POST /api/v2/operations/execute-ibcmd-cli/`.\n\n    **Config
         notes:**\n    - RAS block_sessions: `message`, `permission_code`, `denied_from`,
         `denied_to`, `parameter`\n    - OData query: `entity`, `filter`, `select`,
         `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n    - CLI
@@ -2051,14 +2160,17 @@ paths:
   /api/v2/operations/execute-ibcmd/:
     post:
       operationId: v2_operations_execute_ibcmd_create
+      deprecated: true
       description: "\n    Queue an IBCMD operation for execution on selected databases.\n\n
-        \   **Supported operation types:**\n    - `ibcmd_backup` - Backup infobase\n
+        \   DEPRECATED: prefer schema-driven endpoint `POST /api/v2/operations/execute-ibcmd-cli/`.\n\n
+        \   Sunset: 2026-04-01 (responses include `Deprecation`/`Sunset` headers).\n\n
+        \   **Legacy operation types:**\n    - `ibcmd_backup` - Backup infobase\n
         \   - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`
         - Replicate infobase to another server\n    - `ibcmd_create` - Create new
         infobase\n    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension
         (*.cfe) into infobase\n    - `ibcmd_extension_update` - Update extension properties
         (safe-mode, scope, etc.)\n    "
-      summary: Execute IBCMD operation
+      summary: Execute IBCMD operation (DEPRECATED)
       tags:
       - v2
       requestBody:
@@ -2083,12 +2195,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExecuteOperationResponse'
           description: ''
+          headers:
+            Deprecation:
+              schema:
+                type: string
+              description: Always "true" for this legacy endpoint.
+            Sunset:
+              schema:
+                type: string
+              description: 'HTTP-date: Wed, 01 Apr 2026 00:00:00 GMT.'
+            X-CC1C-Legacy-Operation-Type:
+              schema:
+                type: string
+              description: Legacy operation_type requested (e.g. ibcmd_backup).
+            X-CC1C-Legacy-Endpoint:
+              schema:
+                type: string
+              description: Endpoint name that returned this response.
         '400':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+          headers:
+            Deprecation:
+              schema:
+                type: string
+              description: Always "true" for this legacy endpoint.
+            Sunset:
+              schema:
+                type: string
+              description: 'HTTP-date: Wed, 01 Apr 2026 00:00:00 GMT.'
+            X-CC1C-Legacy-Operation-Type:
+              schema:
+                type: string
+              description: Legacy operation_type requested (e.g. ibcmd_backup).
+            X-CC1C-Legacy-Endpoint:
+              schema:
+                type: string
+              description: Endpoint name that returned this response.
         '401':
           description: Unauthorized
   /api/v2/operations/execute-ibcmd-cli/:
@@ -8321,6 +8467,82 @@ components:
       required:
       - catalog
       - driver
+    DriverCommandShortcut:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        driver:
+          type: string
+        command_id:
+          type: string
+        title:
+          type: string
+          maxLength: 255
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - command_id
+      - created_at
+      - driver
+      - id
+      - title
+      - updated_at
+    ListDriverCommandShortcutsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverCommandShortcut'
+        count:
+          type: integer
+      required:
+      - count
+      - items
+    CreateDriverCommandShortcutRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - ibcmd
+          type: string
+          default: ibcmd
+        command_id:
+          type: string
+        title:
+          type: string
+          maxLength: 255
+      required:
+      - command_id
+      - driver
+      - title
+    DeleteDriverCommandShortcutRequest:
+      type: object
+      properties:
+        shortcut_id:
+          type: string
+          format: uuid
+      required:
+      - shortcut_id
+    DeleteDriverCommandShortcutResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        deleted:
+          type: boolean
+      required:
+      - deleted
+      - success
     EffectiveAccessArtifactItem:
       type: object
       properties:
@@ -8530,7 +8752,10 @@ components:
       - command_id
     ExecuteIbcmdOperationRequest:
       type: object
-      description: Request body for execute_ibcmd_operation endpoint.
+      description: |-
+        Request body for execute_ibcmd_operation endpoint.
+
+        DEPRECATED: use ExecuteIbcmdCliOperationRequest (command_id + params) instead.
       properties:
         operation_type:
           enum:
@@ -8545,6 +8770,7 @@ components:
           description: |-
             Type of IBCMD operation to execute
 
+            DEPRECATED: use ExecuteIbcmdCliOperationRequest (ibcmd_cli) instead.
             * `ibcmd_backup` - IBCMD Backup
             * `ibcmd_restore` - IBCMD Restore
             * `ibcmd_replicate` - IBCMD Replicate
@@ -8594,6 +8820,7 @@ components:
           description: |-
             Operation type to execute
 
+            Note: legacy IBCMD operation types (`ibcmd_*`) are DEPRECATED. Use ExecuteIbcmdCliOperationRequest (ibcmd_cli) instead.
             * `lock_scheduled_jobs` - Lock Scheduled Jobs
             * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
             * `block_sessions` - Block Sessions

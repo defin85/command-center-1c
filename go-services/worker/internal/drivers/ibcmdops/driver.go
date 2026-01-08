@@ -349,16 +349,131 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			return nil, fmt.Errorf("argv is required")
 		}
 
-		resolvedArgs, cleanup, err := runnerartifacts.ResolveArgs(ctx, argv, meta)
+		commandID := strings.TrimSpace(extractString(data, "command_id"))
+		commandTokens := []string{}
+		if commandID != "" {
+			commandTokens = strings.Split(commandID, ".")
+		}
+
+		findFirstPositional := func(args []string) (int, string) {
+			start := 0
+			if len(commandTokens) > 0 && len(args) >= len(commandTokens) {
+				match := true
+				for idx, tok := range commandTokens {
+					if strings.TrimSpace(args[idx]) != tok {
+						match = false
+						break
+					}
+				}
+				if match {
+					start = len(commandTokens)
+				}
+			}
+			for idx := start; idx < len(args); idx++ {
+				token := strings.TrimSpace(args[idx])
+				if token == "" {
+					continue
+				}
+				if strings.HasPrefix(token, "-") {
+					continue
+				}
+				return idx, token
+			}
+			return -1, ""
+		}
+
+		var inputCleanup func()
+		var outputCleanup func()
+		var outputFinalize func(ctx context.Context) error
+		artifactPath := ""
+		var err error
+
+		if commandID == "infobase.dump" {
+			if store == nil {
+				return nil, fmt.Errorf("storage is not configured")
+			}
+
+			posIdx, requested := findFirstPositional(argv)
+			if strings.HasPrefix(strings.TrimSpace(requested), runnerartifacts.ArtifactPrefix) {
+				return nil, fmt.Errorf("artifact:// output is not supported for infobase.dump")
+			}
+
+			outputPath, outArtifactPath, finalize, cleanup, err := store.PrepareOutput(ctx, requested, databaseID, ".dt")
+			if err != nil {
+				return nil, err
+			}
+			if finalize != nil {
+				outputFinalize = finalize
+			}
+			if cleanup != nil {
+				outputCleanup = cleanup
+			}
+			artifactPath = outArtifactPath
+
+			if posIdx >= 0 {
+				argv[posIdx] = outputPath
+			} else {
+				argv = append(argv, outputPath)
+			}
+		}
+
+		if commandID == "infobase.restore" {
+			posIdx, requested := findFirstPositional(argv)
+			if posIdx < 0 || strings.TrimSpace(requested) == "" {
+				return nil, fmt.Errorf("input path is required")
+			}
+
+			var resolvedInput string
+			var cleanup func()
+			if strings.HasPrefix(strings.TrimSpace(requested), runnerartifacts.ArtifactPrefix) {
+				resolvedInput, cleanup, err = runnerartifacts.ResolvePath(ctx, requested, meta)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				if store == nil {
+					return nil, fmt.Errorf("storage is not configured")
+				}
+				resolvedInput, cleanup, err = store.ResolveInput(ctx, requested)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			argv[posIdx] = resolvedInput
+			if cleanup != nil {
+				inputCleanup = cleanup
+			}
+		}
+
+		resolvedArgs, argvCleanup, err := runnerartifacts.ResolveArgs(ctx, argv, meta)
 		if err != nil {
+			if inputCleanup != nil {
+				inputCleanup()
+			}
+			if outputCleanup != nil {
+				outputCleanup()
+			}
 			return nil, err
+		}
+
+		combinedInputCleanup := func() {
+			if inputCleanup != nil {
+				inputCleanup()
+			}
+			if argvCleanup != nil {
+				argvCleanup()
+			}
 		}
 
 		credsArgs := injectInfobaseAuthArgs(resolvedArgs, creds)
 		return &ibcmdRequest{
-			Args:         credsArgs,
-			Stdin:        extractString(data, "stdin"),
-			inputCleanup: cleanup,
+			Args:           credsArgs,
+			Stdin:          extractString(data, "stdin"),
+			ArtifactPath:   artifactPath,
+			inputCleanup:   combinedInputCleanup,
+			outputCleanup:  outputCleanup,
+			outputFinalize: outputFinalize,
 		}, nil
 	}
 

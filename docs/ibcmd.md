@@ -14,6 +14,31 @@ database:
 
 ---
 
+## Статус (Phase 8: депрекация legacy `ibcmd_*`)
+
+- `ibcmd_*` operation types считаются **legacy** и будут удаляться по мере миграции.
+- Новый рекомендуемый путь: **schema-driven** `ibcmd_cli` (`POST /api/v2/operations/execute-ibcmd-cli/`, `command_id + params`).
+- Legacy endpoint `POST /api/v2/operations/execute-ibcmd/` помечен как **DEPRECATED** и предназначен только для обратной совместимости.
+- Sunset (план удаления legacy): **2026-04-01**.
+- `execute-ibcmd` и legacy `ibcmd_*` через `POST /api/v2/operations/execute/` больше не создают новые legacy операции: они транслируются в `ibcmd_cli`.
+- Legacy ответы содержат заголовки `Deprecation: true` и `Sunset: Wed, 01 Apr 2026 00:00:00 GMT`.
+- Workflows/Templates: legacy `ibcmd_*` в workflow-операциях создаются как `ibcmd_cli` (в `metadata.legacy_operation_type` сохраняется исходный тип).
+
+Маппинг legacy → `ibcmd_cli` (catalog `command_id`):
+- `ibcmd_backup` → `infobase.dump`
+- `ibcmd_restore` → `infobase.restore`
+- `ibcmd_replicate` → `infobase.replicate`
+- `ibcmd_create` → `infobase.create`
+- `ibcmd_load_cfg` → `infobase.config.load-cfg`
+- `ibcmd_extension_update` → `infobase.extension.update`
+
+### Migration notes
+
+- Вместо `ibcmd_*` используйте `ibcmd_cli` + `command_id` из driver-catalog v2.
+- Для удобства можно создавать user shortcuts на команды (per-user, MVP: хранит только `driver`, `command_id`, `title`, без параметров/секретов).
+
+---
+
 ## IBCMD в CommandCenter1C (Phase 5)
 
 ### Operation types
