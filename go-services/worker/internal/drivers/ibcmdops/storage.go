@@ -202,7 +202,7 @@ func (s *s3Storage) normalizeOutputKey(outputPath, databaseID, ext string) (stri
 	}
 
 	timestamp := time.Now().UTC().Format("20060102_150405")
-	filename := fmt.Sprintf("%s_%s_%s%s", "ibcmd_backup", sanitizeFilePart(databaseID), timestamp, ext)
+	filename := fmt.Sprintf("%s_%s_%s%s", "infobase_dump", sanitizeFilePart(databaseID), timestamp, ext)
 	key := filepath.ToSlash(filepath.Join(databaseID, filename))
 	return applyPrefix(s.prefix, key), nil
 }
@@ -254,7 +254,7 @@ func resolveLocalPath(basePath, inputPath string) (string, error) {
 
 func resolveLocalOutputPath(outputPath, basePath, databaseID, ext string) (string, error) {
 	if outputPath == "" {
-		outputName := fmt.Sprintf("%s_%s_%s%s", "ibcmd_backup", sanitizeFilePart(databaseID), time.Now().UTC().Format("20060102_150405"), ext)
+		outputName := fmt.Sprintf("%s_%s_%s%s", "infobase_dump", sanitizeFilePart(databaseID), time.Now().UTC().Format("20060102_150405"), ext)
 		outputPath = filepath.Join(databaseID, outputName)
 	}
 

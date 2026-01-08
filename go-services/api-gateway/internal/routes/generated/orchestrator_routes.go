@@ -56,7 +56,6 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/operations/create-command-shortcut/", OperationID: "v2_operations_create_command_shortcut_create"},
 	{Method: "POST", Path: "/operations/delete-command-shortcut/", OperationID: "v2_operations_delete_command_shortcut_create"},
 	{Method: "POST", Path: "/operations/execute/", OperationID: "v2_operations_execute_create"},
-	{Method: "POST", Path: "/operations/execute-ibcmd/", OperationID: "v2_operations_execute_ibcmd_create"},
 	{Method: "POST", Path: "/operations/execute-ibcmd-cli/", OperationID: "v2_operations_execute_ibcmd_cli_create"},
 	{Method: "GET", Path: "/operations/get-operation/", OperationID: "v2_operations_get_operation_retrieve"},
 	{Method: "POST", Path: "/operations/get-operation-timeline/", OperationID: "v2_operations_get_operation_timeline_create"},

@@ -87,7 +87,6 @@ urlpatterns = [
     path('operations/create-command-shortcut/', operations.create_driver_command_shortcut, name='create-command-shortcut'),
     path('operations/delete-command-shortcut/', operations.delete_driver_command_shortcut, name='delete-command-shortcut'),
     path('operations/execute/', operations.execute_operation, name='execute-operation'),
-    path('operations/execute-ibcmd/', operations.execute_ibcmd_operation, name='execute-ibcmd-operation'),
     path('operations/execute-ibcmd-cli/', operations.execute_ibcmd_cli_operation, name='execute-ibcmd-cli-operation'),
     path('operations/cancel-operation/', operations.cancel_operation, name='cancel-operation'),
     path('operations/stream-ticket/', operations.get_stream_ticket, name='stream-ticket'),

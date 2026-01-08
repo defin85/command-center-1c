@@ -2116,10 +2116,7 @@ paths:
       description: "\n    Queue an operation for execution on selected databases.\n\n
         \   **Supported operation types:**\n    - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`,
         `block_sessions`,\n      `unblock_sessions`, `terminate_sessions`\n    - OData:
-        `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n    - IBCMD:
-        legacy (DEPRECATED): `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`, `ibcmd_load_cfg`, `ibcmd_extension_update`\n\n
-        Sunset for legacy IBCMD: 2026-04-01 (responses include `Deprecation`/`Sunset` headers).\n\n
-        Prefer schema-driven endpoint: `POST /api/v2/operations/execute-ibcmd-cli/`.\n\n    **Config
+        `create`, `update`, `delete`, `query`\n    - CLI: `designer_cli`\n\n    **Config
         notes:**\n    - RAS block_sessions: `message`, `permission_code`, `denied_from`,
         `denied_to`, `parameter`\n    - OData query: `entity`, `filter`, `select`,
         `top`, `skip`\n    - OData update/delete: `entity`, `entity_id`\n    - CLI
@@ -2155,86 +2152,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/operations/execute-ibcmd/:
-    post:
-      operationId: v2_operations_execute_ibcmd_create
-      deprecated: true
-      description: "\n    Queue an IBCMD operation for execution on selected databases.\n\n
-        \   DEPRECATED: prefer schema-driven endpoint `POST /api/v2/operations/execute-ibcmd-cli/`.\n\n
-        \   Sunset: 2026-04-01 (responses include `Deprecation`/`Sunset` headers).\n\n
-        \   **Legacy operation types:**\n    - `ibcmd_backup` - Backup infobase\n
-        \   - `ibcmd_restore` - Restore infobase from backup\n    - `ibcmd_replicate`
-        - Replicate infobase to another server\n    - `ibcmd_create` - Create new
-        infobase\n    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension
-        (*.cfe) into infobase\n    - `ibcmd_extension_update` - Update extension properties
-        (safe-mode, scope, etc.)\n    "
-      summary: Execute IBCMD operation (DEPRECATED)
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExecuteIbcmdOperationRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '202':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExecuteOperationResponse'
-          description: ''
-          headers:
-            Deprecation:
-              schema:
-                type: string
-              description: Always "true" for this legacy endpoint.
-            Sunset:
-              schema:
-                type: string
-              description: 'HTTP-date: Wed, 01 Apr 2026 00:00:00 GMT.'
-            X-CC1C-Legacy-Operation-Type:
-              schema:
-                type: string
-              description: Legacy operation_type requested (e.g. ibcmd_backup).
-            X-CC1C-Legacy-Endpoint:
-              schema:
-                type: string
-              description: Endpoint name that returned this response.
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationErrorResponse'
-          description: ''
-          headers:
-            Deprecation:
-              schema:
-                type: string
-              description: Always "true" for this legacy endpoint.
-            Sunset:
-              schema:
-                type: string
-              description: 'HTTP-date: Wed, 01 Apr 2026 00:00:00 GMT.'
-            X-CC1C-Legacy-Operation-Type:
-              schema:
-                type: string
-              description: Legacy operation_type requested (e.g. ibcmd_backup).
-            X-CC1C-Legacy-Endpoint:
-              schema:
-                type: string
-              description: Endpoint name that returned this response.
         '401':
           description: Unauthorized
   /api/v2/operations/execute-ibcmd-cli/:
@@ -6608,12 +6525,6 @@ components:
           - sync_cluster
           - discover_clusters
           - health_check
-          - ibcmd_backup
-          - ibcmd_restore
-          - ibcmd_replicate
-          - ibcmd_create
-          - ibcmd_load_cfg
-          - ibcmd_extension_update
           - ibcmd_cli
           - designer_cli
           type: string
@@ -6630,12 +6541,6 @@ components:
             * `sync_cluster` - Sync Cluster
             * `discover_clusters` - Discover Clusters
             * `health_check` - Health Check
-            * `ibcmd_backup` - IBCMD Backup
-            * `ibcmd_restore` - IBCMD Restore
-            * `ibcmd_replicate` - IBCMD Replicate
-            * `ibcmd_create` - IBCMD Create
-            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-            * `ibcmd_extension_update` - IBCMD Extension Update
             * `ibcmd_cli` - IBCMD CLI (schema-driven)
             * `designer_cli` - Designer CLI
           x-spec-enum-id: 19bb048cbbb997a2
@@ -8750,49 +8655,6 @@ components:
           default: 900
       required:
       - command_id
-    ExecuteIbcmdOperationRequest:
-      type: object
-      description: |-
-        Request body for execute_ibcmd_operation endpoint.
-
-        DEPRECATED: use ExecuteIbcmdCliOperationRequest (command_id + params) instead.
-      properties:
-        operation_type:
-          enum:
-          - ibcmd_backup
-          - ibcmd_restore
-          - ibcmd_replicate
-          - ibcmd_create
-          - ibcmd_load_cfg
-          - ibcmd_extension_update
-          type: string
-          x-spec-enum-id: 01ca97775301f3a8
-          description: |-
-            Type of IBCMD operation to execute
-
-            DEPRECATED: use ExecuteIbcmdCliOperationRequest (ibcmd_cli) instead.
-            * `ibcmd_backup` - IBCMD Backup
-            * `ibcmd_restore` - IBCMD Restore
-            * `ibcmd_replicate` - IBCMD Replicate
-            * `ibcmd_create` - IBCMD Create
-            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-            * `ibcmd_extension_update` - IBCMD Extension Update
-        database_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: List of database UUIDs
-          maxItems: 200
-          minItems: 1
-        config:
-          type: object
-          additionalProperties: {}
-          description: Operation-specific configuration (dbms, db_server, db_name,
-            etc.)
-      required:
-      - database_ids
-      - operation_type
     ExecuteOperationRequest:
       type: object
       description: Request body for execute_operation endpoint.
@@ -8808,19 +8670,12 @@ components:
           - update
           - delete
           - query
-          - ibcmd_backup
-          - ibcmd_restore
-          - ibcmd_replicate
-          - ibcmd_create
-          - ibcmd_load_cfg
-          - ibcmd_extension_update
           - designer_cli
           type: string
           x-spec-enum-id: d03a6bfe4762dcec
           description: |-
             Operation type to execute
 
-            Note: legacy IBCMD operation types (`ibcmd_*`) are DEPRECATED. Use ExecuteIbcmdCliOperationRequest (ibcmd_cli) instead.
             * `lock_scheduled_jobs` - Lock Scheduled Jobs
             * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
             * `block_sessions` - Block Sessions
@@ -8830,12 +8685,6 @@ components:
             * `update` - Update Records
             * `delete` - Delete Records
             * `query` - Query Records
-            * `ibcmd_backup` - IBCMD Backup
-            * `ibcmd_restore` - IBCMD Restore
-            * `ibcmd_replicate` - IBCMD Replicate
-            * `ibcmd_create` - IBCMD Create
-            * `ibcmd_load_cfg` - IBCMD Load Config/Extension
-            * `ibcmd_extension_update` - IBCMD Extension Update
             * `designer_cli` - Designer CLI
         database_ids:
           type: array

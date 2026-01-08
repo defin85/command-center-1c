@@ -43,13 +43,7 @@ class BatchOperation(models.Model):
     TYPE_DISCOVER_CLUSTERS = 'discover_clusters'
     TYPE_HEALTH_CHECK = 'health_check'
 
-    # IBCMD operation types
-    TYPE_IBCMD_BACKUP = 'ibcmd_backup'
-    TYPE_IBCMD_RESTORE = 'ibcmd_restore'
-    TYPE_IBCMD_REPLICATE = 'ibcmd_replicate'
-    TYPE_IBCMD_CREATE = 'ibcmd_create'
-    TYPE_IBCMD_LOAD_CFG = 'ibcmd_load_cfg'
-    TYPE_IBCMD_EXTENSION_UPDATE = 'ibcmd_extension_update'
+    # IBCMD operation types (schema-driven)
     TYPE_IBCMD_CLI = 'ibcmd_cli'
     # CLI operation types
     TYPE_DESIGNER_CLI = 'designer_cli'
@@ -70,13 +64,7 @@ class BatchOperation(models.Model):
         (TYPE_SYNC_CLUSTER, 'Sync Cluster'),
         (TYPE_DISCOVER_CLUSTERS, 'Discover Clusters'),
         (TYPE_HEALTH_CHECK, 'Health Check'),
-        # IBCMD operations
-        (TYPE_IBCMD_BACKUP, 'IBCMD Backup'),
-        (TYPE_IBCMD_RESTORE, 'IBCMD Restore'),
-        (TYPE_IBCMD_REPLICATE, 'IBCMD Replicate'),
-        (TYPE_IBCMD_CREATE, 'IBCMD Create'),
-        (TYPE_IBCMD_LOAD_CFG, 'IBCMD Load Config/Extension'),
-        (TYPE_IBCMD_EXTENSION_UPDATE, 'IBCMD Extension Update'),
+        # IBCMD operations (schema-driven)
         (TYPE_IBCMD_CLI, 'IBCMD CLI (schema-driven)'),
         # CLI operations
         (TYPE_DESIGNER_CLI, 'Designer CLI'),

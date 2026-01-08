@@ -11,7 +11,6 @@ import secrets
 import time
 import asyncio
 import uuid
-from datetime import datetime, timezone as dt_timezone
 from typing import Any
 
 import redis as redis_module
@@ -22,7 +21,6 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from django.utils.http import http_date
 from asgiref.sync import sync_to_async
 from rest_framework import serializers
 from rest_framework import status as http_status
@@ -40,7 +38,6 @@ from apps.operations.services import OperationsService
 from apps.operations.cli_catalog import load_cli_command_catalog
 from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2, compute_etag
 from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
-from apps.operations.ibcmd_legacy import legacy_ibcmd_config_to_ibcmd_cli_request
 from apps.operations.driver_catalog_effective import (
     compute_actor_roles_hash,
     compute_driver_catalog_etag,
@@ -70,7 +67,6 @@ from apps.operations.prometheus_metrics import (
     record_sse_stream_error,
     record_sse_loop_duration,
     record_driver_command_denied,
-    record_deprecated_operation,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,21 +117,6 @@ OPERATION_CATALOG_DRIVER_ORDER = {
     "workflow": 5,
 }
 
-LEGACY_IBCMD_SUNSET_AT = datetime(2026, 4, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
-
-
-def _apply_legacy_ibcmd_deprecation_headers(
-    response: Response,
-    *,
-    legacy_operation_type: str,
-    endpoint: str,
-) -> Response:
-    response["Deprecation"] = "true"
-    response["Sunset"] = http_date(LEGACY_IBCMD_SUNSET_AT.timestamp())
-    response["X-CC1C-Legacy-Operation-Type"] = str(legacy_operation_type or "")
-    response["X-CC1C-Legacy-Endpoint"] = str(endpoint or "")
-    return response
-
 OPERATION_CATALOG_UI_META = {
     "lock_scheduled_jobs": {
         "icon": "LockOutlined",
@@ -172,30 +153,6 @@ OPERATION_CATALOG_UI_META = {
     "health_check": {
         "icon": "HeartOutlined",
         "requires_config": False,
-    },
-    "ibcmd_backup": {
-        "icon": "DatabaseOutlined",
-        "requires_config": True,
-    },
-    "ibcmd_restore": {
-        "icon": "DatabaseOutlined",
-        "requires_config": True,
-    },
-    "ibcmd_replicate": {
-        "icon": "SyncOutlined",
-        "requires_config": True,
-    },
-    "ibcmd_create": {
-        "icon": "DatabaseOutlined",
-        "requires_config": True,
-    },
-    "ibcmd_load_cfg": {
-        "icon": "FileOutlined",
-        "requires_config": True,
-    },
-    "ibcmd_extension_update": {
-        "icon": "SettingOutlined",
-        "requires_config": True,
     },
     "ibcmd_cli": {
         "icon": "CodeOutlined",
@@ -243,14 +200,7 @@ EXTRA_OPERATION_CATALOG = [
     },
 ]
 
-DEPRECATED_OPERATIONS = {
-    "ibcmd_backup": "Deprecated. Use ibcmd_cli command infobase.dump (or create a shortcut).",
-    "ibcmd_restore": "Deprecated. Use ibcmd_cli command infobase.restore (or create a shortcut).",
-    "ibcmd_replicate": "Deprecated. Use ibcmd_cli command infobase.replicate (or create a shortcut).",
-    "ibcmd_create": "Deprecated. Use ibcmd_cli command infobase.create (or create a shortcut).",
-    "ibcmd_load_cfg": "Deprecated. Use ibcmd_cli command infobase.config.load-cfg (or create a shortcut).",
-    "ibcmd_extension_update": "Deprecated. Use ibcmd_cli command infobase.extension.update (or create a shortcut).",
-}
+DEPRECATED_OPERATIONS: dict[str, str] = {}
 
 
 # =============================================================================
@@ -643,14 +593,6 @@ class ExecuteOperationRequestSerializer(serializers.Serializer):
         ('delete', 'Delete Records'),
         ('query', 'Query Records'),
     ]
-    IBCMD_OPERATION_TYPES = [
-        ('ibcmd_backup', 'IBCMD Backup'),
-        ('ibcmd_restore', 'IBCMD Restore'),
-        ('ibcmd_replicate', 'IBCMD Replicate'),
-        ('ibcmd_create', 'IBCMD Create'),
-        ('ibcmd_load_cfg', 'IBCMD Load Config/Extension'),
-        ('ibcmd_extension_update', 'IBCMD Extension Update'),
-    ]
     CLI_OPERATION_TYPES = [
         ('designer_cli', 'Designer CLI'),
     ]
@@ -659,7 +601,6 @@ class ExecuteOperationRequestSerializer(serializers.Serializer):
         choices=(
             RAS_OPERATION_TYPES
             + ODATA_OPERATION_TYPES
-            + IBCMD_OPERATION_TYPES
             + CLI_OPERATION_TYPES
         ),
         help_text="Operation type to execute"
@@ -689,40 +630,6 @@ class ExecuteOperationThrottle(UserRateThrottle):
     """Rate limit: 30 operations per minute per user."""
     rate = '30/min'
     scope = 'execute_operation'
-
-
-class ExecuteIbcmdOperationRequestSerializer(serializers.Serializer):
-    """Request body for execute_ibcmd_operation endpoint."""
-    IBCMD_OPERATION_TYPES = [
-        ('ibcmd_backup', 'IBCMD Backup'),
-        ('ibcmd_restore', 'IBCMD Restore'),
-        ('ibcmd_replicate', 'IBCMD Replicate'),
-        ('ibcmd_create', 'IBCMD Create'),
-        ('ibcmd_load_cfg', 'IBCMD Load Config/Extension'),
-        ('ibcmd_extension_update', 'IBCMD Extension Update'),
-    ]
-
-    operation_type = serializers.ChoiceField(
-        choices=IBCMD_OPERATION_TYPES,
-        help_text="Type of IBCMD operation to execute"
-    )
-    database_ids = serializers.ListField(
-        child=serializers.UUIDField(format='hex_verbose'),
-        min_length=1,
-        max_length=200,
-        help_text="List of database UUIDs"
-    )
-    config = serializers.DictField(
-        required=False,
-        default=dict,
-        help_text="Operation-specific configuration (dbms, db_server, db_name, etc.)"
-    )
-
-
-class ExecuteIbcmdOperationThrottle(UserRateThrottle):
-    """Rate limit: 10 IBCMD operations per minute per user."""
-    rate = '10/min'
-    scope = 'execute_ibcmd_operation'
 
 
 class IbcmdCliConnectionOfflineSerializer(serializers.Serializer):
@@ -1397,7 +1304,6 @@ def cancel_operation(request):
       `unblock_sessions`, `terminate_sessions`
     - OData: `create`, `update`, `delete`, `query`
     - CLI: `designer_cli`
-    - IBCMD: `ibcmd_backup`, `ibcmd_restore`, `ibcmd_replicate`, `ibcmd_create`
 
     **Config notes:**
     - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`, `parameter`
@@ -1451,22 +1357,6 @@ def execute_operation(request):
                 config=config,
                 user=request.user,
             )
-        elif operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
-            record_deprecated_operation(operation_type, "execute_operation")
-            mapped = legacy_ibcmd_config_to_ibcmd_cli_request(operation_type, config)
-            mapped["database_ids"] = database_ids
-            cli_serializer = ExecuteIbcmdCliOperationRequestSerializer(data=mapped)
-            cli_serializer.is_valid(raise_exception=True)
-            response = _execute_ibcmd_cli_validated(
-                request,
-                cli_serializer.validated_data,
-                legacy_operation_type=operation_type,
-            )
-            return _apply_legacy_ibcmd_deprecation_headers(
-                response,
-                legacy_operation_type=operation_type,
-                endpoint="execute_operation",
-            )
         elif operation_type in dict(ExecuteOperationRequestSerializer.CLI_OPERATION_TYPES):
             if not config.get("command"):
                 raise ValueError("command is required for designer_cli")
@@ -1505,125 +1395,23 @@ def execute_operation(request):
         }, status=http_status.HTTP_202_ACCEPTED)
 
     except ValueError as e:
-        response = Response({
+        return Response({
             'success': False,
             'error': {
                 'code': 'VALIDATION_ERROR',
                 'message': str(e)
             }
         }, status=400)
-        if operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
-            return _apply_legacy_ibcmd_deprecation_headers(
-                response,
-                legacy_operation_type=operation_type,
-                endpoint="execute_operation",
-            )
-        return response
 
     except Exception as e:
         logger.error(f"Error executing RAS operation: {e}", exc_info=True)
-        response = Response({
+        return Response({
             'success': False,
             'error': {
                 'code': 'INTERNAL_ERROR',
                 'message': 'Failed to queue operation'
             }
         }, status=500)
-        if operation_type in dict(ExecuteOperationRequestSerializer.IBCMD_OPERATION_TYPES):
-            return _apply_legacy_ibcmd_deprecation_headers(
-                response,
-                legacy_operation_type=operation_type,
-                endpoint="execute_operation",
-            )
-        return response
-
-
-# =============================================================================
-# Execute IBCMD Operation
-# =============================================================================
-
-@extend_schema(
-    tags=['v2'],
-    summary='Execute IBCMD operation',
-    description='''
-    Queue an IBCMD operation for execution on selected databases.
-
-    **Supported operation types:**
-    - `ibcmd_backup` - Backup infobase
-    - `ibcmd_restore` - Restore infobase from backup
-    - `ibcmd_replicate` - Replicate infobase to another server
-    - `ibcmd_create` - Create new infobase
-    - `ibcmd_load_cfg` - Load configuration (*.cf) or extension (*.cfe) into infobase
-    - `ibcmd_extension_update` - Update extension properties (safe-mode, scope, etc.)
-    ''',
-    request=ExecuteIbcmdOperationRequestSerializer,
-    responses={
-        202: ExecuteOperationResponseSerializer,
-        400: OperationErrorResponseSerializer,
-        401: OpenApiResponse(description='Unauthorized'),
-    }
-)
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, CanExecuteOperation])
-@throttle_classes([ExecuteIbcmdOperationThrottle])
-def execute_ibcmd_operation(request):
-    """
-    POST /api/v2/operations/execute-ibcmd/
-
-    Queue an IBCMD operation (backup/restore/replicate/create) for multiple databases.
-    """
-    serializer = ExecuteIbcmdOperationRequestSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    operation_type = serializer.validated_data['operation_type']
-    database_ids = serializer.validated_data['database_ids']
-    config = serializer.validated_data.get('config', {})
-
-    try:
-        record_deprecated_operation(operation_type, "execute_ibcmd_operation")
-        mapped = legacy_ibcmd_config_to_ibcmd_cli_request(operation_type, config)
-        mapped["database_ids"] = database_ids
-        cli_serializer = ExecuteIbcmdCliOperationRequestSerializer(data=mapped)
-        cli_serializer.is_valid(raise_exception=True)
-        response = _execute_ibcmd_cli_validated(
-            request,
-            cli_serializer.validated_data,
-            legacy_operation_type=operation_type,
-        )
-        return _apply_legacy_ibcmd_deprecation_headers(
-            response,
-            legacy_operation_type=operation_type,
-            endpoint="execute_ibcmd_operation",
-        )
-
-    except ValueError as e:
-        response = Response({
-            'success': False,
-            'error': {
-                'code': 'VALIDATION_ERROR',
-                'message': str(e)
-            }
-        }, status=400)
-        return _apply_legacy_ibcmd_deprecation_headers(
-            response,
-            legacy_operation_type=operation_type,
-            endpoint="execute_ibcmd_operation",
-        )
-
-    except Exception as e:
-        logger.error(f"Error executing IBCMD operation: {e}", exc_info=True)
-        response = Response({
-            'success': False,
-            'error': {
-                'code': 'INTERNAL_ERROR',
-                'message': 'Failed to queue operation'
-            }
-        }, status=500)
-        return _apply_legacy_ibcmd_deprecation_headers(
-            response,
-            legacy_operation_type=operation_type,
-            endpoint="execute_ibcmd_operation",
-        )
 
 
 # =============================================================================
@@ -2502,6 +2290,17 @@ def get_operation_catalog(request):
             "deprecated": False,
             "deprecated_message": None,
         })
+
+    if not request.user.is_staff:
+        items = [
+            item
+            for item in items
+            if not (
+                item.get("kind") == "operation"
+                and str(item.get("operation_type") or "").startswith("ibcmd_")
+                and item.get("operation_type") != "ibcmd_cli"
+            )
+        ]
 
     items.sort(
         key=lambda item: (

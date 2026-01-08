@@ -1,8 +1,7 @@
 """
-IBCMD Backend for Workflow Engine.
+IBCMD CLI Backend for Workflow Engine.
 
-Handles ibcmd-based operations via BatchOperationFactory and Go Worker.
-Supports: ibcmd_backup, ibcmd_restore, ibcmd_replicate, ibcmd_create, ibcmd_load_cfg, ibcmd_extension_update
+Handles schema-driven ibcmd_cli operations via BatchOperationFactory and Go Worker.
 """
 
 import logging
@@ -19,7 +18,6 @@ from apps.templates.registry import (
     OperationType,
     BackendType,
     TargetEntity,
-    ParameterSchema,
 )
 
 from ..base import NodeExecutionMode, NodeExecutionResult
@@ -40,163 +38,15 @@ class IBCMDBackend(AbstractOperationBackend):
 
     OPERATION_TYPES: List[OperationType] = [
         OperationType(
-            id='ibcmd_backup',
-            name='IBCMD Backup Infobase',
-            description='Create an infobase backup using ibcmd.',
+            id='ibcmd_cli',
+            name='IBCMD CLI',
+            description='Schema-driven IBCMD command execution.',
             backend=BackendType.IBCMD,
             target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Database engine (PostgreSQL, MSSQLServer, etc.)'),
-                ParameterSchema('db_server', 'string', description='Database server connection string'),
-                ParameterSchema('db_name', 'string', description='Database name'),
-                ParameterSchema('db_user', 'string', description='Database username'),
-                ParameterSchema('db_password', 'string', description='Database password'),
-            ],
-            optional_parameters=[
-                ParameterSchema('output_path', 'string', required=False, description='Backup output path'),
-                ParameterSchema('output_name', 'string', required=False, description='Backup file name'),
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
-            is_async=True,
-            timeout_seconds=600,
-            category='admin',
-            tags=['ibcmd', 'backup'],
-        ),
-        OperationType(
-            id='ibcmd_restore',
-            name='IBCMD Restore Infobase',
-            description='Restore an infobase backup using ibcmd.',
-            backend=BackendType.IBCMD,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Database engine (PostgreSQL, MSSQLServer, etc.)'),
-                ParameterSchema('db_server', 'string', description='Database server connection string'),
-                ParameterSchema('db_name', 'string', description='Database name'),
-                ParameterSchema('db_user', 'string', description='Database username'),
-                ParameterSchema('db_password', 'string', description='Database password'),
-                ParameterSchema('input_path', 'string', description='Backup input path'),
-            ],
-            optional_parameters=[
-                ParameterSchema('create_database', 'boolean', required=False, description='Create database if missing'),
-                ParameterSchema('force', 'boolean', required=False, description='Force restore'),
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
             is_async=True,
             timeout_seconds=900,
             category='admin',
-            tags=['ibcmd', 'restore'],
-        ),
-        OperationType(
-            id='ibcmd_replicate',
-            name='IBCMD Replicate Infobase',
-            description='Replicate an infobase to another server using ibcmd.',
-            backend=BackendType.IBCMD,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Source database engine'),
-                ParameterSchema('db_server', 'string', description='Source database server connection string'),
-                ParameterSchema('db_name', 'string', description='Source database name'),
-                ParameterSchema('db_user', 'string', description='Source database username'),
-                ParameterSchema('db_password', 'string', description='Source database password'),
-                ParameterSchema('target_dbms', 'string', description='Target database engine'),
-                ParameterSchema('target_db_server', 'string', description='Target database server connection string'),
-                ParameterSchema('target_db_name', 'string', description='Target database name'),
-                ParameterSchema('target_db_user', 'string', description='Target database username'),
-                ParameterSchema('target_db_password', 'string', description='Target database password'),
-            ],
-            optional_parameters=[
-                ParameterSchema('jobs_count', 'integer', required=False, description='Source jobs count'),
-                ParameterSchema('target_jobs_count', 'integer', required=False, description='Target jobs count'),
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
-            is_async=True,
-            timeout_seconds=1200,
-            category='admin',
-            tags=['ibcmd', 'replicate'],
-        ),
-        OperationType(
-            id='ibcmd_create',
-            name='IBCMD Create Infobase',
-            description='Create a new infobase using ibcmd.',
-            backend=BackendType.IBCMD,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Database engine (PostgreSQL, MSSQLServer, etc.)'),
-                ParameterSchema('db_server', 'string', description='Database server connection string'),
-                ParameterSchema('db_name', 'string', description='Database name'),
-                ParameterSchema('db_user', 'string', description='Database username'),
-                ParameterSchema('db_password', 'string', description='Database password'),
-            ],
-            optional_parameters=[
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
-            is_async=True,
-            timeout_seconds=600,
-            category='admin',
-            tags=['ibcmd', 'create'],
-        ),
-        OperationType(
-            id='ibcmd_load_cfg',
-            name='IBCMD Load Config/Extension',
-            description='Load configuration (*.cf) or extension (*.cfe) into an infobase using ibcmd.',
-            backend=BackendType.IBCMD,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Database engine (PostgreSQL, MSSQLServer, etc.)'),
-                ParameterSchema('db_server', 'string', description='Database server connection string'),
-                ParameterSchema('db_name', 'string', description='Database name'),
-                ParameterSchema('db_user', 'string', description='Database username'),
-                ParameterSchema('db_password', 'string', description='Database password'),
-                ParameterSchema('file', 'string', description='Path to *.cf/*.cfe file (supports artifact://...)'),
-            ],
-            optional_parameters=[
-                ParameterSchema('extension', 'string', required=False, description='Extension name (for *.cfe load)'),
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
-            is_async=True,
-            timeout_seconds=900,
-            category='admin',
-            tags=['ibcmd', 'config', 'load'],
-        ),
-        OperationType(
-            id='ibcmd_extension_update',
-            name='IBCMD Extension Update',
-            description='Update extension properties (active/safe-mode/scope/security profile) using ibcmd.',
-            backend=BackendType.IBCMD,
-            target_entity=TargetEntity.INFOBASE,
-            required_parameters=[
-                ParameterSchema('dbms', 'string', description='Database engine (PostgreSQL, MSSQLServer, etc.)'),
-                ParameterSchema('db_server', 'string', description='Database server connection string'),
-                ParameterSchema('db_name', 'string', description='Database name'),
-                ParameterSchema('db_user', 'string', description='Database username'),
-                ParameterSchema('db_password', 'string', description='Database password'),
-                ParameterSchema('name', 'string', description='Extension name'),
-            ],
-            optional_parameters=[
-                ParameterSchema('active', 'boolean', required=False, description='Enable/disable extension'),
-                ParameterSchema('safe_mode', 'boolean', required=False, description='Enable/disable safe mode'),
-                ParameterSchema('scope', 'string', required=False, description='Extension scope (infobase|data-separation)'),
-                ParameterSchema('security_profile_name', 'string', required=False, description='Security profile name'),
-                ParameterSchema('unsafe_action_protection', 'boolean', required=False, description='Enable/disable unsafe action protection'),
-                ParameterSchema('used_in_distributed_infobase', 'boolean', required=False, description='Enable/disable usage in distributed infobase'),
-                ParameterSchema('user', 'string', required=False, description='1C user override'),
-                ParameterSchema('password', 'string', required=False, description='1C password override'),
-                ParameterSchema('additional_args', 'json', required=False, description='Extra ibcmd arguments'),
-            ],
-            is_async=True,
-            timeout_seconds=600,
-            category='admin',
-            tags=['ibcmd', 'extension', 'update'],
+            tags=['ibcmd', 'cli'],
         ),
     ]
 

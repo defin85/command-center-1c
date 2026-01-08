@@ -4,7 +4,7 @@ Operation backends for Workflow Engine.
 Strategy pattern implementation for routing operations to different backends:
 - ODataBackend: For OData-based operations (create, update, delete, query)
 - RASBackend: For RAS-based operations (lock/unlock scheduled jobs, block/unblock sessions, terminate)
-- IBCMDBackend: For ibcmd operations (ibcmd_backup, ibcmd_restore, ibcmd_replicate, ibcmd_create)
+- IBCMDBackend: For schema-driven ibcmd operations (ibcmd_cli)
 - CLIBackend: For designer CLI operations (designer_cli)
 """
 

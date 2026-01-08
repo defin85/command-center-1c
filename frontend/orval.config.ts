@@ -13,6 +13,7 @@ export default defineConfig({
       mode: 'tags-split',
       target: './src/api/generated',
       schemas: './src/api/generated/model',
+      clean: ['!.gitignore', '!.npmignore', '!.openapi-generator/**', '!.openapi-generator-ignore'],
       client: 'axios',
       // Use existing apiClient with all interceptors
       override: {
@@ -69,6 +70,7 @@ export default defineConfig({
       mode: 'single',
       target: './src/api/generated-gateway/index.ts',
       schemas: './src/api/generated-gateway/model',
+      clean: true,
       client: 'axios',
       override: {
         mutator: {

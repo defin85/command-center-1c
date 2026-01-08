@@ -1,8 +1,9 @@
 /**
  * Constants for dashboard statistics calculations.
  */
-import { BatchOperationStatusEnum } from '../../api/generated/model/batchOperationStatusEnum'
-import { StatusC5cEnum } from '../../api/generated/model/statusC5cEnum'
+import { BatchOperationStatus } from '../../api/generated/model/batchOperationStatus'
+import { ClusterStatus } from '../../api/generated/model/clusterStatus'
+import { DatabaseStatus } from '../../api/generated/model/databaseStatus'
 
 // ============================================================================
 // Operation Status Groups (for statistics calculation)
@@ -10,16 +11,16 @@ import { StatusC5cEnum } from '../../api/generated/model/statusC5cEnum'
 
 /** Statuses considered as "running" for dashboard stats */
 export const OPERATION_RUNNING_STATUSES = [
-  BatchOperationStatusEnum.pending,
-  BatchOperationStatusEnum.queued,
-  BatchOperationStatusEnum.processing,
+  BatchOperationStatus.pending,
+  BatchOperationStatus.queued,
+  BatchOperationStatus.processing,
 ] as const
 
 /** Status for completed operations */
-export const OPERATION_COMPLETED_STATUS = BatchOperationStatusEnum.completed
+export const OPERATION_COMPLETED_STATUS = BatchOperationStatus.completed
 
 /** Status for failed operations */
-export const OPERATION_FAILED_STATUS = BatchOperationStatusEnum.failed
+export const OPERATION_FAILED_STATUS = BatchOperationStatus.failed
 
 // ============================================================================
 // Database Status Groups
@@ -33,7 +34,7 @@ export const OPERATION_FAILED_STATUS = BatchOperationStatusEnum.failed
 export const DATABASE_LOCKED_STATUS = 'locked' as const
 
 /** Database status indicating maintenance */
-export const DATABASE_MAINTENANCE_STATUS = StatusC5cEnum.maintenance
+export const DATABASE_MAINTENANCE_STATUS = DatabaseStatus.maintenance
 
 /** Database statuses considered unhealthy */
 export const DATABASE_UNHEALTHY_STATUSES = [
@@ -47,6 +48,6 @@ export const DATABASE_UNHEALTHY_STATUSES = [
 
 /** Cluster statuses indicating critical state */
 export const CLUSTER_CRITICAL_STATUSES = [
-  StatusC5cEnum.error,
-  StatusC5cEnum.inactive,
+  ClusterStatus.error,
+  ClusterStatus.inactive,
 ] as const

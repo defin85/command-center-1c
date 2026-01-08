@@ -268,8 +268,8 @@ MVP-подход (A):
    - `BatchOperation.TYPE_IBCMD_CLI = 'ibcmd_cli'`
    - registry + catalog UI meta
 2) API execute:
-   - либо расширить существующий `execute-ibcmd`,
-   - либо использовать общий `/api/v2/operations/execute/`.
+   - использовать `POST /api/v2/operations/execute-ibcmd-cli/` (schema-driven, рекомендуемый путь),
+   - `POST /api/v2/operations/execute/` — только RAS/OData/designer_cli (legacy `execute-ibcmd` удалён).
 3) Payload (рекомендация):
 ```json
 {

@@ -117,12 +117,6 @@ export const SelectTypeStep = ({
   const filteredItems = useMemo(() => {
     const query = searchValue.trim().toLowerCase()
     return items.filter((item) => {
-      if (item.kind === 'operation' && typeof item.operation_type === 'string') {
-        const op = item.operation_type
-        if (op.startsWith('ibcmd_') && op !== 'ibcmd_cli') {
-          return false
-        }
-      }
       if (selectedDrivers.length > 0 && !selectedDrivers.includes(item.driver)) {
         return false
       }

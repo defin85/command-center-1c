@@ -7,7 +7,7 @@
 import type { AxiosProgressEvent } from 'axios'
 
 import { getV2 } from './generated'
-import type { PurposeEnum } from './generated/model'
+import type { FileUploadRequestPurpose } from './generated/model'
 import { getApiBaseUrl } from './baseUrl'
 import { apiClient } from './client'
 
@@ -51,7 +51,7 @@ export const filesApi = {
    */
   upload: async (
     file: File,
-    purpose: PurposeEnum,
+    purpose: FileUploadRequestPurpose,
     expiryHours?: number,
     onProgress?: ProgressCallback
   ): Promise<FileUploadResponse> => {

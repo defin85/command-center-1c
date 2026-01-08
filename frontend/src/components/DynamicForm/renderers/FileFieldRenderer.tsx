@@ -16,7 +16,7 @@ import {
 import type { UploadFile, UploadChangeParam } from 'antd/es/upload/interface'
 import type { FieldRendererProps } from '../types'
 import { filesApi } from '../../../api/files'
-import { PurposeEnum } from '../../../api/generated/model'
+import { FileUploadRequestPurpose } from '../../../api/generated/model'
 
 /**
  * Validate file type against accept pattern.
@@ -121,7 +121,7 @@ export function FileFieldRenderer({
 
     try {
       // Upload file with progress tracking
-      const response = await filesApi.upload(file, PurposeEnum.operation_input, undefined, (percent) => {
+      const response = await filesApi.upload(file, FileUploadRequestPurpose.operation_input, undefined, (percent) => {
         // Check if aborted before updating state
         if (!abortControllerRef.current?.signal.aborted) {
           setProgress(percent)

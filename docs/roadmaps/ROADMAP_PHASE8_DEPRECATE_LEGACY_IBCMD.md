@@ -1,4 +1,4 @@
-# TODO: Phase 8 — Миграция/депрекация legacy `ibcmd_*` (переход на schema-driven `ibcmd_cli`)
+# TODO: Phase 8 — Удаление legacy `ibcmd_*` (переход на schema-driven `ibcmd_cli`)
 
 Связано:
 - `docs/roadmaps/ROADMAP_IBCMD_SCHEMA_DRIVEN_COMMANDS.md` (Phase 8)
@@ -9,8 +9,8 @@
 - вместо “предустановленных” `ibcmd_*` дать пользователям возможность создавать свои “ссылки/шорткаты” (presets) на команды.
 
 Сроки (предложение, можно скорректировать):
-- Deprecation: 2026-01-08 (введено)
-- Sunset: 2026-04-01 (после этой даты удаляем legacy endpoint/типы и остатки кода)
+- Start (stop-new + cleanup): 2026-01-08
+- Target finish (cleanup): 2026-01-15
 
 Примечание по статусам:
 - `[ ]` — не сделано
@@ -21,18 +21,19 @@
 ## 0) Границы и правила депрекации
 
 - [x] Создан checklist Phase 8
-- [x] Зафиксировать окно совместимости и дату `Sunset` для legacy `ibcmd_*` (Sunset: 2026-04-01)
-- [ ] Определить “definition of done” для Phase 8 (технические критерии снятия legacy)
-- [ ] Согласовать UX правило: legacy `ibcmd_*` полностью скрыты от non-staff, видны только при compat/миграции
+- [x] Определить “definition of done” для Phase 8 (технические критерии снятия legacy)
+  - [x] Удалены legacy endpoints/enum’ы/ветки кода и документация legacy
+  - [x] Данные мигрированы (Templates → `ibcmd_cli`), legacy BatchOperation удалены из БД
+  - [x] Перегенерены клиенты (routes/TS), пройдены проверки
+- [x] Согласовать UX правило: legacy `ibcmd_*` полностью скрыты от non-staff (теперь их нет в каталоге/типах)
 
 ---
 
 ## 1) Инвентаризация и маппинг legacy → catalog `command_id`
 
-- [x] Составить таблицу соответствий `ibcmd_*` → `ibcmd.<...>` (стабильные `command_id`)
-- [x] Зафиксировать правила переноса payload (поля, defaults, masking, artifact://) в коде (`apps/operations/ibcmd_legacy.py`)
-- [x] Добавить юнит-тесты на маппинг (legacy endpoint → `ibcmd_cli` operation)
-- [x] Добавить метрику/счётчик “legacy usage” по каждому `ibcmd_*`
+- [x] Составить таблицу соответствий `ibcmd_*` → `command_id` (стабильные `command_id`)
+- [x] Зафиксировать правила переноса payload (поля, defaults, masking, artifact://) в миграции Templates и builder’е `ibcmd_cli`
+- [x] Добавить тесты: legacy endpoint отсутствует; `operation_type=ibcmd_*` отклоняется
 
 Touchpoints (as-is):
 - `orchestrator/apps/api_v2/views/operations.py` (UI meta, каталог операций)
@@ -44,13 +45,12 @@ Touchpoints (as-is):
 
 ---
 
-## 2) Orchestrator: compat-слой + явная депрекация
+## 2) Orchestrator: stop-new + cleanup
 
-- [x] Добавить нормализацию: любые `ibcmd_*` транслировать в `ibcmd_cli` (один путь исполнения)
-- [x] Добавить HTTP-сигналы депрекации (`Deprecation`/`Sunset` headers) для legacy endpoint/типов
-- [x] Пометить legacy операции в каталоге как deprecated (и скрывать в UI для non-staff)
-- [x] Запретить создание новых legacy `ibcmd_*` (server-side: legacy endpoint/типы создают только `ibcmd_cli`)
-- [x] Добавить аудит: фиксировать факт “legacy compat” при запуске операции (Prometheus + metadata)
+- [x] Удалить endpoint `POST /api/v2/operations/execute-ibcmd/`
+- [x] Убрать `ibcmd_*` из `ExecuteOperationRequest.operation_type` (и отказ от legacy в серверной логике)
+- [x] Удалить legacy код/registry entries: оставлен только `ibcmd_cli`
+- [x] Удалить legacy `ibcmd_*` из `BatchOperation.operation_type` (на уровне доменной модели)
 
 ---
 
@@ -58,9 +58,8 @@ Touchpoints (as-is):
 
 ### 3.1 Удаление/скрытие legacy
 
-- [ ] Убрать `ibcmd_*` из пользовательских UI путей (Wizard/каталог/поиск)
-- [ ] Отобразить предупреждение/баннер при открытии старых операций (если они ещё есть в истории)
-- [ ] Обеспечить обратную совместимость отображения истории/логов для уже созданных legacy операций
+- [x] Убрать `ibcmd_*` из пользовательских UI путей (Wizard/каталог/поиск)
+- [x] Обеспечить обратную совместимость отображения истории (если в БД были legacy операции — они удалены миграцией)
 
 ### 3.2 Links/Presets (пользовательские “ссылки”)
 
@@ -73,33 +72,29 @@ Touchpoints (as-is):
 
 ## 4) Миграция данных: Templates / Workflows / Artifacts
 
-- [ ] Найти все места, где сериализуются/хранятся `ibcmd_*` в Template/Workflow/Artifact payload
-- [ ] Реализовать миграцию: переписать `ibcmd_*` → `ibcmd_cli + command_id + params`
-- [ ] Добавить dry-run режим (отчёт: сколько объектов будет изменено, какие типы встречаются)
-- [ ] Добавить “idempotent” гарантию (повторный прогон не ломает данные)
-- [ ] Добавить тесты на миграцию (минимум: 1–2 fixtures)
+- [x] Реализовать миграцию Templates: переписать `ibcmd_*` → `ibcmd_cli + command_id + params`
+- [x] Удалить legacy `BatchOperation` из БД (data migration)
 
 ---
 
 ## 5) Worker: удаление legacy driver и унификация исполнения
 
-- [ ] Убедиться, что `ibcmd_cli` полностью покрывает нужные сценарии legacy (артефакты, masking, прогресс)
-- [ ] Удалить/заморозить `ibcmdops` driver после окончания окна совместимости
-- [ ] Удалить старые code paths и тесты, завязанные на `ibcmd_*`
+- [x] Убедиться, что `ibcmd_cli` покрывает нужные сценарии legacy (artifact://, masking, прогресс)
+- [x] Удалить старые code paths, завязанные на `ibcmd_*` (оставлен только `ibcmd_cli`)
 
 ---
 
 ## 6) OpenAPI + документация + коммуникация
 
-- [x] Пометить legacy в `contracts/orchestrator/openapi.yaml` как deprecated (и указать срок `Sunset`)
-- [x] Обновить `docs/ibcmd.md`: новый путь (`ibcmd_cli`), каталоги команд, shortcuts, миграция
-- [x] Добавить “migration notes” для пользователей (что меняется, как создать ссылку вместо `ibcmd_*`)
+- [x] Удалить legacy из `contracts/orchestrator/openapi.yaml` (paths + enums)
+- [x] Перегенерить клиентов (routes/TS)
+- [x] Обновить `docs/ibcmd.md` под `ibcmd_cli`
 
 ---
 
 ## 7) Удаление legacy (финальный чеклист)
 
-- [ ] Метрики показывают 0 (или приемлемый порог) legacy запусков за период
-- [ ] Запрещено создание новых legacy, миграция данных завершена
-- [ ] Удалены: enums `ibcmd_*` из UI/контрактов, endpoints/ветки кода, документация legacy
+- [x] Запрещено создание новых legacy (endpoint/enum’ы удалены)
+- [x] Миграция данных завершена (Templates) + legacy BatchOperation удалены из БД
+- [x] Удалены: enums `ibcmd_*` из UI/контрактов, endpoints/ветки кода, документация legacy
 - [ ] Добавлен/обновлён smoke-test на выполнение `ibcmd_cli` по каталогу (sanity)

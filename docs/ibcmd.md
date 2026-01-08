@@ -14,85 +14,68 @@ database:
 
 ---
 
-## Статус (Phase 8: депрекация legacy `ibcmd_*`)
+## Статус (Phase 8: stop-new + cleanup)
 
-- `ibcmd_*` operation types считаются **legacy** и будут удаляться по мере миграции.
-- Новый рекомендуемый путь: **schema-driven** `ibcmd_cli` (`POST /api/v2/operations/execute-ibcmd-cli/`, `command_id + params`).
-- Legacy endpoint `POST /api/v2/operations/execute-ibcmd/` помечен как **DEPRECATED** и предназначен только для обратной совместимости.
-- Sunset (план удаления legacy): **2026-04-01**.
-- `execute-ibcmd` и legacy `ibcmd_*` через `POST /api/v2/operations/execute/` больше не создают новые legacy операции: они транслируются в `ibcmd_cli`.
-- Legacy ответы содержат заголовки `Deprecation: true` и `Sunset: Wed, 01 Apr 2026 00:00:00 GMT`.
-- Workflows/Templates: legacy `ibcmd_*` в workflow-операциях создаются как `ibcmd_cli` (в `metadata.legacy_operation_type` сохраняется исходный тип).
+- Legacy operation types `ibcmd_*` удалены.
+- Единственный публичный путь запуска IBCMD: **schema-driven** `ibcmd_cli` (`POST /api/v2/operations/execute-ibcmd-cli/`).
+- `POST /api/v2/operations/execute/` для IBCMD не используется (только RAS/OData/designer_cli).
 
-Маппинг legacy → `ibcmd_cli` (catalog `command_id`):
+Для миграции ментальной модели (старое → новое `command_id`):
 - `ibcmd_backup` → `infobase.dump`
 - `ibcmd_restore` → `infobase.restore`
-- `ibcmd_replicate` → `infobase.replicate`
-- `ibcmd_create` → `infobase.create`
-- `ibcmd_load_cfg` → `infobase.config.load-cfg`
 - `ibcmd_extension_update` → `infobase.extension.update`
-
-### Migration notes
-
-- Вместо `ibcmd_*` используйте `ibcmd_cli` + `command_id` из driver-catalog v2.
-- Для удобства можно создавать user shortcuts на команды (per-user, MVP: хранит только `driver`, `command_id`, `title`, без параметров/секретов).
 
 ---
 
-## IBCMD в CommandCenter1C (Phase 5)
+## IBCMD в CommandCenter1C (`ibcmd_cli`)
 
-### Operation types
+### API: `POST /api/v2/operations/execute-ibcmd-cli/`
 
-- `ibcmd_backup` — бэкап инфобазы (`infobase dump`)
-- `ibcmd_restore` — восстановление (`infobase restore`)
-- `ibcmd_replicate` — репликация (`infobase replicate`)
-- `ibcmd_create` — создание базы (`infobase create`)
-- `ibcmd_load_cfg` — загрузка конфигурации/расширения из файла (`infobase config load-cfg`)
-- `ibcmd_extension_update` — обновление свойств расширения (`infobase extension update`)
+`ibcmd_cli` использует driver-catalog v2 (base@approved + overrides@active) для валидации `command_id` и сборки `argv[]`.
 
-### Payload (пример)
+Пример (per_database):
 
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "output_path": "db-123/backup_20250101.dt",
-  "input_path": "db-123/backup_20250101.dt",
-  "create_database": true,
-  "force": true,
-  "additional_args": ["--jobs-count=4"]
+  "command_id": "infobase.dump",
+  "mode": "guided",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "params": {
+    "output_path": "db-123/backup_20250101.dt",
+    "force": true
+  },
+  "additional_args": ["--jobs-count=4"],
+  "stdin": "",
+  "confirm_dangerous": false,
+  "timeout_seconds": 900
 }
 ```
 
-Пример `ibcmd_load_cfg` (загрузка расширения из артефакта MinIO):
+Пример `infobase.config.load-cfg` (загрузка расширения из артефакта MinIO):
 
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "file": "artifact://artifacts/<artifact_id>/<version_id>/myext.cfe",
-  "extension": "MyExtension"
+  "command_id": "infobase.config.load-cfg",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "params": {
+    "file": "artifact://artifacts/<artifact_id>/<version_id>/myext.cfe",
+    "extension": "MyExtension"
+  }
 }
 ```
 
-Пример `ibcmd_extension_update` (включить safe-mode и защиту от опасных действий):
+Пример `infobase.extension.update` (включить safe-mode и защиту от опасных действий):
 
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "name": "MyExtension",
-  "safe_mode": true,
-  "unsafe_action_protection": true
+  "command_id": "infobase.extension.update",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "confirm_dangerous": true,
+  "params": {
+    "name": "MyExtension",
+    "safe_mode": true,
+    "unsafe_action_protection": true
+  }
 }
 ```
 
@@ -101,10 +84,10 @@ database:
 - **local (default):** `IBCMD_STORAGE_PATH` (по умолчанию `storage/ibcmd`)
 - **s3:** `IBCMD_STORAGE_BACKEND=s3` и `output_path`/`input_path` в виде `s3://bucket/key` или ключа внутри bucket.
 
-Для `ibcmd_backup`:
-- `output_path` необязателен, при отсутствии генерируется имя с префиксом `ibcmd_backup_<db>_<ts>.dt`.
+Для `infobase.dump`:
+- `output_path` необязателен, при отсутствии генерируется `database_id/infobase_dump_<database_id>_<ts>.dt`.
 
-Для `ibcmd_restore`:
+Для `infobase.restore`:
 - `input_path` обязателен (или `backup_path`).
 
 ### Env vars (Worker)
@@ -149,7 +132,7 @@ AgentMode параметры (payload):
 ### Templates
 
 После добавления операций используйте `/api/v2/templates/sync-from-registry/`,
-чтобы появились шаблоны `ibcmd_*` для использования в workflows.
+чтобы появились шаблоны `ibcmd_cli` для использования в workflows.
 
 ---
 

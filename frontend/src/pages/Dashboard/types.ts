@@ -4,8 +4,8 @@
  * Types for statistics, cluster health, and dashboard state management.
  */
 
-import type { BatchOperationStatusEnum } from '../../api/generated/model/batchOperationStatusEnum'
-import type { BatchOperationOperationTypeEnum } from '../../api/generated/model/batchOperationOperationTypeEnum'
+import type { BatchOperationStatus } from '../../api/generated/model/batchOperationStatus'
+import type { BatchOperationOperationType } from '../../api/generated/model/batchOperationOperationType'
 
 /**
  * Statistics for operations
@@ -62,8 +62,8 @@ export interface ClusterStats {
 export interface DashboardOperation {
   id: string
   name: string
-  operation_type: BatchOperationOperationTypeEnum
-  status: BatchOperationStatusEnum
+  operation_type: BatchOperationOperationType
+  status: BatchOperationStatus
   progress: number
   created_at: string
   updated_at: string

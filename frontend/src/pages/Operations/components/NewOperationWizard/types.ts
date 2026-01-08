@@ -24,13 +24,7 @@ export type OperationType =
   // System Operations - internal system operations
   | 'sync_cluster'
   | 'health_check'
-  // IBCMD Operations
-  | 'ibcmd_backup'
-  | 'ibcmd_restore'
-  | 'ibcmd_replicate'
-  | 'ibcmd_create'
-  | 'ibcmd_load_cfg'
-  | 'ibcmd_extension_update'
+  // IBCMD Operations (schema-driven)
   | 'ibcmd_cli'
   // CLI Operations
   | 'designer_cli'
@@ -105,6 +99,14 @@ export const OPERATION_TYPES: OperationTypeConfig[] = [
     label: 'Designer CLI',
     description: 'Execute 1C DESIGNER batch command',
     icon: 'CodeOutlined',
+    category: 'cli',
+    requiresConfig: true,
+  },
+  {
+    type: 'ibcmd_cli',
+    label: 'IBCMD CLI',
+    description: 'Execute schema-driven IBCMD command (driver catalog)',
+    icon: 'ToolOutlined',
     category: 'cli',
     requiresConfig: true,
   },
@@ -236,37 +238,6 @@ export interface OperationConfig {
   filter?: string
   select?: string
   top?: number
-  // IBCMD
-  ibcmd_mode?: 'guided' | 'manual'
-  dbms?: string
-  db_server?: string
-  db_name?: string
-  db_user?: string
-  db_password?: string
-  user?: string
-  password?: string
-  output_path?: string
-  input_path?: string
-  create_database?: boolean
-  force?: boolean
-  target_dbms?: string
-  target_db_server?: string
-  target_db_name?: string
-  target_db_user?: string
-  target_db_password?: string
-  jobs_count?: number
-  target_jobs_count?: number
-  file?: string
-  extension?: string
-  name?: string
-  active?: boolean
-  safe_mode?: boolean
-  scope?: 'infobase' | 'data-separation'
-  security_profile_name?: string
-  unsafe_action_protection?: boolean
-  used_in_distributed_infobase?: boolean
-  additional_args?: string[] | string
-  stdin?: string
   // Schema-driven commands (cli + ibcmd)
   driver_command?: DriverCommandOperationConfig
   // Allow custom fields for workflow templates

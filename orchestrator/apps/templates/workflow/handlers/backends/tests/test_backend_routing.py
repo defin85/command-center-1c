@@ -96,10 +96,10 @@ class TestBackendRouting:
 
         assert isinstance(backend, CLIBackend)
 
-    def test_get_backend_returns_ibcmd_for_backup(self):
-        """Test that ibcmd_backup operation routes to IBCMDBackend."""
+    def test_get_backend_returns_ibcmd_for_cli(self):
+        """Test that ibcmd_cli operation routes to IBCMDBackend."""
         handler = OperationHandler()
-        backend = handler._get_backend('ibcmd_backup')
+        backend = handler._get_backend('ibcmd_cli')
 
         assert isinstance(backend, IBCMDBackend)
 
@@ -128,7 +128,7 @@ class TestBackendRouting:
         """Test that returned backends implement AbstractOperationBackend."""
         handler = OperationHandler()
 
-        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_backup', 'designer_cli']:
+        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_cli', 'designer_cli']:
             backend = handler._get_backend(op_type)
             assert isinstance(backend, AbstractOperationBackend)
 
@@ -168,10 +168,7 @@ class TestBackendRouting:
 
         # Check IBCMD types
         ibcmd_types = all_types['ibcmd']
-        assert 'ibcmd_backup' in ibcmd_types
-        assert 'ibcmd_restore' in ibcmd_types
-        assert 'ibcmd_replicate' in ibcmd_types
-        assert 'ibcmd_create' in ibcmd_types
+        assert 'ibcmd_cli' in ibcmd_types
 
         cli_types = all_types['cli']
         assert 'designer_cli' in cli_types
@@ -192,7 +189,7 @@ class TestBackendRouting:
         assert odata_backend.supports_operation_type('lock_scheduled_jobs') is False
 
         # IBCMD should support ibcmd types
-        assert ibcmd_backend.supports_operation_type('ibcmd_backup') is True
+        assert ibcmd_backend.supports_operation_type('ibcmd_cli') is True
         assert ibcmd_backend.supports_operation_type('create') is False
 
         # CLI should support designer_cli
@@ -268,7 +265,7 @@ class TestBackendRoutingIntegration:
         """Test complete flow: OperationHandler -> RASBackend."""
         from apps.templates.models import OperationTemplate
         from apps.templates.workflow.models import WorkflowNode
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         # Create RAS operation template
         template = OperationTemplate.objects.create(
@@ -319,7 +316,7 @@ class TestBackendRoutingIntegration:
         """Test complete flow: OperationHandler -> ODataBackend."""
         from apps.templates.models import OperationTemplate
         from apps.templates.workflow.models import WorkflowNode
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         # Create OData operation template
         template = OperationTemplate.objects.create(
