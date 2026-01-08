@@ -1,8 +1,10 @@
 # Roadmap: Phase 7.5 — Администрирование RBAC (SPA-primary) и аудит
-> **Статус:** DRAFT
-> **Версия:** 1.0
+> **Статус:** DONE (MVP)
+> **Версия:** 1.1
 > **Создан:** 2026-01-07
+> **Обновлён:** 2026-01-08
 > **Автор:** Codex
+> **Реализация:** `5ceaee1` (Phase 7.5: RBAC admin SPA + audit)
 
 Связанные документы/код:
 - `docs/roadmaps/ROADMAP_PHASE7_RBAC_GOVERNANCE.md` (родительский roadmap Phase 7)
@@ -13,6 +15,22 @@
 
 ---
 
+## Реальный статус (фикс)
+
+Реализовано (MVP):
+- SPA RBAC админка и доступ к ней гейтится по `databases.manage_rbac` (через `user.has_perm`), а не по `is_staff`.
+- RBAC API v2 расширен: роли/capabilities, назначение ролей пользователям, refs для селектов SPA, bindings (user+group) для Clusters/Databases/Templates/Workflows/Artifacts, read‑API аудита.
+- Audit: для большей части write‑операций RBAC API добавлены `reason` и запись в `AdminActionAuditLog`; добавлен просмотр аудита из SPA.
+- Contracts/generation: актуализирован OpenAPI, добавлен `drf-spectacular` postprocessing hook (orval‑friendly), генерация клиентов/роутов проходит.
+- Тесты: добавлен pytest coverage для RBAC admin API.
+
+Осталось (если доводить до “полного DONE” из текста ниже):
+- Привести к единому правилу `reason` для всех write (в т.ч. direct user‑bindings для Cluster/Database) и доработать соответствующие формы в SPA.
+- Добавить guardrail против self-lockout (“последний админ RBAC”) для операций, меняющих источник `databases.manage_rbac` (минимум `set-user-roles`).
+- Реализовать bulk endpoints + (опц.) `preview-change` для массовых назначений (особенно для `Database`).
+- Добавить пагинацию/лимиты для high-cardinality (например effective access по DB) + (опц.) UI‑preview “effective access”.
+- Улучшить доменно‑специфичные подсказки уровней в UI (сейчас MVP-уровень).
+
 ## Analysis
 
 ### Контекст
@@ -20,11 +38,11 @@
 Цель Phase 7.5 — сделать RBAC управляемым из SPA (без зависимости от Django Admin) и обеспечить прозрачный аудит
 изменений прав/ролей/биндингов.
 
-Текущее состояние (на момент документа):
-- В SPA есть `RBACPage`, но доступ к ней и к меню гейтится по `is_staff`.
-- Backend `/api/v2/rbac/*` покрывает user-bindings только для `Cluster`/`Database` и `get-effective-access` только по ним.
-- Для Templates/Workflows/Artifacts bindings уже существуют в моделях/сервисах, но нет SPA‑ориентированного admin API.
-- Audit пишется best-effort в `AdminActionAuditLog`, но read‑API для просмотра в SPA отсутствует.
+Исходное состояние (до реализации v1.0):
+- В SPA есть `RBACPage`, но доступ к ней и к меню гейтился по `is_staff`.
+- Backend `/api/v2/rbac/*` покрывал user-bindings только для `Cluster`/`Database` и `get-effective-access` только по ним.
+- Для Templates/Workflows/Artifacts bindings уже существовали в моделях/сервисах, но не было SPA‑ориентированного admin API.
+- Audit писался best-effort в `AdminActionAuditLog`, но read‑API для просмотра в SPA отсутствовал.
 
 ### Архитектурные драйверы
 
@@ -194,4 +212,3 @@ Bulk (обязательно для массовых действий):
 - **Тяжёлые выборки** (effective access по 700+ DB): нужны include_* флаги, пагинация, и выборка через service-layer/batch.
 - **Аудит‑шум** (bulk): агрегировать события (одно событие на bulk с счётчиками), а не N событий на каждый объект.
 - **Несогласованность capabilities vs scope**: в UI всегда показывать оба слоя (capabilities и bindings) и давать preview.
-
