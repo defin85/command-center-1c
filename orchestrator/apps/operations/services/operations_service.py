@@ -573,6 +573,17 @@ class OperationsService:
 
         except Exception as exc:
             logger.error(f"Error enqueueing cluster sync: {exc}", exc_info=True)
+
+            # Best-effort cleanup: allow immediate retry after enqueue failure.
+            try:
+                redis_client.release_enqueue_lock(task_id=op_id)
+            except Exception:
+                pass
+            try:
+                redis_client.release_lock(task_id=sync_lock_key)
+            except Exception:
+                pass
+
             return EnqueueResult(
                 success=False,
                 operation_id=op_id,

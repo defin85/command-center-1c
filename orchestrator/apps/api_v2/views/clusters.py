@@ -663,8 +663,34 @@ def sync_cluster(request):
                 'status': 'syncing',
                 'message': 'Cluster synchronization started',
             })
-        else:
-            logger.warning(f"Go Worker enqueue failed: {result.error}")
+
+        # Enqueue completed but failed (no exception) - return a proper HTTP response.
+        logger.warning(f"Go Worker enqueue failed: {result.error}")
+
+        operation.status = BatchOperation.STATUS_FAILED
+        operation.failed_tasks = 1
+        operation.completed_at = timezone.now()
+        operation.metadata = {'error': result.error, 'sync_mode': 'enqueue_failed', 'enqueue_status': result.status}
+        operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata', 'updated_at'])
+
+        if result.status == 'duplicate':
+            return Response({
+                'success': False,
+                'operation_id': str(operation.id),
+                'error': {
+                    'code': 'SYNC_IN_PROGRESS',
+                    'message': result.error or 'Cluster sync already in progress',
+                }
+            }, status=409)
+
+        return Response({
+            'success': False,
+            'operation_id': str(operation.id),
+            'error': {
+                'code': 'ENQUEUE_FAILED',
+                'message': result.error or 'Failed to enqueue sync_cluster operation',
+            }
+        }, status=500)
     except Exception as e:
         logger.warning(f"Go Worker unavailable for cluster sync: {e}")
 
@@ -672,7 +698,7 @@ def sync_cluster(request):
         operation.failed_tasks = 1
         operation.completed_at = timezone.now()
         operation.metadata = {'error': str(e), 'sync_mode': 'worker_unavailable'}
-        operation.save()
+        operation.save(update_fields=['status', 'failed_tasks', 'completed_at', 'metadata', 'updated_at'])
 
         return Response({
             'success': False,
