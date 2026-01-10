@@ -350,3 +350,57 @@ def test_effective_access_database_pagination(rbac_admin_client, cluster, databa
     assert len(payload["databases"]) == 1
     assert payload["databases"][0]["source"] == "cluster"
     assert payload["databases"][0]["via_cluster_id"] == str(cluster.id)
+    assert any(
+        src["source"] == "cluster" and src["level"] == "VIEW" and src["via_cluster_id"] == str(cluster.id)
+        for src in payload["databases"][0]["sources"]
+    )
+
+
+@pytest.mark.django_db
+def test_effective_access_sources_all_categories(rbac_admin_client, cluster, database):
+    user = User.objects.create_user(username="effective_target", password="pass")
+    role = Group.objects.create(name="effective_role")
+    user.groups.add(role)
+
+    grant_db_direct = rbac_admin_client.post(
+        "/api/v2/rbac/grant-database-permission/",
+        {"user_id": user.id, "database_id": database.id, "level": "VIEW", "reason": "TICKET-1"},
+        format="json",
+    )
+    assert grant_db_direct.status_code == 200
+
+    grant_db_group = rbac_admin_client.post(
+        "/api/v2/rbac/grant-database-group-permission/",
+        {"group_id": role.id, "database_id": database.id, "level": "OPERATE", "reason": "TICKET-2"},
+        format="json",
+    )
+    assert grant_db_group.status_code == 200
+
+    grant_cluster = rbac_admin_client.post(
+        "/api/v2/rbac/grant-cluster-permission/",
+        {"user_id": user.id, "cluster_id": str(cluster.id), "level": "ADMIN", "reason": "TICKET-3"},
+        format="json",
+    )
+    assert grant_cluster.status_code == 200
+
+    effective = rbac_admin_client.get(
+        "/api/v2/rbac/get-effective-access/",
+        {"user_id": user.id, "include_clusters": False, "include_databases": True},
+    )
+    assert effective.status_code == 200
+    payload = effective.json()
+    assert len(payload["databases"]) == 1
+
+    row = payload["databases"][0]
+    assert row["database"]["id"] == database.id
+    assert row["level"] == "ADMIN"
+    assert row["source"] == "cluster"
+    assert row["via_cluster_id"] == str(cluster.id)
+
+    sources = row["sources"]
+    assert any(src["source"] == "direct" and src["level"] == "VIEW" for src in sources)
+    assert any(src["source"] == "group" and src["level"] == "OPERATE" for src in sources)
+    assert any(
+        src["source"] == "cluster" and src["level"] == "ADMIN" and src["via_cluster_id"] == str(cluster.id)
+        for src in sources
+    )

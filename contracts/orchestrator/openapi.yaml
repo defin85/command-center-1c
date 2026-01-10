@@ -8448,6 +8448,22 @@ components:
       required:
       - deleted
       - success
+    EffectiveAccessArtifactSourceItem:
+      type: object
+      properties:
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+        level:
+          type: string
+      required:
+      - level
+      - source
     EffectiveAccessArtifactItem:
       type: object
       properties:
@@ -8464,8 +8480,30 @@ components:
             * `direct` - direct
             * `group` - group
           x-spec-enum-id: 95cc5059aa03e762
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessArtifactSourceItem'
       required:
       - artifact
+      - level
+      - source
+    EffectiveAccessClusterSourceItem:
+      type: object
+      properties:
+        source:
+          enum:
+          - direct
+          - group
+          - database
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+            * `database` - database
+        level:
+          type: string
+      required:
       - level
       - source
     EffectiveAccessClusterItem:
@@ -8475,9 +8513,35 @@ components:
           $ref: '#/components/schemas/ClusterRef'
         level:
           type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessClusterSourceItem'
       required:
       - cluster
       - level
+    EffectiveAccessDatabaseSourceItem:
+      type: object
+      properties:
+        source:
+          enum:
+          - direct
+          - group
+          - cluster
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+            * `cluster` - cluster
+        level:
+          type: string
+        via_cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - level
+      - source
     EffectiveAccessDatabaseItem:
       type: object
       properties:
@@ -8500,8 +8564,28 @@ components:
           type: string
           format: uuid
           nullable: true
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessDatabaseSourceItem'
       required:
       - database
+      - level
+      - source
+    EffectiveAccessOperationTemplateSourceItem:
+      type: object
+      properties:
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+        level:
+          type: string
+      required:
       - level
       - source
     EffectiveAccessOperationTemplateItem:
@@ -8520,6 +8604,10 @@ components:
             * `direct` - direct
             * `group` - group
           x-spec-enum-id: 95cc5059aa03e762
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessOperationTemplateSourceItem'
       required:
       - level
       - source
@@ -8561,6 +8649,22 @@ components:
       - clusters
       - databases
       - user
+    EffectiveAccessWorkflowTemplateSourceItem:
+      type: object
+      properties:
+        source:
+          enum:
+          - direct
+          - group
+          type: string
+          description: |-
+            * `direct` - direct
+            * `group` - group
+        level:
+          type: string
+      required:
+      - level
+      - source
     EffectiveAccessWorkflowTemplateItem:
       type: object
       properties:
@@ -8577,6 +8681,10 @@ components:
             * `direct` - direct
             * `group` - group
           x-spec-enum-id: 95cc5059aa03e762
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveAccessWorkflowTemplateSourceItem'
       required:
       - level
       - source

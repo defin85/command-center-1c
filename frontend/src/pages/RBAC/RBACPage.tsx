@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch, Table, Modal, Radio, Segmented, Empty } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch, Table, Modal, Radio, Segmented } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
 import type { DatabasePermission } from '../../api/generated/model/databasePermission'
 import type { EffectiveAccessClusterItem } from '../../api/generated/model/effectiveAccessClusterItem'
+import type { EffectiveAccessClusterSourceItem } from '../../api/generated/model/effectiveAccessClusterSourceItem'
 import type { EffectiveAccessDatabaseItem } from '../../api/generated/model/effectiveAccessDatabaseItem'
+import type { EffectiveAccessDatabaseSourceItem } from '../../api/generated/model/effectiveAccessDatabaseSourceItem'
 import type { EffectiveAccessOperationTemplateItem } from '../../api/generated/model/effectiveAccessOperationTemplateItem'
+import type { EffectiveAccessOperationTemplateSourceItem } from '../../api/generated/model/effectiveAccessOperationTemplateSourceItem'
 import type { EffectiveAccessWorkflowTemplateItem } from '../../api/generated/model/effectiveAccessWorkflowTemplateItem'
+import type { EffectiveAccessWorkflowTemplateSourceItem } from '../../api/generated/model/effectiveAccessWorkflowTemplateSourceItem'
 import type { EffectiveAccessArtifactItem } from '../../api/generated/model/effectiveAccessArtifactItem'
+import type { EffectiveAccessArtifactSourceItem } from '../../api/generated/model/effectiveAccessArtifactSourceItem'
 import { useMe } from '../../api/queries/me'
 import {
-  useAdminAuditLog,
   useCanManageRbac,
   useCapabilities,
   useClusterPermissions,
@@ -62,7 +66,6 @@ import {
   useSetUserRoles,
   useUpdateRole,
   useUserRoles,
-  type AdminAuditLogItem,
   type ArtifactGroupPermission,
   type ArtifactPermission,
   type ClusterGroupPermission,
@@ -85,7 +88,18 @@ import {
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { RbacAuditPanel } from './components/RbacAuditPanel'
+import { RbacBulkClusterRolePermissions } from './components/RbacBulkClusterRolePermissions'
+import { RbacBulkDatabaseRolePermissions } from './components/RbacBulkDatabaseRolePermissions'
+import { RbacClusterDatabaseTree } from './components/RbacClusterDatabaseTree'
+import { PermissionsTable } from './components/PermissionsTable'
+import { RbacPrincipalPicker } from './components/RbacPrincipalPicker'
 import { RbacResourceBrowser } from './components/RbacResourceBrowser'
+import { RbacResourcePicker } from './components/RbacResourcePicker'
+import { ReasonModal } from './components/ReasonModal'
+import { useConfirmReason } from './hooks/useConfirmReason'
+import { usePaginatedRefSelectOptions } from './hooks/usePaginatedRefSelectOptions'
+import { getEffectiveAccessSourceTagColor } from './utils/effectiveAccessSourceTag'
 
 const { Title, Text } = Typography
 
@@ -118,15 +132,6 @@ function envFlag(key: string, defaultValue: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(normalized)
 }
 
-function mergeSelectOptions(prev: SelectOption[], next: SelectOption[]): SelectOption[] {
-  if (prev.length === 0) return next
-  const map = new Map(prev.map((opt) => [opt.value, opt]))
-  next.forEach((opt) => {
-    if (!map.has(opt.value)) map.set(opt.value, opt)
-  })
-  return Array.from(map.values())
-}
-
 function ensureSelectOptionsContain(options: SelectOption[], selectedIds: Array<string | undefined>, labelById: Map<string, string>) {
   const ids = selectedIds
     .map((id) => (typeof id === 'string' ? id.trim() : ''))
@@ -142,12 +147,9 @@ function ensureSelectOptionsContain(options: SelectOption[], selectedIds: Array<
   return [...injected, ...options]
 }
 
-function isSelectScrollNearBottom(target: HTMLElement): boolean {
-  return target.scrollTop + target.clientHeight >= target.scrollHeight - 24
-}
-
 export function RBACPage() {
   const { modal, message } = App.useApp()
+  const confirmReason = useConfirmReason(modal, message)
   const hasToken = Boolean(localStorage.getItem('auth_token'))
   const meQuery = useMe({ enabled: hasToken })
   const isStaff = Boolean(meQuery.data?.is_staff)
@@ -157,164 +159,80 @@ export function RBACPage() {
   const rbacLegacyTabsEnabled = envFlag('VITE_RBAC_LEGACY_TABS', false)
   const REF_PAGE_SIZE = 50
 
-	  const clustersRefQuery = useRbacRefClusters({
-	    limit: 1000,
-	    offset: 0,
-	  }, { enabled: canManageRbac })
-	  const clusters = clustersRefQuery.data?.clusters ?? []
-	  const [clustersRefSearch, setClustersRefSearch] = useState<string>('')
-
-	  const [databasesRefSearch, setDatabasesRefSearch] = useState<string>('')
-	  const debouncedDatabasesRefSearch = useDebouncedValue(databasesRefSearch, 300)
-  const [databasesRefOffset, setDatabasesRefOffset] = useState<number>(0)
-  const [databasesRefOptions, setDatabasesRefOptions] = useState<SelectOption[]>([])
-  const databasesLabelById = useRef<Map<string, string>>(new Map())
-  const databasesRefQuery = useRbacRefDatabases({
-    search: debouncedDatabasesRefSearch || undefined,
-    limit: REF_PAGE_SIZE,
-    offset: databasesRefOffset,
+  const clustersRefQuery = useRbacRefClusters({
+    limit: 1000,
+    offset: 0,
   }, { enabled: canManageRbac })
-  const databasesRefTotal = typeof databasesRefQuery.data?.total === 'number'
-    ? databasesRefQuery.data.total
-    : databasesRefOptions.length
+  const clusters = clustersRefQuery.data?.clusters ?? []
+  const [clustersRefSearch, setClustersRefSearch] = useState<string>('')
 
-  useEffect(() => {
-    setDatabasesRefOffset(0)
-    setDatabasesRefOptions([])
-  }, [debouncedDatabasesRefSearch])
+  const {
+    search: databasesRefSearch,
+    setSearch: setDatabasesRefSearch,
+    options: databasesRefOptions,
+    labelById: databasesLabelById,
+    query: databasesRefQuery,
+    handlePopupScroll: handleDatabasesPopupScroll,
+  } = usePaginatedRefSelectOptions({
+    enabled: canManageRbac,
+    pageSize: REF_PAGE_SIZE,
+    queryHook: useRbacRefDatabases,
+    buildFilters: ({ search, limit, offset }) => ({ search, limit, offset }),
+    getItems: (data) => data?.databases,
+    getId: (db) => db.id,
+    getLabel: (db) => `${db.name} #${db.id}`,
+  })
 
-  useEffect(() => {
-    const page = databasesRefQuery.data?.databases
-    if (!page) return
-    page.forEach((db) => {
-      databasesLabelById.current.set(db.id, `${db.name} #${db.id}`)
-    })
-    const next = page.map((db) => ({ label: `${db.name} #${db.id}`, value: db.id }))
-    setDatabasesRefOptions((prev) => databasesRefOffset === 0 ? next : mergeSelectOptions(prev, next))
-  }, [databasesRefQuery.data?.databases, databasesRefOffset])
+  const {
+    search: operationTemplatesRefSearch,
+    setSearch: setOperationTemplatesRefSearch,
+    options: operationTemplatesRefOptions,
+    labelById: operationTemplatesLabelById,
+    query: operationTemplatesRefQuery,
+    handlePopupScroll: handleOperationTemplatesPopupScroll,
+  } = usePaginatedRefSelectOptions({
+    enabled: canManageRbac,
+    pageSize: REF_PAGE_SIZE,
+    queryHook: useRbacRefOperationTemplates,
+    buildFilters: ({ search, limit, offset }) => ({ search, limit, offset }),
+    getItems: (data) => data?.templates,
+    getId: (tpl) => tpl.id,
+    getLabel: (tpl) => `${tpl.name} #${tpl.id}`,
+  })
 
-  const handleDatabasesPopupScroll = (event: any) => {
-    const target = event?.target as HTMLElement | undefined
-    if (!target) return
-    if (!isSelectScrollNearBottom(target)) return
-    if (databasesRefQuery.isFetching) return
-    if (databasesRefOptions.length >= databasesRefTotal) return
-    setDatabasesRefOffset((prev) => prev + REF_PAGE_SIZE)
-  }
+  const {
+    search: workflowTemplatesRefSearch,
+    setSearch: setWorkflowTemplatesRefSearch,
+    options: workflowTemplatesRefOptions,
+    labelById: workflowTemplatesLabelById,
+    query: workflowTemplatesRefQuery,
+    handlePopupScroll: handleWorkflowTemplatesPopupScroll,
+  } = usePaginatedRefSelectOptions({
+    enabled: canManageRbac,
+    pageSize: REF_PAGE_SIZE,
+    queryHook: useRbacRefWorkflowTemplates,
+    buildFilters: ({ search, limit, offset }) => ({ search, limit, offset }),
+    getItems: (data) => data?.templates,
+    getId: (tpl) => tpl.id,
+    getLabel: (tpl) => `${tpl.name} #${tpl.id}`,
+  })
 
-  const [operationTemplatesRefSearch, setOperationTemplatesRefSearch] = useState<string>('')
-  const debouncedOperationTemplatesRefSearch = useDebouncedValue(operationTemplatesRefSearch, 300)
-  const [operationTemplatesRefOffset, setOperationTemplatesRefOffset] = useState<number>(0)
-  const [operationTemplatesRefOptions, setOperationTemplatesRefOptions] = useState<SelectOption[]>([])
-  const operationTemplatesLabelById = useRef<Map<string, string>>(new Map())
-  const operationTemplatesRefQuery = useRbacRefOperationTemplates({
-    search: debouncedOperationTemplatesRefSearch || undefined,
-    limit: REF_PAGE_SIZE,
-    offset: operationTemplatesRefOffset,
-  }, { enabled: canManageRbac })
-  const operationTemplatesRefTotal = typeof operationTemplatesRefQuery.data?.total === 'number'
-    ? operationTemplatesRefQuery.data.total
-    : operationTemplatesRefOptions.length
-
-  useEffect(() => {
-    setOperationTemplatesRefOffset(0)
-    setOperationTemplatesRefOptions([])
-  }, [debouncedOperationTemplatesRefSearch])
-
-  useEffect(() => {
-    const page = operationTemplatesRefQuery.data?.templates
-    if (!page) return
-    page.forEach((tpl) => {
-      operationTemplatesLabelById.current.set(tpl.id, `${tpl.name} #${tpl.id}`)
-    })
-    const next = page.map((tpl) => ({ label: `${tpl.name} #${tpl.id}`, value: tpl.id }))
-    setOperationTemplatesRefOptions((prev) => operationTemplatesRefOffset === 0 ? next : mergeSelectOptions(prev, next))
-  }, [operationTemplatesRefQuery.data?.templates, operationTemplatesRefOffset])
-
-  const handleOperationTemplatesPopupScroll = (event: any) => {
-    const target = event?.target as HTMLElement | undefined
-    if (!target) return
-    if (!isSelectScrollNearBottom(target)) return
-    if (operationTemplatesRefQuery.isFetching) return
-    if (operationTemplatesRefOptions.length >= operationTemplatesRefTotal) return
-    setOperationTemplatesRefOffset((prev) => prev + REF_PAGE_SIZE)
-  }
-
-  const [workflowTemplatesRefSearch, setWorkflowTemplatesRefSearch] = useState<string>('')
-  const debouncedWorkflowTemplatesRefSearch = useDebouncedValue(workflowTemplatesRefSearch, 300)
-  const [workflowTemplatesRefOffset, setWorkflowTemplatesRefOffset] = useState<number>(0)
-  const [workflowTemplatesRefOptions, setWorkflowTemplatesRefOptions] = useState<SelectOption[]>([])
-  const workflowTemplatesLabelById = useRef<Map<string, string>>(new Map())
-  const workflowTemplatesRefQuery = useRbacRefWorkflowTemplates({
-    search: debouncedWorkflowTemplatesRefSearch || undefined,
-    limit: REF_PAGE_SIZE,
-    offset: workflowTemplatesRefOffset,
-  }, { enabled: canManageRbac })
-  const workflowTemplatesRefTotal = typeof workflowTemplatesRefQuery.data?.total === 'number'
-    ? workflowTemplatesRefQuery.data.total
-    : workflowTemplatesRefOptions.length
-
-  useEffect(() => {
-    setWorkflowTemplatesRefOffset(0)
-    setWorkflowTemplatesRefOptions([])
-  }, [debouncedWorkflowTemplatesRefSearch])
-
-  useEffect(() => {
-    const page = workflowTemplatesRefQuery.data?.templates
-    if (!page) return
-    page.forEach((tpl) => {
-      workflowTemplatesLabelById.current.set(tpl.id, `${tpl.name} #${tpl.id}`)
-    })
-    const next = page.map((tpl) => ({ label: `${tpl.name} #${tpl.id}`, value: tpl.id }))
-    setWorkflowTemplatesRefOptions((prev) => workflowTemplatesRefOffset === 0 ? next : mergeSelectOptions(prev, next))
-  }, [workflowTemplatesRefQuery.data?.templates, workflowTemplatesRefOffset])
-
-  const handleWorkflowTemplatesPopupScroll = (event: any) => {
-    const target = event?.target as HTMLElement | undefined
-    if (!target) return
-    if (!isSelectScrollNearBottom(target)) return
-    if (workflowTemplatesRefQuery.isFetching) return
-    if (workflowTemplatesRefOptions.length >= workflowTemplatesRefTotal) return
-    setWorkflowTemplatesRefOffset((prev) => prev + REF_PAGE_SIZE)
-  }
-
-  const [artifactsRefSearch, setArtifactsRefSearch] = useState<string>('')
-  const debouncedArtifactsRefSearch = useDebouncedValue(artifactsRefSearch, 300)
-  const [artifactsRefOffset, setArtifactsRefOffset] = useState<number>(0)
-  const [artifactsRefOptions, setArtifactsRefOptions] = useState<SelectOption[]>([])
-  const artifactsLabelById = useRef<Map<string, string>>(new Map())
-  const artifactsRefQuery = useRbacRefArtifacts({
-    search: debouncedArtifactsRefSearch || undefined,
-    limit: REF_PAGE_SIZE,
-    offset: artifactsRefOffset,
-  }, { enabled: canManageRbac })
-  const artifactsRefTotal = typeof artifactsRefQuery.data?.total === 'number'
-    ? artifactsRefQuery.data.total
-    : artifactsRefOptions.length
-
-  useEffect(() => {
-    setArtifactsRefOffset(0)
-    setArtifactsRefOptions([])
-  }, [debouncedArtifactsRefSearch])
-
-  useEffect(() => {
-    const page = artifactsRefQuery.data?.artifacts
-    if (!page) return
-    page.forEach((artifact) => {
-      artifactsLabelById.current.set(artifact.id, `${artifact.name} #${artifact.id}`)
-    })
-    const next = page.map((artifact) => ({ label: `${artifact.name} #${artifact.id}`, value: artifact.id }))
-    setArtifactsRefOptions((prev) => artifactsRefOffset === 0 ? next : mergeSelectOptions(prev, next))
-  }, [artifactsRefQuery.data?.artifacts, artifactsRefOffset])
-
-  const handleArtifactsPopupScroll = (event: any) => {
-    const target = event?.target as HTMLElement | undefined
-    if (!target) return
-    if (!isSelectScrollNearBottom(target)) return
-    if (artifactsRefQuery.isFetching) return
-    if (artifactsRefOptions.length >= artifactsRefTotal) return
-    setArtifactsRefOffset((prev) => prev + REF_PAGE_SIZE)
-  }
+  const {
+    search: artifactsRefSearch,
+    setSearch: setArtifactsRefSearch,
+    options: artifactsRefOptions,
+    labelById: artifactsLabelById,
+    query: artifactsRefQuery,
+    handlePopupScroll: handleArtifactsPopupScroll,
+  } = usePaginatedRefSelectOptions({
+    enabled: canManageRbac,
+    pageSize: REF_PAGE_SIZE,
+    queryHook: useRbacRefArtifacts,
+    buildFilters: ({ search, limit, offset }) => ({ search, limit, offset }),
+    getItems: (data) => data?.artifacts,
+    getId: (artifact) => artifact.id,
+    getLabel: (artifact) => `${artifact.name} #${artifact.id}`,
+  })
 
   const { data: databasesResponse } = useRbacRefDatabases({
     limit: 2000,
@@ -392,34 +310,33 @@ export function RBACPage() {
   const [selectedRolesUserId, setSelectedRolesUserId] = useState<number | undefined>()
 
   const [selectedEffectiveUserId, setSelectedEffectiveUserId] = useState<number | undefined>()
-  const [effectiveIncludeClusters, setEffectiveIncludeClusters] = useState<boolean>(true)
-  const [effectiveIncludeDatabases, setEffectiveIncludeDatabases] = useState<boolean>(true)
-  const [effectiveIncludeOperationTemplates, setEffectiveIncludeOperationTemplates] = useState<boolean>(false)
-  const [effectiveIncludeWorkflowTemplates, setEffectiveIncludeWorkflowTemplates] = useState<boolean>(false)
-  const [effectiveIncludeArtifacts, setEffectiveIncludeArtifacts] = useState<boolean>(false)
+  const [effectiveResourceKey, setEffectiveResourceKey] = useState<RbacPermissionsResourceKey>('databases')
+  const [effectiveResourceId, setEffectiveResourceId] = useState<string | undefined>()
   const [effectiveDbPage, setEffectiveDbPage] = useState<number>(1)
   const [effectiveDbPageSize, setEffectiveDbPageSize] = useState<number>(50)
+
+  useEffect(() => {
+    setEffectiveResourceId(undefined)
+    setEffectiveDbPage(1)
+  }, [effectiveResourceKey])
+
+  useEffect(() => {
+    setEffectiveDbPage(1)
+  }, [effectiveResourceId])
 
   const [roleEditorOpen, setRoleEditorOpen] = useState<boolean>(false)
   const [roleEditorRoleId, setRoleEditorRoleId] = useState<number | null>(null)
   const [roleEditorPermissionCodes, setRoleEditorPermissionCodes] = useState<string[]>([])
-  const [roleEditorReason, setRoleEditorReason] = useState<string>('')
   const [renameRoleOpen, setRenameRoleOpen] = useState<boolean>(false)
   const [renameRoleRoleId, setRenameRoleRoleId] = useState<number | null>(null)
   const [renameRoleName, setRenameRoleName] = useState<string>('')
-  const [renameRoleReason, setRenameRoleReason] = useState<string>('')
   const [deleteRoleOpen, setDeleteRoleOpen] = useState<boolean>(false)
   const [deleteRoleRoleId, setDeleteRoleRoleId] = useState<number | null>(null)
-  const [deleteRoleReason, setDeleteRoleReason] = useState<string>('')
   const [cloneRoleOpen, setCloneRoleOpen] = useState<boolean>(false)
   const [cloneRoleSourceRoleId, setCloneRoleSourceRoleId] = useState<number | null>(null)
   const [cloneRoleName, setCloneRoleName] = useState<string>('')
-  const [cloneRoleReason, setCloneRoleReason] = useState<string>('')
   const [roleUsageOpen, setRoleUsageOpen] = useState<boolean>(false)
   const [roleUsageRoleId, setRoleUsageRoleId] = useState<number | null>(null)
-  const [auditSearch, setAuditSearch] = useState<string>('')
-  const [auditPage, setAuditPage] = useState<number>(1)
-  const [auditPageSize, setAuditPageSize] = useState<number>(100)
   const [rbacMode, setRbacMode] = useState<'assignments' | 'roles'>('assignments')
   const [rbacLastAssignmentsTabKey, setRbacLastAssignmentsTabKey] = useState<string>('permissions')
 	  const [rbacActiveTabKey, setRbacActiveTabKey] = useState<string>('permissions')
@@ -539,67 +456,11 @@ export function RBACPage() {
     reason: string
   }>()
 
-  const [bulkGrantClusterGroupForm] = Form.useForm<{
-    group_id: number
-    cluster_ids: string
-    level: PermissionLevelCode
-    notes?: string
-    reason: string
-  }>()
-
-  const [bulkRevokeClusterGroupForm] = Form.useForm<{
-    group_id: number
-    cluster_ids: string
-    reason: string
-  }>()
-
-  const [bulkGrantDatabaseGroupForm] = Form.useForm<{
-    group_id: number
-    database_ids: string
-    level: PermissionLevelCode
-    notes?: string
-    reason: string
-  }>()
-
-  const [bulkRevokeDatabaseGroupForm] = Form.useForm<{
-    group_id: number
-    database_ids: string
-    reason: string
-  }>()
-
   const [rbacPermissionsGrantForm] = Form.useForm<{
     principal_id: number
     resource_id: string
     level: PermissionLevelCode
     notes?: string
-    reason: string
-  }>()
-
-  const [rbacPermissionsBulkGrantClusterGroupForm] = Form.useForm<{
-    group_id: number
-    cluster_ids: string
-    level: PermissionLevelCode
-    notes?: string
-    reason: string
-  }>()
-
-  const [rbacPermissionsBulkRevokeClusterGroupForm] = Form.useForm<{
-    group_id: number
-    cluster_ids: string
-    reason: string
-  }>()
-
-  const [rbacPermissionsBulkGrantDatabaseGroupForm] = Form.useForm<{
-    group_id: number
-    database_ids: string
-    level: PermissionLevelCode
-    notes?: string
-    reason: string
-  }>()
-
-  const [rbacPermissionsBulkRevokeDatabaseGroupForm] = Form.useForm<{
-    group_id: number
-    database_ids: string
     reason: string
   }>()
 
@@ -701,21 +562,10 @@ export function RBACPage() {
     return trimmed ? trimmed : undefined
   }
 
-  const parseIdListFromText = (value: unknown): string[] => {
-    if (typeof value !== 'string') return []
-    const parts = value
-      .split(/[\n\r\t ,;]+/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-
-    const seen = new Set<string>()
-    const out: string[] = []
-    for (const part of parts) {
-      if (seen.has(part)) continue
-      seen.add(part)
-      out.push(part)
-    }
-    return out
+  const handleDatabasesLoaded = (items: Array<{ id: string; name: string }>) => {
+    items.forEach((db) => {
+      databasesLabelById.current.set(db.id, `${db.name} #${db.id}`)
+    })
   }
 
   const clustersSelectOptions: SelectOption[] = clusters.map((c) => ({ label: `${c.name} #${c.id}`, value: c.id }))
@@ -753,17 +603,17 @@ export function RBACPage() {
     artifactsLabelById.current
   )
 
-	  const rbacPermissionsResourceRef = (() => {
-	    if (rbacPermissionsResourceKey === 'clusters') {
-	      return {
-	        options: clustersSelectOptions,
-	        loading: clustersRefQuery.isFetching,
-	        showSearch: true,
-	        filterOption: true as const,
-	        onSearch: undefined,
-	        onPopupScroll: undefined,
-	      }
-	    }
+  const rbacPermissionsResourceRef = (() => {
+    if (rbacPermissionsResourceKey === 'clusters') {
+      return {
+        options: clustersSelectOptions,
+        loading: clustersRefQuery.isFetching,
+        showSearch: true,
+        filterOption: true as const,
+        onSearch: undefined,
+        onPopupScroll: undefined,
+      }
+    }
 
     if (rbacPermissionsResourceKey === 'databases') {
       return {
@@ -803,62 +653,114 @@ export function RBACPage() {
       loading: artifactsRefQuery.isFetching,
       showSearch: true,
       filterOption: false as const,
-	      onSearch: setArtifactsRefSearch,
-	      onPopupScroll: handleArtifactsPopupScroll,
-	    }
-	  })()
+      onSearch: setArtifactsRefSearch,
+      onPopupScroll: handleArtifactsPopupScroll,
+    }
+  })()
 
-	  const rbacPermissionsResourceSearchValue: string = (() => {
-	    switch (rbacPermissionsResourceKey) {
-	      case 'clusters':
-	        return clustersRefSearch
-	      case 'databases':
-	        return databasesRefSearch
-	      case 'operation-templates':
-	        return operationTemplatesRefSearch
-	      case 'workflow-templates':
-	        return workflowTemplatesRefSearch
-	      case 'artifacts':
-	        return artifactsRefSearch
-	    }
-	  })()
+  const rbacPermissionsResourceSearchValue: string = (() => {
+    switch (rbacPermissionsResourceKey) {
+      case 'clusters':
+        return clustersRefSearch
+      case 'databases':
+        return databasesRefSearch
+      case 'operation-templates':
+        return operationTemplatesRefSearch
+      case 'workflow-templates':
+        return workflowTemplatesRefSearch
+      case 'artifacts':
+        return artifactsRefSearch
+    }
+  })()
 
-	  const setRbacPermissionsResourceSearchValue = (value: string) => {
-	    switch (rbacPermissionsResourceKey) {
-	      case 'clusters':
-	        setClustersRefSearch(value)
-	        return
-	      case 'databases':
-	        setDatabasesRefSearch(value)
-	        return
-	      case 'operation-templates':
-	        setOperationTemplatesRefSearch(value)
-	        return
-	      case 'workflow-templates':
-	        setWorkflowTemplatesRefSearch(value)
-	        return
-	      case 'artifacts':
-	        setArtifactsRefSearch(value)
-	        return
-	    }
-	  }
+  const setRbacPermissionsResourceSearchValue = (value: string) => {
+    switch (rbacPermissionsResourceKey) {
+      case 'clusters':
+        setClustersRefSearch(value)
+        return
+      case 'databases':
+        setDatabasesRefSearch(value)
+        return
+      case 'operation-templates':
+        setOperationTemplatesRefSearch(value)
+        return
+      case 'workflow-templates':
+        setWorkflowTemplatesRefSearch(value)
+        return
+      case 'artifacts':
+        setArtifactsRefSearch(value)
+        return
+    }
+  }
 
-	  const rbacPermissionsResourceBrowserOptions = useMemo(() => {
-	    const options = rbacPermissionsResourceRef.options
-	    if (rbacPermissionsResourceKey !== 'clusters') return options
-	    const query = clustersRefSearch.trim().toLowerCase()
-	    if (!query) return options
-	    return options.filter((opt) => (
-	      opt.label.toLowerCase().includes(query) || opt.value.toLowerCase().includes(query)
-	    ))
-	  }, [rbacPermissionsResourceKey, clustersRefSearch, rbacPermissionsResourceRef.options])
+  const rbacPermissionsResourceBrowserOptions = useMemo(() => {
+    const options = rbacPermissionsResourceRef.options
+    if (rbacPermissionsResourceKey !== 'clusters') return options
+    const query = clustersRefSearch.trim().toLowerCase()
+    if (!query) return options
+    return options.filter((opt) => (
+      opt.label.toLowerCase().includes(query) || opt.value.toLowerCase().includes(query)
+    ))
+  }, [rbacPermissionsResourceKey, clustersRefSearch, rbacPermissionsResourceRef.options])
 
-	  const rbacPermissionsSelectedResourceLabel = useMemo(() => {
-	    const id = rbacPermissionsList.resource_id
-	    if (!id) return undefined
-	    const match = rbacPermissionsResourceRef.options.find((opt) => opt.value === id)
-	    return match?.label ?? id
-	  }, [rbacPermissionsList.resource_id, rbacPermissionsResourceRef.options])
+  const rbacPermissionsSelectedResourceLabel = useMemo(() => {
+    const id = rbacPermissionsList.resource_id
+    if (!id) return undefined
+    const match = rbacPermissionsResourceRef.options.find((opt) => opt.value === id)
+    return match?.label ?? id
+  }, [rbacPermissionsList.resource_id, rbacPermissionsResourceRef.options])
+
+  const effectiveResourceRef = (() => {
+    if (effectiveResourceKey === 'operation-templates') {
+      return {
+        options: ensureSelectOptionsContain(operationTemplatesRefOptions, [effectiveResourceId], operationTemplatesLabelById.current),
+        loading: operationTemplatesRefQuery.isFetching,
+        showSearch: true,
+        filterOption: false as const,
+        onSearch: setOperationTemplatesRefSearch,
+        onPopupScroll: handleOperationTemplatesPopupScroll,
+      }
+    }
+
+    if (effectiveResourceKey === 'workflow-templates') {
+      return {
+        options: ensureSelectOptionsContain(workflowTemplatesRefOptions, [effectiveResourceId], workflowTemplatesLabelById.current),
+        loading: workflowTemplatesRefQuery.isFetching,
+        showSearch: true,
+        filterOption: false as const,
+        onSearch: setWorkflowTemplatesRefSearch,
+        onPopupScroll: handleWorkflowTemplatesPopupScroll,
+      }
+    }
+
+    if (effectiveResourceKey === 'artifacts') {
+      return {
+        options: ensureSelectOptionsContain(artifactsRefOptions, [effectiveResourceId], artifactsLabelById.current),
+        loading: artifactsRefQuery.isFetching,
+        showSearch: true,
+        filterOption: false as const,
+        onSearch: setArtifactsRefSearch,
+        onPopupScroll: handleArtifactsPopupScroll,
+      }
+    }
+
+    return undefined
+  })()
+
+  const effectiveResourcePlaceholder = (() => {
+    switch (effectiveResourceKey) {
+      case 'clusters':
+        return 'Cluster (optional)'
+      case 'databases':
+        return 'Database (optional)'
+      case 'operation-templates':
+        return 'Operation template (optional)'
+      case 'workflow-templates':
+        return 'Workflow template (optional)'
+      case 'artifacts':
+        return 'Artifact (optional)'
+    }
+  })()
 
 	  const levelsHintClustersDatabases = (
 	    <Alert
@@ -1008,32 +910,6 @@ export function RBACPage() {
     })
   }
 
-  const confirmReason = (title: string, onConfirm: (reason: string) => Promise<void>) => {
-    let value = ''
-    modal.confirm({
-      title,
-      content: (
-        <Input.TextArea
-          placeholder="Reason (required)"
-          autoSize={{ minRows: 2, maxRows: 6 }}
-          onChange={(event) => {
-            value = event.target.value
-          }}
-        />
-      ),
-      okText: 'Confirm',
-      cancelText: 'Cancel',
-      onOk: async () => {
-        const reason = value.trim()
-        if (!reason) {
-          message.error('Reason is required')
-          return Promise.reject(new Error('Reason is required'))
-        }
-        await onConfirm(reason)
-      },
-    })
-  }
-
   const handleRbacPermissionsGrant = async (values: {
     principal_id: number
     resource_id: string
@@ -1140,11 +1016,11 @@ export function RBACPage() {
         }
       }
 
-      message.success('Granted')
+      message.success('Доступ выдан')
       rbacPermissionsGrantForm.resetFields()
       setRbacPermissionsList((prev) => ({ ...prev, page: 1 }))
     } catch {
-      message.error('Grant failed')
+      message.error('Не удалось выдать доступ')
     }
   }
 
@@ -1720,7 +1596,6 @@ export function RBACPage() {
               onClick={() => {
                 setRoleEditorRoleId(row.id)
                 setRoleEditorPermissionCodes(row.permission_codes)
-                setRoleEditorReason('')
                 setRoleEditorOpen(true)
               }}
             >
@@ -1731,7 +1606,6 @@ export function RBACPage() {
               onClick={() => {
                 setCloneRoleSourceRoleId(row.id)
                 setCloneRoleName(`${row.name} copy`)
-                setCloneRoleReason('')
                 setCloneRoleOpen(true)
               }}
             >
@@ -1742,7 +1616,6 @@ export function RBACPage() {
               onClick={() => {
                 setRenameRoleRoleId(row.id)
                 setRenameRoleName(row.name)
-                setRenameRoleReason('')
                 setRenameRoleOpen(true)
               }}
             >
@@ -1753,7 +1626,6 @@ export function RBACPage() {
               size="small"
               onClick={() => {
                 setDeleteRoleRoleId(row.id)
-                setDeleteRoleReason('')
                 setDeleteRoleOpen(true)
               }}
             >
@@ -1764,70 +1636,6 @@ export function RBACPage() {
       },
     ],
     []
-  )
-
-  const auditColumns: ColumnsType<AdminAuditLogItem> = useMemo(
-    () => [
-      {
-        title: 'Created',
-        dataIndex: 'created_at',
-        key: 'created_at',
-        render: (value: string) => value ? new Date(value).toLocaleString() : '-',
-      },
-      {
-        title: 'Actor',
-        dataIndex: 'actor_username',
-        key: 'actor_username',
-        render: (value: string) => value || '-',
-      },
-      { title: 'Action', dataIndex: 'action', key: 'action' },
-      {
-        title: 'Outcome',
-        dataIndex: 'outcome',
-        key: 'outcome',
-        render: (value: string) => (
-          <Tag color={value === 'success' ? 'green' : (value === 'error' ? 'red' : 'default')}>
-            {value}
-          </Tag>
-        ),
-      },
-      {
-        title: 'Target',
-        key: 'target',
-        render: (_: unknown, row) => `${row.target_type}:${row.target_id}`,
-      },
-      {
-        title: 'Reason',
-        key: 'reason',
-        render: (_: unknown, row) => {
-          const reason = typeof row.metadata?.reason === 'string' ? row.metadata.reason : ''
-          return reason ? reason : '-'
-        },
-      },
-      {
-        title: 'Details',
-        key: 'details',
-        render: (_: unknown, row) => (
-          <Button
-            size="small"
-            onClick={() => {
-              modal.info({
-                title: `Audit #${row.id}`,
-                width: 860,
-                content: (
-                  <pre style={{ whiteSpace: 'pre-wrap' }}>
-                    {JSON.stringify(row, null, 2)}
-                  </pre>
-                ),
-              })
-            }}
-          >
-            View
-          </Button>
-        ),
-      },
-    ],
-    [modal]
   )
 
   const ibAuthTypeLabels: Record<string, string> = {
@@ -1990,14 +1798,21 @@ export function RBACPage() {
 
   const userRolesQuery = useUserRoles(selectedRolesUserId, { enabled: canManageRbac && Boolean(selectedRolesUserId) })
 
+  const effectiveIncludeClusters = effectiveResourceKey === 'clusters'
+  const effectiveIncludeDatabases = effectiveResourceKey === 'databases'
+  const effectiveIncludeOperationTemplates = effectiveResourceKey === 'operation-templates'
+  const effectiveIncludeWorkflowTemplates = effectiveResourceKey === 'workflow-templates'
+  const effectiveIncludeArtifacts = effectiveResourceKey === 'artifacts'
+  const effectiveDbPaginationEnabled = effectiveIncludeDatabases && !effectiveResourceId
+
   const effectiveAccessQuery = useEffectiveAccess(selectedEffectiveUserId, {
     includeDatabases: effectiveIncludeDatabases,
     includeClusters: effectiveIncludeClusters,
     includeTemplates: effectiveIncludeOperationTemplates,
     includeWorkflows: effectiveIncludeWorkflowTemplates,
     includeArtifacts: effectiveIncludeArtifacts,
-    limit: effectiveIncludeDatabases ? effectiveDbPageSize : undefined,
-    offset: effectiveIncludeDatabases ? (effectiveDbPage - 1) * effectiveDbPageSize : undefined,
+    limit: effectiveDbPaginationEnabled ? effectiveDbPageSize : undefined,
+    offset: effectiveDbPaginationEnabled ? (effectiveDbPage - 1) * effectiveDbPageSize : undefined,
     enabled: canManageRbac && Boolean(selectedEffectiveUserId),
   })
 
@@ -2071,13 +1886,6 @@ export function RBACPage() {
     search: artifactGroupList.search || undefined,
     limit: artifactGroupList.pageSize,
     offset: (artifactGroupList.page - 1) * artifactGroupList.pageSize,
-  }, { enabled: canManageRbac })
-
-  const debouncedAuditSearch = useDebouncedValue(auditSearch, 300)
-  const auditQuery = useAdminAuditLog({
-    search: debouncedAuditSearch || undefined,
-    limit: auditPageSize,
-    offset: (auditPage - 1) * auditPageSize,
   }, { enabled: canManageRbac })
 
   const roleUsageEnabled = canManageRbac && Boolean(roleUsageRoleId)
@@ -2427,9 +2235,107 @@ export function RBACPage() {
     },
   ], [])
 
+  const effectiveClusterSourcesColumns: ColumnsType<EffectiveAccessClusterSourceItem> = useMemo(() => [
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => {
+        const source = row.source
+        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{source}</Tag>
+      },
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+  ], [])
+
+  const effectiveDatabaseSourcesColumns: ColumnsType<EffectiveAccessDatabaseSourceItem> = useMemo(() => [
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => {
+        const source = row.source
+        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{source}</Tag>
+      },
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+    {
+      title: 'Via cluster',
+      key: 'via_cluster_id',
+      render: (_: unknown, row) => {
+        if (row.source !== 'cluster') return '-'
+        const viaId = row.via_cluster_id
+        if (!viaId) return '-'
+        const name = clusterNameById.get(viaId)
+        return (
+          <span>
+            {name ?? '-'} <Text type="secondary">#{viaId}</Text>
+          </span>
+        )
+      },
+    },
+  ], [clusterNameById])
+
+  const effectiveOperationTemplateSourcesColumns: ColumnsType<EffectiveAccessOperationTemplateSourceItem> = useMemo(() => [
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+  ], [])
+
+  const effectiveWorkflowTemplateSourcesColumns: ColumnsType<EffectiveAccessWorkflowTemplateSourceItem> = useMemo(() => [
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+  ], [])
+
+  const effectiveArtifactSourcesColumns: ColumnsType<EffectiveAccessArtifactSourceItem> = useMemo(() => [
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+    },
+    { title: 'Level', dataIndex: 'level', key: 'level' },
+  ], [])
+
   const selectedRoleForEditor = roleEditorRoleId
     ? roles.find((role) => role.id === roleEditorRoleId) ?? null
     : null
+
+  const roleEditorDiff = useMemo(() => {
+    const current = new Set(selectedRoleForEditor?.permission_codes ?? [])
+    const next = new Set(roleEditorPermissionCodes ?? [])
+    const added = Array.from(next).filter((code) => !current.has(code)).sort()
+    const removed = Array.from(current).filter((code) => !next.has(code)).sort()
+    return {
+      currentCount: current.size,
+      nextCount: next.size,
+      added,
+      removed,
+    }
+  }, [roleEditorPermissionCodes, selectedRoleForEditor])
+
+  const renderCodeTags = (codes: string[]) => {
+    if (codes.length === 0) {
+      return <Tag color="default">-</Tag>
+    }
+
+    const max = 12
+    const shown = codes.slice(0, max)
+    return (
+      <Space size={4} wrap>
+        {shown.map((code) => (
+          <Tag key={code}>{code}</Tag>
+        ))}
+        {codes.length > max && (
+          <Text type="secondary">+{codes.length - max} ещё</Text>
+        )}
+      </Space>
+    )
+  }
 
   const clusterGroupPermissions = clusterGroupPermissionsQuery.data?.permissions ?? []
   const totalClusterGroupPermissions = typeof clusterGroupPermissionsQuery.data?.total === 'number'
@@ -2470,11 +2376,6 @@ export function RBACPage() {
   const totalArtifactGroupPermissions = typeof artifactGroupPermissionsQuery.data?.total === 'number'
     ? artifactGroupPermissionsQuery.data.total
     : artifactGroupPermissions.length
-
-  const auditItems = auditQuery.data?.items ?? []
-  const totalAuditItems = typeof auditQuery.data?.total === 'number'
-    ? auditQuery.data.total
-    : auditItems.length
 
   const rbacPermissionsTableConfig: RbacPermissionsTableConfig = (() => {
     if (rbacPermissionsResourceKey === 'clusters' && rbacPermissionsPrincipalType === 'user') {
@@ -2788,6 +2689,13 @@ export function RBACPage() {
                       </Button>
                     </Form.Item>
                   </Form>
+                  {createRole.error && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="warning"
+                      message="Не удалось создать роль"
+                    />
+                  )}
                 </Card>
 
                 <Card title="Roles" size="small">
@@ -2802,14 +2710,30 @@ export function RBACPage() {
                       Refresh
                     </Button>
                   </Space>
-                  <Table
-                    size="small"
-                    columns={rolesColumns}
-                    dataSource={visibleRoles}
-                    loading={rolesQuery.isLoading}
-                    rowKey="id"
-                    pagination={{ pageSize: 50 }}
-                  />
+                  {rolesQuery.error && (
+                    <Alert
+                      style={{ marginBottom: 12 }}
+                      type="warning"
+                      message="Не удалось загрузить роли"
+                    />
+                  )}
+                  {!rolesQuery.isLoading && !rolesQuery.error && visibleRoles.length === 0 ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message={roleSearch.trim() ? 'Роли не найдены' : 'Ролей пока нет'}
+                      description={roleSearch.trim() ? 'Попробуйте изменить поиск.' : 'Создайте роль выше.'}
+                    />
+                  ) : (
+                    <Table
+                      size="small"
+                      columns={rolesColumns}
+                      dataSource={visibleRoles}
+                      loading={rolesQuery.isLoading}
+                      rowKey="id"
+                      pagination={{ pageSize: 50 }}
+                    />
+                  )}
                 </Card>
               </Space>
             ),
@@ -2824,6 +2748,27 @@ export function RBACPage() {
                   : (rbacPermissionsResourceKey === 'artifacts')
                     ? levelsHintArtifacts
                     : levelsHintTemplatesWorkflows}
+
+                {rbacPermissionsResourceKey === 'databases' && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="Как выдать доступ на конкретную ИБ"
+                    description={(
+                      <Space direction="vertical" size={4}>
+                        <Text>
+                          1) Выберите режим <Text code>Кто → Где</Text> (подберите пользователя/роль и ИБ в фильтрах), или <Text code>Где → Кто</Text> (выберите ИБ слева и смотрите назначения справа).
+                        </Text>
+                        <Text>
+                          2) В блоке “Выдать доступ” укажите уровень и <Text code>reason</Text>, затем нажмите <Text code>Grant</Text>.
+                        </Text>
+                        <Text type="secondary">
+                          3) Перепроверьте вкладку “Effective access”: строка = итог, раскрытие = источники (direct/group/cluster/database/...).
+                        </Text>
+                      </Space>
+                    )}
+                  />
+                )}
 
                 <Card title="Объект и субъект" size="small">
                   <Space wrap>
@@ -2887,41 +2832,27 @@ export function RBACPage() {
                         message: rbacPermissionsPrincipalType === 'user' ? 'user required' : 'role required',
                       }]}
                     >
-                      {rbacPermissionsPrincipalType === 'user' ? (
-                        <Select
-                          style={{ width: 240 }}
-                          placeholder="User"
-                          allowClear
-                          showSearch
-                          filterOption={false}
-                          onSearch={setUserSearch}
-                          options={userOptions}
-                          loading={usersQuery.isFetching}
-                        />
-                      ) : (
-                        <Select
-                          style={{ width: 240 }}
-                          placeholder="Role"
-                          options={roleOptions}
-                          showSearch
-                          optionFilterProp="label"
-                        />
-                      )}
+                      <RbacPrincipalPicker
+                        principalType={rbacPermissionsPrincipalType}
+                        allowClear
+                        userOptions={userOptions}
+                        userLoading={usersQuery.isFetching}
+                        onUserSearch={setUserSearch}
+                        roleOptions={roleOptions}
+                      />
                     </Form.Item>
 
                     <Form.Item name="resource_id" rules={[{ required: true, message: 'resource required' }]}>
-                      <Select
-                        style={{ width: 360 }}
-                        placeholder="Resource"
-                        disabled={rbacPermissionsViewMode === 'resource'}
-                        showSearch={rbacPermissionsResourceRef.showSearch}
-                        optionFilterProp="label"
-                        filterOption={rbacPermissionsResourceRef.filterOption}
-                        onSearch={rbacPermissionsResourceRef.filterOption ? undefined : rbacPermissionsResourceRef.onSearch}
-                        onPopupScroll={rbacPermissionsResourceRef.filterOption ? undefined : rbacPermissionsResourceRef.onPopupScroll}
-                        options={rbacPermissionsResourceRef.options}
-                        loading={rbacPermissionsResourceRef.loading}
-                      />
+	                      <RbacResourcePicker
+	                        resourceKey={rbacPermissionsResourceKey}
+	                        clusters={clusters}
+	                        disabled={rbacPermissionsViewMode === 'resource'}
+	                        placeholder="Resource"
+	                        width={360}
+	                        databaseLabelById={databasesLabelById.current}
+	                        onDatabasesLoaded={handleDatabasesLoaded}
+	                        select={rbacPermissionsResourceRef}
+	                      />
                     </Form.Item>
 
                     <Form.Item name="level" rules={[{ required: true }]}>
@@ -2951,508 +2882,207 @@ export function RBACPage() {
 
                 {rbacPermissionsViewMode === 'resource' && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <RbacResourceBrowser
-                      title="Ресурсы"
-                      searchPlaceholder="Search resource"
-                      searchValue={rbacPermissionsResourceSearchValue}
-                      onSearchChange={setRbacPermissionsResourceSearchValue}
-                      options={rbacPermissionsResourceBrowserOptions}
-                      selectedValue={rbacPermissionsList.resource_id}
-                      onSelect={(id) => {
-                        setRbacPermissionsList((prev) => ({ ...prev, resource_id: id, page: 1 }))
-                        rbacPermissionsGrantForm.setFieldValue('resource_id', id)
-                      }}
-                      loading={rbacPermissionsResourceRef.loading}
-                      onScroll={(event) => rbacPermissionsResourceRef.onPopupScroll?.(event)}
-                      clearLabel="Снять выбор"
-                      clearDisabled={!rbacPermissionsList.resource_id}
-                      onClear={() => {
-                        setRbacPermissionsList((prev) => ({ ...prev, resource_id: undefined, page: 1 }))
-                        rbacPermissionsGrantForm.setFieldValue('resource_id', undefined)
-                      }}
-                    />
+                    {rbacPermissionsResourceKey === 'clusters' || rbacPermissionsResourceKey === 'databases' ? (
+	                      <RbacClusterDatabaseTree
+	                        title="Ресурсы"
+	                        mode={rbacPermissionsResourceKey === 'clusters' ? 'clusters' : 'databases'}
+	                        clusters={clusters}
+                        value={rbacPermissionsList.resource_id}
+                        onChange={(id) => {
+                          setRbacPermissionsList((prev) => ({ ...prev, resource_id: id, page: 1 }))
+                          rbacPermissionsGrantForm.setFieldValue('resource_id', id)
+                        }}
+	                        onDatabasesLoaded={handleDatabasesLoaded}
+	                      />
+                    ) : (
+                      <RbacResourceBrowser
+                        title="Ресурсы"
+                        searchPlaceholder="Search resource"
+                        searchValue={rbacPermissionsResourceSearchValue}
+                        onSearchChange={setRbacPermissionsResourceSearchValue}
+                        options={rbacPermissionsResourceBrowserOptions}
+                        selectedValue={rbacPermissionsList.resource_id}
+                        onSelect={(id) => {
+                          setRbacPermissionsList((prev) => ({ ...prev, resource_id: id, page: 1 }))
+                          rbacPermissionsGrantForm.setFieldValue('resource_id', id)
+                        }}
+                        loading={rbacPermissionsResourceRef.loading}
+                        onScroll={(event) => rbacPermissionsResourceRef.onPopupScroll?.(event)}
+                        clearLabel="Снять выбор"
+                        clearDisabled={!rbacPermissionsList.resource_id}
+                        onClear={() => {
+                          setRbacPermissionsList((prev) => ({ ...prev, resource_id: undefined, page: 1 }))
+                          rbacPermissionsGrantForm.setFieldValue('resource_id', undefined)
+                        }}
+                      />
+                    )}
 
-                    <Card title="Назначения" size="small" style={{ flex: 1, minWidth: 0 }}>
-                      {!rbacPermissionsList.resource_id ? (
-                        <Empty description="Выберите ресурс слева" />
-                      ) : (
-                        <>
-                          <Space wrap style={{ marginBottom: 12 }}>
-                            <Text>
-                              <Text strong>Resource:</Text> {rbacPermissionsSelectedResourceLabel}
+                    <PermissionsTable
+                      title="Назначения"
+                      style={{ flex: 1, minWidth: 0 }}
+                      empty={{
+                        show: !rbacPermissionsList.resource_id,
+                        description: (
+                          <Space direction="vertical" size={4}>
+                            <Text>Выберите ресурс слева.</Text>
+                            <Text type="secondary">
+                              Дальше: в блоке “Выдать доступ” выберите субъект, уровень и укажите reason.
                             </Text>
-
-                            <Select
-                              style={{ width: 140 }}
-                              placeholder="Level"
-                              allowClear
-                              value={rbacPermissionsList.level}
-                              onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
-                              options={LEVEL_OPTIONS}
-                            />
-
-                            <Input
-                              placeholder="Search"
-                              style={{ width: 220 }}
-                              value={rbacPermissionsList.search}
-                              onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-                            />
-
-                            <Button
-                              onClick={() => rbacPermissionsTableConfig.refetch()}
-                              loading={rbacPermissionsTableConfig.fetching}
-                            >
-                              Refresh
-                            </Button>
+                            <Text type="secondary">
+                              После изменений перепроверьте вкладку “Effective access”.
+                            </Text>
                           </Space>
+                        ),
+                      }}
+                      toolbar={(
+                        <>
+                          <Text>
+                            <Text strong>Resource:</Text> {rbacPermissionsSelectedResourceLabel}
+                          </Text>
 
-                          {Boolean(rbacPermissionsTableConfig.error) && (
-                            <Alert
-                              type="warning"
-                              message="Не удалось загрузить permissions"
-                              style={{ marginBottom: 12 }}
-                            />
-                          )}
-
-                          <Table
-                            size="small"
-                            columns={rbacPermissionsTableConfig.columns}
-                            dataSource={rbacPermissionsTableConfig.rows}
-                            loading={rbacPermissionsTableConfig.loading}
-                            rowKey={rbacPermissionsTableConfig.rowKey}
-                            pagination={{
-                              current: rbacPermissionsList.page,
-                              pageSize: rbacPermissionsList.pageSize,
-                              total: rbacPermissionsTableConfig.total,
-                              showSizeChanger: true,
-                              onChange: (page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize })),
-                            }}
+                          <Select
+                            style={{ width: 140 }}
+                            placeholder="Level"
+                            allowClear
+                            value={rbacPermissionsList.level}
+                            onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
+                            options={LEVEL_OPTIONS}
                           />
+
+                          <Input
+                            placeholder="Search"
+                            style={{ width: 220 }}
+                            value={rbacPermissionsList.search}
+                            onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                          />
+
+                          <Button
+                            onClick={() => rbacPermissionsTableConfig.refetch()}
+                            loading={rbacPermissionsTableConfig.fetching}
+                          >
+                            Refresh
+                          </Button>
                         </>
                       )}
-                    </Card>
+                      columns={rbacPermissionsTableConfig.columns}
+                      rows={rbacPermissionsTableConfig.rows}
+                      loading={rbacPermissionsTableConfig.loading}
+                      rowKey={rbacPermissionsTableConfig.rowKey}
+                      total={rbacPermissionsTableConfig.total}
+                      page={rbacPermissionsList.page}
+                      pageSize={rbacPermissionsList.pageSize}
+                      onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
+                      error={rbacPermissionsTableConfig.error}
+                      errorMessage="Не удалось загрузить permissions"
+                    />
                   </div>
                 )}
 
                 {rbacPermissionsViewMode === 'principal'
                   && rbacPermissionsPrincipalType === 'role'
                   && rbacPermissionsResourceKey === 'clusters' && (
-                  <Card title="Bulk Cluster Role Permissions" size="small">
-                    <Tabs
-                      items={[
-                        {
-                          key: 'grant',
-                          label: 'Bulk Grant',
-                          children: (
-                            <Form
-                              form={rbacPermissionsBulkGrantClusterGroupForm}
-                              layout="vertical"
-                              onFinish={(values) => {
-                                const clusterIds = parseIdListFromText(values.cluster_ids)
-                                if (clusterIds.length === 0) {
-                                  message.error('cluster_ids required')
-                                  return
-                                }
-
-                                const roleName = roleNameById.get(values.group_id) ?? String(values.group_id)
-                                modal.confirm({
-                                  title: 'Подтвердите массовую выдачу доступа (Clusters)',
-                                  okText: 'Применить',
-                                  cancelText: 'Отмена',
-                                  content: (
-                                    <Space direction="vertical" size={4}>
-                                      <Text><Text strong>Роль:</Text> {roleName} #{values.group_id}</Text>
-                                      <Text><Text strong>Уровень:</Text> {values.level}</Text>
-                                      {values.notes ? <Text><Text strong>Notes:</Text> {values.notes}</Text> : null}
-                                      <Text><Text strong>Количество:</Text> {clusterIds.length}</Text>
-                                      <Text type="secondary">
-                                        Пример: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
-                                      </Text>
-                                    </Space>
-                                  ),
-                                  onOk: async () => {
-                                    try {
-                                      const result = await bulkGrantClusterGroup.mutateAsync({
-                                        group_id: values.group_id,
-                                        cluster_ids: clusterIds,
-                                        level: values.level,
-                                        notes: values.notes,
-                                        reason: values.reason,
-                                      })
-                                      message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
-                                      rbacPermissionsBulkGrantClusterGroupForm.resetFields()
-                                    } catch (error) {
-                                      message.error('Bulk grant failed')
-                                      throw error
-                                    }
-                                  },
-                                })
-                              }}
-                              initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
-                            >
-                              <Space wrap>
-                                <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                  <Select
-                                    style={{ width: 240 }}
-                                    placeholder="Role"
-                                    options={roleOptions}
-                                    showSearch
-                                    optionFilterProp="label"
-                                  />
-                                </Form.Item>
-                                <Form.Item name="level" rules={[{ required: true }]}>
-                                  <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
-                                </Form.Item>
-                                <Form.Item name="notes">
-                                  <Input placeholder="Notes (optional)" style={{ width: 260 }} />
-                                </Form.Item>
-                                <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                  <Input placeholder="Reason" style={{ width: 320 }} />
-                                </Form.Item>
-                              </Space>
-                              <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
-                                <Input.TextArea
-                                  placeholder="Cluster UUIDs (one per line)"
-                                  autoSize={{ minRows: 3, maxRows: 6 }}
-                                />
-                              </Form.Item>
-                              <Button type="primary" htmlType="submit" loading={bulkGrantClusterGroup.isPending}>
-                                Bulk Grant
-                              </Button>
-                            </Form>
-                          ),
-                        },
-                        {
-                          key: 'revoke',
-                          label: 'Bulk Revoke',
-                          children: (
-                            <Form
-                              form={rbacPermissionsBulkRevokeClusterGroupForm}
-                              layout="vertical"
-                              onFinish={(values) => {
-                                const clusterIds = parseIdListFromText(values.cluster_ids)
-                                if (clusterIds.length === 0) {
-                                  message.error('cluster_ids required')
-                                  return
-                                }
-
-                                const roleName = roleNameById.get(values.group_id) ?? String(values.group_id)
-                                modal.confirm({
-                                  title: 'Подтвердите массовое снятие доступа (Clusters)',
-                                  okText: 'Применить',
-                                  cancelText: 'Отмена',
-                                  content: (
-                                    <Space direction="vertical" size={4}>
-                                      <Text><Text strong>Роль:</Text> {roleName} #{values.group_id}</Text>
-                                      <Text><Text strong>Количество:</Text> {clusterIds.length}</Text>
-                                      <Text type="secondary">
-                                        Пример: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
-                                      </Text>
-                                    </Space>
-                                  ),
-                                  onOk: async () => {
-                                    try {
-                                      const result = await bulkRevokeClusterGroup.mutateAsync({
-                                        group_id: values.group_id,
-                                        cluster_ids: clusterIds,
-                                        reason: values.reason,
-                                      })
-                                      message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
-                                      rbacPermissionsBulkRevokeClusterGroupForm.resetFields()
-                                    } catch (error) {
-                                      message.error('Bulk revoke failed')
-                                      throw error
-                                    }
-                                  },
-                                })
-                              }}
-                            >
-                              <Space wrap>
-                                <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                  <Select
-                                    style={{ width: 240 }}
-                                    placeholder="Role"
-                                    options={roleOptions}
-                                    showSearch
-                                    optionFilterProp="label"
-                                  />
-                                </Form.Item>
-                                <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                  <Input placeholder="Reason" style={{ width: 320 }} />
-                                </Form.Item>
-                              </Space>
-                              <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
-                                <Input.TextArea
-                                  placeholder="Cluster UUIDs (one per line)"
-                                  autoSize={{ minRows: 3, maxRows: 6 }}
-                                />
-                              </Form.Item>
-                              <Button type="primary" danger htmlType="submit" loading={bulkRevokeClusterGroup.isPending}>
-                                Bulk Revoke
-                              </Button>
-                            </Form>
-                          ),
-                        },
-                      ]}
-                    />
-                  </Card>
+                  <RbacBulkClusterRolePermissions
+                    roleOptions={roleOptions}
+                    roleNameById={roleNameById}
+                    levelOptions={LEVEL_OPTIONS}
+                    bulkGrant={bulkGrantClusterGroup}
+                    bulkRevoke={bulkRevokeClusterGroup}
+                  />
                 )}
 
                 {rbacPermissionsViewMode === 'principal'
                   && rbacPermissionsPrincipalType === 'role'
                   && rbacPermissionsResourceKey === 'databases' && (
-                  <Card title="Bulk Database Role Permissions" size="small">
-                    <Tabs
-                      items={[
-                        {
-                          key: 'grant',
-                          label: 'Bulk Grant',
-                          children: (
-                            <Form
-                              form={rbacPermissionsBulkGrantDatabaseGroupForm}
-                              layout="vertical"
-                              onFinish={(values) => {
-                                const databaseIds = parseIdListFromText(values.database_ids)
-                                if (databaseIds.length === 0) {
-                                  message.error('database_ids required')
-                                  return
-                                }
-
-                                const roleName = roleNameById.get(values.group_id) ?? String(values.group_id)
-                                modal.confirm({
-                                  title: 'Подтвердите массовую выдачу доступа (Databases)',
-                                  okText: 'Применить',
-                                  cancelText: 'Отмена',
-                                  content: (
-                                    <Space direction="vertical" size={4}>
-                                      <Text><Text strong>Роль:</Text> {roleName} #{values.group_id}</Text>
-                                      <Text><Text strong>Уровень:</Text> {values.level}</Text>
-                                      {values.notes ? <Text><Text strong>Notes:</Text> {values.notes}</Text> : null}
-                                      <Text><Text strong>Количество:</Text> {databaseIds.length}</Text>
-                                      <Text type="secondary">
-                                        Пример: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', ...' : ''}
-                                      </Text>
-                                    </Space>
-                                  ),
-                                  onOk: async () => {
-                                    try {
-                                      const result = await bulkGrantDatabaseGroup.mutateAsync({
-                                        group_id: values.group_id,
-                                        database_ids: databaseIds,
-                                        level: values.level,
-                                        notes: values.notes,
-                                        reason: values.reason,
-                                      })
-                                      message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
-                                      rbacPermissionsBulkGrantDatabaseGroupForm.resetFields()
-                                    } catch (error) {
-                                      message.error('Bulk grant failed')
-                                      throw error
-                                    }
-                                  },
-                                })
-                              }}
-                              initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
-                            >
-                              <Space wrap>
-                                <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                  <Select
-                                    style={{ width: 240 }}
-                                    placeholder="Role"
-                                    options={roleOptions}
-                                    showSearch
-                                    optionFilterProp="label"
-                                  />
-                                </Form.Item>
-                                <Form.Item name="level" rules={[{ required: true }]}>
-                                  <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
-                                </Form.Item>
-                                <Form.Item name="notes">
-                                  <Input placeholder="Notes (optional)" style={{ width: 260 }} />
-                                </Form.Item>
-                                <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                  <Input placeholder="Reason" style={{ width: 320 }} />
-                                </Form.Item>
-                              </Space>
-                              <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
-                                <Input.TextArea
-                                  placeholder="Database IDs (one per line)"
-                                  autoSize={{ minRows: 3, maxRows: 8 }}
-                                />
-                              </Form.Item>
-                              <Button type="primary" htmlType="submit" loading={bulkGrantDatabaseGroup.isPending}>
-                                Bulk Grant
-                              </Button>
-                            </Form>
-                          ),
-                        },
-                        {
-                          key: 'revoke',
-                          label: 'Bulk Revoke',
-                          children: (
-                            <Form
-                              form={rbacPermissionsBulkRevokeDatabaseGroupForm}
-                              layout="vertical"
-                              onFinish={(values) => {
-                                const databaseIds = parseIdListFromText(values.database_ids)
-                                if (databaseIds.length === 0) {
-                                  message.error('database_ids required')
-                                  return
-                                }
-
-                                const roleName = roleNameById.get(values.group_id) ?? String(values.group_id)
-                                modal.confirm({
-                                  title: 'Подтвердите массовое снятие доступа (Databases)',
-                                  okText: 'Применить',
-                                  cancelText: 'Отмена',
-                                  content: (
-                                    <Space direction="vertical" size={4}>
-                                      <Text><Text strong>Роль:</Text> {roleName} #{values.group_id}</Text>
-                                      <Text><Text strong>Количество:</Text> {databaseIds.length}</Text>
-                                      <Text type="secondary">
-                                        Пример: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', ...' : ''}
-                                      </Text>
-                                    </Space>
-                                  ),
-                                  onOk: async () => {
-                                    try {
-                                      const result = await bulkRevokeDatabaseGroup.mutateAsync({
-                                        group_id: values.group_id,
-                                        database_ids: databaseIds,
-                                        reason: values.reason,
-                                      })
-                                      message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
-                                      rbacPermissionsBulkRevokeDatabaseGroupForm.resetFields()
-                                    } catch (error) {
-                                      message.error('Bulk revoke failed')
-                                      throw error
-                                    }
-                                  },
-                                })
-                              }}
-                            >
-                              <Space wrap>
-                                <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                  <Select
-                                    style={{ width: 240 }}
-                                    placeholder="Role"
-                                    options={roleOptions}
-                                    showSearch
-                                    optionFilterProp="label"
-                                  />
-                                </Form.Item>
-                                <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                  <Input placeholder="Reason" style={{ width: 320 }} />
-                                </Form.Item>
-                              </Space>
-                              <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
-                                <Input.TextArea
-                                  placeholder="Database IDs (one per line)"
-                                  autoSize={{ minRows: 3, maxRows: 8 }}
-                                />
-                              </Form.Item>
-                              <Button type="primary" danger htmlType="submit" loading={bulkRevokeDatabaseGroup.isPending}>
-                                Bulk Revoke
-                              </Button>
-                            </Form>
-                          ),
-                        },
-                      ]}
-                    />
-                  </Card>
+                  <RbacBulkDatabaseRolePermissions
+                    roleOptions={roleOptions}
+                    roleNameById={roleNameById}
+                    levelOptions={LEVEL_OPTIONS}
+                    bulkGrant={bulkGrantDatabaseGroup}
+                    bulkRevoke={bulkRevokeDatabaseGroup}
+                  />
                 )}
 
                 {rbacPermissionsViewMode === 'principal' && (
-                  <Card title="Permissions" size="small">
-                    <Space wrap style={{ marginBottom: 12 }}>
-                      {rbacPermissionsPrincipalType === 'user' ? (
-                        <Select
-                          style={{ width: 240 }}
-                          placeholder="User"
-                          allowClear
-                          showSearch
-                          filterOption={false}
-                          onSearch={setUserSearch}
-                          value={rbacPermissionsList.principal_id}
-                          onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, principal_id: value ?? undefined, page: 1 }))}
-                          options={userOptions}
-                          loading={usersQuery.isFetching}
+                  <PermissionsTable
+                    title="Permissions"
+                    preamble={(!rbacPermissionsList.principal_id
+                      && !rbacPermissionsList.resource_id
+                      && !rbacPermissionsList.level
+                      && !rbacPermissionsList.search) ? (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message="С чего начать"
+                          description={(
+                            <Space direction="vertical" size={4}>
+                              <Text>Выберите User/Role и (опционально) Resource/Level — так проще найти нужные назначения.</Text>
+                              <Text type="secondary">Для сценария “Где → Кто” переключите режим выше на “Где → Кто”.</Text>
+                              <Text type="secondary">После изменений перепроверьте вкладку “Effective access”.</Text>
+                            </Space>
+                          )}
                         />
-                      ) : (
-                        <Select
-                          style={{ width: 240 }}
-                          placeholder="Role"
+                      ) : null}
+                    toolbar={(
+                      <>
+                        <RbacPrincipalPicker
+                          principalType={rbacPermissionsPrincipalType}
                           allowClear
                           value={rbacPermissionsList.principal_id}
-                          onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, principal_id: value ?? undefined, page: 1 }))}
-                          options={roleOptions}
-                          showSearch
-                          optionFilterProp="label"
+                          onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, principal_id: value, page: 1 }))}
+                          userOptions={userOptions}
+                          userLoading={usersQuery.isFetching}
+                          onUserSearch={setUserSearch}
+                          roleOptions={roleOptions}
                         />
-                      )}
 
-                      <Select
-                        style={{ width: 360 }}
-                        placeholder="Resource"
-                        allowClear
-                        value={rbacPermissionsList.resource_id}
-                        onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, resource_id: value ?? undefined, page: 1 }))}
-                        showSearch={rbacPermissionsResourceRef.showSearch}
-                        optionFilterProp="label"
-                        filterOption={rbacPermissionsResourceRef.filterOption}
-                        onSearch={rbacPermissionsResourceRef.filterOption ? undefined : rbacPermissionsResourceRef.onSearch}
-                        onPopupScroll={rbacPermissionsResourceRef.filterOption ? undefined : rbacPermissionsResourceRef.onPopupScroll}
-                        options={rbacPermissionsResourceRef.options}
-                        loading={rbacPermissionsResourceRef.loading}
-                      />
+                        <RbacResourcePicker
+                          resourceKey={rbacPermissionsResourceKey}
+                          clusters={clusters}
+                          allowClear
+                          value={rbacPermissionsList.resource_id}
+                          onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, resource_id: value, page: 1 }))}
+                          placeholder="Resource"
+                          width={360}
+                          databaseLabelById={databasesLabelById.current}
+                          onDatabasesLoaded={handleDatabasesLoaded}
+                          select={rbacPermissionsResourceRef}
+                        />
 
-                      <Select
-                        style={{ width: 140 }}
-                        placeholder="Level"
-                        allowClear
-                        value={rbacPermissionsList.level}
-                        onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
-                        options={LEVEL_OPTIONS}
-                      />
+                        <Select
+                          style={{ width: 140 }}
+                          placeholder="Level"
+                          allowClear
+                          value={rbacPermissionsList.level}
+                          onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
+                          options={LEVEL_OPTIONS}
+                        />
 
-                      <Input
-                        placeholder="Search"
-                        style={{ width: 220 }}
-                        value={rbacPermissionsList.search}
-                        onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-                      />
+                        <Input
+                          placeholder="Search"
+                          style={{ width: 220 }}
+                          value={rbacPermissionsList.search}
+                          onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                        />
 
-                      <Button
-                        onClick={() => rbacPermissionsTableConfig.refetch()}
-                        loading={rbacPermissionsTableConfig.fetching}
-                      >
-                        Refresh
-                      </Button>
-                    </Space>
-
-                    {Boolean(rbacPermissionsTableConfig.error) && (
-                      <Alert
-                        type="warning"
-                        message="Не удалось загрузить permissions"
-                        style={{ marginBottom: 12 }}
-                      />
+                        <Button
+                          onClick={() => rbacPermissionsTableConfig.refetch()}
+                          loading={rbacPermissionsTableConfig.fetching}
+                        >
+                          Refresh
+                        </Button>
+                      </>
                     )}
-
-                    <Table
-                      size="small"
-                      columns={rbacPermissionsTableConfig.columns}
-                      dataSource={rbacPermissionsTableConfig.rows}
-                      loading={rbacPermissionsTableConfig.loading}
-                      rowKey={rbacPermissionsTableConfig.rowKey}
-                      pagination={{
-                        current: rbacPermissionsList.page,
-                        pageSize: rbacPermissionsList.pageSize,
-                        total: rbacPermissionsTableConfig.total,
-                        showSizeChanger: true,
-                        onChange: (page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize })),
-                      }}
-                    />
-                  </Card>
+                    columns={rbacPermissionsTableConfig.columns}
+                    rows={rbacPermissionsTableConfig.rows}
+                    loading={rbacPermissionsTableConfig.loading}
+                    rowKey={rbacPermissionsTableConfig.rowKey}
+                    total={rbacPermissionsTableConfig.total}
+                    page={rbacPermissionsList.page}
+                    pageSize={rbacPermissionsList.pageSize}
+                    onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
+                    error={rbacPermissionsTableConfig.error}
+                    errorMessage="Не удалось загрузить permissions"
+                  />
                 )}
               </Space>
             ),
@@ -3469,7 +3099,131 @@ export function RBACPage() {
                     initialValues={{ mode: 'replace' satisfies 'replace' | 'add' | 'remove' }}
                     onFinish={(values) => {
                       setSelectedRolesUserId(values.user_id)
-                      setUserRoles.mutate(values)
+
+                      const mode = (values.mode ?? 'replace') as 'replace' | 'add' | 'remove'
+                      const selectedRoleIds = Array.from(new Set(values.group_ids ?? [])).sort((a, b) => a - b)
+                      const currentRoles = userRolesQuery.data?.roles ?? []
+                      const currentRoleIds = currentRoles.map((role) => role.id)
+                      const currentRoleIdSet = new Set(currentRoleIds)
+                      const selectedRoleIdSet = new Set(selectedRoleIds)
+
+                      const computeDiff = () => {
+                        const isCurrentRolesLoadedForUser = Boolean(
+                          userRolesQuery.data
+                          && userRolesQuery.data.user?.id === values.user_id
+                          && !userRolesQuery.isLoading
+                          && !userRolesQuery.error
+                        )
+
+                        if (!isCurrentRolesLoadedForUser) {
+                          return {
+                            added: [] as number[],
+                            removed: [] as number[],
+                            next: mode === 'replace' ? selectedRoleIds : null,
+                          }
+                        }
+
+                        if (mode === 'replace') {
+                          const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                          const removed = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id))
+                          return { added, removed, next: selectedRoleIds }
+                        }
+
+                        if (mode === 'add') {
+                          const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                          const next = Array.from(new Set([...currentRoleIds, ...selectedRoleIds])).sort((a, b) => a - b)
+                          return { added, removed: [] as number[], next }
+                        }
+
+                        const removed = selectedRoleIds.filter((id) => currentRoleIdSet.has(id))
+                        const next = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id)).sort((a, b) => a - b)
+                        return { added: [] as number[], removed, next }
+                      }
+
+                      const diff = computeDiff()
+                      const userLabel = userOptions.find((opt) => opt.value === values.user_id)?.label ?? `User #${values.user_id}`
+                      const modeLabel = mode === 'replace' ? 'Replace' : (mode === 'add' ? 'Add' : 'Remove')
+
+                      const renderRoleTags = (ids: number[]) => {
+                        if (ids.length === 0) {
+                          return <Tag color="default">-</Tag>
+                        }
+
+                        const max = 10
+                        const shown = ids.slice(0, max)
+                        return (
+                          <Space size={4} wrap>
+                            {shown.map((id) => (
+                              <Tag key={id}>{roleNameById.get(id) ?? `#${id}`}</Tag>
+                            ))}
+                            {ids.length > max && (
+                              <Text type="secondary">+{ids.length - max} ещё</Text>
+                            )}
+                          </Space>
+                        )
+                      }
+
+                      modal.confirm({
+                        title: 'Применить роли пользователю?',
+                        okText: 'Применить',
+                        cancelText: 'Отмена',
+                        content: (
+                          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <div>
+                              <Text type="secondary">Пользователь:</Text> <Text>{userLabel}</Text>
+                            </div>
+                            <div>
+                              <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
+                            </div>
+                            <div>
+                              <Text type="secondary">Выбрано ролей:</Text> <Text>{selectedRoleIds.length}</Text>
+                            </div>
+                            <div>
+                              <Text type="secondary">Выбранные роли:</Text> {renderRoleTags(selectedRoleIds)}
+                            </div>
+                            {userRolesQuery.data?.user?.id === values.user_id && !userRolesQuery.error && (
+                              <div>
+                                <Text type="secondary">Текущие роли:</Text> {renderRoleTags(currentRoleIds)}
+                              </div>
+                            )}
+
+                            {(userRolesQuery.isLoading || userRolesQuery.isFetching) && (
+                              <Alert
+                                type="info"
+                                showIcon
+                                message="Текущие роли загружаются"
+                                description="Diff может быть неполным."
+                              />
+                            )}
+                            {userRolesQuery.error && (
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message="Не удалось загрузить текущие роли пользователя"
+                                description="Diff может быть неполным."
+                              />
+                            )}
+
+                            <div>
+                              <Text type="secondary">Добавится:</Text> {renderRoleTags(diff.added)}
+                            </div>
+                            <div>
+                              <Text type="secondary">Уберётся:</Text> {renderRoleTags(diff.removed)}
+                            </div>
+                            <div>
+                              <Text type="secondary">Итого после применения:</Text>{' '}
+                              <Text>{diff.next ? diff.next.length : '-'}</Text>
+                            </div>
+
+                            <div>
+                              <Text type="secondary">Reason:</Text> <Text>{values.reason}</Text>
+                            </div>
+                          </Space>
+                        ),
+                        onOk: async () => {
+                          await setUserRoles.mutateAsync(values)
+                        },
+                      })
                     }}
                   >
                     <Form.Item name="user_id" rules={[{ required: true, message: 'user required' }]}>
@@ -3515,6 +3269,37 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
 
+                  {setUserRoles.error && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="warning"
+                      message="Не удалось применить роли пользователю"
+                    />
+                  )}
+
+                  {!selectedRolesUserId && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="info"
+                      showIcon
+                      message="С чего начать"
+                      description={(
+                        <Space direction="vertical" size={4}>
+                          <Text>Выберите пользователя, затем роли и режим (replace/add/remove).</Text>
+                          <Text type="secondary">Изменения требуют reason и попадают в audit.</Text>
+                        </Space>
+                      )}
+                    />
+                  )}
+
+                  {userRolesQuery.error && selectedRolesUserId && (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="warning"
+                      message="Не удалось загрузить текущие роли пользователя"
+                    />
+                  )}
+
                   {selectedRolesUserId && (
                     <div style={{ marginTop: 12 }}>
                       <Text type="secondary">Current roles:</Text>{' '}
@@ -3534,7 +3319,7 @@ export function RBACPage() {
             label: 'Effective access',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Card title="Effective access preview" size="small">
+                <Card title="Effective access" size="small">
                   <Space wrap align="start">
                     <Select
                       style={{ width: 260 }}
@@ -3552,44 +3337,31 @@ export function RBACPage() {
                       loading={usersQuery.isFetching}
                     />
 
-                    <Space>
-                      <Text>Clusters</Text>
-                      <Switch
-                        checked={effectiveIncludeClusters}
-                        onChange={(checked) => setEffectiveIncludeClusters(checked)}
-                      />
-                    </Space>
-                    <Space>
-                      <Text>Databases</Text>
-                      <Switch
-                        checked={effectiveIncludeDatabases}
-                        onChange={(checked) => {
-                          setEffectiveIncludeDatabases(checked)
-                          setEffectiveDbPage(1)
-                        }}
-                      />
-                    </Space>
-                    <Space>
-                      <Text>Operation templates</Text>
-                      <Switch
-                        checked={effectiveIncludeOperationTemplates}
-                        onChange={(checked) => setEffectiveIncludeOperationTemplates(checked)}
-                      />
-                    </Space>
-                    <Space>
-                      <Text>Workflow templates</Text>
-                      <Switch
-                        checked={effectiveIncludeWorkflowTemplates}
-                        onChange={(checked) => setEffectiveIncludeWorkflowTemplates(checked)}
-                      />
-                    </Space>
-                    <Space>
-                      <Text>Artifacts</Text>
-                      <Switch
-                        checked={effectiveIncludeArtifacts}
-                        onChange={(checked) => setEffectiveIncludeArtifacts(checked)}
-                      />
-                    </Space>
+                    <Select
+                      style={{ width: 260 }}
+                      value={effectiveResourceKey}
+                      options={[
+                        { label: 'Clusters', value: 'clusters' },
+                        { label: 'Databases', value: 'databases' },
+                        { label: 'Operation Templates', value: 'operation-templates' },
+                        { label: 'Workflow Templates', value: 'workflow-templates' },
+                        { label: 'Artifacts', value: 'artifacts' },
+                      ]}
+                      onChange={(value) => setEffectiveResourceKey(value as RbacPermissionsResourceKey)}
+                    />
+
+	                    <RbacResourcePicker
+	                      resourceKey={effectiveResourceKey}
+	                      clusters={clusters}
+	                      allowClear
+	                      value={effectiveResourceId}
+                      onChange={setEffectiveResourceId}
+	                      placeholder={effectiveResourcePlaceholder}
+	                      width={360}
+	                      databaseLabelById={databasesLabelById.current}
+	                      onDatabasesLoaded={handleDatabasesLoaded}
+	                      select={effectiveResourceRef}
+	                    />
 
                     <Button
                       onClick={() => effectiveAccessQuery.refetch()}
@@ -3605,7 +3377,12 @@ export function RBACPage() {
                       style={{ marginTop: 12 }}
                       type="info"
                       message="Выберите пользователя для preview"
-                      description="Показывает итоговый доступ с учётом direct/group/inherited (cluster) источников."
+                      description={(
+                        <Space direction="vertical" size={4}>
+                          <Text>Выберите пользователя и тип ресурса. Опционально укажите конкретный ресурс для фильтра.</Text>
+                          <Text type="secondary">Раскрытие строки показывает источники (direct/group/cluster/database/...).</Text>
+                        </Space>
+                      )}
                     />
                   )}
 
@@ -3620,28 +3397,56 @@ export function RBACPage() {
 
                 {selectedEffectiveUserId && (
                   <>
-                    {effectiveIncludeClusters && (
-                      <Card title={`Clusters (${effectiveAccessQuery.data?.clusters?.length ?? 0})`} size="small">
+                    {effectiveResourceKey === 'clusters' && (
+                      <Card title="Clusters" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.cluster.id}
                           columns={effectiveClustersColumns}
-                          dataSource={effectiveAccessQuery.data?.clusters ?? []}
+                          dataSource={(effectiveAccessQuery.data?.clusters ?? []).filter((row) => (
+                            !effectiveResourceId || row.cluster.id === effectiveResourceId
+                          ))}
                           loading={effectiveAccessQuery.isFetching}
+                          expandable={{
+                            rowExpandable: (row) => (row.sources ?? []).length > 0,
+                            expandedRowRender: (row) => (
+                              <Table
+                                size="small"
+                                columns={effectiveClusterSourcesColumns}
+                                dataSource={row.sources ?? []}
+                                rowKey={(_, index) => String(index)}
+                                pagination={false}
+                              />
+                            ),
+                          }}
                           pagination={{ pageSize: 50 }}
                         />
                       </Card>
                     )}
 
-                    {effectiveIncludeDatabases && (
+                    {effectiveResourceKey === 'databases' && (
                       <Card title="Databases" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.database.id}
                           columns={effectiveDatabasesColumns}
-                          dataSource={effectiveAccessQuery.data?.databases ?? []}
+                          dataSource={(effectiveAccessQuery.data?.databases ?? []).filter((row) => (
+                            !effectiveResourceId || row.database.id === effectiveResourceId
+                          ))}
                           loading={effectiveAccessQuery.isFetching}
-                          pagination={{
+                          expandable={{
+                            rowExpandable: (row) => (row.sources ?? []).length > 0,
+                            expandedRowRender: (row) => (
+                              <Table
+                                size="small"
+                                columns={effectiveDatabaseSourcesColumns}
+                                dataSource={row.sources ?? []}
+                                rowKey={(_, index) => String(index)}
+                                pagination={false}
+                              />
+                            ),
+                          }}
+                          pagination={effectiveDbPaginationEnabled ? {
                             current: effectiveDbPage,
                             pageSize: effectiveDbPageSize,
                             total: typeof effectiveAccessQuery.data?.databases_total === 'number'
@@ -3652,45 +3457,87 @@ export function RBACPage() {
                               setEffectiveDbPage(page)
                               setEffectiveDbPageSize(pageSize)
                             },
-                          }}
+                          } : false}
                         />
                       </Card>
                     )}
 
-                    {effectiveIncludeOperationTemplates && (
+                    {effectiveResourceKey === 'operation-templates' && (
                       <Card title="Operation templates" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.template.id}
                           columns={effectiveOperationTemplatesColumns}
-                          dataSource={effectiveAccessQuery.data?.operation_templates ?? []}
+                          dataSource={(effectiveAccessQuery.data?.operation_templates ?? []).filter((row) => (
+                            !effectiveResourceId || row.template.id === effectiveResourceId
+                          ))}
                           loading={effectiveAccessQuery.isFetching}
+                          expandable={{
+                            rowExpandable: (row) => (row.sources ?? []).length > 0,
+                            expandedRowRender: (row) => (
+                              <Table
+                                size="small"
+                                columns={effectiveOperationTemplateSourcesColumns}
+                                dataSource={row.sources ?? []}
+                                rowKey={(_, index) => String(index)}
+                                pagination={false}
+                              />
+                            ),
+                          }}
                           pagination={{ pageSize: 50 }}
                         />
                       </Card>
                     )}
 
-                    {effectiveIncludeWorkflowTemplates && (
+                    {effectiveResourceKey === 'workflow-templates' && (
                       <Card title="Workflow templates" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.template.id}
                           columns={effectiveWorkflowTemplatesColumns}
-                          dataSource={effectiveAccessQuery.data?.workflow_templates ?? []}
+                          dataSource={(effectiveAccessQuery.data?.workflow_templates ?? []).filter((row) => (
+                            !effectiveResourceId || row.template.id === effectiveResourceId
+                          ))}
                           loading={effectiveAccessQuery.isFetching}
+                          expandable={{
+                            rowExpandable: (row) => (row.sources ?? []).length > 0,
+                            expandedRowRender: (row) => (
+                              <Table
+                                size="small"
+                                columns={effectiveWorkflowTemplateSourcesColumns}
+                                dataSource={row.sources ?? []}
+                                rowKey={(_, index) => String(index)}
+                                pagination={false}
+                              />
+                            ),
+                          }}
                           pagination={{ pageSize: 50 }}
                         />
                       </Card>
                     )}
 
-                    {effectiveIncludeArtifacts && (
+                    {effectiveResourceKey === 'artifacts' && (
                       <Card title="Artifacts" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.artifact.id}
                           columns={effectiveArtifactsColumns}
-                          dataSource={effectiveAccessQuery.data?.artifacts ?? []}
+                          dataSource={(effectiveAccessQuery.data?.artifacts ?? []).filter((row) => (
+                            !effectiveResourceId || row.artifact.id === effectiveResourceId
+                          ))}
                           loading={effectiveAccessQuery.isFetching}
+                          expandable={{
+                            rowExpandable: (row) => (row.sources ?? []).length > 0,
+                            expandedRowRender: (row) => (
+                              <Table
+                                size="small"
+                                columns={effectiveArtifactSourcesColumns}
+                                dataSource={row.sources ?? []}
+                                rowKey={(_, index) => String(index)}
+                                pagination={false}
+                              />
+                            ),
+                          }}
                           pagination={{ pageSize: 50 }}
                         />
                       </Card>
@@ -3753,7 +3600,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantCluster.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -3823,185 +3670,72 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantClusterGroup.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
-                <Card title="Bulk Cluster Permission (Role)" size="small">
-                  <Tabs
-                    items={[
-                      {
-                        key: 'grant',
-                        label: 'Bulk Grant',
-                        children: (
-                          <Form
-                            form={bulkGrantClusterGroupForm}
-                            layout="vertical"
-                            onFinish={async (values) => {
-                              const clusterIds = parseIdListFromText(values.cluster_ids)
-                              if (clusterIds.length === 0) {
-                                message.error('cluster_ids required')
-                                return
-                              }
-                              try {
-                                const result = await bulkGrantClusterGroup.mutateAsync({
-                                  group_id: values.group_id,
-                                  cluster_ids: clusterIds,
-                                  level: values.level,
-                                  notes: values.notes,
-                                  reason: values.reason,
-                                })
-                                message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
-                                bulkGrantClusterGroupForm.resetFields()
-                              } catch {
-                                message.error('Bulk grant failed')
-                              }
-                            }}
-                            initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
-                          >
-                            <Space wrap>
-                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                <Select
-                                  style={{ width: 240 }}
-                                  placeholder="Role"
-                                  options={roleOptions}
-                                  showSearch
-                                  optionFilterProp="label"
-                                />
-                              </Form.Item>
-                              <Form.Item name="level" rules={[{ required: true }]}>
-                                <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
-                              </Form.Item>
-                              <Form.Item name="notes">
-                                <Input placeholder="Notes (optional)" style={{ width: 260 }} />
-                              </Form.Item>
-                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                <Input placeholder="Reason" style={{ width: 320 }} />
-                              </Form.Item>
-                            </Space>
-                            <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
-                              <Input.TextArea
-                                placeholder="Cluster UUIDs (one per line)"
-                                autoSize={{ minRows: 3, maxRows: 6 }}
-                              />
-                            </Form.Item>
-                            <Button type="primary" htmlType="submit" loading={bulkGrantClusterGroup.isPending}>
-                              Bulk Grant
-                            </Button>
-                          </Form>
-                        ),
-                      },
-                      {
-                        key: 'revoke',
-                        label: 'Bulk Revoke',
-                        children: (
-                          <Form
-                            form={bulkRevokeClusterGroupForm}
-                            layout="vertical"
-                            onFinish={async (values) => {
-                              const clusterIds = parseIdListFromText(values.cluster_ids)
-                              if (clusterIds.length === 0) {
-                                message.error('cluster_ids required')
-                                return
-                              }
-                              try {
-                                const result = await bulkRevokeClusterGroup.mutateAsync({
-                                  group_id: values.group_id,
-                                  cluster_ids: clusterIds,
-                                  reason: values.reason,
-                                })
-                                message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
-                                bulkRevokeClusterGroupForm.resetFields()
-                              } catch {
-                                message.error('Bulk revoke failed')
-                              }
-                            }}
-                          >
-                            <Space wrap>
-                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                <Select
-                                  style={{ width: 240 }}
-                                  placeholder="Role"
-                                  options={roleOptions}
-                                  showSearch
-                                  optionFilterProp="label"
-                                />
-                              </Form.Item>
-                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                <Input placeholder="Reason" style={{ width: 320 }} />
-                              </Form.Item>
-                            </Space>
-                            <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
-                              <Input.TextArea
-                                placeholder="Cluster UUIDs (one per line)"
-                                autoSize={{ minRows: 3, maxRows: 6 }}
-                              />
-                            </Form.Item>
-                            <Button type="primary" danger htmlType="submit" loading={bulkRevokeClusterGroup.isPending}>
-                              Bulk Revoke
-                            </Button>
-                          </Form>
-                        ),
-                      },
-                    ]}
-                  />
-                </Card>
+                <RbacBulkClusterRolePermissions
+                  roleOptions={roleOptions}
+                  roleNameById={roleNameById}
+                  levelOptions={LEVEL_OPTIONS}
+                  bulkGrant={bulkGrantClusterGroup}
+                  bulkRevoke={bulkRevokeClusterGroup}
+                />
 
-                <Card title="Cluster Permissions (Role)" size="small">
-                  <Space wrap style={{ marginBottom: 12 }}>
-                    <Select
-                      style={{ width: 240 }}
-                      placeholder="Role"
-                      allowClear
-                      value={clusterGroupList.group_id}
-                      onChange={(value) => setClusterGroupList((prev) => ({ ...prev, group_id: value ?? undefined, page: 1 }))}
-                      options={roleOptions}
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <Select
-                      style={{ width: 320 }}
-                      placeholder="Cluster"
-                      allowClear
-                      value={clusterGroupList.cluster_id}
-                      onChange={(value) => setClusterGroupList((prev) => ({ ...prev, cluster_id: value ?? undefined, page: 1 }))}
-                      options={clusters.map((c) => ({ label: `${c.name} #${c.id}`, value: c.id }))}
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <Select
-                      style={{ width: 140 }}
-                      placeholder="Level"
-                      allowClear
-                      value={clusterGroupList.level}
-                      onChange={(value) => setClusterGroupList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
-                      options={LEVEL_OPTIONS}
-                    />
-                    <Input
-                      placeholder="Search"
-                      style={{ width: 220 }}
-                      value={clusterGroupList.search}
-                      onChange={(e) => setClusterGroupList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-                    />
-                    <Button onClick={() => clusterGroupPermissionsQuery.refetch()} loading={clusterGroupPermissionsQuery.isFetching}>
-                      Refresh
-                    </Button>
-                  </Space>
-                  <Table
-                    size="small"
-                    columns={clusterGroupColumns}
-                    dataSource={clusterGroupPermissions}
-                    loading={clusterGroupPermissionsQuery.isLoading}
-                    rowKey={(row) => `${row.group.id}:${row.cluster.id}`}
-                    pagination={{
-                      current: clusterGroupList.page,
-                      pageSize: clusterGroupList.pageSize,
-                      total: totalClusterGroupPermissions,
-                      showSizeChanger: true,
-                      onChange: (page, pageSize) => setClusterGroupList((prev) => ({ ...prev, page, pageSize })),
-                    }}
-                  />
-                </Card>
+                <PermissionsTable
+                  title="Cluster Permissions (Role)"
+                  toolbar={(
+                    <>
+                      <Select
+                        style={{ width: 240 }}
+                        placeholder="Role"
+                        allowClear
+                        value={clusterGroupList.group_id}
+                        onChange={(value) => setClusterGroupList((prev) => ({ ...prev, group_id: value ?? undefined, page: 1 }))}
+                        options={roleOptions}
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                      <Select
+                        style={{ width: 320 }}
+                        placeholder="Cluster"
+                        allowClear
+                        value={clusterGroupList.cluster_id}
+                        onChange={(value) => setClusterGroupList((prev) => ({ ...prev, cluster_id: value ?? undefined, page: 1 }))}
+                        options={clusters.map((c) => ({ label: `${c.name} #${c.id}`, value: c.id }))}
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                      <Select
+                        style={{ width: 140 }}
+                        placeholder="Level"
+                        allowClear
+                        value={clusterGroupList.level}
+                        onChange={(value) => setClusterGroupList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
+                        options={LEVEL_OPTIONS}
+                      />
+                      <Input
+                        placeholder="Search"
+                        style={{ width: 220 }}
+                        value={clusterGroupList.search}
+                        onChange={(e) => setClusterGroupList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                      />
+                      <Button onClick={() => clusterGroupPermissionsQuery.refetch()} loading={clusterGroupPermissionsQuery.isFetching}>
+                        Refresh
+                      </Button>
+                    </>
+                  )}
+                  columns={clusterGroupColumns}
+                  rows={clusterGroupPermissions}
+                  loading={clusterGroupPermissionsQuery.isLoading}
+                  rowKey={(row) => `${row.group.id}:${row.cluster.id}`}
+                  total={totalClusterGroupPermissions}
+                  page={clusterGroupList.page}
+                  pageSize={clusterGroupList.pageSize}
+                  onPaginationChange={(page, pageSize) => setClusterGroupList((prev) => ({ ...prev, page, pageSize }))}
+                  error={clusterGroupPermissionsQuery.error}
+                  errorMessage="Не удалось загрузить permissions"
+                />
               </Space>
             ),
           },
@@ -4057,7 +3791,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantDatabase.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4127,185 +3861,72 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantDatabaseGroup.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
-                <Card title="Bulk Database Permission (Role)" size="small">
-                  <Tabs
-                    items={[
-                      {
-                        key: 'grant',
-                        label: 'Bulk Grant',
-                        children: (
-                          <Form
-                            form={bulkGrantDatabaseGroupForm}
-                            layout="vertical"
-                            onFinish={async (values) => {
-                              const databaseIds = parseIdListFromText(values.database_ids)
-                              if (databaseIds.length === 0) {
-                                message.error('database_ids required')
-                                return
-                              }
-                              try {
-                                const result = await bulkGrantDatabaseGroup.mutateAsync({
-                                  group_id: values.group_id,
-                                  database_ids: databaseIds,
-                                  level: values.level,
-                                  notes: values.notes,
-                                  reason: values.reason,
-                                })
-                                message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
-                                bulkGrantDatabaseGroupForm.resetFields()
-                              } catch {
-                                message.error('Bulk grant failed')
-                              }
-                            }}
-                            initialValues={{ level: 'VIEW' satisfies PermissionLevelCode }}
-                          >
-                            <Space wrap>
-                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                <Select
-                                  style={{ width: 240 }}
-                                  placeholder="Role"
-                                  options={roleOptions}
-                                  showSearch
-                                  optionFilterProp="label"
-                                />
-                              </Form.Item>
-                              <Form.Item name="level" rules={[{ required: true }]}>
-                                <Select style={{ width: 140 }} options={LEVEL_OPTIONS} />
-                              </Form.Item>
-                              <Form.Item name="notes">
-                                <Input placeholder="Notes (optional)" style={{ width: 260 }} />
-                              </Form.Item>
-                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                <Input placeholder="Reason" style={{ width: 320 }} />
-                              </Form.Item>
-                            </Space>
-                            <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
-                              <Input.TextArea
-                                placeholder="Database IDs (one per line)"
-                                autoSize={{ minRows: 3, maxRows: 8 }}
-                              />
-                            </Form.Item>
-                            <Button type="primary" htmlType="submit" loading={bulkGrantDatabaseGroup.isPending}>
-                              Bulk Grant
-                            </Button>
-                          </Form>
-                        ),
-                      },
-                      {
-                        key: 'revoke',
-                        label: 'Bulk Revoke',
-                        children: (
-                          <Form
-                            form={bulkRevokeDatabaseGroupForm}
-                            layout="vertical"
-                            onFinish={async (values) => {
-                              const databaseIds = parseIdListFromText(values.database_ids)
-                              if (databaseIds.length === 0) {
-                                message.error('database_ids required')
-                                return
-                              }
-                              try {
-                                const result = await bulkRevokeDatabaseGroup.mutateAsync({
-                                  group_id: values.group_id,
-                                  database_ids: databaseIds,
-                                  reason: values.reason,
-                                })
-                                message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
-                                bulkRevokeDatabaseGroupForm.resetFields()
-                              } catch {
-                                message.error('Bulk revoke failed')
-                              }
-                            }}
-                          >
-                            <Space wrap>
-                              <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
-                                <Select
-                                  style={{ width: 240 }}
-                                  placeholder="Role"
-                                  options={roleOptions}
-                                  showSearch
-                                  optionFilterProp="label"
-                                />
-                              </Form.Item>
-                              <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                                <Input placeholder="Reason" style={{ width: 320 }} />
-                              </Form.Item>
-                            </Space>
-                            <Form.Item name="database_ids" rules={[{ required: true, message: 'database_ids required' }]}>
-                              <Input.TextArea
-                                placeholder="Database IDs (one per line)"
-                                autoSize={{ minRows: 3, maxRows: 8 }}
-                              />
-                            </Form.Item>
-                            <Button type="primary" danger htmlType="submit" loading={bulkRevokeDatabaseGroup.isPending}>
-                              Bulk Revoke
-                            </Button>
-                          </Form>
-                        ),
-                      },
-                    ]}
-                  />
-                </Card>
+                <RbacBulkDatabaseRolePermissions
+                  roleOptions={roleOptions}
+                  roleNameById={roleNameById}
+                  levelOptions={LEVEL_OPTIONS}
+                  bulkGrant={bulkGrantDatabaseGroup}
+                  bulkRevoke={bulkRevokeDatabaseGroup}
+                />
 
-                <Card title="Database Permissions (Role)" size="small">
-                  <Space wrap style={{ marginBottom: 12 }}>
-                    <Select
-                      style={{ width: 240 }}
-                      placeholder="Role"
-                      allowClear
-                      value={databaseGroupList.group_id}
-                      onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, group_id: value ?? undefined, page: 1 }))}
-                      options={roleOptions}
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <Select
-                      style={{ width: 320 }}
-                      placeholder="Database"
-                      allowClear
-                      value={databaseGroupList.database_id}
-                      onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, database_id: value ?? undefined, page: 1 }))}
-                      options={databases.map((db) => ({ label: `${db.name} #${db.id}`, value: db.id }))}
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <Select
-                      style={{ width: 140 }}
-                      placeholder="Level"
-                      allowClear
-                      value={databaseGroupList.level}
-                      onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
-                      options={LEVEL_OPTIONS}
-                    />
-                    <Input
-                      placeholder="Search"
-                      style={{ width: 220 }}
-                      value={databaseGroupList.search}
-                      onChange={(e) => setDatabaseGroupList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-                    />
-                    <Button onClick={() => databaseGroupPermissionsQuery.refetch()} loading={databaseGroupPermissionsQuery.isFetching}>
-                      Refresh
-                    </Button>
-                  </Space>
-                  <Table
-                    size="small"
-                    columns={databaseGroupColumns}
-                    dataSource={databaseGroupPermissions}
-                    loading={databaseGroupPermissionsQuery.isLoading}
-                    rowKey={(row) => `${row.group.id}:${row.database.id}`}
-                    pagination={{
-                      current: databaseGroupList.page,
-                      pageSize: databaseGroupList.pageSize,
-                      total: totalDatabaseGroupPermissions,
-                      showSizeChanger: true,
-                      onChange: (page, pageSize) => setDatabaseGroupList((prev) => ({ ...prev, page, pageSize })),
-                    }}
-                  />
-                </Card>
+                <PermissionsTable
+                  title="Database Permissions (Role)"
+                  toolbar={(
+                    <>
+                      <Select
+                        style={{ width: 240 }}
+                        placeholder="Role"
+                        allowClear
+                        value={databaseGroupList.group_id}
+                        onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, group_id: value ?? undefined, page: 1 }))}
+                        options={roleOptions}
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                      <Select
+                        style={{ width: 320 }}
+                        placeholder="Database"
+                        allowClear
+                        value={databaseGroupList.database_id}
+                        onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, database_id: value ?? undefined, page: 1 }))}
+                        options={databases.map((db) => ({ label: `${db.name} #${db.id}`, value: db.id }))}
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                      <Select
+                        style={{ width: 140 }}
+                        placeholder="Level"
+                        allowClear
+                        value={databaseGroupList.level}
+                        onChange={(value) => setDatabaseGroupList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
+                        options={LEVEL_OPTIONS}
+                      />
+                      <Input
+                        placeholder="Search"
+                        style={{ width: 220 }}
+                        value={databaseGroupList.search}
+                        onChange={(e) => setDatabaseGroupList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                      />
+                      <Button onClick={() => databaseGroupPermissionsQuery.refetch()} loading={databaseGroupPermissionsQuery.isFetching}>
+                        Refresh
+                      </Button>
+                    </>
+                  )}
+                  columns={databaseGroupColumns}
+                  rows={databaseGroupPermissions}
+                  loading={databaseGroupPermissionsQuery.isLoading}
+                  rowKey={(row) => `${row.group.id}:${row.database.id}`}
+                  total={totalDatabaseGroupPermissions}
+                  page={databaseGroupList.page}
+                  pageSize={databaseGroupList.pageSize}
+                  onPaginationChange={(page, pageSize) => setDatabaseGroupList((prev) => ({ ...prev, page, pageSize }))}
+                  error={databaseGroupPermissionsQuery.error}
+                  errorMessage="Не удалось загрузить permissions"
+                />
               </Space>
             ),
           },
@@ -4359,7 +3980,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantOperationTemplate.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4465,7 +4086,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantOperationTemplateGroup.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4580,7 +4201,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantWorkflowTemplate.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4686,7 +4307,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantWorkflowTemplateGroup.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4801,7 +4422,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantArtifact.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4907,7 +4528,7 @@ export function RBACPage() {
                     </Form.Item>
                   </Form>
                   {grantArtifactGroup.error && (
-                    <Alert style={{ marginTop: 12 }} type="error" message="Grant failed" />
+                    <Alert style={{ marginTop: 12 }} type="error" message="Не удалось выдать доступ" />
                   )}
                 </Card>
 
@@ -4978,39 +4599,7 @@ export function RBACPage() {
             label: 'Audit',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Card title="Admin Audit" size="small">
-                  <Space wrap style={{ marginBottom: 12 }}>
-                    <Input
-                      placeholder="Search"
-                      style={{ width: 320 }}
-                      value={auditSearch}
-                      onChange={(e) => {
-                        setAuditSearch(e.target.value)
-                        setAuditPage(1)
-                      }}
-                    />
-                    <Button onClick={() => auditQuery.refetch()} loading={auditQuery.isFetching}>
-                      Refresh
-                    </Button>
-                  </Space>
-                  <Table
-                    size="small"
-                    columns={auditColumns}
-                    dataSource={auditItems}
-                    loading={auditQuery.isLoading}
-                    rowKey="id"
-                    pagination={{
-                      current: auditPage,
-                      pageSize: auditPageSize,
-                      total: totalAuditItems,
-                      showSizeChanger: true,
-                      onChange: (page, pageSize) => {
-                        setAuditPage(page)
-                        setAuditPageSize(pageSize)
-                      },
-                    }}
-                  />
-                </Card>
+                <RbacAuditPanel enabled={canManageRbac} errorMessage="Не удалось загрузить журнал аудита" />
               </Space>
             ),
           },
@@ -5318,7 +4907,7 @@ export function RBACPage() {
         )}
       </Modal>
 
-      <Modal
+      <ReasonModal
         title="Clone role"
         open={cloneRoleOpen}
         okText="Create"
@@ -5327,10 +4916,10 @@ export function RBACPage() {
           setCloneRoleSourceRoleId(null)
         }}
         okButtonProps={{
-          disabled: !cloneRoleSourceRoleId || !cloneRoleName.trim() || !cloneRoleReason.trim(),
+          disabled: !cloneRoleSourceRoleId || !cloneRoleName.trim(),
           loading: createRole.isPending || setRoleCapabilities.isPending,
         }}
-        onOk={async () => {
+        onOk={async (reason) => {
           if (!cloneRoleSourceRoleId) return
           const source = roles.find((role) => role.id === cloneRoleSourceRoleId)
           if (!source) {
@@ -5338,9 +4927,8 @@ export function RBACPage() {
             return
           }
           const name = cloneRoleName.trim()
-          const reason = cloneRoleReason.trim()
-          if (!name || !reason) {
-            message.error('Name and reason are required')
+          if (!name) {
+            message.error('Name is required')
             return
           }
 
@@ -5360,40 +4948,28 @@ export function RBACPage() {
           }
         }}
       >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            message={cloneRoleSourceRoleId ? `Source role id: ${cloneRoleSourceRoleId}` : 'Select source role'}
-          />
-          <Input
-            placeholder="New role name"
-            value={cloneRoleName}
-            onChange={(e) => setCloneRoleName(e.target.value)}
-          />
-          <Input
-            placeholder="Reason (required)"
-            value={cloneRoleReason}
-            onChange={(e) => setCloneRoleReason(e.target.value)}
-          />
-        </Space>
-      </Modal>
+        <Alert
+          type="info"
+          message={cloneRoleSourceRoleId ? `Source role id: ${cloneRoleSourceRoleId}` : 'Select source role'}
+        />
+        <Input
+          placeholder="New role name"
+          value={cloneRoleName}
+          onChange={(e) => setCloneRoleName(e.target.value)}
+        />
+      </ReasonModal>
 
-      <Modal
+      <ReasonModal
         title={selectedRoleForEditor ? `Role capabilities: ${selectedRoleForEditor.name}` : 'Role capabilities'}
         open={roleEditorOpen}
         okText="Save"
         onCancel={() => setRoleEditorOpen(false)}
         okButtonProps={{
-          disabled: !roleEditorRoleId || !roleEditorReason.trim(),
+          disabled: !roleEditorRoleId,
           loading: setRoleCapabilities.isPending,
         }}
-        onOk={async () => {
+        onOk={async (reason) => {
           if (!roleEditorRoleId) return
-          const reason = roleEditorReason.trim()
-          if (!reason) {
-            message.error('Reason is required')
-            return
-          }
           await setRoleCapabilities.mutateAsync({
             group_id: roleEditorRoleId,
             permission_codes: roleEditorPermissionCodes,
@@ -5403,77 +4979,91 @@ export function RBACPage() {
           setRoleEditorOpen(false)
         }}
       >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Select
-            mode="multiple"
-            style={{ width: '100%' }}
-            placeholder="Capabilities"
-            options={capabilityOptions}
-            value={roleEditorPermissionCodes}
-            onChange={(value) => setRoleEditorPermissionCodes(value)}
-            showSearch
-            optionFilterProp="label"
+        {!selectedRoleForEditor ? (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="warning"
+            showIcon
+            message="Роль не найдена"
           />
-          <Input
-            placeholder="Reason (required)"
-            value={roleEditorReason}
-            onChange={(e) => setRoleEditorReason(e.target.value)}
+        ) : (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0) ? 'info' : 'success'}
+            showIcon
+            message={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0)
+              ? `Изменения capabilities: +${roleEditorDiff.added.length} / -${roleEditorDiff.removed.length}`
+              : 'Изменений нет'}
+            description={(
+              <Space direction="vertical" size={4}>
+                <div>
+                  <Text type="secondary">Текущих:</Text> <Text>{roleEditorDiff.currentCount}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">Выбрано:</Text> <Text>{roleEditorDiff.nextCount}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">Добавится:</Text> {renderCodeTags(roleEditorDiff.added)}
+                </div>
+                <div>
+                  <Text type="secondary">Уберётся:</Text> {renderCodeTags(roleEditorDiff.removed)}
+                </div>
+              </Space>
+            )}
           />
-        </Space>
-      </Modal>
+        )}
+        <Select
+          mode="multiple"
+          style={{ width: '100%' }}
+          placeholder="Capabilities"
+          options={capabilityOptions}
+          value={roleEditorPermissionCodes}
+          onChange={(value) => setRoleEditorPermissionCodes(value)}
+          showSearch
+          optionFilterProp="label"
+        />
+      </ReasonModal>
 
-      <Modal
+      <ReasonModal
         title="Rename role"
         open={renameRoleOpen}
         okText="Save"
         onCancel={() => setRenameRoleOpen(false)}
         okButtonProps={{
-          disabled: !renameRoleRoleId || !renameRoleName.trim() || !renameRoleReason.trim(),
+          disabled: !renameRoleRoleId || !renameRoleName.trim(),
           loading: updateRole.isPending,
         }}
-        onOk={async () => {
+        onOk={async (reason) => {
           if (!renameRoleRoleId) return
           const name = renameRoleName.trim()
-          const reason = renameRoleReason.trim()
-          if (!name || !reason) {
-            message.error('Name and reason are required')
+          if (!name) {
+            message.error('Name is required')
             return
           }
           await updateRole.mutateAsync({ group_id: renameRoleRoleId, name, reason })
           setRenameRoleOpen(false)
         }}
       >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Input placeholder="Role name" value={renameRoleName} onChange={(e) => setRenameRoleName(e.target.value)} />
-          <Input placeholder="Reason (required)" value={renameRoleReason} onChange={(e) => setRenameRoleReason(e.target.value)} />
-        </Space>
-      </Modal>
+        <Input placeholder="Role name" value={renameRoleName} onChange={(e) => setRenameRoleName(e.target.value)} />
+      </ReasonModal>
 
-      <Modal
+      <ReasonModal
         title="Delete role"
         open={deleteRoleOpen}
         okText="Delete"
-        okButtonProps={{ danger: true, disabled: !deleteRoleRoleId || !deleteRoleReason.trim(), loading: deleteRole.isPending }}
+        okButtonProps={{ danger: true, disabled: !deleteRoleRoleId, loading: deleteRole.isPending }}
         onCancel={() => setDeleteRoleOpen(false)}
-        onOk={async () => {
+        onOk={async (reason) => {
           if (!deleteRoleRoleId) return
-          const reason = deleteRoleReason.trim()
-          if (!reason) {
-            message.error('Reason is required')
-            return
-          }
           await deleteRole.mutateAsync({ group_id: deleteRoleRoleId, reason })
           setDeleteRoleOpen(false)
         }}
       >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="warning"
-            message="Role будет удалена, если нет участников/perms/bindings."
-          />
-          <Input placeholder="Reason (required)" value={deleteRoleReason} onChange={(e) => setDeleteRoleReason(e.target.value)} />
-        </Space>
-      </Modal>
+        <Alert
+          type="warning"
+          message="Role будет удалена, если нет участников/perms/bindings."
+        />
+      </ReasonModal>
     </div>
   )
 }

@@ -667,9 +667,21 @@ class ArtifactGroupPermissionUpsertResponseSerializer(serializers.Serializer):
     permission = ArtifactGroupPermissionSerializer()
 
 
+class EffectiveAccessClusterSourceItemSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=["direct", "group", "database"])
+    level = PermissionLevelCodeField()
+
+
 class EffectiveAccessClusterItemSerializer(serializers.Serializer):
     cluster = ClusterRefSerializer()
     level = PermissionLevelCodeField()
+    sources = EffectiveAccessClusterSourceItemSerializer(many=True, required=False)
+
+
+class EffectiveAccessDatabaseSourceItemSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=["direct", "group", "cluster"])
+    level = PermissionLevelCodeField()
+    via_cluster_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class EffectiveAccessDatabaseItemSerializer(serializers.Serializer):
@@ -677,24 +689,43 @@ class EffectiveAccessDatabaseItemSerializer(serializers.Serializer):
     level = PermissionLevelCodeField()
     source = serializers.ChoiceField(choices=["direct", "group", "cluster"])
     via_cluster_id = serializers.UUIDField(required=False, allow_null=True)
+    sources = EffectiveAccessDatabaseSourceItemSerializer(many=True, required=False)
+
+
+class EffectiveAccessOperationTemplateSourceItemSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=["direct", "group"])
+    level = PermissionLevelCodeField()
 
 
 class EffectiveAccessOperationTemplateItemSerializer(serializers.Serializer):
     template = OperationTemplateRefSerializer()
     level = PermissionLevelCodeField()
     source = serializers.ChoiceField(choices=["direct", "group"])
+    sources = EffectiveAccessOperationTemplateSourceItemSerializer(many=True, required=False)
+
+
+class EffectiveAccessWorkflowTemplateSourceItemSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=["direct", "group"])
+    level = PermissionLevelCodeField()
 
 
 class EffectiveAccessWorkflowTemplateItemSerializer(serializers.Serializer):
     template = WorkflowTemplateRefSerializer()
     level = PermissionLevelCodeField()
     source = serializers.ChoiceField(choices=["direct", "group"])
+    sources = EffectiveAccessWorkflowTemplateSourceItemSerializer(many=True, required=False)
+
+
+class EffectiveAccessArtifactSourceItemSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=["direct", "group"])
+    level = PermissionLevelCodeField()
 
 
 class EffectiveAccessArtifactItemSerializer(serializers.Serializer):
     artifact = ArtifactRefSerializer()
     level = PermissionLevelCodeField()
     source = serializers.ChoiceField(choices=["direct", "group"])
+    sources = EffectiveAccessArtifactSourceItemSerializer(many=True, required=False)
 
 
 class EffectiveAccessResponseSerializer(serializers.Serializer):
@@ -1481,7 +1512,16 @@ def get_effective_access(request):
             level = cluster_explicit_level_map.get(cluster_id)
             if level is None:
                 level = PermissionLevel.VIEW
-            clusters_out.append({"cluster": _cluster_ref(cluster), "level": _level_code(level)})
+            sources = []
+            direct_level = direct_cluster_level_map.get(cluster_id)
+            if direct_level is not None:
+                sources.append({"source": "direct", "level": _level_code(direct_level)})
+            group_level = group_cluster_level_map.get(cluster_id)
+            if group_level is not None:
+                sources.append({"source": "group", "level": _level_code(group_level)})
+            if cluster_id in derived_cluster_ids:
+                sources.append({"source": "database", "level": _level_code(PermissionLevel.VIEW)})
+            clusters_out.append({"cluster": _cluster_ref(cluster), "level": _level_code(level), "sources": sources})
         clusters_out.sort(key=lambda x: x["cluster"]["name"])
 
     databases_out = []
@@ -1549,12 +1589,21 @@ def get_effective_access(request):
                 source = "cluster"
                 via_cluster_id = db.cluster_id
 
+            sources = []
+            if user_level is not None:
+                sources.append({"source": "direct", "level": _level_code(user_level)})
+            if group_level is not None:
+                sources.append({"source": "group", "level": _level_code(group_level)})
+            if cluster_level is not None:
+                sources.append({"source": "cluster", "level": _level_code(cluster_level), "via_cluster_id": db.cluster_id})
+
             databases_out.append(
                 {
                     "database": _database_ref(db),
                     "level": _level_code(effective_level),
                     "source": source,
                     "via_cluster_id": via_cluster_id,
+                    "sources": sources,
                 }
             )
 
@@ -1588,8 +1637,13 @@ def get_effective_access(request):
             source = "direct"
             if group_level is not None and (user_level is None or group_level > user_level):
                 source = "group"
+            sources = []
+            if user_level is not None:
+                sources.append({"source": "direct", "level": _level_code(user_level)})
+            if group_level is not None:
+                sources.append({"source": "group", "level": _level_code(group_level)})
             operation_templates_out.append(
-                {"template": {"id": tpl.id, "name": tpl.name}, "level": _level_code(effective_level), "source": source}
+                {"template": {"id": tpl.id, "name": tpl.name}, "level": _level_code(effective_level), "source": source, "sources": sources}
             )
 
     workflow_templates_out = []
@@ -1626,8 +1680,13 @@ def get_effective_access(request):
             source = "direct"
             if group_level is not None and (user_level is None or group_level > user_level):
                 source = "group"
+            sources = []
+            if user_level is not None:
+                sources.append({"source": "direct", "level": _level_code(user_level)})
+            if group_level is not None:
+                sources.append({"source": "group", "level": _level_code(group_level)})
             workflow_templates_out.append(
-                {"template": {"id": tpl.id, "name": tpl.name}, "level": _level_code(effective_level), "source": source}
+                {"template": {"id": tpl.id, "name": tpl.name}, "level": _level_code(effective_level), "source": source, "sources": sources}
             )
 
     artifacts_out = []
@@ -1660,8 +1719,13 @@ def get_effective_access(request):
             source = "direct"
             if group_level is not None and (user_level is None or group_level > user_level):
                 source = "group"
+            sources = []
+            if user_level is not None:
+                sources.append({"source": "direct", "level": _level_code(user_level)})
+            if group_level is not None:
+                sources.append({"source": "group", "level": _level_code(group_level)})
             artifacts_out.append(
-                {"artifact": {"id": art.id, "name": art.name}, "level": _level_code(effective_level), "source": source}
+                {"artifact": {"id": art.id, "name": art.name}, "level": _level_code(effective_level), "source": source, "sources": sources}
             )
 
     response_payload: dict[str, Any] = {

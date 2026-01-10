@@ -1,21 +1,6 @@
 # Roadmap: RBAC UI (переключатель "Назначения / Роли")
 
-Статус: 2026-01-09 — v0 готов: MVP + production-ready UX, включая 2‑панельный сценарий `Где -> Кто` (см. `frontend/src/pages/RBAC/RBACPage.tsx`).
-
-Текущая реализация (v0):
-- Режимы: `Назначения / Роли`.
-- `Назначения`:
-  - `Доступ к объектам`: два сценария `Кто -> Где` / `Где -> Кто` для clusters/databases/operation templates/workflow templates/artifacts (grant/revoke + reason, bulk для role+clusters/databases).
-  - `Роли пользователей`: выдача ролей пользователю (replace/add/remove + reason).
-  - `Effective access`: просмотр итогового доступа пользователя.
-  - `Audit`: просмотр admin audit log.
-  - `Infobase Users`: только staff (вне RBAC-редактора, но в той же странице).
-- `Роли`: CRUD ролей + редактирование capabilities (reason обязателен).
-
-Ограничения v0 (оставшиеся долги):
-- Страница `RBACPage.tsx` всё ещё крупная: стоит вынести компоненты (`PrincipalPicker`, `ResourcePicker`, `PermissionsTable`, ...).
-- 2‑панельный сценарий "Resource -> Assignments" реализован, но пока без дерева clusters→databases (используется список + поиск).
-- Нет undo/rollback по audit.
+Статус: 2026-01-10 — v0.1: закрыты основные долги v0 (дерево clusters→databases; effective access с фильтрами и источниками). Закрыт Milestone 1 (декомпозиция `RBACPage.tsx`), выполнен Milestone 4 (пустые состояния/подсказки, унификация loading/error, дока для операторов). Дальше: тесты/регрессии. Undo остаётся optional.
 
 Цель: заменить текущую модель "отдельная вкладка на каждый тип объекта" на человеко-ориентированный RBAC-интерфейс с единым UX, где:
 - "Назначения" отвечает на вопрос **кто где имеет доступ** (users/groups -> clusters/infobases/другие ресурсы).
@@ -30,6 +15,34 @@
 - Единые компоненты и один layout вместо копипасты вкладок.
 - Любые изменения прав/ролей требуют `reason` и пишутся в admin audit log (как уже принято в API v2).
 - По возможности переиспользовать существующие endpoints; новые API добавлять только при реальной необходимости (и тогда фиксировать в `contracts/**`).
+
+---
+
+## Текущая реализация (v0.1)
+
+Режимы: `Назначения / Роли` (страница: `frontend/src/pages/RBAC/RBACPage.tsx`).
+
+- `Назначения`:
+  - `Доступ к объектам`: два сценария `Кто -> Где` / `Где -> Кто` для clusters/databases/operation templates/workflow templates/artifacts (grant/revoke + reason, bulk для групп на clusters/databases; clusters/databases выбираются через дерево clusters→databases, кластеры кликабельны).
+  - `Роли пользователей`: выдача ролей пользователю (replace/add/remove + reason).
+  - `Effective access`: итоговый доступ пользователя по выбранному типу ресурса + фильтр по конкретному ресурсу + раскрытие (expand) “источников” (direct/group/cluster/database/...).
+  - `Audit`: просмотр admin audit log.
+  - `Infobase Users`: только staff (вне RBAC-редактора, но в той же странице).
+- `Роли`: CRUD ролей + редактирование capabilities (reason обязателен).
+
+Поддерживаемый scope (v0.1):
+- ресурсы: clusters, databases, operation templates, workflow templates, artifacts;
+- principals: user и group;
+- bulk: только group+clusters/databases.
+
+---
+
+## Долги v0 (что осталось)
+
+- Страница `RBACPage.tsx` всё ещё крупная: нужно вынести оставшиеся общие компоненты/хуки (`PermissionsTable` с toolbar/bulk, `ReasonModal`, `AuditPanel`, `EffectiveAccessPanel`, ...). Уже вынесены: `RbacPrincipalPicker`, `RbacResourcePicker`, `RbacPermissionsTable` (рендер таблицы), `useConfirmReason`, общий хук для paginated ref Select.
+- Полировка: пустые состояния, подсказки “как выдать доступ на конкретную ИБ”, устойчивые loading/error.
+- Тесты/регрессии: минимум smoke/e2e на ключевые сценарии RBAC UI.
+- Undo/rollback по audit — **optional** (не входит в v0.1, см. Backlog).
 
 ---
 
@@ -62,134 +75,111 @@
 
 ---
 
-## Приоритеты (Next)
+## Definition of Done по производительности (минимум для масштаба 700+ ИБ)
 
-Цель: довести v0 до "production-ready" UX на масштабе 700+ ИБ.
-
-- [x] Reference pickers: server-side search + pagination (databases/templates/workflows/artifacts) без загрузки 1000/2000 options за раз.
-- [x] Debounce для поиска (users/audit/permissions).
-- [x] Confirm для bulk операций + summary (что изменится) перед применением.
-- [x] Feature-flag для старых вкладок: `VITE_RBAC_LEGACY_TABS` (по умолчанию выключен).
-- [ ] Упрощение `RBACPage.tsx` (выделить общие компоненты и уменьшить дубль кода).
-- [x] "Где используется роль" + "клонировать роль" (ускорить админские сценарии).
+- [x] Reference списки (databases/operation templates/workflow templates/artifacts) поддерживают server-side search + pagination (без загрузки 2000+ options в Select). Clusters загружаются списком (limit=1000) и фильтруются на клиенте.
+- [x] Поиск debounced (250-400ms) и не делает запрос на каждый символ.
+- [x] Таблицы назначений используют backend pagination (limit/offset), pageSize по умолчанию 50, время ответа <= 1с в типовых условиях.
 
 ---
 
-## TODO
-
-### Milestone 0 — Инвентаризация и UX-спека (1-2 дня)
-
-- [x] Зафиксировать список поддерживаемых resource types для RBAC UI v2:
-  - [x] ресурсы: clusters, databases, operation templates, workflow templates, artifacts;
-  - [x] principals: user и role (group);
-  - [x] bulk: только role+clusters/databases (MVP).
-- [x] Описать UX сценарии (поддерживаются текущим UI):
-  - [x] "выдать доступ бухгалтеру на ИБ X" → `Назначения / Доступ к объектам` (principal=user, resource=database).
-  - [x] "дать группе доступ на набор ИБ" → `Назначения / Доступ к объектам` (principal=role, bulk databases).
-  - [x] "посмотреть эффективные права пользователя на ИБ" → `Назначения / Effective access` (включить databases, выбрать user).
-  - [x] "создать роль и раздать её" → `Роли` (create) + `Назначения / Роли пользователей` (assign roles).
-- [x] Определить первичный фокус внутри режима `Назначения`:
-  - [x] MVP: единый экран "filters → table" (principal+resource+level+search) вместо раздельных вкладок по типам.
-  - [ ] (опция) перейти на 2-панельный сценарий "Resource → Assignments" (см. Milestone 3).
-- [x] Зафиксировать DoD по производительности (минимум для масштаба 700+ ИБ):
-  - [x] Reference списки (clusters/databases/…) должны поддерживать server-side search + pagination (без загрузки 2000+ options в Select).
-  - [x] Поиск должен быть debounced (250-400ms) и не делать запрос на каждый символ.
-  - [x] Таблица назначений: backend pagination (limit/offset), pageSize по умолчанию 50, время ответа <= 1с в типовых условиях.
-
----
-
-### Milestone 1 — Backend/API: сверка и точечные улучшения (0-2 дня)
+## API (v2): что переиспользуем
 
 План: максимум переиспользования существующих endpoints `api/v2/rbac/*`.
 
-- [x] Проверить, что фронту достаточно текущих API (без добавления новых) — текущая реализация использует существующие endpoints:
-  - [x] refs: `rbac/ref-clusters`, `rbac/ref-databases`, `rbac/ref-operation-templates`, `rbac/ref-workflow-templates`, `rbac/ref-artifacts`;
-  - [x] permissions list/grant/revoke для user/group на нужные resource types;
-  - [x] roles CRUD + capabilities;
-  - [x] audit: `rbac/list-admin-audit`;
-  - [x] effective access: `rbac/get-effective-access`.
-- [ ] Если фронту нужно унифицировать множество похожих вызовов:
-  - [ ] (опционально) добавить общий endpoint вида `rbac/list-resource-permissions?resource_type=...` и аналогичные grant/revoke,
-  - [ ] при этом обновить контракты в `contracts/**` и оставить старые endpoints на период миграции.
+- refs: `rbac/ref-clusters`, `rbac/ref-databases`, `rbac/ref-operation-templates`, `rbac/ref-workflow-templates`, `rbac/ref-artifacts`;
+- permissions list/grant/revoke для user/group на нужные resource types;
+- roles CRUD + capabilities;
+- audit: `rbac/list-admin-audit`;
+- effective access: `rbac/get-effective-access` (включая `sources[]` для отображения источников).
+
+Опционально (если фронту нужно унифицировать множество похожих вызовов):
+- [ ] добавить общий endpoint вида `rbac/list-resource-permissions?resource_type=...` и аналогичные grant/revoke,
+- [ ] при этом обновить контракты в `contracts/**` и оставить старые endpoints на период миграции.
 
 ---
 
-### Milestone 2 — Frontend: каркас страницы и выделение общих компонентов (2-4 дня)
+## План v0.1 — закрытие долгов v0 (без undo)
 
-- [x] Вынести новый layout `/rbac` с переключателем режимов (`Назначения` / `Роли`) (реализовано в существующей странице, без выделения компонентов).
-- [ ] Выделить общие компоненты (переиспользуемые во всех resource types):
-  - [ ] `PrincipalPicker` (user/group) с поиском;
-  - [ ] `ResourcePicker` / `ResourceTree` (включая lazy-load);
-    - [x] MVP: `RbacResourceBrowser` (левый список ресурсов для 2‑панельного сценария).
-    - [ ] Tree (clusters→databases) и переиспользование во всех resource types.
-  - [ ] `PermissionsTable` (единая таблица назначений + bulk actions);
-  - [ ] `ReasonModal` (обязательный ввод reason на мутации);
-  - [ ] `AuditDrawer` (просмотр admin audit log).
-- [ ] Перевести текущие табы на новые компоненты по одному (инкрементально), начиная с clusters/databases.
-- [x] Временно сохранить старые вкладки под feature-flag `VITE_RBAC_LEGACY_TABS` (для отката UI без отката API).
+### Milestone 0 — Инвентаризация (0.5 дня)
+
+- [x] Разметить/зафиксировать границы будущих компонентов и общих хуков внутри `RBACPage.tsx` (часть вынесена в `components/` и `hooks/`).
+- [x] Проверить и обеспечить, что `rbac/get-effective-access` содержит данные для “источников” (добавлены `sources[]` + обновлены контракты и тесты).
 
 ---
 
-### Milestone 3 — Режим "Назначения" (MVP) (3-6 дней)
+### Milestone 1 — Frontend: декомпозиция `RBACPage.tsx` и общие компоненты (2-4 дня)
 
-- [x] Реализовать единый экран "Доступ к объектам" (principal+resource фильтры → таблица назначений) для clusters/databases/templates/workflows/artifacts.
-- [x] Реализовать 2-панельный сценарий "Resource -> Assignments":
-  - [x] слева: выбор resource type + список объектов с поиском;
-  - [x] справа: таблица назначений для выбранного объекта (users/groups -> roles/permissions).
-- [x] Поддержать user и group назначения (grant/revoke; bulk пока только для групп на clusters/databases).
-- [x] Добавить панель "Effective access" для выбранного principal (вкладка `Effective access`):
-  - [ ] с фильтром по ресурсу/типу;
-  - [ ] с понятным объяснением источников (если применимо).
-- [ ] UX-предохранители:
-  - [x] подтверждение массовых операций;
-  - [x] блокировка кнопок при отсутствии `reason` (reason обязателен на формах).
-- [ ] Производительность:
-  - [x] пагинация на таблицах (limit/offset);
-  - [ ] виртуализация таблиц (если нужно);
-  - [x] debounce поиска.
+- [x] Layout `/rbac` с переключателем режимов (`Назначения` / `Роли`) реализован.
+- [x] Legacy вкладки спрятаны под feature-flag `VITE_RBAC_LEGACY_TABS` (по умолчанию выключен).
+- [x] MVP: `RbacResourceBrowser` (левый список ресурсов для 2‑панельного сценария).
+- [x] Выделить общие компоненты (переиспользуемые во всех resource types):
+  - [x] `RbacPrincipalPicker` (user/group) с поиском;
+  - [x] `RbacResourcePicker` (единый интерфейс выбора ресурса для `Кто -> Где`);
+  - [x] `PermissionsTable` (единая таблица назначений + bulk actions);
+    - [x] `RbacPermissionsTable` (общий рендер таблицы + pagination + error);
+  - [x] `ReasonModal` (обязательный ввод reason на мутации);
+    - [x] `useConfirmReason` (reason prompt для revoke);
+  - [x] `AuditPanel` / `AuditDrawer` (просмотр admin audit log).
+- [x] Вынести общий хук(и) для reference pickers: server-side search + pagination + merge options.
+- [x] Перевести текущие табы на новые компоненты по одному (инкрементально), начиная с clusters/databases.
 
 ---
 
-### Milestone 4 — Режим "Роли" (MVP) (3-6 дней)
+### Milestone 2 — `ResourceTree` clusters→databases (2-4 дня)
 
-- [x] Экран списка ролей:
-  - [x] поиск/фильтры;
-  - [x] create/rename/delete с `reason`;
-  - [x] "клонировать роль".
-- [x] Экран редактирования роли:
-  - [x] редактирование capabilities/прав роли в едином UI (без вкладок по типам);
-  - [x] поиск по capabilities;
-  - [x] сохранение с `reason`.
-- [x] "Где используется роль" (usage):
-  - [x] показать назначения роли (counts по ресурсам + переход в `Назначения` с фильтром по роли).
+- [x] Реализовать дерево clusters→databases с lazy-load и pagination:
+  - [x] кластеры кликабельны (можно выбрать кластер как ресурс);
+  - [x] базы подгружаются при раскрытии кластера (server-side, без “все базы сразу”);
+  - [x] поиск debounced; не делает запрос на каждый символ;
+  - [x] кешировать загруженные узлы (чтобы не перезагружать при каждом раскрытии).
+- [x] Интегрировать дерево в 2‑панельный сценарий `Где -> Кто` (Resource → Assignments) для clusters/databases.
+- [x] Интегрировать дерево в фильтры сценария `Кто -> Где` (выбор resource для clusters/databases).
 
 ---
 
-### Milestone 5 — Аудит и откат (optional, но желательно) (2-4 дня)
+### Milestone 3 — `Effective access`: фильтры + источники (1-3 дня)
 
-- [x] Встроить просмотр `rbac/list-admin-audit` прямо в `/rbac` (поиск + пагинация; фильтры по action/target/actor пока не выделены отдельно).
-- [ ] (опционально) Реализовать "быстрый откат" для последних изменений:
-  - [ ] на уровне UI: кнопка "отменить" рядом с записью аудита;
-  - [ ] на уровне API: если нужно, добавить безопасный endpoint "replay/undo" (или выполнять инверсию через существующие grant/revoke),
+- [x] Панель `Effective access` (базовый просмотр итогового доступа) реализована.
+- [x] Добавить фильтры по `resource_type` и конкретному ресурсу:
+  - [x] для clusters/databases — выбор через `ResourceTree` (см. Milestone 2);
+  - [x] для templates/workflows/artifacts — через ref pickers.
+- [x] UI: таблица “итог по ресурсу” + раскрытие (expand) “все источники”:
+  - [x] строка = итог по ресурсу (что разрешено и на каком уровне);
+  - [x] раскрытие = subtable источников (direct/group/cluster/database и т.д., как возвращает API).
+- [x] Расширить `rbac/get-effective-access` и обновить контракты в `contracts/**` (добавлены `sources[]`).
+
+---
+
+### Milestone 4 — Полировка и эксплуатация (1-2 дня)
+
+- [x] Улучшить discoverability:
+  - [x] пустые состояния (что делать дальше);
+  - [x] подсказки “как выдать доступ на конкретную ИБ”.
+- [x] Улучшить устойчивость UX:
+  - [x] единообразные loading/error состояния;
+  - [x] защита от случайных массовых операций (confirm + summary уже есть; довести до консистентности во всех местах).
+- [x] Обновить документацию для операторов: “как выдавать доступ на ИБ”, “как смотреть эффективные права”.
+
+---
+
+### Milestone 5 — Тесты и контроль регрессий (параллельно)
+
+- [x] Frontend (Vitest): тесты на новые общие хуки/трансформы (select pagination, tree data model, effective access sources).
+- [x] Frontend (Playwright smoke/e2e):
+  - [x] загрузка списков/дерева;
+  - [x] grant/revoke с reason;
+  - [x] create/update role с reason;
+  - [x] `Effective access`: фильтрация + раскрытие источников.
+
+---
+
+## Backlog (optional)
+
+### Undo/rollback по audit (optional, после v0.1) (2-4 дня)
+
+- [x] Просмотр `rbac/list-admin-audit` встроен в `/rbac` (поиск + пагинация).
+- [ ] Реализовать “быстрый откат” для последних изменений:
+  - [ ] на уровне UI: кнопка “отменить” рядом с записью аудита;
+  - [ ] на уровне API: если нужно, добавить безопасный endpoint "replay/undo" (или выполнять инверсию через существующие grant/revoke);
   - [ ] обязательный `reason` на undo.
-
----
-
-### Milestone 6 — Полировка и эксплуатация (1-3 дня)
-
-- [ ] Улучшить discoverability:
-  - [ ] пустые состояния (что делать дальше);
-  - [ ] подсказки "как выдать доступ на конкретную ИБ".
-- [ ] Добавить метрики/события (если у вас принято) по действиям RBAC UI: grant/revoke, role save, errors.
-- [ ] Обновить документацию для операторов: "как выдавать доступ на ИБ", "как смотреть эффективные права".
-
----
-
-### Milestone 7 — Тесты и контроль регрессий (параллельно)
-
-- [ ] Backend: дописать тесты только если меняем API (иначе — достаточно текущих).
-- [ ] Frontend: минимум smoke/e2e на:
-  - [ ] загрузку списков;
-  - [ ] grant/revoke с reason;
-  - [ ] create/update role с reason;
-  - [ ] просмотр effective access.
