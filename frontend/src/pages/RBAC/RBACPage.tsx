@@ -4599,7 +4599,18 @@ export function RBACPage() {
             label: 'Audit',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <RbacAuditPanel enabled={canManageRbac} errorMessage="Не удалось загрузить журнал аудита" />
+                <RbacAuditPanel
+                  enabled={canManageRbac}
+                  errorMessage="Не удалось загрузить журнал аудита"
+                  undoLabel="Отменить"
+                  undoModalTitle="Отменить изменение"
+                  undoOkText="Отменить"
+                  undoCancelText="Закрыть"
+                  undoReasonPlaceholder="Причина (обязательно)"
+                  undoSuccessMessage="Изменение отменено"
+                  undoFailedMessage="Не удалось отменить изменение"
+                  undoNotSupportedMessage="Для этой записи откат не поддерживается"
+                />
               </Space>
             ),
           },

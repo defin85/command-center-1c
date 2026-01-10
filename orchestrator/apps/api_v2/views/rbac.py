@@ -1022,6 +1022,8 @@ def grant_cluster_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = ClusterPermission.objects.select_for_update().get_or_create(
             user=user,
@@ -1029,6 +1031,8 @@ def grant_cluster_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -1058,6 +1062,7 @@ def grant_cluster_permission(request):
             "level": _level_code(level),
             "created": created,
             "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
         },
     )
     return Response(payload)
@@ -1100,7 +1105,14 @@ def revoke_cluster_permission(request):
     cluster_id = serializer.validated_data["cluster_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = ClusterPermission.objects.filter(user_id=user_id, cluster_id=cluster_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = ClusterPermission.objects.select_for_update().filter(user_id=user_id, cluster_id=cluster_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = ClusterPermission.objects.filter(user_id=user_id, cluster_id=cluster_id).delete()
 
     log_admin_action(
         request,
@@ -1108,7 +1120,12 @@ def revoke_cluster_permission(request):
         outcome="success",
         target_type="cluster",
         target_id=str(cluster_id),
-        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -1260,6 +1277,8 @@ def grant_database_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = DatabasePermission.objects.select_for_update().get_or_create(
             user=user,
@@ -1267,6 +1286,8 @@ def grant_database_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -1296,6 +1317,7 @@ def grant_database_permission(request):
             "level": _level_code(level),
             "created": created,
             "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
         },
     )
     return Response(payload)
@@ -1338,7 +1360,14 @@ def revoke_database_permission(request):
     database_id = serializer.validated_data["database_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = DatabasePermission.objects.filter(user_id=user_id, database_id=database_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = DatabasePermission.objects.select_for_update().filter(user_id=user_id, database_id=database_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = DatabasePermission.objects.filter(user_id=user_id, database_id=database_id).delete()
 
     log_admin_action(
         request,
@@ -1346,7 +1375,12 @@ def revoke_database_permission(request):
         outcome="success",
         target_type="database",
         target_id=str(database_id),
-        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -2158,6 +2192,10 @@ def set_role_capabilities(request):
             status=404,
         )
 
+    old_permission_codes = sorted(
+        {f"{p.content_type.app_label}.{p.codename}" for p in group.permissions.select_related("content_type").all()}
+    )
+
     parsed: list[tuple[str, str, str]] = []
     for code in permission_codes:
         split = _split_permission_code(code)
@@ -2259,6 +2297,7 @@ def set_role_capabilities(request):
             "reason": reason,
             "mode": mode,
             "permission_codes": permission_codes,
+            "old_permission_codes": old_permission_codes,
         },
     )
     return Response({"group": _group_ref(group), "permission_codes": updated_codes})
@@ -2346,6 +2385,8 @@ def set_user_roles(request):
             status=404,
         )
 
+    old_group_ids = sorted(list(target_user.groups.values_list("id", flat=True)))
+
     groups = list(Group.objects.filter(id__in=group_ids))
     if len(groups) != len(set(group_ids)):
         return Response(
@@ -2416,7 +2457,7 @@ def set_user_roles(request):
         outcome="success",
         target_type="user",
         target_id=str(target_user.id),
-        metadata={"reason": reason, "mode": mode, "group_ids": group_ids},
+        metadata={"reason": reason, "mode": mode, "group_ids": group_ids, "old_group_ids": old_group_ids},
     )
     return Response({"user": _user_ref(target_user), "roles": [_group_ref(g) for g in roles]})
 
@@ -2698,6 +2739,8 @@ def grant_cluster_group_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = ClusterGroupPermission.objects.select_for_update().get_or_create(
             group=group,
@@ -2705,6 +2748,8 @@ def grant_cluster_group_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -2727,7 +2772,14 @@ def grant_cluster_group_permission(request):
         outcome="success",
         target_type="cluster",
         target_id=str(cluster_id),
-        metadata={"reason": reason, "group_id": group_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -2764,14 +2816,26 @@ def revoke_cluster_group_permission(request):
     cluster_id = serializer.validated_data["cluster_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = ClusterGroupPermission.objects.filter(group_id=group_id, cluster_id=cluster_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = ClusterGroupPermission.objects.select_for_update().filter(group_id=group_id, cluster_id=cluster_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = ClusterGroupPermission.objects.filter(group_id=group_id, cluster_id=cluster_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_cluster_group_permission",
         outcome="success",
         target_type="cluster",
         target_id=str(cluster_id),
-        metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -3047,6 +3111,8 @@ def grant_database_group_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = DatabaseGroupPermission.objects.select_for_update().get_or_create(
             group=group,
@@ -3054,6 +3120,8 @@ def grant_database_group_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -3076,7 +3144,14 @@ def grant_database_group_permission(request):
         outcome="success",
         target_type="database",
         target_id=str(database_id),
-        metadata={"reason": reason, "group_id": group_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -3113,14 +3188,26 @@ def revoke_database_group_permission(request):
     database_id = serializer.validated_data["database_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = DatabaseGroupPermission.objects.filter(group_id=group_id, database_id=database_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = DatabaseGroupPermission.objects.select_for_update().filter(group_id=group_id, database_id=database_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = DatabaseGroupPermission.objects.filter(group_id=group_id, database_id=database_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_database_group_permission",
         outcome="success",
         target_type="database",
         target_id=str(database_id),
-        metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -3392,6 +3479,8 @@ def grant_operation_template_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = OperationTemplatePermission.objects.select_for_update().get_or_create(
             user=user,
@@ -3399,6 +3488,8 @@ def grant_operation_template_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -3421,7 +3512,14 @@ def grant_operation_template_permission(request):
         outcome="success",
         target_type="operation_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "user_id": user_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -3458,14 +3556,26 @@ def revoke_operation_template_permission(request):
     template_id = serializer.validated_data["template_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = OperationTemplatePermission.objects.filter(user_id=user_id, template_id=template_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = OperationTemplatePermission.objects.select_for_update().filter(user_id=user_id, template_id=template_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = OperationTemplatePermission.objects.filter(user_id=user_id, template_id=template_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_operation_template_permission",
         outcome="success",
         target_type="operation_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -3579,6 +3689,8 @@ def grant_operation_template_group_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = OperationTemplateGroupPermission.objects.select_for_update().get_or_create(
             group=group,
@@ -3586,6 +3698,8 @@ def grant_operation_template_group_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -3608,7 +3722,14 @@ def grant_operation_template_group_permission(request):
         outcome="success",
         target_type="operation_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "group_id": group_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -3645,14 +3766,26 @@ def revoke_operation_template_group_permission(request):
     template_id = serializer.validated_data["template_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = OperationTemplateGroupPermission.objects.filter(group_id=group_id, template_id=template_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = OperationTemplateGroupPermission.objects.select_for_update().filter(group_id=group_id, template_id=template_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = OperationTemplateGroupPermission.objects.filter(group_id=group_id, template_id=template_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_operation_template_group_permission",
         outcome="success",
         target_type="operation_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -3919,6 +4052,8 @@ def grant_workflow_template_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = WorkflowTemplatePermission.objects.select_for_update().get_or_create(
             user=user,
@@ -3926,6 +4061,8 @@ def grant_workflow_template_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -3948,7 +4085,14 @@ def grant_workflow_template_permission(request):
         outcome="success",
         target_type="workflow_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "user_id": user_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -3985,14 +4129,26 @@ def revoke_workflow_template_permission(request):
     template_id = serializer.validated_data["template_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = WorkflowTemplatePermission.objects.filter(user_id=user_id, workflow_template_id=template_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = WorkflowTemplatePermission.objects.select_for_update().filter(user_id=user_id, workflow_template_id=template_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = WorkflowTemplatePermission.objects.filter(user_id=user_id, workflow_template_id=template_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_workflow_template_permission",
         outcome="success",
         target_type="workflow_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -4106,6 +4262,8 @@ def grant_workflow_template_group_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = WorkflowTemplateGroupPermission.objects.select_for_update().get_or_create(
             group=group,
@@ -4113,6 +4271,8 @@ def grant_workflow_template_group_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -4135,7 +4295,14 @@ def grant_workflow_template_group_permission(request):
         outcome="success",
         target_type="workflow_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "group_id": group_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -4172,14 +4339,26 @@ def revoke_workflow_template_group_permission(request):
     template_id = serializer.validated_data["template_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = WorkflowTemplateGroupPermission.objects.filter(group_id=group_id, workflow_template_id=template_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = WorkflowTemplateGroupPermission.objects.select_for_update().filter(group_id=group_id, workflow_template_id=template_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = WorkflowTemplateGroupPermission.objects.filter(group_id=group_id, workflow_template_id=template_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_workflow_template_group_permission",
         outcome="success",
         target_type="workflow_template",
         target_id=str(template_id),
-        metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -4446,6 +4625,8 @@ def grant_artifact_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = ArtifactPermission.objects.select_for_update().get_or_create(
             user=user,
@@ -4453,6 +4634,8 @@ def grant_artifact_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -4475,7 +4658,14 @@ def grant_artifact_permission(request):
         outcome="success",
         target_type="artifact",
         target_id=str(artifact_id),
-        metadata={"reason": reason, "user_id": user_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -4512,14 +4702,26 @@ def revoke_artifact_permission(request):
     artifact_id = serializer.validated_data["artifact_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = ArtifactPermission.objects.filter(user_id=user_id, artifact_id=artifact_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = ArtifactPermission.objects.select_for_update().filter(user_id=user_id, artifact_id=artifact_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = ArtifactPermission.objects.filter(user_id=user_id, artifact_id=artifact_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_artifact_permission",
         outcome="success",
         target_type="artifact",
         target_id=str(artifact_id),
-        metadata={"reason": reason, "user_id": user_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "user_id": user_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
@@ -4633,6 +4835,8 @@ def grant_artifact_group_permission(request):
             status=404,
         )
 
+    old_level = None
+    old_notes = None
     with transaction.atomic():
         obj, created = ArtifactGroupPermission.objects.select_for_update().get_or_create(
             group=group,
@@ -4640,6 +4844,8 @@ def grant_artifact_group_permission(request):
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
+            old_level = _level_code(obj.level)
+            old_notes = obj.notes or ""
             obj.level = level
             obj.notes = notes
             obj.granted_by = request.user
@@ -4662,7 +4868,14 @@ def grant_artifact_group_permission(request):
         outcome="success",
         target_type="artifact",
         target_id=str(artifact_id),
-        metadata={"reason": reason, "group_id": group_id, "level": _level_code(level), "created": created, "notes": notes},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "level": _level_code(level),
+            "created": created,
+            "notes": notes,
+            **({"old_level": old_level, "old_notes": old_notes} if not created else {}),
+        },
     )
     return Response(payload)
 
@@ -4699,14 +4912,26 @@ def revoke_artifact_group_permission(request):
     artifact_id = serializer.validated_data["artifact_id"]
     reason = str(serializer.validated_data.get("reason") or "").strip()
 
-    deleted, _ = ArtifactGroupPermission.objects.filter(group_id=group_id, artifact_id=artifact_id).delete()
+    old_level = None
+    old_notes = None
+    with transaction.atomic():
+        existing = ArtifactGroupPermission.objects.select_for_update().filter(group_id=group_id, artifact_id=artifact_id).first()
+        if existing is not None:
+            old_level = _level_code(existing.level)
+            old_notes = existing.notes or ""
+        deleted, _ = ArtifactGroupPermission.objects.filter(group_id=group_id, artifact_id=artifact_id).delete()
     log_admin_action(
         request,
         action="rbac.revoke_artifact_group_permission",
         outcome="success",
         target_type="artifact",
         target_id=str(artifact_id),
-        metadata={"reason": reason, "group_id": group_id, "deleted": deleted > 0},
+        metadata={
+            "reason": reason,
+            "group_id": group_id,
+            "deleted": deleted > 0,
+            **({"old_level": old_level, "old_notes": old_notes} if deleted > 0 and old_level is not None else {}),
+        },
     )
     return Response({"deleted": deleted > 0})
 
