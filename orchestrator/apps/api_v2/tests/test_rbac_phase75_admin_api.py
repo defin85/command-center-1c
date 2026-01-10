@@ -240,6 +240,36 @@ def test_direct_bindings_clusters_and_databases_require_reason(rbac_admin_client
 
 
 @pytest.mark.django_db
+def test_list_users_with_roles(rbac_admin_client):
+    role1 = Group.objects.create(name="role_a")
+    role2 = Group.objects.create(name="role_b")
+
+    u1 = User.objects.create_user(username="u_roles_1", password="pass")
+    u2 = User.objects.create_user(username="u_roles_2", password="pass")
+    u1.groups.add(role2, role1)
+    u2.groups.add(role1)
+
+    resp = rbac_admin_client.get("/api/v2/rbac/list-users-with-roles/", {"search": "u_roles_", "limit": 10, "offset": 0})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 2
+    assert payload["total"] >= 2
+
+    users = payload["users"]
+    assert users[0]["username"] == "u_roles_1"
+    assert users[1]["username"] == "u_roles_2"
+
+    u1_roles = users[0]["roles"]
+    assert [r["name"] for r in u1_roles] == ["role_a", "role_b"]
+
+    filtered = rbac_admin_client.get("/api/v2/rbac/list-users-with-roles/", {"role_id": role2.id, "limit": 10, "offset": 0})
+    assert filtered.status_code == 200
+    filtered_users = filtered.json()["users"]
+    assert len(filtered_users) == 1
+    assert filtered_users[0]["username"] == "u_roles_1"
+
+
+@pytest.mark.django_db
 def test_bulk_group_permissions_clusters_and_databases(rbac_admin_client, cluster, database):
     group = Group.objects.create(name="bulk_ops")
 

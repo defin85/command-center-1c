@@ -144,6 +144,7 @@ urlpatterns = [
     path('rbac/grant-database-permission/', rbac.grant_database_permission, name='grant-database-permission'),
     path('rbac/revoke-database-permission/', rbac.revoke_database_permission, name='revoke-database-permission'),
     path('rbac/list-users/', rbac.list_users, name='list-users'),
+    path('rbac/list-users-with-roles/', rbac.list_users_with_roles, name='list-users-with-roles'),
     path('rbac/get-effective-access/', rbac.get_effective_access, name='get-effective-access'),
     path('rbac/list-roles/', rbac.list_roles, name='list-roles'),
     path('rbac/create-role/', rbac.create_role, name='create-role'),

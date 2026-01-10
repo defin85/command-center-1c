@@ -15,6 +15,7 @@ export function RbacResourceBrowser(props: {
   selectedValue?: string
   onSelect: (value: string) => void
   loading?: boolean
+  loadingText?: string
   onScroll?: UIEventHandler<HTMLDivElement>
   clearLabel?: string
   clearDisabled?: boolean
@@ -43,7 +44,7 @@ export function RbacResourceBrowser(props: {
           />
           {props.loading && (
             <div style={{ padding: 8, textAlign: 'center' }}>
-              <Text type="secondary">Loading...</Text>
+              <Text type="secondary">{props.loadingText ?? 'Loading...'}</Text>
             </div>
           )}
         </div>
@@ -56,4 +57,3 @@ export function RbacResourceBrowser(props: {
     </Card>
   )
 }
-

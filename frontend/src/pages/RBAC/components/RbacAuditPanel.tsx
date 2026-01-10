@@ -11,7 +11,27 @@ const { Text } = Typography
 
 type UndoCommand = {
   title: string
+  code: string
+  meta?: Record<string, unknown>
   run: (reason: string) => Promise<void>
+}
+
+type RbacAuditPanelI18n = {
+  searchPlaceholder?: string
+  refreshText?: string
+  viewText?: string
+  detailsModalTitle?: (id: number) => string
+  columnCreatedAt?: string
+  columnActor?: string
+  columnAction?: string
+  columnOutcome?: string
+  columnTarget?: string
+  columnReason?: string
+  columnDetails?: string
+  detailsAuditIdLabel?: string
+  detailsActionLabel?: string
+  detailsTargetLabel?: string
+  formatUndoTitle?: (cmd: UndoCommand, item: AdminAuditLogItem) => string
 }
 
 function getNumber(meta: Record<string, unknown>, key: string): number | null {
@@ -43,6 +63,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId) return null
     return {
       title: `Undo: delete role #${groupId}`,
+      code: 'delete_role',
+      meta: { groupId },
       run: async (reason) => {
         await apiClient.post('/api/v2/rbac/delete-role/', { group_id: groupId, reason })
       },
@@ -55,6 +77,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || !oldName) return null
     return {
       title: `Undo: rename role #${groupId}`,
+      code: 'rename_role',
+      meta: { groupId, oldName },
       run: async (reason) => {
         await apiClient.post('/api/v2/rbac/update-role/', { group_id: groupId, name: oldName, reason })
       },
@@ -70,6 +94,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || !oldGroupIds) return null
     return {
       title: `Undo: restore user roles #${userId}`,
+      code: 'restore_user_roles',
+      meta: { userId, oldGroupIdsCount: oldGroupIds.length },
       run: async (reason) => {
         await apiClient.post('/api/v2/rbac/set-user-roles/', {
           user_id: userId,
@@ -90,6 +116,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || !oldCodes) return null
     return {
       title: `Undo: restore role capabilities #${groupId}`,
+      code: 'restore_role_capabilities',
+      meta: { groupId, oldCodesCount: oldCodes.length },
       run: async (reason) => {
         await apiClient.post('/api/v2/rbac/set-role-capabilities/', {
           group_id: groupId,
@@ -119,6 +147,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke cluster permission`,
+        code: 'revoke_cluster_permission',
+        meta: { userId, clusterId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-cluster-permission/', { user_id: userId, cluster_id: targetId, reason })
         },
@@ -127,6 +157,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore cluster permission level`,
+        code: 'restore_cluster_permission_level',
+        meta: { userId, clusterId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-cluster-permission/', { user_id: userId, cluster_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -138,6 +170,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore cluster permission`,
+      code: 'restore_cluster_permission',
+      meta: { userId, clusterId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-cluster-permission/', { user_id: userId, cluster_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -149,6 +183,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke database permission`,
+        code: 'revoke_database_permission',
+        meta: { userId, databaseId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-database-permission/', { user_id: userId, database_id: targetId, reason })
         },
@@ -157,6 +193,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore database permission level`,
+        code: 'restore_database_permission_level',
+        meta: { userId, databaseId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-database-permission/', { user_id: userId, database_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -168,6 +206,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore database permission`,
+      code: 'restore_database_permission',
+      meta: { userId, databaseId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-database-permission/', { user_id: userId, database_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -179,6 +219,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke cluster group permission`,
+        code: 'revoke_cluster_group_permission',
+        meta: { groupId, clusterId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-cluster-group-permission/', { group_id: groupId, cluster_id: targetId, reason })
         },
@@ -187,6 +229,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore cluster group permission level`,
+        code: 'restore_cluster_group_permission_level',
+        meta: { groupId, clusterId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-cluster-group-permission/', { group_id: groupId, cluster_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -198,6 +242,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore cluster group permission`,
+      code: 'restore_cluster_group_permission',
+      meta: { groupId, clusterId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-cluster-group-permission/', { group_id: groupId, cluster_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -209,6 +255,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke database group permission`,
+        code: 'revoke_database_group_permission',
+        meta: { groupId, databaseId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-database-group-permission/', { group_id: groupId, database_id: targetId, reason })
         },
@@ -217,6 +265,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore database group permission level`,
+        code: 'restore_database_group_permission_level',
+        meta: { groupId, databaseId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-database-group-permission/', { group_id: groupId, database_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -228,6 +278,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore database group permission`,
+      code: 'restore_database_group_permission',
+      meta: { groupId, databaseId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-database-group-permission/', { group_id: groupId, database_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -239,6 +291,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke operation template permission`,
+        code: 'revoke_operation_template_permission',
+        meta: { userId, templateId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-operation-template-permission/', { user_id: userId, template_id: targetId, reason })
         },
@@ -247,6 +301,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore operation template permission level`,
+        code: 'restore_operation_template_permission_level',
+        meta: { userId, templateId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-operation-template-permission/', { user_id: userId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -258,6 +314,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore operation template permission`,
+      code: 'restore_operation_template_permission',
+      meta: { userId, templateId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-operation-template-permission/', { user_id: userId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -269,6 +327,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke operation template group permission`,
+        code: 'revoke_operation_template_group_permission',
+        meta: { groupId, templateId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-operation-template-group-permission/', { group_id: groupId, template_id: targetId, reason })
         },
@@ -277,6 +337,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore operation template group permission level`,
+        code: 'restore_operation_template_group_permission_level',
+        meta: { groupId, templateId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-operation-template-group-permission/', { group_id: groupId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -288,6 +350,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore operation template group permission`,
+      code: 'restore_operation_template_group_permission',
+      meta: { groupId, templateId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-operation-template-group-permission/', { group_id: groupId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -299,6 +363,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke workflow template permission`,
+        code: 'revoke_workflow_template_permission',
+        meta: { userId, templateId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-workflow-template-permission/', { user_id: userId, template_id: targetId, reason })
         },
@@ -307,6 +373,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore workflow template permission level`,
+        code: 'restore_workflow_template_permission_level',
+        meta: { userId, templateId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-workflow-template-permission/', { user_id: userId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -318,6 +386,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore workflow template permission`,
+      code: 'restore_workflow_template_permission',
+      meta: { userId, templateId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-workflow-template-permission/', { user_id: userId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -329,6 +399,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke workflow template group permission`,
+        code: 'revoke_workflow_template_group_permission',
+        meta: { groupId, templateId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-workflow-template-group-permission/', { group_id: groupId, template_id: targetId, reason })
         },
@@ -337,6 +409,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore workflow template group permission level`,
+        code: 'restore_workflow_template_group_permission_level',
+        meta: { groupId, templateId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-workflow-template-group-permission/', { group_id: groupId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -348,6 +422,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore workflow template group permission`,
+      code: 'restore_workflow_template_group_permission',
+      meta: { groupId, templateId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-workflow-template-group-permission/', { group_id: groupId, template_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -359,6 +435,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke artifact permission`,
+        code: 'revoke_artifact_permission',
+        meta: { userId, artifactId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-artifact-permission/', { user_id: userId, artifact_id: targetId, reason })
         },
@@ -367,6 +445,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore artifact permission level`,
+        code: 'restore_artifact_permission_level',
+        meta: { userId, artifactId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-artifact-permission/', { user_id: userId, artifact_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -378,6 +458,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!userId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore artifact permission`,
+      code: 'restore_artifact_permission',
+      meta: { userId, artifactId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-artifact-permission/', { user_id: userId, artifact_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -389,6 +471,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === true) {
       return {
         title: `Undo: revoke artifact group permission`,
+        code: 'revoke_artifact_group_permission',
+        meta: { groupId, artifactId: targetId },
         run: async (reason) => {
           await apiClient.post('/api/v2/rbac/revoke-artifact-group-permission/', { group_id: groupId, artifact_id: targetId, reason })
         },
@@ -397,6 +481,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (created === false && oldLevel) {
       return {
         title: `Undo: restore artifact group permission level`,
+        code: 'restore_artifact_group_permission_level',
+        meta: { groupId, artifactId: targetId, oldLevel },
         run: async (reason) => {
           await grantOrRestore('/api/v2/rbac/grant-artifact-group-permission/', { group_id: groupId, artifact_id: targetId, level: oldLevel, notes: oldNotes }, reason)
         },
@@ -408,6 +494,8 @@ function getUndoCommand(item: AdminAuditLogItem): UndoCommand | null {
     if (!groupId || deleted !== true || !oldLevel) return null
     return {
       title: `Undo: restore artifact group permission`,
+      code: 'restore_artifact_group_permission',
+      meta: { groupId, artifactId: targetId, oldLevel },
       run: async (reason) => {
         await grantOrRestore('/api/v2/rbac/grant-artifact-group-permission/', { group_id: groupId, artifact_id: targetId, level: oldLevel, notes: oldNotes }, reason)
       },
@@ -426,11 +514,14 @@ export function RbacAuditPanel(props: {
   undoOkText?: string
   undoCancelText?: string
   undoReasonPlaceholder?: string
+  undoReasonRequiredMessage?: string
   undoSuccessMessage?: string
   undoFailedMessage?: string
   undoNotSupportedMessage?: string
+  i18n?: RbacAuditPanelI18n
 }) {
   const { modal, message } = App.useApp()
+  const i18n = props.i18n ?? {}
   const [search, setSearch] = useState<string>('')
   const [page, setPage] = useState<number>(1)
   const [pageSize, setPageSize] = useState<number>(100)
@@ -450,20 +541,20 @@ export function RbacAuditPanel(props: {
 
   const columns: ColumnsType<AdminAuditLogItem> = useMemo(() => [
     {
-      title: 'Created',
+      title: i18n.columnCreatedAt ?? 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
       render: (value: string) => value ? new Date(value).toLocaleString() : '-',
     },
     {
-      title: 'Actor',
+      title: i18n.columnActor ?? 'Actor',
       dataIndex: 'actor_username',
       key: 'actor_username',
       render: (value: string) => value || '-',
     },
-    { title: 'Action', dataIndex: 'action', key: 'action' },
+    { title: i18n.columnAction ?? 'Action', dataIndex: 'action', key: 'action' },
     {
-      title: 'Outcome',
+      title: i18n.columnOutcome ?? 'Outcome',
       dataIndex: 'outcome',
       key: 'outcome',
       render: (value: string) => (
@@ -473,12 +564,12 @@ export function RbacAuditPanel(props: {
       ),
     },
     {
-      title: 'Target',
+      title: i18n.columnTarget ?? 'Target',
       key: 'target',
       render: (_: unknown, row) => `${row.target_type}:${row.target_id}`,
     },
     {
-      title: 'Reason',
+      title: i18n.columnReason ?? 'Reason',
       key: 'reason',
       render: (_: unknown, row) => {
         const reason = typeof row.metadata?.reason === 'string' ? row.metadata.reason : ''
@@ -486,7 +577,7 @@ export function RbacAuditPanel(props: {
       },
     },
     {
-      title: 'Details',
+      title: i18n.columnDetails ?? 'Details',
       key: 'details',
       render: (_: unknown, row) => (
         <Space size="small" wrap>
@@ -494,7 +585,7 @@ export function RbacAuditPanel(props: {
             size="small"
             onClick={() => {
               modal.info({
-                title: `Audit #${row.id}`,
+                title: i18n.detailsModalTitle?.(row.id) ?? `Audit #${row.id}`,
                 width: 860,
                 content: (
                   <pre style={{ whiteSpace: 'pre-wrap' }}>
@@ -504,7 +595,7 @@ export function RbacAuditPanel(props: {
               })
             }}
           >
-            View
+            {i18n.viewText ?? 'View'}
           </Button>
           {props.enabled && (
             (() => {
@@ -526,13 +617,13 @@ export function RbacAuditPanel(props: {
         </Space>
       ),
     },
-  ], [modal, props.enabled, props.undoLabel])
+  ], [i18n, modal, props.enabled, props.undoLabel])
 
   return (
     <Card title={props.title ?? 'Admin Audit'} size="small">
       <Space wrap style={{ marginBottom: 12 }}>
         <Input
-          placeholder="Search"
+          placeholder={i18n.searchPlaceholder ?? 'Search'}
           style={{ width: 320 }}
           value={search}
           onChange={(e) => {
@@ -541,7 +632,7 @@ export function RbacAuditPanel(props: {
           }}
         />
         <Button onClick={() => query.refetch()} loading={query.isFetching}>
-          Refresh
+          {i18n.refreshText ?? 'Refresh'}
         </Button>
       </Space>
       {query.error && (
@@ -576,6 +667,7 @@ export function RbacAuditPanel(props: {
         cancelText={props.undoCancelText ?? 'Cancel'}
         okButtonProps={{ loading: undoLoading }}
         reasonPlaceholder={props.undoReasonPlaceholder}
+        requiredMessage={props.undoReasonRequiredMessage}
         onCancel={() => {
           if (undoLoading) return
           setUndoOpen(false)
@@ -609,12 +701,16 @@ export function RbacAuditPanel(props: {
           <Alert
             type="info"
             showIcon
-            message={getUndoCommand(undoItem)?.title ?? (props.undoNotSupportedMessage ?? 'Undo is not supported for this entry')}
+            message={(() => {
+              const cmd = getUndoCommand(undoItem)
+              if (!cmd) return props.undoNotSupportedMessage ?? 'Undo is not supported for this entry'
+              return i18n.formatUndoTitle ? i18n.formatUndoTitle(cmd, undoItem) : cmd.title
+            })()}
             description={(
               <Space direction="vertical" size={4}>
-                <div><Text type="secondary">Audit ID:</Text> <Text>#{undoItem.id}</Text></div>
-                <div><Text type="secondary">Action:</Text> <Text>{undoItem.action}</Text></div>
-                <div><Text type="secondary">Target:</Text> <Text>{undoItem.target_type}:{undoItem.target_id}</Text></div>
+                <div><Text type="secondary">{i18n.detailsAuditIdLabel ?? 'Audit ID:'}</Text> <Text>#{undoItem.id}</Text></div>
+                <div><Text type="secondary">{i18n.detailsActionLabel ?? 'Action:'}</Text> <Text>{undoItem.action}</Text></div>
+                <div><Text type="secondary">{i18n.detailsTargetLabel ?? 'Target:'}</Text> <Text>{undoItem.target_type}:{undoItem.target_id}</Text></div>
               </Space>
             )}
           />

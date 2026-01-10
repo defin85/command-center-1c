@@ -39,6 +39,9 @@ export const queryKeys = {
     users: (filters?: { search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.rbac.all, 'users', filters] as const
     ),
+    usersWithRoles: (filters?: { search?: string; role_id?: number; limit?: number; offset?: number }) => (
+      [...queryKeys.rbac.all, 'users-with-roles', filters] as const
+    ),
     roles: (filters?: { search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.rbac.all, 'roles', filters] as const
     ),

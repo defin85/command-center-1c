@@ -7,6 +7,34 @@ type RoleOption = { label: string; value: number }
 type BulkGrantResult = { created: number; updated: number; skipped: number }
 type BulkRevokeResult = { deleted: number; skipped: number }
 
+type BulkRolePermissionsI18n = {
+  title?: string
+  tabGrant?: string
+  tabRevoke?: string
+  confirmGrantTitle?: string
+  confirmRevokeTitle?: string
+  applyText?: string
+  cancelText?: string
+  roleLabel?: string
+  levelLabel?: string
+  notesLabel?: string
+  countLabel?: string
+  exampleLabel?: string
+  rolePlaceholder?: string
+  notesPlaceholder?: string
+  reasonPlaceholder?: string
+  idsPlaceholder?: string
+  grantButton?: string
+  revokeButton?: string
+  idsRequiredMessage?: string
+  roleRequiredMessage?: string
+  reasonRequiredMessage?: string
+  grantSuccessMessage?: (result: BulkGrantResult) => string
+  revokeSuccessMessage?: (result: BulkRevokeResult) => string
+  grantFailedMessage?: string
+  revokeFailedMessage?: string
+}
+
 export function RbacBulkClusterRolePermissions(props: {
   roleOptions: RoleOption[]
   roleNameById: Map<number, string>
@@ -29,9 +57,11 @@ export function RbacBulkClusterRolePermissions(props: {
     }) => Promise<BulkRevokeResult>
     isPending: boolean
   }
+  i18n?: BulkRolePermissionsI18n
 }) {
   const { modal, message } = App.useApp()
   const { Text } = Typography
+  const i18n = props.i18n ?? {}
 
   const [grantForm] = Form.useForm<{
     group_id: number
@@ -48,12 +78,12 @@ export function RbacBulkClusterRolePermissions(props: {
   }>()
 
   return (
-    <Card title="Bulk Cluster Role Permissions" size="small">
+    <Card title={i18n.title ?? 'Bulk Cluster Role Permissions'} size="small">
       <Tabs
         items={[
           {
             key: 'grant',
-            label: 'Bulk Grant',
+            label: i18n.tabGrant ?? 'Bulk Grant',
             children: (
               <Form
                 form={grantForm}
@@ -62,23 +92,23 @@ export function RbacBulkClusterRolePermissions(props: {
                 onFinish={(values) => {
                   const clusterIds = parseIdListFromText(values.cluster_ids)
                   if (clusterIds.length === 0) {
-                    message.error('cluster_ids required')
+                    message.error(i18n.idsRequiredMessage ?? 'cluster_ids required')
                     return
                   }
 
                   const roleName = props.roleNameById.get(values.group_id) ?? String(values.group_id)
                   modal.confirm({
-                    title: 'Confirm bulk grant (Clusters)',
-                    okText: 'Apply',
-                    cancelText: 'Cancel',
+                    title: i18n.confirmGrantTitle ?? 'Confirm bulk grant (Clusters)',
+                    okText: i18n.applyText ?? 'Apply',
+                    cancelText: i18n.cancelText ?? 'Cancel',
                     content: (
                       <Space direction="vertical" size={4}>
-                        <Text><Text strong>Role:</Text> {roleName} #{values.group_id}</Text>
-                        <Text><Text strong>Level:</Text> {values.level}</Text>
-                        {values.notes ? <Text><Text strong>Notes:</Text> {values.notes}</Text> : null}
-                        <Text><Text strong>Count:</Text> {clusterIds.length}</Text>
+                        <Text><Text strong>{i18n.roleLabel ?? 'Role'}:</Text> {roleName} #{values.group_id}</Text>
+                        <Text><Text strong>{i18n.levelLabel ?? 'Level'}:</Text> {values.level}</Text>
+                        {values.notes ? <Text><Text strong>{i18n.notesLabel ?? 'Notes'}:</Text> {values.notes}</Text> : null}
+                        <Text><Text strong>{i18n.countLabel ?? 'Count'}:</Text> {clusterIds.length}</Text>
                         <Text type="secondary">
-                          Example: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
+                          {i18n.exampleLabel ?? 'Example'}: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
                         </Text>
                       </Space>
                     ),
@@ -91,10 +121,10 @@ export function RbacBulkClusterRolePermissions(props: {
                           notes: values.notes,
                           reason: values.reason,
                         })
-                        message.success(`Bulk grant: created=${result.created}, updated=${result.updated}, skipped=${result.skipped}`)
+                        message.success((i18n.grantSuccessMessage ?? ((r) => `Bulk grant: created=${r.created}, updated=${r.updated}, skipped=${r.skipped}`))(result))
                         grantForm.resetFields()
                       } catch (error) {
-                        message.error('Bulk grant failed')
+                        message.error(i18n.grantFailedMessage ?? 'Bulk grant failed')
                         throw error
                       }
                     },
@@ -102,10 +132,10 @@ export function RbacBulkClusterRolePermissions(props: {
                 }}
               >
                 <Space wrap>
-                  <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                  <Form.Item name="group_id" rules={[{ required: true, message: i18n.roleRequiredMessage ?? 'role required' }]}>
                     <Select
                       style={{ width: 240 }}
-                      placeholder="Role"
+                      placeholder={i18n.rolePlaceholder ?? 'Role'}
                       options={props.roleOptions}
                       showSearch
                       optionFilterProp="label"
@@ -115,27 +145,27 @@ export function RbacBulkClusterRolePermissions(props: {
                     <Select style={{ width: 140 }} options={props.levelOptions} />
                   </Form.Item>
                   <Form.Item name="notes">
-                    <Input placeholder="Notes (optional)" style={{ width: 260 }} />
+                    <Input placeholder={i18n.notesPlaceholder ?? 'Notes (optional)'} style={{ width: 260 }} />
                   </Form.Item>
-                  <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                    <Input placeholder="Reason" style={{ width: 320 }} />
+                  <Form.Item name="reason" rules={[{ required: true, message: i18n.reasonRequiredMessage ?? 'reason required' }]}>
+                    <Input placeholder={i18n.reasonPlaceholder ?? 'Reason'} style={{ width: 320 }} />
                   </Form.Item>
                 </Space>
-                <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
+                <Form.Item name="cluster_ids" rules={[{ required: true, message: i18n.idsRequiredMessage ?? 'cluster_ids required' }]}>
                   <Input.TextArea
-                    placeholder="Cluster UUIDs (one per line)"
+                    placeholder={i18n.idsPlaceholder ?? 'Cluster UUIDs (one per line)'}
                     autoSize={{ minRows: 3, maxRows: 6 }}
                   />
                 </Form.Item>
                 <Button type="primary" htmlType="submit" loading={props.bulkGrant.isPending}>
-                  Bulk Grant
+                  {i18n.grantButton ?? 'Bulk Grant'}
                 </Button>
               </Form>
             ),
           },
           {
             key: 'revoke',
-            label: 'Bulk Revoke',
+            label: i18n.tabRevoke ?? 'Bulk Revoke',
             children: (
               <Form
                 form={revokeForm}
@@ -143,21 +173,21 @@ export function RbacBulkClusterRolePermissions(props: {
                 onFinish={(values) => {
                   const clusterIds = parseIdListFromText(values.cluster_ids)
                   if (clusterIds.length === 0) {
-                    message.error('cluster_ids required')
+                    message.error(i18n.idsRequiredMessage ?? 'cluster_ids required')
                     return
                   }
 
                   const roleName = props.roleNameById.get(values.group_id) ?? String(values.group_id)
                   modal.confirm({
-                    title: 'Confirm bulk revoke (Clusters)',
-                    okText: 'Apply',
-                    cancelText: 'Cancel',
+                    title: i18n.confirmRevokeTitle ?? 'Confirm bulk revoke (Clusters)',
+                    okText: i18n.applyText ?? 'Apply',
+                    cancelText: i18n.cancelText ?? 'Cancel',
                     content: (
                       <Space direction="vertical" size={4}>
-                        <Text><Text strong>Role:</Text> {roleName} #{values.group_id}</Text>
-                        <Text><Text strong>Count:</Text> {clusterIds.length}</Text>
+                        <Text><Text strong>{i18n.roleLabel ?? 'Role'}:</Text> {roleName} #{values.group_id}</Text>
+                        <Text><Text strong>{i18n.countLabel ?? 'Count'}:</Text> {clusterIds.length}</Text>
                         <Text type="secondary">
-                          Example: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
+                          {i18n.exampleLabel ?? 'Example'}: {clusterIds.slice(0, 5).join(', ')}{clusterIds.length > 5 ? ', ...' : ''}
                         </Text>
                       </Space>
                     ),
@@ -168,10 +198,10 @@ export function RbacBulkClusterRolePermissions(props: {
                           cluster_ids: clusterIds,
                           reason: values.reason,
                         })
-                        message.success(`Bulk revoke: deleted=${result.deleted}, skipped=${result.skipped}`)
+                        message.success((i18n.revokeSuccessMessage ?? ((r) => `Bulk revoke: deleted=${r.deleted}, skipped=${r.skipped}`))(result))
                         revokeForm.resetFields()
                       } catch (error) {
-                        message.error('Bulk revoke failed')
+                        message.error(i18n.revokeFailedMessage ?? 'Bulk revoke failed')
                         throw error
                       }
                     },
@@ -179,27 +209,27 @@ export function RbacBulkClusterRolePermissions(props: {
                 }}
               >
                 <Space wrap>
-                  <Form.Item name="group_id" rules={[{ required: true, message: 'role required' }]}>
+                  <Form.Item name="group_id" rules={[{ required: true, message: i18n.roleRequiredMessage ?? 'role required' }]}>
                     <Select
                       style={{ width: 240 }}
-                      placeholder="Role"
+                      placeholder={i18n.rolePlaceholder ?? 'Role'}
                       options={props.roleOptions}
                       showSearch
                       optionFilterProp="label"
                     />
                   </Form.Item>
-                  <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                    <Input placeholder="Reason" style={{ width: 320 }} />
+                  <Form.Item name="reason" rules={[{ required: true, message: i18n.reasonRequiredMessage ?? 'reason required' }]}>
+                    <Input placeholder={i18n.reasonPlaceholder ?? 'Reason'} style={{ width: 320 }} />
                   </Form.Item>
                 </Space>
-                <Form.Item name="cluster_ids" rules={[{ required: true, message: 'cluster_ids required' }]}>
+                <Form.Item name="cluster_ids" rules={[{ required: true, message: i18n.idsRequiredMessage ?? 'cluster_ids required' }]}>
                   <Input.TextArea
-                    placeholder="Cluster UUIDs (one per line)"
+                    placeholder={i18n.idsPlaceholder ?? 'Cluster UUIDs (one per line)'}
                     autoSize={{ minRows: 3, maxRows: 8 }}
                   />
                 </Form.Item>
                 <Button type="primary" danger htmlType="submit" loading={props.bulkRevoke.isPending}>
-                  Bulk Revoke
+                  {i18n.revokeButton ?? 'Bulk Revoke'}
                 </Button>
               </Form>
             ),

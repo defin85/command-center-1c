@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch, Table, Modal, Radio, Segmented } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch, Table, Modal, Radio, Segmented, Popover } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
@@ -61,11 +61,11 @@ import {
   useRevokeArtifactGroupPermission,
   useRevokeArtifactPermission,
   useRbacUsers,
+  useRbacUsersWithRoles,
   useRoles,
   useSetRoleCapabilities,
   useSetUserRoles,
   useUpdateRole,
-  useUserRoles,
   type ArtifactGroupPermission,
   type ArtifactPermission,
   type ClusterGroupPermission,
@@ -73,6 +73,7 @@ import {
   type OperationTemplateGroupPermission,
   type OperationTemplatePermission,
   type RbacRole,
+  type UserWithRolesRef,
   type WorkflowTemplateGroupPermission,
   type WorkflowTemplatePermission,
 } from '../../api/queries/rbac'
@@ -117,6 +118,8 @@ type RbacPermissionsTableConfig = {
   refetch: () => void
 }
 
+type UserRolesViewMode = 'user-to-roles' | 'role-to-users'
+
 const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelCode }> = [
   { label: 'VIEW', value: 'VIEW' },
   { label: 'OPERATE', value: 'OPERATE' },
@@ -149,7 +152,12 @@ function ensureSelectOptionsContain(options: SelectOption[], selectedIds: Array<
 
 export function RBACPage() {
   const { modal, message } = App.useApp()
-  const confirmReason = useConfirmReason(modal, message)
+  const confirmReason = useConfirmReason(modal, message, {
+    placeholder: 'Причина (обязательно)',
+    okText: 'Отозвать',
+    cancelText: 'Отмена',
+    requiredMessage: 'Укажите причину',
+  })
   const hasToken = Boolean(localStorage.getItem('auth_token'))
   const meQuery = useMe({ enabled: hasToken })
   const isStaff = Boolean(meQuery.data?.is_staff)
@@ -307,7 +315,16 @@ export function RBACPage() {
   const [ibHasUserFilter, setIbHasUserFilter] = useState<string>('any')
   const [userSearch, setUserSearch] = useState<string>('')
   const [roleSearch, setRoleSearch] = useState<string>('')
-  const [selectedRolesUserId, setSelectedRolesUserId] = useState<number | undefined>()
+
+  const [userRolesViewMode, setUserRolesViewMode] = useState<UserRolesViewMode>('user-to-roles')
+  const [userRolesList, setUserRolesList] = useState<{
+    search: string
+    role_id?: number
+    page: number
+    pageSize: number
+  }>({ search: '', page: 1, pageSize: 50 })
+  const [userRolesEditorOpen, setUserRolesEditorOpen] = useState<boolean>(false)
+  const [userRolesEditorUser, setUserRolesEditorUser] = useState<UserWithRolesRef | null>(null)
 
   const [selectedEffectiveUserId, setSelectedEffectiveUserId] = useState<number | undefined>()
   const [effectiveResourceKey, setEffectiveResourceKey] = useState<RbacPermissionsResourceKey>('databases')
@@ -465,10 +482,9 @@ export function RBACPage() {
   }>()
 
   const [createRoleForm] = Form.useForm<{ name: string; reason: string }>()
-  const [assignRolesForm] = Form.useForm<{
-    user_id: number
-    group_ids: number[]
+  const [userRolesEditorForm] = Form.useForm<{
     mode?: 'replace' | 'add' | 'remove'
+    group_ids?: number[]
     reason: string
   }>()
 
@@ -534,6 +550,19 @@ export function RBACPage() {
 
 	  const rbacPermissionsGrantResourceId = Form.useWatch('resource_id', rbacPermissionsGrantForm)
 	  const ibUserFormDatabaseId = Form.useWatch('database_id', ibUserForm)
+	  const userRolesEditorMode = Form.useWatch('mode', userRolesEditorForm)
+	  const userRolesEditorGroupIds = Form.useWatch('group_ids', userRolesEditorForm)
+	  const userRolesEditorReason = Form.useWatch('reason', userRolesEditorForm)
+
+	  const userRolesEditorModeValue = (userRolesEditorMode ?? 'replace') as 'replace' | 'add' | 'remove'
+	  const userRolesEditorSelectedIds = Array.isArray(userRolesEditorGroupIds)
+	    ? userRolesEditorGroupIds.filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+	    : []
+	  const userRolesEditorSelectedIdsUnique = Array.from(new Set(userRolesEditorSelectedIds)).sort((a, b) => a - b)
+	  const userRolesEditorTrimmedReason = typeof userRolesEditorReason === 'string' ? userRolesEditorReason.trim() : ''
+	  const userRolesEditorCanSubmit = Boolean(userRolesEditorUser)
+	    && Boolean(userRolesEditorTrimmedReason)
+	    && (userRolesEditorModeValue === 'replace' || userRolesEditorSelectedIdsUnique.length > 0)
 
 	  useEffect(() => {
 	    if (rbacPermissionsViewMode !== 'resource') return
@@ -750,65 +779,17 @@ export function RBACPage() {
   const effectiveResourcePlaceholder = (() => {
     switch (effectiveResourceKey) {
       case 'clusters':
-        return 'Cluster (optional)'
+        return 'Кластер (опционально)'
       case 'databases':
-        return 'Database (optional)'
+        return 'База (опционально)'
       case 'operation-templates':
-        return 'Operation template (optional)'
+        return 'Шаблон операции (опционально)'
       case 'workflow-templates':
-        return 'Workflow template (optional)'
+        return 'Шаблон рабочего процесса (опционально)'
       case 'artifacts':
-        return 'Artifact (optional)'
+        return 'Артефакт (опционально)'
     }
   })()
-
-	  const levelsHintClustersDatabases = (
-	    <Alert
-	      type="info"
-      showIcon
-      message="Подсказка по уровням доступа (Clusters/Databases)"
-      description={(
-        <div>
-          <div><Text strong>VIEW</Text>: видеть и читать (списки/детали/метаданные/статусы).</div>
-          <div><Text strong>OPERATE</Text>: выполнять операции без изменения конфигурации.</div>
-          <div><Text strong>MANAGE</Text>: менять настройки/конфигурацию объекта.</div>
-          <div><Text strong>ADMIN</Text>: самый высокий уровень, потенциально разрушительные действия (если поддерживаются).</div>
-        </div>
-      )}
-    />
-  )
-
-  const levelsHintTemplatesWorkflows = (
-    <Alert
-      type="info"
-      showIcon
-      message="Подсказка по уровням доступа (Templates/Workflows)"
-      description={(
-        <div>
-          <div><Text strong>VIEW</Text>: читать шаблон.</div>
-          <div><Text strong>OPERATE</Text>: исполнять (запускать) workflow/операции по шаблону.</div>
-          <div><Text strong>MANAGE</Text>: создавать/редактировать/публиковать.</div>
-          <div><Text strong>ADMIN</Text>: самый высокий уровень (если домен не разделяет отдельно).</div>
-        </div>
-      )}
-    />
-  )
-
-  const levelsHintArtifacts = (
-    <Alert
-      type="info"
-      showIcon
-      message="Подсказка по уровням доступа (Artifacts)"
-      description={(
-        <div>
-          <div><Text strong>VIEW</Text>: видеть артефакт и версии (read).</div>
-          <div><Text strong>OPERATE</Text>: upload/публикация версий (операционные действия).</div>
-          <div><Text strong>MANAGE</Text>: управлять артефактом (настройки/алиасы/soft-delete).</div>
-          <div><Text strong>ADMIN</Text>: самый высокий уровень (если домен не разделяет отдельно).</div>
-        </div>
-      )}
-    />
-  )
 
   const handleIbUserEdit = (record: InfobaseUserMapping) => {
     setSelectedIbDatabaseId(record.database_id)
@@ -1025,30 +1006,30 @@ export function RBACPage() {
   }
 
   const clusterFallbackColumns = useMemo(() => [
-    { key: 'user_id', label: 'User', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'cluster', label: 'Cluster', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'level', label: 'Level', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'granted_at', label: 'Granted At', groupKey: 'time', groupLabel: 'Time' },
-    { key: 'granted_by', label: 'Granted By', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'notes', label: 'Notes', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+    { key: 'user_id', label: 'Пользователь', groupKey: 'core', groupLabel: 'Основное' },
+    { key: 'cluster', label: 'Кластер', groupKey: 'core', groupLabel: 'Основное' },
+    { key: 'level', label: 'Уровень', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'granted_at', label: 'Выдано', groupKey: 'time', groupLabel: 'Время' },
+    { key: 'granted_by', label: 'Кем выдано', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'notes', label: 'Комментарий', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
   ], [])
 
   const databaseFallbackColumns = useMemo(() => [
-    { key: 'user_id', label: 'User', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'database', label: 'Database', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'database_id', label: 'Database ID', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'level', label: 'Level', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'granted_at', label: 'Granted At', groupKey: 'time', groupLabel: 'Time' },
-    { key: 'granted_by', label: 'Granted By', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'notes', label: 'Notes', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+    { key: 'user_id', label: 'Пользователь', groupKey: 'core', groupLabel: 'Основное' },
+    { key: 'database', label: 'База', groupKey: 'core', groupLabel: 'Основное' },
+    { key: 'database_id', label: 'ID базы', groupKey: 'core', groupLabel: 'Основное' },
+    { key: 'level', label: 'Уровень', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'granted_at', label: 'Выдано', groupKey: 'time', groupLabel: 'Время' },
+    { key: 'granted_by', label: 'Кем выдано', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'notes', label: 'Комментарий', groupKey: 'meta', groupLabel: 'Метаданные' },
+    { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
   ], [])
 
   const clusterColumns: ColumnsType<ClusterPermission> = useMemo(
     () => [
       {
-        title: 'User',
+        title: 'Пользователь',
         key: 'user_id',
         render: (_, row) => (
           <span>
@@ -1056,17 +1037,17 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Cluster', dataIndex: ['cluster', 'name'], key: 'cluster' },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
-      { title: 'Granted At', dataIndex: 'granted_at', key: 'granted_at' },
+      { title: 'Кластер', dataIndex: ['cluster', 'name'], key: 'cluster' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: 'Выдано', dataIndex: 'granted_at', key: 'granted_at' },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_, row) => (
           <Button
@@ -1075,12 +1056,12 @@ export function RBACPage() {
             loading={revokeCluster.isPending}
             onClick={() => {
               if (!row.user?.id || !row.cluster?.id) return
-              confirmReason('Revoke cluster user permission?', async (reason) => {
+              confirmReason('Отозвать доступ пользователя к кластеру?', async (reason) => {
                 await revokeCluster.mutateAsync({ user_id: row.user.id, cluster_id: row.cluster.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1091,7 +1072,7 @@ export function RBACPage() {
   const databaseColumns: ColumnsType<DatabasePermission> = useMemo(
     () => [
       {
-        title: 'User',
+        title: 'Пользователь',
         key: 'user_id',
         render: (_, row) => (
           <span>
@@ -1099,18 +1080,18 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Database', dataIndex: ['database', 'name'], key: 'database' },
-      { title: 'Database ID', dataIndex: ['database', 'id'], key: 'database_id' },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
-      { title: 'Granted At', dataIndex: 'granted_at', key: 'granted_at' },
+      { title: 'База', dataIndex: ['database', 'name'], key: 'database' },
+      { title: 'ID базы', dataIndex: ['database', 'id'], key: 'database_id' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: 'Выдано', dataIndex: 'granted_at', key: 'granted_at' },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_, row) => (
           <Button
@@ -1119,12 +1100,12 @@ export function RBACPage() {
             loading={revokeDatabase.isPending}
             onClick={() => {
               if (!row.user?.id || !row.database?.id) return
-              confirmReason('Revoke database user permission?', async (reason) => {
+              confirmReason('Отозвать доступ пользователя к базе?', async (reason) => {
                 await revokeDatabase.mutateAsync({ user_id: row.user.id, database_id: row.database.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1135,7 +1116,7 @@ export function RBACPage() {
   const clusterGroupColumns: ColumnsType<ClusterGroupPermission> = useMemo(
     () => [
       {
-        title: 'Role',
+        title: 'Группа',
         key: 'group',
         render: (_: unknown, row) => (
           <span>
@@ -1144,7 +1125,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Cluster',
+        title: 'Кластер',
         key: 'cluster',
         render: (_: unknown, row) => (
           <span>
@@ -1152,21 +1133,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1174,12 +1155,12 @@ export function RBACPage() {
             size="small"
             loading={revokeClusterGroup.isPending}
             onClick={() => {
-              confirmReason('Revoke cluster role permission?', async (reason) => {
+              confirmReason('Отозвать доступ группы к кластеру?', async (reason) => {
                 await revokeClusterGroup.mutateAsync({ group_id: row.group.id, cluster_id: row.cluster.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1190,7 +1171,7 @@ export function RBACPage() {
   const databaseGroupColumns: ColumnsType<DatabaseGroupPermission> = useMemo(
     () => [
       {
-        title: 'Role',
+        title: 'Группа',
         key: 'group',
         render: (_: unknown, row) => (
           <span>
@@ -1199,7 +1180,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Database',
+        title: 'База',
         key: 'database',
         render: (_: unknown, row) => (
           <span>
@@ -1207,21 +1188,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1229,12 +1210,12 @@ export function RBACPage() {
             size="small"
             loading={revokeDatabaseGroup.isPending}
             onClick={() => {
-              confirmReason('Revoke database role permission?', async (reason) => {
+              confirmReason('Отозвать доступ группы к базе?', async (reason) => {
                 await revokeDatabaseGroup.mutateAsync({ group_id: row.group.id, database_id: row.database.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1245,7 +1226,7 @@ export function RBACPage() {
   const operationTemplateUserColumns: ColumnsType<OperationTemplatePermission> = useMemo(
     () => [
       {
-        title: 'User',
+        title: 'Пользователь',
         key: 'user',
         render: (_: unknown, row) => (
           <span>
@@ -1254,7 +1235,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Template',
+        title: 'Шаблон операции',
         key: 'template',
         render: (_: unknown, row) => (
           <span>
@@ -1262,21 +1243,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1284,12 +1265,12 @@ export function RBACPage() {
             size="small"
             loading={revokeOperationTemplate.isPending}
             onClick={() => {
-              confirmReason('Revoke operation template user permission?', async (reason) => {
+              confirmReason('Отозвать доступ пользователя к шаблону операции?', async (reason) => {
                 await revokeOperationTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1300,7 +1281,7 @@ export function RBACPage() {
   const operationTemplateGroupColumns: ColumnsType<OperationTemplateGroupPermission> = useMemo(
     () => [
       {
-        title: 'Role',
+        title: 'Группа',
         key: 'group',
         render: (_: unknown, row) => (
           <span>
@@ -1309,7 +1290,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Template',
+        title: 'Шаблон операции',
         key: 'template',
         render: (_: unknown, row) => (
           <span>
@@ -1317,21 +1298,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1339,12 +1320,12 @@ export function RBACPage() {
             size="small"
             loading={revokeOperationTemplateGroup.isPending}
             onClick={() => {
-              confirmReason('Revoke operation template role permission?', async (reason) => {
+              confirmReason('Отозвать доступ группы к шаблону операции?', async (reason) => {
                 await revokeOperationTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1355,7 +1336,7 @@ export function RBACPage() {
   const workflowTemplateUserColumns: ColumnsType<WorkflowTemplatePermission> = useMemo(
     () => [
       {
-        title: 'User',
+        title: 'Пользователь',
         key: 'user',
         render: (_: unknown, row) => (
           <span>
@@ -1364,7 +1345,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Workflow Template',
+        title: 'Шаблон рабочего процесса',
         key: 'template',
         render: (_: unknown, row) => (
           <span>
@@ -1372,21 +1353,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1394,12 +1375,12 @@ export function RBACPage() {
             size="small"
             loading={revokeWorkflowTemplate.isPending}
             onClick={() => {
-              confirmReason('Revoke workflow template user permission?', async (reason) => {
+              confirmReason('Отозвать доступ пользователя к шаблону рабочего процесса?', async (reason) => {
                 await revokeWorkflowTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1410,7 +1391,7 @@ export function RBACPage() {
   const workflowTemplateGroupColumns: ColumnsType<WorkflowTemplateGroupPermission> = useMemo(
     () => [
       {
-        title: 'Role',
+        title: 'Группа',
         key: 'group',
         render: (_: unknown, row) => (
           <span>
@@ -1419,7 +1400,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Workflow Template',
+        title: 'Шаблон рабочего процесса',
         key: 'template',
         render: (_: unknown, row) => (
           <span>
@@ -1427,21 +1408,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1449,12 +1430,12 @@ export function RBACPage() {
             size="small"
             loading={revokeWorkflowTemplateGroup.isPending}
             onClick={() => {
-              confirmReason('Revoke workflow template role permission?', async (reason) => {
+              confirmReason('Отозвать доступ группы к шаблону рабочего процесса?', async (reason) => {
                 await revokeWorkflowTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1465,7 +1446,7 @@ export function RBACPage() {
   const artifactUserColumns: ColumnsType<ArtifactPermission> = useMemo(
     () => [
       {
-        title: 'User',
+        title: 'Пользователь',
         key: 'user',
         render: (_: unknown, row) => (
           <span>
@@ -1474,7 +1455,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Artifact',
+        title: 'Артефакт',
         key: 'artifact',
         render: (_: unknown, row) => (
           <span>
@@ -1482,21 +1463,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1504,12 +1485,12 @@ export function RBACPage() {
             size="small"
             loading={revokeArtifact.isPending}
             onClick={() => {
-              confirmReason('Revoke artifact user permission?', async (reason) => {
+              confirmReason('Отозвать доступ пользователя к артефакту?', async (reason) => {
                 await revokeArtifact.mutateAsync({ user_id: row.user.id, artifact_id: row.artifact.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1520,7 +1501,7 @@ export function RBACPage() {
   const artifactGroupColumns: ColumnsType<ArtifactGroupPermission> = useMemo(
     () => [
       {
-        title: 'Role',
+        title: 'Группа',
         key: 'group',
         render: (_: unknown, row) => (
           <span>
@@ -1529,7 +1510,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Artifact',
+        title: 'Артефакт',
         key: 'artifact',
         render: (_: unknown, row) => (
           <span>
@@ -1537,21 +1518,21 @@ export function RBACPage() {
           </span>
         ),
       },
-      { title: 'Level', dataIndex: 'level', key: 'level' },
+      { title: 'Уровень', dataIndex: 'level', key: 'level' },
       {
-        title: 'Granted At',
+        title: 'Выдано',
         dataIndex: 'granted_at',
         key: 'granted_at',
         render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
       },
       {
-        title: 'Granted By',
+        title: 'Кем выдано',
         key: 'granted_by',
         render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
       },
-      { title: 'Notes', dataIndex: 'notes', key: 'notes' },
+      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Button
@@ -1559,12 +1540,12 @@ export function RBACPage() {
             size="small"
             loading={revokeArtifactGroup.isPending}
             onClick={() => {
-              confirmReason('Revoke artifact role permission?', async (reason) => {
+              confirmReason('Отозвать доступ группы к артефакту?', async (reason) => {
                 await revokeArtifactGroup.mutateAsync({ group_id: row.group.id, artifact_id: row.artifact.id, reason })
               })
             }}
           >
-            Revoke
+            Отозвать
           </Button>
         ),
       },
@@ -1574,11 +1555,11 @@ export function RBACPage() {
 
   const rolesColumns: ColumnsType<RbacRole> = useMemo(
     () => [
-      { title: 'Role', dataIndex: 'name', key: 'name' },
-      { title: 'Users', dataIndex: 'users_count', key: 'users_count' },
-      { title: 'Capabilities', dataIndex: 'permissions_count', key: 'permissions_count' },
+      { title: 'Роль', dataIndex: 'name', key: 'name' },
+      { title: 'Пользователи', dataIndex: 'users_count', key: 'users_count' },
+      { title: 'Права', dataIndex: 'permissions_count', key: 'permissions_count' },
       {
-        title: 'Actions',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Space size="small">
@@ -1589,7 +1570,7 @@ export function RBACPage() {
                 setRoleUsageOpen(true)
               }}
             >
-              Usage
+              Использование
             </Button>
             <Button
               size="small"
@@ -1599,17 +1580,17 @@ export function RBACPage() {
                 setRoleEditorOpen(true)
               }}
             >
-              Capabilities
+              Права
             </Button>
             <Button
               size="small"
               onClick={() => {
                 setCloneRoleSourceRoleId(row.id)
-                setCloneRoleName(`${row.name} copy`)
+                setCloneRoleName(`${row.name} копия`)
                 setCloneRoleOpen(true)
               }}
             >
-              Clone
+              Клонировать
             </Button>
             <Button
               size="small"
@@ -1619,7 +1600,7 @@ export function RBACPage() {
                 setRenameRoleOpen(true)
               }}
             >
-              Rename
+              Переименовать
             </Button>
             <Button
               danger
@@ -1629,7 +1610,7 @@ export function RBACPage() {
                 setDeleteRoleOpen(true)
               }}
             >
-              Delete
+              Удалить
             </Button>
           </Space>
         ),
@@ -1639,16 +1620,16 @@ export function RBACPage() {
   )
 
   const ibAuthTypeLabels: Record<string, string> = {
-    local: 'Local',
+    local: 'Локальная',
     ad: 'AD',
-    service: 'Service',
-    other: 'Other',
+    service: 'Сервисная',
+    other: 'Другая',
   }
 
   const ibUsersColumns: ColumnsType<InfobaseUserMapping> = useMemo(
     () => [
       {
-        title: 'IB User',
+        title: 'Пользователь ИБ',
         key: 'ib_user',
         render: (_: unknown, row) => (
           <span>
@@ -1658,7 +1639,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'CC User',
+        title: 'Пользователь CC',
         key: 'cc_user',
         render: (_: unknown, row) => (
           row.user
@@ -1671,7 +1652,7 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Roles',
+        title: 'Роли',
         key: 'roles',
         render: (_: unknown, row) => (
           <Space size="small" wrap>
@@ -1682,37 +1663,37 @@ export function RBACPage() {
         ),
       },
       {
-        title: 'Auth',
+        title: 'Аутентификация',
         key: 'auth_type',
         render: (_: unknown, row) => (
           <Tag>{ibAuthTypeLabels[row.auth_type] || row.auth_type}</Tag>
         ),
       },
       {
-        title: 'Service',
+        title: 'Сервисный',
         key: 'is_service',
         render: (_: unknown, row) => (
           <Tag color={row.is_service ? 'blue' : 'default'}>
-            {row.is_service ? 'Yes' : 'No'}
+            {row.is_service ? 'Да' : 'Нет'}
           </Tag>
         ),
       },
       {
-        title: 'Password',
+        title: 'Пароль',
         key: 'password',
         render: (_: unknown, row) => (
           <Tag color={row.ib_password_configured ? 'green' : 'default'}>
-            {row.ib_password_configured ? 'Configured' : 'Missing'}
+            {row.ib_password_configured ? 'Задан' : 'Не задан'}
           </Tag>
         ),
       },
       {
-        title: 'Action',
+        title: 'Действия',
         key: 'actions',
         render: (_: unknown, row) => (
           <Space size="small">
             <Button size="small" onClick={() => handleIbUserEdit(row)}>
-              Edit
+              Редактировать
             </Button>
             <Button
               danger
@@ -1720,7 +1701,7 @@ export function RBACPage() {
               loading={deleteInfobaseUser.isPending}
               onClick={() => handleIbUserDelete(row)}
             >
-              Delete
+              Удалить
             </Button>
           </Space>
         ),
@@ -1747,14 +1728,14 @@ export function RBACPage() {
     tableId: 'rbac_ib_users',
     columns: ibUsersColumns,
     fallbackColumns: [
-      { key: 'ib_username', label: 'IB User', groupKey: 'core', groupLabel: 'Core' },
-      { key: 'ib_display_name', label: 'Display Name', groupKey: 'core', groupLabel: 'Core' },
-      { key: 'cc_user', label: 'CC User', groupKey: 'core', groupLabel: 'Core' },
-      { key: 'roles', label: 'Roles', groupKey: 'meta', groupLabel: 'Meta' },
-      { key: 'auth_type', label: 'Auth', groupKey: 'meta', groupLabel: 'Meta' },
-      { key: 'is_service', label: 'Service', groupKey: 'meta', groupLabel: 'Meta' },
-      { key: 'password', label: 'Password', groupKey: 'meta', groupLabel: 'Meta' },
-      { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
+      { key: 'ib_username', label: 'Пользователь ИБ', groupKey: 'core', groupLabel: 'Основное' },
+      { key: 'ib_display_name', label: 'Имя в ИБ', groupKey: 'core', groupLabel: 'Основное' },
+      { key: 'cc_user', label: 'Пользователь CC', groupKey: 'core', groupLabel: 'Основное' },
+      { key: 'roles', label: 'Роли', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'auth_type', label: 'Аутентификация', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'is_service', label: 'Сервисный', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'password', label: 'Пароль', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
     ],
     initialPageSize: 25,
   })
@@ -1796,7 +1777,17 @@ export function RBACPage() {
     offset: 0,
   }, { enabled: canManageRbac })
 
-  const userRolesQuery = useUserRoles(selectedRolesUserId, { enabled: canManageRbac && Boolean(selectedRolesUserId) })
+  const debouncedUserRolesSearch = useDebouncedValue(userRolesList.search, 300)
+  const userRolesUsersQuery = useRbacUsersWithRoles({
+    search: debouncedUserRolesSearch || undefined,
+    role_id: userRolesList.role_id,
+    limit: userRolesList.pageSize,
+    offset: (userRolesList.page - 1) * userRolesList.pageSize,
+  }, {
+    enabled: canManageRbac && (
+      userRolesViewMode === 'user-to-roles' || Boolean(userRolesList.role_id)
+    ),
+  })
 
   const effectiveIncludeClusters = effectiveResourceKey === 'clusters'
   const effectiveIncludeDatabases = effectiveResourceKey === 'databases'
@@ -2054,7 +2045,6 @@ export function RBACPage() {
     const base = usersQuery.data?.users ?? []
     const extra = [
       ...(editingIbUser?.user ? [editingIbUser.user] : []),
-      ...(userRolesQuery.data?.user ? [userRolesQuery.data.user] : []),
     ]
     const combined = [...base, ...extra]
     const map = new Map<number, { label: string; value: number }>()
@@ -2064,7 +2054,7 @@ export function RBACPage() {
       }
     })
     return Array.from(map.values())
-  }, [usersQuery.data?.users, editingIbUser?.user, userRolesQuery.data?.user])
+  }, [usersQuery.data?.users, editingIbUser?.user])
 
   const clusterNameById = useMemo(() => (
     new Map(clusters.map((c) => [c.id, c.name]))
@@ -2082,6 +2072,99 @@ export function RBACPage() {
   const roleOptions = useMemo(() => (
     roles.map((role) => ({ label: `${role.name} #${role.id}`, value: role.id }))
   ), [roles])
+
+  const userRolesUsers = userRolesUsersQuery.data?.users ?? []
+  const totalUserRolesUsers = typeof userRolesUsersQuery.data?.total === 'number'
+    ? userRolesUsersQuery.data.total
+    : userRolesUsers.length
+
+  const openUserRolesEditor = useCallback((user: UserWithRolesRef) => {
+    setUserRolesEditorUser(user)
+    setUserRolesEditorOpen(true)
+    userRolesEditorForm.setFieldsValue({
+      mode: 'replace',
+      group_ids: (user.roles ?? []).map((r) => r.id).sort((a, b) => a - b),
+      reason: '',
+    })
+  }, [userRolesEditorForm])
+
+  const renderLimitedRoleTags = useCallback((roles: Array<{ id: number; name: string }>) => {
+    if (!roles || roles.length === 0) {
+      return <Tag color="default">-</Tag>
+    }
+
+    const shown = roles.slice(0, 3)
+    const rest = roles.slice(3)
+
+    const content = (
+      <Space size={4} wrap>
+        {roles.map((role) => (
+          <Tag key={role.id}>{role.name}</Tag>
+        ))}
+      </Space>
+    )
+
+    return (
+      <Space size={4} wrap>
+        {shown.map((role) => (
+          <Tag key={role.id}>{role.name}</Tag>
+        ))}
+        {rest.length > 0 && (
+          <Popover content={content} title="Роли" trigger="click">
+            <Button type="link" size="small" style={{ paddingInline: 0, height: 22 }}>
+              ещё {rest.length}
+            </Button>
+          </Popover>
+        )}
+      </Space>
+    )
+  }, [])
+
+  const renderRoleIdTags = useCallback((ids: number[]) => {
+    if (ids.length === 0) {
+      return <Tag color="default">-</Tag>
+    }
+
+    const max = 10
+    const shown = ids.slice(0, max)
+    return (
+      <Space size={4} wrap>
+        {shown.map((id) => (
+          <Tag key={id}>{roleNameById.get(id) ?? `#${id}`}</Tag>
+        ))}
+        {ids.length > max && (
+          <Text type="secondary">+{ids.length - max} ещё</Text>
+        )}
+      </Space>
+    )
+  }, [roleNameById])
+
+  const userRolesColumns: ColumnsType<UserWithRolesRef> = useMemo(() => [
+    {
+      title: 'Пользователь',
+      key: 'user',
+      render: (_: unknown, row) => (
+        <span>
+          {row.username} <Text type="secondary">#{row.id}</Text>
+        </span>
+      ),
+    },
+    {
+      title: 'Роли',
+      key: 'roles',
+      render: (_: unknown, row) => renderLimitedRoleTags(row.roles ?? []),
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, row) => (
+        <Button size="small" onClick={() => openUserRolesEditor(row)}>
+          Изменить
+        </Button>
+      ),
+    },
+  ], [openUserRolesEditor, renderLimitedRoleTags])
   const selectedRoleForUsage = useMemo(() => (
     roles.find((role) => role.id === roleUsageRoleId) ?? null
   ), [roles, roleUsageRoleId])
@@ -2114,12 +2197,19 @@ export function RBACPage() {
 
   const capabilities = capabilitiesQuery.data?.capabilities ?? []
   const capabilityOptions = useMemo(() => (
-    capabilities.map((cap) => ({ label: cap.exists ? cap.code : `${cap.code} (missing)`, value: cap.code }))
+    capabilities.map((cap) => ({ label: cap.exists ? cap.code : `${cap.code} (нет)`, value: cap.code }))
   ), [capabilities])
+
+  const effectiveSourceLabel = useCallback((source: string) => {
+    if (source === 'direct') return 'прямое'
+    if (source === 'group') return 'группа'
+    if (source === 'cluster') return 'кластер'
+    return source
+  }, [])
 
   const effectiveClustersColumns: ColumnsType<EffectiveAccessClusterItem> = useMemo(() => [
     {
-      title: 'Cluster',
+      title: 'Кластер',
       key: 'cluster',
       render: (_: unknown, row) => (
         <span>
@@ -2127,12 +2217,12 @@ export function RBACPage() {
         </span>
       ),
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
   ], [])
 
   const effectiveDatabasesColumns: ColumnsType<EffectiveAccessDatabaseItem> = useMemo(() => [
     {
-      title: 'Database',
+      title: 'База',
       key: 'database',
       render: (_: unknown, row) => (
         <span>
@@ -2141,7 +2231,7 @@ export function RBACPage() {
       ),
     },
     {
-      title: 'Cluster',
+      title: 'Кластер',
       key: 'cluster',
       render: (_: unknown, row) => {
         const clusterId = row.database.cluster_id
@@ -2154,18 +2244,18 @@ export function RBACPage() {
         )
       },
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
       render: (_: unknown, row) => {
         const source = row.source
         const color = source === 'direct' ? 'blue' : source === 'group' ? 'purple' : 'gold'
-        return <Tag color={color}>{source}</Tag>
+        return <Tag color={color}>{source === 'cluster' ? 'через кластер' : effectiveSourceLabel(source)}</Tag>
       },
     },
     {
-      title: 'Via cluster',
+      title: 'Через кластер',
       key: 'via_cluster_id',
       render: (_: unknown, row) => {
         if (row.source !== 'cluster') return '-'
@@ -2179,11 +2269,11 @@ export function RBACPage() {
         )
       },
     },
-  ], [clusterNameById])
+  ], [clusterNameById, effectiveSourceLabel])
 
   const effectiveOperationTemplatesColumns: ColumnsType<EffectiveAccessOperationTemplateItem> = useMemo(() => [
     {
-      title: 'Template',
+      title: 'Шаблон операции',
       key: 'template',
       render: (_: unknown, row) => (
         <span>
@@ -2191,17 +2281,17 @@ export function RBACPage() {
         </span>
       ),
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel])
 
   const effectiveWorkflowTemplatesColumns: ColumnsType<EffectiveAccessWorkflowTemplateItem> = useMemo(() => [
     {
-      title: 'Template',
+      title: 'Шаблон рабочего процесса',
       key: 'template',
       render: (_: unknown, row) => (
         <span>
@@ -2209,17 +2299,17 @@ export function RBACPage() {
         </span>
       ),
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel])
 
   const effectiveArtifactsColumns: ColumnsType<EffectiveAccessArtifactItem> = useMemo(() => [
     {
-      title: 'Artifact',
+      title: 'Артефакт',
       key: 'artifact',
       render: (_: unknown, row) => (
         <span>
@@ -2227,38 +2317,38 @@ export function RBACPage() {
         </span>
       ),
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={row.source === 'direct' ? 'blue' : 'purple'}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel])
 
   const effectiveClusterSourcesColumns: ColumnsType<EffectiveAccessClusterSourceItem> = useMemo(() => [
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
       render: (_: unknown, row) => {
         const source = row.source
-        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{source}</Tag>
+        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{effectiveSourceLabel(source)}</Tag>
       },
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel])
 
   const effectiveDatabaseSourcesColumns: ColumnsType<EffectiveAccessDatabaseSourceItem> = useMemo(() => [
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
       render: (_: unknown, row) => {
         const source = row.source
-        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{source}</Tag>
+        return <Tag color={getEffectiveAccessSourceTagColor(source)}>{effectiveSourceLabel(source)}</Tag>
       },
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
     {
-      title: 'Via cluster',
+      title: 'Через кластер',
       key: 'via_cluster_id',
       render: (_: unknown, row) => {
         if (row.source !== 'cluster') return '-'
@@ -2272,34 +2362,34 @@ export function RBACPage() {
         )
       },
     },
-  ], [clusterNameById])
+  ], [clusterNameById, effectiveSourceLabel])
 
   const effectiveOperationTemplateSourcesColumns: ColumnsType<EffectiveAccessOperationTemplateSourceItem> = useMemo(() => [
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel])
 
   const effectiveWorkflowTemplateSourcesColumns: ColumnsType<EffectiveAccessWorkflowTemplateSourceItem> = useMemo(() => [
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel])
 
   const effectiveArtifactSourcesColumns: ColumnsType<EffectiveAccessArtifactSourceItem> = useMemo(() => [
     {
-      title: 'Source',
+      title: 'Источник',
       key: 'source',
-      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{row.source}</Tag>,
+      render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Level', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel])
 
   const selectedRoleForEditor = roleEditorRoleId
     ? roles.find((role) => role.id === roleEditorRoleId) ?? null
@@ -2581,7 +2671,7 @@ export function RBACPage() {
     return (
       <div>
         <Title level={2}>RBAC</Title>
-        <Text type="secondary">Loading...</Text>
+        <Text type="secondary">Загрузка…</Text>
       </div>
     )
   }
@@ -2663,29 +2753,29 @@ export function RBACPage() {
           const items = [
           {
             key: 'roles',
-            label: 'Roles',
+            label: 'Роли',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Card title="Create Role" size="small">
+                <Card title="Создать роль" size="small">
                   <Form
                     form={createRoleForm}
                     layout="inline"
                     onFinish={(values) => createRole.mutate(values, { onSuccess: () => createRoleForm.resetFields() })}
                   >
-                    <Form.Item name="name" rules={[{ required: true, message: 'name required' }]}>
-                      <Input placeholder="Role name" style={{ width: 240 }} />
+                    <Form.Item name="name" rules={[{ required: true, message: 'Укажите название роли' }]}>
+                      <Input placeholder="Название роли" style={{ width: 240 }} />
                     </Form.Item>
-                    <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                      <Input placeholder="Reason" style={{ width: 320 }} />
+                    <Form.Item name="reason" rules={[{ required: true, message: 'Укажите причину' }]}>
+                      <Input placeholder="Причина (обязательно)" style={{ width: 320 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" loading={createRole.isPending}>
-                        Create
+                        Создать
                       </Button>
                     </Form.Item>
                     <Form.Item>
                       <Button onClick={() => rolesQuery.refetch()} loading={rolesQuery.isFetching}>
-                        Refresh
+                        Обновить
                       </Button>
                     </Form.Item>
                   </Form>
@@ -2698,16 +2788,16 @@ export function RBACPage() {
                   )}
                 </Card>
 
-                <Card title="Roles" size="small">
+                <Card title="Роли" size="small">
                   <Space wrap style={{ marginBottom: 12 }}>
                     <Input
-                      placeholder="Search role"
+                      placeholder="Поиск роли"
                       style={{ width: 280 }}
                       value={roleSearch}
                       onChange={(e) => setRoleSearch(e.target.value)}
                     />
                     <Button onClick={() => rolesQuery.refetch()} loading={rolesQuery.isFetching}>
-                      Refresh
+                      Обновить
                     </Button>
                   </Space>
                   {rolesQuery.error && (
@@ -2743,12 +2833,6 @@ export function RBACPage() {
             label: 'Доступ к объектам',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {(rbacPermissionsResourceKey === 'clusters' || rbacPermissionsResourceKey === 'databases')
-                  ? levelsHintClustersDatabases
-                  : (rbacPermissionsResourceKey === 'artifacts')
-                    ? levelsHintArtifacts
-                    : levelsHintTemplatesWorkflows}
-
                 {rbacPermissionsResourceKey === 'databases' && (
                   <Alert
                     type="info"
@@ -2757,13 +2841,13 @@ export function RBACPage() {
                     description={(
                       <Space direction="vertical" size={4}>
                         <Text>
-                          1) Выберите режим <Text code>Кто → Где</Text> (подберите пользователя/роль и ИБ в фильтрах), или <Text code>Где → Кто</Text> (выберите ИБ слева и смотрите назначения справа).
+                          1) Выберите режим <Text code>Кто → Где</Text> (подберите пользователя/группу и ИБ в фильтрах), или <Text code>Где → Кто</Text> (выберите ИБ слева и смотрите назначения справа).
                         </Text>
                         <Text>
-                          2) В блоке “Выдать доступ” укажите уровень и <Text code>reason</Text>, затем нажмите <Text code>Grant</Text>.
+                          2) В блоке “Выдать доступ” укажите уровень и причину, затем нажмите “Выдать”.
                         </Text>
                         <Text type="secondary">
-                          3) Перепроверьте вкладку “Effective access”: строка = итог, раскрытие = источники (direct/group/cluster/database/...).
+                          3) Перепроверьте вкладку “Эффективный доступ”: строка = итог, раскрытие = источники (прямое/группа/через кластер/...).
                         </Text>
                       </Space>
                     )}
@@ -2776,11 +2860,11 @@ export function RBACPage() {
                       style={{ width: 260 }}
                       value={rbacPermissionsResourceKey}
                       options={[
-                        { label: 'Clusters', value: 'clusters' },
-                        { label: 'Databases', value: 'databases' },
-                        { label: 'Operation Templates', value: 'operation-templates' },
-                        { label: 'Workflow Templates', value: 'workflow-templates' },
-                        { label: 'Artifacts', value: 'artifacts' },
+                        { label: 'Кластеры', value: 'clusters' },
+                        { label: 'Базы', value: 'databases' },
+                        { label: 'Шаблоны операций', value: 'operation-templates' },
+                        { label: 'Шаблоны рабочих процессов', value: 'workflow-templates' },
+                        { label: 'Артефакты', value: 'artifacts' },
 	                      ]}
 	                      onChange={(value) => {
 	                        const nextKey = value as RbacPermissionsResourceKey
@@ -2804,8 +2888,8 @@ export function RBACPage() {
                         setRbacPermissionsList((prev) => ({ ...prev, principal_id: undefined, page: 1 }))
                       }}
 	                    >
-	                      <Radio.Button value="user">User</Radio.Button>
-	                      <Radio.Button value="role">Role</Radio.Button>
+	                      <Radio.Button value="user">Пользователь</Radio.Button>
+	                      <Radio.Button value="role">Группа</Radio.Button>
 	                    </Radio.Group>
 	                    <Segmented
 	                      value={rbacPermissionsViewMode}
@@ -2829,12 +2913,14 @@ export function RBACPage() {
                       name="principal_id"
                       rules={[{
                         required: true,
-                        message: rbacPermissionsPrincipalType === 'user' ? 'user required' : 'role required',
+                        message: rbacPermissionsPrincipalType === 'user' ? 'Выберите пользователя' : 'Выберите группу',
                       }]}
                     >
                       <RbacPrincipalPicker
                         principalType={rbacPermissionsPrincipalType}
                         allowClear
+                        placeholderUser="Пользователь"
+                        placeholderRole="Группа"
                         userOptions={userOptions}
                         userLoading={usersQuery.isFetching}
                         onUserSearch={setUserSearch}
@@ -2842,12 +2928,12 @@ export function RBACPage() {
                       />
                     </Form.Item>
 
-                    <Form.Item name="resource_id" rules={[{ required: true, message: 'resource required' }]}>
+                    <Form.Item name="resource_id" rules={[{ required: true, message: 'Выберите ресурс' }]}>
 	                      <RbacResourcePicker
 	                        resourceKey={rbacPermissionsResourceKey}
 	                        clusters={clusters}
 	                        disabled={rbacPermissionsViewMode === 'resource'}
-	                        placeholder="Resource"
+	                        placeholder="Ресурс"
 	                        width={360}
 	                        databaseLabelById={databasesLabelById.current}
 	                        onDatabasesLoaded={handleDatabasesLoaded}
@@ -2860,11 +2946,11 @@ export function RBACPage() {
                     </Form.Item>
 
                     <Form.Item name="notes">
-                      <Input placeholder="Notes (optional)" style={{ width: 220 }} />
+                      <Input placeholder="Комментарий (опционально)" style={{ width: 220 }} />
                     </Form.Item>
 
-                    <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                      <Input placeholder="Reason" style={{ width: 260 }} />
+                    <Form.Item name="reason" rules={[{ required: true, message: 'Укажите причину' }]}>
+                      <Input placeholder="Причина (обязательно)" style={{ width: 260 }} />
                     </Form.Item>
 
                     <Form.Item>
@@ -2874,7 +2960,7 @@ export function RBACPage() {
                         loading={rbacPermissionsGrantPending}
                         disabled={rbacPermissionsViewMode === 'resource' && !rbacPermissionsList.resource_id}
                       >
-                        Grant
+                        Выдать
                       </Button>
                     </Form.Item>
                   </Form>
@@ -2887,6 +2973,10 @@ export function RBACPage() {
 	                        title="Ресурсы"
 	                        mode={rbacPermissionsResourceKey === 'clusters' ? 'clusters' : 'databases'}
 	                        clusters={clusters}
+                        searchPlaceholder={rbacPermissionsResourceKey === 'clusters' ? 'Поиск кластеров' : 'Поиск баз'}
+                        loadingText="Загрузка…"
+                        loadMoreText="Загрузить ещё…"
+                        clearLabel="Снять выбор"
                         value={rbacPermissionsList.resource_id}
                         onChange={(id) => {
                           setRbacPermissionsList((prev) => ({ ...prev, resource_id: id, page: 1 }))
@@ -2897,7 +2987,7 @@ export function RBACPage() {
                     ) : (
                       <RbacResourceBrowser
                         title="Ресурсы"
-                        searchPlaceholder="Search resource"
+                        searchPlaceholder="Поиск ресурса"
                         searchValue={rbacPermissionsResourceSearchValue}
                         onSearchChange={setRbacPermissionsResourceSearchValue}
                         options={rbacPermissionsResourceBrowserOptions}
@@ -2907,6 +2997,7 @@ export function RBACPage() {
                           rbacPermissionsGrantForm.setFieldValue('resource_id', id)
                         }}
                         loading={rbacPermissionsResourceRef.loading}
+                        loadingText="Загрузка…"
                         onScroll={(event) => rbacPermissionsResourceRef.onPopupScroll?.(event)}
                         clearLabel="Снять выбор"
                         clearDisabled={!rbacPermissionsList.resource_id}
@@ -2926,10 +3017,10 @@ export function RBACPage() {
                           <Space direction="vertical" size={4}>
                             <Text>Выберите ресурс слева.</Text>
                             <Text type="secondary">
-                              Дальше: в блоке “Выдать доступ” выберите субъект, уровень и укажите reason.
+                              Дальше: в блоке “Выдать доступ” выберите субъект, уровень и укажите причину.
                             </Text>
                             <Text type="secondary">
-                              После изменений перепроверьте вкладку “Effective access”.
+                              После изменений перепроверьте вкладку “Эффективный доступ”.
                             </Text>
                           </Space>
                         ),
@@ -2937,12 +3028,12 @@ export function RBACPage() {
                       toolbar={(
                         <>
                           <Text>
-                            <Text strong>Resource:</Text> {rbacPermissionsSelectedResourceLabel}
+                            <Text strong>Ресурс:</Text> {rbacPermissionsSelectedResourceLabel}
                           </Text>
 
                           <Select
                             style={{ width: 140 }}
-                            placeholder="Level"
+                            placeholder="Уровень"
                             allowClear
                             value={rbacPermissionsList.level}
                             onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
@@ -2950,7 +3041,7 @@ export function RBACPage() {
                           />
 
                           <Input
-                            placeholder="Search"
+                            placeholder="Поиск"
                             style={{ width: 220 }}
                             value={rbacPermissionsList.search}
                             onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
@@ -2960,7 +3051,7 @@ export function RBACPage() {
                             onClick={() => rbacPermissionsTableConfig.refetch()}
                             loading={rbacPermissionsTableConfig.fetching}
                           >
-                            Refresh
+                            Обновить
                           </Button>
                         </>
                       )}
@@ -2973,7 +3064,7 @@ export function RBACPage() {
                       pageSize={rbacPermissionsList.pageSize}
                       onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
                       error={rbacPermissionsTableConfig.error}
-                      errorMessage="Не удалось загрузить permissions"
+                    errorMessage="Не удалось загрузить назначения"
                     />
                   </div>
                 )}
@@ -2987,6 +3078,33 @@ export function RBACPage() {
                     levelOptions={LEVEL_OPTIONS}
                     bulkGrant={bulkGrantClusterGroup}
                     bulkRevoke={bulkRevokeClusterGroup}
+                    i18n={{
+                      title: 'Массовые назначения (кластеры)',
+                      tabGrant: 'Выдать массово',
+                      tabRevoke: 'Отозвать массово',
+                      confirmGrantTitle: 'Подтвердить массовую выдачу (кластеры)',
+                      confirmRevokeTitle: 'Подтвердить массовый отзыв (кластеры)',
+                      applyText: 'Применить',
+                      cancelText: 'Отмена',
+                      roleLabel: 'Группа',
+                      levelLabel: 'Уровень',
+                      notesLabel: 'Комментарий',
+                      countLabel: 'Количество',
+                      exampleLabel: 'Пример',
+                      rolePlaceholder: 'Группа',
+                      notesPlaceholder: 'Комментарий (опционально)',
+                      reasonPlaceholder: 'Причина (обязательно)',
+                      idsPlaceholder: 'UUID кластеров (по одному в строке)',
+                      grantButton: 'Выдать массово',
+                      revokeButton: 'Отозвать массово',
+                      idsRequiredMessage: 'Укажите список кластеров',
+                      roleRequiredMessage: 'Выберите группу',
+                      reasonRequiredMessage: 'Укажите причину',
+                      grantSuccessMessage: (r) => `Массовая выдача: создано=${r.created}, обновлено=${r.updated}, пропущено=${r.skipped}`,
+                      revokeSuccessMessage: (r) => `Массовый отзыв: удалено=${r.deleted}, пропущено=${r.skipped}`,
+                      grantFailedMessage: 'Не удалось выполнить массовую выдачу',
+                      revokeFailedMessage: 'Не удалось выполнить массовый отзыв',
+                    }}
                   />
                 )}
 
@@ -2999,12 +3117,39 @@ export function RBACPage() {
                     levelOptions={LEVEL_OPTIONS}
                     bulkGrant={bulkGrantDatabaseGroup}
                     bulkRevoke={bulkRevokeDatabaseGroup}
+                    i18n={{
+                      title: 'Массовые назначения (базы)',
+                      tabGrant: 'Выдать массово',
+                      tabRevoke: 'Отозвать массово',
+                      confirmGrantTitle: 'Подтвердить массовую выдачу (базы)',
+                      confirmRevokeTitle: 'Подтвердить массовый отзыв (базы)',
+                      applyText: 'Применить',
+                      cancelText: 'Отмена',
+                      roleLabel: 'Группа',
+                      levelLabel: 'Уровень',
+                      notesLabel: 'Комментарий',
+                      countLabel: 'Количество',
+                      exampleLabel: 'Пример',
+                      rolePlaceholder: 'Группа',
+                      notesPlaceholder: 'Комментарий (опционально)',
+                      reasonPlaceholder: 'Причина (обязательно)',
+                      idsPlaceholder: 'ID баз (по одному в строке)',
+                      grantButton: 'Выдать массово',
+                      revokeButton: 'Отозвать массово',
+                      idsRequiredMessage: 'Укажите список баз',
+                      roleRequiredMessage: 'Выберите группу',
+                      reasonRequiredMessage: 'Укажите причину',
+                      grantSuccessMessage: (r) => `Массовая выдача: создано=${r.created}, обновлено=${r.updated}, пропущено=${r.skipped}`,
+                      revokeSuccessMessage: (r) => `Массовый отзыв: удалено=${r.deleted}, пропущено=${r.skipped}`,
+                      grantFailedMessage: 'Не удалось выполнить массовую выдачу',
+                      revokeFailedMessage: 'Не удалось выполнить массовый отзыв',
+                    }}
                   />
                 )}
 
                 {rbacPermissionsViewMode === 'principal' && (
                   <PermissionsTable
-                    title="Permissions"
+                    title="Назначения"
                     preamble={(!rbacPermissionsList.principal_id
                       && !rbacPermissionsList.resource_id
                       && !rbacPermissionsList.level
@@ -3015,9 +3160,9 @@ export function RBACPage() {
                           message="С чего начать"
                           description={(
                             <Space direction="vertical" size={4}>
-                              <Text>Выберите User/Role и (опционально) Resource/Level — так проще найти нужные назначения.</Text>
+                              <Text>Выберите пользователя/группу и (опционально) ресурс/уровень — так проще найти нужные назначения.</Text>
                               <Text type="secondary">Для сценария “Где → Кто” переключите режим выше на “Где → Кто”.</Text>
-                              <Text type="secondary">После изменений перепроверьте вкладку “Effective access”.</Text>
+                              <Text type="secondary">После изменений перепроверьте вкладку “Эффективный доступ”.</Text>
                             </Space>
                           )}
                         />
@@ -3029,6 +3174,8 @@ export function RBACPage() {
                           allowClear
                           value={rbacPermissionsList.principal_id}
                           onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, principal_id: value, page: 1 }))}
+                          placeholderUser="Пользователь"
+                          placeholderRole="Группа"
                           userOptions={userOptions}
                           userLoading={usersQuery.isFetching}
                           onUserSearch={setUserSearch}
@@ -3041,7 +3188,7 @@ export function RBACPage() {
                           allowClear
                           value={rbacPermissionsList.resource_id}
                           onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, resource_id: value, page: 1 }))}
-                          placeholder="Resource"
+                          placeholder="Ресурс"
                           width={360}
                           databaseLabelById={databasesLabelById.current}
                           onDatabasesLoaded={handleDatabasesLoaded}
@@ -3050,7 +3197,7 @@ export function RBACPage() {
 
                         <Select
                           style={{ width: 140 }}
-                          placeholder="Level"
+                          placeholder="Уровень"
                           allowClear
                           value={rbacPermissionsList.level}
                           onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
@@ -3058,7 +3205,7 @@ export function RBACPage() {
                         />
 
                         <Input
-                          placeholder="Search"
+                          placeholder="Поиск"
                           style={{ width: 220 }}
                           value={rbacPermissionsList.search}
                           onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
@@ -3068,7 +3215,7 @@ export function RBACPage() {
                           onClick={() => rbacPermissionsTableConfig.refetch()}
                           loading={rbacPermissionsTableConfig.fetching}
                         >
-                          Refresh
+                          Обновить
                         </Button>
                       </>
                     )}
@@ -3081,7 +3228,7 @@ export function RBACPage() {
                     pageSize={rbacPermissionsList.pageSize}
                     onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
                     error={rbacPermissionsTableConfig.error}
-                    errorMessage="Не удалось загрузить permissions"
+                    errorMessage="Не удалось загрузить назначения"
                   />
                 )}
               </Space>
@@ -3092,238 +3239,94 @@ export function RBACPage() {
             label: 'Роли пользователей',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Card title="Assign Roles to User" size="small">
-                  <Form
-                    form={assignRolesForm}
-                    layout="inline"
-                    initialValues={{ mode: 'replace' satisfies 'replace' | 'add' | 'remove' }}
-                    onFinish={(values) => {
-                      setSelectedRolesUserId(values.user_id)
-
-                      const mode = (values.mode ?? 'replace') as 'replace' | 'add' | 'remove'
-                      const selectedRoleIds = Array.from(new Set(values.group_ids ?? [])).sort((a, b) => a - b)
-                      const currentRoles = userRolesQuery.data?.roles ?? []
-                      const currentRoleIds = currentRoles.map((role) => role.id)
-                      const currentRoleIdSet = new Set(currentRoleIds)
-                      const selectedRoleIdSet = new Set(selectedRoleIds)
-
-                      const computeDiff = () => {
-                        const isCurrentRolesLoadedForUser = Boolean(
-                          userRolesQuery.data
-                          && userRolesQuery.data.user?.id === values.user_id
-                          && !userRolesQuery.isLoading
-                          && !userRolesQuery.error
-                        )
-
-                        if (!isCurrentRolesLoadedForUser) {
-                          return {
-                            added: [] as number[],
-                            removed: [] as number[],
-                            next: mode === 'replace' ? selectedRoleIds : null,
-                          }
-                        }
-
-                        if (mode === 'replace') {
-                          const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
-                          const removed = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id))
-                          return { added, removed, next: selectedRoleIds }
-                        }
-
-                        if (mode === 'add') {
-                          const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
-                          const next = Array.from(new Set([...currentRoleIds, ...selectedRoleIds])).sort((a, b) => a - b)
-                          return { added, removed: [] as number[], next }
-                        }
-
-                        const removed = selectedRoleIds.filter((id) => currentRoleIdSet.has(id))
-                        const next = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id)).sort((a, b) => a - b)
-                        return { added: [] as number[], removed, next }
-                      }
-
-                      const diff = computeDiff()
-                      const userLabel = userOptions.find((opt) => opt.value === values.user_id)?.label ?? `User #${values.user_id}`
-                      const modeLabel = mode === 'replace' ? 'Replace' : (mode === 'add' ? 'Add' : 'Remove')
-
-                      const renderRoleTags = (ids: number[]) => {
-                        if (ids.length === 0) {
-                          return <Tag color="default">-</Tag>
-                        }
-
-                        const max = 10
-                        const shown = ids.slice(0, max)
-                        return (
-                          <Space size={4} wrap>
-                            {shown.map((id) => (
-                              <Tag key={id}>{roleNameById.get(id) ?? `#${id}`}</Tag>
-                            ))}
-                            {ids.length > max && (
-                              <Text type="secondary">+{ids.length - max} ещё</Text>
-                            )}
-                          </Space>
-                        )
-                      }
-
-                      modal.confirm({
-                        title: 'Применить роли пользователю?',
-                        okText: 'Применить',
-                        cancelText: 'Отмена',
-                        content: (
-                          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                            <div>
-                              <Text type="secondary">Пользователь:</Text> <Text>{userLabel}</Text>
-                            </div>
-                            <div>
-                              <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
-                            </div>
-                            <div>
-                              <Text type="secondary">Выбрано ролей:</Text> <Text>{selectedRoleIds.length}</Text>
-                            </div>
-                            <div>
-                              <Text type="secondary">Выбранные роли:</Text> {renderRoleTags(selectedRoleIds)}
-                            </div>
-                            {userRolesQuery.data?.user?.id === values.user_id && !userRolesQuery.error && (
-                              <div>
-                                <Text type="secondary">Текущие роли:</Text> {renderRoleTags(currentRoleIds)}
-                              </div>
-                            )}
-
-                            {(userRolesQuery.isLoading || userRolesQuery.isFetching) && (
-                              <Alert
-                                type="info"
-                                showIcon
-                                message="Текущие роли загружаются"
-                                description="Diff может быть неполным."
-                              />
-                            )}
-                            {userRolesQuery.error && (
-                              <Alert
-                                type="warning"
-                                showIcon
-                                message="Не удалось загрузить текущие роли пользователя"
-                                description="Diff может быть неполным."
-                              />
-                            )}
-
-                            <div>
-                              <Text type="secondary">Добавится:</Text> {renderRoleTags(diff.added)}
-                            </div>
-                            <div>
-                              <Text type="secondary">Уберётся:</Text> {renderRoleTags(diff.removed)}
-                            </div>
-                            <div>
-                              <Text type="secondary">Итого после применения:</Text>{' '}
-                              <Text>{diff.next ? diff.next.length : '-'}</Text>
-                            </div>
-
-                            <div>
-                              <Text type="secondary">Reason:</Text> <Text>{values.reason}</Text>
-                            </div>
-                          </Space>
-                        ),
-                        onOk: async () => {
-                          await setUserRoles.mutateAsync(values)
-                        },
-                      })
-                    }}
-                  >
-                    <Form.Item name="user_id" rules={[{ required: true, message: 'user required' }]}>
-                      <Select
-                        style={{ width: 220 }}
-                        placeholder="User"
-                        allowClear
-                        showSearch
-                        filterOption={false}
-                        onSearch={setUserSearch}
-                        onChange={(value) => setSelectedRolesUserId(value)}
-                        options={userOptions}
-                        loading={usersQuery.isFetching}
-                      />
-                    </Form.Item>
-                    <Form.Item name="group_ids" rules={[{ required: true, message: 'roles required' }]}>
-                      <Select
-                        style={{ width: 320 }}
-                        placeholder="Roles"
-                        mode="multiple"
-                        options={roleOptions}
-                        showSearch
-                        optionFilterProp="label"
-                      />
-                    </Form.Item>
-                    <Form.Item name="mode">
-                      <Select
-                        style={{ width: 140 }}
-                        options={[
-                          { label: 'Replace', value: 'replace' },
-                          { label: 'Add', value: 'add' },
-                          { label: 'Remove', value: 'remove' },
-                        ]}
-                      />
-                    </Form.Item>
-                    <Form.Item name="reason" rules={[{ required: true, message: 'reason required' }]}>
-                      <Input placeholder="Reason" style={{ width: 320 }} />
-                    </Form.Item>
-                    <Form.Item>
-                      <Button type="primary" htmlType="submit" loading={setUserRoles.isPending}>
-                        Apply
-                      </Button>
-                    </Form.Item>
-                  </Form>
-
-                  {setUserRoles.error && (
-                    <Alert
-                      style={{ marginTop: 12 }}
-                      type="warning"
-                      message="Не удалось применить роли пользователю"
+                <Card title="Роли пользователей" size="small">
+                  <Space wrap style={{ marginBottom: 12 }}>
+                    <Segmented
+                      value={userRolesViewMode}
+                      options={[
+                        { label: 'Пользователь → Роли', value: 'user-to-roles' },
+                        { label: 'Роль → Пользователи', value: 'role-to-users' },
+                      ]}
+                      onChange={(value) => {
+                        setUserRolesViewMode(value as UserRolesViewMode)
+                        setUserRolesList((prev) => ({ ...prev, page: 1 }))
+                      }}
                     />
-                  )}
 
-                  {!selectedRolesUserId && (
+                    <Input
+                      placeholder="Поиск пользователя"
+                      style={{ width: 240 }}
+                      value={userRolesList.search}
+                      onChange={(e) => setUserRolesList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                    />
+
+                    <Select
+                      style={{ width: 360 }}
+                      placeholder={userRolesViewMode === 'role-to-users' ? 'Роль (обязательно)' : 'Фильтр по роли (опционально)'}
+                      allowClear={userRolesViewMode !== 'role-to-users'}
+                      value={userRolesList.role_id}
+                      onChange={(value) => setUserRolesList((prev) => ({ ...prev, role_id: value ?? undefined, page: 1 }))}
+                      options={roleOptions}
+                      showSearch
+                      optionFilterProp="label"
+                    />
+
+                    <Button
+                      onClick={() => userRolesUsersQuery.refetch()}
+                      loading={userRolesUsersQuery.isFetching}
+                      disabled={userRolesViewMode === 'role-to-users' && !userRolesList.role_id}
+                    >
+                      Обновить
+                    </Button>
+                  </Space>
+
+                  {userRolesViewMode === 'role-to-users' && !userRolesList.role_id && (
                     <Alert
-                      style={{ marginTop: 12 }}
+                      style={{ marginBottom: 12 }}
                       type="info"
                       showIcon
-                      message="С чего начать"
-                      description={(
-                        <Space direction="vertical" size={4}>
-                          <Text>Выберите пользователя, затем роли и режим (replace/add/remove).</Text>
-                          <Text type="secondary">Изменения требуют reason и попадают в audit.</Text>
-                        </Space>
-                      )}
+                      message="Выберите роль"
+                      description="Режим “Роль → Пользователи” показывает пользователей, у которых назначена выбранная роль."
                     />
                   )}
 
-                  {userRolesQuery.error && selectedRolesUserId && (
+                  {userRolesUsersQuery.error && (
                     <Alert
-                      style={{ marginTop: 12 }}
+                      style={{ marginBottom: 12 }}
                       type="warning"
-                      message="Не удалось загрузить текущие роли пользователя"
+                      showIcon
+                      message="Не удалось загрузить пользователей и роли"
                     />
                   )}
 
-                  {selectedRolesUserId && (
-                    <div style={{ marginTop: 12 }}>
-                      <Text type="secondary">Current roles:</Text>{' '}
-                      <Space size="small" wrap>
-                        {(userRolesQuery.data?.roles ?? []).length > 0
-                          ? (userRolesQuery.data?.roles ?? []).map((role) => <Tag key={role.id}>{role.name}</Tag>)
-                          : <Tag color="default">-</Tag>}
-                      </Space>
-                    </div>
-                  )}
+                  <Table
+                    size="small"
+                    columns={userRolesColumns}
+                    dataSource={(userRolesViewMode === 'role-to-users' && !userRolesList.role_id) ? [] : userRolesUsers}
+                    loading={userRolesUsersQuery.isFetching}
+                    rowKey="id"
+                    pagination={{
+                      current: userRolesList.page,
+                      pageSize: userRolesList.pageSize,
+                      total: (userRolesViewMode === 'role-to-users' && !userRolesList.role_id) ? 0 : totalUserRolesUsers,
+                      showSizeChanger: true,
+                      onChange: (page, pageSize) => setUserRolesList((prev) => ({ ...prev, page, pageSize })),
+                    }}
+                  />
                 </Card>
               </Space>
             ),
           },
           {
             key: 'effective-access',
-            label: 'Effective access',
+            label: 'Эффективный доступ',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Card title="Effective access" size="small">
+                <Card title="Эффективный доступ" size="small">
                   <Space wrap align="start">
                     <Select
                       style={{ width: 260 }}
-                      placeholder="User"
+                      placeholder="Пользователь"
                       allowClear
                       showSearch
                       filterOption={false}
@@ -3341,11 +3344,11 @@ export function RBACPage() {
                       style={{ width: 260 }}
                       value={effectiveResourceKey}
                       options={[
-                        { label: 'Clusters', value: 'clusters' },
-                        { label: 'Databases', value: 'databases' },
-                        { label: 'Operation Templates', value: 'operation-templates' },
-                        { label: 'Workflow Templates', value: 'workflow-templates' },
-                        { label: 'Artifacts', value: 'artifacts' },
+                        { label: 'Кластеры', value: 'clusters' },
+                        { label: 'Базы', value: 'databases' },
+                        { label: 'Шаблоны операций', value: 'operation-templates' },
+                        { label: 'Шаблоны рабочих процессов', value: 'workflow-templates' },
+                        { label: 'Артефакты', value: 'artifacts' },
                       ]}
                       onChange={(value) => setEffectiveResourceKey(value as RbacPermissionsResourceKey)}
                     />
@@ -3368,7 +3371,7 @@ export function RBACPage() {
                       loading={effectiveAccessQuery.isFetching}
                       disabled={!selectedEffectiveUserId}
                     >
-                      Refresh
+                      Обновить
                     </Button>
                   </Space>
 
@@ -3376,21 +3379,21 @@ export function RBACPage() {
                     <Alert
                       style={{ marginTop: 12 }}
                       type="info"
-                      message="Выберите пользователя для preview"
-                      description={(
-                        <Space direction="vertical" size={4}>
-                          <Text>Выберите пользователя и тип ресурса. Опционально укажите конкретный ресурс для фильтра.</Text>
-                          <Text type="secondary">Раскрытие строки показывает источники (direct/group/cluster/database/...).</Text>
-                        </Space>
-                      )}
-                    />
+                          message="Выберите пользователя для просмотра"
+                          description={(
+                            <Space direction="vertical" size={4}>
+                              <Text>Выберите пользователя и тип ресурса. Опционально укажите конкретный ресурс для фильтра.</Text>
+                              <Text type="secondary">Раскрытие строки показывает источники (прямое/группа/через кластер/...)</Text>
+                            </Space>
+                          )}
+                        />
                   )}
 
                   {effectiveAccessQuery.error && selectedEffectiveUserId && (
                     <Alert
                       style={{ marginTop: 12 }}
                       type="warning"
-                      message="Не удалось загрузить effective access"
+                      message="Не удалось загрузить эффективный доступ"
                     />
                   )}
                 </Card>
@@ -3398,7 +3401,7 @@ export function RBACPage() {
                 {selectedEffectiveUserId && (
                   <>
                     {effectiveResourceKey === 'clusters' && (
-                      <Card title="Clusters" size="small">
+                      <Card title="Кластеры" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.cluster.id}
@@ -3425,7 +3428,7 @@ export function RBACPage() {
                     )}
 
                     {effectiveResourceKey === 'databases' && (
-                      <Card title="Databases" size="small">
+                      <Card title="Базы" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.database.id}
@@ -3463,7 +3466,7 @@ export function RBACPage() {
                     )}
 
                     {effectiveResourceKey === 'operation-templates' && (
-                      <Card title="Operation templates" size="small">
+                      <Card title="Шаблоны операций" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.template.id}
@@ -3490,7 +3493,7 @@ export function RBACPage() {
                     )}
 
                     {effectiveResourceKey === 'workflow-templates' && (
-                      <Card title="Workflow templates" size="small">
+                      <Card title="Шаблоны рабочих процессов" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.template.id}
@@ -3517,7 +3520,7 @@ export function RBACPage() {
                     )}
 
                     {effectiveResourceKey === 'artifacts' && (
-                      <Card title="Artifacts" size="small">
+                      <Card title="Артефакты" size="small">
                         <Table
                           size="small"
                           rowKey={(row) => row.artifact.id}
@@ -3553,7 +3556,6 @@ export function RBACPage() {
             label: 'Cluster Permissions',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {levelsHintClustersDatabases}
                 <Card title="Grant Cluster Permission" size="small">
                   <Form
                     form={grantClusterForm}
@@ -3608,7 +3610,7 @@ export function RBACPage() {
                   {clusterPermissionsQuery.error && (
                     <Alert
                       type="warning"
-                      message="Не удалось загрузить permissions"
+                      message="Не удалось загрузить назначения"
                       style={{ marginBottom: 12 }}
                     />
                   )}
@@ -3734,7 +3736,7 @@ export function RBACPage() {
                   pageSize={clusterGroupList.pageSize}
                   onPaginationChange={(page, pageSize) => setClusterGroupList((prev) => ({ ...prev, page, pageSize }))}
                   error={clusterGroupPermissionsQuery.error}
-                  errorMessage="Не удалось загрузить permissions"
+                  errorMessage="Не удалось загрузить назначения"
                 />
               </Space>
             ),
@@ -3744,7 +3746,6 @@ export function RBACPage() {
             label: 'Database Permissions',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {levelsHintClustersDatabases}
                 <Card title="Grant Database Permission" size="small">
                   <Form
                     form={grantDatabaseForm}
@@ -3799,7 +3800,7 @@ export function RBACPage() {
                   {databasePermissionsQuery.error && (
                     <Alert
                       type="warning"
-                      message="Не удалось загрузить permissions"
+                      message="Не удалось загрузить назначения"
                       style={{ marginBottom: 12 }}
                     />
                   )}
@@ -3925,7 +3926,7 @@ export function RBACPage() {
                   pageSize={databaseGroupList.pageSize}
                   onPaginationChange={(page, pageSize) => setDatabaseGroupList((prev) => ({ ...prev, page, pageSize }))}
                   error={databaseGroupPermissionsQuery.error}
-                  errorMessage="Не удалось загрузить permissions"
+                  errorMessage="Не удалось загрузить назначения"
                 />
               </Space>
             ),
@@ -3935,7 +3936,6 @@ export function RBACPage() {
             label: 'Operation Templates',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {levelsHintTemplatesWorkflows}
                 <Card title="Grant Operation Template Permission (User)" size="small">
                   <Form
                     form={grantOperationTemplateForm}
@@ -4156,7 +4156,6 @@ export function RBACPage() {
             label: 'Workflow Templates',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {levelsHintTemplatesWorkflows}
                 <Card title="Grant Workflow Template Permission (User)" size="small">
                   <Form
                     form={grantWorkflowTemplateForm}
@@ -4377,7 +4376,6 @@ export function RBACPage() {
             label: 'Artifacts',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {levelsHintArtifacts}
                 <Card title="Grant Artifact Permission (User)" size="small">
                   <Form
                     form={grantArtifactForm}
@@ -4596,20 +4594,128 @@ export function RBACPage() {
           ] : []),
           {
             key: 'audit',
-            label: 'Audit',
+            label: 'Аудит',
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <RbacAuditPanel
                   enabled={canManageRbac}
+                  title="Аудит"
                   errorMessage="Не удалось загрузить журнал аудита"
                   undoLabel="Отменить"
                   undoModalTitle="Отменить изменение"
                   undoOkText="Отменить"
                   undoCancelText="Закрыть"
                   undoReasonPlaceholder="Причина (обязательно)"
+                  undoReasonRequiredMessage="Укажите причину"
                   undoSuccessMessage="Изменение отменено"
                   undoFailedMessage="Не удалось отменить изменение"
                   undoNotSupportedMessage="Для этой записи откат не поддерживается"
+                  i18n={{
+                    searchPlaceholder: 'Поиск',
+                    refreshText: 'Обновить',
+                    viewText: 'Открыть',
+                    detailsModalTitle: (id) => `Аудит #${id}`,
+                    columnCreatedAt: 'Время',
+                    columnActor: 'Оператор',
+                    columnAction: 'Действие',
+                    columnOutcome: 'Результат',
+                    columnTarget: 'Цель',
+                    columnReason: 'Причина',
+                    columnDetails: 'Детали',
+                    detailsAuditIdLabel: 'ID аудита:',
+                    detailsActionLabel: 'Действие:',
+                    detailsTargetLabel: 'Цель:',
+                    formatUndoTitle: (cmd) => {
+                      const meta = cmd.meta ?? {}
+                      const id = (key: string) => {
+                        const value = (meta as Record<string, unknown>)[key]
+                        return value === undefined || value === null ? '?' : String(value)
+                      }
+
+                      switch (cmd.code) {
+                        case 'delete_role':
+                          return `Откат: удалить роль #${id('groupId')}`
+                        case 'rename_role':
+                          return `Откат: вернуть имя роли #${id('groupId')}`
+                        case 'restore_user_roles':
+                          return `Откат: восстановить роли пользователя #${id('userId')}`
+                        case 'restore_role_capabilities':
+                          return `Откат: восстановить права роли #${id('groupId')}`
+
+                        case 'revoke_cluster_permission':
+                          return `Откат: отозвать доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+                        case 'restore_cluster_permission_level':
+                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+                        case 'restore_cluster_permission':
+                          return `Откат: восстановить доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+
+                        case 'revoke_database_permission':
+                          return `Откат: отозвать доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
+                        case 'restore_database_permission_level':
+                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к базе ${id('databaseId')}`
+                        case 'restore_database_permission':
+                          return `Откат: восстановить доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
+
+                        case 'revoke_cluster_group_permission':
+                          return `Откат: отозвать доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
+                        case 'restore_cluster_group_permission_level':
+                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к кластеру ${id('clusterId')}`
+                        case 'restore_cluster_group_permission':
+                          return `Откат: восстановить доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
+
+                        case 'revoke_database_group_permission':
+                          return `Откат: отозвать доступ группы #${id('groupId')} к базе ${id('databaseId')}`
+                        case 'restore_database_group_permission_level':
+                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к базе ${id('databaseId')}`
+                        case 'restore_database_group_permission':
+                          return `Откат: восстановить доступ группы #${id('groupId')} к базе ${id('databaseId')}`
+
+                        case 'revoke_operation_template_permission':
+                          return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+                        case 'restore_operation_template_permission_level':
+                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+                        case 'restore_operation_template_permission':
+                          return `Откат: восстановить доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+
+                        case 'revoke_operation_template_group_permission':
+                          return `Откат: отозвать доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+                        case 'restore_operation_template_group_permission_level':
+                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+                        case 'restore_operation_template_group_permission':
+                          return `Откат: восстановить доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+
+                        case 'revoke_workflow_template_permission':
+                          return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
+                        case 'restore_workflow_template_permission_level':
+                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
+                        case 'restore_workflow_template_permission':
+                          return `Откат: восстановить доступ пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
+
+                        case 'revoke_workflow_template_group_permission':
+                          return `Откат: отозвать доступ группы #${id('groupId')} к шаблону рабочего процесса ${id('templateId')}`
+                        case 'restore_workflow_template_group_permission_level':
+                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к шаблону рабочего процесса ${id('templateId')}`
+                        case 'restore_workflow_template_group_permission':
+                          return `Откат: восстановить доступ группы #${id('groupId')} к шаблону рабочего процесса ${id('templateId')}`
+
+                        case 'revoke_artifact_permission':
+                          return `Откат: отозвать доступ пользователя #${id('userId')} к артефакту ${id('artifactId')}`
+                        case 'restore_artifact_permission_level':
+                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к артефакту ${id('artifactId')}`
+                        case 'restore_artifact_permission':
+                          return `Откат: восстановить доступ пользователя #${id('userId')} к артефакту ${id('artifactId')}`
+
+                        case 'revoke_artifact_group_permission':
+                          return `Откат: отозвать доступ группы #${id('groupId')} к артефакту ${id('artifactId')}`
+                        case 'restore_artifact_group_permission_level':
+                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к артефакту ${id('artifactId')}`
+                        case 'restore_artifact_group_permission':
+                          return `Откат: восстановить доступ группы #${id('groupId')} к артефакту ${id('artifactId')}`
+                      }
+
+                      return `Откат: ${cmd.code}`
+                    },
+                  }}
                 />
               </Space>
             ),
@@ -4617,14 +4723,14 @@ export function RBACPage() {
           ...(isStaff ? [
             {
               key: 'ib-users',
-              label: 'Infobase Users',
+              label: 'Пользователи ИБ',
               children: (
                 <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                  <Card title="Infobase Users" size="small">
+                  <Card title="Пользователи ИБ" size="small">
                     {!selectedIbDatabaseId && (
                       <Alert
                         type="info"
-                        message="Select a database to view infobase users"
+                        message="Выберите базу, чтобы посмотреть пользователей инфобазы"
                         style={{ marginBottom: 12 }}
                       />
                     )}
@@ -4635,12 +4741,12 @@ export function RBACPage() {
                       loading={ibUsersQuery.isLoading}
                       rowKey="id"
                       columns={ibUsersColumns}
-                      searchPlaceholder="Search infobase users"
+                      searchPlaceholder="Поиск пользователей инфобазы"
                       toolbarActions={(
                         <Space>
                           <Select
                             style={{ width: 320 }}
-                            placeholder="Database"
+                            placeholder="База"
                             allowClear
                             value={selectedIbDatabaseId}
                             onChange={(value) => {
@@ -4662,11 +4768,11 @@ export function RBACPage() {
                             value={ibAuthFilter}
                             onChange={setIbAuthFilter}
                             options={[
-                              { label: 'Auth: Any', value: 'any' },
-                              { label: 'Auth: Local', value: 'local' },
-                              { label: 'Auth: AD', value: 'ad' },
-                              { label: 'Auth: Service', value: 'service' },
-                              { label: 'Auth: Other', value: 'other' },
+                              { label: 'Аутентификация: любая', value: 'any' },
+                              { label: 'Аутентификация: local', value: 'local' },
+                              { label: 'Аутентификация: AD', value: 'ad' },
+                              { label: 'Аутентификация: service', value: 'service' },
+                              { label: 'Аутентификация: другое', value: 'other' },
                             ]}
                           />
                           <Select
@@ -4674,9 +4780,9 @@ export function RBACPage() {
                             value={ibServiceFilter}
                             onChange={setIbServiceFilter}
                             options={[
-                              { label: 'Service: Any', value: 'any' },
-                              { label: 'Service: Yes', value: 'true' },
-                              { label: 'Service: No', value: 'false' },
+                              { label: 'Сервисный: любой', value: 'any' },
+                              { label: 'Сервисный: да', value: 'true' },
+                              { label: 'Сервисный: нет', value: 'false' },
                             ]}
                           />
                           <Select
@@ -4684,9 +4790,9 @@ export function RBACPage() {
                             value={ibHasUserFilter}
                             onChange={setIbHasUserFilter}
                             options={[
-                              { label: 'CC User: Any', value: 'any' },
-                              { label: 'CC User: Linked', value: 'true' },
-                              { label: 'CC User: Unlinked', value: 'false' },
+                              { label: 'CC пользователь: любой', value: 'any' },
+                              { label: 'CC пользователь: привязан', value: 'true' },
+                              { label: 'CC пользователь: не привязан', value: 'false' },
                             ]}
                           />
                           <Button
@@ -4694,14 +4800,14 @@ export function RBACPage() {
                             disabled={!selectedIbDatabaseId}
                             loading={ibUsersQuery.isFetching}
                           >
-                            Refresh
+                            Обновить
                           </Button>
                         </Space>
                       )}
                     />
                   </Card>
 
-                  <Card title={editingIbUser ? 'Edit Infobase User' : 'Add Infobase User'} size="small">
+                  <Card title={editingIbUser ? 'Редактировать пользователя ИБ' : 'Добавить пользователя ИБ'} size="small">
                     <Form
                       form={ibUserForm}
                       layout="vertical"
@@ -4709,13 +4815,13 @@ export function RBACPage() {
                     >
                       <Space size="large" align="start" wrap>
                         <Form.Item
-                          label="Database"
+                          label="База"
                           name="database_id"
-                          rules={[{ required: true, message: 'database_id required' }]}
+                          rules={[{ required: true, message: 'Выберите базу' }]}
                         >
                           <Select
                             style={{ width: 320 }}
-                            placeholder="Database"
+                            placeholder="База"
                             showSearch
                             filterOption={false}
                             onSearch={setDatabasesRefSearch}
@@ -4728,20 +4834,20 @@ export function RBACPage() {
                           />
                         </Form.Item>
                         <Form.Item
-                          label="IB Username"
+                          label="Логин ИБ"
                           name="ib_username"
-                          rules={[{ required: true, message: 'ib_username required' }]}
+                          rules={[{ required: true, message: 'Укажите логин ИБ' }]}
                         >
                           <Input placeholder="ib_user" />
                         </Form.Item>
-                        <Form.Item label="IB Display Name" name="ib_display_name">
-                          <Input placeholder="Display name" />
+                        <Form.Item label="Имя в ИБ" name="ib_display_name">
+                          <Input placeholder="Имя" />
                         </Form.Item>
-                        <Form.Item label="CC User" name="user_id">
+                        <Form.Item label="Пользователь CC" name="user_id">
                           <Select
                             showSearch
                             allowClear
-                            placeholder="Select user"
+                            placeholder="Выберите пользователя"
                             filterOption={false}
                             onSearch={(value) => setUserSearch(value)}
                             options={userOptions}
@@ -4749,44 +4855,44 @@ export function RBACPage() {
                             style={{ width: 220 }}
                           />
                         </Form.Item>
-                        <Form.Item label="Auth Type" name="auth_type">
+                        <Form.Item label="Тип аутентификации" name="auth_type">
                           <Select
                             style={{ width: 160 }}
                             options={[
-                              { label: 'Local', value: 'local' },
+                              { label: 'Локальная', value: 'local' },
                               { label: 'AD', value: 'ad' },
-                              { label: 'Service', value: 'service' },
-                              { label: 'Other', value: 'other' },
+                              { label: 'Сервисная', value: 'service' },
+                              { label: 'Другая', value: 'other' },
                             ]}
                           />
                         </Form.Item>
-                        <Form.Item label="Service Account" name="is_service" valuePropName="checked">
+                        <Form.Item label="Сервисный аккаунт" name="is_service" valuePropName="checked">
                           <Switch />
                         </Form.Item>
                       </Space>
-                      <Form.Item label="Roles" name="ib_roles">
-                        <Select mode="tags" tokenSeparators={[',']} placeholder="Roles (comma separated)" />
+                      <Form.Item label="Роли (ИБ)" name="ib_roles">
+                        <Select mode="tags" tokenSeparators={[',']} placeholder="Роли (через запятую)" />
                       </Form.Item>
                       <Form.Item
-                        label={editingIbUser ? 'New IB Password' : 'IB Password'}
+                        label={editingIbUser ? 'Новый пароль ИБ' : 'Пароль ИБ'}
                         name="ib_password"
                         help={(
                           <Space size="small">
                             {editingIbUser ? (
-                              <span>Use Update Password to apply changes.</span>
+                              <span>Нажмите “Обновить пароль”, чтобы применить изменения.</span>
                             ) : (
-                              <span>Set password during creation (optional).</span>
+                              <span>Можно задать пароль при создании (опционально).</span>
                             )}
                             <Tag color={editingIbUser?.ib_password_configured ? 'green' : 'default'}>
-                              {editingIbUser?.ib_password_configured ? 'Configured' : 'Missing'}
+                              {editingIbUser?.ib_password_configured ? 'Задан' : 'Не задан'}
                             </Tag>
                           </Space>
                         )}
                       >
-                        <Input.Password placeholder="Enter password" />
+                        <Input.Password placeholder="Введите пароль" />
                       </Form.Item>
-                      <Form.Item label="Notes" name="notes">
-                        <Input placeholder="Optional notes" />
+                      <Form.Item label="Комментарий" name="notes">
+                        <Input placeholder="Комментарий (опционально)" />
                       </Form.Item>
                       <Space>
                         <Button
@@ -4794,14 +4900,14 @@ export function RBACPage() {
                           onClick={handleIbUserSave}
                           loading={createInfobaseUser.isPending || updateInfobaseUser.isPending}
                         >
-                          {editingIbUser ? 'Update' : 'Add'}
+                          {editingIbUser ? 'Сохранить' : 'Добавить'}
                         </Button>
                         {editingIbUser && (
                           <Button
                             onClick={handleIbUserPasswordUpdate}
                             loading={setInfobaseUserPassword.isPending}
                           >
-                            Update Password
+                            Обновить пароль
                           </Button>
                         )}
                         {editingIbUser && (
@@ -4810,11 +4916,11 @@ export function RBACPage() {
                             onClick={handleIbUserPasswordReset}
                             loading={resetInfobaseUserPassword.isPending}
                           >
-                            Reset Password
+                            Сбросить пароль
                           </Button>
                         )}
                         {editingIbUser && (
-                          <Button onClick={handleIbUserResetForm}>Cancel edit</Button>
+                          <Button onClick={handleIbUserResetForm}>Отменить редактирование</Button>
                         )}
                       </Space>
                     </Form>
@@ -4840,6 +4946,209 @@ export function RBACPage() {
           return items.filter((item) => allowedKeys.has(String(item.key)))
         })()}
       />
+
+      <Modal
+        title={userRolesEditorUser ? `Роли пользователя: ${userRolesEditorUser.username} #${userRolesEditorUser.id}` : 'Роли пользователя'}
+        open={userRolesEditorOpen}
+        width={760}
+        okText="Продолжить"
+        cancelText="Отмена"
+        okButtonProps={{
+          disabled: !userRolesEditorCanSubmit,
+          loading: setUserRoles.isPending,
+        }}
+        onCancel={() => {
+          if (setUserRoles.isPending) return
+          setUserRolesEditorOpen(false)
+          setUserRolesEditorUser(null)
+          userRolesEditorForm.resetFields()
+        }}
+        onOk={() => userRolesEditorForm.submit()}
+        destroyOnClose
+      >
+        {!userRolesEditorUser ? (
+          <Alert type="warning" showIcon message="Пользователь не выбран" />
+        ) : (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text type="secondary">Текущие роли:</Text>{' '}
+              {renderLimitedRoleTags(userRolesEditorUser.roles ?? [])}
+            </div>
+
+            {userRolesEditorModeValue === 'replace' && (
+              <Alert
+                type="info"
+                showIcon
+                message="Режим replace — итоговый список ролей"
+                description="Можно оставить пустым, чтобы снять все роли у пользователя."
+              />
+            )}
+
+            <Form
+              form={userRolesEditorForm}
+              layout="vertical"
+              initialValues={{ mode: 'replace' as const }}
+              onFinish={(values) => {
+                if (!userRolesEditorUser) return
+
+                const mode = (values.mode ?? 'replace') as 'replace' | 'add' | 'remove'
+                const selectedRoleIds = Array.from(new Set(values.group_ids ?? [])).sort((a, b) => a - b)
+                const reason = String(values.reason ?? '').trim()
+
+                if (!reason) {
+                  message.error('Причина обязательна')
+                  return
+                }
+                if (mode !== 'replace' && selectedRoleIds.length === 0) {
+                  message.error('Выберите роли')
+                  return
+                }
+
+                const currentRoleIds = (userRolesEditorUser.roles ?? []).map((r) => r.id).sort((a, b) => a - b)
+                const currentRoleIdSet = new Set(currentRoleIds)
+                const selectedRoleIdSet = new Set(selectedRoleIds)
+
+                const modeLabel = mode === 'replace' ? 'Заменить' : (mode === 'add' ? 'Добавить' : 'Убрать')
+
+                const computeDiff = () => {
+                  if (mode === 'replace') {
+                    const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                    const removed = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id))
+                    return { added, removed, next: selectedRoleIds }
+                  }
+
+                  if (mode === 'add') {
+                    const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                    const next = Array.from(new Set([...currentRoleIds, ...selectedRoleIds])).sort((a, b) => a - b)
+                    return { added, removed: [] as number[], next }
+                  }
+
+                  const removed = selectedRoleIds.filter((id) => currentRoleIdSet.has(id))
+                  const next = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id)).sort((a, b) => a - b)
+                  return { added: [] as number[], removed, next }
+                }
+
+                const diff = computeDiff()
+                const isReplaceRemoveAll = mode === 'replace' && selectedRoleIds.length === 0 && currentRoleIds.length > 0
+
+                modal.confirm({
+                  title: isReplaceRemoveAll ? 'Снять все роли у пользователя?' : 'Применить роли пользователю?',
+                  okText: 'Применить',
+                  cancelText: 'Отмена',
+                  okButtonProps: { danger: isReplaceRemoveAll },
+                  content: (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      {isReplaceRemoveAll && (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message={`Будут сняты все роли (${currentRoleIds.length}).`}
+                          description="Это эквивалентно выдаче replace с пустым списком ролей."
+                        />
+                      )}
+
+                      <div>
+                        <Text type="secondary">Пользователь:</Text>{' '}
+                        <Text>{userRolesEditorUser.username} #{userRolesEditorUser.id}</Text>
+                      </div>
+                      <div>
+                        <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
+                      </div>
+
+                      <div>
+                        <Text type="secondary">Выбрано:</Text> <Text>{selectedRoleIds.length}</Text>
+                      </div>
+                      <div>
+                        <Text type="secondary">Выбранные роли:</Text> {renderRoleIdTags(selectedRoleIds)}
+                      </div>
+
+                      <div>
+                        <Text type="secondary">Текущие роли:</Text> {renderRoleIdTags(currentRoleIds)}
+                      </div>
+
+                      <div>
+                        <Text type="secondary">Добавится:</Text> {renderRoleIdTags(diff.added)}
+                      </div>
+                      <div>
+                        <Text type="secondary">Уберётся:</Text> {renderRoleIdTags(diff.removed)}
+                      </div>
+                      <div>
+                        <Text type="secondary">Итого после применения:</Text>{' '}
+                        <Text>{diff.next.length}</Text>
+                      </div>
+
+                      <div>
+                        <Text type="secondary">Причина:</Text> <Text>{reason}</Text>
+                      </div>
+                    </Space>
+                  ),
+                  onOk: async () => {
+                    try {
+                      await setUserRoles.mutateAsync({
+                        user_id: userRolesEditorUser.id,
+                        group_ids: selectedRoleIds,
+                        mode,
+                        reason,
+                      })
+                      message.success('Роли применены')
+                      setUserRolesEditorOpen(false)
+                      setUserRolesEditorUser(null)
+                      userRolesEditorForm.resetFields()
+                      userRolesUsersQuery.refetch()
+                    } catch {
+                      message.error('Не удалось применить роли')
+                      throw new Error('Failed to apply roles')
+                    }
+                  },
+                })
+              }}
+            >
+              <Form.Item label="Режим" name="mode">
+                <Select
+                  style={{ width: 240 }}
+                  options={[
+                    { label: 'Заменить (replace)', value: 'replace' },
+                    { label: 'Добавить (add)', value: 'add' },
+                    { label: 'Убрать (remove)', value: 'remove' },
+                  ]}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label={
+                  userRolesEditorModeValue === 'replace'
+                    ? 'Роли (итоговый список)'
+                    : (userRolesEditorModeValue === 'add' ? 'Роли для добавления' : 'Роли для удаления')
+                }
+                name="group_ids"
+              >
+                <Select
+                  mode="multiple"
+                  style={{ width: '100%' }}
+                  placeholder={
+                    userRolesEditorModeValue === 'replace'
+                      ? 'Выберите роли (можно очистить, чтобы снять все)'
+                      : (userRolesEditorModeValue === 'add' ? 'Выберите роли' : 'Выберите роли из текущих')
+                  }
+                  options={userRolesEditorModeValue === 'remove'
+                    ? (userRolesEditorUser.roles ?? []).map((r) => ({ label: `${r.name} #${r.id}`, value: r.id }))
+                    : roleOptions}
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Причина"
+                name="reason"
+                rules={[{ required: true, message: 'Укажите причину' }]}
+              >
+                <Input placeholder="Причина (обязательно)" />
+              </Form.Item>
+            </Form>
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         title={selectedRoleForUsage ? `Использование роли: ${selectedRoleForUsage.name}` : 'Использование роли'}
@@ -4891,18 +5200,18 @@ export function RBACPage() {
             )}
 
             <Space wrap>
-              <Tag>Users: {selectedRoleForUsage.users_count}</Tag>
-              <Tag>Capabilities: {selectedRoleForUsage.permissions_count}</Tag>
+              <Tag>Пользователей: {selectedRoleForUsage.users_count}</Tag>
+              <Tag>Прав: {selectedRoleForUsage.permissions_count}</Tag>
             </Space>
 
             <div>
-              <Text strong>Назначения (bindings):</Text>
+              <Text strong>Назначения:</Text>
               <Space wrap style={{ marginTop: 8 }}>
-                <Tag>Clusters: {roleUsageTotals.clusters}</Tag>
-                <Tag>Databases: {roleUsageTotals.databases}</Tag>
-                <Tag>Operation templates: {roleUsageTotals.operationTemplates}</Tag>
-                <Tag>Workflow templates: {roleUsageTotals.workflowTemplates}</Tag>
-                <Tag>Artifacts: {roleUsageTotals.artifacts}</Tag>
+                <Tag>Кластеры: {roleUsageTotals.clusters}</Tag>
+                <Tag>Базы: {roleUsageTotals.databases}</Tag>
+                <Tag>Шаблоны операций: {roleUsageTotals.operationTemplates}</Tag>
+                <Tag>Шаблоны рабочих процессов: {roleUsageTotals.workflowTemplates}</Tag>
+                <Tag>Артефакты: {roleUsageTotals.artifacts}</Tag>
               </Space>
               {roleUsageLoading && (
                 <div style={{ marginTop: 8 }}>
@@ -4919,9 +5228,12 @@ export function RBACPage() {
       </Modal>
 
       <ReasonModal
-        title="Clone role"
+        title="Клонировать роль"
         open={cloneRoleOpen}
-        okText="Create"
+        okText="Создать"
+        cancelText="Отмена"
+        reasonPlaceholder="Причина (обязательно)"
+        requiredMessage="Укажите причину"
         onCancel={() => {
           setCloneRoleOpen(false)
           setCloneRoleSourceRoleId(null)
@@ -4934,12 +5246,12 @@ export function RBACPage() {
           if (!cloneRoleSourceRoleId) return
           const source = roles.find((role) => role.id === cloneRoleSourceRoleId)
           if (!source) {
-            message.error('Source role not found')
+            message.error('Исходная роль не найдена')
             return
           }
           const name = cloneRoleName.trim()
           if (!name) {
-            message.error('Name is required')
+            message.error('Укажите имя роли')
             return
           }
 
@@ -4951,29 +5263,32 @@ export function RBACPage() {
               mode: 'replace',
               reason,
             })
-            message.success(`Role cloned: ${created.name} #${created.id}`)
+            message.success(`Роль склонирована: ${created.name} #${created.id}`)
             setCloneRoleOpen(false)
             setCloneRoleSourceRoleId(null)
           } catch {
-            message.error('Clone failed')
+            message.error('Не удалось клонировать роль')
           }
         }}
       >
         <Alert
           type="info"
-          message={cloneRoleSourceRoleId ? `Source role id: ${cloneRoleSourceRoleId}` : 'Select source role'}
+          message={cloneRoleSourceRoleId ? `ID исходной роли: ${cloneRoleSourceRoleId}` : 'Выберите исходную роль'}
         />
         <Input
-          placeholder="New role name"
+          placeholder="Название новой роли"
           value={cloneRoleName}
           onChange={(e) => setCloneRoleName(e.target.value)}
         />
       </ReasonModal>
 
       <ReasonModal
-        title={selectedRoleForEditor ? `Role capabilities: ${selectedRoleForEditor.name}` : 'Role capabilities'}
+        title={selectedRoleForEditor ? `Права роли: ${selectedRoleForEditor.name}` : 'Права роли'}
         open={roleEditorOpen}
-        okText="Save"
+        okText="Сохранить"
+        cancelText="Отмена"
+        reasonPlaceholder="Причина (обязательно)"
+        requiredMessage="Укажите причину"
         onCancel={() => setRoleEditorOpen(false)}
         okButtonProps={{
           disabled: !roleEditorRoleId,
@@ -5003,7 +5318,7 @@ export function RBACPage() {
             type={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0) ? 'info' : 'success'}
             showIcon
             message={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0)
-              ? `Изменения capabilities: +${roleEditorDiff.added.length} / -${roleEditorDiff.removed.length}`
+              ? `Изменения прав: +${roleEditorDiff.added.length} / -${roleEditorDiff.removed.length}`
               : 'Изменений нет'}
             description={(
               <Space direction="vertical" size={4}>
@@ -5026,7 +5341,7 @@ export function RBACPage() {
         <Select
           mode="multiple"
           style={{ width: '100%' }}
-          placeholder="Capabilities"
+          placeholder="Права"
           options={capabilityOptions}
           value={roleEditorPermissionCodes}
           onChange={(value) => setRoleEditorPermissionCodes(value)}
@@ -5036,9 +5351,12 @@ export function RBACPage() {
       </ReasonModal>
 
       <ReasonModal
-        title="Rename role"
+        title="Переименовать роль"
         open={renameRoleOpen}
-        okText="Save"
+        okText="Сохранить"
+        cancelText="Отмена"
+        reasonPlaceholder="Причина (обязательно)"
+        requiredMessage="Укажите причину"
         onCancel={() => setRenameRoleOpen(false)}
         okButtonProps={{
           disabled: !renameRoleRoleId || !renameRoleName.trim(),
@@ -5048,20 +5366,23 @@ export function RBACPage() {
           if (!renameRoleRoleId) return
           const name = renameRoleName.trim()
           if (!name) {
-            message.error('Name is required')
+            message.error('Укажите имя роли')
             return
           }
           await updateRole.mutateAsync({ group_id: renameRoleRoleId, name, reason })
           setRenameRoleOpen(false)
         }}
       >
-        <Input placeholder="Role name" value={renameRoleName} onChange={(e) => setRenameRoleName(e.target.value)} />
+        <Input placeholder="Имя роли" value={renameRoleName} onChange={(e) => setRenameRoleName(e.target.value)} />
       </ReasonModal>
 
       <ReasonModal
-        title="Delete role"
+        title="Удалить роль"
         open={deleteRoleOpen}
-        okText="Delete"
+        okText="Удалить"
+        cancelText="Отмена"
+        reasonPlaceholder="Причина (обязательно)"
+        requiredMessage="Укажите причину"
         okButtonProps={{ danger: true, disabled: !deleteRoleRoleId, loading: deleteRole.isPending }}
         onCancel={() => setDeleteRoleOpen(false)}
         onOk={async (reason) => {
@@ -5072,7 +5393,7 @@ export function RBACPage() {
       >
         <Alert
           type="warning"
-          message="Role будет удалена, если нет участников/perms/bindings."
+          message="Роль будет удалена, если нет участников/прав/назначений."
         />
       </ReasonModal>
     </div>

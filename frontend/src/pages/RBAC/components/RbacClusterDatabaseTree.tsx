@@ -27,6 +27,10 @@ export function RbacClusterDatabaseTree(props: {
   width?: number
   height?: number
   onDatabasesLoaded?: (items: DatabaseRef[]) => void
+  searchPlaceholder?: string
+  loadingText?: string
+  loadMoreText?: string
+  clearLabel?: string
 }) {
   const [search, setSearch] = useState<string>('')
   const debouncedSearch = useDebouncedValue(search, 300)
@@ -53,6 +57,9 @@ export function RbacClusterDatabaseTree(props: {
     return [props.mode === 'clusters' ? clusterKey(props.value) : databaseKey(props.value)]
   }, [props.mode, props.value])
 
+  const loadingText = props.loadingText ?? 'Loading...'
+  const loadMoreText = props.loadMoreText ?? 'Load more...'
+
   const treeData: DataNode[] = useMemo(() => {
     return filteredClusters.map((cluster) => {
       const st = clusterDatabases[cluster.id]
@@ -69,26 +76,26 @@ export function RbacClusterDatabaseTree(props: {
               isLeaf: true,
               selectable: props.mode === 'databases',
             })),
-            ...(st.loading
-              ? [
-                  {
-                    key: `loading:${cluster.id}`,
-                    title: <Text type="secondary">Loading...</Text>,
-                    isLeaf: true,
-                    selectable: false,
-                  },
-                ]
-              : st.items.length < st.total
-                ? [
-                    {
-                      key: loadMoreKey(cluster.id),
-                      title: <Text type="secondary">Load more...</Text>,
-                      isLeaf: true,
-                    },
-                  ]
-                : []),
-          ]
-        : undefined
+	            ...(st.loading
+	              ? [
+	                  {
+	                    key: `loading:${cluster.id}`,
+	                    title: <Text type="secondary">{loadingText}</Text>,
+	                    isLeaf: true,
+	                    selectable: false,
+	                  },
+	                ]
+	              : st.items.length < st.total
+	                ? [
+	                    {
+	                      key: loadMoreKey(cluster.id),
+	                      title: <Text type="secondary">{loadMoreText}</Text>,
+	                      isLeaf: true,
+	                    },
+	                  ]
+	                : []),
+	          ]
+	        : undefined
 
       return {
         key: clusterKey(cluster.id),
@@ -97,11 +104,11 @@ export function RbacClusterDatabaseTree(props: {
             {cluster.name} <Text type="secondary">#{cluster.id}</Text>
           </span>
         ),
-        selectable: props.mode === 'clusters',
-        children,
-      }
-    })
-  }, [filteredClusters, clusterDatabases, props.mode])
+	        selectable: props.mode === 'clusters',
+	        children,
+	      }
+	    })
+	  }, [filteredClusters, clusterDatabases, loadMoreText, loadingText, props.mode])
 
   const fetchDatabasesPage = async (clusterId: string, offset: number) => {
     const params: Record<string, unknown> = { cluster_id: clusterId, limit: DB_PAGE_SIZE, offset }
@@ -192,7 +199,7 @@ export function RbacClusterDatabaseTree(props: {
     <Card title={props.title ?? 'Clusters -> Databases'} size="small" style={{ width: props.width ?? 420 }}>
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Input
-          placeholder={props.mode === 'clusters' ? 'Search clusters' : 'Search databases'}
+          placeholder={props.searchPlaceholder ?? (props.mode === 'clusters' ? 'Search clusters' : 'Search databases')}
           allowClear
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -218,7 +225,7 @@ export function RbacClusterDatabaseTree(props: {
           />
         </div>
         <Button size="small" disabled={!props.value} onClick={() => props.onChange(undefined)}>
-          Clear selection
+          {props.clearLabel ?? 'Clear selection'}
         </Button>
       </Space>
     </Card>

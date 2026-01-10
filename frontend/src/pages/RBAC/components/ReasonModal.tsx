@@ -14,6 +14,7 @@ export function ReasonModal(props: {
   onOk: (reason: string) => Promise<void> | void
   children?: ReactNode
   reasonPlaceholder?: string
+  requiredMessage?: string
 }) {
   const { message } = App.useApp()
   const [reason, setReason] = useState<string>('')
@@ -45,7 +46,7 @@ export function ReasonModal(props: {
       okButtonProps={mergedOkButtonProps}
       onOk={async () => {
         if (!trimmedReason) {
-          message.error('Reason is required')
+          message.error(props.requiredMessage ?? 'Reason is required')
           return
         }
         await props.onOk(trimmedReason)
