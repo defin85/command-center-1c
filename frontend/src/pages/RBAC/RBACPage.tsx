@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, Tag, Switch, Table, Modal, Radio, Segmented, Popover } from 'antd'
+import { App, Alert, Badge, Button, Card, Form, Input, Modal, Popover, Radio, Segmented, Select, Space, Switch, Table, Tabs, Tooltip, Typography, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { ClusterPermission } from '../../api/generated/model/clusterPermission'
@@ -120,6 +120,9 @@ type RbacPermissionsTableConfig = {
 
 type UserRolesViewMode = 'user-to-roles' | 'role-to-users'
 
+const LS_RBAC_LEVELS_HINT_DISMISSED = 'cc1c_rbac_levels_hint_dismissed'
+const LS_RBAC_USER_ROLES_TABLE_HINT_DISMISSED = 'cc1c_rbac_user_roles_table_hint_dismissed'
+
 const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelCode }> = [
   { label: 'VIEW', value: 'VIEW' },
   { label: 'OPERATE', value: 'OPERATE' },
@@ -158,6 +161,27 @@ export function RBACPage() {
     cancelText: 'Отмена',
     requiredMessage: 'Укажите причину',
   })
+  const clusterDatabasePickerI18n = useMemo(() => ({
+    clearText: 'Очистить',
+    modalTitleClusters: 'Выбор кластера',
+    modalTitleDatabases: 'Выбор базы',
+    treeTitle: 'Ресурсы',
+    searchPlaceholderClusters: 'Поиск кластеров',
+    searchPlaceholderDatabases: 'Поиск баз',
+    loadingText: 'Загрузка…',
+    loadMoreText: 'Загрузить ещё…',
+    clearSelectionText: 'Снять выбор',
+  }), [])
+
+  const [permissionLevelsHintDismissed, setPermissionLevelsHintDismissed] = useState<boolean>(() => (
+    localStorage.getItem(LS_RBAC_LEVELS_HINT_DISMISSED) === '1'
+  ))
+  const [permissionLevelsHintExpanded, setPermissionLevelsHintExpanded] = useState<boolean>(true)
+
+  const [userRolesTableHintDismissed, setUserRolesTableHintDismissed] = useState<boolean>(() => (
+    localStorage.getItem(LS_RBAC_USER_ROLES_TABLE_HINT_DISMISSED) === '1'
+  ))
+
   const hasToken = Boolean(localStorage.getItem('auth_token'))
   const meQuery = useMe({ enabled: hasToken })
   const isStaff = Boolean(meQuery.data?.is_staff)
@@ -368,6 +392,50 @@ export function RBACPage() {
     page: number
     pageSize: number
   }>({ search: '', page: 1, pageSize: 50 })
+
+  useEffect(() => {
+    if (permissionLevelsHintDismissed) return
+    if (!permissionLevelsHintExpanded) return
+
+    const startedWorking = (
+      rbacMode !== 'assignments'
+      || rbacActiveTabKey !== 'permissions'
+      || rbacPermissionsResourceKey !== 'databases'
+      || rbacPermissionsPrincipalType !== 'user'
+      || rbacPermissionsViewMode !== 'principal'
+      || Boolean(rbacPermissionsList.principal_id)
+      || Boolean(rbacPermissionsList.resource_id)
+      || Boolean(rbacPermissionsList.level)
+      || rbacPermissionsList.search.trim().length > 0
+      || userRolesViewMode !== 'user-to-roles'
+      || userRolesList.search.trim().length > 0
+      || typeof userRolesList.role_id === 'number'
+      || typeof selectedEffectiveUserId === 'number'
+      || effectiveResourceKey !== 'databases'
+      || typeof effectiveResourceId === 'string'
+    )
+
+    if (!startedWorking) return
+    setPermissionLevelsHintExpanded(false)
+  }, [
+    effectiveResourceId,
+    effectiveResourceKey,
+    permissionLevelsHintDismissed,
+    permissionLevelsHintExpanded,
+    rbacActiveTabKey,
+    rbacMode,
+    rbacPermissionsList.level,
+    rbacPermissionsList.principal_id,
+    rbacPermissionsList.resource_id,
+    rbacPermissionsList.search,
+    rbacPermissionsPrincipalType,
+    rbacPermissionsResourceKey,
+    rbacPermissionsViewMode,
+    selectedEffectiveUserId,
+    userRolesList.role_id,
+    userRolesList.search,
+    userRolesViewMode,
+  ])
 
   const [clusterGroupList, setClusterGroupList] = useState<{
     group_id?: number
@@ -2072,6 +2140,11 @@ export function RBACPage() {
   const roleOptions = useMemo(() => (
     roles.map((role) => ({ label: `${role.name} #${role.id}`, value: role.id }))
   ), [roles])
+  const selectedRoleForUserRoles = useMemo(() => (
+    typeof userRolesList.role_id === 'number'
+      ? roles.find((role) => role.id === userRolesList.role_id) ?? null
+      : null
+  ), [roles, userRolesList.role_id])
 
   const userRolesUsers = userRolesUsersQuery.data?.users ?? []
   const totalUserRolesUsers = typeof userRolesUsersQuery.data?.total === 'number'
@@ -2152,14 +2225,22 @@ export function RBACPage() {
     {
       title: 'Роли',
       key: 'roles',
-      render: (_: unknown, row) => renderLimitedRoleTags(row.roles ?? []),
+      render: (_: unknown, row) => {
+        const roles = row.roles ?? []
+        return (
+          <Space size={8} wrap>
+            <Badge count={roles.length} showZero />
+            {renderLimitedRoleTags(roles)}
+          </Space>
+        )
+      },
     },
     {
       title: '',
       key: 'actions',
       width: 120,
       render: (_: unknown, row) => (
-        <Button size="small" onClick={() => openUserRolesEditor(row)}>
+        <Button size="small" data-testid={`rbac-user-roles-edit-${row.id}`} onClick={() => openUserRolesEditor(row)}>
           Изменить
         </Button>
       ),
@@ -2692,28 +2773,47 @@ export function RBACPage() {
   return (
     <div>
       <Title level={2}>RBAC</Title>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="Подсказка по уровням VIEW / OPERATE / MANAGE / ADMIN"
-        description={(
-          <Space direction="vertical" size={4}>
-            <Text>
-              <Tag>VIEW</Tag> видеть/читать (списки/детали/метаданные).
-            </Text>
-            <Text>
-              <Tag>OPERATE</Tag> выполнять операции, без изменения конфигурации.
-            </Text>
-            <Text>
-              <Tag>MANAGE</Tag> менять настройки/конфигурацию объекта.
-            </Text>
-            <Text>
-              <Tag>ADMIN</Tag> самый высокий уровень (в т.ч. разрушительные/владельческие действия, если домен различает).
-            </Text>
-          </Space>
-        )}
-      />
+      {!permissionLevelsHintDismissed && (
+        <Alert
+          type="info"
+          showIcon
+          closable
+          style={{ marginBottom: 16 }}
+          afterClose={() => {
+            localStorage.setItem(LS_RBAC_LEVELS_HINT_DISMISSED, '1')
+            setPermissionLevelsHintDismissed(true)
+          }}
+          message={(
+            <Space size={8}>
+              <Text>Подсказка по уровням VIEW / OPERATE / MANAGE / ADMIN</Text>
+              <Button
+                type="link"
+                size="small"
+                style={{ paddingInline: 0, height: 20 }}
+                onClick={() => setPermissionLevelsHintExpanded((prev) => !prev)}
+              >
+                {permissionLevelsHintExpanded ? 'Свернуть' : 'Показать'}
+              </Button>
+            </Space>
+          )}
+          description={permissionLevelsHintExpanded ? (
+            <Space direction="vertical" size={4}>
+              <Text>
+                <Tag>VIEW</Tag> видеть/читать (списки/детали/метаданные).
+              </Text>
+              <Text>
+                <Tag>OPERATE</Tag> выполнять операции, без изменения конфигурации.
+              </Text>
+              <Text>
+                <Tag>MANAGE</Tag> менять настройки/конфигурацию объекта.
+              </Text>
+              <Text>
+                <Tag>ADMIN</Tag> самый высокий уровень (в т.ч. разрушительные/владельческие действия, если домен различает).
+              </Text>
+            </Space>
+          ) : undefined}
+        />
+      )}
       <Space style={{ marginBottom: 12 }}>
         <Radio.Group
           buttonStyle="solid"
@@ -2753,7 +2853,7 @@ export function RBACPage() {
           const items = [
           {
             key: 'roles',
-            label: 'Роли',
+            label: <span data-testid="rbac-tab-roles">Роли</span>,
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="Создать роль" size="small">
@@ -2830,7 +2930,7 @@ export function RBACPage() {
           },
           {
             key: 'permissions',
-            label: 'Доступ к объектам',
+            label: <span data-testid="rbac-tab-permissions">Доступ к объектам</span>,
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 {rbacPermissionsResourceKey === 'databases' && (
@@ -2929,16 +3029,21 @@ export function RBACPage() {
                     </Form.Item>
 
                     <Form.Item name="resource_id" rules={[{ required: true, message: 'Выберите ресурс' }]}>
-	                      <RbacResourcePicker
-	                        resourceKey={rbacPermissionsResourceKey}
-	                        clusters={clusters}
-	                        disabled={rbacPermissionsViewMode === 'resource'}
-	                        placeholder="Ресурс"
-	                        width={360}
-	                        databaseLabelById={databasesLabelById.current}
-	                        onDatabasesLoaded={handleDatabasesLoaded}
-	                        select={rbacPermissionsResourceRef}
-	                      />
+                      <Tooltip title="Ресурс — куда выдаём доступ (кластер/база/шаблон/артефакт).">
+                        <span data-testid="rbac-permissions-grant-resource">
+                          <RbacResourcePicker
+                            resourceKey={rbacPermissionsResourceKey}
+                            clusters={clusters}
+                            disabled={rbacPermissionsViewMode === 'resource'}
+                            placeholder="Ресурс"
+                            width={360}
+                            databaseLabelById={databasesLabelById.current}
+                            onDatabasesLoaded={handleDatabasesLoaded}
+                            select={rbacPermissionsResourceRef}
+                            clusterDatabasePickerI18n={clusterDatabasePickerI18n}
+                          />
+                        </span>
+                      </Tooltip>
                     </Form.Item>
 
                     <Form.Item name="level" rules={[{ required: true }]}>
@@ -2946,7 +3051,9 @@ export function RBACPage() {
                     </Form.Item>
 
                     <Form.Item name="notes">
-                      <Input placeholder="Комментарий (опционально)" style={{ width: 220 }} />
+                      <Tooltip title="Комментарий к назначению (не причина).">
+                        <Input placeholder="Комментарий (опционально)" style={{ width: 220 }} />
+                      </Tooltip>
                     </Form.Item>
 
                     <Form.Item name="reason" rules={[{ required: true, message: 'Укажите причину' }]}>
@@ -3193,6 +3300,7 @@ export function RBACPage() {
                           databaseLabelById={databasesLabelById.current}
                           onDatabasesLoaded={handleDatabasesLoaded}
                           select={rbacPermissionsResourceRef}
+                          clusterDatabasePickerI18n={clusterDatabasePickerI18n}
                         />
 
                         <Select
@@ -3236,7 +3344,7 @@ export function RBACPage() {
           },
           {
             key: 'user-roles',
-            label: 'Роли пользователей',
+            label: <span data-testid="rbac-tab-user-roles">Роли пользователей</span>,
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="Роли пользователей" size="small">
@@ -3271,6 +3379,13 @@ export function RBACPage() {
                       optionFilterProp="label"
                     />
 
+                    {userRolesViewMode === 'role-to-users' && selectedRoleForUserRoles && (
+                      <Space size={6}>
+                        <Text type="secondary">Пользователей в роли:</Text>
+                        <Badge count={selectedRoleForUserRoles.users_count} showZero />
+                      </Space>
+                    )}
+
                     <Button
                       onClick={() => userRolesUsersQuery.refetch()}
                       loading={userRolesUsersQuery.isFetching}
@@ -3278,7 +3393,48 @@ export function RBACPage() {
                     >
                       Обновить
                     </Button>
+
+                    {userRolesTableHintDismissed && (
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ paddingInline: 0, height: 22 }}
+                        onClick={() => {
+                          localStorage.removeItem(LS_RBAC_USER_ROLES_TABLE_HINT_DISMISSED)
+                          setUserRolesTableHintDismissed(false)
+                        }}
+                      >
+                        Показать подсказку
+                      </Button>
+                    )}
                   </Space>
+
+                  {!userRolesTableHintDismissed && (
+                    <Alert
+                      style={{ marginBottom: 12 }}
+                      type="info"
+                      showIcon
+                      closable
+                      message="Как читать таблицу"
+                      description={(
+                        <Space direction="vertical" size={4}>
+                          <Text>
+                            <Text code>Пользователь → Роли</Text>: строка = пользователь, в колонке “Роли” показываются первые 3 (остальное — через “ещё N”).
+                          </Text>
+                          <Text>
+                            <Text code>Роль → Пользователи</Text>: выберите роль — появится список пользователей с этой ролью.
+                          </Text>
+                          <Text type="secondary">
+                            “Изменить” открывает назначение ролей. Перед применением показывается список изменений; режим “Заменить” с пустым списком снимает все роли.
+                          </Text>
+                        </Space>
+                      )}
+                      afterClose={() => {
+                        localStorage.setItem(LS_RBAC_USER_ROLES_TABLE_HINT_DISMISSED, '1')
+                        setUserRolesTableHintDismissed(true)
+                      }}
+                    />
+                  )}
 
                   {userRolesViewMode === 'role-to-users' && !userRolesList.role_id && (
                     <Alert
@@ -3319,7 +3475,7 @@ export function RBACPage() {
           },
           {
             key: 'effective-access',
-            label: 'Эффективный доступ',
+            label: <span data-testid="rbac-tab-effective-access">Эффективный доступ</span>,
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="Эффективный доступ" size="small">
@@ -3364,9 +3520,11 @@ export function RBACPage() {
 	                      databaseLabelById={databasesLabelById.current}
 	                      onDatabasesLoaded={handleDatabasesLoaded}
 	                      select={effectiveResourceRef}
+                        clusterDatabasePickerI18n={clusterDatabasePickerI18n}
 	                    />
 
                     <Button
+                      data-testid="rbac-effective-access-refresh"
                       onClick={() => effectiveAccessQuery.refetch()}
                       loading={effectiveAccessQuery.isFetching}
                       disabled={!selectedEffectiveUserId}
@@ -4594,100 +4752,101 @@ export function RBACPage() {
           ] : []),
           {
             key: 'audit',
-            label: 'Аудит',
+            label: <span data-testid="rbac-tab-audit">Аудит</span>,
             children: (
               <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <RbacAuditPanel
-                  enabled={canManageRbac}
-                  title="Аудит"
-                  errorMessage="Не удалось загрузить журнал аудита"
-                  undoLabel="Отменить"
-                  undoModalTitle="Отменить изменение"
-                  undoOkText="Отменить"
-                  undoCancelText="Закрыть"
-                  undoReasonPlaceholder="Причина (обязательно)"
-                  undoReasonRequiredMessage="Укажите причину"
-                  undoSuccessMessage="Изменение отменено"
-                  undoFailedMessage="Не удалось отменить изменение"
-                  undoNotSupportedMessage="Для этой записи откат не поддерживается"
-                  i18n={{
-                    searchPlaceholder: 'Поиск',
-                    refreshText: 'Обновить',
-                    viewText: 'Открыть',
-                    detailsModalTitle: (id) => `Аудит #${id}`,
-                    columnCreatedAt: 'Время',
-                    columnActor: 'Оператор',
-                    columnAction: 'Действие',
-                    columnOutcome: 'Результат',
-                    columnTarget: 'Цель',
-                    columnReason: 'Причина',
-                    columnDetails: 'Детали',
-                    detailsAuditIdLabel: 'ID аудита:',
-                    detailsActionLabel: 'Действие:',
-                    detailsTargetLabel: 'Цель:',
-                    formatUndoTitle: (cmd) => {
-                      const meta = cmd.meta ?? {}
-                      const id = (key: string) => {
-                        const value = (meta as Record<string, unknown>)[key]
-                        return value === undefined || value === null ? '?' : String(value)
-                      }
+                <div data-testid="rbac-audit-panel">
+                  <RbacAuditPanel
+                    enabled={canManageRbac}
+                    title="Аудит"
+                    errorMessage="Не удалось загрузить журнал аудита"
+                    undoLabel="Отменить"
+                    undoModalTitle="Отменить изменение"
+                    undoOkText="Отменить"
+                    undoCancelText="Закрыть"
+                    undoReasonPlaceholder="Причина (обязательно)"
+                    undoReasonRequiredMessage="Укажите причину"
+                    undoSuccessMessage="Изменение отменено"
+                    undoFailedMessage="Не удалось отменить изменение"
+                    undoNotSupportedMessage="Для этой записи откат не поддерживается"
+                    i18n={{
+                      searchPlaceholder: 'Поиск',
+                      refreshText: 'Обновить',
+                      viewText: 'Открыть',
+                      detailsModalTitle: (id) => `Аудит #${id}`,
+                      columnCreatedAt: 'Время',
+                      columnActor: 'Оператор',
+                      columnAction: 'Действие',
+                      columnOutcome: 'Результат',
+                      columnTarget: 'Цель',
+                      columnReason: 'Причина',
+                      columnDetails: 'Детали',
+                      detailsAuditIdLabel: 'ID аудита:',
+                      detailsActionLabel: 'Действие:',
+                      detailsTargetLabel: 'Цель:',
+                      formatUndoTitle: (cmd) => {
+                        const meta = cmd.meta ?? {}
+                        const id = (key: string) => {
+                          const value = (meta as Record<string, unknown>)[key]
+                          return value === undefined || value === null ? '?' : String(value)
+                        }
 
-                      switch (cmd.code) {
-                        case 'delete_role':
-                          return `Откат: удалить роль #${id('groupId')}`
-                        case 'rename_role':
-                          return `Откат: вернуть имя роли #${id('groupId')}`
-                        case 'restore_user_roles':
-                          return `Откат: восстановить роли пользователя #${id('userId')}`
-                        case 'restore_role_capabilities':
-                          return `Откат: восстановить права роли #${id('groupId')}`
+                        switch (cmd.code) {
+                          case 'delete_role':
+                            return `Откат: удалить роль #${id('groupId')}`
+                          case 'rename_role':
+                            return `Откат: вернуть имя роли #${id('groupId')}`
+                          case 'restore_user_roles':
+                            return `Откат: восстановить роли пользователя #${id('userId')}`
+                          case 'restore_role_capabilities':
+                            return `Откат: восстановить права роли #${id('groupId')}`
 
-                        case 'revoke_cluster_permission':
-                          return `Откат: отозвать доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
-                        case 'restore_cluster_permission_level':
-                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к кластеру ${id('clusterId')}`
-                        case 'restore_cluster_permission':
-                          return `Откат: восстановить доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+                          case 'revoke_cluster_permission':
+                            return `Откат: отозвать доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+                          case 'restore_cluster_permission_level':
+                            return `Откат: восстановить уровень доступа пользователя #${id('userId')} к кластеру ${id('clusterId')}`
+                          case 'restore_cluster_permission':
+                            return `Откат: восстановить доступ пользователя #${id('userId')} к кластеру ${id('clusterId')}`
 
-                        case 'revoke_database_permission':
-                          return `Откат: отозвать доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
-                        case 'restore_database_permission_level':
-                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к базе ${id('databaseId')}`
-                        case 'restore_database_permission':
-                          return `Откат: восстановить доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
+                          case 'revoke_database_permission':
+                            return `Откат: отозвать доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
+                          case 'restore_database_permission_level':
+                            return `Откат: восстановить уровень доступа пользователя #${id('userId')} к базе ${id('databaseId')}`
+                          case 'restore_database_permission':
+                            return `Откат: восстановить доступ пользователя #${id('userId')} к базе ${id('databaseId')}`
 
-                        case 'revoke_cluster_group_permission':
-                          return `Откат: отозвать доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
-                        case 'restore_cluster_group_permission_level':
-                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к кластеру ${id('clusterId')}`
-                        case 'restore_cluster_group_permission':
-                          return `Откат: восстановить доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
+                          case 'revoke_cluster_group_permission':
+                            return `Откат: отозвать доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
+                          case 'restore_cluster_group_permission_level':
+                            return `Откат: восстановить уровень доступа группы #${id('groupId')} к кластеру ${id('clusterId')}`
+                          case 'restore_cluster_group_permission':
+                            return `Откат: восстановить доступ группы #${id('groupId')} к кластеру ${id('clusterId')}`
 
-                        case 'revoke_database_group_permission':
-                          return `Откат: отозвать доступ группы #${id('groupId')} к базе ${id('databaseId')}`
-                        case 'restore_database_group_permission_level':
-                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к базе ${id('databaseId')}`
-                        case 'restore_database_group_permission':
-                          return `Откат: восстановить доступ группы #${id('groupId')} к базе ${id('databaseId')}`
+                          case 'revoke_database_group_permission':
+                            return `Откат: отозвать доступ группы #${id('groupId')} к базе ${id('databaseId')}`
+                          case 'restore_database_group_permission_level':
+                            return `Откат: восстановить уровень доступа группы #${id('groupId')} к базе ${id('databaseId')}`
+                          case 'restore_database_group_permission':
+                            return `Откат: восстановить доступ группы #${id('groupId')} к базе ${id('databaseId')}`
 
-                        case 'revoke_operation_template_permission':
-                          return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
-                        case 'restore_operation_template_permission_level':
-                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
-                        case 'restore_operation_template_permission':
-                          return `Откат: восстановить доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+                          case 'revoke_operation_template_permission':
+                            return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+                          case 'restore_operation_template_permission_level':
+                            return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
+                          case 'restore_operation_template_permission':
+                            return `Откат: восстановить доступ пользователя #${id('userId')} к шаблону операции ${id('templateId')}`
 
-                        case 'revoke_operation_template_group_permission':
-                          return `Откат: отозвать доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
-                        case 'restore_operation_template_group_permission_level':
-                          return `Откат: восстановить уровень доступа группы #${id('groupId')} к шаблону операции ${id('templateId')}`
-                        case 'restore_operation_template_group_permission':
-                          return `Откат: восстановить доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+                          case 'revoke_operation_template_group_permission':
+                            return `Откат: отозвать доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+                          case 'restore_operation_template_group_permission_level':
+                            return `Откат: восстановить уровень доступа группы #${id('groupId')} к шаблону операции ${id('templateId')}`
+                          case 'restore_operation_template_group_permission':
+                            return `Откат: восстановить доступ группы #${id('groupId')} к шаблону операции ${id('templateId')}`
 
-                        case 'revoke_workflow_template_permission':
-                          return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
-                        case 'restore_workflow_template_permission_level':
-                          return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
+                          case 'revoke_workflow_template_permission':
+                            return `Откат: отозвать доступ пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
+                          case 'restore_workflow_template_permission_level':
+                            return `Откат: восстановить уровень доступа пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
                         case 'restore_workflow_template_permission':
                           return `Откат: восстановить доступ пользователя #${id('userId')} к шаблону рабочего процесса ${id('templateId')}`
 
@@ -4717,6 +4876,7 @@ export function RBACPage() {
                     },
                   }}
                 />
+                </div>
               </Space>
             ),
           },
@@ -4954,6 +5114,7 @@ export function RBACPage() {
         okText="Продолжить"
         cancelText="Отмена"
         okButtonProps={{
+          'data-testid': 'rbac-user-roles-editor-ok',
           disabled: !userRolesEditorCanSubmit,
           loading: setUserRoles.isPending,
         }}
@@ -4966,188 +5127,198 @@ export function RBACPage() {
         onOk={() => userRolesEditorForm.submit()}
         destroyOnClose
       >
-        {!userRolesEditorUser ? (
-          <Alert type="warning" showIcon message="Пользователь не выбран" />
-        ) : (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <div>
-              <Text type="secondary">Текущие роли:</Text>{' '}
-              {renderLimitedRoleTags(userRolesEditorUser.roles ?? [])}
-            </div>
+        <div data-testid="rbac-user-roles-editor">
+          {!userRolesEditorUser ? (
+            <Alert type="warning" showIcon message="Пользователь не выбран" />
+          ) : (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div>
+                <Text type="secondary">Текущие роли:</Text>{' '}
+                {renderLimitedRoleTags(userRolesEditorUser.roles ?? [])}
+              </div>
 
-            {userRolesEditorModeValue === 'replace' && (
-              <Alert
-                type="info"
-                showIcon
-                message="Режим replace — итоговый список ролей"
-                description="Можно оставить пустым, чтобы снять все роли у пользователя."
-              />
-            )}
+              {userRolesEditorModeValue === 'replace' && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="Режим “Заменить” — итоговый список ролей"
+                  description="Можно оставить пустым, чтобы снять все роли у пользователя."
+                />
+              )}
 
-            <Form
-              form={userRolesEditorForm}
-              layout="vertical"
-              initialValues={{ mode: 'replace' as const }}
-              onFinish={(values) => {
-                if (!userRolesEditorUser) return
+              <Form
+                form={userRolesEditorForm}
+                layout="vertical"
+                initialValues={{ mode: 'replace' as const }}
+                onFinish={(values) => {
+                  if (!userRolesEditorUser) return
 
-                const mode = (values.mode ?? 'replace') as 'replace' | 'add' | 'remove'
-                const selectedRoleIds = Array.from(new Set(values.group_ids ?? [])).sort((a, b) => a - b)
-                const reason = String(values.reason ?? '').trim()
+                  const mode = (values.mode ?? 'replace') as 'replace' | 'add' | 'remove'
+                  const selectedRoleIds = Array.from(new Set(values.group_ids ?? [])).sort((a, b) => a - b)
+                  const reason = String(values.reason ?? '').trim()
 
-                if (!reason) {
-                  message.error('Причина обязательна')
-                  return
-                }
-                if (mode !== 'replace' && selectedRoleIds.length === 0) {
-                  message.error('Выберите роли')
-                  return
-                }
-
-                const currentRoleIds = (userRolesEditorUser.roles ?? []).map((r) => r.id).sort((a, b) => a - b)
-                const currentRoleIdSet = new Set(currentRoleIds)
-                const selectedRoleIdSet = new Set(selectedRoleIds)
-
-                const modeLabel = mode === 'replace' ? 'Заменить' : (mode === 'add' ? 'Добавить' : 'Убрать')
-
-                const computeDiff = () => {
-                  if (mode === 'replace') {
-                    const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
-                    const removed = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id))
-                    return { added, removed, next: selectedRoleIds }
+                  if (!reason) {
+                    message.error('Причина обязательна')
+                    return
+                  }
+                  if (mode !== 'replace' && selectedRoleIds.length === 0) {
+                    message.error('Выберите роли')
+                    return
                   }
 
-                  if (mode === 'add') {
-                    const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
-                    const next = Array.from(new Set([...currentRoleIds, ...selectedRoleIds])).sort((a, b) => a - b)
-                    return { added, removed: [] as number[], next }
-                  }
+                  const currentRoleIds = (userRolesEditorUser.roles ?? []).map((r) => r.id).sort((a, b) => a - b)
+                  const currentRoleIdSet = new Set(currentRoleIds)
+                  const selectedRoleIdSet = new Set(selectedRoleIds)
 
-                  const removed = selectedRoleIds.filter((id) => currentRoleIdSet.has(id))
-                  const next = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id)).sort((a, b) => a - b)
-                  return { added: [] as number[], removed, next }
-                }
+                  const modeLabel = mode === 'replace' ? 'Заменить' : (mode === 'add' ? 'Добавить' : 'Убрать')
 
-                const diff = computeDiff()
-                const isReplaceRemoveAll = mode === 'replace' && selectedRoleIds.length === 0 && currentRoleIds.length > 0
-
-                modal.confirm({
-                  title: isReplaceRemoveAll ? 'Снять все роли у пользователя?' : 'Применить роли пользователю?',
-                  okText: 'Применить',
-                  cancelText: 'Отмена',
-                  okButtonProps: { danger: isReplaceRemoveAll },
-                  content: (
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      {isReplaceRemoveAll && (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          message={`Будут сняты все роли (${currentRoleIds.length}).`}
-                          description="Это эквивалентно выдаче replace с пустым списком ролей."
-                        />
-                      )}
-
-                      <div>
-                        <Text type="secondary">Пользователь:</Text>{' '}
-                        <Text>{userRolesEditorUser.username} #{userRolesEditorUser.id}</Text>
-                      </div>
-                      <div>
-                        <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
-                      </div>
-
-                      <div>
-                        <Text type="secondary">Выбрано:</Text> <Text>{selectedRoleIds.length}</Text>
-                      </div>
-                      <div>
-                        <Text type="secondary">Выбранные роли:</Text> {renderRoleIdTags(selectedRoleIds)}
-                      </div>
-
-                      <div>
-                        <Text type="secondary">Текущие роли:</Text> {renderRoleIdTags(currentRoleIds)}
-                      </div>
-
-                      <div>
-                        <Text type="secondary">Добавится:</Text> {renderRoleIdTags(diff.added)}
-                      </div>
-                      <div>
-                        <Text type="secondary">Уберётся:</Text> {renderRoleIdTags(diff.removed)}
-                      </div>
-                      <div>
-                        <Text type="secondary">Итого после применения:</Text>{' '}
-                        <Text>{diff.next.length}</Text>
-                      </div>
-
-                      <div>
-                        <Text type="secondary">Причина:</Text> <Text>{reason}</Text>
-                      </div>
-                    </Space>
-                  ),
-                  onOk: async () => {
-                    try {
-                      await setUserRoles.mutateAsync({
-                        user_id: userRolesEditorUser.id,
-                        group_ids: selectedRoleIds,
-                        mode,
-                        reason,
-                      })
-                      message.success('Роли применены')
-                      setUserRolesEditorOpen(false)
-                      setUserRolesEditorUser(null)
-                      userRolesEditorForm.resetFields()
-                      userRolesUsersQuery.refetch()
-                    } catch {
-                      message.error('Не удалось применить роли')
-                      throw new Error('Failed to apply roles')
+                  const computeDiff = () => {
+                    if (mode === 'replace') {
+                      const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                      const removed = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id))
+                      return { added, removed, next: selectedRoleIds }
                     }
-                  },
-                })
-              }}
-            >
-              <Form.Item label="Режим" name="mode">
-                <Select
-                  style={{ width: 240 }}
-                  options={[
-                    { label: 'Заменить (replace)', value: 'replace' },
-                    { label: 'Добавить (add)', value: 'add' },
-                    { label: 'Убрать (remove)', value: 'remove' },
-                  ]}
-                />
-              </Form.Item>
 
-              <Form.Item
-                label={
-                  userRolesEditorModeValue === 'replace'
-                    ? 'Роли (итоговый список)'
-                    : (userRolesEditorModeValue === 'add' ? 'Роли для добавления' : 'Роли для удаления')
-                }
-                name="group_ids"
-              >
-                <Select
-                  mode="multiple"
-                  style={{ width: '100%' }}
-                  placeholder={
-                    userRolesEditorModeValue === 'replace'
-                      ? 'Выберите роли (можно очистить, чтобы снять все)'
-                      : (userRolesEditorModeValue === 'add' ? 'Выберите роли' : 'Выберите роли из текущих')
+                    if (mode === 'add') {
+                      const added = selectedRoleIds.filter((id) => !currentRoleIdSet.has(id))
+                      const next = Array.from(new Set([...currentRoleIds, ...selectedRoleIds])).sort((a, b) => a - b)
+                      return { added, removed: [] as number[], next }
+                    }
+
+                    const removed = selectedRoleIds.filter((id) => currentRoleIdSet.has(id))
+                    const next = currentRoleIds.filter((id) => !selectedRoleIdSet.has(id)).sort((a, b) => a - b)
+                    return { added: [] as number[], removed, next }
                   }
-                  options={userRolesEditorModeValue === 'remove'
-                    ? (userRolesEditorUser.roles ?? []).map((r) => ({ label: `${r.name} #${r.id}`, value: r.id }))
-                    : roleOptions}
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
 
-              <Form.Item
-                label="Причина"
-                name="reason"
-                rules={[{ required: true, message: 'Укажите причину' }]}
+                  const diff = computeDiff()
+                  const isReplaceRemoveAll = mode === 'replace' && selectedRoleIds.length === 0 && currentRoleIds.length > 0
+
+                  modal.confirm({
+                    title: isReplaceRemoveAll ? 'Снять все роли у пользователя?' : 'Применить роли пользователю?',
+                    okText: 'Применить',
+                    cancelText: 'Отмена',
+                    okButtonProps: { danger: isReplaceRemoveAll, 'data-testid': 'rbac-user-roles-confirm-ok' },
+                    cancelButtonProps: { 'data-testid': 'rbac-user-roles-confirm-cancel' },
+                    content: (
+                      <div data-testid="rbac-user-roles-confirm-content">
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                          {isReplaceRemoveAll && (
+                            <div data-testid="rbac-user-roles-confirm-remove-all-warning">
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message={`Будут сняты все роли (${currentRoleIds.length}).`}
+                                description="Это эквивалентно режиму “Заменить” с пустым списком ролей."
+                              />
+                            </div>
+                          )}
+
+                          <div>
+                            <Text type="secondary">Пользователь:</Text>{' '}
+                            <Text>{userRolesEditorUser.username} #{userRolesEditorUser.id}</Text>
+                          </div>
+                          <div>
+                            <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
+                          </div>
+
+                          <div data-testid="rbac-user-roles-confirm-selected-count">
+                            <Text type="secondary">Выбрано:</Text> <Text>{selectedRoleIds.length}</Text>
+                          </div>
+                          <div data-testid="rbac-user-roles-confirm-selected-roles">
+                            <Text type="secondary">Выбранные роли:</Text> {renderRoleIdTags(selectedRoleIds)}
+                          </div>
+
+                          <div data-testid="rbac-user-roles-confirm-current-roles">
+                            <Text type="secondary">Текущие роли:</Text> {renderRoleIdTags(currentRoleIds)}
+                          </div>
+
+                          <div data-testid="rbac-user-roles-confirm-diff-added">
+                            <Text type="secondary">Добавится:</Text> {renderRoleIdTags(diff.added)}
+                          </div>
+                          <div data-testid="rbac-user-roles-confirm-diff-removed">
+                            <Text type="secondary">Уберётся:</Text> {renderRoleIdTags(diff.removed)}
+                          </div>
+                          <div data-testid="rbac-user-roles-confirm-next-count">
+                            <Text type="secondary">Итого после применения:</Text>{' '}
+                            <Text>{diff.next.length}</Text>
+                          </div>
+
+                          <div data-testid="rbac-user-roles-confirm-reason">
+                            <Text type="secondary">Причина:</Text> <Text>{reason}</Text>
+                          </div>
+                        </Space>
+                      </div>
+                    ),
+                    onOk: async () => {
+                      try {
+                        await setUserRoles.mutateAsync({
+                          user_id: userRolesEditorUser.id,
+                          group_ids: selectedRoleIds,
+                          mode,
+                          reason,
+                        })
+                        message.success('Роли применены')
+                        setUserRolesEditorOpen(false)
+                        setUserRolesEditorUser(null)
+                        userRolesEditorForm.resetFields()
+                        userRolesUsersQuery.refetch()
+                      } catch {
+                        message.error('Не удалось применить роли')
+                        throw new Error('Failed to apply roles')
+                      }
+                    },
+                  })
+                }}
               >
-                <Input placeholder="Причина (обязательно)" />
-              </Form.Item>
-            </Form>
-          </Space>
-        )}
+                <Form.Item label="Режим" name="mode">
+                  <Select
+                    data-testid="rbac-user-roles-editor-mode"
+                    style={{ width: 240 }}
+                    options={[
+                      { label: 'Заменить', value: 'replace' },
+                      { label: 'Добавить', value: 'add' },
+                      { label: 'Убрать', value: 'remove' },
+                    ]}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  label={
+                    userRolesEditorModeValue === 'replace'
+                      ? 'Роли (итоговый список)'
+                      : (userRolesEditorModeValue === 'add' ? 'Роли для добавления' : 'Роли для удаления')
+                  }
+                  name="group_ids"
+                >
+                  <Select
+                    data-testid="rbac-user-roles-editor-group-ids"
+                    allowClear
+                    mode="multiple"
+                    style={{ width: '100%' }}
+                    placeholder={
+                      userRolesEditorModeValue === 'replace'
+                        ? 'Выберите роли (можно очистить, чтобы снять все)'
+                        : (userRolesEditorModeValue === 'add' ? 'Выберите роли' : 'Выберите роли из текущих')
+                    }
+                    options={userRolesEditorModeValue === 'remove'
+                      ? (userRolesEditorUser.roles ?? []).map((r) => ({ label: `${r.name} #${r.id}`, value: r.id }))
+                      : roleOptions}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  label="Причина"
+                  name="reason"
+                  rules={[{ required: true, message: 'Укажите причину' }]}
+                >
+                  <Input data-testid="rbac-user-roles-editor-reason" placeholder="Причина (обязательно)" />
+                </Form.Item>
+              </Form>
+            </Space>
+          )}
+        </div>
       </Modal>
 
       <Modal

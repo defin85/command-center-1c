@@ -1,7 +1,7 @@
 import { Select } from 'antd'
 
 import type { ClusterRef, DatabaseRef } from '../../../api/queries/rbac'
-import { RbacClusterDatabasePicker } from './RbacClusterDatabasePicker'
+import { RbacClusterDatabasePicker, type RbacClusterDatabasePickerI18n } from './RbacClusterDatabasePicker'
 
 type ResourceKey = 'clusters' | 'databases' | 'operation-templates' | 'workflow-templates' | 'artifacts'
 
@@ -28,6 +28,7 @@ export function RbacResourcePicker(props: {
   databaseLabelById?: Map<string, string>
   onDatabasesLoaded?: (items: DatabaseRef[]) => void
   select?: RbacResourceSelectConfig
+  clusterDatabasePickerI18n?: RbacClusterDatabasePickerI18n
 }) {
   const width = props.width ?? 360
 
@@ -41,6 +42,7 @@ export function RbacResourcePicker(props: {
         disabled={props.disabled}
         placeholder={props.placeholder ?? 'Cluster'}
         width={width}
+        i18n={props.clusterDatabasePickerI18n}
       />
     )
   }
@@ -57,6 +59,7 @@ export function RbacResourcePicker(props: {
         width={width}
         databaseLabelById={props.databaseLabelById}
         onDatabasesLoaded={props.onDatabasesLoaded}
+        i18n={props.clusterDatabasePickerI18n}
       />
     )
   }
@@ -79,4 +82,3 @@ export function RbacResourcePicker(props: {
     />
   )
 }
-

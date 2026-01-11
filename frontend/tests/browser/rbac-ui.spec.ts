@@ -9,6 +9,7 @@ type MockState = {
   me: { id: number; username: string; is_staff: boolean }
   users: MockUser[]
   roles: MockRole[]
+  userRoleIdsByUserId: Record<number, number[]>
   clusters: MockCluster[]
   databases: MockDatabase[]
   databasePermissions: Array<{
@@ -54,6 +55,10 @@ function defaultState(): MockState {
     roles: [
       { id: 201, name: 'Ops', users_count: 1, permissions_count: 1, permission_codes: ['perm.ops'] },
     ],
+    userRoleIdsByUserId: {
+      101: [201],
+      102: [],
+    },
     clusters,
     databases,
     databasePermissions: [
@@ -102,11 +107,7 @@ async function setupApiMocks(
   page: Page,
   state: MockState,
   captures?: {
-    grantDatabase?: any[]
-    revokeDatabase?: any[]
-    createRole?: any[]
-    updateRole?: any[]
-    effectiveAccess?: any[]
+    setUserRoles?: any[]
   }
 ) {
   await page.route('**/api/v2/**', async (route) => {
@@ -125,6 +126,34 @@ async function setupApiMocks(
         ? state.users.filter((u) => u.username.toLowerCase().includes(search) || String(u.id).includes(search))
         : state.users
       return fulfillJson(route, { users: filtered, count: filtered.length, total: filtered.length })
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/list-users-with-roles/') {
+      const search = (url.searchParams.get('search') ?? '').trim().toLowerCase()
+      const roleIdRaw = url.searchParams.get('role_id')
+      const roleId = roleIdRaw ? Number(roleIdRaw) : null
+      const limit = Number(url.searchParams.get('limit') ?? '50')
+      const offset = Number(url.searchParams.get('offset') ?? '0')
+
+      const getRolesForUser = (userId: number) => {
+        const roleIds = state.userRoleIdsByUserId[userId] ?? []
+        return roleIds
+          .map((id) => state.roles.find((r) => r.id === id))
+          .filter((r): r is MockRole => Boolean(r))
+          .map((r) => ({ id: r.id, name: r.name }))
+      }
+
+      let filtered = state.users
+      if (search) {
+        filtered = filtered.filter((u) => u.username.toLowerCase().includes(search) || String(u.id).includes(search))
+      }
+      if (typeof roleId === 'number' && Number.isFinite(roleId)) {
+        filtered = filtered.filter((u) => (state.userRoleIdsByUserId[u.id] ?? []).includes(roleId))
+      }
+
+      const pageItems = filtered.slice(offset, offset + limit)
+      const users = pageItems.map((u) => ({ id: u.id, username: u.username, roles: getRolesForUser(u.id) }))
+      return fulfillJson(route, { users, count: users.length, total: filtered.length })
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/list-roles/') {
@@ -173,36 +202,7 @@ async function setupApiMocks(
       return fulfillJson(route, { permissions: state.databasePermissions, count: state.databasePermissions.length, total: state.databasePermissions.length })
     }
 
-    if (method === 'POST' && path === '/api/v2/rbac/grant-database-permission/') {
-      const body = request.postDataJSON()
-      captures?.grantDatabase?.push(body)
-      return fulfillJson(route, { created: true, permission: body })
-    }
-
-    if (method === 'POST' && path === '/api/v2/rbac/revoke-database-permission/') {
-      const body = request.postDataJSON()
-      captures?.revokeDatabase?.push(body)
-      return fulfillJson(route, { deleted: true })
-    }
-
-    if (method === 'POST' && path === '/api/v2/rbac/create-role/') {
-      const body = request.postDataJSON() as { name: string; reason: string }
-      captures?.createRole?.push(body)
-      const nextId = Math.max(0, ...state.roles.map((r) => r.id)) + 1
-      state.roles.push({ id: nextId, name: body.name, users_count: 0, permissions_count: 0, permission_codes: [] })
-      return fulfillJson(route, { id: nextId, name: body.name })
-    }
-
-    if (method === 'POST' && path === '/api/v2/rbac/update-role/') {
-      const body = request.postDataJSON() as { group_id: number; name: string; reason: string }
-      captures?.updateRole?.push(body)
-      const role = state.roles.find((r) => r.id === body.group_id)
-      if (role) role.name = body.name
-      return fulfillJson(route, { id: body.group_id, name: body.name })
-    }
-
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
-      captures?.effectiveAccess?.push(Object.fromEntries(url.searchParams.entries()))
       return fulfillJson(route, state.effectiveAccess)
     }
 
@@ -210,154 +210,163 @@ async function setupApiMocks(
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
-    return fulfillJson(route, { error: `unmocked ${method} ${path}` }, 500)
+    if (method === 'POST' && path === '/api/v2/rbac/set-user-roles/') {
+      const body = request.postDataJSON() as { user_id: number; group_ids: number[]; mode?: string; reason: string }
+      captures?.setUserRoles?.push(body)
+
+      const user = state.users.find((u) => u.id === body.user_id)
+      if (!user) return fulfillJson(route, {}, 404)
+
+      const mode = body.mode ?? 'replace'
+      const selectedIds = Array.isArray(body.group_ids) ? body.group_ids : []
+
+      const current = new Set<number>(state.userRoleIdsByUserId[body.user_id] ?? [])
+      if (mode === 'replace') {
+        state.userRoleIdsByUserId[body.user_id] = Array.from(new Set(selectedIds)).sort((a, b) => a - b)
+      } else if (mode === 'add') {
+        selectedIds.forEach((id) => current.add(id))
+        state.userRoleIdsByUserId[body.user_id] = Array.from(current).sort((a, b) => a - b)
+      } else if (mode === 'remove') {
+        selectedIds.forEach((id) => current.delete(id))
+        state.userRoleIdsByUserId[body.user_id] = Array.from(current).sort((a, b) => a - b)
+      }
+
+      const roles = (state.userRoleIdsByUserId[body.user_id] ?? [])
+        .map((id) => state.roles.find((r) => r.id === id))
+        .filter((r): r is MockRole => Boolean(r))
+        .map((r) => ({ id: r.id, name: r.name }))
+
+      return fulfillJson(route, { user: { id: user.id, username: user.username }, roles })
+    }
+
+    return fulfillJson(route, {}, 200)
   })
 }
 
-async function selectAntdOption(page: Page, optionText: string) {
-  await page.locator('.ant-select-dropdown').getByText(optionText, { exact: true }).click()
-}
-
-async function openAndSelectDatabaseInPicker(page: Page, trigger: Locator, databaseName: string) {
-  await trigger.click()
-  await expect(page.getByText('Select database', { exact: true })).toBeVisible()
-
-  const clusterNode = page.locator('.ant-tree-treenode').filter({ hasText: 'Cluster One' }).first()
-  await clusterNode.locator('.ant-tree-switcher').click()
-  await expect(page.locator('.ant-tree-treenode').filter({ hasText: databaseName }).first()).toBeVisible()
-  await page.locator('.ant-tree-treenode').filter({ hasText: databaseName }).first().click()
-}
-
-test('RBAC: clusters->databases tree is usable in picker', async ({ page }) => {
-  const state = defaultState()
-  await setupAuth(page)
-  await setupApiMocks(page, state)
-
-  await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('button', { name: 'Grant', exact: true })).toBeVisible()
-
-  const grantForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Grant', exact: true }) }).first()
-  const resourcePickerGroup = grantForm.locator('.ant-space-compact').filter({ hasText: 'Clear' }).first()
-  const resourcePickerButton = resourcePickerGroup.locator('button').first()
-
-  await openAndSelectDatabaseInPicker(page, resourcePickerButton, 'Database One')
-  await expect(resourcePickerButton).toHaveText(/Database One/)
-})
-
-test('RBAC: grant and revoke require reason (database permission)', async ({ page }) => {
-  const state = defaultState()
-  const grantDatabase: any[] = []
-  const revokeDatabase: any[] = []
-
-  await setupAuth(page)
-  await setupApiMocks(page, state, { grantDatabase, revokeDatabase })
-
-  await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('button', { name: 'Grant', exact: true })).toBeVisible()
-
-  const grantForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Grant', exact: true }) }).first()
-  const resourcePickerGroup = grantForm.locator('.ant-space-compact').filter({ hasText: 'Clear' }).first()
-  const resourcePickerButton = resourcePickerGroup.locator('button').first()
-
-  await grantForm.locator('.ant-select').first().click()
-  await selectAntdOption(page, 'alice #101')
-
-  await openAndSelectDatabaseInPicker(page, resourcePickerButton, 'Database One')
-
-  await grantForm.locator('input[placeholder="Reason"]').fill('test grant')
-  await grantForm.getByRole('button', { name: 'Grant', exact: true }).click()
-
-  await expect.poll(() => grantDatabase.length).toBe(1)
-  expect(grantDatabase[0]).toMatchObject({
-    user_id: 101,
-    database_id: 'db-1',
-    level: 'VIEW',
-    reason: 'test grant',
-  })
-
-  const permissionsCard = page.locator('.ant-card').filter({ has: page.locator('.ant-card-head-title', { hasText: 'Permissions' }) }).first()
-  const permissionRow = permissionsCard.locator('tr').filter({ hasText: 'Database One' }).first()
-  await permissionRow.getByRole('button', { name: 'Revoke', exact: true }).click()
-  await page.getByPlaceholder('Reason (required)').fill('test revoke')
-  await page.getByRole('button', { name: 'Confirm', exact: true }).click()
-
-  await expect.poll(() => revokeDatabase.length).toBe(1)
-  expect(revokeDatabase[0]).toMatchObject({
-    user_id: 101,
-    database_id: 'db-1',
-    reason: 'test revoke',
-  })
-})
-
-test('RBAC: create and rename role require reason', async ({ page }) => {
-  const state = defaultState()
-  const createRole: any[] = []
-  const updateRole: any[] = []
-
-  await setupAuth(page)
-  await setupApiMocks(page, state, { createRole, updateRole })
-
-  await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
-
-  const rolesModeToggle = page.locator('.ant-radio-button-wrapper').filter({
-    has: page.locator('input[type="radio"][value="roles"]'),
-  }).first()
-  await rolesModeToggle.scrollIntoViewIfNeeded()
-  await rolesModeToggle.click()
-  await expect(page.getByText('Create Role', { exact: true })).toBeVisible()
-
-  const createRoleCard = page.locator('.ant-card').filter({ has: page.locator('.ant-card-head-title', { hasText: 'Create Role' }) }).first()
-  await createRoleCard.getByPlaceholder('Role name').fill('NewRole')
-  await createRoleCard.getByPlaceholder('Reason').fill('create reason')
-  await createRoleCard.getByRole('button', { name: 'Create', exact: true }).click()
-
-  await expect.poll(() => createRole.length).toBe(1)
-  expect(createRole[0]).toMatchObject({ name: 'NewRole', reason: 'create reason' })
-
-  const rolesCard = page.locator('.ant-card').filter({ has: page.locator('.ant-card-head-title', { hasText: 'Roles' }) }).first()
-  await rolesCard.getByRole('button', { name: 'Rename', exact: true }).first().click()
-  await expect(page.getByText('Rename role', { exact: true })).toBeVisible()
-
-  const renameModal = page.locator('.ant-modal').filter({ hasText: 'Rename role' }).first()
-  await renameModal.getByPlaceholder('Role name').fill('OpsRenamed')
-  await renameModal.getByPlaceholder('Reason (required)').fill('rename reason')
-  await renameModal.getByRole('button', { name: 'Save', exact: true }).click()
-
-  await expect.poll(() => updateRole.length).toBe(1)
-  expect(updateRole[0]).toMatchObject({ group_id: 201, name: 'OpsRenamed', reason: 'rename reason' })
-})
-
-test('RBAC: effective access filters and expands sources', async ({ page }) => {
+test('RBAC: no English UI tokens (smoke)', async ({ page }) => {
   const state = defaultState()
 
   await setupAuth(page)
   await setupApiMocks(page, state)
 
   await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
-  await page.getByRole('tab', { name: 'Effective access', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'RBAC', exact: true })).toBeVisible()
 
-  const activeTabPane = page.locator('.ant-tabs-tabpane-active').first()
-  const effectiveCard = activeTabPane.locator('.ant-card').filter({
-    has: page.locator('.ant-card-head-title', { hasText: 'Effective access' }),
-  }).first()
-  await expect(effectiveCard).toBeVisible()
-  await effectiveCard.locator('.ant-select').first().click()
-  await selectAntdOption(page, 'alice #101')
+  const forbiddenText = [
+    'Clear',
+    'Clear selection',
+    'Select cluster',
+    'Select database',
+    'Search clusters',
+    'Search databases',
+    'Loading...',
+    'Load more...',
+    'Grant',
+    'Revoke',
+    'Reason',
+    'Reason (required)',
+    'Notes (optional)',
+    'Resource',
+    'Effective access',
+    'Audit',
+    'Infobase Users',
+    'Create Role',
+    'Role name',
+    'Rename role',
+    'Save',
+    'Replace',
+    'Apply',
+    'Current roles',
+    'Clusters',
+    'Databases',
+  ]
 
-  const resourceTypeSelect = effectiveCard.locator('.ant-select').nth(1)
-  await resourceTypeSelect.click()
-  await selectAntdOption(page, 'Clusters')
+  const assertNoEnglish = async (scope: Locator) => {
+    for (const token of forbiddenText) {
+      await expect(scope.locator(`text=${token}`), `Unexpected EN token in UI: ${token}`).toHaveCount(0)
+      await expect(scope.locator(`[placeholder*="${token}"]`), `Unexpected EN token in placeholders: ${token}`).toHaveCount(0)
+    }
+  }
 
-  const clusterPickerGroup = effectiveCard.locator('.ant-space-compact').filter({ hasText: 'Clear' }).first()
-  const clusterPickerButton = clusterPickerGroup.locator('button').first()
-  await clusterPickerButton.click()
-  await expect(page.getByText('Select cluster', { exact: true })).toBeVisible()
-  await page.locator('.ant-tree-treenode').filter({ hasText: 'Cluster Two' }).first().click()
+  const main = page.getByRole('main')
+  await assertNoEnglish(main)
 
-  const clustersCard = activeTabPane.locator('.ant-card').filter({
-    has: page.locator('.ant-card-head-title', { hasText: 'Clusters' }),
-  }).first()
-  await expect(clustersCard).toBeVisible()
-  await clustersCard.locator('.ant-table-row-expand-icon').first().click()
-  await expect(page.getByText('group', { exact: true })).toBeVisible()
+  const grantResourcePicker = page.getByTestId('rbac-permissions-grant-resource')
+  await expect(grantResourcePicker).toBeVisible()
+
+  const openButton = grantResourcePicker.locator('button').first()
+  await openButton.click()
+  const modal = page.locator('.ant-modal').first()
+  await expect(modal).toBeVisible()
+  await assertNoEnglish(main)
+  await assertNoEnglish(modal)
+
+  await page.keyboard.press('Escape')
+  await expect(modal).toBeHidden()
+
+  await page.getByTestId('rbac-tab-user-roles').click()
+  await expect(page.getByTestId('rbac-user-roles-edit-101')).toBeVisible()
+  await assertNoEnglish(main)
+
+  await page.getByTestId('rbac-tab-effective-access').click()
+  await expect(page.getByTestId('rbac-effective-access-refresh')).toBeVisible()
+  await assertNoEnglish(main)
+
+  await page.getByTestId('rbac-tab-audit').click()
+  await expect(page.getByTestId('rbac-audit-panel')).toBeVisible()
+  await assertNoEnglish(main)
+
+  await page.getByTestId('rbac-tab-permissions').click()
+  await expect(page.getByTestId('rbac-permissions-grant-resource')).toBeVisible()
+  await assertNoEnglish(main)
+})
+
+test('RBAC: user roles replace empty shows guard + diff', async ({ page }) => {
+  const state = defaultState()
+  const setUserRoles: any[] = []
+
+  await setupAuth(page)
+  await setupApiMocks(page, state, { setUserRoles })
+
+  await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
+
+  await page.getByTestId('rbac-tab-user-roles').click()
+  await expect(page.getByTestId('rbac-user-roles-edit-101')).toBeVisible()
+  await page.getByTestId('rbac-user-roles-edit-101').click()
+
+  await expect(page.getByTestId('rbac-user-roles-editor')).toBeVisible()
+
+  const roleIdsSelect = page.getByTestId('rbac-user-roles-editor-group-ids')
+  await roleIdsSelect.hover()
+  const clearIcon = roleIdsSelect.locator('.ant-select-clear')
+  if (await clearIcon.count()) {
+    await clearIcon.click()
+  } else {
+    const removeIcons = roleIdsSelect.locator('.ant-select-selection-item-remove')
+    while (await removeIcons.count()) {
+      await removeIcons.first().click()
+    }
+  }
+
+  await page.getByTestId('rbac-user-roles-editor-reason').fill('test reason')
+  await page.getByTestId('rbac-user-roles-editor-ok').click()
+
+  await expect(page.getByTestId('rbac-user-roles-confirm-content')).toBeVisible()
+  await expect(page.getByTestId('rbac-user-roles-confirm-remove-all-warning')).toBeVisible()
+  await expect(page.getByTestId('rbac-user-roles-confirm-selected-count')).toContainText('0')
+  await expect(page.getByTestId('rbac-user-roles-confirm-next-count')).toContainText('0')
+  await expect(page.getByTestId('rbac-user-roles-confirm-selected-roles')).toContainText('-')
+  await expect(page.getByTestId('rbac-user-roles-confirm-current-roles')).toContainText('Ops')
+  await expect(page.getByTestId('rbac-user-roles-confirm-diff-added')).toContainText('-')
+  await expect(page.getByTestId('rbac-user-roles-confirm-diff-removed')).toContainText('Ops')
+
+  await page.getByTestId('rbac-user-roles-confirm-ok').click()
+
+  await expect.poll(() => setUserRoles.length).toBe(1)
+  expect(setUserRoles[0]).toMatchObject({
+    user_id: 101,
+    group_ids: [],
+    mode: 'replace',
+    reason: 'test reason',
+  })
 })
