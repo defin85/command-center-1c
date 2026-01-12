@@ -136,6 +136,24 @@ driver_commands_denied_total = Counter(
     ['driver', 'reason']
 )
 
+driver_catalog_editor_conflicts_total = Counter(
+    'cc1c_orchestrator_driver_catalog_editor_conflicts_total',
+    'Total driver catalog editor optimistic concurrency conflicts (ETag mismatch)',
+    ['driver', 'action']
+)
+
+driver_catalog_editor_validation_failed_total = Counter(
+    'cc1c_orchestrator_driver_catalog_editor_validation_failed_total',
+    'Total driver catalog editor validation failures',
+    ['driver', 'stage', 'kind']
+)
+
+driver_catalog_editor_errors_total = Counter(
+    'cc1c_orchestrator_driver_catalog_editor_errors_total',
+    'Total driver catalog editor errors (by reason code)',
+    ['driver', 'action', 'code']
+)
+
 # =============================================================================
 # Deprecation Metrics
 # =============================================================================
@@ -391,6 +409,21 @@ def record_api_v2_error(endpoint: str, error: str) -> None:
 def record_driver_command_denied(driver: str, reason: str) -> None:
     """Record RBAC deny for schema-driven driver command (by reason)."""
     driver_commands_denied_total.labels(driver=driver, reason=reason).inc()
+
+
+def record_driver_catalog_editor_conflict(driver: str, action: str) -> None:
+    """Record optimistic concurrency conflicts in driver catalog editor flows."""
+    driver_catalog_editor_conflicts_total.labels(driver=driver, action=action).inc()
+
+
+def record_driver_catalog_editor_validation_failed(driver: str, stage: str, kind: str) -> None:
+    """Record validation failures in driver catalog editor flows."""
+    driver_catalog_editor_validation_failed_total.labels(driver=driver, stage=stage, kind=kind).inc()
+
+
+def record_driver_catalog_editor_error(driver: str, action: str, code: str) -> None:
+    """Record an error response in driver catalog editor flows (by code)."""
+    driver_catalog_editor_errors_total.labels(driver=driver, action=action, code=code).inc()
 
 
 def record_deprecated_operation(operation_type: str, endpoint: str) -> None:

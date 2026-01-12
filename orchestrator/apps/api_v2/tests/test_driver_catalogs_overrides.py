@@ -1,7 +1,7 @@
 import io
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
@@ -14,6 +14,8 @@ def staff_user():
     user = User.objects.create_user(username="driver_catalogs_overrides_admin", password="pass")
     user.is_staff = True
     user.save(update_fields=["is_staff"])
+    permission = Permission.objects.get(codename="manage_driver_catalogs", content_type__app_label="operations")
+    user.user_permissions.add(permission)
     return user
 
 

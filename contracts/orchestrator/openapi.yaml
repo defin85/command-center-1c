@@ -4642,6 +4642,402 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/settings/command-schemas/audit/:
+    get:
+      operationId: v2_settings_command_schemas_audit_retrieve
+      summary: List command schemas audit log entries
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ibcmd)
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasAuditListResponse'
+          description: ''
+  /api/v2/settings/command-schemas/diff/:
+    post:
+      operationId: v2_settings_command_schemas_diff_create
+      description: |-
+        Return base -> effective diff for a single command.
+
+        If catalog is provided in request body, uses draft overrides without saving.
+      summary: Diff command schema (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasDiffRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasDiffRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasDiffRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasDiffResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/editor/:
+    get:
+      operationId: v2_settings_command_schemas_editor_retrieve
+      description: |-
+        Return base/overrides versions and catalogs for Command Schemas Editor (staff-only).
+
+        Supports conditional requests via ETag/If-None-Match (returns 304).
+      summary: Get command schemas editor view (v2)
+      parameters:
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ibcmd)
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasEditorViewResponse'
+          description: ''
+        '304':
+          description: Not Modified
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/import-its/:
+    post:
+      operationId: v2_settings_command_schemas_import_its_create
+      description: |-
+        Parse ITS JSON into driver command schema catalog and optionally save (staff-only).
+
+        driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.
+        driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact.
+      summary: Import ITS command schemas (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasImportRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasImportRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasImportRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasImportResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/overrides/rollback/:
+    post:
+      operationId: v2_settings_command_schemas_overrides_rollback_create
+      description: Move overrides alias active to a specific version (staff-only).
+        Requires reason.
+      summary: Rollback command schema overrides (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesRollbackRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesRollbackRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesRollbackRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasOverridesRollbackResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          description: Conflict
+  /api/v2/settings/command-schemas/overrides/update/:
+    post:
+      operationId: v2_settings_command_schemas_overrides_update_create
+      description: |-
+        Upload new overrides catalog version and move alias active (staff-only). Requires reason.
+
+        Supports optimistic concurrency via If-Match header or expected_etag in request body.
+      summary: Update command schema overrides (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasOverridesUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasOverridesUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          description: Conflict
+  /api/v2/settings/command-schemas/preview/:
+    post:
+      operationId: v2_settings_command_schemas_preview_create
+      description: |-
+        Build argv/argv_masked for a single command using effective catalog.
+
+        If catalog is provided in request body, uses draft overrides without saving.
+      summary: Preview command argv (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPreviewRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasPreviewResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/promote/:
+    post:
+      operationId: v2_settings_command_schemas_promote_create
+      description: Move base alias (approved/latest) to a specific version (staff-only).
+        Requires reason.
+      summary: Promote command schemas base alias (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPromoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPromoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasPromoteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasPromoteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/validate/:
+    post:
+      operationId: v2_settings_command_schemas_validate_create
+      description: |-
+        Validate effective driver command schema catalog.
+
+        If catalog is provided in request body, validates draft overrides without saving.
+      summary: Validate command schemas (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasValidateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasValidateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasValidateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasValidateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/settings/command-schemas/versions/:
+    get:
+      operationId: v2_settings_command_schemas_versions_retrieve
+      description: List base/overrides versions for Command Schemas Editor (staff-only).
+      summary: List command schema artifact versions (v2)
+      parameters:
+      - in: query
+        name: artifact
+        schema:
+          type: string
+        description: Artifact type (base/overrides)
+        required: true
+      - in: query
+        name: driver
+        schema:
+          type: string
+        description: Driver name (cli/ibcmd)
+        required: true
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 50, max 200)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasVersionsListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/settings/driver-catalogs/:
     get:
       operationId: v2_settings_driver_catalogs_retrieve
@@ -7442,6 +7838,450 @@ components:
       required:
       - cluster
       - message
+    CommandSchemasAuditListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandSchemasAuditLogItem'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - items
+      - total
+    CommandSchemasAuditLogItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        action:
+          type: string
+        outcome:
+          type: string
+        actor_username:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: {}
+        error_message:
+          type: string
+      required:
+      - action
+      - actor_username
+      - created_at
+      - error_message
+      - id
+      - metadata
+      - outcome
+      - target_id
+      - target_type
+    CommandSchemasDiffItem:
+      type: object
+      properties:
+        path:
+          type: string
+        base_present:
+          type: boolean
+        base:
+          nullable: true
+        effective_present:
+          type: boolean
+        effective:
+          nullable: true
+      required:
+      - base_present
+      - effective_present
+      - path
+    CommandSchemasDiffRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        command_id:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - command_id
+      - driver
+    CommandSchemasDiffResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        command_id:
+          type: string
+        has_overrides:
+          type: boolean
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandSchemasDiffItem'
+        count:
+          type: integer
+      required:
+      - changes
+      - command_id
+      - count
+      - driver
+      - has_overrides
+    CommandSchemasEditorViewResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        etag:
+          type: string
+        base:
+          type: object
+          additionalProperties: {}
+        overrides:
+          type: object
+          additionalProperties: {}
+        catalogs:
+          type: object
+          additionalProperties: {}
+      required:
+      - base
+      - catalogs
+      - driver
+      - etag
+      - overrides
+    CommandSchemasImportRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+          default: cli
+        its_payload:
+          type: object
+          additionalProperties: {}
+        save:
+          type: boolean
+          default: true
+        reason:
+          type: string
+      required:
+      - its_payload
+      - reason
+    CommandSchemasImportResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+      required:
+      - catalog
+      - driver
+    CommandSchemasIssue:
+      type: object
+      properties:
+        severity:
+          enum:
+          - error
+          - warning
+          type: string
+          description: |-
+            * `error` - error
+            * `warning` - warning
+          x-spec-enum-id: 81719efa66e0f221
+        code:
+          type: string
+        message:
+          type: string
+        command_id:
+          type: string
+          nullable: true
+        path:
+          type: string
+          nullable: true
+      required:
+      - code
+      - message
+      - severity
+    CommandSchemasOverridesRollbackRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        version:
+          type: string
+          nullable: true
+        version_id:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+        expected_etag:
+          type: string
+          nullable: true
+      required:
+      - driver
+      - reason
+    CommandSchemasOverridesRollbackResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        overrides_version:
+          type: string
+        etag:
+          type: string
+      required:
+      - driver
+      - etag
+      - overrides_version
+    CommandSchemasOverridesUpdateRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        catalog:
+          type: object
+          additionalProperties: {}
+        reason:
+          type: string
+        expected_etag:
+          type: string
+          nullable: true
+      required:
+      - catalog
+      - driver
+      - reason
+    CommandSchemasOverridesUpdateResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        overrides_version:
+          type: string
+        etag:
+          type: string
+      required:
+      - driver
+      - etag
+      - overrides_version
+    CommandSchemasPreviewRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        command_id:
+          type: string
+        mode:
+          enum:
+          - guided
+          - manual
+          type: string
+          description: |-
+            * `guided` - guided
+            * `manual` - manual
+          x-spec-enum-id: bd50d848143873c7
+          default: guided
+        params:
+          type: object
+          additionalProperties: {}
+        additional_args:
+          type: array
+          items:
+            type: string
+        catalog:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - command_id
+      - driver
+    CommandSchemasPreviewResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        command_id:
+          type: string
+        argv:
+          type: array
+          items:
+            type: string
+        argv_masked:
+          type: array
+          items:
+            type: string
+        risk_level:
+          type: string
+          nullable: true
+        scope:
+          type: string
+          nullable: true
+        disabled:
+          type: boolean
+          nullable: true
+      required:
+      - argv
+      - argv_masked
+      - command_id
+      - driver
+    CommandSchemasPromoteRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        version:
+          type: string
+        alias:
+          type: string
+          default: approved
+        reason:
+          type: string
+      required:
+      - driver
+      - reason
+      - version
+    CommandSchemasPromoteResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        alias:
+          type: string
+        version:
+          type: string
+      required:
+      - alias
+      - driver
+      - version
+    CommandSchemasValidateRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        catalog:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - driver
+    CommandSchemasValidateResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        ok:
+          type: boolean
+        base_version:
+          type: string
+          nullable: true
+        base_version_id:
+          type: string
+          nullable: true
+        overrides_version:
+          type: string
+          nullable: true
+        overrides_version_id:
+          type: string
+          nullable: true
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandSchemasIssue'
+        errors_count:
+          type: integer
+        warnings_count:
+          type: integer
+      required:
+      - base_version
+      - base_version_id
+      - driver
+      - errors_count
+      - issues
+      - ok
+      - overrides_version
+      - overrides_version_id
+      - warnings_count
+    CommandSchemasVersionsListResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        artifact:
+          type: string
+        versions:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        count:
+          type: integer
+      required:
+      - artifact
+      - count
+      - driver
+      - versions
     CompensationLogRequest:
       type: object
       properties:

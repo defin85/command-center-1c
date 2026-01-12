@@ -14,6 +14,7 @@ import { RBACPage } from './pages/RBAC/RBACPage'
 import { UsersPage } from './pages/Users/UsersPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
 import { DriverCatalogsPage } from './pages/DriverCatalogs/DriverCatalogsPage'
+import { CommandSchemasPage } from './pages/CommandSchemas/CommandSchemasPage'
 import { DLQPage } from './pages/DLQ'
 import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
@@ -24,6 +25,7 @@ import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useMe } from './api/queries/me'
 import { useCanManageRbac } from './api/queries/rbac'
+import { useCanManageDriverCatalogs } from './api/queries'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
 
@@ -70,6 +72,25 @@ const RbacRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!canManageRbacQuery.data) {
+    return <Navigate to="/forbidden" replace />
+  }
+
+  return <>{children}</>
+}
+
+const DriverCatalogsRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('auth_token')
+  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: Boolean(token) })
+
+  if (!token) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (canManageDriverCatalogsQuery.isLoading) {
+    return <div />
+  }
+
+  if (!canManageDriverCatalogsQuery.data) {
     return <Navigate to="/forbidden" replace />
   }
 
@@ -271,11 +292,18 @@ function App() {
             </StaffRoute>
           } />
           <Route path="/settings/driver-catalogs" element={
-            <StaffRoute>
+            <DriverCatalogsRoute>
               <MainLayout>
                 <DriverCatalogsPage />
               </MainLayout>
-            </StaffRoute>
+            </DriverCatalogsRoute>
+          } />
+          <Route path="/settings/command-schemas" element={
+            <DriverCatalogsRoute>
+              <MainLayout>
+                <CommandSchemasPage />
+              </MainLayout>
+            </DriverCatalogsRoute>
           } />
           <Route path="/settings/timeline" element={
             <StaffRoute>

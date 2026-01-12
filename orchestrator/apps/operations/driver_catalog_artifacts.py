@@ -69,6 +69,7 @@ def upload_base_catalog_version(
     catalog: dict[str, Any],
     *,
     created_by=None,
+    metadata_extra: dict[str, Any] | None = None,
 ) -> ArtifactVersion:
     driver = _normalize_driver(driver)
     artifacts = get_or_create_catalog_artifacts(driver, created_by=created_by)
@@ -89,6 +90,9 @@ def upload_base_catalog_version(
     )
 
     metadata = _build_catalog_metadata(catalog)
+    if metadata_extra:
+        metadata = dict(metadata)
+        metadata.update(metadata_extra)
 
     version_obj = ArtifactService.create_version(
         artifact=artifacts.base,
@@ -112,6 +116,7 @@ def upload_overrides_catalog_version(
     catalog: dict[str, Any],
     *,
     created_by=None,
+    metadata_extra: dict[str, Any] | None = None,
 ) -> ArtifactVersion:
     driver = _normalize_driver(driver)
     artifacts = get_or_create_catalog_artifacts(driver, created_by=created_by)
@@ -129,12 +134,17 @@ def upload_overrides_catalog_version(
         content_type="application/json",
     )
 
+    metadata = {"catalog_version": 2, "driver": driver, "type": "overrides"}
+    if metadata_extra:
+        metadata = dict(metadata)
+        metadata.update(metadata_extra)
+
     version_obj = ArtifactService.create_version(
         artifact=artifacts.overrides,
         file_obj=file_obj,
         filename=filename,
         version=version_value,
-        metadata={"catalog_version": 2, "driver": driver, "type": "overrides"},
+        metadata=metadata,
         content_type="application/json",
         created_by=created_by,
     )

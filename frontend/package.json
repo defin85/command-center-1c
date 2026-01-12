@@ -15,6 +15,8 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:browser": "playwright test",
+    "test:browser:command-schemas": "playwright test tests/browser/command-schemas-ui.spec.ts",
     "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts"
   },
   "dependencies": {

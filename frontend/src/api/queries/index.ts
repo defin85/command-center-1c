@@ -71,6 +71,10 @@ export const queryKeys = {
     all: ['me'] as const,
     current: () => [...queryKeys.me.all, 'current'] as const,
   },
+  commandSchemas: {
+    all: ['command-schemas'] as const,
+    canManage: () => [...queryKeys.commandSchemas.all, 'can-manage'] as const,
+  },
   dlq: {
     all: ['dlq'] as const,
     list: (filters?: unknown) => [...queryKeys.dlq.all, 'list', filters] as const,
@@ -134,3 +138,4 @@ export {
 
 export { useDriverCommands } from './driverCommands'
 export { useDriverCommandShortcuts, useCreateDriverCommandShortcut, useDeleteDriverCommandShortcut } from './commandShortcuts'
+export { useCanManageDriverCatalogs } from './commandSchemas'

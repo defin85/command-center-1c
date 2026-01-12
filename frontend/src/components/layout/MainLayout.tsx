@@ -6,6 +6,7 @@ import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
 import { useCanManageRbac } from '../../api/queries/rbac'
+import { useCanManageDriverCatalogs } from '../../api/queries'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
@@ -23,6 +24,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const meQuery = useMe()
   const hasToken = Boolean(localStorage.getItem('auth_token'))
   const canManageRbacQuery = useCanManageRbac({ enabled: hasToken })
+  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: hasToken })
   const {
     isConnected: isDatabaseStreamConnected,
     isConnecting: isDatabaseStreamConnecting,
@@ -34,6 +36,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canManageUsers = Boolean(meQuery.data?.is_staff)
   const canManageAdmin = Boolean(meQuery.data?.is_staff)
   const canManageRbac = Boolean(canManageRbacQuery.data)
+  const canManageDriverCatalogs = Boolean(canManageDriverCatalogsQuery.data)
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -127,11 +130,20 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           icon: <SettingOutlined />,
           label: 'Runtime Settings',
         },
-        {
-          key: '/settings/driver-catalogs',
-          icon: <SettingOutlined />,
-          label: 'Driver Catalogs',
-        },
+        ...(canManageDriverCatalogs
+          ? [
+            {
+              key: '/settings/driver-catalogs',
+              icon: <SettingOutlined />,
+              label: 'Driver Catalogs',
+            },
+            {
+              key: '/settings/command-schemas',
+              icon: <SettingOutlined />,
+              label: 'Command Schemas',
+            },
+          ]
+          : []),
         {
           key: '/settings/timeline',
           icon: <SettingOutlined />,

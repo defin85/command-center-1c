@@ -26,6 +26,36 @@
 - Просмотр шаблонов операций.
 - **Sync from registry** (staff-only): синхронизация шаблонов из in-code registry.
 
+### Command Schemas (`/settings/command-schemas`)
+- Редактирование схем команд для `cli`/`ibcmd` (driver catalogs v2) через UI (save/validate/preview/diff/rollback).
+- Доступ: `is_staff=true` + право `operations.manage_driver_catalogs` (иначе будет 403/скрытый пункт меню).
+- Любые write-действия требуют `reason` и попадают в audit log.
+
+#### Как импортировать ITS (base catalog)
+- Endpoint: `POST /api/v2/settings/command-schemas/import-its/`
+- Body: `driver=cli|ibcmd`, `its_payload={...}`, `save=true|false`, `reason="..."`
+- Примечания:
+  - `cli`: импортирует legacy catalog и публикует v2 base artifact.
+  - `ibcmd`: строит v2 base artifact из ITS и публикует его.
+
+#### Как откатывать overrides (rollback)
+- В UI: `Rollback` → выбрать версию `ovr-*` → указать `reason` → применить.
+- Через API: `POST /api/v2/settings/command-schemas/overrides/rollback/`
+  - Body: `driver`, `version` (или `version_id`), `reason`, опционально `expected_etag` (409 при конфликте).
+
+#### Рекомендации (permissions / risk_level)
+- `risk_level=dangerous` ставь только для реально опасных действий; UI требует подтверждение при смене safe->dangerous.
+- `disabled=true` используй как break-glass выключатель; включение disabled команды требует подтверждение.
+- `permissions` держи максимально строгими: минимизируй `allowed_roles/allowed_envs`, не ослабляй `min_db_level` без явной причины.
+
+#### Аудит и метрики
+- Audit endpoint: `GET /api/v2/settings/command-schemas/audit/` (фильтр по `driver=cli|ibcmd`).
+- Prometheus:
+  - `cc1c_orchestrator_admin_actions_total{action="driver_catalog.overrides.update|driver_catalog.overrides.rollback|driver_catalog.promote|driver_catalog.import_its",outcome="success|error"}`
+  - `cc1c_orchestrator_driver_catalog_editor_conflicts_total{driver=...,action="overrides.update|overrides.rollback"}`
+  - `cc1c_orchestrator_driver_catalog_editor_validation_failed_total{driver=...,stage="overrides.update|import_its|validate",kind="invalid_overrides|invalid_effective|invalid_parsed"}`
+  - `cc1c_orchestrator_driver_catalog_editor_errors_total{driver=...,action=...,code=...}` (все error-коды, включая `PERMISSION_DENIED`, `BASE_CATALOG_MISSING`, `INVALID_ALIAS`, `VERSION_NOT_FOUND`, `SAVE_FAILED`)
+
 ### RBAC (`/rbac`)
 - Выдача/отзыв прав на ресурсы (clusters/databases/templates/workflows/artifacts).
 - Проверка **effective access** (итоговый доступ + источники).
