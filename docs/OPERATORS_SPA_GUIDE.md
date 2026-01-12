@@ -32,11 +32,19 @@
 - Любые write-действия требуют `reason` и попадают в audit log.
 
 #### Как импортировать ITS (base catalog)
+- В UI: `/settings/command-schemas` → выбрать driver (`CLI`/`IBCMD`) → `Import ITS...` → выбрать ITS JSON → указать `reason` → `Import`.
 - Endpoint: `POST /api/v2/settings/command-schemas/import-its/`
 - Body: `driver=cli|ibcmd`, `its_payload={...}`, `save=true|false`, `reason="..."`
 - Примечания:
   - `cli`: импортирует legacy catalog и публикует v2 base artifact.
   - `ibcmd`: строит v2 base artifact из ITS и публикует его.
+
+#### CLI: как опубликовать legacy catalog (bootstrap)
+Если для `cli` уже есть `config/cli_commands.json`, но base-артефакта еще нет, редактор покажет предупреждение и предложит опубликовать base.
+
+- В UI: вкладка `CLI` → `Publish...` → указать `reason` → подтвердить.
+- Через API: `POST /api/v2/settings/command-schemas/bootstrap-cli/`
+  - Body: `reason="..."`
 
 #### Как откатывать overrides (rollback)
 - В UI: `Rollback` → выбрать версию `ovr-*` → указать `reason` → применить.

@@ -272,5 +272,6 @@ urlpatterns = [
     path('settings/command-schemas/overrides/update/', driver_catalogs.update_command_schema_overrides, name='command-schemas-overrides-update'),
     path('settings/command-schemas/overrides/rollback/', driver_catalogs.rollback_command_schema_overrides, name='command-schemas-overrides-rollback'),
     path('settings/command-schemas/import-its/', driver_catalogs.import_its_command_schemas, name='command-schemas-import-its'),
+    path('settings/command-schemas/bootstrap-cli/', driver_catalogs.bootstrap_cli_command_schemas_base, name='command-schemas-bootstrap-cli'),
     path('settings/command-schemas/promote/', driver_catalogs.promote_command_schemas_base, name='command-schemas-promote'),
 ]

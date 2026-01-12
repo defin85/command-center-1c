@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App, Button, Card, Checkbox, Divider, Form, Input, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
-import { ReloadOutlined, RollbackOutlined, SaveOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Card, Checkbox, Divider, Form, Input, Modal, Select, Space, Switch, Tabs, Tag, Typography, Upload } from 'antd'
+import type { UploadProps } from 'antd'
+import { ReloadOutlined, RollbackOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
 
 import type { DriverCatalogV2, DriverCommandParamV2, DriverCommandV2 } from '../../api/driverCommands'
 import {
+  bootstrapCliCommandSchemasBase,
   diffCommandSchemas,
   getCommandSchemasEditorView,
+  importItsCommandSchemas,
   listCommandSchemaVersions,
   previewCommandSchemas,
   rollbackCommandSchemaOverrides,
@@ -136,6 +139,15 @@ export function CommandSchemasPage() {
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveReason, setSaveReason] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const [bootstrapOpen, setBootstrapOpen] = useState(false)
+  const [bootstrapReason, setBootstrapReason] = useState('')
+  const [bootstrapping, setBootstrapping] = useState(false)
+
+  const [importItsOpen, setImportItsOpen] = useState(false)
+  const [importItsReason, setImportItsReason] = useState('')
+  const [importItsFile, setImportItsFile] = useState<File | null>(null)
+  const [importingIts, setImportingIts] = useState(false)
 
   const [rollbackOpen, setRollbackOpen] = useState(false)
   const [rollbackReason, setRollbackReason] = useState('')
@@ -406,6 +418,135 @@ export function CommandSchemasPage() {
       },
     })
   }, [dirty, fetchView, message, modal, rollingBack, saving])
+
+  const openBootstrap = useCallback(() => {
+    if (saving || rollbackLoading || rollingBack || loading) {
+      message.info('Please wait until the current action finishes')
+      return
+    }
+
+    const open = () => {
+      setBootstrapOpen(true)
+      setBootstrapReason('')
+      setBootstrapping(false)
+    }
+
+    if (!dirty) {
+      open()
+      return
+    }
+
+    modal.confirm({
+      title: 'Unsaved changes',
+      content: 'Publishing base will reload the editor and discard your local draft.',
+      okText: 'Discard and continue',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: open,
+    })
+  }, [dirty, loading, message, modal, rollbackLoading, rollingBack, saving])
+
+  const openImportIts = useCallback(() => {
+    if (saving || rollbackLoading || rollingBack || loading || bootstrapping) {
+      message.info('Please wait until the current action finishes')
+      return
+    }
+
+    const open = () => {
+      setImportItsOpen(true)
+      setImportItsReason('')
+      setImportItsFile(null)
+      setImportingIts(false)
+    }
+
+    if (!dirty) {
+      open()
+      return
+    }
+
+    modal.confirm({
+      title: 'Unsaved changes',
+      content: 'Importing ITS will reload the editor and discard your local draft.',
+      okText: 'Discard and continue',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: open,
+    })
+  }, [bootstrapping, dirty, loading, message, modal, rollbackLoading, rollingBack, saving])
+
+  const handleImportItsFile: UploadProps['beforeUpload'] = (file) => {
+    setImportItsFile(file)
+    return false
+  }
+
+  const handleImportIts = async () => {
+    if (importingIts) {
+      return
+    }
+
+    const reason = saveText(importItsReason)
+    if (!reason) {
+      message.error('Reason is required')
+      return
+    }
+    if (!importItsFile) {
+      message.error('Select ITS JSON file')
+      return
+    }
+
+    let itsPayload: Record<string, unknown>
+    try {
+      const rawText = await importItsFile.text()
+      const parsed = JSON.parse(rawText) as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        message.error('ITS payload must be a JSON object')
+        return
+      }
+      itsPayload = parsed as Record<string, unknown>
+    } catch (_err) {
+      message.error('Invalid ITS JSON file')
+      return
+    }
+
+    setImportingIts(true)
+    try {
+      await importItsCommandSchemas({ driver: activeDriver, its_payload: itsPayload, save: true, reason })
+      message.success('ITS imported')
+      setImportItsOpen(false)
+      await fetchView()
+    } catch (error) {
+      const err = error as { response?: { data?: { error?: { message?: string } | string } } } | null
+      const backendMessage = typeof err?.response?.data?.error === 'string'
+        ? err.response?.data?.error
+        : err?.response?.data?.error?.message
+      message.error(backendMessage || 'Failed to import ITS')
+    } finally {
+      setImportingIts(false)
+    }
+  }
+
+  const handleBootstrap = async () => {
+    if (bootstrapping) {
+      return
+    }
+    const reason = bootstrapReason.trim()
+    if (!reason) {
+      return
+    }
+
+    setBootstrapping(true)
+    try {
+      await bootstrapCliCommandSchemasBase({ reason })
+      message.success('CLI base catalog published')
+      setBootstrapOpen(false)
+      await fetchView()
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Failed to publish CLI base catalog'
+      message.error(text)
+    } finally {
+      setBootstrapping(false)
+    }
+  }
 
   const openRollback = async () => {
     setRollbackOpen(true)
@@ -1560,6 +1701,14 @@ export function CommandSchemasPage() {
           <Button data-testid="command-schemas-refresh" onClick={requestRefreshView} loading={loading} icon={<ReloadOutlined />}>
             Refresh
           </Button>
+          <Button
+            data-testid="command-schemas-import-its-open"
+            onClick={openImportIts}
+            disabled={loading || saving || rollingBack || rollbackLoading || bootstrapping}
+            icon={<UploadOutlined />}
+          >
+            Import ITS...
+          </Button>
           <Button data-testid="command-schemas-rollback-open" onClick={openRollback} disabled={!view} icon={<RollbackOutlined />}>
             Rollback...
           </Button>
@@ -1615,6 +1764,24 @@ export function CommandSchemasPage() {
               <Text type="secondary">Overrides active: {view.overrides.active_version ?? '-'}</Text>
               <Text type="secondary">ETag: {view.etag}</Text>
             </Space>
+          )}
+        />
+      )}
+
+      {view && activeDriver === 'cli' && !view.base.approved_version && !view.base.latest_version && (
+        <Alert
+          type="warning"
+          showIcon
+          message="CLI base catalog is not published"
+          description="Command Schemas editor reads base catalogs from MinIO artifacts. Publish legacy config/cli_commands.json to start."
+          action={(
+            <Button
+              data-testid="command-schemas-bootstrap-open"
+              onClick={openBootstrap}
+              disabled={loading || saving || rollingBack || rollbackLoading}
+            >
+              Publish...
+            </Button>
           )}
         />
       )}
@@ -1675,6 +1842,74 @@ export function CommandSchemasPage() {
             onChange={(e) => setSaveReason(e.target.value)}
             placeholder="Why are you changing command schemas?"
             rows={4}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title={`Import ITS JSON (${activeDriver.toUpperCase()})`}
+        open={importItsOpen}
+        onCancel={() => setImportItsOpen(false)}
+        onOk={handleImportIts}
+        okText="Import"
+        okButtonProps={{
+          disabled: importingIts || !importItsFile || !importItsReason.trim(),
+          loading: importingIts,
+          'data-testid': 'command-schemas-import-its-confirm',
+        }}
+        cancelButtonProps={{ disabled: importingIts }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="ITS export"
+            description="Export ITS JSON via scripts/dev/its-scrape.py and upload it here to build base catalog."
+          />
+          <Text type="secondary">ITS JSON file</Text>
+          <Upload
+            accept=".json,application/json"
+            showUploadList={false}
+            beforeUpload={handleImportItsFile}
+            disabled={importingIts}
+          >
+            <Button icon={<UploadOutlined />} data-testid="command-schemas-import-its-file">
+              Select file...
+            </Button>
+          </Upload>
+          {importItsFile && (
+            <Text type="secondary">Selected: {importItsFile.name}</Text>
+          )}
+          <Text type="secondary">Reason (required)</Text>
+          <Input.TextArea
+            data-testid="command-schemas-import-its-reason"
+            value={importItsReason}
+            onChange={(e) => setImportItsReason(e.target.value)}
+            placeholder="Why import ITS?"
+            rows={4}
+            disabled={importingIts}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="Publish CLI base catalog"
+        open={bootstrapOpen}
+        onCancel={() => setBootstrapOpen(false)}
+        onOk={handleBootstrap}
+        okText="Publish"
+        okButtonProps={{ disabled: !bootstrapReason.trim() || bootstrapping, loading: bootstrapping, 'data-testid': 'command-schemas-bootstrap-confirm' }}
+        cancelButtonProps={{ disabled: bootstrapping }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">Reason (required)</Text>
+          <Input.TextArea
+            data-testid="command-schemas-bootstrap-reason"
+            value={bootstrapReason}
+            onChange={(e) => setBootstrapReason(e.target.value)}
+            placeholder="Why publish CLI base catalog?"
+            rows={4}
+            disabled={bootstrapping}
           />
         </Space>
       </Modal>

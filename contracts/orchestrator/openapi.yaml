@@ -4790,6 +4790,44 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/settings/command-schemas/bootstrap-cli/:
+    post:
+      operationId: v2_settings_command_schemas_bootstrap_cli_create
+      description: Publish current legacy CLI command catalog (config/cli_commands.json)
+        as a versioned v2 base artifact (staff-only). Requires reason.
+      summary: Bootstrap CLI command schemas base from legacy file (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasBootstrapCliResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/settings/command-schemas/overrides/rollback/:
     post:
       operationId: v2_settings_command_schemas_overrides_rollback_create
@@ -7967,6 +8005,26 @@ components:
       - driver
       - etag
       - overrides
+    CommandSchemasBootstrapCliRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+      required:
+      - reason
+    CommandSchemasBootstrapCliResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        base_version:
+          type: string
+        base_version_id:
+          type: string
+      required:
+      - base_version
+      - base_version_id
+      - driver
     CommandSchemasImportRequest:
       type: object
       properties:

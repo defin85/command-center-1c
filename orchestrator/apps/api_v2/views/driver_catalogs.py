@@ -246,6 +246,16 @@ class CommandSchemasPromoteResponseSerializer(serializers.Serializer):
     version = serializers.CharField()
 
 
+class CommandSchemasBootstrapCliRequestSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+
+
+class CommandSchemasBootstrapCliResponseSerializer(serializers.Serializer):
+    driver = serializers.CharField()
+    base_version = serializers.CharField()
+    base_version_id = serializers.CharField()
+
+
 class CommandSchemasIssueSerializer(serializers.Serializer):
     severity = serializers.ChoiceField(choices=["error", "warning"])
     code = serializers.CharField()
@@ -2160,6 +2170,145 @@ def import_its_command_schemas(request):
         },
     )
     return Response({"driver": driver, "catalog": catalog})
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Bootstrap CLI command schemas base from legacy file (v2)",
+    description=(
+        "Publish current legacy CLI command catalog (config/cli_commands.json) "
+        "as a versioned v2 base artifact (staff-only). Requires reason."
+    ),
+    request=CommandSchemasBootstrapCliRequestSerializer,
+    responses={
+        200: CommandSchemasBootstrapCliResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+def bootstrap_cli_command_schemas_base(request):
+    denied = _ensure_manage_driver_catalogs(request, action="bootstrap.cli_base")
+    if denied:
+        return denied
+
+    serializer = CommandSchemasBootstrapCliRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_REQUEST")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.bootstrap_cli",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id="cli",
+            metadata={"error": "INVALID_REQUEST"},
+            error_message="INVALID_REQUEST",
+        )
+        return Response({
+            "success": False,
+            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
+        }, status=400)
+
+    reason = serializer.validated_data["reason"]
+
+    legacy = load_cli_command_catalog()
+    legacy_errors = validate_cli_catalog(legacy)
+    if legacy_errors:
+        record_driver_catalog_editor_validation_failed("cli", stage="bootstrap.cli_base", kind="invalid_legacy")
+        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_CATALOG")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.bootstrap_cli",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id="cli",
+            metadata={"error": "INVALID_CATALOG", "driver": "cli", "reason": reason},
+            error_message="INVALID_CATALOG",
+        )
+        return Response({
+            "success": False,
+            "error": {"code": "INVALID_CATALOG", "message": "Invalid legacy CLI catalog", "details": legacy_errors},
+        }, status=400)
+
+    try:
+        base_catalog = cli_catalog_v1_to_v2(legacy)
+    except Exception as exc:
+        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="CONVERT_FAILED")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.bootstrap_cli",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id="cli",
+            metadata={"error": "CONVERT_FAILED", "driver": "cli", "reason": reason},
+            error_message="CONVERT_FAILED",
+        )
+        return Response(
+            {"success": False, "error": {"code": "CONVERT_FAILED", "message": str(exc)}},
+            status=500,
+        )
+
+    validation_issues = _validate_cli_catalog_v2(base_catalog)
+    if any(item.get("severity") == "error" for item in validation_issues):
+        record_driver_catalog_editor_validation_failed("cli", stage="bootstrap.cli_base", kind="invalid_converted")
+        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_CATALOG")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.bootstrap_cli",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id="cli",
+            metadata={"error": "INVALID_CATALOG", "driver": "cli", "reason": reason},
+            error_message="INVALID_CATALOG",
+        )
+        return Response({
+            "success": False,
+            "error": {
+                "code": "INVALID_CATALOG",
+                "message": "Converted CLI base catalog is invalid",
+                "details": validation_issues,
+            },
+        }, status=400)
+
+    try:
+        version_obj = upload_base_catalog_version(
+            driver="cli",
+            catalog=base_catalog,
+            created_by=request.user,
+            metadata_extra={"reason": reason},
+        )
+        invalidate_driver_catalog_cache("cli")
+    except Exception as exc:
+        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="SAVE_FAILED")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.bootstrap_cli",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id="cli",
+            metadata={"error": "SAVE_FAILED", "driver": "cli", "reason": reason},
+            error_message="SAVE_FAILED",
+        )
+        return Response(
+            {"success": False, "error": {"code": "SAVE_FAILED", "message": str(exc)}},
+            status=500,
+        )
+
+    log_admin_action(
+        request,
+        action="driver_catalog.base.bootstrap_cli",
+        outcome="success",
+        target_type="driver_catalog",
+        target_id="cli",
+        metadata={"driver": "cli", "version": str(version_obj.version), "reason": reason},
+    )
+
+    return Response({
+        "driver": "cli",
+        "base_version": str(version_obj.version),
+        "base_version_id": str(version_obj.id),
+    })
 
 
 @extend_schema(

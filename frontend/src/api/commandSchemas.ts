@@ -93,6 +93,48 @@ export async function listCommandSchemaVersions(
   return response.data
 }
 
+export type CommandSchemasBootstrapCliRequest = {
+  reason: string
+}
+
+export type CommandSchemasBootstrapCliResponse = {
+  driver: CommandSchemaDriver
+  base_version: string
+  base_version_id: string
+}
+
+export async function bootstrapCliCommandSchemasBase(
+  payload: CommandSchemasBootstrapCliRequest
+): Promise<CommandSchemasBootstrapCliResponse> {
+  const response = await apiClient.post<CommandSchemasBootstrapCliResponse>(
+    '/api/v2/settings/command-schemas/bootstrap-cli/',
+    payload
+  )
+  return response.data
+}
+
+export type CommandSchemasImportItsRequest = {
+  driver: CommandSchemaDriver
+  its_payload: Record<string, unknown>
+  save?: boolean
+  reason: string
+}
+
+export type CommandSchemasImportItsResponse = {
+  driver: CommandSchemaDriver
+  catalog: Record<string, unknown>
+}
+
+export async function importItsCommandSchemas(
+  payload: CommandSchemasImportItsRequest
+): Promise<CommandSchemasImportItsResponse> {
+  const response = await apiClient.post<CommandSchemasImportItsResponse>(
+    '/api/v2/settings/command-schemas/import-its/',
+    payload
+  )
+  return response.data
+}
+
 export type CommandSchemaOverridesUpdateRequest = {
   driver: CommandSchemaDriver
   catalog: Record<string, unknown>

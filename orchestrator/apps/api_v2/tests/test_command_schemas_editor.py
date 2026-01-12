@@ -123,6 +123,74 @@ def test_command_schemas_editor_view_returns_versions_and_etag(client, monkeypat
 
 
 @pytest.mark.django_db
+def test_command_schemas_bootstrap_cli_publishes_base_artifact_and_is_audited(client, monkeypatch):
+    storage_data: dict[str, bytes] = {}
+
+    def fake_upload_object(_self, storage_key: str, data, size: int, content_type=None):
+        _ = size
+        _ = content_type
+        storage_data[storage_key] = data.read()
+        try:
+            data.seek(0)
+        except Exception:
+            pass
+
+    def fake_get_object(_self, storage_key: str):
+        return io.BytesIO(storage_data[storage_key])
+
+    monkeypatch.setattr(ArtifactStorageClient, "upload_object", fake_upload_object)
+    monkeypatch.setattr(ArtifactStorageClient, "get_object", fake_get_object)
+
+    def fake_load_cli_catalog():
+        return {
+            "version": "8.3.27",
+            "source": "legacy_cli_config",
+            "generated_at": "2026-01-01T00:00:00Z",
+            "commands": [
+                {
+                    "id": "AccessToken",
+                    "label": "AccessToken",
+                    "description": "Get token",
+                    "params": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(driver_catalogs_view, "load_cli_command_catalog", fake_load_cli_catalog)
+
+    resp = client.post(
+        "/api/v2/settings/command-schemas/bootstrap-cli/",
+        data={"reason": "bootstrap legacy cli"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["driver"] == "cli"
+    assert payload["base_version"]
+    assert payload["base_version_id"]
+
+    base = Artifact.objects.get(name="driver_catalog.cli.base", kind=ArtifactKind.DRIVER_CATALOG)
+    assert base.versions.count() == 1
+    assert base.aliases.filter(alias="latest").exists()
+    assert base.aliases.filter(alias="approved").exists()
+    assert base.versions.first().metadata.get("reason") == "bootstrap legacy cli"
+
+    audit = AdminActionAuditLog.objects.filter(
+        action="driver_catalog.base.bootstrap_cli",
+        outcome="success",
+        target_id="cli",
+    ).first()
+    assert audit is not None
+    assert audit.metadata.get("reason") == "bootstrap legacy cli"
+
+    editor_resp = client.get("/api/v2/settings/command-schemas/editor/", {"driver": "cli"})
+    assert editor_resp.status_code == 200
+    editor_payload = editor_resp.json()
+    assert editor_payload["base"]["approved_version"] is not None
+    assert editor_payload["catalogs"]["base"]["commands_by_id"]["AccessToken"]["argv"] == ["/AccessToken"]
+
+
+@pytest.mark.django_db
 def test_command_schemas_overrides_update_and_rollback(client, monkeypatch):
     base = Artifact.objects.create(
         name="driver_catalog.cli.base",
