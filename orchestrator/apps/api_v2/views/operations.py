@@ -35,8 +35,6 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.operations.models import BatchOperation, Task, DriverCommandShortcut
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
-from apps.operations.cli_catalog import load_cli_command_catalog
-from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2, compute_etag
 from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
 from apps.operations.driver_catalog_effective import (
     compute_actor_roles_hash,
@@ -2520,8 +2518,126 @@ def delete_driver_command_shortcut(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_cli_command_catalog(request):
-    catalog = load_cli_command_catalog()
-    return Response(catalog)
+    roles_hash = compute_actor_roles_hash(request.user)
+
+    resolved = resolve_driver_catalog_versions("cli")
+    if resolved.base_version is None:
+        payload = {
+            "version": "unknown",
+            "source": "command_schemas",
+            "generated_at": "",
+            "commands": [],
+        }
+        etag = compute_driver_catalog_etag(
+            driver="cli",
+            base_version_id=None,
+            overrides_version_id=None,
+            roles_hash=roles_hash,
+        )
+        response = Response(payload)
+        response["ETag"] = etag
+        response["Cache-Control"] = "private, max-age=0"
+        return response
+
+    effective = get_effective_driver_catalog(
+        driver="cli",
+        base_version=resolved.base_version,
+        overrides_version=resolved.overrides_version,
+    )
+    catalog_v2 = filter_catalog_for_user(request.user, effective.catalog)
+
+    source_meta = catalog_v2.get("source") if isinstance(catalog_v2, dict) else {}
+    if not isinstance(source_meta, dict):
+        source_meta = {}
+
+    version_str = str(catalog_v2.get("platform_version") or "").strip() or "unknown"
+    source_str = str(
+        source_meta.get("doc_url")
+        or source_meta.get("doc_id")
+        or source_meta.get("hint")
+        or "command_schemas"
+    ).strip() or "command_schemas"
+    generated_at = str(catalog_v2.get("generated_at") or "").strip()
+
+    commands_by_id = catalog_v2.get("commands_by_id") if isinstance(catalog_v2, dict) else {}
+    if not isinstance(commands_by_id, dict):
+        commands_by_id = {}
+
+    commands = []
+    for cmd_id in sorted(k for k in commands_by_id.keys() if isinstance(k, str) and k.strip()):
+        cmd = commands_by_id.get(cmd_id)
+        if not isinstance(cmd, dict):
+            continue
+
+        item: dict[str, Any] = {
+            "id": cmd_id,
+            "label": str(cmd.get("label") or cmd_id),
+        }
+
+        description = cmd.get("description")
+        if isinstance(description, str) and description:
+            item["description"] = description
+
+        argv = cmd.get("argv")
+        if isinstance(argv, list) and argv and all(isinstance(x, str) and x.strip() for x in argv):
+            item["usage"] = " ".join(str(x).strip() for x in argv if str(x).strip())
+
+        source_section = cmd.get("source_section")
+        if isinstance(source_section, str) and source_section:
+            item["source_section"] = source_section
+
+        params_by_name = cmd.get("params_by_name")
+        if isinstance(params_by_name, dict) and params_by_name:
+            params = []
+            for name, schema in sorted(params_by_name.items(), key=lambda kv: str(kv[0])):
+                if not isinstance(name, str) or not name.strip() or not isinstance(schema, dict):
+                    continue
+
+                param: dict[str, Any] = {"name": name}
+                kind = str(schema.get("kind") or "").strip() or "flag"
+                param["kind"] = kind
+
+                label = schema.get("label")
+                if isinstance(label, str) and label:
+                    param["label"] = label
+
+                required = schema.get("required")
+                if isinstance(required, bool):
+                    param["required"] = required
+
+                expects_value = schema.get("expects_value")
+                if isinstance(expects_value, bool):
+                    param["expects_value"] = expects_value
+
+                flag = schema.get("flag")
+                if isinstance(flag, str) and flag:
+                    param["flag"] = flag
+
+                params.append(param)
+
+            if params:
+                commands.append({**item, "params": params})
+                continue
+
+        commands.append(item)
+
+    payload = {
+        "version": version_str,
+        "source": source_str,
+        "generated_at": generated_at,
+        "commands": commands,
+    }
+
+    etag = compute_driver_catalog_etag(
+        driver="cli",
+        base_version_id=effective.base_version_id,
+        overrides_version_id=effective.overrides_version_id,
+        roles_hash=roles_hash,
+    )
+    response = Response(payload)
+    response["ETag"] = etag
+    response["Cache-Control"] = "private, max-age=0"
+    return response
 
 
 @extend_schema(
@@ -2651,38 +2767,26 @@ def get_driver_commands(request):
             status=500,
         )
 
-    if driver == "cli":
-        raw_catalog = load_cli_command_catalog()
-        catalog_v2 = filter_catalog_for_user(request.user, cli_catalog_v1_to_v2(raw_catalog))
-        payload = {
+    payload = {
+        "driver": driver,
+        "base_version": "unknown",
+        "overrides_version": None,
+        "generated_at": "",
+        "catalog": {
+            "catalog_version": 2,
             "driver": driver,
-            "base_version": str(raw_catalog.get("version") or "unknown"),
-            "overrides_version": None,
-            "generated_at": str(raw_catalog.get("generated_at") or ""),
-            "catalog": catalog_v2,
-        }
-        etag = compute_etag(payload)
-    else:
-        payload = {
-            "driver": driver,
-            "base_version": "unknown",
-            "overrides_version": None,
+            "platform_version": "",
+            "source": {"type": "not_available", "hint": f"{driver} catalog is not imported yet"},
             "generated_at": "",
-            "catalog": {
-                "catalog_version": 2,
-                "driver": "ibcmd",
-                "platform_version": "",
-                "source": {"type": "not_available", "hint": "ibcmd catalog is not imported yet"},
-                "generated_at": "",
-                "commands_by_id": {},
-            },
-        }
-        etag = compute_driver_catalog_etag(
-            driver=driver,
-            base_version_id=None,
-            overrides_version_id=None,
-            roles_hash=roles_hash,
-        )
+            "commands_by_id": {},
+        },
+    }
+    etag = compute_driver_catalog_etag(
+        driver=driver,
+        base_version_id=None,
+        overrides_version_id=None,
+        roles_hash=roles_hash,
+    )
 
     if request.headers.get("If-None-Match") == etag:
         response = Response(status=304)

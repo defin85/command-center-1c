@@ -71,7 +71,8 @@ function buildEffectiveCatalog(base: AnyRecord, overridesCatalog: AnyRecord): An
 async function setupApiMocks(
   page: Page,
   state: {
-    baseCatalog: AnyRecord
+    baseApprovedCatalog: AnyRecord
+    baseLatestCatalog: AnyRecord
     baseApprovedVersion: string
     baseLatestVersion: string
     activeOverridesVersion: string
@@ -80,6 +81,9 @@ async function setupApiMocks(
     captures: {
       overridesUpdate: any[]
       overridesRollback: any[]
+      baseUpdate: any[]
+      effectiveUpdate: any[]
+      validate: any[]
     }
   }
 ) {
@@ -89,7 +93,7 @@ async function setupApiMocks(
     const path = url.pathname
     const method = request.method()
 
-    const currentEtag = `etag-${state.activeOverridesVersion}`
+    const currentEtag = `etag-${state.baseLatestVersion}-${state.activeOverridesVersion}`
 
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: false })
@@ -109,8 +113,10 @@ async function setupApiMocks(
 
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/editor/') {
       const driver = (url.searchParams.get('driver') || '').trim().toLowerCase()
+      const mode = (url.searchParams.get('mode') || '').trim().toLowerCase()
       const overridesCatalog = state.overridesByVersion[state.activeOverridesVersion]
-      const effectiveCatalog = buildEffectiveCatalog(state.baseCatalog, overridesCatalog)
+      const effectiveCatalog = buildEffectiveCatalog(state.baseApprovedCatalog, overridesCatalog)
+      const baseCatalog = mode === 'raw' ? state.baseLatestCatalog : state.baseApprovedCatalog
       return fulfillJson(route, {
         driver,
         etag: currentEtag,
@@ -125,7 +131,7 @@ async function setupApiMocks(
           active_version_id: `ovr-id-${state.activeOverridesVersion}`,
         },
         catalogs: {
-          base: state.baseCatalog,
+          base: baseCatalog,
           overrides: overridesCatalog,
           effective: {
             base_version: state.baseApprovedVersion,
@@ -137,6 +143,75 @@ async function setupApiMocks(
             source: 'mock',
           },
         },
+      })
+    }
+
+    if (method === 'POST' && path === '/api/v2/settings/command-schemas/validate/') {
+      const body = request.postDataJSON()
+      state.captures.validate.push(body)
+      const usesEffective = Boolean(body.effective_catalog)
+      return fulfillJson(route, {
+        driver: body.driver,
+        ok: true,
+        base_version: usesEffective ? null : state.baseApprovedVersion,
+        base_version_id: usesEffective ? null : 'base-id-approved',
+        overrides_version: usesEffective ? null : state.activeOverridesVersion,
+        overrides_version_id: usesEffective ? null : `ovr-id-${state.activeOverridesVersion}`,
+        issues: [],
+        errors_count: 0,
+        warnings_count: 0,
+      })
+    }
+
+    if (method === 'POST' && path === '/api/v2/settings/command-schemas/base/update/') {
+      const body = request.postDataJSON()
+      state.captures.baseUpdate.push(body)
+
+      if (body.expected_etag && body.expected_etag !== currentEtag) {
+        return fulfillJson(route, { success: false, error: { code: 'CONFLICT', message: 'conflict' } }, 409)
+      }
+
+      const nextIndex = state.captures.baseUpdate.length
+      const nextVersion = `v-base-${nextIndex}`
+
+      state.baseLatestVersion = nextVersion
+      state.baseLatestCatalog = body.catalog
+
+      const nextEtag = `etag-${nextVersion}-${state.activeOverridesVersion}`
+      return fulfillJson(route, { driver: body.driver, base_version: nextVersion, etag: nextEtag })
+    }
+
+    if (method === 'POST' && path === '/api/v2/settings/command-schemas/effective/update/') {
+      const body = request.postDataJSON()
+      state.captures.effectiveUpdate.push(body)
+
+      if (body.expected_etag && body.expected_etag !== currentEtag) {
+        return fulfillJson(route, { success: false, error: { code: 'CONFLICT', message: 'conflict' } }, 409)
+      }
+
+      const nextIndex = state.captures.effectiveUpdate.length
+      const nextBaseVersion = `v-effective-${nextIndex}`
+
+      const resetOverridesVersion = `ovr-reset-${nextIndex}`
+      state.overridesByVersion[resetOverridesVersion] = {
+        catalog_version: 2,
+        driver: body.driver,
+        overrides: { commands_by_id: {} },
+      }
+      state.reasonsByVersion[resetOverridesVersion] = String(body.reason || '')
+      state.activeOverridesVersion = resetOverridesVersion
+
+      state.baseApprovedVersion = nextBaseVersion
+      state.baseLatestVersion = nextBaseVersion
+      state.baseApprovedCatalog = body.catalog
+      state.baseLatestCatalog = body.catalog
+
+      const nextEtag = `etag-${nextBaseVersion}-${resetOverridesVersion}`
+      return fulfillJson(route, {
+        driver: body.driver,
+        base_version: nextBaseVersion,
+        overrides_version: resetOverridesVersion,
+        etag: nextEtag,
       })
     }
 
@@ -175,7 +250,7 @@ async function setupApiMocks(
       state.reasonsByVersion[nextVersion] = String(body.reason || '')
       state.activeOverridesVersion = nextVersion
 
-      return fulfillJson(route, { driver: body.driver, overrides_version: nextVersion, etag: `etag-${nextVersion}` })
+      return fulfillJson(route, { driver: body.driver, overrides_version: nextVersion, etag: `etag-${state.baseLatestVersion}-${nextVersion}` })
     }
 
     if (method === 'POST' && path === '/api/v2/settings/command-schemas/overrides/rollback/') {
@@ -193,7 +268,7 @@ async function setupApiMocks(
 
       state.activeOverridesVersion = version
 
-      return fulfillJson(route, { driver: body.driver, overrides_version: version, etag: `etag-${version}` })
+      return fulfillJson(route, { driver: body.driver, overrides_version: version, etag: `etag-${state.baseLatestVersion}-${version}` })
     }
 
     return fulfillJson(route, {}, 200)
@@ -221,9 +296,10 @@ test('Command Schemas: load + save + rollback (smoke)', async ({ page }) => {
     },
   }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[] }
+  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
   const state = {
-    baseCatalog,
+    baseApprovedCatalog: baseCatalog,
+    baseLatestCatalog: baseCatalog,
     baseApprovedVersion: 'v-base',
     baseLatestVersion: 'v-base',
     activeOverridesVersion: 'ovr-0',
@@ -272,4 +348,74 @@ test('Command Schemas: load + save + rollback (smoke)', async ({ page }) => {
 
   await expect.poll(() => captures.overridesRollback.length).toBe(1)
   await expect(page.getByText('Overrides active: ovr-0')).toBeVisible()
+})
+
+test('Command Schemas: raw mode save base/overrides/effective (smoke)', async ({ page }) => {
+  const baseCatalog = {
+    catalog_version: 2,
+    driver: 'ibcmd',
+    platform_version: '8.3.27',
+    source: { type: 'its_import', doc_id: 'TI000', doc_url: 'http://example' },
+    generated_at: '2026-01-01T00:00:00Z',
+    commands_by_id: {
+      'ibcmd.infobase.dump': {
+        label: 'Dump',
+        description: 'Dump infobase',
+        argv: ['ibcmd', 'infobase', 'dump'],
+        scope: 'per_database',
+        risk_level: 'safe',
+        params_by_name: {
+          remote: { kind: 'flag', required: true, expects_value: true, flag: '--remote' },
+        },
+      },
+    },
+  }
+
+  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const state = {
+    baseApprovedCatalog: baseCatalog,
+    baseLatestCatalog: baseCatalog,
+    baseApprovedVersion: 'v-base',
+    baseLatestVersion: 'v-base',
+    activeOverridesVersion: 'ovr-0',
+    overridesByVersion: {
+      'ovr-0': { catalog_version: 2, driver: 'ibcmd', overrides: { commands_by_id: {} } },
+    } as Record<string, AnyRecord>,
+    reasonsByVersion: { 'ovr-0': 'initial' } as Record<string, string>,
+    captures,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/settings/command-schemas?mode=raw&driver=ibcmd', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Raw JSON')).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Base' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Overrides' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Effective' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Save base...' }).click()
+  await page.getByTestId('command-schemas-raw-save-reason').fill('save base')
+  await page.getByTestId('command-schemas-raw-save-confirm').click()
+  await expect(page.getByRole('dialog', { name: 'Save base catalog' })).toBeHidden()
+
+  await page.getByRole('tab', { name: 'Overrides' }).click()
+  await page.getByRole('button', { name: 'Save overrides...' }).click()
+  await page.getByTestId('command-schemas-raw-save-reason').fill('save overrides')
+  await page.getByTestId('command-schemas-raw-save-confirm').click()
+  await expect(page.getByRole('dialog', { name: 'Save overrides catalog' })).toBeHidden()
+
+  await page.getByRole('tab', { name: 'Effective' }).click()
+  await page.getByTestId('command-schemas-raw-effective-enable').click()
+  await page.getByRole('button', { name: 'Save effective...' }).click()
+  await page.getByTestId('command-schemas-raw-effective-confirm').check()
+  await page.getByTestId('command-schemas-raw-save-reason').fill('save effective')
+  await page.getByTestId('command-schemas-raw-save-confirm').click()
+  await expect(page.getByRole('dialog', { name: 'DANGEROUS: Save effective catalog' })).toBeHidden()
+
+  expect(captures.validate.length).toBeGreaterThanOrEqual(3)
+  expect(captures.baseUpdate.length).toBe(1)
+  expect(captures.overridesUpdate.length).toBe(1)
+  expect(captures.effectiveUpdate.length).toBe(1)
 })

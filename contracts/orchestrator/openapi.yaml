@@ -2057,6 +2057,15 @@ paths:
           type: string
         description: Driver name (cli/ibcmd)
         required: true
+      - in: query
+        name: mode
+        schema:
+          type: string
+          enum:
+          - guided
+          - raw
+        description: Editor mode (guided/raw). In raw mode, base catalog is loaded from base alias latest.
+        required: false
       tags:
       - v2
       security:
@@ -4749,13 +4758,97 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/settings/command-schemas/base/update/:
+    post:
+      operationId: v2_settings_command_schemas_base_update_create
+      description: |-
+        Upload new base catalog version (v2) and move base alias `latest` only (staff-only). Requires reason.
+
+        Supports optimistic concurrency via If-Match header or expected_etag in request body.
+      summary: Update command schemas base (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasBaseUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          description: Conflict
+  /api/v2/settings/command-schemas/effective/update/:
+    post:
+      operationId: v2_settings_command_schemas_effective_update_create
+      description: |-
+        DANGEROUS: Replace effective catalog by uploading it as a new base version (move `latest` + `approved`) and resetting overrides (staff-only). Requires reason.
+
+        Supports optimistic concurrency via If-Match header or expected_etag in request body.
+      summary: Update command schemas effective (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasEffectiveUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasEffectiveUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasEffectiveUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasEffectiveUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          description: Conflict
   /api/v2/settings/command-schemas/import-its/:
     post:
       operationId: v2_settings_command_schemas_import_its_create
       description: |-
         Parse ITS JSON into driver command schema catalog and optionally save (staff-only).
 
-        driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.
+        driver=cli: uploads v2 base catalog artifact.
         driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact.
       summary: Import ITS command schemas (v2)
       tags:
@@ -4781,44 +4874,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandSchemasImportResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/command-schemas/bootstrap-cli/:
-    post:
-      operationId: v2_settings_command_schemas_bootstrap_cli_create
-      description: Publish current legacy CLI command catalog (config/cli_commands.json)
-        as a versioned v2 base artifact (staff-only). Requires reason.
-      summary: Bootstrap CLI command schemas base from legacy file (v2)
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBootstrapCliRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CommandSchemasBootstrapCliResponse'
           description: ''
         '400':
           content:
@@ -5067,243 +5122,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandSchemasVersionsListResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/:
-    get:
-      operationId: v2_settings_driver_catalogs_retrieve
-      description: List available driver catalogs and metadata (staff-only).
-      summary: List driver catalogs
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/get/:
-    get:
-      operationId: v2_settings_driver_catalogs_get_retrieve
-      description: Return driver catalog contents (staff-only).
-      summary: Get driver catalog
-      parameters:
-      - in: query
-        name: driver
-        schema:
-          type: string
-        description: Driver name (cli/ras/odata/ibcmd)
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogGetResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/import-its/:
-    post:
-      operationId: v2_settings_driver_catalogs_import_its_create
-      description: |-
-        Parse ITS JSON into driver command catalog and optionally save (staff-only).
-
-        driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.
-        driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact.
-      summary: Import ITS catalog
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogImportRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogImportRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogImportRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogImportResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/overrides/get/:
-    get:
-      operationId: v2_settings_driver_catalogs_overrides_get_retrieve
-      description: Return active overrides catalog for the requested driver (staff-only).
-      summary: Get driver catalog overrides (v2)
-      parameters:
-      - in: query
-        name: driver
-        schema:
-          type: string
-        description: Driver name (cli/ibcmd)
-        required: true
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogOverridesGetResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/overrides/update/:
-    post:
-      operationId: v2_settings_driver_catalogs_overrides_update_create
-      description: Upload new overrides catalog version and move alias active (staff-only).
-        Requires reason.
-      summary: Update driver catalog overrides (v2)
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogOverridesUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogOverridesUpdateResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/promote/:
-    post:
-      operationId: v2_settings_driver_catalogs_promote_create
-      description: Move base alias (approved/latest) to a specific version (staff-only).
-        Requires reason.
-      summary: Promote driver catalog base alias
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogPromoteRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogPromoteResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/settings/driver-catalogs/update/:
-    post:
-      operationId: v2_settings_driver_catalogs_update_create
-      description: Update driver catalog file (staff-only). Requires reason.
-      summary: Update driver catalog
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DriverCatalogUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DriverCatalogGetResponse'
           description: ''
         '400':
           content:
@@ -8005,26 +7823,83 @@ components:
       - driver
       - etag
       - overrides
-    CommandSchemasBootstrapCliRequest:
+    CommandSchemasBaseUpdateRequest:
       type: object
       properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        catalog:
+          type: object
+          additionalProperties: {}
         reason:
           type: string
+        expected_etag:
+          type: string
+          nullable: true
       required:
+      - catalog
+      - driver
       - reason
-    CommandSchemasBootstrapCliResponse:
+    CommandSchemasBaseUpdateResponse:
       type: object
       properties:
         driver:
           type: string
         base_version:
           type: string
-        base_version_id:
+        etag:
           type: string
       required:
       - base_version
-      - base_version_id
       - driver
+      - etag
+    CommandSchemasEffectiveUpdateRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        catalog:
+          type: object
+          additionalProperties: {}
+        reason:
+          type: string
+        expected_etag:
+          type: string
+          nullable: true
+      required:
+      - catalog
+      - driver
+      - reason
+    CommandSchemasEffectiveUpdateResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        base_version:
+          type: string
+        overrides_version:
+          type: string
+        etag:
+          type: string
+      required:
+      - base_version
+      - driver
+      - etag
+      - overrides_version
     CommandSchemasImportRequest:
       type: object
       properties:
@@ -8279,6 +8154,10 @@ components:
             * `ibcmd` - ibcmd
           x-spec-enum-id: 04e91cd3f4c47669
         catalog:
+          type: object
+          additionalProperties: {}
+          nullable: true
+        effective_catalog:
           type: object
           additionalProperties: {}
           nullable: true
@@ -9011,175 +8890,6 @@ components:
       - message
       - operation_id
       - status
-    DriverCatalogGetResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        catalog:
-          type: object
-          additionalProperties: {}
-      required:
-      - catalog
-      - driver
-    DriverCatalogImportRequest:
-      type: object
-      properties:
-        driver:
-          enum:
-          - cli
-          - ibcmd
-          type: string
-          description: |-
-            * `cli` - cli
-            * `ibcmd` - ibcmd
-          x-spec-enum-id: 04e91cd3f4c47669
-          default: cli
-        its_payload:
-          type: object
-          additionalProperties: {}
-        save:
-          type: boolean
-          default: true
-      required:
-      - its_payload
-    DriverCatalogImportResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        catalog:
-          type: object
-          additionalProperties: {}
-      required:
-      - catalog
-      - driver
-    DriverCatalogListItem:
-      type: object
-      properties:
-        driver:
-          type: string
-        version:
-          type: string
-        command_count:
-          type: integer
-        source:
-          type: string
-      required:
-      - command_count
-      - driver
-      - version
-    DriverCatalogListResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/DriverCatalogListItem'
-        count:
-          type: integer
-      required:
-      - count
-      - items
-    DriverCatalogOverridesGetResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        overrides_version:
-          type: string
-        catalog:
-          type: object
-          additionalProperties: {}
-      required:
-      - catalog
-      - driver
-      - overrides_version
-    DriverCatalogOverridesUpdateRequest:
-      type: object
-      properties:
-        driver:
-          enum:
-          - cli
-          - ibcmd
-          type: string
-          description: |-
-            * `cli` - cli
-            * `ibcmd` - ibcmd
-          x-spec-enum-id: 04e91cd3f4c47669
-        catalog:
-          type: object
-          additionalProperties: {}
-        reason:
-          type: string
-      required:
-      - catalog
-      - driver
-      - reason
-    DriverCatalogOverridesUpdateResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        overrides_version:
-          type: string
-        catalog:
-          type: object
-          additionalProperties: {}
-      required:
-      - catalog
-      - driver
-      - overrides_version
-    DriverCatalogPromoteRequest:
-      type: object
-      properties:
-        driver:
-          enum:
-          - cli
-          - ibcmd
-          type: string
-          description: |-
-            * `cli` - cli
-            * `ibcmd` - ibcmd
-          x-spec-enum-id: 04e91cd3f4c47669
-        version:
-          type: string
-        alias:
-          type: string
-          default: approved
-        reason:
-          type: string
-      required:
-      - driver
-      - reason
-      - version
-    DriverCatalogPromoteResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        alias:
-          type: string
-        version:
-          type: string
-      required:
-      - alias
-      - driver
-      - version
-    DriverCatalogUpdateRequest:
-      type: object
-      properties:
-        driver:
-          type: string
-        catalog:
-          type: object
-          additionalProperties: {}
-        reason:
-          type: string
-      required:
-      - catalog
-      - driver
-      - reason
     DriverCatalogV2:
       type: object
       properties:

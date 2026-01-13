@@ -56,10 +56,15 @@ export type CommandSchemasEditorView = {
   }
 }
 
-export async function getCommandSchemasEditorView(driver: CommandSchemaDriver): Promise<CommandSchemasEditorView> {
+export type CommandSchemasEditorMode = 'guided' | 'raw'
+
+export async function getCommandSchemasEditorView(
+  driver: CommandSchemaDriver,
+  mode?: CommandSchemasEditorMode
+): Promise<CommandSchemasEditorView> {
   const response = await apiClient.get<CommandSchemasEditorView>(
     '/api/v2/settings/command-schemas/editor/',
-    { params: { driver } }
+    { params: { driver, ...(mode ? { mode } : {}) } }
   )
   return response.data
 }
@@ -93,26 +98,6 @@ export async function listCommandSchemaVersions(
   return response.data
 }
 
-export type CommandSchemasBootstrapCliRequest = {
-  reason: string
-}
-
-export type CommandSchemasBootstrapCliResponse = {
-  driver: CommandSchemaDriver
-  base_version: string
-  base_version_id: string
-}
-
-export async function bootstrapCliCommandSchemasBase(
-  payload: CommandSchemasBootstrapCliRequest
-): Promise<CommandSchemasBootstrapCliResponse> {
-  const response = await apiClient.post<CommandSchemasBootstrapCliResponse>(
-    '/api/v2/settings/command-schemas/bootstrap-cli/',
-    payload
-  )
-  return response.data
-}
-
 export type CommandSchemasImportItsRequest = {
   driver: CommandSchemaDriver
   its_payload: Record<string, unknown>
@@ -130,6 +115,53 @@ export async function importItsCommandSchemas(
 ): Promise<CommandSchemasImportItsResponse> {
   const response = await apiClient.post<CommandSchemasImportItsResponse>(
     '/api/v2/settings/command-schemas/import-its/',
+    payload
+  )
+  return response.data
+}
+
+export type CommandSchemaBaseUpdateRequest = {
+  driver: CommandSchemaDriver
+  catalog: Record<string, unknown>
+  reason: string
+  expected_etag?: string
+}
+
+export type CommandSchemaBaseUpdateResponse = {
+  driver: CommandSchemaDriver
+  base_version: string
+  etag: string
+}
+
+export async function updateCommandSchemaBase(
+  payload: CommandSchemaBaseUpdateRequest
+): Promise<CommandSchemaBaseUpdateResponse> {
+  const response = await apiClient.post<CommandSchemaBaseUpdateResponse>(
+    '/api/v2/settings/command-schemas/base/update/',
+    payload
+  )
+  return response.data
+}
+
+export type CommandSchemaEffectiveUpdateRequest = {
+  driver: CommandSchemaDriver
+  catalog: Record<string, unknown>
+  reason: string
+  expected_etag?: string
+}
+
+export type CommandSchemaEffectiveUpdateResponse = {
+  driver: CommandSchemaDriver
+  base_version: string
+  overrides_version: string
+  etag: string
+}
+
+export async function updateCommandSchemaEffective(
+  payload: CommandSchemaEffectiveUpdateRequest
+): Promise<CommandSchemaEffectiveUpdateResponse> {
+  const response = await apiClient.post<CommandSchemaEffectiveUpdateResponse>(
+    '/api/v2/settings/command-schemas/effective/update/',
     payload
   )
   return response.data
@@ -193,6 +225,7 @@ export type CommandSchemaIssue = {
 export type CommandSchemasValidateRequest = {
   driver: CommandSchemaDriver
   catalog?: CommandSchemasOverridesCatalogV2
+  effective_catalog?: DriverCatalogV2
 }
 
 export type CommandSchemasValidateResponse = {

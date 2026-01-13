@@ -1,20 +1,16 @@
 """
-Driver catalog management endpoints (staff-only).
+Command Schemas management endpoints (staff-only).
 
 Supports:
-- list/get/update driver catalogs (file-backed)
-- import ITS JSON to CLI catalog (and publish v2 base artifact)
-- import ITS JSON to IBCMD catalog v2 base artifact
+- schema-driven command catalogs (cli/ibcmd) stored as versioned artifacts
+- guided and raw editing flows for base/overrides/effective
 """
 
 from __future__ import annotations
 
 import copy
 import json
-import logging
-from pathlib import Path
 
-from django.conf import settings
 from rest_framework import status as http_status
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -25,14 +21,13 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.artifacts.models import ArtifactAlias, ArtifactVersion
 from apps.core import permission_codes as perms
 from apps.operations.cli_catalog import (
-    load_cli_command_catalog,
-    save_cli_command_catalog,
     build_cli_catalog_from_its,
     validate_cli_catalog,
 )
 from apps.operations.ibcmd_catalog_v2 import build_base_catalog_from_its as build_ibcmd_catalog_v2_from_its
 from apps.operations.ibcmd_catalog_v2 import validate_catalog_v2 as validate_ibcmd_catalog_v2
 from apps.operations.driver_catalog_artifacts import (
+    build_empty_overrides_catalog,
     get_or_create_catalog_artifacts,
     promote_base_alias,
     upload_base_catalog_version,
@@ -56,15 +51,24 @@ from apps.operations.prometheus_metrics import (
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.artifacts.storage import ArtifactStorageError
 
-logger = logging.getLogger(__name__)
-
-
-DRIVER_CATALOGS = {
-    "cli": {"path": "config/cli_commands.json", "kind": "cli"},
-    "ras": {"path": "config/driver_catalogs/ras.json", "kind": "generic"},
-    "odata": {"path": "config/driver_catalogs/odata.json", "kind": "generic"},
-    "ibcmd": {"path": "config/driver_catalogs/ibcmd.json", "kind": "generic"},
+COMMAND_SCHEMA_DRIVERS = {
+    "cli": {
+        "supports_guided": True,
+        "supports_raw_base_edit": True,
+        "supports_raw_overrides_edit": True,
+        "supports_raw_effective_edit": True,
+        "supports_import_its": True,
+    },
+    "ibcmd": {
+        "supports_guided": True,
+        "supports_raw_base_edit": True,
+        "supports_raw_overrides_edit": True,
+        "supports_raw_effective_edit": True,
+        "supports_import_its": True,
+    },
 }
+
+COMMAND_SCHEMA_DRIVER_CHOICES = tuple(COMMAND_SCHEMA_DRIVERS.keys())
 
 
 def _permission_denied(message: str):
@@ -87,93 +91,6 @@ def _ensure_manage_driver_catalogs(request, *, action: str | None = None):
     return _permission_denied("You do not have permission to manage driver catalogs.")
 
 
-def _catalog_path(rel_path: str) -> Path:
-    return Path(settings.BASE_DIR).parent / rel_path
-
-
-def _load_catalog(path: Path) -> dict:
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except FileNotFoundError:
-        logger.info("Driver catalog not found: %s", path)
-    except json.JSONDecodeError as exc:
-        logger.warning("Driver catalog invalid: %s", exc)
-    except OSError as exc:
-        logger.warning("Failed to read driver catalog: %s", exc)
-    return {"version": "unknown", "source": str(path), "commands": []}
-
-
-def _save_catalog(path: Path, catalog: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-class DriverCatalogListItemSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    version = serializers.CharField()
-    command_count = serializers.IntegerField()
-    source = serializers.CharField(required=False)
-
-
-class DriverCatalogListResponseSerializer(serializers.Serializer):
-    items = DriverCatalogListItemSerializer(many=True)
-    count = serializers.IntegerField()
-
-
-class DriverCatalogGetResponseSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    catalog = serializers.DictField()
-
-
-class DriverCatalogUpdateRequestSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    catalog = serializers.DictField()
-    reason = serializers.CharField()
-
-
-class DriverCatalogImportRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"], default="cli")
-    its_payload = serializers.DictField()
-    save = serializers.BooleanField(default=True)
-
-
-class DriverCatalogImportResponseSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    catalog = serializers.DictField()
-
-
-class DriverCatalogOverridesGetResponseSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    overrides_version = serializers.CharField()
-    catalog = serializers.DictField()
-
-
-class DriverCatalogOverridesUpdateRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
-    catalog = serializers.DictField()
-    reason = serializers.CharField()
-
-
-class DriverCatalogOverridesUpdateResponseSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    overrides_version = serializers.CharField()
-    catalog = serializers.DictField()
-
-
-class DriverCatalogPromoteRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
-    version = serializers.CharField()
-    alias = serializers.CharField(required=False, default="approved")
-    reason = serializers.CharField()
-
-
-class DriverCatalogPromoteResponseSerializer(serializers.Serializer):
-    driver = serializers.CharField()
-    alias = serializers.CharField()
-    version = serializers.CharField()
-
-
 class CommandSchemasEditorViewResponseSerializer(serializers.Serializer):
     driver = serializers.CharField()
     etag = serializers.CharField()
@@ -190,7 +107,7 @@ class CommandSchemasVersionsListResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasOverridesUpdateRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     catalog = serializers.DictField()
     reason = serializers.CharField()
     expected_etag = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -203,7 +120,7 @@ class CommandSchemasOverridesUpdateResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasOverridesRollbackRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     version = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     version_id = serializers.UUIDField(required=False, allow_null=True)
     reason = serializers.CharField()
@@ -222,7 +139,7 @@ class CommandSchemasOverridesRollbackResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasImportRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"], default="cli")
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES, default="cli")
     its_payload = serializers.DictField()
     save = serializers.BooleanField(default=True)
     reason = serializers.CharField()
@@ -234,7 +151,7 @@ class CommandSchemasImportResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasPromoteRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     version = serializers.CharField()
     alias = serializers.CharField(required=False, default="approved")
     reason = serializers.CharField()
@@ -246,14 +163,31 @@ class CommandSchemasPromoteResponseSerializer(serializers.Serializer):
     version = serializers.CharField()
 
 
-class CommandSchemasBootstrapCliRequestSerializer(serializers.Serializer):
+class CommandSchemasBaseUpdateRequestSerializer(serializers.Serializer):
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
+    catalog = serializers.DictField()
     reason = serializers.CharField()
+    expected_etag = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
-class CommandSchemasBootstrapCliResponseSerializer(serializers.Serializer):
+class CommandSchemasBaseUpdateResponseSerializer(serializers.Serializer):
     driver = serializers.CharField()
     base_version = serializers.CharField()
-    base_version_id = serializers.CharField()
+    etag = serializers.CharField()
+
+
+class CommandSchemasEffectiveUpdateRequestSerializer(serializers.Serializer):
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
+    catalog = serializers.DictField()
+    reason = serializers.CharField()
+    expected_etag = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class CommandSchemasEffectiveUpdateResponseSerializer(serializers.Serializer):
+    driver = serializers.CharField()
+    base_version = serializers.CharField()
+    overrides_version = serializers.CharField()
+    etag = serializers.CharField()
 
 
 class CommandSchemasIssueSerializer(serializers.Serializer):
@@ -265,8 +199,9 @@ class CommandSchemasIssueSerializer(serializers.Serializer):
 
 
 class CommandSchemasValidateRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     catalog = serializers.DictField(required=False, allow_null=True)
+    effective_catalog = serializers.DictField(required=False, allow_null=True)
 
 
 class CommandSchemasValidateResponseSerializer(serializers.Serializer):
@@ -282,7 +217,7 @@ class CommandSchemasValidateResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasPreviewRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     command_id = serializers.CharField()
     mode = serializers.ChoiceField(choices=["guided", "manual"], default="guided")
     params = serializers.DictField(required=False, default=dict)
@@ -301,7 +236,7 @@ class CommandSchemasPreviewResponseSerializer(serializers.Serializer):
 
 
 class CommandSchemasDiffRequestSerializer(serializers.Serializer):
-    driver = serializers.ChoiceField(choices=["cli", "ibcmd"])
+    driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     command_id = serializers.CharField()
     catalog = serializers.DictField(required=False, allow_null=True)
 
@@ -338,15 +273,6 @@ class CommandSchemasAuditListResponseSerializer(serializers.Serializer):
     items = CommandSchemasAuditLogItemSerializer(many=True)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
-
-
-def _resolve_catalog(driver: str) -> dict:
-    if driver == "cli":
-        return load_cli_command_catalog()
-    cfg = DRIVER_CATALOGS.get(driver)
-    if not cfg:
-        return {}
-    return _load_catalog(_catalog_path(cfg["path"]))
 
 
 def _deep_merge_dict(target: dict, patch: dict) -> None:
@@ -390,6 +316,25 @@ def _extract_expected_etag(request, payload_etag: str | None) -> str | None:
         return None
     value = str(payload_etag or "").strip()
     return value or None
+
+
+def _compute_command_schemas_etag(
+    *,
+    driver: str,
+    base_versions: dict[str, ArtifactVersion | None],
+    overrides_version: ArtifactVersion | None,
+) -> str:
+    approved = base_versions.get("approved")
+    latest = base_versions.get("latest")
+    approved_id = str(approved.id) if approved else ""
+    latest_id = str(latest.id) if latest else ""
+    base_part = f"approved={approved_id}|latest={latest_id}"
+    return compute_driver_catalog_etag(
+        driver=driver,
+        base_version_id=base_part if (approved_id or latest_id) else None,
+        overrides_version_id=str(overrides_version.id) if overrides_version else None,
+        roles_hash=None,
+    )
 
 
 def _issue(
@@ -792,351 +737,6 @@ def _diff_values(
         })
 
 
-@extend_schema(
-    tags=["v2"],
-    summary="List driver catalogs",
-    description="List available driver catalogs and metadata (staff-only).",
-    responses={
-        200: DriverCatalogListResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def list_driver_catalogs(request):
-    denied = _ensure_manage_driver_catalogs(request, action="driver_catalog.list")
-    if denied:
-        return denied
-
-    items = []
-    for driver, cfg in DRIVER_CATALOGS.items():
-        catalog = _resolve_catalog(driver)
-        commands = catalog.get("commands")
-        items.append({
-            "driver": driver,
-            "version": str(catalog.get("version") or "unknown"),
-            "command_count": len(commands) if isinstance(commands, list) else 0,
-            "source": str(catalog.get("source") or cfg.get("path")),
-        })
-    return Response({"items": items, "count": len(items)})
-
-
-@extend_schema(
-    tags=["v2"],
-    summary="Get driver catalog",
-    description="Return driver catalog contents (staff-only).",
-    parameters=[
-        OpenApiParameter(
-            name="driver",
-            type=str,
-            required=True,
-            description="Driver name (cli/ras/odata/ibcmd)",
-        )
-    ],
-    responses={
-        200: DriverCatalogGetResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def get_driver_catalog(request):
-    denied = _ensure_manage_driver_catalogs(request, action="driver_catalog.get")
-    if denied:
-        return denied
-
-    driver = str(request.query_params.get("driver") or "").strip()
-    if not driver:
-        record_driver_catalog_editor_error("unknown", action="driver_catalog.get", code="MISSING_DRIVER")
-        return Response({
-            "success": False,
-            "error": {"code": "MISSING_DRIVER", "message": "driver is required"},
-        }, status=400)
-    if driver not in DRIVER_CATALOGS:
-        record_driver_catalog_editor_error("unknown", action="driver_catalog.get", code="UNKNOWN_DRIVER")
-        return Response({
-            "success": False,
-            "error": {"code": "UNKNOWN_DRIVER", "message": f"Unknown driver: {driver}"},
-        }, status=400)
-    catalog = _resolve_catalog(driver)
-    return Response({"driver": driver, "catalog": catalog})
-
-
-@extend_schema(
-    tags=["v2"],
-    summary="Update driver catalog",
-    description="Update driver catalog file (staff-only). Requires reason.",
-    request=DriverCatalogUpdateRequestSerializer,
-    responses={
-        200: DriverCatalogGetResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def update_driver_catalog(request):
-    denied = _ensure_manage_driver_catalogs(request, action="driver_catalog.update")
-    if denied:
-        return denied
-
-    serializer = DriverCatalogUpdateRequestSerializer(data=request.data)
-    if not serializer.is_valid():
-        record_driver_catalog_editor_error("unknown", action="driver_catalog.update", code="INVALID_REQUEST")
-        log_admin_action(
-            request,
-            action="driver_catalog.update",
-            outcome="error",
-            target_type="driver_catalog",
-            metadata={"error": "INVALID_REQUEST"},
-            error_message="INVALID_REQUEST",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
-        }, status=400)
-    driver = serializer.validated_data["driver"]
-    catalog = serializer.validated_data["catalog"]
-    reason = serializer.validated_data["reason"]
-    if driver not in DRIVER_CATALOGS:
-        record_driver_catalog_editor_error("unknown", action="driver_catalog.update", code="UNKNOWN_DRIVER")
-        log_admin_action(
-            request,
-            action="driver_catalog.update",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id=driver,
-            metadata={"error": "UNKNOWN_DRIVER", "driver": driver, "reason": reason},
-            error_message="UNKNOWN_DRIVER",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "UNKNOWN_DRIVER", "message": f"Unknown driver: {driver}"},
-        }, status=400)
-    if driver == "cli":
-        errors = validate_cli_catalog(catalog)
-        if errors:
-            record_driver_catalog_editor_validation_failed(driver, stage="driver_catalog.update", kind="invalid_parsed")
-            record_driver_catalog_editor_error(driver, action="driver_catalog.update", code="INVALID_CATALOG")
-            log_admin_action(
-                request,
-                action="driver_catalog.update",
-                outcome="error",
-                target_type="driver_catalog",
-                target_id=driver,
-                metadata={"error": "INVALID_CATALOG", "driver": driver, "reason": reason},
-                error_message="INVALID_CATALOG",
-            )
-            return Response({
-                "success": False,
-                "error": {"code": "INVALID_CATALOG", "message": "Invalid CLI catalog", "details": errors},
-            }, status=400)
-        try:
-            save_cli_command_catalog(catalog)
-            upload_base_catalog_version(
-                driver="cli",
-                catalog=cli_catalog_v1_to_v2(catalog),
-                created_by=request.user,
-                metadata_extra={"reason": reason},
-            )
-            invalidate_driver_catalog_cache("cli")
-        except Exception as exc:
-            record_driver_catalog_editor_error(driver, action="driver_catalog.update", code="UPDATE_FAILED")
-            log_admin_action(
-                request,
-                action="driver_catalog.update",
-                outcome="error",
-                target_type="driver_catalog",
-                target_id=driver,
-                metadata={"error": "UPDATE_FAILED", "driver": driver, "reason": reason},
-                error_message="UPDATE_FAILED",
-            )
-            return Response(
-                {"success": False, "error": {"code": "UPDATE_FAILED", "message": str(exc)}},
-                status=500,
-            )
-    else:
-        try:
-            _save_catalog(_catalog_path(DRIVER_CATALOGS[driver]["path"]), catalog)
-        except Exception as exc:
-            record_driver_catalog_editor_error(driver, action="driver_catalog.update", code="UPDATE_FAILED")
-            log_admin_action(
-                request,
-                action="driver_catalog.update",
-                outcome="error",
-                target_type="driver_catalog",
-                target_id=driver,
-                metadata={"error": "UPDATE_FAILED", "driver": driver, "reason": reason},
-                error_message="UPDATE_FAILED",
-            )
-            return Response(
-                {"success": False, "error": {"code": "UPDATE_FAILED", "message": str(exc)}},
-                status=500,
-            )
-    log_admin_action(
-        request,
-        action="driver_catalog.update",
-        outcome="success",
-        target_type="driver_catalog",
-        target_id=driver,
-        metadata={"driver": driver, "reason": reason},
-    )
-    return Response({"driver": driver, "catalog": catalog})
-
-
-@extend_schema(
-    tags=["v2"],
-    summary="Import ITS catalog",
-    description=(
-        "Parse ITS JSON into driver command catalog and optionally save (staff-only).\n\n"
-        "driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.\n"
-        "driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact."
-    ),
-    request=DriverCatalogImportRequestSerializer,
-    responses={
-        200: DriverCatalogImportResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def import_its_driver_catalog(request):
-    denied = _ensure_manage_driver_catalogs(request, action="import_its")
-    if denied:
-        return denied
-
-    serializer = DriverCatalogImportRequestSerializer(data=request.data)
-    if not serializer.is_valid():
-        record_driver_catalog_editor_error("unknown", action="import_its", code="INVALID_REQUEST")
-        log_admin_action(
-            request,
-            action="driver_catalog.import_its",
-            outcome="error",
-            target_type="driver_catalog",
-            metadata={"error": "INVALID_REQUEST"},
-            error_message="INVALID_REQUEST",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
-        }, status=400)
-    driver = serializer.validated_data["driver"]
-    if driver != "cli":
-        if driver != "ibcmd":
-            record_driver_catalog_editor_error("unknown", action="import_its", code="UNSUPPORTED_DRIVER")
-            log_admin_action(
-                request,
-                action="driver_catalog.import_its",
-                outcome="error",
-                target_type="driver_catalog",
-                metadata={"error": "UNSUPPORTED_DRIVER", "driver": driver},
-                error_message="UNSUPPORTED_DRIVER",
-            )
-            return Response({
-                "success": False,
-                "error": {"code": "UNSUPPORTED_DRIVER", "message": f"Unsupported driver: {driver}"},
-            }, status=400)
-    its_payload = serializer.validated_data["its_payload"]
-
-    if driver == "cli":
-        catalog = build_cli_catalog_from_its(its_payload)
-        errors = validate_cli_catalog(catalog)
-        if errors:
-            record_driver_catalog_editor_validation_failed(driver, stage="import_its", kind="invalid_parsed")
-            record_driver_catalog_editor_error(driver, action="import_its", code="INVALID_CATALOG")
-            log_admin_action(
-                request,
-                action="driver_catalog.import_its",
-                outcome="error",
-                target_type="driver_catalog",
-                target_id=driver,
-                metadata={"error": "INVALID_CATALOG", "driver": driver},
-                error_message="INVALID_CATALOG",
-            )
-            return Response({
-                "success": False,
-                "error": {"code": "INVALID_CATALOG", "message": "Parsed CLI catalog is invalid", "details": errors},
-            }, status=400)
-        if serializer.validated_data.get("save", True):
-            try:
-                save_cli_command_catalog(catalog)
-                upload_base_catalog_version(
-                    driver="cli",
-                    catalog=cli_catalog_v1_to_v2(catalog),
-                    created_by=request.user,
-                )
-                invalidate_driver_catalog_cache("cli")
-            except Exception as exc:
-                record_driver_catalog_editor_error(driver, action="import_its", code="IMPORT_FAILED")
-                log_admin_action(
-                    request,
-                    action="driver_catalog.import_its",
-                    outcome="error",
-                    target_type="driver_catalog",
-                    target_id=driver,
-                    metadata={"error": "IMPORT_FAILED", "driver": driver},
-                    error_message="IMPORT_FAILED",
-                )
-                return Response(
-                    {"success": False, "error": {"code": "IMPORT_FAILED", "message": str(exc)}},
-                    status=500,
-                )
-    else:
-        catalog = build_ibcmd_catalog_v2_from_its(its_payload)
-        errors = validate_ibcmd_catalog_v2(catalog)
-        if errors:
-            record_driver_catalog_editor_validation_failed(driver, stage="import_its", kind="invalid_parsed")
-            record_driver_catalog_editor_error(driver, action="import_its", code="INVALID_CATALOG")
-            log_admin_action(
-                request,
-                action="driver_catalog.import_its",
-                outcome="error",
-                target_type="driver_catalog",
-                target_id=driver,
-                metadata={"error": "INVALID_CATALOG", "driver": driver},
-                error_message="INVALID_CATALOG",
-            )
-            return Response({
-                "success": False,
-                "error": {"code": "INVALID_CATALOG", "message": "Parsed IBCMD catalog is invalid", "details": errors},
-            }, status=400)
-        if serializer.validated_data.get("save", True):
-            try:
-                upload_base_catalog_version(
-                    driver="ibcmd",
-                    catalog=catalog,
-                    created_by=request.user,
-                )
-                invalidate_driver_catalog_cache("ibcmd")
-            except Exception as exc:
-                record_driver_catalog_editor_error(driver, action="import_its", code="IMPORT_FAILED")
-                log_admin_action(
-                    request,
-                    action="driver_catalog.import_its",
-                    outcome="error",
-                    target_type="driver_catalog",
-                    target_id=driver,
-                    metadata={"error": "IMPORT_FAILED", "driver": driver},
-                    error_message="IMPORT_FAILED",
-                )
-                return Response(
-                    {"success": False, "error": {"code": "IMPORT_FAILED", "message": str(exc)}},
-                    status=500,
-                )
-
-    log_admin_action(
-        request,
-        action="driver_catalog.import_its",
-        outcome="success",
-        target_type="driver_catalog",
-        target_id=driver,
-        metadata={"driver": driver, "version": catalog.get("version") or catalog.get("platform_version")},
-    )
-    return Response({"driver": driver, "catalog": catalog})
-
-
 def _validate_overrides_catalog_v2(driver: str, catalog: dict) -> list[str]:
     errors: list[str] = []
     if not isinstance(catalog, dict):
@@ -1153,241 +753,6 @@ def _validate_overrides_catalog_v2(driver: str, catalog: dict) -> list[str]:
 
 @extend_schema(
     tags=["v2"],
-    summary="Get driver catalog overrides (v2)",
-    description="Return active overrides catalog for the requested driver (staff-only).",
-    parameters=[
-        OpenApiParameter(
-            name="driver",
-            type=str,
-            required=True,
-            description="Driver name (cli/ibcmd)",
-        )
-    ],
-    responses={
-        200: DriverCatalogOverridesGetResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def get_driver_catalog_overrides(request):
-    denied = _ensure_manage_driver_catalogs(request, action="overrides.get")
-    if denied:
-        return denied
-
-    driver = str(request.query_params.get("driver") or "").strip().lower()
-    if not driver:
-        record_driver_catalog_editor_error("unknown", action="overrides.get", code="MISSING_DRIVER")
-        return Response({
-            "success": False,
-            "error": {"code": "MISSING_DRIVER", "message": "driver is required"},
-        }, status=400)
-    if driver not in {"cli", "ibcmd"}:
-        record_driver_catalog_editor_error("unknown", action="overrides.get", code="UNKNOWN_DRIVER")
-        return Response({
-            "success": False,
-            "error": {"code": "UNKNOWN_DRIVER", "message": f"Unknown driver: {driver}"},
-        }, status=400)
-
-    artifacts = get_or_create_catalog_artifacts(driver, created_by=request.user)
-    alias_obj = artifacts.overrides.aliases.select_related("version").get(alias="active")
-    try:
-        catalog = load_catalog_json(alias_obj.version)
-    except ArtifactStorageError as exc:
-        record_driver_catalog_editor_error(driver, action="overrides.get", code="STORAGE_ERROR")
-        return Response(
-            {"success": False, "error": {"code": "STORAGE_ERROR", "message": str(exc)}},
-            status=500,
-        )
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        record_driver_catalog_editor_error(driver, action="overrides.get", code="CATALOG_INVALID")
-        return Response(
-            {"success": False, "error": {"code": "CATALOG_INVALID", "message": str(exc)}},
-            status=500,
-        )
-    return Response({
-        "driver": driver,
-        "overrides_version": str(alias_obj.version.version),
-        "catalog": catalog,
-    })
-
-
-@extend_schema(
-    tags=["v2"],
-    summary="Update driver catalog overrides (v2)",
-    description="Upload new overrides catalog version and move alias active (staff-only). Requires reason.",
-    request=DriverCatalogOverridesUpdateRequestSerializer,
-    responses={
-        200: DriverCatalogOverridesUpdateResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def update_driver_catalog_overrides(request):
-    denied = _ensure_manage_driver_catalogs(request, action="overrides.update")
-    if denied:
-        return denied
-
-    serializer = DriverCatalogOverridesUpdateRequestSerializer(data=request.data)
-    if not serializer.is_valid():
-        record_driver_catalog_editor_error("unknown", action="overrides.update", code="INVALID_REQUEST")
-        log_admin_action(
-            request,
-            action="driver_catalog.overrides.update",
-            outcome="error",
-            target_type="driver_catalog",
-            metadata={"error": "INVALID_REQUEST"},
-            error_message="INVALID_REQUEST",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
-        }, status=400)
-
-    driver = serializer.validated_data["driver"]
-    catalog = serializer.validated_data["catalog"]
-    reason = serializer.validated_data["reason"]
-    errors = _validate_overrides_catalog_v2(driver, catalog)
-    if errors:
-        record_driver_catalog_editor_validation_failed(driver, stage="overrides.update", kind="invalid_overrides")
-        record_driver_catalog_editor_error(driver, action="overrides.update", code="INVALID_CATALOG")
-        log_admin_action(
-            request,
-            action="driver_catalog.overrides.update",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id=driver,
-            metadata={"error": "INVALID_CATALOG", "driver": driver, "reason": reason},
-            error_message="INVALID_CATALOG",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_CATALOG", "message": "Invalid overrides catalog", "details": errors},
-        }, status=400)
-
-    try:
-        version_obj = upload_overrides_catalog_version(
-            driver=driver,
-            catalog=catalog,
-            created_by=request.user,
-            metadata_extra={"reason": reason},
-        )
-        invalidate_driver_catalog_cache(driver)
-    except Exception as exc:
-        record_driver_catalog_editor_error(driver, action="overrides.update", code="SAVE_FAILED")
-        log_admin_action(
-            request,
-            action="driver_catalog.overrides.update",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id=driver,
-            metadata={"error": "SAVE_FAILED", "driver": driver, "reason": reason},
-            error_message="SAVE_FAILED",
-        )
-        return Response(
-            {"success": False, "error": {"code": "SAVE_FAILED", "message": str(exc)}},
-            status=500,
-        )
-    log_admin_action(
-        request,
-        action="driver_catalog.overrides.update",
-        outcome="success",
-        target_type="driver_catalog",
-        target_id=driver,
-        metadata={"driver": driver, "version": version_obj.version, "reason": reason},
-    )
-    return Response({"driver": driver, "overrides_version": version_obj.version, "catalog": catalog})
-
-
-@extend_schema(
-    tags=["v2"],
-    summary="Promote driver catalog base alias",
-    description="Move base alias (approved/latest) to a specific version (staff-only). Requires reason.",
-    request=DriverCatalogPromoteRequestSerializer,
-    responses={
-        200: DriverCatalogPromoteResponseSerializer,
-        400: ErrorResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def promote_driver_catalog_base(request):
-    denied = _ensure_manage_driver_catalogs(request, action="promote")
-    if denied:
-        return denied
-
-    serializer = DriverCatalogPromoteRequestSerializer(data=request.data)
-    if not serializer.is_valid():
-        record_driver_catalog_editor_error("unknown", action="promote", code="INVALID_REQUEST")
-        log_admin_action(
-            request,
-            action="driver_catalog.promote",
-            outcome="error",
-            target_type="driver_catalog",
-            metadata={"error": "INVALID_REQUEST"},
-            error_message="INVALID_REQUEST",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
-        }, status=400)
-
-    driver = serializer.validated_data["driver"]
-    version = str(serializer.validated_data["version"] or "").strip()
-    alias = str(serializer.validated_data.get("alias") or "approved").strip() or "approved"
-    reason = serializer.validated_data["reason"]
-    if alias not in {"approved", "latest"}:
-        record_driver_catalog_editor_error(driver, action="promote", code="INVALID_ALIAS")
-        log_admin_action(
-            request,
-            action="driver_catalog.promote",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id=driver,
-            metadata={"error": "INVALID_ALIAS", "driver": driver, "alias": alias, "version": version, "reason": reason},
-            error_message="INVALID_ALIAS",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "INVALID_ALIAS", "message": f"Unsupported alias: {alias}"},
-        }, status=400)
-
-    try:
-        promote_base_alias(driver, version=version, alias=alias)
-    except Exception as exc:
-        record_driver_catalog_editor_error(driver, action="promote", code="PROMOTE_FAILED")
-        log_admin_action(
-            request,
-            action="driver_catalog.promote",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id=driver,
-            metadata={"error": "PROMOTE_FAILED", "driver": driver, "alias": alias, "version": version, "reason": reason},
-            error_message="PROMOTE_FAILED",
-        )
-        return Response({
-            "success": False,
-            "error": {"code": "PROMOTE_FAILED", "message": str(exc)},
-        }, status=400)
-
-    invalidate_driver_catalog_cache(driver)
-    log_admin_action(
-        request,
-        action="driver_catalog.promote",
-        outcome="success",
-        target_type="driver_catalog",
-        target_id=driver,
-        metadata={"driver": driver, "alias": alias, "version": version, "reason": reason},
-    )
-    return Response({"driver": driver, "alias": alias, "version": version})
-
-
-@extend_schema(
-    tags=["v2"],
     summary="Get command schemas editor view (v2)",
     description=(
         "Return base/overrides versions and catalogs for Command Schemas Editor (staff-only).\n\n"
@@ -1399,7 +764,13 @@ def promote_driver_catalog_base(request):
             type=str,
             required=True,
             description="Driver name (cli/ibcmd)",
-        )
+        ),
+        OpenApiParameter(
+            name="mode",
+            type=str,
+            required=False,
+            description="Editor mode (guided/raw). In raw mode, base catalog is loaded from base alias latest.",
+        ),
     ],
     responses={
         200: CommandSchemasEditorViewResponseSerializer,
@@ -1416,7 +787,7 @@ def get_command_schemas_editor_view(request):
         return denied
 
     driver = str(request.query_params.get("driver") or "").strip().lower()
-    if driver not in {"cli", "ibcmd"}:
+    if driver not in COMMAND_SCHEMA_DRIVER_CHOICES:
         record_driver_catalog_editor_error("unknown", action="editor.view", code="UNKNOWN_DRIVER")
         return Response({
             "success": False,
@@ -1438,11 +809,10 @@ def get_command_schemas_editor_view(request):
 
     base_resolved, base_resolved_alias = _resolve_driver_base_version(base_versions=base_versions)
 
-    etag = compute_driver_catalog_etag(
+    etag = _compute_command_schemas_etag(
         driver=driver,
-        base_version_id=str(base_resolved.id) if base_resolved else None,
-        overrides_version_id=str(overrides_active.id) if overrides_active else None,
-        roles_hash=None,
+        base_versions=base_versions,
+        overrides_version=overrides_active,
     )
 
     if request.headers.get("If-None-Match") == etag:
@@ -1450,8 +820,15 @@ def get_command_schemas_editor_view(request):
         response["ETag"] = etag
         return response
 
+    mode = str(request.query_params.get("mode") or "").strip().lower()
+    display_base = base_resolved
+    if mode == "raw":
+        latest = base_versions.get("latest")
+        if latest is not None:
+            display_base = latest
+
     try:
-        base_catalog = load_catalog_json(base_resolved) if base_resolved else _build_empty_catalog_v2(driver)
+        base_catalog = load_catalog_json(display_base) if display_base else _build_empty_catalog_v2(driver)
         overrides_catalog = load_catalog_json(overrides_active) if overrides_active else {
             "catalog_version": 2,
             "driver": driver,
@@ -1552,7 +929,7 @@ def list_command_schema_versions(request):
         return denied
 
     driver = str(request.query_params.get("driver") or "").strip().lower()
-    if driver not in {"cli", "ibcmd"}:
+    if driver not in COMMAND_SCHEMA_DRIVER_CHOICES:
         record_driver_catalog_editor_error("unknown", action="versions.list", code="UNKNOWN_DRIVER")
         return Response({
             "success": False,
@@ -1665,11 +1042,10 @@ def update_command_schema_overrides(request):
         base_versions[alias_obj.alias] = alias_obj.version
     base_resolved, _base_alias = _resolve_driver_base_version(base_versions=base_versions)
 
-    current_etag = compute_driver_catalog_etag(
+    current_etag = _compute_command_schemas_etag(
         driver=driver,
-        base_version_id=str(base_resolved.id) if base_resolved else None,
-        overrides_version_id=str(overrides_active.id) if overrides_active else None,
-        roles_hash=None,
+        base_versions=base_versions,
+        overrides_version=overrides_active,
     )
     if expected_etag is not None and expected_etag != current_etag:
         record_driver_catalog_editor_conflict(driver, action="overrides.update")
@@ -1851,11 +1227,10 @@ def update_command_schema_overrides(request):
             status=500,
         )
 
-    new_etag = compute_driver_catalog_etag(
+    new_etag = _compute_command_schemas_etag(
         driver=driver,
-        base_version_id=str(base_resolved.id) if base_resolved else None,
-        overrides_version_id=str(version_obj.id),
-        roles_hash=None,
+        base_versions=base_versions,
+        overrides_version=version_obj,
     )
 
     log_admin_action(
@@ -1924,11 +1299,10 @@ def rollback_command_schema_overrides(request):
         base_versions[alias_obj.alias] = alias_obj.version
     base_resolved, _base_alias = _resolve_driver_base_version(base_versions=base_versions)
 
-    current_etag = compute_driver_catalog_etag(
+    current_etag = _compute_command_schemas_etag(
         driver=driver,
-        base_version_id=str(base_resolved.id) if base_resolved else None,
-        overrides_version_id=str(overrides_active.id) if overrides_active else None,
-        roles_hash=None,
+        base_versions=base_versions,
+        overrides_version=overrides_active,
     )
     if expected_etag is not None and expected_etag != current_etag:
         record_driver_catalog_editor_conflict(driver, action="overrides.rollback")
@@ -1990,11 +1364,10 @@ def rollback_command_schema_overrides(request):
 
         invalidate_driver_catalog_cache(driver)
 
-        new_etag = compute_driver_catalog_etag(
+        new_etag = _compute_command_schemas_etag(
             driver=driver,
-            base_version_id=str(base_resolved.id) if base_resolved else None,
-            overrides_version_id=str(target_version.id),
-            roles_hash=None,
+            base_versions=base_versions,
+            overrides_version=target_version,
         )
     except Exception as exc:
         record_driver_catalog_editor_error(driver, action="overrides.rollback", code="ROLLBACK_FAILED")
@@ -2032,7 +1405,7 @@ def rollback_command_schema_overrides(request):
     summary="Import ITS command schemas (v2)",
     description=(
         "Parse ITS JSON into driver command schema catalog and optionally save (staff-only).\n\n"
-        "driver=cli: updates legacy file-backed catalog (v1) and uploads v2 base catalog artifact.\n"
+        "driver=cli: uploads v2 base catalog artifact.\n"
         "driver=ibcmd: generates schema-driven catalog v2 and uploads it as a versioned artifact."
     ),
     request=CommandSchemasImportRequestSerializer,
@@ -2070,8 +1443,8 @@ def import_its_command_schemas(request):
     reason = serializer.validated_data["reason"]
 
     if driver == "cli":
-        catalog = build_cli_catalog_from_its(its_payload)
-        errors = validate_cli_catalog(catalog)
+        legacy_catalog = build_cli_catalog_from_its(its_payload)
+        errors = validate_cli_catalog(legacy_catalog)
         if errors:
             record_driver_catalog_editor_validation_failed(driver, stage="import_its", kind="invalid_parsed")
             record_driver_catalog_editor_error(driver, action="import_its", code="INVALID_CATALOG")
@@ -2088,15 +1461,40 @@ def import_its_command_schemas(request):
                 "success": False,
                 "error": {"code": "INVALID_CATALOG", "message": "Parsed CLI catalog is invalid", "details": errors},
             }, status=400)
+
+        base_catalog = cli_catalog_v1_to_v2(legacy_catalog)
+        validation_issues = _validate_cli_catalog_v2(base_catalog)
+        if any(item.get("severity") == "error" for item in validation_issues):
+            record_driver_catalog_editor_validation_failed(driver, stage="import_its", kind="invalid_base")
+            record_driver_catalog_editor_error(driver, action="import_its", code="INVALID_CATALOG")
+            log_admin_action(
+                request,
+                action="driver_catalog.import_its",
+                outcome="error",
+                target_type="driver_catalog",
+                target_id=driver,
+                metadata={"error": "INVALID_CATALOG", "driver": driver, "reason": reason},
+                error_message="INVALID_CATALOG",
+            )
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "INVALID_CATALOG",
+                    "message": "Parsed CLI base catalog is invalid",
+                    "details": validation_issues,
+                },
+            }, status=400)
         if serializer.validated_data.get("save", True):
             try:
-                save_cli_command_catalog(catalog)
-                upload_base_catalog_version(
+                version_obj = upload_base_catalog_version(
                     driver="cli",
-                    catalog=cli_catalog_v1_to_v2(catalog),
+                    catalog=base_catalog,
                     created_by=request.user,
                     metadata_extra={"reason": reason},
                 )
+                artifacts = get_or_create_catalog_artifacts("cli", created_by=request.user)
+                if not ArtifactAlias.objects.filter(artifact=artifacts.base, alias="approved").exists():
+                    promote_base_alias("cli", version=str(version_obj.version), alias="approved")
                 invalidate_driver_catalog_cache("cli")
             except Exception as exc:
                 record_driver_catalog_editor_error(driver, action="import_its", code="IMPORT_FAILED")
@@ -2114,8 +1512,8 @@ def import_its_command_schemas(request):
                     status=500,
                 )
     else:
-        catalog = build_ibcmd_catalog_v2_from_its(its_payload)
-        errors = validate_ibcmd_catalog_v2(catalog)
+        base_catalog = build_ibcmd_catalog_v2_from_its(its_payload)
+        errors = validate_ibcmd_catalog_v2(base_catalog)
         if errors:
             record_driver_catalog_editor_validation_failed(driver, stage="import_its", kind="invalid_parsed")
             record_driver_catalog_editor_error(driver, action="import_its", code="INVALID_CATALOG")
@@ -2134,12 +1532,15 @@ def import_its_command_schemas(request):
             }, status=400)
         if serializer.validated_data.get("save", True):
             try:
-                upload_base_catalog_version(
+                version_obj = upload_base_catalog_version(
                     driver="ibcmd",
-                    catalog=catalog,
+                    catalog=base_catalog,
                     created_by=request.user,
                     metadata_extra={"reason": reason},
                 )
+                artifacts = get_or_create_catalog_artifacts("ibcmd", created_by=request.user)
+                if not ArtifactAlias.objects.filter(artifact=artifacts.base, alias="approved").exists():
+                    promote_base_alias("ibcmd", version=str(version_obj.version), alias="approved")
                 invalidate_driver_catalog_cache("ibcmd")
             except Exception as exc:
                 record_driver_catalog_editor_error(driver, action="import_its", code="IMPORT_FAILED")
@@ -2165,43 +1566,44 @@ def import_its_command_schemas(request):
         target_id=driver,
         metadata={
             "driver": driver,
-            "version": catalog.get("version") or catalog.get("platform_version"),
+            "version": base_catalog.get("platform_version") if isinstance(base_catalog, dict) else None,
             "reason": reason,
         },
     )
-    return Response({"driver": driver, "catalog": catalog})
+    return Response({"driver": driver, "catalog": base_catalog})
 
 
 @extend_schema(
     tags=["v2"],
-    summary="Bootstrap CLI command schemas base from legacy file (v2)",
+    summary="Update command schemas base (v2)",
     description=(
-        "Publish current legacy CLI command catalog (config/cli_commands.json) "
-        "as a versioned v2 base artifact (staff-only). Requires reason."
+        "Upload new base catalog version (v2) and move base alias latest only (approved is not touched) "
+        "(staff-only). Requires reason.\n\n"
+        "Supports optimistic concurrency via If-Match header or expected_etag in request body."
     ),
-    request=CommandSchemasBootstrapCliRequestSerializer,
+    request=CommandSchemasBaseUpdateRequestSerializer,
     responses={
-        200: CommandSchemasBootstrapCliResponseSerializer,
+        200: CommandSchemasBaseUpdateResponseSerializer,
         400: ErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        409: OpenApiResponse(description="Conflict"),
     },
 )
 @api_view(["POST"])
 @permission_classes([IsAdminUser])
-def bootstrap_cli_command_schemas_base(request):
-    denied = _ensure_manage_driver_catalogs(request, action="bootstrap.cli_base")
+def update_command_schemas_base(request):
+    denied = _ensure_manage_driver_catalogs(request, action="base.update")
     if denied:
         return denied
 
-    serializer = CommandSchemasBootstrapCliRequestSerializer(data=request.data)
+    serializer = CommandSchemasBaseUpdateRequestSerializer(data=request.data)
     if not serializer.is_valid():
-        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_REQUEST")
+        record_driver_catalog_editor_error("unknown", action="base.update", code="INVALID_REQUEST")
         log_admin_action(
             request,
-            action="driver_catalog.base.bootstrap_cli",
+            action="driver_catalog.base.update",
             outcome="error",
             target_type="driver_catalog",
-            target_id="cli",
             metadata={"error": "INVALID_REQUEST"},
             error_message="INVALID_REQUEST",
         )
@@ -2210,84 +1612,110 @@ def bootstrap_cli_command_schemas_base(request):
             "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
         }, status=400)
 
+    driver = serializer.validated_data["driver"]
+    catalog = serializer.validated_data["catalog"]
     reason = serializer.validated_data["reason"]
+    expected_etag = _extract_expected_etag(request, serializer.validated_data.get("expected_etag"))
 
-    legacy = load_cli_command_catalog()
-    legacy_errors = validate_cli_catalog(legacy)
-    if legacy_errors:
-        record_driver_catalog_editor_validation_failed("cli", stage="bootstrap.cli_base", kind="invalid_legacy")
-        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_CATALOG")
-        log_admin_action(
-            request,
-            action="driver_catalog.base.bootstrap_cli",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id="cli",
-            metadata={"error": "INVALID_CATALOG", "driver": "cli", "reason": reason},
-            error_message="INVALID_CATALOG",
-        )
+    if not COMMAND_SCHEMA_DRIVERS.get(driver, {}).get("supports_raw_base_edit"):
+        record_driver_catalog_editor_error(driver, action="base.update", code="UNSUPPORTED_DRIVER")
         return Response({
             "success": False,
-            "error": {"code": "INVALID_CATALOG", "message": "Invalid legacy CLI catalog", "details": legacy_errors},
+            "error": {"code": "UNSUPPORTED_DRIVER", "message": f"Raw base edit is not supported for {driver}"},
         }, status=400)
 
-    try:
-        base_catalog = cli_catalog_v1_to_v2(legacy)
-    except Exception as exc:
-        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="CONVERT_FAILED")
-        log_admin_action(
-            request,
-            action="driver_catalog.base.bootstrap_cli",
-            outcome="error",
-            target_type="driver_catalog",
-            target_id="cli",
-            metadata={"error": "CONVERT_FAILED", "driver": "cli", "reason": reason},
-            error_message="CONVERT_FAILED",
-        )
-        return Response(
-            {"success": False, "error": {"code": "CONVERT_FAILED", "message": str(exc)}},
-            status=500,
-        )
+    artifacts = get_or_create_catalog_artifacts(driver, created_by=request.user)
+    overrides_alias = artifacts.overrides.aliases.select_related("version").get(alias="active")
+    overrides_active = overrides_alias.version if overrides_alias else None
 
-    validation_issues = _validate_cli_catalog_v2(base_catalog)
-    if any(item.get("severity") == "error" for item in validation_issues):
-        record_driver_catalog_editor_validation_failed("cli", stage="bootstrap.cli_base", kind="invalid_converted")
-        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="INVALID_CATALOG")
+    base_aliases = ArtifactAlias.objects.select_related("version").filter(
+        artifact=artifacts.base,
+        alias__in=["approved", "latest"],
+    )
+    base_versions: dict[str, ArtifactVersion | None] = {"approved": None, "latest": None}
+    for alias_obj in base_aliases:
+        base_versions[alias_obj.alias] = alias_obj.version
+    base_resolved, _base_alias = _resolve_driver_base_version(base_versions=base_versions)
+
+    current_etag = _compute_command_schemas_etag(
+        driver=driver,
+        base_versions=base_versions,
+        overrides_version=overrides_active,
+    )
+    if expected_etag is not None and expected_etag != current_etag:
+        record_driver_catalog_editor_conflict(driver, action="base.update")
+        record_driver_catalog_editor_error(driver, action="base.update", code="CONFLICT")
         log_admin_action(
             request,
-            action="driver_catalog.base.bootstrap_cli",
+            action="driver_catalog.base.update",
             outcome="error",
             target_type="driver_catalog",
-            target_id="cli",
-            metadata={"error": "INVALID_CATALOG", "driver": "cli", "reason": reason},
+            target_id=driver,
+            metadata={"error": "CONFLICT", "driver": driver, "reason": reason},
+            error_message="CONFLICT",
+        )
+        response = Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "CONFLICT",
+                    "message": "Base catalog changed since you opened the editor.",
+                    "details": {"expected_etag": expected_etag, "current_etag": current_etag},
+                },
+            },
+            status=409,
+        )
+        response["ETag"] = current_etag
+        return response
+
+    validation_issues: list[dict] = []
+    if driver == "ibcmd":
+        for err in validate_ibcmd_catalog_v2(catalog):
+            validation_issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+        for cmd_id, cmd in _get_commands_by_id(catalog).items():
+            if isinstance(cmd_id, str) and isinstance(cmd, dict):
+                validation_issues.extend(_collect_command_param_issues(cmd_id, cmd))
+    else:
+        validation_issues.extend(_validate_cli_catalog_v2(catalog))
+
+    if any(item.get("severity") == "error" for item in validation_issues):
+        record_driver_catalog_editor_validation_failed(driver, stage="base.update", kind="invalid_base")
+        record_driver_catalog_editor_error(driver, action="base.update", code="INVALID_CATALOG")
+        log_admin_action(
+            request,
+            action="driver_catalog.base.update",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id=driver,
+            metadata={"error": "INVALID_CATALOG", "driver": driver, "reason": reason},
             error_message="INVALID_CATALOG",
         )
         return Response({
             "success": False,
             "error": {
                 "code": "INVALID_CATALOG",
-                "message": "Converted CLI base catalog is invalid",
+                "message": "Invalid base catalog",
                 "details": validation_issues,
             },
         }, status=400)
 
     try:
         version_obj = upload_base_catalog_version(
-            driver="cli",
-            catalog=base_catalog,
+            driver=driver,
+            catalog=catalog,
             created_by=request.user,
             metadata_extra={"reason": reason},
         )
-        invalidate_driver_catalog_cache("cli")
+        invalidate_driver_catalog_cache(driver)
     except Exception as exc:
-        record_driver_catalog_editor_error("cli", action="bootstrap.cli_base", code="SAVE_FAILED")
+        record_driver_catalog_editor_error(driver, action="base.update", code="SAVE_FAILED")
         log_admin_action(
             request,
-            action="driver_catalog.base.bootstrap_cli",
+            action="driver_catalog.base.update",
             outcome="error",
             target_type="driver_catalog",
-            target_id="cli",
-            metadata={"error": "SAVE_FAILED", "driver": "cli", "reason": reason},
+            target_id=driver,
+            metadata={"error": "SAVE_FAILED", "driver": driver, "reason": reason},
             error_message="SAVE_FAILED",
         )
         return Response(
@@ -2295,20 +1723,220 @@ def bootstrap_cli_command_schemas_base(request):
             status=500,
         )
 
-    log_admin_action(
-        request,
-        action="driver_catalog.base.bootstrap_cli",
-        outcome="success",
-        target_type="driver_catalog",
-        target_id="cli",
-        metadata={"driver": "cli", "version": str(version_obj.version), "reason": reason},
+    base_versions_after = dict(base_versions)
+    base_versions_after["latest"] = version_obj
+    new_etag = _compute_command_schemas_etag(
+        driver=driver,
+        base_versions=base_versions_after,
+        overrides_version=overrides_active,
     )
 
-    return Response({
-        "driver": "cli",
-        "base_version": str(version_obj.version),
-        "base_version_id": str(version_obj.id),
+    log_admin_action(
+        request,
+        action="driver_catalog.base.update",
+        outcome="success",
+        target_type="driver_catalog",
+        target_id=driver,
+        metadata={"driver": driver, "version": version_obj.version, "reason": reason},
+    )
+    response = Response({"driver": driver, "base_version": str(version_obj.version), "etag": new_etag})
+    response["ETag"] = new_etag
+    response["Cache-Control"] = "private, max-age=0"
+    return response
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Update command schemas effective (v2)",
+    description=(
+        "DANGEROUS: Replace effective catalog by uploading it as a new base version and resetting overrides "
+        "(staff-only). Requires reason.\n\n"
+        "Supports optimistic concurrency via If-Match header or expected_etag in request body."
+    ),
+    request=CommandSchemasEffectiveUpdateRequestSerializer,
+    responses={
+        200: CommandSchemasEffectiveUpdateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        409: OpenApiResponse(description="Conflict"),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+def update_command_schemas_effective(request):
+    denied = _ensure_manage_driver_catalogs(request, action="effective.update")
+    if denied:
+        return denied
+
+    serializer = CommandSchemasEffectiveUpdateRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        record_driver_catalog_editor_error("unknown", action="effective.update", code="INVALID_REQUEST")
+        log_admin_action(
+            request,
+            action="driver_catalog.effective.update",
+            outcome="error",
+            target_type="driver_catalog",
+            metadata={"error": "INVALID_REQUEST"},
+            error_message="INVALID_REQUEST",
+        )
+        return Response({
+            "success": False,
+            "error": {"code": "INVALID_REQUEST", "message": "Invalid request", "details": serializer.errors},
+        }, status=400)
+
+    driver = serializer.validated_data["driver"]
+    catalog = serializer.validated_data["catalog"]
+    reason = serializer.validated_data["reason"]
+    expected_etag = _extract_expected_etag(request, serializer.validated_data.get("expected_etag"))
+
+    if not COMMAND_SCHEMA_DRIVERS.get(driver, {}).get("supports_raw_effective_edit"):
+        record_driver_catalog_editor_error(driver, action="effective.update", code="UNSUPPORTED_DRIVER")
+        return Response({
+            "success": False,
+            "error": {"code": "UNSUPPORTED_DRIVER", "message": f"Raw effective edit is not supported for {driver}"},
+        }, status=400)
+
+    artifacts = get_or_create_catalog_artifacts(driver, created_by=request.user)
+    overrides_alias = artifacts.overrides.aliases.select_related("version").get(alias="active")
+    overrides_active = overrides_alias.version if overrides_alias else None
+
+    base_aliases = ArtifactAlias.objects.select_related("version").filter(
+        artifact=artifacts.base,
+        alias__in=["approved", "latest"],
+    )
+    base_versions: dict[str, ArtifactVersion | None] = {"approved": None, "latest": None}
+    for alias_obj in base_aliases:
+        base_versions[alias_obj.alias] = alias_obj.version
+    base_resolved, _base_alias = _resolve_driver_base_version(base_versions=base_versions)
+
+    current_etag = _compute_command_schemas_etag(
+        driver=driver,
+        base_versions=base_versions,
+        overrides_version=overrides_active,
+    )
+    if expected_etag is not None and expected_etag != current_etag:
+        record_driver_catalog_editor_conflict(driver, action="effective.update")
+        record_driver_catalog_editor_error(driver, action="effective.update", code="CONFLICT")
+        log_admin_action(
+            request,
+            action="driver_catalog.effective.update",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id=driver,
+            metadata={"error": "CONFLICT", "driver": driver, "reason": reason},
+            error_message="CONFLICT",
+        )
+        response = Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "CONFLICT",
+                    "message": "Effective catalog changed since you opened the editor.",
+                    "details": {"expected_etag": expected_etag, "current_etag": current_etag},
+                },
+            },
+            status=409,
+        )
+        response["ETag"] = current_etag
+        return response
+
+    validation_issues: list[dict] = []
+    if driver == "ibcmd":
+        for err in validate_ibcmd_catalog_v2(catalog):
+            validation_issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+        for cmd_id, cmd in _get_commands_by_id(catalog).items():
+            if isinstance(cmd_id, str) and isinstance(cmd, dict):
+                validation_issues.extend(_collect_command_param_issues(cmd_id, cmd))
+    else:
+        validation_issues.extend(_validate_cli_catalog_v2(catalog))
+
+    if any(item.get("severity") == "error" for item in validation_issues):
+        record_driver_catalog_editor_validation_failed(driver, stage="effective.update", kind="invalid_effective")
+        record_driver_catalog_editor_error(driver, action="effective.update", code="INVALID_CATALOG")
+        log_admin_action(
+            request,
+            action="driver_catalog.effective.update",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id=driver,
+            metadata={"error": "INVALID_CATALOG", "driver": driver, "reason": reason},
+            error_message="INVALID_CATALOG",
+        )
+        return Response({
+            "success": False,
+            "error": {
+                "code": "INVALID_CATALOG",
+                "message": "Invalid effective catalog",
+                "details": validation_issues,
+            },
+        }, status=400)
+
+    try:
+        base_version_obj = upload_base_catalog_version(
+            driver=driver,
+            catalog=catalog,
+            created_by=request.user,
+            metadata_extra={"reason": reason, "dangerous_effective_update": True},
+        )
+        promote_base_alias(driver, version=str(base_version_obj.version), alias="approved")
+
+        empty_overrides = build_empty_overrides_catalog(driver)
+        overrides_version_obj = upload_overrides_catalog_version(
+            driver=driver,
+            catalog=empty_overrides,
+            created_by=request.user,
+            metadata_extra={"reason": reason, "reset": True},
+        )
+
+        invalidate_driver_catalog_cache(driver)
+    except Exception as exc:
+        record_driver_catalog_editor_error(driver, action="effective.update", code="SAVE_FAILED")
+        log_admin_action(
+            request,
+            action="driver_catalog.effective.update",
+            outcome="error",
+            target_type="driver_catalog",
+            target_id=driver,
+            metadata={"error": "SAVE_FAILED", "driver": driver, "reason": reason},
+            error_message="SAVE_FAILED",
+        )
+        return Response(
+            {"success": False, "error": {"code": "SAVE_FAILED", "message": str(exc)}},
+            status=500,
+        )
+
+    base_versions_after: dict[str, ArtifactVersion | None] = {
+        "approved": base_version_obj,
+        "latest": base_version_obj,
+    }
+    new_etag = _compute_command_schemas_etag(
+        driver=driver,
+        base_versions=base_versions_after,
+        overrides_version=overrides_version_obj,
+    )
+
+    log_admin_action(
+        request,
+        action="driver_catalog.effective.update",
+        outcome="success",
+        target_type="driver_catalog",
+        target_id=driver,
+        metadata={
+            "driver": driver,
+            "base_version": base_version_obj.version,
+            "overrides_version": overrides_version_obj.version if overrides_version_obj else None,
+            "reason": reason,
+        },
+    )
+    response = Response({
+        "driver": driver,
+        "base_version": str(base_version_obj.version),
+        "overrides_version": str(overrides_version_obj.version) if overrides_version_obj else None,
+        "etag": new_etag,
     })
+    response["ETag"] = new_etag
+    response["Cache-Control"] = "private, max-age=0"
+    return response
 
 
 @extend_schema(
@@ -2432,6 +2060,43 @@ def validate_command_schemas(request):
 
     driver = serializer.validated_data["driver"]
     draft_overrides = serializer.validated_data.get("catalog")
+    draft_effective = serializer.validated_data.get("effective_catalog")
+
+    if draft_overrides is not None and draft_effective is not None:
+        record_driver_catalog_editor_error(driver, action="validate", code="INVALID_REQUEST")
+        return Response({
+            "success": False,
+            "error": {"code": "INVALID_REQUEST", "message": "Provide catalog or effective_catalog, not both"},
+        }, status=400)
+
+    if draft_effective is not None:
+        issues: list[dict] = []
+        if driver == "ibcmd":
+            for err in validate_ibcmd_catalog_v2(draft_effective):
+                issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+            for cmd_id, cmd in _get_commands_by_id(draft_effective).items():
+                if isinstance(cmd_id, str) and isinstance(cmd, dict):
+                    issues.extend(_collect_command_param_issues(cmd_id, cmd))
+        else:
+            issues.extend(_validate_cli_catalog_v2(draft_effective))
+
+        errors_count = sum(1 for item in issues if item.get("severity") == "error")
+        warnings_count = sum(1 for item in issues if item.get("severity") == "warning")
+
+        if errors_count:
+            record_driver_catalog_editor_validation_failed(driver, stage="validate", kind="invalid_effective")
+
+        return Response({
+            "driver": driver,
+            "ok": errors_count == 0,
+            "base_version": None,
+            "base_version_id": None,
+            "overrides_version": None,
+            "overrides_version_id": None,
+            "issues": issues,
+            "errors_count": errors_count,
+            "warnings_count": warnings_count,
+        })
 
     artifacts = get_or_create_catalog_artifacts(driver, created_by=request.user)
 
@@ -2858,7 +2523,7 @@ def list_command_schemas_audit(request):
         return denied
 
     driver = (request.query_params.get("driver") or "").strip().lower()
-    if driver and driver not in {"cli", "ibcmd"}:
+    if driver and driver not in COMMAND_SCHEMA_DRIVER_CHOICES:
         record_driver_catalog_editor_error("unknown", action="audit.list", code="UNKNOWN_DRIVER")
         return Response({
             "success": False,

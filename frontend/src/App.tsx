@@ -13,7 +13,6 @@ import { ServiceMeshPage } from './pages/ServiceMesh'
 import { RBACPage } from './pages/RBAC/RBACPage'
 import { UsersPage } from './pages/Users/UsersPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
-import { DriverCatalogsPage } from './pages/DriverCatalogs/DriverCatalogsPage'
 import { CommandSchemasPage } from './pages/CommandSchemas/CommandSchemasPage'
 import { DLQPage } from './pages/DLQ'
 import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
@@ -293,9 +292,7 @@ function App() {
           } />
           <Route path="/settings/driver-catalogs" element={
             <DriverCatalogsRoute>
-              <MainLayout>
-                <DriverCatalogsPage />
-              </MainLayout>
+              <Navigate to="/settings/command-schemas?mode=raw" replace />
             </DriverCatalogsRoute>
           } />
           <Route path="/settings/command-schemas" element={

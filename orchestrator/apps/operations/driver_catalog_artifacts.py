@@ -78,8 +78,6 @@ def upload_base_catalog_version(
     existing = artifacts.base.versions.filter(version=version_value).first()
     if existing:
         _upsert_alias(artifacts.base, CATALOG_ALIAS_LATEST, existing)
-        if not ArtifactAlias.objects.filter(artifact=artifacts.base, alias=CATALOG_ALIAS_APPROVED).exists():
-            _upsert_alias(artifacts.base, CATALOG_ALIAS_APPROVED, existing)
         return existing
 
     filename = _build_unique_filename(artifacts.base.name, version_value)
@@ -105,8 +103,6 @@ def upload_base_catalog_version(
     )
 
     _upsert_alias(artifacts.base, CATALOG_ALIAS_LATEST, version_obj)
-    if not ArtifactAlias.objects.filter(artifact=artifacts.base, alias=CATALOG_ALIAS_APPROVED).exists():
-        _upsert_alias(artifacts.base, CATALOG_ALIAS_APPROVED, version_obj)
 
     return version_obj
 

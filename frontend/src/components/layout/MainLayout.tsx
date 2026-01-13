@@ -133,11 +133,6 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         ...(canManageDriverCatalogs
           ? [
             {
-              key: '/settings/driver-catalogs',
-              icon: <SettingOutlined />,
-              label: 'Driver Catalogs',
-            },
-            {
               key: '/settings/command-schemas',
               icon: <SettingOutlined />,
               label: 'Command Schemas',

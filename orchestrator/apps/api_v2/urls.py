@@ -250,17 +250,6 @@ urlpatterns = [
     path('settings/runtime/<str:key>/', runtime_settings.update_runtime_setting, name='runtime-settings-update'),
 
     # ========================================================================
-    # Driver Catalogs (SPA-primary administration)
-    # ========================================================================
-    path('settings/driver-catalogs/', driver_catalogs.list_driver_catalogs, name='driver-catalogs-list'),
-    path('settings/driver-catalogs/get/', driver_catalogs.get_driver_catalog, name='driver-catalogs-get'),
-    path('settings/driver-catalogs/update/', driver_catalogs.update_driver_catalog, name='driver-catalogs-update'),
-    path('settings/driver-catalogs/import-its/', driver_catalogs.import_its_driver_catalog, name='driver-catalogs-import-its'),
-    path('settings/driver-catalogs/promote/', driver_catalogs.promote_driver_catalog_base, name='driver-catalogs-promote'),
-    path('settings/driver-catalogs/overrides/get/', driver_catalogs.get_driver_catalog_overrides, name='driver-catalogs-overrides-get'),
-    path('settings/driver-catalogs/overrides/update/', driver_catalogs.update_driver_catalog_overrides, name='driver-catalogs-overrides-update'),
-
-    # ========================================================================
     # Command Schemas Editor (SPA-primary administration)
     # ========================================================================
     path('settings/command-schemas/editor/', driver_catalogs.get_command_schemas_editor_view, name='command-schemas-editor'),
@@ -269,9 +258,10 @@ urlpatterns = [
     path('settings/command-schemas/preview/', driver_catalogs.preview_command_schemas, name='command-schemas-preview'),
     path('settings/command-schemas/diff/', driver_catalogs.diff_command_schemas, name='command-schemas-diff'),
     path('settings/command-schemas/audit/', driver_catalogs.list_command_schemas_audit, name='command-schemas-audit'),
+    path('settings/command-schemas/base/update/', driver_catalogs.update_command_schemas_base, name='command-schemas-base-update'),
+    path('settings/command-schemas/effective/update/', driver_catalogs.update_command_schemas_effective, name='command-schemas-effective-update'),
     path('settings/command-schemas/overrides/update/', driver_catalogs.update_command_schema_overrides, name='command-schemas-overrides-update'),
     path('settings/command-schemas/overrides/rollback/', driver_catalogs.rollback_command_schema_overrides, name='command-schemas-overrides-rollback'),
     path('settings/command-schemas/import-its/', driver_catalogs.import_its_command_schemas, name='command-schemas-import-its'),
-    path('settings/command-schemas/bootstrap-cli/', driver_catalogs.bootstrap_cli_command_schemas_base, name='command-schemas-bootstrap-cli'),
     path('settings/command-schemas/promote/', driver_catalogs.promote_command_schemas_base, name='command-schemas-promote'),
 ]

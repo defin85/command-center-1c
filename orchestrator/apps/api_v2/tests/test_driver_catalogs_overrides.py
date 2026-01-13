@@ -1,4 +1,5 @@
 import io
+import json
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -27,7 +28,7 @@ def client(staff_user):
 
 
 @pytest.mark.django_db
-def test_driver_catalogs_overrides_update_and_get(client, monkeypatch):
+def test_command_schemas_overrides_update_for_ibcmd(client, monkeypatch):
     storage_data: dict[str, bytes] = {}
 
     def fake_upload_object(_self, storage_key: str, data, size: int, content_type=None):
@@ -45,19 +46,87 @@ def test_driver_catalogs_overrides_update_and_get(client, monkeypatch):
     monkeypatch.setattr(ArtifactStorageClient, "upload_object", fake_upload_object)
     monkeypatch.setattr(ArtifactStorageClient, "get_object", fake_get_object)
 
+    base = Artifact.objects.create(
+        name="driver_catalog.ibcmd.base",
+        kind=ArtifactKind.DRIVER_CATALOG,
+        is_versioned=True,
+        tags=["driver_catalog", "ibcmd", "base"],
+    )
+    overrides = Artifact.objects.create(
+        name="driver_catalog.ibcmd.overrides",
+        kind=ArtifactKind.DRIVER_CATALOG,
+        is_versioned=True,
+        tags=["driver_catalog", "ibcmd", "overrides"],
+    )
+
+    base_version = ArtifactVersion.objects.create(
+        artifact=base,
+        version="v-base",
+        filename="driver_catalog.ibcmd.base__v-base.json",
+        storage_key="test/base",
+        size=1,
+        checksum="base",
+        content_type="application/json",
+        metadata={},
+    )
+    initial_overrides_version = ArtifactVersion.objects.create(
+        artifact=overrides,
+        version="ovr-initial",
+        filename="driver_catalog.ibcmd.overrides__ovr-initial.json",
+        storage_key="test/overrides",
+        size=1,
+        checksum="overrides",
+        content_type="application/json",
+        metadata={},
+    )
+    ArtifactAlias.objects.create(artifact=base, alias="approved", version=base_version)
+    ArtifactAlias.objects.create(artifact=overrides, alias="active", version=initial_overrides_version)
+
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "its_import", "doc_id": "TI000", "doc_url": "http://example"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "ibcmd.infobase.dump": {
+                "label": "Dump",
+                "description": "Dump",
+                "argv": ["ibcmd", "infobase", "dump"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {
+                    "remote": {"kind": "flag", "required": True, "expects_value": True, "flag": "--remote"},
+                },
+            },
+        },
+    }
+    overrides_catalog_initial = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "overrides": {"commands_by_id": {}},
+    }
+
+    storage_data["test/base"] = json.dumps(base_catalog).encode("utf-8")
+    storage_data["test/overrides"] = json.dumps(overrides_catalog_initial).encode("utf-8")
+
+    editor_resp = client.get("/api/v2/settings/command-schemas/editor/", {"driver": "ibcmd"})
+    assert editor_resp.status_code == 200
+    etag = editor_resp.headers["ETag"]
+
     overrides_catalog = {
         "catalog_version": 2,
         "driver": "ibcmd",
         "overrides": {
             "commands_by_id": {
-                "server.config.init": {"disabled": True},
+                "ibcmd.infobase.dump": {"disabled": True},
             }
         },
     }
 
     update_resp = client.post(
-        "/api/v2/settings/driver-catalogs/overrides/update/",
-        data={"driver": "ibcmd", "catalog": overrides_catalog, "reason": "test update"},
+        "/api/v2/settings/command-schemas/overrides/update/",
+        data={"driver": "ibcmd", "catalog": overrides_catalog, "reason": "test update", "expected_etag": etag},
         format="json",
     )
     assert update_resp.status_code == 200
@@ -65,12 +134,10 @@ def test_driver_catalogs_overrides_update_and_get(client, monkeypatch):
     assert update_payload["driver"] == "ibcmd"
     assert update_payload["overrides_version"].startswith("ovr-")
 
-    get_resp = client.get("/api/v2/settings/driver-catalogs/overrides/get/", {"driver": "ibcmd"})
-    assert get_resp.status_code == 200
-    get_payload = get_resp.json()
-    assert get_payload["driver"] == "ibcmd"
-    assert get_payload["overrides_version"] == update_payload["overrides_version"]
-    assert get_payload["catalog"]["overrides"]["commands_by_id"]["server.config.init"]["disabled"] is True
+    editor_after = client.get("/api/v2/settings/command-schemas/editor/", {"driver": "ibcmd"})
+    assert editor_after.status_code == 200
+    effective = editor_after.json()["catalogs"]["effective"]["catalog"]
+    assert effective["commands_by_id"]["ibcmd.infobase.dump"]["disabled"] is True
 
 
 @pytest.mark.django_db
@@ -106,7 +173,7 @@ def test_driver_catalogs_promote_changes_approved_alias(client, monkeypatch):
     ArtifactAlias.objects.create(artifact=base, alias="approved", version=v1)
 
     resp = client.post(
-        "/api/v2/settings/driver-catalogs/promote/",
+        "/api/v2/settings/command-schemas/promote/",
         data={"driver": "ibcmd", "version": "v2", "alias": "approved", "reason": "test promote"},
         format="json",
     )

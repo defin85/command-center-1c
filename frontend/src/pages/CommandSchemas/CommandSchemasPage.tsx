@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Checkbox, Divider, Form, Input, Modal, Select, Space, Switch, Tabs, Tag, Typography, Upload } from 'antd'
 import type { UploadProps } from 'antd'
 import { ReloadOutlined, RollbackOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
 
 import type { DriverCatalogV2, DriverCommandParamV2, DriverCommandV2 } from '../../api/driverCommands'
 import {
-  bootstrapCliCommandSchemasBase,
   diffCommandSchemas,
   getCommandSchemasEditorView,
   importItsCommandSchemas,
@@ -22,6 +22,7 @@ import {
   type CommandSchemaVersionListItem,
 } from '../../api/commandSchemas'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
+import { CommandSchemasRawEditor } from './CommandSchemasRawEditor'
 
 const { Title, Text } = Typography
 
@@ -118,7 +119,20 @@ type CommandListItem = {
 
 export function CommandSchemasPage() {
   const { message, modal } = App.useApp()
-  const [activeDriver, setActiveDriver] = useState<CommandSchemaDriver>('ibcmd')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  type CommandSchemasMode = 'guided' | 'raw'
+
+  const [mode, setMode] = useState<CommandSchemasMode>(() => (
+    (searchParams.get('mode') || '').trim().toLowerCase() === 'raw' ? 'raw' : 'guided'
+  ))
+
+  const [activeDriver, setActiveDriver] = useState<CommandSchemaDriver>(() => {
+    const raw = (searchParams.get('driver') || '').trim().toLowerCase()
+    return raw === 'cli' ? 'cli' : 'ibcmd'
+  })
+
+  const [rawDirty, setRawDirty] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<Awaited<ReturnType<typeof getCommandSchemasEditorView>> | null>(null)
@@ -139,10 +153,6 @@ export function CommandSchemasPage() {
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveReason, setSaveReason] = useState('')
   const [saving, setSaving] = useState(false)
-
-  const [bootstrapOpen, setBootstrapOpen] = useState(false)
-  const [bootstrapReason, setBootstrapReason] = useState('')
-  const [bootstrapping, setBootstrapping] = useState(false)
 
   const [importItsOpen, setImportItsOpen] = useState(false)
   const [importItsReason, setImportItsReason] = useState('')
@@ -177,7 +187,7 @@ export function CommandSchemasPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await getCommandSchemasEditorView(activeDriver)
+      const data = await getCommandSchemasEditorView(activeDriver, mode)
       setView(data)
 
       const server = data.catalogs?.overrides ?? buildEmptyOverrides(activeDriver)
@@ -203,11 +213,15 @@ export function CommandSchemasPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeDriver])
+  }, [activeDriver, mode])
 
   useEffect(() => {
     void fetchView()
   }, [fetchView])
+
+  useEffect(() => {
+    setSearchParams({ driver: activeDriver, mode }, { replace: true })
+  }, [activeDriver, mode, setSearchParams])
 
   const baseCatalog = view?.catalogs?.base
 
@@ -241,6 +255,7 @@ export function CommandSchemasPage() {
   }, [baseCommandsById, overridesById])
 
   const dirty = useMemo(() => JSON.stringify(serverOverrides) !== JSON.stringify(draftOverrides), [serverOverrides, draftOverrides])
+  const hasUnsavedChanges = mode === 'raw' ? rawDirty : dirty
 
   const selectedEffective = selectedCommandId ? draftEffectiveCommandsById[selectedCommandId] : undefined
   const selectedBase = selectedCommandId ? baseCommandsById[selectedCommandId] : undefined
@@ -379,7 +394,7 @@ export function CommandSchemasPage() {
       return
     }
 
-    if (!dirty) {
+    if (!hasUnsavedChanges) {
       setActiveDriver(nextDriver)
       return
     }
@@ -394,7 +409,7 @@ export function CommandSchemasPage() {
         setActiveDriver(nextDriver)
       },
     })
-  }, [activeDriver, dirty, message, modal, rollbackLoading, rollingBack, saving])
+  }, [activeDriver, hasUnsavedChanges, message, modal, rollbackLoading, rollingBack, saving])
 
   const requestRefreshView = useCallback(() => {
     if (saving || rollingBack) {
@@ -402,7 +417,7 @@ export function CommandSchemasPage() {
       return
     }
 
-    if (!dirty) {
+    if (!hasUnsavedChanges) {
       void fetchView()
       return
     }
@@ -417,37 +432,10 @@ export function CommandSchemasPage() {
         void fetchView()
       },
     })
-  }, [dirty, fetchView, message, modal, rollingBack, saving])
-
-  const openBootstrap = useCallback(() => {
-    if (saving || rollbackLoading || rollingBack || loading) {
-      message.info('Please wait until the current action finishes')
-      return
-    }
-
-    const open = () => {
-      setBootstrapOpen(true)
-      setBootstrapReason('')
-      setBootstrapping(false)
-    }
-
-    if (!dirty) {
-      open()
-      return
-    }
-
-    modal.confirm({
-      title: 'Unsaved changes',
-      content: 'Publishing base will reload the editor and discard your local draft.',
-      okText: 'Discard and continue',
-      okButtonProps: { danger: true },
-      cancelText: 'Cancel',
-      onOk: open,
-    })
-  }, [dirty, loading, message, modal, rollbackLoading, rollingBack, saving])
+  }, [fetchView, hasUnsavedChanges, message, modal, rollingBack, saving])
 
   const openImportIts = useCallback(() => {
-    if (saving || rollbackLoading || rollingBack || loading || bootstrapping) {
+    if (saving || rollbackLoading || rollingBack || loading) {
       message.info('Please wait until the current action finishes')
       return
     }
@@ -459,7 +447,7 @@ export function CommandSchemasPage() {
       setImportingIts(false)
     }
 
-    if (!dirty) {
+    if (!hasUnsavedChanges) {
       open()
       return
     }
@@ -472,7 +460,7 @@ export function CommandSchemasPage() {
       cancelText: 'Cancel',
       onOk: open,
     })
-  }, [bootstrapping, dirty, loading, message, modal, rollbackLoading, rollingBack, saving])
+  }, [hasUnsavedChanges, loading, message, modal, rollbackLoading, rollingBack, saving])
 
   const handleImportItsFile: UploadProps['beforeUpload'] = (file) => {
     setImportItsFile(file)
@@ -522,29 +510,6 @@ export function CommandSchemasPage() {
       message.error(backendMessage || 'Failed to import ITS')
     } finally {
       setImportingIts(false)
-    }
-  }
-
-  const handleBootstrap = async () => {
-    if (bootstrapping) {
-      return
-    }
-    const reason = bootstrapReason.trim()
-    if (!reason) {
-      return
-    }
-
-    setBootstrapping(true)
-    try {
-      await bootstrapCliCommandSchemasBase({ reason })
-      message.success('CLI base catalog published')
-      setBootstrapOpen(false)
-      await fetchView()
-    } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to publish CLI base catalog'
-      message.error(text)
-    } finally {
-      setBootstrapping(false)
     }
   }
 
@@ -1698,13 +1663,23 @@ export function CommandSchemasPage() {
           <Text type="secondary">Human-oriented editor for driver command schemas (MinIO artifacts).</Text>
         </div>
         <Space wrap>
+          <Space size="small" align="center">
+            <Text type="secondary">Mode</Text>
+            <Switch
+              checked={mode === 'raw'}
+              onChange={(checked) => setMode(checked ? 'raw' : 'guided')}
+              checkedChildren="Raw"
+              unCheckedChildren="Guided"
+              disabled={loading}
+            />
+          </Space>
           <Button data-testid="command-schemas-refresh" onClick={requestRefreshView} loading={loading} icon={<ReloadOutlined />}>
             Refresh
           </Button>
           <Button
             data-testid="command-schemas-import-its-open"
             onClick={openImportIts}
-            disabled={loading || saving || rollingBack || rollbackLoading || bootstrapping}
+            disabled={loading || saving || rollingBack || rollbackLoading}
             icon={<UploadOutlined />}
           >
             Import ITS...
@@ -1712,13 +1687,15 @@ export function CommandSchemasPage() {
           <Button data-testid="command-schemas-rollback-open" onClick={openRollback} disabled={!view} icon={<RollbackOutlined />}>
             Rollback...
           </Button>
-          <Button data-testid="command-schemas-save-open" type="primary" icon={<SaveOutlined />} onClick={openSave} disabled={!view || !dirty || saving}>
-            Save...
-          </Button>
+          {mode === 'guided' && (
+            <Button data-testid="command-schemas-save-open" type="primary" icon={<SaveOutlined />} onClick={openSave} disabled={!view || !dirty || saving}>
+              Save...
+            </Button>
+          )}
         </Space>
       </div>
 
-      {dirty && (
+      {mode === 'guided' && dirty && (
         <div data-testid="command-schemas-unsaved-banner" style={{ position: 'sticky', top: 0, zIndex: 20, background: '#fff' }}>
           <Alert
             type="warning"
@@ -1768,83 +1745,77 @@ export function CommandSchemasPage() {
         />
       )}
 
-      {view && activeDriver === 'cli' && !view.base.approved_version && !view.base.latest_version && (
-        <Alert
-          type="warning"
-          showIcon
-          message="CLI base catalog is not published"
-          description="Command Schemas editor reads base catalogs from MinIO artifacts. Publish legacy config/cli_commands.json to start."
-          action={(
-            <Button
-              data-testid="command-schemas-bootstrap-open"
-              onClick={openBootstrap}
-              disabled={loading || saving || rollingBack || rollbackLoading}
+      {mode === 'guided' ? (
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '360px minmax(560px, 1fr) 420px',
+              gap: 16,
+              alignItems: 'start',
+            }}
+          >
+            <Card size="small" title="Commands">
+              {renderCommandList()}
+            </Card>
+
+            <Card
+              size="small"
+              title={selectedCommandId ? `Editor: ${displayCommandId(activeDriver, selectedCommandId)}` : 'Editor'}
             >
-              Publish...
-            </Button>
-          )}
+              <Tabs
+                activeKey={activeEditorTab}
+                onChange={(key) => setActiveEditorTab(key as 'basics' | 'permissions' | 'params' | 'advanced')}
+                items={[
+                  { key: 'basics', label: 'Basics', children: renderBasicsEditor() },
+                  { key: 'permissions', label: 'Permissions', children: renderPermissionsEditor() },
+                  { key: 'params', label: 'Params', children: renderParamsEditor() },
+                  { key: 'advanced', label: 'Advanced', children: renderAdvancedEditor() },
+                ]}
+              />
+            </Card>
+
+            <Card size="small" title="Preview / Diff / Validate">
+              {renderSidePanel()}
+            </Card>
+          </div>
+
+          <Modal
+            title="Save overrides"
+            open={saveOpen}
+            onCancel={() => setSaveOpen(false)}
+            onOk={handleSave}
+            okText="Save"
+            okButtonProps={{ disabled: !saveReason.trim() || saving, 'data-testid': 'command-schemas-save-confirm' }}
+            cancelButtonProps={{ disabled: saving }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Alert
+                type="info"
+                showIcon
+                message="Summary"
+                description={`commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
+              />
+              <Text type="secondary">Reason (required)</Text>
+              <Input.TextArea
+                data-testid="command-schemas-save-reason"
+                value={saveReason}
+                onChange={(e) => setSaveReason(e.target.value)}
+                placeholder="Why are you changing command schemas?"
+                rows={4}
+              />
+            </Space>
+          </Modal>
+        </>
+      ) : (
+        <CommandSchemasRawEditor
+          driver={activeDriver}
+          view={view}
+          disabled={loading || importingIts || rollbackLoading || rollingBack}
+          onReload={fetchView}
+          onDirtyChange={setRawDirty}
         />
       )}
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '360px minmax(560px, 1fr) 420px',
-          gap: 16,
-          alignItems: 'start',
-        }}
-      >
-        <Card size="small" title="Commands">
-          {renderCommandList()}
-        </Card>
-
-        <Card
-          size="small"
-          title={selectedCommandId ? `Editor: ${displayCommandId(activeDriver, selectedCommandId)}` : 'Editor'}
-        >
-          <Tabs
-            activeKey={activeEditorTab}
-            onChange={(key) => setActiveEditorTab(key as 'basics' | 'permissions' | 'params' | 'advanced')}
-            items={[
-              { key: 'basics', label: 'Basics', children: renderBasicsEditor() },
-              { key: 'permissions', label: 'Permissions', children: renderPermissionsEditor() },
-              { key: 'params', label: 'Params', children: renderParamsEditor() },
-              { key: 'advanced', label: 'Advanced', children: renderAdvancedEditor() },
-            ]}
-          />
-        </Card>
-
-        <Card size="small" title="Preview / Diff / Validate">
-          {renderSidePanel()}
-        </Card>
-      </div>
-
-      <Modal
-        title="Save overrides"
-        open={saveOpen}
-        onCancel={() => setSaveOpen(false)}
-        onOk={handleSave}
-        okText="Save"
-        okButtonProps={{ disabled: !saveReason.trim() || saving, 'data-testid': 'command-schemas-save-confirm' }}
-        cancelButtonProps={{ disabled: saving }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="Summary"
-            description={`commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
-          />
-          <Text type="secondary">Reason (required)</Text>
-          <Input.TextArea
-            data-testid="command-schemas-save-reason"
-            value={saveReason}
-            onChange={(e) => setSaveReason(e.target.value)}
-            placeholder="Why are you changing command schemas?"
-            rows={4}
-          />
-        </Space>
-      </Modal>
 
       <Modal
         title={`Import ITS JSON (${activeDriver.toUpperCase()})`}
@@ -1888,28 +1859,6 @@ export function CommandSchemasPage() {
             placeholder="Why import ITS?"
             rows={4}
             disabled={importingIts}
-          />
-        </Space>
-      </Modal>
-
-      <Modal
-        title="Publish CLI base catalog"
-        open={bootstrapOpen}
-        onCancel={() => setBootstrapOpen(false)}
-        onOk={handleBootstrap}
-        okText="Publish"
-        okButtonProps={{ disabled: !bootstrapReason.trim() || bootstrapping, loading: bootstrapping, 'data-testid': 'command-schemas-bootstrap-confirm' }}
-        cancelButtonProps={{ disabled: bootstrapping }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Text type="secondary">Reason (required)</Text>
-          <Input.TextArea
-            data-testid="command-schemas-bootstrap-reason"
-            value={bootstrapReason}
-            onChange={(e) => setBootstrapReason(e.target.value)}
-            placeholder="Why publish CLI base catalog?"
-            rows={4}
-            disabled={bootstrapping}
           />
         </Space>
       </Modal>
