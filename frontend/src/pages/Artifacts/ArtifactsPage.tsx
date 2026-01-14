@@ -1567,72 +1567,69 @@ export const ArtifactsPage = () => {
         {!purgeTarget ? (
           <Text type="secondary">Select an artifact.</Text>
         ) : (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {purgePreflightLoading && (
-              <Spin tip="Building purge plan..." />
-            )}
+          <Spin spinning={purgePreflightLoading} tip="Building purge plan...">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              {purgePreflightError && (
+                <Alert type="error" message={purgePreflightError} showIcon />
+              )}
 
-            {purgePreflightError && (
-              <Alert type="error" message={purgePreflightError} showIcon />
-            )}
+              {purgePlan && (
+                <Descriptions size="small" column={2} bordered>
+                  <Descriptions.Item label="Versions">{purgePlan.versions_count}</Descriptions.Item>
+                  <Descriptions.Item label="Aliases">{purgePlan.aliases_count}</Descriptions.Item>
+                  <Descriptions.Item label="Objects">{purgePlan.storage_keys_total}</Descriptions.Item>
+                  <Descriptions.Item label="Total size">{formatBytes(purgePlan.total_bytes)}</Descriptions.Item>
+                </Descriptions>
+              )}
 
-            {purgePlan && (
-              <Descriptions size="small" column={2} bordered>
-                <Descriptions.Item label="Versions">{purgePlan.versions_count}</Descriptions.Item>
-                <Descriptions.Item label="Aliases">{purgePlan.aliases_count}</Descriptions.Item>
-                <Descriptions.Item label="Objects">{purgePlan.storage_keys_total}</Descriptions.Item>
-                <Descriptions.Item label="Total size">{formatBytes(purgePlan.total_bytes)}</Descriptions.Item>
-              </Descriptions>
-            )}
-
-            {purgeBlockers.length > 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                message="Purge is blocked"
-                description={
-                  <Collapse
-                    items={[
-                      {
-                        key: 'blockers',
-                        label: `Active usage (${purgeBlockers.length})`,
-                        children: (
-                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                            {purgeBlockers.map((blocker) => (
-                              <Text key={`${blocker.type}:${blocker.id}`}>
-                                {blocker.type} {blocker.id} ({blocker.status}) {blocker.name ?? ''}
-                              </Text>
-                            ))}
-                          </Space>
-                        ),
-                      },
-                    ]}
-                  />
-                }
-              />
-            )}
-
-            {purgeJobError && (
-              <Alert type="error" showIcon message={purgeJobError} />
-            )}
-
-            {purgeJobId && purgeJobQuery.data && (
-              <>
-                <Progress
-                  percent={purgeJobQuery.data.total_objects > 0
-                    ? Math.min(100, Math.round((purgeJobQuery.data.deleted_objects / purgeJobQuery.data.total_objects) * 100))
-                    : 0}
-                  status={purgeJobQuery.data.status === 'failed' ? 'exception' : undefined}
+              {purgeBlockers.length > 0 && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="Purge is blocked"
+                  description={
+                    <Collapse
+                      items={[
+                        {
+                          key: 'blockers',
+                          label: `Active usage (${purgeBlockers.length})`,
+                          children: (
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              {purgeBlockers.map((blocker) => (
+                                <Text key={`${blocker.type}:${blocker.id}`}>
+                                  {blocker.type} {blocker.id} ({blocker.status}) {blocker.name ?? ''}
+                                </Text>
+                              ))}
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
+                  }
                 />
-                <Text type="secondary">
-                  {purgeJobQuery.data.status}: {purgeJobQuery.data.deleted_objects}/{purgeJobQuery.data.total_objects} objects
-                </Text>
-              </>
-            )}
+              )}
 
-            {!purgeJobId && (
-              <>
-                <Form layout="vertical">
+              {purgeJobError && (
+                <Alert type="error" showIcon message={purgeJobError} />
+              )}
+
+              {purgeJobId && purgeJobQuery.data && (
+                <>
+                  <Progress
+                    percent={purgeJobQuery.data.total_objects > 0
+                      ? Math.min(100, Math.round((purgeJobQuery.data.deleted_objects / purgeJobQuery.data.total_objects) * 100))
+                      : 0}
+                    status={purgeJobQuery.data.status === 'failed' ? 'exception' : undefined}
+                  />
+                  <Text type="secondary">
+                    {purgeJobQuery.data.status}: {purgeJobQuery.data.deleted_objects}/{purgeJobQuery.data.total_objects} objects
+                  </Text>
+                </>
+              )}
+
+              {!purgeJobId && (
+                <>
+                  <Form layout="vertical">
                   <Form.Item label="Reason" required>
                     <Input.TextArea
                       value={purgeReason}
@@ -1656,9 +1653,10 @@ export const ArtifactsPage = () => {
                   message="This action cannot be undone"
                   description="All versions, aliases, and files in MinIO will be removed."
                 />
-              </>
-            )}
-          </Space>
+                </>
+              )}
+            </Space>
+          </Spin>
         )}
       </Modal>
     </div>

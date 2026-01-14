@@ -47,7 +47,7 @@ func DefaultConfig() *SchedulerConfig {
 		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
 		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
 		EventReplayCron:             "@every 60s",  // Every 60 seconds
-		ArtifactsPurgeCron:          "@every 60s",  // Every 60 seconds
+		ArtifactsPurgeCron:          "@every 10s",  // Every 10 seconds
 		LockTTL:                     5 * time.Minute,
 		LockRetryDelay:              100 * time.Millisecond,
 		LockMaxRetries:              3,

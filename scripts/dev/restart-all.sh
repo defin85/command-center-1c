@@ -44,6 +44,11 @@ cd "$PROJECT_ROOT"
 # Load environment variables from .env.local
 load_env_file
 
+# Dev default: enable Go scheduler unless explicitly disabled in env.
+if [[ -z "${ENABLE_GO_SCHEDULER:-}" ]]; then
+    export ENABLE_GO_SCHEDULER=true
+fi
+
 # Флаги по умолчанию
 FORCE_REBUILD=false
 NO_REBUILD=false

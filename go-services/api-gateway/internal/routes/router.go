@@ -95,14 +95,18 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	// V2 routes group
 	v2 := router.Group("/api/v2")
 	v2.Use(auth.AuthMiddleware(jwtManager))
-	v2.Use(middleware.RateLimitMiddleware(100, time.Minute)) // 100 req/min
+
+	// Apply global API rate limit to most routes, but keep streaming (SSE) and ticket endpoints outside
+	// to avoid blocking unrelated user actions under reconnect scenarios.
+	v2Limited := v2.Group("")
+	v2Limited.Use(middleware.RateLimitMiddleware(100, time.Minute)) // 100 req/min
 	{
 		// Jaeger tracing routes
-		v2.Any("/tracing/*path", jaegerHandler)
+		v2Limited.Any("/tracing/*path", jaegerHandler)
 
 		// Orchestrator routes (Django backend for CRUD operations)
 		// Routes are generated from OpenAPI spec + fallback wildcards
-		RegisterOrchestratorRoutes(v2, handlers.ProxyToOrchestratorV2)
+		RegisterOrchestratorRoutes(v2Limited, v2, handlers.ProxyToOrchestratorV2)
 	}
 
 	log.Info("API v2 routes configured",
