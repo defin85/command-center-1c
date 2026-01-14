@@ -98,3 +98,48 @@ def test_build_base_catalog_from_its_parses_group_section_commands():
     assert create_cmd["scope"] == "per_database"
     assert create_cmd["risk_level"] == "safe"
     assert create_cmd["params_by_name"]["name"]["flag"] == "--name"
+
+
+def test_build_base_catalog_from_its_parses_flag_variants_with_extra_placeholders():
+    marker_param = _ru("\\u041f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440")
+    marker_desc = _ru("\\u041e\\u043f\\u0438\\u0441\\u0430\\u043d\\u0438\\u0435")
+
+    payload = {
+        "version": "8.3.27",
+        "pointer_ti": "TI000001193",
+        "sections": [
+            {"title": f"4.10.11. {_ru('\\u0420\\u0435\\u0436\\u0438\\u043c')} eventlog", "text": ""},
+            {
+                "title": "4.10.11.2. export",
+                "text": "\n".join(
+                    [
+                        "Export event log.",
+                        "",
+                        marker_param,
+                        "",
+                        marker_desc,
+                        "",
+                        "--follow=<timeout> <ms>",
+                        "",
+                        "-F <timeout> <ms>",
+                        "",
+                        "Polling frequency in ms.",
+                    ]
+                ),
+            },
+        ],
+    }
+
+    catalog = build_base_catalog_from_its(payload)
+    cmd = catalog["commands_by_id"]["eventlog.export"]
+    assert cmd["argv"] == ["eventlog", "export"]
+
+    follow = (cmd.get("params_by_name") or {}).get("follow")
+    assert follow is not None
+    assert follow["kind"] == "flag"
+    assert follow["flag"] == "--follow"
+    assert follow["expects_value"] is True
+    assert follow.get("ui", {}).get("aliases") == ["-F"]
+
+    errors = validate_catalog_v2(catalog)
+    assert errors == []

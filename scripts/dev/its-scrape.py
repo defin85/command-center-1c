@@ -912,12 +912,20 @@ def main() -> int:
         action="store_true",
         help="In crawl mode, skip items that resolve to an already scraped doc_id",
     )
+    parser.add_argument(
+        "--validate-ibcmd",
+        action="store_true",
+        help="After scraping, build and validate IBCMD catalog v2 (fails with non-zero exit on errors)",
+    )
     args = parser.parse_args()
 
     include_raw_text = not bool(args.no_raw_text)
     sanitize_text = bool(args.sanitize_text)
 
     if args.crawl_toc:
+        if args.validate_ibcmd:
+            print("ERROR: --validate-ibcmd is not supported with --crawl-toc", file=sys.stderr)
+            return 1
         try:
             index_path = asyncio.run(
                 crawl_toc(
@@ -957,6 +965,27 @@ def main() -> int:
     if payload.get("breadcrumb_str"):
         print(f"breadcrumb: {payload.get('breadcrumb_str')}")
     print(f"sections: {payload.get('sections_count')}")
+
+    if args.validate_ibcmd:
+        try:
+            repo_root = Path(__file__).resolve().parents[2]
+            orchestrator_dir = repo_root / "orchestrator"
+            if orchestrator_dir.exists():
+                sys.path.insert(0, str(orchestrator_dir))
+
+            from apps.operations.ibcmd_catalog_v2 import build_base_catalog_from_its, validate_catalog_v2
+        except Exception as e:
+            print(f"ERROR: cannot import IBCMD parser/validator from orchestrator/: {e}", file=sys.stderr)
+            return 1
+
+        catalog = build_base_catalog_from_its(payload)
+        errors = validate_catalog_v2(catalog)
+        print(f"ibcmd_catalog: commands={len(catalog.get('commands_by_id') or {})}, errors={len(errors)}")
+        if errors:
+            for err in errors:
+                print(f"- {err}", file=sys.stderr)
+            return 1
+
     return 0
 
 

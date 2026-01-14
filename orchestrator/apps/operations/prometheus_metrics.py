@@ -155,6 +155,35 @@ driver_catalog_editor_errors_total = Counter(
 )
 
 # =============================================================================
+# Artifacts Purge Metrics
+# =============================================================================
+
+artifact_purge_jobs_total = Counter(
+    'cc1c_orchestrator_artifact_purge_jobs_total',
+    'Total artifact purge jobs (created/success/failed)',
+    ['mode', 'status']
+)
+
+artifact_purge_deleted_objects_total = Counter(
+    'cc1c_orchestrator_artifact_purge_deleted_objects_total',
+    'Total objects deleted by artifact purge',
+    ['mode']
+)
+
+artifact_purge_deleted_bytes_total = Counter(
+    'cc1c_orchestrator_artifact_purge_deleted_bytes_total',
+    'Total bytes deleted by artifact purge',
+    ['mode']
+)
+
+artifact_purge_duration_seconds = Histogram(
+    'cc1c_orchestrator_artifact_purge_duration_seconds',
+    'Artifact purge duration in seconds',
+    ['mode', 'status'],
+    buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800]
+)
+
+# =============================================================================
 # Deprecation Metrics
 # =============================================================================
 
@@ -424,6 +453,30 @@ def record_driver_catalog_editor_validation_failed(driver: str, stage: str, kind
 def record_driver_catalog_editor_error(driver: str, action: str, code: str) -> None:
     """Record an error response in driver catalog editor flows (by code)."""
     driver_catalog_editor_errors_total.labels(driver=driver, action=action, code=code).inc()
+
+
+def record_artifact_purge_job_created(mode: str) -> None:
+    """Record artifact purge job creation (manual/ttl)."""
+    artifact_purge_jobs_total.labels(mode=mode, status="created").inc()
+
+
+def record_artifact_purge_job_completed(
+    mode: str,
+    status: str,
+    *,
+    deleted_objects: int = 0,
+    deleted_bytes: int = 0,
+    duration_seconds: float = 0.0,
+) -> None:
+    """Record artifact purge job completion + counters."""
+    artifact_purge_jobs_total.labels(mode=mode, status=status).inc()
+
+    if deleted_objects:
+        artifact_purge_deleted_objects_total.labels(mode=mode).inc(deleted_objects)
+    if deleted_bytes:
+        artifact_purge_deleted_bytes_total.labels(mode=mode).inc(deleted_bytes)
+    if duration_seconds and duration_seconds > 0:
+        artifact_purge_duration_seconds.labels(mode=mode, status=status).observe(duration_seconds)
 
 
 def record_deprecated_operation(operation_type: str, endpoint: str) -> None:

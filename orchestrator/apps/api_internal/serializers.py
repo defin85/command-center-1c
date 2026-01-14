@@ -59,6 +59,34 @@ class TaskExecutionCompleteSerializer(serializers.Serializer):
 
 
 # =============================================================================
+# Artifacts Purge Serializers
+# =============================================================================
+
+
+class ArtifactPurgeJobClaimSerializer(serializers.Serializer):
+    """Input serializer for claiming next purge job."""
+
+    worker_instance = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+
+class ArtifactPurgeJobProgressUpdateSerializer(serializers.Serializer):
+    """Input serializer for purge job progress updates."""
+
+    deleted_objects = serializers.IntegerField(min_value=0, required=False, default=0)
+    deleted_bytes = serializers.IntegerField(min_value=0, required=False, default=0)
+
+
+class ArtifactPurgeJobCompleteSerializer(serializers.Serializer):
+    """Input serializer for completing purge job."""
+
+    status = serializers.ChoiceField(choices=["success", "failed"])
+    deleted_objects = serializers.IntegerField(min_value=0, required=False, default=0)
+    deleted_bytes = serializers.IntegerField(min_value=0, required=False, default=0)
+    error_code = serializers.CharField(required=False, allow_blank=True, default="")
+    error_message = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+# =============================================================================
 # Database Credentials Serializer
 # =============================================================================
 

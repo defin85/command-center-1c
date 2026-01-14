@@ -254,6 +254,63 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/artifacts/{artifact_id}/purge/:
+    post:
+      operationId: v2_artifacts_purge_create
+      summary: Purge artifact (permanent delete)
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPurgeResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/artifacts/{artifact_id}/versions/:
     get:
       operationId: v2_artifacts_versions_retrieve
@@ -392,6 +449,39 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/artifacts/purge-jobs/{job_id}/:
+    get:
+      operationId: v2_artifacts_purge_jobs_retrieve
+      summary: Get artifact purge job
+      parameters:
+      - in: path
+        name: job_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPurgeJob'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/audit/log-compensation/:
     post:
       operationId: v2_audit_log_compensation_create
@@ -6501,15 +6591,178 @@ components:
           type: array
           items:
             type: string
+        is_deleted:
+          type: boolean
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        purge_state:
+          type: string
+          enum:
+          - none
+          - scheduled
+          - blocked
+          - running
+          - failed
+        purge_after:
+          type: string
+          format: date-time
+          nullable: true
+        purge_blocked_until:
+          type: string
+          format: date-time
+          nullable: true
+        purge_blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactPurgeBlocker'
         created_at:
           type: string
           format: date-time
       required:
       - created_at
       - id
+      - is_deleted
       - is_versioned
       - kind
       - name
+      - purge_state
+    ArtifactPurgeBlocker:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - batch_operation
+          - workflow_execution
+        id:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+        details:
+          type: string
+      required:
+      - id
+      - status
+      - type
+    ArtifactPurgeJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+          - manual
+          - ttl
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - success
+          - failed
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_objects:
+          type: integer
+        deleted_objects:
+          type: integer
+        total_bytes:
+          type: integer
+          format: int64
+        deleted_bytes:
+          type: integer
+          format: int64
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+      required:
+      - artifact_id
+      - created_at
+      - deleted_bytes
+      - deleted_objects
+      - id
+      - mode
+      - status
+      - total_bytes
+      - total_objects
+    ArtifactPurgePlan:
+      type: object
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        versions_count:
+          type: integer
+        aliases_count:
+          type: integer
+        total_bytes:
+          type: integer
+          format: int64
+        storage_keys:
+          type: array
+          items:
+            type: string
+        storage_keys_total:
+          type: integer
+        prefix:
+          type: string
+      required:
+      - aliases_count
+      - artifact_id
+      - prefix
+      - storage_keys
+      - storage_keys_total
+      - total_bytes
+      - versions_count
+    ArtifactPurgeRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        dry_run:
+          type: boolean
+          default: false
+    ArtifactPurgeResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          nullable: true
+        plan:
+          $ref: '#/components/schemas/ArtifactPurgePlan'
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactPurgeBlocker'
+      required:
+      - blockers
+      - job_id
+      - plan
     ArtifactAlias:
       type: object
       properties:

@@ -128,11 +128,13 @@ urlpatterns = [
     path('artifacts/create/', artifacts.create_artifact, name='create-artifact'),
     path('artifacts/<uuid:artifact_id>/', artifacts.delete_artifact, name='delete-artifact'),
     path('artifacts/<uuid:artifact_id>/restore/', artifacts.restore_artifact, name='restore-artifact'),
+    path('artifacts/<uuid:artifact_id>/purge/', artifacts.purge_artifact, name='purge-artifact'),
     path('artifacts/<uuid:artifact_id>/versions/', artifacts.list_artifact_versions, name='list-artifact-versions'),
     path('artifacts/<uuid:artifact_id>/versions/upload/', artifacts.upload_artifact_version, name='upload-artifact-version'),
     path('artifacts/<uuid:artifact_id>/versions/<str:version>/download/', artifacts.download_artifact_version, name='download-artifact-version'),
     path('artifacts/<uuid:artifact_id>/aliases/', artifacts.list_artifact_aliases, name='list-artifact-aliases'),
     path('artifacts/<uuid:artifact_id>/aliases/upsert/', artifacts.upsert_artifact_alias, name='upsert-artifact-alias'),
+    path('artifacts/purge-jobs/<uuid:job_id>/', artifacts.get_purge_job, name='get-artifact-purge-job'),
 
     # ========================================================================
     # RBAC (SPA-primary administration)

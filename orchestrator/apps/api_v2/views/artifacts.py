@@ -5,11 +5,14 @@ Provides artifact registry with versions and aliases backed by MinIO + Postgres.
 """
 
 import logging
+import json
+from datetime import timedelta
 
 from django.conf import settings
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -20,12 +23,23 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.core import permission_codes as perms
-from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
+from apps.artifacts.models import (
+    Artifact,
+    ArtifactAlias,
+    ArtifactKind,
+    ArtifactPurgeJob,
+    ArtifactPurgeJobMode,
+    ArtifactPurgeJobStatus,
+    ArtifactPurgeState,
+    ArtifactVersion,
+)
 from apps.artifacts.rbac import ArtifactPermissionService
 from apps.artifacts.services import ArtifactService
 from apps.artifacts.storage import ArtifactStorageClient, ArtifactStorageError
+from apps.artifacts.purge_blockers import find_purge_blockers
 from apps.databases.models import PermissionLevel
 from apps.files.services import FileStorageService
+from apps.operations.prometheus_metrics import record_artifact_purge_job_created
 
 
 logger = logging.getLogger(__name__)
@@ -35,12 +49,26 @@ logger = logging.getLogger(__name__)
 # Serializers
 # =============================================================================
 
+class ArtifactPurgeBlockerSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=["batch_operation", "workflow_execution"])
+    id = serializers.CharField()
+    status = serializers.CharField()
+    name = serializers.CharField(required=False, allow_blank=True, default="")
+    details = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 class ArtifactSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
     kind = serializers.CharField()
     is_versioned = serializers.BooleanField()
     tags = serializers.ListField(child=serializers.CharField(), required=False)
+    is_deleted = serializers.BooleanField()
+    deleted_at = serializers.DateTimeField(allow_null=True, required=False)
+    purge_state = serializers.CharField()
+    purge_after = serializers.DateTimeField(allow_null=True, required=False)
+    purge_blocked_until = serializers.DateTimeField(allow_null=True, required=False)
+    purge_blockers = ArtifactPurgeBlockerSerializer(many=True, required=False)
     created_at = serializers.DateTimeField()
 
 
@@ -109,6 +137,43 @@ class ArtifactAliasUpsertRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class ArtifactPurgeRequestSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    dry_run = serializers.BooleanField(required=False, default=False)
+
+class ArtifactPurgePlanSerializer(serializers.Serializer):
+    artifact_id = serializers.UUIDField()
+    versions_count = serializers.IntegerField()
+    aliases_count = serializers.IntegerField()
+    total_bytes = serializers.IntegerField()
+    storage_keys = serializers.ListField(child=serializers.CharField())
+    storage_keys_total = serializers.IntegerField()
+    prefix = serializers.CharField()
+
+
+class ArtifactPurgeResponseSerializer(serializers.Serializer):
+    job_id = serializers.UUIDField(allow_null=True, required=False)
+    plan = ArtifactPurgePlanSerializer()
+    blockers = ArtifactPurgeBlockerSerializer(many=True)
+
+
+class ArtifactPurgeJobSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    artifact_id = serializers.UUIDField()
+    mode = serializers.CharField()
+    status = serializers.CharField()
+    reason = serializers.CharField(allow_blank=True, required=False)
+    created_at = serializers.DateTimeField()
+    started_at = serializers.DateTimeField(allow_null=True, required=False)
+    completed_at = serializers.DateTimeField(allow_null=True, required=False)
+    total_objects = serializers.IntegerField()
+    deleted_objects = serializers.IntegerField()
+    total_bytes = serializers.IntegerField()
+    deleted_bytes = serializers.IntegerField()
+    error_code = serializers.CharField(allow_blank=True, required=False)
+    error_message = serializers.CharField(allow_blank=True, required=False)
+
+
 # =============================================================================
 # Permissions
 # =============================================================================
@@ -128,6 +193,32 @@ def _ensure_permission(request, perm: str, obj=None, message: str = "Forbidden")
 
 def _get_active_artifact(artifact_id):
     return get_object_or_404(Artifact, id=artifact_id, is_deleted=False)
+
+
+def _purge_ttl_days() -> int:
+    value = getattr(settings, "ARTIFACT_PURGE_TTL_DAYS", 30)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return 30
+    return max(1, value)
+
+
+def _build_purge_plan(artifact: Artifact, keys_limit: int = 200) -> dict:
+    versions_qs = ArtifactVersion.objects.filter(artifact=artifact).order_by("created_at")
+    storage_keys_total = versions_qs.count()
+    storage_keys = list(versions_qs.values_list("storage_key", flat=True)[:keys_limit])
+    total_bytes = versions_qs.aggregate(total=Sum("size")).get("total") or 0
+    aliases_count = ArtifactAlias.objects.filter(artifact=artifact).count()
+    return {
+        "artifact_id": artifact.id,
+        "versions_count": storage_keys_total,
+        "aliases_count": aliases_count,
+        "total_bytes": int(total_bytes),
+        "storage_keys": storage_keys,
+        "storage_keys_total": storage_keys_total,
+        "prefix": f"artifacts/{artifact.id}/",
+    }
 
 
 # =============================================================================
@@ -268,7 +359,21 @@ def delete_artifact(request, artifact_id):
     artifact.is_deleted = True
     artifact.deleted_at = timezone.now()
     artifact.deleted_by = request.user
-    artifact.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+    artifact.purge_state = ArtifactPurgeState.SCHEDULED
+    artifact.purge_after = artifact.deleted_at + timedelta(days=_purge_ttl_days())
+    artifact.purge_blocked_until = None
+    artifact.purge_blockers = []
+    artifact.save(
+        update_fields=[
+            "is_deleted",
+            "deleted_at",
+            "deleted_by",
+            "purge_state",
+            "purge_after",
+            "purge_blocked_until",
+            "purge_blockers",
+        ]
+    )
     return Response(status=http_status.HTTP_204_NO_CONTENT)
 
 
@@ -296,10 +401,33 @@ def restore_artifact(request, artifact_id):
     if denied:
         return denied
 
+    if ArtifactPurgeJob.objects.filter(
+        artifact_id=artifact.id,
+        status__in=[ArtifactPurgeJobStatus.QUEUED, ArtifactPurgeJobStatus.RUNNING],
+    ).exists():
+        return Response(
+            {"success": False, "error": {"code": "PURGE_ALREADY_RUNNING", "message": "Artifact purge is running"}},
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
     artifact.is_deleted = False
     artifact.deleted_at = None
     artifact.deleted_by = None
-    artifact.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+    artifact.purge_state = ArtifactPurgeState.NONE
+    artifact.purge_after = None
+    artifact.purge_blocked_until = None
+    artifact.purge_blockers = []
+    artifact.save(
+        update_fields=[
+            "is_deleted",
+            "deleted_at",
+            "deleted_by",
+            "purge_state",
+            "purge_after",
+            "purge_blocked_until",
+            "purge_blockers",
+        ]
+    )
     response = ArtifactSerializer(artifact)
     return Response(response.data, status=http_status.HTTP_200_OK)
 
@@ -552,3 +680,140 @@ def download_artifact_version(request, artifact_id, version):
     response = FileResponse(data, as_attachment=True, filename=version_obj.filename)
     response["Content-Type"] = version_obj.content_type or "application/octet-stream"
     return response
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Purge artifact (permanent delete)",
+    request=ArtifactPurgeRequestSerializer,
+    responses={
+        200: ArtifactPurgeResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+        404: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def purge_artifact(request, artifact_id):
+    artifact = get_object_or_404(Artifact, id=artifact_id)
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to manage this artifact.",
+    )
+    if denied:
+        return denied
+
+    denied = _ensure_permission(
+        request,
+        perms.PERM_ARTIFACTS_PURGE_ARTIFACT,
+        obj=artifact,
+        message="You do not have permission to purge this artifact.",
+    )
+    if denied:
+        return denied
+
+    serializer = ArtifactPurgeRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"success": False, "error": serializer.errors}, status=400)
+
+    data = serializer.validated_data
+    dry_run = bool(data.get("dry_run", False))
+    reason = (data.get("reason") or "").strip()
+
+    plan = _build_purge_plan(artifact)
+    blockers = find_purge_blockers(artifact.id) if artifact.is_deleted else []
+
+    if dry_run:
+        response = ArtifactPurgeResponseSerializer({"job_id": None, "plan": plan, "blockers": blockers})
+        return Response(response.data, status=http_status.HTTP_200_OK)
+
+    if not artifact.is_deleted:
+        return Response(
+            {"success": False, "error": {"code": "PURGE_NOT_ALLOWED", "message": "Artifact must be deleted first"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not reason:
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "reason is required"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if blockers:
+        return Response(
+            {"success": False, "error": {"code": "ARTIFACT_IN_USE", "message": "Artifact is used by active operations/workflows"}},
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
+    existing_job = ArtifactPurgeJob.objects.filter(
+        artifact_id=artifact.id,
+        status__in=[ArtifactPurgeJobStatus.QUEUED, ArtifactPurgeJobStatus.RUNNING],
+    ).first()
+    if existing_job:
+        return Response(
+            {"success": False, "error": {"code": "PURGE_ALREADY_RUNNING", "message": "Artifact purge already running"}},
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
+    with transaction.atomic():
+        locked = Artifact.objects.select_for_update().get(id=artifact.id)
+        if locked.purge_state == ArtifactPurgeState.RUNNING:
+            return Response(
+                {"success": False, "error": {"code": "PURGE_ALREADY_RUNNING", "message": "Artifact purge already running"}},
+                status=http_status.HTTP_409_CONFLICT,
+            )
+
+        job = ArtifactPurgeJob.objects.create(
+            artifact_id=locked.id,
+            mode=ArtifactPurgeJobMode.MANUAL,
+            status=ArtifactPurgeJobStatus.QUEUED,
+            reason=reason,
+            requested_by=request.user,
+        )
+        locked.purge_state = ArtifactPurgeState.RUNNING
+        locked.purge_blocked_until = None
+        locked.purge_blockers = []
+        locked.save(update_fields=["purge_state", "purge_blocked_until", "purge_blockers"])
+
+    record_artifact_purge_job_created(job.mode)
+
+    response = ArtifactPurgeResponseSerializer({"job_id": job.id, "plan": plan, "blockers": []})
+    return Response(response.data, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Get artifact purge job",
+    responses={
+        200: ArtifactPurgeJobSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_purge_job(request, job_id):
+    job = get_object_or_404(ArtifactPurgeJob, id=job_id)
+
+    artifact = Artifact.objects.filter(id=job.artifact_id).first()
+    if artifact is not None:
+        denied = _ensure_permission(
+            request,
+            perms.PERM_ARTIFACTS_MANAGE_ARTIFACT,
+            obj=artifact,
+            message="You do not have permission to manage this artifact.",
+        )
+        if denied:
+            return denied
+    else:
+        if not request.user.is_staff and job.requested_by_id != request.user.id:
+            return _permission_denied("You do not have permission to view this purge job.")
+
+    response = ArtifactPurgeJobSerializer(job)
+    return Response(response.data, status=http_status.HTTP_200_OK)

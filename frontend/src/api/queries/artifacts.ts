@@ -7,11 +7,15 @@ import {
   upsertArtifactAlias,
   deleteArtifact,
   restoreArtifact,
+  purgeArtifact,
+  getArtifactPurgeJob,
   type ArtifactAliasUpsertPayload,
   type ArtifactListParams,
   type ArtifactListResponse,
   type ArtifactVersionListResponse,
   type ArtifactAliasListResponse,
+  type ArtifactPurgeResponse,
+  type ArtifactPurgeJob,
 } from '../artifacts'
 import { queryKeys } from './index'
 
@@ -77,5 +81,32 @@ export const useRestoreArtifact = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
     },
+  })
+}
+
+export const usePurgeArtifact = () => {
+  const queryClient = useQueryClient()
+  return useMutation<
+    ArtifactPurgeResponse,
+    Error,
+    { artifactId: string; payload: { reason?: string; dry_run?: boolean } }
+  >({
+    mutationFn: ({ artifactId, payload }) => purgeArtifact(artifactId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
+    },
+  })
+}
+
+export const useArtifactPurgeJob = (
+  jobId?: string,
+  options?: { enabled?: boolean; refetchInterval?: number }
+) => {
+  return useQuery<ArtifactPurgeJob, Error>({
+    queryKey: queryKeys.artifacts.purgeJob(jobId ?? 'none'),
+    queryFn: ({ signal }) => getArtifactPurgeJob(jobId as string, signal),
+    enabled: Boolean(jobId) && (options?.enabled ?? true),
+    retry: false,
+    refetchInterval: options?.refetchInterval,
   })
 }

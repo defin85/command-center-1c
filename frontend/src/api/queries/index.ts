@@ -87,6 +87,7 @@ export const queryKeys = {
     list: (filters?: ArtifactFilters) => [...queryKeys.artifacts.all, 'list', filters] as const,
     versions: (artifactId: string) => [...queryKeys.artifacts.all, 'versions', artifactId] as const,
     aliases: (artifactId: string) => [...queryKeys.artifacts.all, 'aliases', artifactId] as const,
+    purgeJob: (jobId: string) => [...queryKeys.artifacts.all, 'purge-job', jobId] as const,
   },
   users: {
     all: ['users'] as const,
@@ -134,6 +135,8 @@ export {
   useUpsertArtifactAlias,
   useDeleteArtifact,
   useRestoreArtifact,
+  usePurgeArtifact,
+  useArtifactPurgeJob,
 } from './artifacts'
 
 export { useDriverCommands } from './driverCommands'

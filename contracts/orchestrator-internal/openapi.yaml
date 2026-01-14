@@ -56,6 +56,8 @@ tags:
     description: Event Replay System - управление failed events
   - name: timeline
     description: Timeline / observability (operation execution timeline)
+  - name: artifacts
+    description: Artifacts lifecycle (purge/TTL)
 
 paths:
   # ============================================================================
@@ -490,6 +492,89 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  # Artifacts purge (permanent delete / TTL)
+  /api/v2/internal/artifacts/claim-purge-job:
+    post:
+      summary: Claim next artifact purge job
+      operationId: claimArtifactPurgeJobV2
+      tags: [artifacts]
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeJobClaimRequest'
+      responses:
+        '200':
+          description: Purge job claimed (or none available)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPurgeJobClaimResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  /api/v2/internal/artifacts/update-purge-job:
+    post:
+      summary: Update artifact purge job progress
+      operationId: updateArtifactPurgeJobV2
+      tags: [artifacts]
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeJobProgressUpdateRequest'
+      responses:
+        '200':
+          description: Progress updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
+  /api/v2/internal/artifacts/complete-purge-job:
+    post:
+      summary: Complete artifact purge job (finalize)
+      operationId: completeArtifactPurgeJobV2
+      tags: [artifacts]
+      security: [{ApiKeyAuth: []}]
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeJobCompleteRequest'
+      responses:
+        '200':
+          description: Job completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '500': {$ref: '#/components/responses/InternalServerError'}
 
 components:
@@ -1518,6 +1603,94 @@ components:
           type: string
           description: Optional message (views may return only success field)
           example: "Операция выполнена успешно"
+
+    # ============================================================================
+    # ARTIFACTS PURGE SCHEMAS
+    # ============================================================================
+    ArtifactPurgeJobClaimRequest:
+      type: object
+      properties:
+        worker_instance:
+          type: string
+          description: Идентификатор инстанса worker (hostname:pid)
+          example: "worker-1:12345"
+
+    ArtifactPurgeJobClaim:
+      type: object
+      required:
+        - job_id
+        - artifact_id
+        - mode
+        - status
+        - prefix
+        - storage_keys
+        - total_objects
+        - total_bytes
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum: [manual, ttl]
+        status:
+          type: string
+          enum: [queued, running]
+        prefix:
+          type: string
+          description: MinIO prefix for safety delete
+          example: "artifacts/4b2c7f2e-2f8e-4a0a-9d4d-2d9b0b9c8b1a/"
+        storage_keys:
+          type: array
+          items:
+            type: string
+        total_objects:
+          type: integer
+        total_bytes:
+          type: integer
+          format: int64
+
+    ArtifactPurgeJobClaimResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          example: true
+        job:
+          $ref: '#/components/schemas/ArtifactPurgeJobClaim'
+          nullable: true
+
+    ArtifactPurgeJobProgressUpdateRequest:
+      type: object
+      properties:
+        deleted_objects:
+          type: integer
+        deleted_bytes:
+          type: integer
+          format: int64
+
+    ArtifactPurgeJobCompleteRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+        deleted_objects:
+          type: integer
+        deleted_bytes:
+          type: integer
+          format: int64
+        error_code:
+          type: string
+        error_message:
+          type: string
 
   responses:
     BadRequest:

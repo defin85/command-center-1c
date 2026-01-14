@@ -20,6 +20,26 @@ class ArtifactKind(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class ArtifactPurgeState(models.TextChoices):
+    NONE = "none", "None"
+    SCHEDULED = "scheduled", "Scheduled"
+    BLOCKED = "blocked", "Blocked"
+    RUNNING = "running", "Running"
+    FAILED = "failed", "Failed"
+
+
+class ArtifactPurgeJobMode(models.TextChoices):
+    MANUAL = "manual", "Manual"
+    TTL = "ttl", "TTL"
+
+
+class ArtifactPurgeJobStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    SUCCESS = "success", "Success"
+    FAILED = "failed", "Failed"
+
+
 class Artifact(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
@@ -42,18 +62,30 @@ class Artifact(models.Model):
         on_delete=models.SET_NULL,
         related_name="artifacts_created",
     )
+    purge_state = models.CharField(
+        max_length=16,
+        choices=ArtifactPurgeState.choices,
+        default=ArtifactPurgeState.NONE,
+    )
+    purge_after = models.DateTimeField(null=True, blank=True)
+    purge_blocked_until = models.DateTimeField(null=True, blank=True)
+    purge_blockers = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["kind", "name"]),
+            models.Index(fields=["is_deleted", "purge_after"], name="art_isdel_purgeafter_idx"),
+            models.Index(fields=["purge_state", "purge_after"], name="art_purgestate_purgeafter_idx"),
+            models.Index(fields=["purge_blocked_until"], name="art_purgeblockeduntil_idx"),
         ]
         unique_together = [
             ("name", "kind"),
         ]
         permissions = (
             ("manage_artifact", "Can manage artifacts"),
+            ("purge_artifact", "Can purge artifacts"),
         )
 
     def __str__(self) -> str:
@@ -101,6 +133,47 @@ class ArtifactVersion(models.Model):
         return f"{self.artifact.name}@{self.version}"
 
 
+class ArtifactPurgeJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    artifact_id = models.UUIDField(db_index=True)
+    mode = models.CharField(max_length=16, choices=ArtifactPurgeJobMode.choices)
+    status = models.CharField(max_length=16, choices=ArtifactPurgeJobStatus.choices)
+    reason = models.TextField(blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="artifact_purge_jobs_requested",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    total_objects = models.IntegerField(default=0)
+    deleted_objects = models.IntegerField(default=0)
+    total_bytes = models.BigIntegerField(default=0)
+    deleted_bytes = models.BigIntegerField(default=0)
+    error_code = models.CharField(max_length=64, blank=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["artifact_id", "status"], name="apj_art_status_idx"),
+            models.Index(fields=["status", "created_at"], name="apj_status_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["artifact_id"],
+                condition=models.Q(status__in=[ArtifactPurgeJobStatus.QUEUED, ArtifactPurgeJobStatus.RUNNING]),
+                name="apj_unique_active_artifact",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Purge {self.artifact_id} ({self.status})"
+
+
 class ArtifactAlias(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     artifact = models.ForeignKey(
@@ -137,11 +210,20 @@ class ArtifactUsage(models.Model):
     )
     version = models.ForeignKey(
         ArtifactVersion,
-        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="usage",
     )
     operation = models.ForeignKey(
         "operations.BatchOperation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="artifact_usage",
+    )
+    workflow_execution = models.ForeignKey(
+        "templates.WorkflowExecution",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -160,10 +242,14 @@ class ArtifactUsage(models.Model):
         ordering = ["-used_at"]
         indexes = [
             models.Index(fields=["artifact", "version"]),
+            models.Index(fields=["artifact", "operation"], name="artusage_art_op_idx"),
+            models.Index(fields=["artifact", "workflow_execution"], name="artusage_art_wf_idx"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.artifact.name}@{self.version.version}"
+        if self.version is not None:
+            return f"{self.artifact.name}@{self.version.version}"
+        return f"{self.artifact.name}@<unknown>"
 
 
 class ArtifactPermission(models.Model):

@@ -132,7 +132,7 @@ func (s *Storage) UploadFile(ctx context.Context, key, localPath, contentType st
 	if s == nil || s.client == nil {
 		return fmt.Errorf("storage client is not initialized")
 	}
-	key = strings.TrimLeft(strings.TrimSpace(key), "/")
+	key = sanitizeKey(key)
 	if key == "" {
 		return fmt.Errorf("object key is required")
 	}
@@ -169,4 +169,97 @@ func sanitizeEndpoint(value string) string {
 	raw = strings.TrimPrefix(raw, "https://")
 	raw = strings.TrimLeft(raw, "/")
 	return raw
+}
+
+func sanitizeKey(value string) string {
+	return strings.TrimLeft(strings.TrimSpace(value), "/")
+}
+
+func (s *Storage) DeleteObject(ctx context.Context, key string) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("storage client is not initialized")
+	}
+	key = sanitizeKey(key)
+	if key == "" {
+		return fmt.Errorf("object key is required")
+	}
+	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to delete object: %w", err)
+	}
+	return nil
+}
+
+func (s *Storage) DeleteObjects(ctx context.Context, keys []string) (deleted int, failedKeys []string, err error) {
+	if s == nil || s.client == nil {
+		return 0, nil, fmt.Errorf("storage client is not initialized")
+	}
+	if len(keys) == 0 {
+		return 0, nil, nil
+	}
+
+	objectsCh := make(chan minio.ObjectInfo, len(keys))
+	sent := 0
+	for _, key := range keys {
+		clean := sanitizeKey(key)
+		if clean == "" {
+			continue
+		}
+		objectsCh <- minio.ObjectInfo{Key: clean}
+		sent++
+	}
+	close(objectsCh)
+
+	var firstErr error
+	for rmErr := range s.client.RemoveObjects(ctx, s.bucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		failedKeys = append(failedKeys, rmErr.ObjectName)
+		if firstErr == nil {
+			firstErr = fmt.Errorf("failed to delete object %s: %w", rmErr.ObjectName, rmErr.Err)
+		}
+	}
+
+	return sent - len(failedKeys), failedKeys, firstErr
+}
+
+func (s *Storage) DeleteByPrefix(ctx context.Context, prefix string, batchSize int) (deleted int, failed int, err error) {
+	if s == nil || s.client == nil {
+		return 0, 0, fmt.Errorf("storage client is not initialized")
+	}
+	prefix = sanitizeKey(prefix)
+	if prefix == "" {
+		return 0, 0, fmt.Errorf("prefix is required")
+	}
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	var batch []string
+	for object := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}) {
+		if object.Err != nil {
+			return deleted, failed, fmt.Errorf("failed to list objects: %w", object.Err)
+		}
+		batch = append(batch, object.Key)
+		if len(batch) >= batchSize {
+			d, failedKeys, batchErr := s.DeleteObjects(ctx, batch)
+			deleted += d
+			failed += len(failedKeys)
+			if batchErr != nil {
+				return deleted, failed, batchErr
+			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		d, failedKeys, batchErr := s.DeleteObjects(ctx, batch)
+		deleted += d
+		failed += len(failedKeys)
+		if batchErr != nil {
+			return deleted, failed, batchErr
+		}
+	}
+
+	return deleted, failed, nil
 }

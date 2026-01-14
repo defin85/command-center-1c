@@ -47,6 +47,7 @@ OBJECT_PERMISSION_RULES: Final[dict[str, ObjectPermissionRule]] = {
     # Artifacts
     perms.PERM_ARTIFACTS_VIEW_ARTIFACT: ObjectPermissionRule(PermissionLevel.VIEW),
     perms.PERM_ARTIFACTS_MANAGE_ARTIFACT: ObjectPermissionRule(PermissionLevel.MANAGE),
+    perms.PERM_ARTIFACTS_PURGE_ARTIFACT: ObjectPermissionRule(PermissionLevel.ADMIN),
 
     # ArtifactVersion permissions resolve against Artifact scope (inheritance)
     perms.PERM_ARTIFACTS_VIEW_ARTIFACT_VERSION: ObjectPermissionRule(PermissionLevel.VIEW),

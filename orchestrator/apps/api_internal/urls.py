@@ -132,6 +132,25 @@ urlpatterns = [
     ),
 
     # ========================================================================
+    # Artifacts (purge/TTL)
+    # ========================================================================
+    path(
+        'artifacts/claim-purge-job',
+        views.claim_artifact_purge_job,
+        name='artifacts-claim-purge-job'
+    ),
+    path(
+        'artifacts/update-purge-job',
+        views.update_artifact_purge_job,
+        name='artifacts-update-purge-job'
+    ),
+    path(
+        'artifacts/complete-purge-job',
+        views.complete_artifact_purge_job,
+        name='artifacts-complete-purge-job'
+    ),
+
+    # ========================================================================
     # Runtime Settings
     # ========================================================================
     path(

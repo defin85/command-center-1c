@@ -486,15 +486,32 @@ def _build_param_from_variants(variants: list[str], description: str, positional
 
 
 def _parse_flag_variant(variant: str) -> tuple[str, bool]:
-    match = _FLAG_VARIANT_RE.match(variant)
+    variant = variant.strip()
+    if not variant:
+        return "", False
+
+    # ITS sometimes renders variants with extra placeholders/units on the same line,
+    # e.g. "--follow=<timeout> <ms>" or "-F <timeout> <ms>". We keep only the flag
+    # token and infer expects_value from the presence of placeholders.
+    parts = variant.split()
+    first = parts[0].strip().strip(";,")
+
+    if "=" in first:
+        return first.split("=", 1)[0], True
+
+    expects_value = any(_POSITIONAL_VARIANT_RE.match(p) for p in parts[1:])
+
+    match = _FLAG_VARIANT_RE.match(first)
     if match:
         flag_token = match.group(1)
-        expects_value = bool(match.group(2))
+        expects_value = expects_value or bool(match.group(2))
         return flag_token, expects_value
+
     match = _SHORT_FLAG_WITH_VALUE_RE.match(variant)
     if match:
         return match.group(1), True
-    return variant.split()[0], "=" in variant
+
+    return first, expects_value
 
 
 def _render_positional_label(raw: str) -> str:

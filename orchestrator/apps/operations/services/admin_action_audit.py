@@ -22,6 +22,9 @@ def log_admin_action(
     target_id: str = "",
     metadata: Optional[Dict[str, Any]] = None,
     error_message: str = "",
+    actor=None,
+    actor_ip: Optional[str] = None,
+    user_agent: str = "",
 ) -> None:
     """
     Best-effort audit logging + metrics.
@@ -32,14 +35,16 @@ def log_admin_action(
     record_admin_action(action, outcome)
 
     try:
-        actor = getattr(request, "user", None) if request is not None else None
+        if actor is None:
+            actor = getattr(request, "user", None) if request is not None else None
+
         actor_username = getattr(actor, "username", "") if actor is not None else ""
-        actor_ip = None
-        user_agent = ""
 
         if request is not None:
             actor_ip = request.META.get("REMOTE_ADDR")
             user_agent = (request.META.get("HTTP_USER_AGENT") or "")[:256]
+        else:
+            user_agent = (user_agent or "")[:256]
 
         AdminActionAuditLog.objects.create(
             action=action,
@@ -55,4 +60,3 @@ def log_admin_action(
         )
     except Exception as e:
         logger.warning("Admin action audit write failed: %s", e, exc_info=True)
-

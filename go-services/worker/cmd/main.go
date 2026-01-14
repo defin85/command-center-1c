@@ -311,6 +311,7 @@ func main() {
 			"cleanup_history_cron": schedConfig.CleanupHistoryCron,
 			"cleanup_events_cron":  schedConfig.CleanupEventsCron,
 			"database_health_cron": schedConfig.DatabaseHealthCron,
+			"artifacts_purge_cron": schedConfig.ArtifactsPurgeCron,
 		}).Info("initializing Go scheduler")
 
 		// Reuse zapLog created above for scheduler
@@ -387,6 +388,24 @@ func main() {
 					}
 				} else {
 					log.Info("event replay job is disabled (set ENABLE_GO_EVENT_REPLAY=true to enable)")
+				}
+
+				// Register artifacts purge job (permanent delete / TTL)
+				purgeJob, err := jobs.NewArtifactsPurgeJob(
+					orchestratorClient,
+					cfg.WorkerID,
+					zapLog,
+					schedConfig.ArtifactsPurgeMaxJobs,
+				)
+				if err != nil {
+					log.WithError(err).Error("failed to initialize artifacts purge job")
+				} else if err := sched.RegisterJob(schedConfig.ArtifactsPurgeCron, purgeJob); err != nil {
+					log.WithError(err).Error("failed to register artifacts purge job")
+				} else {
+					log.Info("artifacts purge job registered",
+						zap.String("cron", schedConfig.ArtifactsPurgeCron),
+						zap.Int("max_jobs_per_run", schedConfig.ArtifactsPurgeMaxJobs),
+					)
 				}
 			}
 

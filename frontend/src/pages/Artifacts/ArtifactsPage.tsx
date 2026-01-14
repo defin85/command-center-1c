@@ -35,9 +35,20 @@ import {
   useUpsertArtifactAlias,
   useDeleteArtifact,
   useRestoreArtifact,
+  usePurgeArtifact,
+  useArtifactPurgeJob,
 } from '../../api/queries'
-import type { Artifact, ArtifactAlias, ArtifactVersion, ArtifactKind, UploadProgressInfo } from '../../api/artifacts'
-import { createArtifact, downloadArtifactVersion, uploadArtifactVersion, upsertArtifactAlias } from '../../api/artifacts'
+import type {
+  Artifact,
+  ArtifactAlias,
+  ArtifactVersion,
+  ArtifactKind,
+  UploadProgressInfo,
+  ArtifactPurgeBlocker,
+  ArtifactPurgePlan,
+  ArtifactPurgeJob,
+} from '../../api/artifacts'
+import { createArtifact, downloadArtifactVersion, uploadArtifactVersion, upsertArtifactAlias, purgeArtifact as purgeArtifactApi } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
@@ -80,6 +91,63 @@ const formatDuration = (seconds: number | null) => {
   const secs = value % 60
   if (mins === 0) return `${secs}s`
   return `${mins}m ${secs}s`
+}
+
+const formatPurgeAfter = (value?: string | null) => {
+  if (!value) return '—'
+  const target = new Date(value).getTime()
+  if (!Number.isFinite(target)) return '—'
+  const days = Math.ceil((target - Date.now()) / (1000 * 60 * 60 * 24))
+  if (days > 0) {
+    return `${new Date(value).toLocaleString()} (in ${days}d)`
+  }
+  return `${new Date(value).toLocaleString()} (overdue)`
+}
+
+const renderPurgeBlockers = (blockers?: ArtifactPurgeBlocker[]) => {
+  const items = blockers ?? []
+  if (items.length === 0) {
+    return <Text type="secondary">—</Text>
+  }
+
+  return (
+    <Space direction="vertical" size={0}>
+      {items.slice(0, 10).map((blocker) => {
+        const label = blocker.type === 'batch_operation' ? 'Operation' : 'Workflow'
+        const title = blocker.name ? `${label}: ${blocker.name}` : `${label}: ${blocker.id}`
+        return (
+          <Text key={`${blocker.type}:${blocker.id}`}>
+            {title} ({blocker.status})
+          </Text>
+        )
+      })}
+      {items.length > 10 && (
+        <Text type="secondary">+{items.length - 10} more</Text>
+      )}
+    </Space>
+  )
+}
+
+const renderAutoPurge = (artifact: Artifact) => {
+  if (!artifact.purge_after) return '—'
+
+  if (artifact.purge_state !== 'blocked') {
+    return formatPurgeAfter(artifact.purge_after)
+  }
+
+  const blockersCount = artifact.purge_blockers?.length ?? 0
+  const retryAt = artifact.purge_blocked_until ? new Date(artifact.purge_blocked_until).toLocaleString() : '—'
+
+  return (
+    <Space direction="vertical" size={0}>
+      <Space size={8} wrap>
+        <Tag color="orange">Blocked</Tag>
+        {blockersCount > 0 && <Text type="secondary">{blockersCount} blockers</Text>}
+      </Space>
+      <Text type="secondary">{formatPurgeAfter(artifact.purge_after)}</Text>
+      <Text type="secondary">Retry after {retryAt}</Text>
+    </Space>
+  )
 }
 
 const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '')
@@ -217,6 +285,22 @@ export const ArtifactsPage = () => {
   const uploadStartRef = useRef<number | null>(null)
   const deleteArtifactMutation = useDeleteArtifact()
   const restoreArtifactMutation = useRestoreArtifact()
+  const purgeArtifactMutation = usePurgeArtifact()
+
+  const [purgeOpen, setPurgeOpen] = useState(false)
+  const [purgeTarget, setPurgeTarget] = useState<Artifact | null>(null)
+  const [purgePlan, setPurgePlan] = useState<ArtifactPurgePlan | null>(null)
+  const [purgeBlockers, setPurgeBlockers] = useState<ArtifactPurgeBlocker[]>([])
+  const [purgePreflightLoading, setPurgePreflightLoading] = useState(false)
+  const [purgePreflightError, setPurgePreflightError] = useState<string | null>(null)
+  const [purgeReason, setPurgeReason] = useState('')
+  const [purgeConfirmName, setPurgeConfirmName] = useState('')
+  const [purgeJobId, setPurgeJobId] = useState<string | null>(null)
+  const [purgeJobError, setPurgeJobError] = useState<string | null>(null)
+  const purgeJobQuery = useArtifactPurgeJob(purgeJobId ?? undefined, {
+    enabled: Boolean(purgeJobId),
+    refetchInterval: purgeJobId ? 1000 : undefined,
+  })
 
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('versions')
@@ -457,84 +541,214 @@ export const ArtifactsPage = () => {
     })
   }, [isStaff, message, modal, restoreArtifactMutation, selectedArtifact?.id])
 
+  const closePurgeModal = useCallback(() => {
+    setPurgeOpen(false)
+    setPurgeTarget(null)
+    setPurgePlan(null)
+    setPurgeBlockers([])
+    setPurgePreflightLoading(false)
+    setPurgePreflightError(null)
+    setPurgeReason('')
+    setPurgeConfirmName('')
+    setPurgeJobId(null)
+    setPurgeJobError(null)
+  }, [])
+
+  const openPurgeModal = useCallback((artifact: Artifact) => {
+    if (!isStaff) {
+      message.error('Permanent delete requires staff access')
+      return
+    }
+    setPurgeTarget(artifact)
+    setPurgeOpen(true)
+    setPurgePlan(null)
+    setPurgeBlockers([])
+    setPurgePreflightError(null)
+    setPurgeReason('')
+    setPurgeConfirmName('')
+    setPurgeJobId(null)
+    setPurgeJobError(null)
+  }, [isStaff, message])
+
+  useEffect(() => {
+    if (!purgeOpen || !purgeTarget) return
+    let cancelled = false
+    setPurgePreflightLoading(true)
+    setPurgePreflightError(null)
+    purgeArtifactApi(purgeTarget.id, { dry_run: true })
+      .then((response) => {
+        if (cancelled) return
+        setPurgePlan(response.plan)
+        setPurgeBlockers(response.blockers)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        const err = error as { response?: { data?: { error?: { message?: string } | string } } } | null
+        const backendMessage = typeof err?.response?.data?.error === 'string'
+          ? err.response?.data?.error
+          : err?.response?.data?.error?.message
+        setPurgePreflightError(backendMessage || 'Failed to build purge plan')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setPurgePreflightLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [purgeOpen, purgeTarget])
+
+  useEffect(() => {
+    if (!purgeJobId) return
+    const job = purgeJobQuery.data as ArtifactPurgeJob | undefined
+    if (!job) return
+
+    if (job.status === 'success') {
+      message.success('Artifact permanently deleted')
+      closePurgeModal()
+      queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
+      if (selectedArtifact?.id === purgeTarget?.id) {
+        setDetailsOpen(false)
+        setSelectedArtifact(null)
+      }
+      return
+    }
+
+    if (job.status === 'failed') {
+      setPurgeJobError(job.error_message || job.error_code || 'Purge failed')
+    }
+  }, [
+    closePurgeModal,
+    message,
+    purgeJobId,
+    purgeJobQuery.data,
+    purgeTarget?.id,
+    queryClient,
+    selectedArtifact?.id,
+  ])
+
+  const handleStartPurge = useCallback(async () => {
+    if (!purgeTarget) return
+    setPurgeJobError(null)
+    try {
+      const response = await purgeArtifactMutation.mutateAsync({
+        artifactId: purgeTarget.id,
+        payload: { reason: purgeReason, dry_run: false },
+      })
+      if (!response.job_id) {
+        throw new Error('Missing job_id')
+      }
+      setPurgeJobId(response.job_id)
+      setPurgePlan(response.plan)
+      setPurgeBlockers(response.blockers)
+      message.success('Purge started')
+    } catch (error) {
+      const err = error as { response?: { data?: { error?: { message?: string } | string } } } | null
+      const backendMessage = typeof err?.response?.data?.error === 'string'
+        ? err.response?.data?.error
+        : err?.response?.data?.error?.message
+      message.error(backendMessage || 'Failed to start purge')
+    }
+  }, [message, purgeArtifactMutation, purgeReason, purgeTarget])
 
 
-  const columns = useMemo<ColumnsType<Artifact>>(() => [
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      width: 260,
-      render: (value: string, record) => (
-        <Button type="link" onClick={() => handleOpenDetails(record)}>
-          {value}
-        </Button>
-      ),
-    },
-    {
-      title: 'Kind',
-      dataIndex: 'kind',
-      key: 'kind',
-      width: 160,
-      render: (value: ArtifactKind) => KIND_LABELS[value] ?? value,
-    },
-    {
-      title: 'Tags',
-      dataIndex: 'tags',
-      key: 'tags',
-      width: 240,
-      render: (tags: string[]) => (
-        <Space wrap size={4}>
-          {(tags ?? []).length === 0
-            ? <Text type="secondary">—</Text>
-            : tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-        </Space>
-      ),
-    },
-    {
-      title: 'Created',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 200,
-      render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 140,
-      render: (_, record) => (
-        <Space>
-          <Button
-            icon={<EyeOutlined />}
-            onClick={() => handleOpenDetails(record)}
-          >
-            Details
+  const columns = useMemo<ColumnsType<Artifact>>(() => {
+    const base: ColumnsType<Artifact> = [
+      {
+        title: 'Name',
+        dataIndex: 'name',
+        key: 'name',
+        width: 260,
+        render: (value: string, record) => (
+          <Button type="link" onClick={() => handleOpenDetails(record)}>
+            {value}
           </Button>
-          {catalogTab === 'deleted' ? (
+        ),
+      },
+      {
+        title: 'Kind',
+        dataIndex: 'kind',
+        key: 'kind',
+        width: 160,
+        render: (value: ArtifactKind) => KIND_LABELS[value] ?? value,
+      },
+      {
+        title: 'Tags',
+        dataIndex: 'tags',
+        key: 'tags',
+        width: 240,
+        render: (tags: string[]) => (
+          <Space wrap size={4}>
+            {(tags ?? []).length === 0
+              ? <Text type="secondary">—</Text>
+              : tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+          </Space>
+        ),
+      },
+      ...(catalogTab === 'deleted' ? ([
+        {
+          title: 'Auto purge',
+          dataIndex: 'purge_after',
+          key: 'purge_after',
+          width: 220,
+          render: (_: unknown, record) => renderAutoPurge(record),
+        },
+      ] as ColumnsType<Artifact>) : []),
+      {
+        title: 'Created',
+        dataIndex: 'created_at',
+        key: 'created_at',
+        width: 200,
+        render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
+      },
+      {
+        title: 'Actions',
+        key: 'actions',
+        width: catalogTab === 'deleted' ? 260 : 140,
+        render: (_, record) => (
+          <Space>
             <Button
-              disabled={!isStaff}
-              onClick={() => handleRestoreArtifact(record)}
+              icon={<EyeOutlined />}
+              onClick={() => handleOpenDetails(record)}
             >
-              Restore
+              Details
             </Button>
-          ) : (
-            <Button
-              danger
-              disabled={!isStaff}
-              onClick={() => handleDeleteArtifact(record)}
-            >
-              Delete
-            </Button>
-          )}
-        </Space>
-      ),
-    },
-  ], [catalogTab, handleDeleteArtifact, handleOpenDetails, handleRestoreArtifact, isStaff])
+            {catalogTab === 'deleted' ? (
+              <>
+                <Button
+                  disabled={!isStaff}
+                  onClick={() => handleRestoreArtifact(record)}
+                >
+                  Restore
+                </Button>
+                <Button
+                  danger
+                  disabled={!isStaff}
+                  onClick={() => openPurgeModal(record)}
+                >
+                  Delete permanently
+                </Button>
+              </>
+            ) : (
+              <Button
+                danger
+                disabled={!isStaff}
+                onClick={() => handleDeleteArtifact(record)}
+              >
+                Delete
+              </Button>
+            )}
+          </Space>
+        ),
+      },
+    ]
+
+    return base
+  }, [catalogTab, handleDeleteArtifact, handleOpenDetails, handleRestoreArtifact, isStaff, openPurgeModal])
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'kind', label: 'Kind', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'tags', label: 'Tags', groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'purge_after', label: 'Auto purge', sortable: true, groupKey: 'time', groupLabel: 'Time' },
     { key: 'created_at', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
     { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
   ], [])
@@ -1099,12 +1313,21 @@ export const ArtifactsPage = () => {
         extra={selectedArtifact && (
           <Space>
             {catalogTab === 'deleted' ? (
-              <Button
-                disabled={!isStaff}
-                onClick={() => handleRestoreArtifact(selectedArtifact)}
-              >
-                Restore
-              </Button>
+              <>
+                <Button
+                  disabled={!isStaff}
+                  onClick={() => handleRestoreArtifact(selectedArtifact)}
+                >
+                  Restore
+                </Button>
+                <Button
+                  danger
+                  disabled={!isStaff}
+                  onClick={() => openPurgeModal(selectedArtifact)}
+                >
+                  Delete permanently
+                </Button>
+              </>
             ) : (
               <Button
                 danger
@@ -1128,17 +1351,36 @@ export const ArtifactsPage = () => {
               <Descriptions.Item label="Created">
                 {new Date(selectedArtifact.created_at).toLocaleString()}
               </Descriptions.Item>
-              <Descriptions.Item label="Tags" span={2}>
-                {(selectedArtifact.tags ?? []).length === 0
-                  ? <Text type="secondary">—</Text>
-                  : selectedArtifact.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-              </Descriptions.Item>
-            </Descriptions>
+              {selectedArtifact.is_deleted && (
+                <>
+                  <Descriptions.Item label="Deleted">
+                    {selectedArtifact.deleted_at ? new Date(selectedArtifact.deleted_at).toLocaleString() : '—'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Auto purge">
+                    {renderAutoPurge(selectedArtifact)}
+                  </Descriptions.Item>
+                </>
+              )}
+	              <Descriptions.Item label="Tags" span={2}>
+	                {(selectedArtifact.tags ?? []).length === 0
+	                  ? <Text type="secondary">—</Text>
+	                  : selectedArtifact.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+	              </Descriptions.Item>
+	            </Descriptions>
 
-            <Tabs
-              activeKey={activeTab}
-              onChange={setActiveTab}
-              items={[
+	            {selectedArtifact.is_deleted && selectedArtifact.purge_state === 'blocked' && (
+	              <Alert
+	                type="warning"
+	                showIcon
+	                message="Auto purge blocked"
+	                description={renderPurgeBlockers(selectedArtifact.purge_blockers)}
+	              />
+	            )}
+	
+	            <Tabs
+	              activeKey={activeTab}
+	              onChange={setActiveTab}
+	              items={[
                 {
                   key: 'versions',
                   label: `Versions (${versions.length})`,
@@ -1300,6 +1542,125 @@ export const ArtifactsPage = () => {
           </Space>
         )}
       </Drawer>
+
+      <Modal
+        title={purgeJobId ? 'Deleting permanently...' : `Delete permanently "${purgeTarget?.name ?? ''}"?`}
+        open={purgeOpen}
+        onCancel={closePurgeModal}
+        okText={purgeJobId ? 'In progress' : 'Delete permanently'}
+        cancelText={purgeJobId ? 'Close' : 'Cancel'}
+        okButtonProps={{
+          danger: true,
+          disabled: Boolean(purgeJobId)
+            || !purgeTarget
+            || purgePreflightLoading
+            || Boolean(purgePreflightError)
+            || purgeBlockers.length > 0
+            || purgeReason.trim().length === 0
+            || purgeConfirmName.trim() !== purgeTarget?.name,
+          loading: purgeArtifactMutation.isPending,
+        }}
+        onOk={handleStartPurge}
+        width={720}
+        destroyOnHidden
+      >
+        {!purgeTarget ? (
+          <Text type="secondary">Select an artifact.</Text>
+        ) : (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {purgePreflightLoading && (
+              <Spin tip="Building purge plan..." />
+            )}
+
+            {purgePreflightError && (
+              <Alert type="error" message={purgePreflightError} showIcon />
+            )}
+
+            {purgePlan && (
+              <Descriptions size="small" column={2} bordered>
+                <Descriptions.Item label="Versions">{purgePlan.versions_count}</Descriptions.Item>
+                <Descriptions.Item label="Aliases">{purgePlan.aliases_count}</Descriptions.Item>
+                <Descriptions.Item label="Objects">{purgePlan.storage_keys_total}</Descriptions.Item>
+                <Descriptions.Item label="Total size">{formatBytes(purgePlan.total_bytes)}</Descriptions.Item>
+              </Descriptions>
+            )}
+
+            {purgeBlockers.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Purge is blocked"
+                description={
+                  <Collapse
+                    items={[
+                      {
+                        key: 'blockers',
+                        label: `Active usage (${purgeBlockers.length})`,
+                        children: (
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            {purgeBlockers.map((blocker) => (
+                              <Text key={`${blocker.type}:${blocker.id}`}>
+                                {blocker.type} {blocker.id} ({blocker.status}) {blocker.name ?? ''}
+                              </Text>
+                            ))}
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                }
+              />
+            )}
+
+            {purgeJobError && (
+              <Alert type="error" showIcon message={purgeJobError} />
+            )}
+
+            {purgeJobId && purgeJobQuery.data && (
+              <>
+                <Progress
+                  percent={purgeJobQuery.data.total_objects > 0
+                    ? Math.min(100, Math.round((purgeJobQuery.data.deleted_objects / purgeJobQuery.data.total_objects) * 100))
+                    : 0}
+                  status={purgeJobQuery.data.status === 'failed' ? 'exception' : undefined}
+                />
+                <Text type="secondary">
+                  {purgeJobQuery.data.status}: {purgeJobQuery.data.deleted_objects}/{purgeJobQuery.data.total_objects} objects
+                </Text>
+              </>
+            )}
+
+            {!purgeJobId && (
+              <>
+                <Form layout="vertical">
+                  <Form.Item label="Reason" required>
+                    <Input.TextArea
+                      value={purgeReason}
+                      onChange={(event) => setPurgeReason(event.target.value)}
+                      rows={3}
+                      placeholder="Why are you deleting this artifact permanently?"
+                    />
+                  </Form.Item>
+                  <Form.Item label={`Type "${purgeTarget.name}" to confirm`} required>
+                    <Input
+                      value={purgeConfirmName}
+                      onChange={(event) => setPurgeConfirmName(event.target.value)}
+                      placeholder={purgeTarget.name}
+                      autoComplete="off"
+                    />
+                  </Form.Item>
+                </Form>
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="This action cannot be undone"
+                  description="All versions, aliases, and files in MinIO will be removed."
+                />
+              </>
+            )}
+          </Space>
+        )}
+      </Modal>
     </div>
   )
 }

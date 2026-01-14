@@ -32,7 +32,7 @@ class ArtifactAliasAdmin(admin.ModelAdmin):
 
 @admin.register(ArtifactUsage)
 class ArtifactUsageAdmin(admin.ModelAdmin):
-    list_display = ("artifact", "version", "operation", "database", "used_at")
+    list_display = ("artifact", "version", "operation", "workflow_execution", "database", "used_at")
     list_filter = ("artifact",)
 
 

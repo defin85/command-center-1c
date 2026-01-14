@@ -11,12 +11,20 @@ export type ArtifactKind =
   | 'ras_script'
   | 'other'
 
+export type ArtifactPurgeState = 'none' | 'scheduled' | 'blocked' | 'running' | 'failed'
+
 export interface Artifact {
   id: string
   name: string
   kind: ArtifactKind
   is_versioned: boolean
   tags: string[]
+  is_deleted: boolean
+  deleted_at?: string | null
+  purge_state: ArtifactPurgeState
+  purge_after?: string | null
+  purge_blocked_until?: string | null
+  purge_blockers?: ArtifactPurgeBlocker[]
   created_at: string
 }
 
@@ -53,6 +61,50 @@ export interface ArtifactVersionListResponse {
 export interface ArtifactAliasListResponse {
   aliases: ArtifactAlias[]
   count: number
+}
+
+export interface ArtifactPurgeBlocker {
+  type: 'batch_operation' | 'workflow_execution'
+  id: string
+  status: string
+  name?: string
+  details?: string
+}
+
+export interface ArtifactPurgePlan {
+  artifact_id: string
+  versions_count: number
+  aliases_count: number
+  total_bytes: number
+  storage_keys: string[]
+  storage_keys_total: number
+  prefix: string
+}
+
+export interface ArtifactPurgeResponse {
+  job_id?: string | null
+  plan: ArtifactPurgePlan
+  blockers: ArtifactPurgeBlocker[]
+}
+
+export type ArtifactPurgeJobStatus = 'queued' | 'running' | 'success' | 'failed'
+export type ArtifactPurgeJobMode = 'manual' | 'ttl'
+
+export interface ArtifactPurgeJob {
+  id: string
+  artifact_id: string
+  mode: ArtifactPurgeJobMode
+  status: ArtifactPurgeJobStatus
+  reason?: string | null
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  total_objects: number
+  deleted_objects: number
+  total_bytes: number
+  deleted_bytes: number
+  error_code?: string | null
+  error_message?: string | null
 }
 
 export interface ArtifactListParams {
@@ -217,4 +269,32 @@ export const downloadArtifactVersion = async (
     }
   )
   return response.data as Blob
+}
+
+export const purgeArtifact = async (
+  artifactId: string,
+  payload: { reason?: string; dry_run?: boolean }
+): Promise<ArtifactPurgeResponse> => {
+  const response = await apiClient.post<ArtifactPurgeResponse>(
+    `/api/v2/artifacts/${artifactId}/purge/`,
+    payload,
+    {
+      skipGlobalError: true,
+    }
+  )
+  return response.data
+}
+
+export const getArtifactPurgeJob = async (
+  jobId: string,
+  signal?: AbortSignal
+): Promise<ArtifactPurgeJob> => {
+  const response = await apiClient.get<ArtifactPurgeJob>(
+    `/api/v2/artifacts/purge-jobs/${jobId}/`,
+    {
+      signal,
+      skipGlobalError: true,
+    }
+  )
+  return response.data
 }

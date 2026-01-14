@@ -106,6 +106,35 @@ nohup setsid chromium --disable-gpu --disable-dev-shm-usage --no-sandbox \
 Приоритетный способ отладки: `./scripts/dev/chrome-debug.py` (console/network/screenshot/eval/reload/pages).
 Ограничение: `chrome-debug.py` и MCP-интерактив к браузеру одновременно нельзя (CDP поддерживает одно WebSocket соединение к странице).
 
+### MCP chrome-devtools (Codex CLI) — браузер стартует сам
+
+В WSL `chrome-devtools-mcp` может ошибочно выбрать Windows `chrome.exe` под `/mnt/c/...` и падать с `Target closed` / `Target.setDiscoverTargets`.
+Чтобы запуск был стабильным, всегда пинни Linux Chromium через `--executablePath` и используй изолированный профиль.
+
+Рекомендуемый конфиг для Codex: `~/.codex/config.toml`
+
+```toml
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = [
+  "-y",
+  "chrome-devtools-mcp@latest",
+  "--executablePath=/usr/lib/chromium/chromium",
+  "--isolated",
+  "--logFile=/tmp/chrome-devtools-mcp.log",
+  "--chromeArg=--no-sandbox",
+  "--chromeArg=--disable-setuid-sandbox",
+  "--chromeArg=--no-first-run",
+  "--chromeArg=--no-default-browser-check",
+  "--chromeArg=--disable-dev-shm-usage",
+]
+startup_timeout_sec = 30
+```
+
+Заметки:
+- После правки `~/.codex/config.toml` нужно перезапустить Codex (или через `/mcp` перезапустить MCP сервер), иначе настройки не подхватятся.
+- При ошибках смотри `/tmp/chrome-devtools-mcp.log`.
+
 ## LSP Tool (lspctl)
 
 CLI для LSP JSON-RPC с JSON output: `tools/lspctl/lspctl.py`.
@@ -145,9 +174,10 @@ Notes:
 
 ---
 
-**Version:** 4.1
-**Updated:** 2026-01-13
+**Version:** 4.2
+**Updated:** 2026-01-14
 
-**Changes v4.1:**
+**Changes v4.2:**
 - Синхронизированы критичные данные (порты, лимиты, покрытие) с `.claude/rules/*`
 - Добавлен раздел по contract-first и отладке frontend через `chrome-debug.py`
+- Уточнён стабильный запуск Chromium для `chrome-devtools` MCP в WSL (через `--executablePath`, `--isolated`, лог).

@@ -16,6 +16,7 @@ type SchedulerConfig struct {
 	CleanupEventsCron  string // cleanup_old_replayed_events
 	DatabaseHealthCron string // periodic_database_health_check
 	EventReplayCron    string // replay_failed_events
+	ArtifactsPurgeCron string // purge_artifacts
 
 	// Lock configuration
 	LockTTL        time.Duration // TTL for distributed locks
@@ -33,6 +34,9 @@ type SchedulerConfig struct {
 	EventReplayBatchSize int  // Number of events to replay per batch
 	EventReplayEnabled   bool // Feature flag for event replay job
 
+	// Artifacts purge settings
+	ArtifactsPurgeMaxJobs int // Max purge jobs per scheduler tick
+
 }
 
 // DefaultConfig returns scheduler configuration with defaults
@@ -43,6 +47,7 @@ func DefaultConfig() *SchedulerConfig {
 		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
 		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
 		EventReplayCron:             "@every 60s",  // Every 60 seconds
+		ArtifactsPurgeCron:          "@every 60s",  // Every 60 seconds
 		LockTTL:                     5 * time.Minute,
 		LockRetryDelay:              100 * time.Millisecond,
 		LockMaxRetries:              3,
@@ -51,6 +56,7 @@ func DefaultConfig() *SchedulerConfig {
 		CleanupEventsRetentionDays:  7,
 		EventReplayBatchSize:        100,
 		EventReplayEnabled:          false, // Disabled by default
+		ArtifactsPurgeMaxJobs:       3,
 	}
 }
 
@@ -73,6 +79,9 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := os.Getenv("SCHEDULER_EVENT_REPLAY"); v != "" {
 		cfg.EventReplayCron = v
+	}
+	if v := os.Getenv("SCHEDULER_ARTIFACTS_PURGE"); v != "" {
+		cfg.ArtifactsPurgeCron = v
 	}
 
 	// Lock configuration
@@ -104,6 +113,11 @@ func LoadConfigFromEnv() *SchedulerConfig {
 		cfg.EventReplayBatchSize = v
 	}
 	cfg.EventReplayEnabled = getBoolEnv("ENABLE_GO_EVENT_REPLAY", false)
+
+	// Artifacts purge settings
+	if v := getIntEnv("ARTIFACTS_PURGE_MAX_JOBS", 0); v > 0 {
+		cfg.ArtifactsPurgeMaxJobs = v
+	}
 
 	return cfg
 }

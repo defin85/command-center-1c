@@ -41,6 +41,7 @@ PERM_TEMPLATES_EXECUTE_WORKFLOW_TEMPLATE: Final[str] = "templates.execute_workfl
 
 PERM_ARTIFACTS_VIEW_ARTIFACT: Final[str] = "artifacts.view_artifact"
 PERM_ARTIFACTS_MANAGE_ARTIFACT: Final[str] = "artifacts.manage_artifact"
+PERM_ARTIFACTS_PURGE_ARTIFACT: Final[str] = "artifacts.purge_artifact"
 
 PERM_ARTIFACTS_VIEW_ARTIFACT_VERSION: Final[str] = "artifacts.view_artifactversion"
 PERM_ARTIFACTS_UPLOAD_ARTIFACT_VERSION: Final[str] = "artifacts.upload_artifact_version"
@@ -56,4 +57,3 @@ PERM_OPERATIONS_EXECUTE_DANGEROUS_OPERATION: Final[str] = "operations.execute_da
 PERM_OPERATIONS_CANCEL_OPERATION: Final[str] = "operations.cancel_operation"
 PERM_OPERATIONS_VIEW_OPERATION_LOGS: Final[str] = "operations.view_operation_logs"
 PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS: Final[str] = "operations.manage_driver_catalogs"
-
