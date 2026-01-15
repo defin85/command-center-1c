@@ -143,3 +143,103 @@ def test_build_base_catalog_from_its_parses_flag_variants_with_extra_placeholder
 
     errors = validate_catalog_v2(catalog)
     assert errors == []
+
+
+def test_build_base_catalog_from_its_parses_enum_values_with_blank_lines_in_text():
+    marker_param = _ru("\\u041f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440")
+    marker_desc = _ru("\\u041e\\u043f\\u0438\\u0441\\u0430\\u043d\\u0438\\u0435")
+    allowed = _ru("\\u0414\\u043e\\u043f\\u0443\\u0441\\u0442\\u0438\\u043c\\u044b\\u0435 \\u0437\\u043d\\u0430\\u0447\\u0435\\u043d\\u0438\\u044f")
+    bullet = _ru("\\u25cf")
+
+    payload = {
+        "version": "8.3.27",
+        "pointer_ti": "TI000001193",
+        "sections": [
+            {"title": f"4.10.4. {_ru('\\u0420\\u0435\\u0436\\u0438\\u043c')} infobase", "text": ""},
+            {
+                "title": f"4.10.4.7.12. {_ru('\\u041a\\u043e\\u043c\\u0430\\u043d\\u0434\\u044b \\u0433\\u0440\\u0443\\u043f\\u043f\\u044b')} extension",
+                "text": "\n".join(
+                    [
+                        "update",
+                        "",
+                        marker_param,
+                        "",
+                        marker_desc,
+                        "",
+                        "--active=<flag>",
+                        "",
+                        "Active flag.",
+                        f"{allowed}:",
+                        f"{bullet} yes - enable.",
+                        "",
+                        f"{bullet} no - disable.",
+                    ]
+                ),
+            },
+        ],
+    }
+
+    catalog = build_base_catalog_from_its(payload)
+    cmd = catalog["commands_by_id"]["infobase.extension.update"]
+    active = (cmd.get("params_by_name") or {}).get("active")
+    assert active is not None
+    assert active.get("enum") == ["yes", "no"]
+
+    errors = validate_catalog_v2(catalog)
+    assert errors == []
+
+
+def test_build_base_catalog_from_its_prefers_blocks_for_enum_values():
+    marker_param = _ru("\\u041f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440")
+    marker_desc = _ru("\\u041e\\u043f\\u0438\\u0441\\u0430\\u043d\\u0438\\u0435")
+    allowed = _ru("\\u0414\\u043e\\u043f\\u0443\\u0441\\u0442\\u0438\\u043c\\u044b\\u0435 \\u0437\\u043d\\u0430\\u0447\\u0435\\u043d\\u0438\\u044f")
+    bullet = _ru("\\u25cf")
+
+    payload = {
+        "version": "8.3.27",
+        "pointer_ti": "TI000001193",
+        "sections": [
+            {"title": f"4.10.4. {_ru('\\u0420\\u0435\\u0436\\u0438\\u043c')} infobase", "text": ""},
+            {
+                "title": f"4.10.4.7.12. {_ru('\\u041a\\u043e\\u043c\\u0430\\u043d\\u0434\\u044b \\u0433\\u0440\\u0443\\u043f\\u043f\\u044b')} extension",
+                # Text simulates current innerText export: blank line between enum items.
+                "text": "\n".join(
+                    [
+                        "update",
+                        "",
+                        marker_param,
+                        "",
+                        marker_desc,
+                        "",
+                        "--active=<flag>",
+                        "",
+                        "Active flag.",
+                        f"{allowed}:",
+                        f"{bullet} yes - enable.",
+                        "",
+                        f"{bullet} no - disable.",
+                    ]
+                ),
+                # Blocks represent DOM paragraphs: no blank line between consecutive bullet items.
+                "blocks": [
+                    {"kind": "h6", "text": "update"},
+                    {"kind": "p", "text": marker_param},
+                    {"kind": "p", "text": marker_desc},
+                    {"kind": "p", "text": "--active=<flag>"},
+                    {"kind": "p", "text": "Active flag."},
+                    {"kind": "p", "text": f"{allowed}:"},
+                    {"kind": "p", "text": f"{bullet} yes - enable."},
+                    {"kind": "p", "text": f"{bullet} no - disable."},
+                ],
+            },
+        ],
+    }
+
+    catalog = build_base_catalog_from_its(payload)
+    cmd = catalog["commands_by_id"]["infobase.extension.update"]
+    active = (cmd.get("params_by_name") or {}).get("active")
+    assert active is not None
+    assert active.get("enum") == ["yes", "no"]
+
+    errors = validate_catalog_v2(catalog)
+    assert errors == []

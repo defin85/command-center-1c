@@ -261,7 +261,7 @@ async def _click_link(
     a = links.find(x => (x.getAttribute('href') || '').includes(href)) || null;
   }}
   if (!a && text) {{
-    a = links.find(x => (x.innerText || '').trim().replace(/\\s+/g,' ') === text) || null;
+    a = links.find(x => (x.innerText || '').trim().replace(/\s+/g,' ') === text) || null;
   }}
   if (!a) return false;
   a.click();
@@ -292,6 +292,7 @@ async def _scrape_current_in_session(
     ws,
     page_url: str,
     include_raw_text: bool,
+    include_blocks: bool,
     sanitize_text: bool,
 ) -> dict[str, Any]:
     outer = await cdp.eval(
@@ -488,6 +489,30 @@ async def _scrape_current_in_session(
 """,
     )
 
+    heading_anchor_items = await cdp.eval(
+        ws,
+        r"""
+(() => {
+  const f = document.querySelector('#w_metadata_doc_frame');
+  const d = f && f.contentDocument;
+  if (!d) return [];
+  const headingRe = /^(?:Приложение\s+\d+\.|(?:\d+\.){1,6}\s).+/;
+  const out = [];
+  const anchors = Array.from(d.querySelectorAll('a.bookmark[id]'));
+  for (const a of anchors) {
+    const h = a.querySelector('h1,h2,h3,h4,h5,h6');
+    if (!h) continue;
+    const text = String((h.innerText || h.textContent || '')).trim().replace(/\s+/g, ' ');
+    if (!text) continue;
+    if (!headingRe.test(text)) continue;
+    const level = parseInt(String(h.tagName || '').replace(/[^0-9]/g,''), 10) || null;
+    out.push({ id: String(a.id || ''), text, level });
+  }
+  return out;
+})()
+""",
+    )
+
     toc_raw = outer.get("toc") if isinstance(outer, dict) else []
     toc_items: list[dict[str, Any]] = []
     if isinstance(toc_raw, list):
@@ -513,49 +538,131 @@ async def _scrape_current_in_session(
         enriched_toc.append({**it, "id": ti})
     enriched_toc = _build_toc_hierarchy(enriched_toc)
 
-    async def read_section_by_anchor(start_id: str, next_id: str | None) -> str:
+    async def read_section_by_anchor(start_id: str, next_id: str | None) -> dict[str, Any]:
         next_part = f"'{next_id}'" if next_id else "null"
-        return str(
+        return dict(
             await cdp.eval(
                 ws,
                 rf"""
 (() => {{
+  const withBlocks = {str(bool(include_blocks)).lower()};
   const f = document.querySelector('#w_metadata_doc_frame');
   const d = f && f.contentDocument;
-  if (!d) return '';
+  if (!d) return {{ text: '' }};
   const start = d.getElementById('{start_id}');
-  if (!start) return '';
+  if (!start) return {{ text: '' }};
   const end = {next_part} ? d.getElementById({next_part}) : null;
   const range = d.createRange();
-  range.setStartBefore(start);
+  // Skip the anchor itself: its text is stored in section.title
+  range.setStartAfter(start);
   if (end) range.setEndBefore(end);
   else range.setEndAfter(d.body.lastChild || d.body);
-  const txt = range.cloneContents().textContent || '';
-  return txt;
+  const frag = range.cloneContents();
+  const txt = frag.textContent || '';
+  const out = {{ text: txt }};
+
+  if (withBlocks) {{
+    const container = d.createElement('div');
+    container.appendChild(frag);
+
+    const blocks = [];
+    const nodes = Array.from(container.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,pre,table'));
+    for (const el of nodes) {{
+      const kind = String(el.tagName || '').toLowerCase();
+      const className = String(el.getAttribute('class') || '');
+
+      if (kind === 'table') {{
+        const rows = [];
+        const trs = Array.from(el.querySelectorAll('tr'));
+	        for (const tr of trs) {{
+	          const cells = Array.from(tr.querySelectorAll('th,td')).map(td => {{
+	            return String((td.textContent || '')).trim().replace(/\s+/g, ' ');
+	          }}).filter(Boolean);
+	          if (cells.length) rows.push(cells);
+	        }}
+        if (rows.length) {{
+          blocks.push({{ kind, class: className, rows }});
+        }}
+        continue;
+      }}
+
+      const raw = String((el.textContent || '')).trim();
+      const text = raw.replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+
+      blocks.push({{ kind, class: className, text }});
+    }}
+
+    out.blocks = blocks;
+  }}
+
+  return out;
 }})()
 """,
             )
-        ).strip()
+        )
 
     sections: list[dict[str, Any]] = []
     toc_with_anchors = [t for t in enriched_toc if t.get("id") and t.get("id") in anchor_set]
-    if toc_with_anchors:
-        for idx, t in enumerate(toc_with_anchors):
-            sid = str(t["id"])
-            next_id = str(toc_with_anchors[idx + 1]["id"]) if idx + 1 < len(toc_with_anchors) else None
-            section_text = await read_section_by_anchor(sid, next_id)
-            if sanitize_text:
-                section_text = _sanitize_text(section_text)
-            sections.append(
+    heading_anchors = []
+    if isinstance(heading_anchor_items, list):
+        for it in heading_anchor_items:
+            if not isinstance(it, dict):
+                continue
+            sid = str(it.get("id") or "").strip()
+            title = str(it.get("text") or "").strip()
+            if not sid or not title:
+                continue
+            heading_anchors.append(
                 {
                     "id": sid,
-                    "title": t.get("text") or "",
-                    "level": t.get("level") or 1,
-                    "parent_id": t.get("parent_id"),
-                    "text": section_text,
+                    "text": title,
+                    "level": int(it.get("level") or 0) or None,
+                    "parent_id": None,
                 }
             )
+
+    section_outline = toc_with_anchors or (heading_anchors if include_blocks else [])
+    if section_outline:
+        for idx, t in enumerate(section_outline):
+            sid = str(t["id"])
+            next_id = str(section_outline[idx + 1]["id"]) if idx + 1 < len(section_outline) else None
+            chunk = await read_section_by_anchor(sid, next_id)
+            section_text = str(chunk.get("text") or "").strip()
+            if sanitize_text:
+                section_text = _sanitize_text(section_text)
+
+            section: dict[str, Any] = {
+                "id": sid,
+                "title": t.get("text") or "",
+                "level": t.get("level") or 1,
+                "parent_id": t.get("parent_id"),
+                "text": section_text,
+            }
+            if include_blocks:
+                blocks = chunk.get("blocks") if isinstance(chunk, dict) else None
+                if isinstance(blocks, list):
+                    out_blocks: list[dict[str, Any]] = []
+                    for b in blocks:
+                        if not isinstance(b, dict):
+                            continue
+                        kind = str(b.get("kind") or "").strip()
+                        cls = str(b.get("class") or "").strip()
+                        if kind == "table":
+                            rows = b.get("rows")
+                            if isinstance(rows, list):
+                                out_blocks.append({"kind": "table", "class": cls, "rows": rows})
+                            continue
+                        text = str(b.get("text") or "").strip()
+                        if sanitize_text and text:
+                            text = _sanitize_text(text).strip()
+                        if not text:
+                            continue
+                        out_blocks.append({"kind": kind, "class": cls, "text": text})
+                    section["blocks"] = out_blocks
+            sections.append(section)
     else:
+        # Fallback: heuristic split over extracted innerText (no per-block structure here).
         for s in _split_sections(full_text):
             sections.append(
                 {
@@ -628,6 +735,7 @@ async def scrape(
     out_path: Path,
     *,
     include_raw_text: bool,
+    include_blocks: bool,
     name_style: str,
     sanitize_text: bool,
     open_url: str,
@@ -650,6 +758,7 @@ async def scrape(
             ws=ws,
             page_url=str(page.get("url") or ""),
             include_raw_text=include_raw_text,
+            include_blocks=include_blocks,
             sanitize_text=sanitize_text,
         )
 
@@ -668,6 +777,7 @@ async def crawl_toc(
     max_items: int = 0,
     delay_s: float = 0.3,
     include_raw_text: bool,
+    include_blocks: bool,
     name_style: str,
     only_unique_docs: bool,
     sanitize_text: bool,
@@ -801,6 +911,7 @@ async def crawl_toc(
                 ws=ws,
                 page_url=str(page.get("url") or ""),
                 include_raw_text=include_raw_text,
+                include_blocks=include_blocks,
                 sanitize_text=sanitize_text,
             )
 
@@ -887,6 +998,11 @@ def main() -> int:
         help="Do not include full raw_text in JSON (smaller output, recommended for crawl)",
     )
     parser.add_argument(
+        "--with-blocks",
+        action="store_true",
+        help="Include structured per-section blocks extracted from ITS frame HTML (for robust parsing)",
+    )
+    parser.add_argument(
         "--sanitize-text",
         action="store_true",
         help="Normalize text (NFKC), replace NBSP with space, remove zero-width chars (cleaner JSON for editors)",
@@ -920,6 +1036,7 @@ def main() -> int:
     args = parser.parse_args()
 
     include_raw_text = not bool(args.no_raw_text)
+    include_blocks = bool(args.with_blocks)
     sanitize_text = bool(args.sanitize_text)
 
     if args.crawl_toc:
@@ -933,6 +1050,7 @@ def main() -> int:
                     Path(args.out_dir),
                     max_items=int(args.max_items or 0),
                     include_raw_text=include_raw_text,
+                    include_blocks=include_blocks,
                     name_style=str(args.name_style),
                     only_unique_docs=bool(args.only_unique_docs),
                     sanitize_text=sanitize_text,
@@ -951,6 +1069,7 @@ def main() -> int:
                 args.url_pattern,
                 out_path,
                 include_raw_text=include_raw_text,
+                include_blocks=include_blocks,
                 name_style=str(args.name_style),
                 sanitize_text=sanitize_text,
                 open_url=str(args.open_url or ""),

@@ -496,6 +496,61 @@ export function CommandSchemasPage() {
       return
     }
 
+    const sections = itsPayload.sections
+    const hasBlocks = Array.isArray(sections)
+      && sections.some((section) => {
+        if (!section || typeof section !== 'object') {
+          return false
+        }
+        const blocks = (section as { blocks?: unknown }).blocks
+        return Array.isArray(blocks) && blocks.length > 0
+      })
+    const hasCliCommandBlocks = Array.isArray(sections)
+      && sections.some((section) => {
+        if (!section || typeof section !== 'object') {
+          return false
+        }
+        const blocks = (section as { blocks?: unknown }).blocks
+        if (!Array.isArray(blocks)) {
+          return false
+        }
+        return blocks.some((block) => {
+          if (!block || typeof block !== 'object') {
+            return false
+          }
+          const cls = String((block as { class?: unknown }).class ?? '')
+          return cls.includes('Lang-parameter')
+        })
+      })
+
+    if (!hasBlocks || (activeDriver === 'cli' && !hasCliCommandBlocks)) {
+      const ok = await new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: 'ITS export quality warning',
+          content: (
+            <Space direction="vertical">
+              <Text>
+                This ITS JSON does not include structured <Text code>blocks</Text> (or does not include{' '}
+                <Text code>Lang-parameter</Text> command blocks for CLI). Parsing may be degraded.
+              </Text>
+              <Text type="secondary">
+                Re-export with <Text code>python scripts/dev/its-scrape.py --with-blocks --no-raw-text</Text> for best
+                results.
+              </Text>
+            </Space>
+          ),
+          okText: 'Import anyway',
+          okButtonProps: { danger: true },
+          cancelText: 'Cancel',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        })
+      })
+      if (!ok) {
+        return
+      }
+    }
+
     setImportingIts(true)
     try {
       await importItsCommandSchemas({ driver: activeDriver, its_payload: itsPayload, save: true, reason })
@@ -1835,7 +1890,14 @@ export function CommandSchemasPage() {
             type="info"
             showIcon
             message="ITS export"
-            description="Export ITS JSON via scripts/dev/its-scrape.py and upload it here to build base catalog."
+            description={(
+              <Space direction="vertical">
+                <Text>Export ITS JSON via scripts/dev/its-scrape.py and upload it here to build base catalog.</Text>
+                <Text type="secondary">
+                  Recommended: <Text code>python scripts/dev/its-scrape.py --with-blocks --no-raw-text</Text>
+                </Text>
+              </Space>
+            )}
           />
           <Text type="secondary">ITS JSON file</Text>
           <Upload

@@ -136,6 +136,9 @@ sudo systemctl restart blackbox-exporter
 # Сохранить текущую открытую страницу (имя файла автогенерируется из breadcrumbs + версии)
 ./scripts/dev/its-scrape.py --url-pattern "its.1c.ru/db/v8327doc"
 
+# Сохранить с структурированными blocks (для более надежного парсинга)
+./scripts/dev/its-scrape.py --with-blocks --no-raw-text
+
 # Сохранить, используя полное breadcrumb-имя в filename
 ./scripts/dev/its-scrape.py --name-style full
 

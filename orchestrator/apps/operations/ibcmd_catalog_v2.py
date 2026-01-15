@@ -97,7 +97,7 @@ def build_base_catalog_from_its(payload: dict[str, Any]) -> dict[str, Any]:
             continue
 
         if entry.kind == "group":
-            group_text = str(section.get("text") or "")
+            group_text = _section_text_for_parser(section)
             prefix_tokens = _normalize_argv_prefix(_build_argv_prefix(stack))
             group_params = _parse_group_params(group_text)
             for cmd_name, cmd_desc, cmd_desc_full, cmd_params in _iter_group_commands(group_text):
@@ -120,7 +120,7 @@ def build_base_catalog_from_its(payload: dict[str, Any]) -> dict[str, Any]:
             argv_prefix = _normalize_argv_prefix(_build_argv_prefix(stack))
             argv = argv_prefix + cmd_tokens
 
-            text = str(section.get("text") or "")
+            text = _section_text_for_parser(section)
             cmd_desc, cmd_desc_full, cmd_params = _parse_command_text(text)
             _upsert_command(
                 commands_by_id,
@@ -534,7 +534,10 @@ def _extract_enum(description: str) -> list[str]:
             idx += 1
         while idx < len(lines):
             line = lines[idx].strip()
-            if not line or not line.startswith(_RU_BULLET):
+            if not line:
+                idx += 1
+                continue
+            if not line.startswith(_RU_BULLET):
                 break
             item = line.lstrip(_RU_BULLET).strip()
             token = item.split()[0].strip(";,")
@@ -666,6 +669,35 @@ def _first_paragraph(text: str) -> str:
 
 def _split_lines(text: str) -> list[str]:
     return text.splitlines() if text else []
+
+
+def _section_text_for_parser(section: dict[str, Any]) -> str:
+    blocks = section.get("blocks")
+    if isinstance(blocks, list):
+        lines = _blocks_to_lines(blocks)
+        if lines:
+            return "\n".join(lines)
+    return str(section.get("text") or "")
+
+
+def _blocks_to_lines(blocks: list[Any]) -> list[str]:
+    lines: list[str] = []
+    prev_is_bullet = False
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if not isinstance(text, str):
+            continue
+        text = text.strip()
+        if not text:
+            continue
+        is_bullet = text.startswith(_RU_BULLET)
+        if lines and not (prev_is_bullet and is_bullet):
+            lines.append("")
+        lines.append(text)
+        prev_is_bullet = is_bullet
+    return lines
 
 
 def _utc_now_iso() -> str:
