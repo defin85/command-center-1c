@@ -11,6 +11,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.registry import RUNTIME_SETTINGS
+from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, validate_action_catalog_references, validate_action_catalog_v1
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,33 @@ def update_runtime_setting(request, key: str):
             {'success': False, 'error': {'code': 'VALIDATION_ERROR', 'message': exc.detail}},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    if definition.key == UI_ACTION_CATALOG_KEY:
+        schema_errors = validate_action_catalog_v1(value)
+        if schema_errors:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": [err.to_text() for err in schema_errors],
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ref_errors = validate_action_catalog_references(value)
+        if ref_errors:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": [err.to_text() for err in ref_errors],
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     setting, _ = RuntimeSetting.objects.get_or_create(
         key=definition.key,

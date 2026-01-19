@@ -1,12 +1,14 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { App, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons'
+import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import type { Database } from '../../api/generated/model/database'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
+import type { ActionCatalogAction } from '../../api/generated/model/actionCatalogAction'
+import { getV2 } from '../../api/generated'
 import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
@@ -17,13 +19,18 @@ import {
   useBulkHealthCheckDatabases,
   useSetDatabaseStatus,
   useUpdateDatabaseCredentials,
+  useDatabaseExtensionsSnapshot,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
+import { useActionCatalog } from '../../api/queries/ui'
 import { useAuthz } from '../../authz'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { ExtensionsDrawer } from './components/ExtensionsDrawer'
+
+const api = getV2()
 
 export const Databases = () => {
   const navigate = useNavigate()
@@ -40,6 +47,9 @@ export const Databases = () => {
   const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
   const [credentialsDatabase, setCredentialsDatabase] = useState<Database | null>(null)
   const [credentialsForm] = Form.useForm()
+  const [extensionsDrawerVisible, setExtensionsDrawerVisible] = useState(false)
+  const [extensionsDatabase, setExtensionsDatabase] = useState<Database | null>(null)
+  const [extensionsActionPendingId, setExtensionsActionPendingId] = useState<string | null>(null)
 
   // Row selection state
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -79,6 +89,11 @@ export const Databases = () => {
   const clusters = clustersResponse?.clusters ?? []
   const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamStatus()
   const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
+  const actionCatalogQuery = useActionCatalog()
+  const extensionsSnapshotQuery = useDatabaseExtensionsSnapshot({
+    id: extensionsDatabase?.id ?? '',
+    enabled: extensionsDrawerVisible && Boolean(extensionsDatabase?.id),
+  })
 
   // Mutations
   const executeRasOperation = useExecuteRasOperation()
@@ -111,6 +126,16 @@ export const Databases = () => {
   const canManageSelected = useMemo(
     () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canManageDatabase(db.id)),
     [selectedDatabases, canManageDatabase]
+  )
+
+  const extensionsActions: ActionCatalogAction[] = (actionCatalogQuery.data?.extensions?.actions ?? []) as ActionCatalogAction[]
+  const extensionsDatabaseCardActions = useMemo(
+    () => extensionsActions.filter((action) => action.contexts.includes('database_card')),
+    [extensionsActions]
+  )
+  const extensionsBulkActions = useMemo(
+    () => extensionsActions.filter((action) => action.contexts.includes('bulk_page')),
+    [extensionsActions]
   )
 
   type AxiosErrorLike = { response?: { status?: number }; message?: string }
@@ -217,6 +242,127 @@ export const Databases = () => {
     })
   }
 
+  const openExtensionsDrawer = (database: Database) => {
+    if (!canOperateDatabase(database.id)) {
+      message.error('Недостаточно прав для операций с расширениями')
+      return
+    }
+    setExtensionsDatabase(database)
+    setExtensionsDrawerVisible(true)
+  }
+
+  const closeExtensionsDrawer = () => {
+    setExtensionsDrawerVisible(false)
+    setExtensionsDatabase(null)
+    setExtensionsActionPendingId(null)
+  }
+
+  const executeExtensionsAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
+    const executor = action.executor
+    const kind = executor.kind
+
+    if (kind === 'ibcmd_cli') {
+      const commandId = (executor.command_id ?? '').trim()
+      if (!commandId) {
+        throw new Error('Action executor missing command_id')
+      }
+
+      const timeoutSeconds = executor.fixed?.timeout_seconds
+      const payload: Record<string, unknown> = {
+        command_id: commandId,
+        mode: executor.mode === 'manual' ? 'manual' : 'guided',
+        database_ids: databaseIds,
+        params: executor.params ?? {},
+        additional_args: executor.additional_args ?? [],
+        stdin: executor.stdin ?? '',
+        confirm_dangerous: executor.fixed?.confirm_dangerous === true,
+      }
+      if (typeof timeoutSeconds === 'number') {
+        payload.timeout_seconds = timeoutSeconds
+      }
+
+      const res = await api.postOperationsExecuteIbcmdCli(payload)
+      message.success(`Операция поставлена в очередь: ${action.label}`)
+      if (res.operation_id) {
+        navigate(`/operations?operation=${res.operation_id}`)
+      }
+      return
+    }
+
+    if (kind === 'designer_cli') {
+      const command = (executor.command_id ?? '').trim()
+      if (!command) {
+        throw new Error('Action executor missing command_id')
+      }
+      const res = await api.postOperationsExecute({
+        operation_type: 'designer_cli',
+        database_ids: databaseIds,
+        config: {
+          command,
+          args: executor.additional_args ?? [],
+        },
+      })
+      message.success(`Операция поставлена в очередь: ${action.label}`)
+      if (res.operation_id) {
+        navigate(`/operations?operation=${res.operation_id}`)
+      }
+      return
+    }
+
+    if (kind === 'workflow') {
+      const workflowId = (executor.workflow_id ?? '').trim()
+      if (!workflowId) {
+        throw new Error('Action executor missing workflow_id')
+      }
+      const baseContext = executor.params && typeof executor.params === 'object' ? executor.params : {}
+      const res = await api.postWorkflowsExecuteWorkflow({
+        workflow_id: workflowId,
+        mode: 'async',
+        input_context: {
+          ...baseContext,
+          database_ids: databaseIds,
+        },
+      })
+      message.success(`Workflow запущен: ${action.label}`)
+      if (res.execution_id) {
+        navigate(`/workflows/executions/${res.execution_id}`)
+      }
+      return
+    }
+
+    throw new Error(`Unsupported action executor kind: ${kind}`)
+  }, [message, navigate])
+
+  const runExtensionsAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
+    if (extensionsActionPendingId) return
+
+    const doRun = async () => {
+      setExtensionsActionPendingId(action.id)
+      try {
+        await executeExtensionsAction(action, databaseIds)
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : 'unknown error'
+        message.error(`Не удалось выполнить действие: ${errorMessage}`)
+      } finally {
+        setExtensionsActionPendingId(null)
+      }
+    }
+
+    if (action.executor.fixed?.confirm_dangerous === true) {
+      const count = databaseIds.length
+      modal.confirm({
+        title: 'Подтвердить опасное действие?',
+        content: `Действие "${action.label}" будет выполнено для ${count} баз(ы).`,
+        okText: 'Выполнить',
+        cancelText: 'Отмена',
+        okButtonProps: { danger: true },
+        onOk: doRun,
+      })
+      return
+    }
+
+    await doRun()
+  }, [executeExtensionsAction, extensionsActionPendingId, message, modal])
 
   // Row selection configuration
   const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
@@ -554,6 +700,14 @@ export const Databases = () => {
               title="Credentials"
               disabled={!canManage}
             />
+            <Tooltip title="Extensions">
+              <Button
+                size="small"
+                icon={<AppstoreOutlined />}
+                onClick={() => openExtensionsDrawer(record)}
+                disabled={!canOperate}
+              />
+            </Tooltip>
             <DatabaseActionsMenu
               databaseId={record.id}
               databaseStatus={record.status}
@@ -695,6 +849,32 @@ export const Databases = () => {
               Set status <DownOutlined />
             </Button>
           </Dropdown>
+          {extensionsBulkActions.length > 0 && (
+            <Dropdown
+              trigger={['click']}
+              disabled={!canOperateSelected || actionCatalogQuery.isLoading || Boolean(extensionsActionPendingId)}
+              menu={{
+                items: extensionsBulkActions.map((action) => ({
+                  key: action.id,
+                  label: action.label,
+                  danger: action.executor.fixed?.confirm_dangerous === true,
+                })),
+                onClick: async ({ key }) => {
+                  if (!canOperateSelected) {
+                    message.error('Недостаточно прав для операций с расширениями')
+                    return
+                  }
+                  const action = extensionsBulkActions.find((item) => item.id === key)
+                  if (!action) return
+                  await runExtensionsAction(action, selectedDatabases.map((d) => d.id))
+                },
+              }}
+            >
+              <Button icon={<AppstoreOutlined />} loading={extensionsActionPendingId !== null} disabled={!canOperateSelected}>
+                Extensions <DownOutlined />
+              </Button>
+            </Dropdown>
+          )}
         </Space>
       )}
 
@@ -760,6 +940,26 @@ export const Databases = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <ExtensionsDrawer
+        open={extensionsDrawerVisible}
+        databaseName={extensionsDatabase?.name}
+        actions={extensionsDatabaseCardActions}
+        actionsLoading={actionCatalogQuery.isLoading}
+        pendingActionId={extensionsActionPendingId}
+        onClose={closeExtensionsDrawer}
+        onRunAction={async (action) => {
+          if (!extensionsDatabase) return
+          await runExtensionsAction(action, [extensionsDatabase.id])
+        }}
+        snapshot={extensionsSnapshotQuery.data ?? null}
+        snapshotLoading={extensionsSnapshotQuery.isLoading}
+        snapshotFetching={extensionsSnapshotQuery.isFetching}
+        onRefreshSnapshot={() => {
+          if (!extensionsDatabase) return
+          extensionsSnapshotQuery.refetch()
+        }}
+      />
 
       {/* Operation Confirm Modal for RAS actions */}
       <OperationConfirmModal

@@ -1245,6 +1245,48 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+  /api/v2/databases/get-extensions-snapshot/:
+    get:
+      operationId: v2_databases_get_extensions_snapshot_retrieve
+      description: Get latest known extensions snapshot for a database (if any).
+      summary: Get database extensions snapshot
+      parameters:
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database UUID
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseExtensionsSnapshotResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
         '404':
           content:
             application/json:
@@ -5610,6 +5652,25 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/ui/action-catalog/:
+    get:
+      operationId: v2_ui_action_catalog_retrieve
+      description: Returns effective action catalog for the current user (RBAC + driver catalogs + workflows).
+      summary: Get effective action catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v2/users/create/:
     post:
       operationId: v2_users_create_create
@@ -8896,6 +8957,27 @@ components:
           description: Cluster info if database belongs to a cluster
       required:
       - database
+    DatabaseExtensionsSnapshotResponse:
+      type: object
+      description: Response for get_extensions_snapshot endpoint.
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: Database UUID
+        snapshot:
+          type: object
+          additionalProperties: {}
+          description: Latest known extensions snapshot (empty object if not available)
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        source_operation_id:
+          type: string
+      required:
+      - database_id
+      - snapshot
     DatabaseErrorDetail:
       type: object
       description: Error detail structure.
@@ -11905,6 +11987,76 @@ components:
       - columns
       - table_id
       - version
+    ActionCatalogExecutorFixed:
+      type: object
+      properties:
+        confirm_dangerous:
+          type: boolean
+        timeout_seconds:
+          type: integer
+      additionalProperties: false
+    ActionCatalogExecutor:
+      type: object
+      properties:
+        kind:
+          type: string
+        driver:
+          type: string
+        command_id:
+          type: string
+        workflow_id:
+          type: string
+        mode:
+          type: string
+        params:
+          type: object
+        additional_args:
+          type: array
+          items:
+            type: string
+        stdin:
+          type: string
+        fixed:
+          $ref: '#/components/schemas/ActionCatalogExecutorFixed'
+      required:
+      - kind
+    ActionCatalogAction:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        contexts:
+          type: array
+          items:
+            type: string
+        executor:
+          $ref: '#/components/schemas/ActionCatalogExecutor'
+      required:
+      - id
+      - label
+      - contexts
+      - executor
+    ExtensionsActionCatalog:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCatalogAction'
+      required:
+      - actions
+    ActionCatalogResponse:
+      type: object
+      properties:
+        catalog_version:
+          type: integer
+        extensions:
+          $ref: '#/components/schemas/ExtensionsActionCatalog'
+      required:
+      - catalog_version
+      - extensions
     Task:
       type: object
       description: Serializer for Task model.

@@ -28,7 +28,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.core import permission_codes as perms
-from apps.databases.models import Cluster, Database, InfobaseUserMapping, PermissionLevel
+from apps.databases.models import Cluster, Database, DatabaseExtensionsSnapshot, InfobaseUserMapping, PermissionLevel
 from apps.databases.services import PermissionService
 from apps.databases.serializers import (
     DatabaseSerializer,
@@ -310,6 +310,14 @@ class DatabaseDetailResponseSerializer(serializers.Serializer):
     """Response for get_database endpoint."""
     database = DatabaseSerializer()
     cluster = ClusterSerializer(required=False, allow_null=True, help_text="Cluster info if database belongs to a cluster")
+
+
+class DatabaseExtensionsSnapshotResponseSerializer(serializers.Serializer):
+    """Response for get_extensions_snapshot endpoint."""
+    database_id = serializers.UUIDField(help_text="Database UUID")
+    snapshot = serializers.JSONField(help_text="Latest known extensions snapshot (empty object if not available)")
+    updated_at = serializers.DateTimeField(allow_null=True, required=False)
+    source_operation_id = serializers.CharField(allow_blank=True, required=False)
 
 
 class DatabaseCredentialsUpdateRequestSerializer(serializers.Serializer):
@@ -610,6 +618,83 @@ def get_database(request):
         'database': serializer.data,
         'cluster': cluster_info,
     })
+
+
+@extend_schema(
+    tags=['v2'],
+    summary='Get database extensions snapshot',
+    description='Get latest known extensions snapshot for a database (if any).',
+    parameters=[
+        OpenApiParameter(name='database_id', type=str, required=True, description='Database UUID'),
+    ],
+    responses={
+        200: DatabaseExtensionsSnapshotResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        404: DatabaseErrorResponseSerializer,
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_extensions_snapshot(request):
+    """
+    GET /api/v2/databases/get-extensions-snapshot/?database_id=X
+
+    Returns latest known extensions snapshot for the database.
+
+    Response (200):
+        {
+            "database_id": "...",
+            "snapshot": {...},
+            "updated_at": "...",
+            "source_operation_id": "..."
+        }
+    """
+    database_id = request.query_params.get('database_id')
+
+    if not database_id:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'MISSING_PARAMETER',
+                'message': 'database_id is required'
+            }
+        }, status=400)
+
+    try:
+        db = Database.objects.get(id=database_id)
+    except Database.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': {
+                'code': 'DATABASE_NOT_FOUND',
+                'message': 'Database not found'
+            }
+        }, status=404)
+
+    if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, db):
+        return _permission_denied("You do not have permission to access this database.")
+
+    snapshot = {}
+    updated_at = None
+    source_operation_id = ""
+    try:
+        snapshot_obj = db.extensions_snapshot
+        snapshot = snapshot_obj.snapshot or {}
+        updated_at = snapshot_obj.updated_at
+        source_operation_id = snapshot_obj.source_operation_id or ""
+    except DatabaseExtensionsSnapshot.DoesNotExist:
+        pass
+
+    return Response(
+        {
+            "database_id": str(db.id),
+            "snapshot": snapshot,
+            "updated_at": updated_at,
+            "source_operation_id": source_operation_id,
+        }
+    )
 
 
 @extend_schema(

@@ -12,6 +12,7 @@ import { App } from 'antd'
 import { getV2 } from '../generated'
 import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
+import type { DatabaseExtensionsSnapshotResponse } from '../generated/model/databaseExtensionsSnapshotResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
 import { apiClient } from '../client'
 import type { SetDatabaseStatusRequest } from '../generated/model/setDatabaseStatusRequest'
@@ -64,6 +65,16 @@ export async function fetchDatabase(
 ): Promise<Database | null> {
   const response: DatabaseDetailResponse = await api.getDatabasesGetDatabase({ database_id: id }, { signal })
   return response.database || null
+}
+
+/**
+ * Fetch latest known extensions snapshot for a database.
+ */
+export async function fetchDatabaseExtensionsSnapshot(
+  id: string,
+  signal?: AbortSignal
+): Promise<DatabaseExtensionsSnapshotResponse> {
+  return api.getDatabasesGetExtensionsSnapshot({ database_id: id }, { signal })
 }
 
 // =============================================================================
@@ -200,6 +211,23 @@ export function useDatabase(options: UseDatabaseOptions) {
   return useQuery({
     queryKey: queryKeys.databases.detail(id),
     queryFn: ({ signal }) => fetchDatabase(id, signal),
+    enabled: enabled && !!id,
+  })
+}
+
+export interface UseDatabaseExtensionsSnapshotOptions {
+  /** Database ID */
+  id: string
+  /** Enable/disable the query */
+  enabled?: boolean
+}
+
+export function useDatabaseExtensionsSnapshot(options: UseDatabaseExtensionsSnapshotOptions) {
+  const { id, enabled = true } = options
+
+  return useQuery({
+    queryKey: queryKeys.databases.extensionsSnapshot(id),
+    queryFn: ({ signal }) => fetchDatabaseExtensionsSnapshot(id, signal),
     enabled: enabled && !!id,
   })
 }

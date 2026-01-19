@@ -10,3 +10,10 @@ export function useTableMetadata(tableId: string) {
     enabled: Boolean(tableId),
   })
 }
+
+export function useActionCatalog() {
+  return useQuery({
+    queryKey: ['ui', 'action-catalog'],
+    queryFn: () => api.getUiActionCatalog(),
+  })
+}

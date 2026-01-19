@@ -18,6 +18,7 @@ export const queryKeys = {
     all: ['databases'] as const,
     list: (filters?: DatabaseFilters) => [...queryKeys.databases.all, 'list', filters] as const,
     detail: (id: string) => [...queryKeys.databases.all, 'detail', id] as const,
+    extensionsSnapshot: (id: string) => [...queryKeys.databases.all, 'extensions-snapshot', id] as const,
     ibUsers: (filters?: { databaseId?: string; search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.databases.all, 'ib-users', filters] as const
     ),
@@ -117,7 +118,7 @@ export {
 } from './templates'
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
-export { useTableMetadata } from './ui'
+export { useTableMetadata, useActionCatalog } from './ui'
 export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
 export type { UserSummary } from './users'
 export {

@@ -211,12 +211,16 @@
 ### Этап 9 — Расширения: полный lifecycle через Streams
 
 Результат:
-- Список установленных расширений в UI.
-- Операции install/update/remove через Streams + timeline.
-- Унификация с новыми драйверами.
+- Введён action catalog для UI как RuntimeSetting `ui.action_catalog` (bindings действий расширений -> executors).
+- API `GET /api/v2/ui/action-catalog/` возвращает effective catalog для текущего пользователя (RBAC + driver catalogs + workflows, fail-closed).
+- UI `/databases`:
+  - single DB: Drawer "Extensions" с действиями из каталога (контекст `database_card`) и просмотром snapshot (`get-extensions-snapshot`).
+  - bulk: Dropdown "Extensions" по выбранным базам (контекст `bulk_page`).
+- Выполнение действий не требует новых engine/endpoints: используем существующие `execute-ibcmd-cli` / `execute-workflow` / `designer_cli`.
 
 Проверка:
-- Установка/обновление/удаление отражается в списке и timeline.
+- Действия из `ui.action_catalog` запускаются из UI и видны в `/operations` или `/workflows/executions`.
+- Для действий list/sync snapshot расширений сохраняется в Postgres и читается через `get-extensions-snapshot`.
 
 ---
 

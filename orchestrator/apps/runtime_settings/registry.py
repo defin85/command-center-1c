@@ -13,6 +13,12 @@ class RuntimeSettingDefinition:
 
 
 RUNTIME_SETTINGS = {
+    "ui.action_catalog": RuntimeSettingDefinition(
+        key="ui.action_catalog",
+        value_type="json",
+        default={"catalog_version": 1, "extensions": {"actions": []}},
+        description="UI action catalog bindings (v1).",
+    ),
     "ui.operations.max_live_streams": RuntimeSettingDefinition(
         key="ui.operations.max_live_streams",
         value_type="int",

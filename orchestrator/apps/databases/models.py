@@ -896,3 +896,31 @@ class InfobaseUserMapping(models.Model):
 
     def __str__(self):
         return f"{self.database.name}: {self.ib_username}"
+
+
+class DatabaseExtensionsSnapshot(models.Model):
+    """
+    Latest known extensions snapshot for a database.
+
+    Updated after successful completion of a configured extensions sync/list action.
+    """
+
+    database = models.OneToOneField(
+        'Database',
+        on_delete=models.CASCADE,
+        related_name='extensions_snapshot',
+        primary_key=True,
+    )
+    snapshot = models.JSONField(default=dict, blank=True)
+    source_operation_id = models.CharField(max_length=64, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'databases_extensions_snapshot'
+        indexes = [
+            models.Index(fields=['-updated_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.database.name}: extensions snapshot"

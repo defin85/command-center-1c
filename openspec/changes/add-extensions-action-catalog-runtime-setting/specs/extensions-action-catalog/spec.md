@@ -1,67 +1,66 @@
 ## ADDED Requirements
 
-### Requirement: Extensions Action Catalog Runtime Setting
-The system SHALL store an extensions action catalog in RuntimeSetting key `ui.action_catalog`.
+### Requirement: RuntimeSetting для каталога действий расширений
+Система ДОЛЖНА (SHALL) хранить каталог действий расширений в ключе RuntimeSetting `ui.action_catalog`.
 
-#### Scenario: Missing catalog returns empty
-- **WHEN** `ui.action_catalog` is not configured
-- **THEN** the system returns an empty extensions action catalog
+#### Scenario: Нет каталога -> пустой результат
+- **WHEN** `ui.action_catalog` не настроен
+- **THEN** система возвращает пустой каталог действий расширений
 
-#### Scenario: Valid catalog is available
-- **WHEN** a valid action catalog is configured in `ui.action_catalog`
-- **THEN** the system returns the configured extensions actions and executor bindings
+#### Scenario: Валидный каталог доступен
+- **WHEN** в `ui.action_catalog` настроен валидный action catalog
+- **THEN** система возвращает настроенные actions для расширений и executor bindings
 
-### Requirement: Effective Action Catalog API
-The system SHALL expose an API endpoint that returns the effective action catalog for the current user.
+### Requirement: API для effective action catalog
+Система ДОЛЖНА (SHALL) предоставить API endpoint, который возвращает effective action catalog для текущего пользователя.
 
-#### Scenario: User receives only allowed actions
-- **WHEN** a user requests the action catalog
-- **THEN** the response omits actions that the user is not allowed to see or execute
+#### Scenario: Пользователь получает только разрешённые действия
+- **WHEN** пользователь запрашивает action catalog
+- **THEN** ответ исключает действия, которые пользователь не имеет права видеть или выполнять
 
-### Requirement: Action Executors
-The system SHALL support action executors `ibcmd_cli`, `designer_cli`, and `workflow` in the action catalog.
+### Requirement: Action executors
+Система ДОЛЖНА (SHALL) поддерживать action executors `ibcmd_cli`, `designer_cli` и `workflow` в action catalog.
 
-#### Scenario: ibcmd_cli action maps to execute-ibcmd-cli
-- **WHEN** an action uses executor `ibcmd_cli`
-- **THEN** it can be executed using `POST /api/v2/operations/execute-ibcmd-cli/` with the mapped fields
+#### Scenario: ibcmd_cli action маппится на execute-ibcmd-cli
+- **WHEN** действие использует executor `ibcmd_cli`
+- **THEN** его можно выполнить через `POST /api/v2/operations/execute-ibcmd-cli/` с промаппленными полями
 
-#### Scenario: workflow action maps to execute-workflow
-- **WHEN** an action uses executor `workflow`
-- **THEN** it can be executed using `POST /api/v2/workflows/execute-workflow/` with the mapped `workflow_id` and `input_context`
+#### Scenario: workflow action маппится на execute-workflow
+- **WHEN** действие использует executor `workflow`
+- **THEN** его можно выполнить через `POST /api/v2/workflows/execute-workflow/` с промаппленными `workflow_id` и `input_context`
 
-### Requirement: Deactivate and Delete Are Distinct
-The system SHALL model deactivation and deletion of an extension as separate actions with separate semantics.
+### Requirement: Deactivate и delete — разные действия
+Система ДОЛЖНА (SHALL) моделировать деактивацию и удаление расширения как отдельные действия с разной семантикой.
 
-#### Scenario: Deactivate does not delete
-- **WHEN** the operator runs the deactivate action for extension `X`
-- **THEN** extension `X` remains present and only its active flag changes
+#### Scenario: Deactivate не удаляет
+- **WHEN** оператор выполняет действие deactivate для расширения `X`
+- **THEN** расширение `X` остаётся установленным, меняется только его флаг активности
 
-#### Scenario: Delete removes extension
-- **WHEN** the operator runs the delete action for extension `X` and confirms a dangerous operation
-- **THEN** extension `X` is removed from the infobase
+#### Scenario: Delete удаляет расширение
+- **WHEN** оператор выполняет действие delete для расширения `X` и подтверждает dangerous operation
+- **THEN** расширение `X` удаляется из инфобазы
 
-### Requirement: Bulk Execution
-The system SHALL support executing extensions actions for one database or for a list of databases (bulk).
+### Requirement: Bulk execution
+Система ДОЛЖНА (SHALL) поддерживать выполнение действий над расширениями для одной базы или для списка баз (bulk).
 
-#### Scenario: Bulk creates per-database tasks
-- **WHEN** the operator runs a per-database action for N databases
-- **THEN** a single batch operation is created with N tasks
+#### Scenario: Bulk создаёт per-database tasks
+- **WHEN** оператор выполняет per-database действие для N баз
+- **THEN** создаётся одна batch operation с N tasks
 
-### Requirement: Fail-Closed Validation
-The system SHALL validate action catalog entries against available driver catalogs and workflows and MUST fail closed for invalid references.
+### Requirement: Fail-closed validation
+Система ДОЛЖНА (SHALL) валидировать элементы action catalog по доступным driver catalogs и workflows и MUST fail closed для невалидных ссылок.
 
-#### Scenario: Unknown command is filtered out
-- **WHEN** an action references a `command_id` not present in the effective driver catalog
-- **THEN** the action is omitted from the effective action catalog
+#### Scenario: Unknown command фильтруется
+- **WHEN** действие ссылается на `command_id`, которого нет в effective driver catalog
+- **THEN** действие исключается из effective action catalog
 
-#### Scenario: Dangerous commands are hidden for non-staff
-- **WHEN** an action resolves to a dangerous command and the user is not staff
-- **THEN** the action is omitted from the effective action catalog
+#### Scenario: Dangerous commands скрыты от non-staff
+- **WHEN** действие резолвится в dangerous command, а пользователь не staff
+- **THEN** действие исключается из effective action catalog
 
-### Requirement: Extensions Snapshot in Postgres
-The system SHALL persist the latest known extensions snapshot per database in Postgres.
+### Requirement: Snapshot расширений в Postgres
+Система ДОЛЖНА (SHALL) хранить последний известный snapshot расширений по каждой базе в Postgres.
 
-#### Scenario: Snapshot updated after successful sync
-- **WHEN** the configured extensions sync action completes successfully for a database
-- **THEN** the extensions snapshot record for that database is upserted with the latest data
-
+#### Scenario: Snapshot обновляется после успешного sync
+- **WHEN** настроенное действие sync для расширений успешно завершается для базы
+- **THEN** запись snapshot расширений для этой базы upsert'ится с актуальными данными

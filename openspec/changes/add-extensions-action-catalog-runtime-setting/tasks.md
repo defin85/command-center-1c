@@ -1,10 +1,9 @@
-## 1. Implementation
-- [ ] 1.1 Add RuntimeSetting key `ui.action_catalog` (default empty catalog)
-- [ ] 1.2 Implement JSON schema validation for action catalog (fail closed)
-- [ ] 1.3 Add API endpoint to fetch effective action catalog (user-filtered)
-- [ ] 1.4 Add extensions snapshot model in Postgres + update pipeline
-- [ ] 1.5 Add UI: database card extensions management (single DB)
-- [ ] 1.6 Add UI: bulk extensions management page (multi DB)
-- [ ] 1.7 Add tests (backend validation/filtering + frontend rendering)
-- [ ] 1.8 Update docs/roadmap references for Stage 9
-
+## 1. Implementation (Реализация)
+- [x] 1.1 Добавить ключ RuntimeSetting `ui.action_catalog` (по умолчанию пустой каталог)
+- [x] 1.2 Реализовать валидацию action catalog по JSON Schema (fail closed)
+- [x] 1.3 Добавить API endpoint для получения effective action catalog (с фильтрацией по пользователю)
+- [x] 1.4 Добавить модель snapshot расширений в Postgres + пайплайн обновления
+- [x] 1.5 UI: управление расширениями на карточке базы (single DB)
+- [x] 1.6 UI: страница bulk управления расширениями (multi DB)
+- [x] 1.7 Добавить тесты (backend validation/filtering + frontend rendering)
+- [x] 1.8 Обновить ссылки в docs/roadmap для Stage 9

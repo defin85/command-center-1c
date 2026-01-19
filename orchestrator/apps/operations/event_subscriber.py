@@ -717,6 +717,41 @@ class EventSubscriber:
             close_old_connections()
             batch_op = BatchOperation.objects.get(id=operation_id)
 
+            should_update_extensions_snapshot = False
+            op_command_id = str((batch_op.metadata or {}).get("command_id") or "").strip()
+            if batch_op.operation_type == BatchOperation.TYPE_IBCMD_CLI and op_command_id:
+                try:
+                    from apps.databases.models import DatabaseExtensionsSnapshot
+                    from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
+                    from apps.runtime_settings.models import RuntimeSetting
+
+                    raw_catalog = RuntimeSetting.objects.filter(key=UI_ACTION_CATALOG_KEY).values_list("value", flat=True).first()
+                    catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+
+                    extensions = catalog.get("extensions") if isinstance(catalog, dict) else None
+                    actions = extensions.get("actions") if isinstance(extensions, dict) else None
+
+                    snapshot_command_ids: set[str] = set()
+                    if isinstance(actions, list):
+                        for action in actions:
+                            if not isinstance(action, dict):
+                                continue
+                            action_id = str(action.get("id") or "").strip()
+                            if action_id not in {"extensions.list", "extensions.sync"}:
+                                continue
+                            executor = action.get("executor")
+                            if not isinstance(executor, dict):
+                                continue
+                            if executor.get("kind") != "ibcmd_cli":
+                                continue
+                            command_id = executor.get("command_id")
+                            if isinstance(command_id, str) and command_id.strip():
+                                snapshot_command_ids.add(command_id.strip())
+
+                    should_update_extensions_snapshot = op_command_id in snapshot_command_ids
+                except Exception:
+                    should_update_extensions_snapshot = False
+
             # Extract summary from payload
             summary = payload.get('summary', {})
             results = payload.get('results', [])
@@ -746,6 +781,20 @@ class EventSubscriber:
                         update_fields["result"] = result.get("data")
                         update_fields["error_message"] = ""
                         update_fields["error_code"] = ""
+                        if should_update_extensions_snapshot and database_id:
+                            try:
+                                snapshot_data = result.get("data")
+                                if not isinstance(snapshot_data, dict):
+                                    snapshot_data = {"raw": snapshot_data}
+                                DatabaseExtensionsSnapshot.objects.update_or_create(
+                                    database_id=database_id,
+                                    defaults={
+                                        "snapshot": snapshot_data,
+                                        "source_operation_id": str(operation_id),
+                                    },
+                                )
+                            except Exception:
+                                pass
                     else:
                         update_fields["error_message"] = result.get("error") or "Unknown error"
                         update_fields["error_code"] = result.get("error_code") or "UNKNOWN_ERROR"

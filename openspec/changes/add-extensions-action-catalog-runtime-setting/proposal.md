@@ -1,17 +1,19 @@
-# Change: Add extensions action catalog in RuntimeSetting
+# Change: Добавить каталог действий расширений в RuntimeSetting
 
 ## Why
-We need to connect existing Operations + Workflow capabilities to the UI to manage 1C configuration extensions without hardcoding driver/command bindings in the frontend. Operators must be able to configure which drivers/commands/workflows are treated as "extensions management".
+Зачем:
+Нужно подключить существующие возможности Operations + Workflow к UI, чтобы управлять расширениями конфигурации 1С без хардкода привязок driver/command во фронтенде. Операторы должны иметь возможность настраивать, какие drivers/commands/workflows считаются "управлением расширениями".
 
 ## What Changes
-- Add a new RuntimeSetting key `ui.action_catalog` that stores a JSON action catalog (initial scope: `extensions` section).
-- Add an API endpoint to fetch an effective action catalog for the current user (filtered by RBAC, driver catalogs, and environment).
-- Define extension lifecycle actions with separate deactivate vs delete semantics and bulk execution support.
-- Persist per-database extensions snapshot in Postgres (supported), updated from configured sync/list actions.
-- UI uses existing Streams (Operations SSE) to show live progress and results.
+Что меняется:
+- Добавить новый ключ RuntimeSetting `ui.action_catalog`, который хранит JSON action catalog (первичный scope: секция `extensions`).
+- Добавить API endpoint, который возвращает effective action catalog для текущего пользователя (фильтрация по RBAC, driver catalogs и окружению).
+- Определить действия жизненного цикла расширений с разной семантикой deactivate vs delete и поддержкой bulk execution.
+- Хранить snapshot расширений по каждой базе в Postgres (поддерживается) и обновлять его из настроенных действий sync/list.
+- UI использует существующие Streams (Operations SSE) для отображения прогресса и результатов в реальном времени.
 
 ## Impact
-- Affected specs: `extensions-action-catalog` (new)
-- Affected code (planned): Orchestrator runtime settings + API v2, Frontend extensions UI
-- Breaking changes: none (additive)
-
+Влияние:
+- Затронутые спеки: `extensions-action-catalog` (new)
+- Затронутый код (план): Orchestrator runtime settings + API v2, Frontend extensions UI
+- Ломающих изменений нет (additive)

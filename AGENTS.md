@@ -20,6 +20,11 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
+# Язык (важно)
+
+- Планы и спеки ведём на русском языке: OpenSpec (`openspec/specs/**`, `openspec/changes/**`) и описания задач/планов в процессе работы.
+- Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском, но общий смысл должен быть понятен без перевода.
+
 # Unified Workflow
 
 We operate in a cycle: **OpenSpec (What) → Beads (How) → Code (Implementation)**.

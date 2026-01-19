@@ -42,12 +42,14 @@ urlpatterns = [
     # UI Metadata
     # ========================================================================
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
+    path('ui/action-catalog/', ui.get_action_catalog, name='ui-action-catalog'),
 
     # ========================================================================
     # Databases
     # ========================================================================
     path('databases/list-databases/', databases.list_databases, name='list-databases'),
     path('databases/get-database/', databases.get_database, name='get-database'),
+    path('databases/get-extensions-snapshot/', databases.get_extensions_snapshot, name='get-extensions-snapshot'),
     path('databases/update-credentials/', databases.update_database_credentials, name='update-database-credentials'),
     path('databases/list-ib-users/', databases.list_infobase_users, name='list-infobase-users'),
     path('databases/create-ib-user/', databases.create_infobase_user, name='create-infobase-user'),
