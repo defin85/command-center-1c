@@ -1,0 +1,12 @@
+# Serena project configuration (LSP backend)
+# See: https://oraios.github.io/serena/
+languages:
+  - go
+  - python
+encoding: "utf-8"
+ignore_all_files_in_gitignore: true
+ignored_paths: []
+read_only: false
+excluded_tools: []
+included_optional_tools: []
+project_name: "command-center-1c"
