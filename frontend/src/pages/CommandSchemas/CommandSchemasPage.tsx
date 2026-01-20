@@ -11,6 +11,7 @@ import {
   importItsCommandSchemas,
   listCommandSchemaVersions,
   previewCommandSchemas,
+  promoteCommandSchemas,
   rollbackCommandSchemaOverrides,
   updateCommandSchemaOverrides,
   validateCommandSchemas,
@@ -223,6 +224,10 @@ export function CommandSchemasPage() {
   const [rollbackVersions, setRollbackVersions] = useState<CommandSchemaVersionListItem[]>([])
   const [rollbackVersion, setRollbackVersion] = useState<string>('')
 
+  const [promoteOpen, setPromoteOpen] = useState(false)
+  const [promoteReason, setPromoteReason] = useState('')
+  const [promoting, setPromoting] = useState(false)
+
   const [previewMode, setPreviewMode] = useState<'guided' | 'manual'>('guided')
   const [previewConnectionText, setPreviewConnectionText] = useState('{}')
   const [previewConnectionError, setPreviewConnectionError] = useState<string | null>(null)
@@ -323,6 +328,13 @@ export function CommandSchemasPage() {
 
   const dirty = useMemo(() => JSON.stringify(serverOverrides) !== JSON.stringify(draftOverrides), [serverOverrides, draftOverrides])
   const hasUnsavedChanges = mode === 'raw' ? rawDirty : dirty
+
+  const canPromoteLatest = useMemo(() => {
+    if (!view) return false
+    const approved = safeText(view.base?.approved_version).trim()
+    const latest = safeText(view.base?.latest_version).trim()
+    return Boolean(latest) && approved !== latest
+  }, [view])
 
   const selectedEffective = selectedCommandId ? draftEffectiveCommandsById[selectedCommandId] : undefined
   const selectedBase = selectedCommandId ? baseCommandsById[selectedCommandId] : undefined
@@ -654,6 +666,53 @@ export function CommandSchemasPage() {
       message.error(text)
     } finally {
       setRollbackLoading(false)
+    }
+  }
+
+  const openPromote = () => {
+    if (!view) {
+      message.error('Editor data is not loaded yet')
+      return
+    }
+    if (!canPromoteLatest) {
+      message.info('Nothing to promote (approved is already latest)')
+      return
+    }
+    setPromoteOpen(true)
+    setPromoteReason('')
+  }
+
+  const handlePromote = async () => {
+    if (!view) return
+
+    const reason = saveText(promoteReason)
+    if (!reason) {
+      message.error('Reason is required')
+      return
+    }
+
+    const version = safeText(view.base?.latest_version).trim()
+    if (!version) {
+      message.error('Latest base version is not available')
+      return
+    }
+
+    setPromoting(true)
+    try {
+      await promoteCommandSchemas({
+        driver: activeDriver,
+        version,
+        alias: 'approved',
+        reason,
+      })
+      message.success(`Promoted ${version} to approved`)
+      setPromoteOpen(false)
+      await fetchView()
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Failed to promote'
+      message.error(text)
+    } finally {
+      setPromoting(false)
     }
   }
 
@@ -1957,6 +2016,13 @@ export function CommandSchemasPage() {
           <Button data-testid="command-schemas-rollback-open" onClick={openRollback} disabled={!view} icon={<RollbackOutlined />}>
             Rollback...
           </Button>
+          <Button
+            data-testid="command-schemas-promote-open"
+            onClick={openPromote}
+            disabled={!view || !canPromoteLatest || loading || saving || rollingBack || rollbackLoading || importingIts || promoting}
+          >
+            Promote latest...
+          </Button>
           {mode === 'guided' && (
             <Button data-testid="command-schemas-save-open" type="primary" icon={<SaveOutlined />} onClick={openSave} disabled={!view || !dirty || saving}>
               Save...
@@ -2180,6 +2246,38 @@ export function CommandSchemasPage() {
             placeholder="Why rollback?"
             rows={4}
             disabled={rollingBack}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="Promote base catalog"
+        open={promoteOpen}
+        onCancel={() => setPromoteOpen(false)}
+        onOk={handlePromote}
+        okText="Promote"
+        okButtonProps={{
+          disabled: promoting || !promoteReason.trim() || !canPromoteLatest,
+          loading: promoting,
+          'data-testid': 'command-schemas-promote-confirm',
+        }}
+        cancelButtonProps={{ disabled: promoting }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Promote latest → approved"
+            description={`driver=${activeDriver}, latest=${view?.base.latest_version ?? '-'}, approved=${view?.base.approved_version ?? '-'}`}
+          />
+          <Text type="secondary">Reason (required)</Text>
+          <Input.TextArea
+            data-testid="command-schemas-promote-reason"
+            value={promoteReason}
+            onChange={(e) => setPromoteReason(e.target.value)}
+            placeholder="Why are you promoting this base catalog?"
+            rows={4}
+            disabled={promoting}
           />
         </Space>
       </Modal>

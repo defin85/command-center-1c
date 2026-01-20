@@ -342,3 +342,26 @@ export async function listCommandSchemasAudit(
   )
   return response.data
 }
+
+export type CommandSchemasPromoteRequest = {
+  driver: CommandSchemaDriver
+  version: string
+  alias?: string
+  reason: string
+}
+
+export type CommandSchemasPromoteResponse = {
+  driver: CommandSchemaDriver
+  alias: string
+  version: string
+}
+
+export async function promoteCommandSchemas(
+  payload: CommandSchemasPromoteRequest
+): Promise<CommandSchemasPromoteResponse> {
+  const response = await apiClient.post<CommandSchemasPromoteResponse>(
+    '/api/v2/settings/command-schemas/promote/',
+    payload
+  )
+  return response.data
+}

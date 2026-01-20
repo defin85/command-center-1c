@@ -226,6 +226,18 @@ async function setupApiMocks(
       })
     }
 
+    if (method === 'POST' && path === '/api/v2/settings/command-schemas/promote/') {
+      const body = request.postDataJSON()
+      if (body.alias && body.alias !== 'approved' && body.alias !== 'latest') {
+        return fulfillJson(route, { success: false, error: { code: 'INVALID_ALIAS', message: 'invalid alias' } }, 400)
+      }
+
+      const version = String(body.version || '')
+      state.baseApprovedVersion = version
+      state.baseApprovedCatalog = state.baseLatestCatalog
+      return fulfillJson(route, { driver: body.driver, alias: body.alias || 'approved', version })
+    }
+
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/versions/') {
       const driver = (url.searchParams.get('driver') || '').trim().toLowerCase()
       const artifact = (url.searchParams.get('artifact') || '').trim().toLowerCase()
@@ -359,6 +371,60 @@ test('Command Schemas: load + save + rollback (smoke)', async ({ page }) => {
 
   await expect.poll(() => captures.overridesRollback.length).toBe(1)
   await expect(page.getByText('Overrides active: ovr-0')).toBeVisible()
+})
+
+test('Command Schemas: promote latest to approved (smoke)', async ({ page }) => {
+  const baseApprovedCatalog = {
+    catalog_version: 2,
+    driver: 'ibcmd',
+    platform_version: '8.3.27',
+    source: { type: 'its_import', doc_id: 'TI000', doc_url: 'http://example' },
+    generated_at: '2026-01-01T00:00:00Z',
+    commands_by_id: {
+      'ibcmd.infobase.dump': {
+        label: 'Dump',
+        description: 'Dump infobase',
+        argv: ['ibcmd', 'infobase', 'dump'],
+        scope: 'per_database',
+        risk_level: 'safe',
+        params_by_name: { remote: { kind: 'flag', required: true, expects_value: true, flag: '--remote' } },
+      },
+    },
+  }
+
+  const baseLatestCatalog = {
+    ...baseApprovedCatalog,
+    driver_schema: { connection: { remote: { kind: 'flag', flag: '--remote', expects_value: true } } },
+  }
+
+  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const state = {
+    baseApprovedCatalog,
+    baseLatestCatalog,
+    baseApprovedVersion: 'v-approved',
+    baseLatestVersion: 'v-latest',
+    activeOverridesVersion: 'ovr-0',
+    overridesByVersion: {
+      'ovr-0': { catalog_version: 2, driver: 'ibcmd', overrides: { commands_by_id: {} } },
+    } as Record<string, AnyRecord>,
+    reasonsByVersion: { 'ovr-0': 'initial' } as Record<string, string>,
+    captures,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/settings/command-schemas', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Base approved: v-approved')).toBeVisible()
+  await expect(page.getByText('Base latest: v-latest')).toBeVisible()
+
+  await page.getByTestId('command-schemas-promote-open').click()
+  await expect(page.getByText('Promote base catalog', { exact: true })).toBeVisible()
+  await page.getByTestId('command-schemas-promote-reason').fill('promote latest')
+  await page.getByTestId('command-schemas-promote-confirm').click()
+
+  await expect(page.getByText('Base approved: v-latest')).toBeVisible()
 })
 
 test('Command Schemas: validate shows global issues (driver schema)', async ({ page }) => {
