@@ -1293,6 +1293,117 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+  /api/v2/extensions/overview/:
+    get:
+      operationId: v2_extensions_overview_retrieve
+      description: Aggregated extensions overview across accessible databases (snapshot-driven).
+      summary: Extensions overview (aggregated)
+      parameters:
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by extension name (substring)
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (active|inactive|missing|unknown)
+      - in: query
+        name: version
+        schema:
+          type: string
+        description: Filter rows where this version exists
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Restrict to a cluster
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 100, max 1000)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsOverviewResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/extensions/overview/databases/:
+    get:
+      operationId: v2_extensions_overview_databases_retrieve
+      description: List databases for a given extension name/version/status (snapshot-driven).
+      summary: Extensions overview drill-down (databases)
+      parameters:
+      - in: query
+        name: name
+        schema:
+          type: string
+        description: Extension name (exact match)
+        required: true
+      - in: query
+        name: version
+        schema:
+          type: string
+        description: Filter by exact version
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status (active|inactive|missing|unknown)
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Restrict to a cluster
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 100, max 1000)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsOverviewDatabasesResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -8980,6 +9091,113 @@ components:
       required:
       - database_id
       - snapshot
+    ExtensionsOverviewResponse:
+      type: object
+      description: Aggregated extensions overview across accessible databases.
+      properties:
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsOverviewRow'
+        count:
+          type: integer
+        total:
+          type: integer
+        total_databases:
+          type: integer
+      required:
+      - extensions
+      - count
+      - total
+      - total_databases
+    ExtensionsOverviewRow:
+      type: object
+      properties:
+        name:
+          type: string
+        installed_count:
+          type: integer
+        active_count:
+          type: integer
+        inactive_count:
+          type: integer
+        missing_count:
+          type: integer
+        unknown_count:
+          type: integer
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsOverviewVersionCount'
+        latest_snapshot_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - name
+      - installed_count
+      - active_count
+      - inactive_count
+      - missing_count
+      - unknown_count
+      - versions
+    ExtensionsOverviewVersionCount:
+      type: object
+      properties:
+        version:
+          type: string
+          nullable: true
+        count:
+          type: integer
+      required:
+      - version
+      - count
+    ExtensionsOverviewDatabasesResponse:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsOverviewDatabaseRow'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - databases
+      - count
+      - total
+    ExtensionsOverviewDatabaseRow:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        cluster_name:
+          type: string
+        status:
+          type: string
+        version:
+          type: string
+          nullable: true
+        snapshot_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - database_id
+      - database_name
+      - cluster_id
+      - cluster_name
+      - status
+      - version
+      - snapshot_updated_at
     DatabaseErrorDetail:
       type: object
       description: Error detail structure.

@@ -34,6 +34,8 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/databases/delete-ib-user/", OperationID: "v2_databases_delete_ib_user_create"},
 	{Method: "GET", Path: "/databases/get-database/", OperationID: "v2_databases_get_database_retrieve"},
 	{Method: "GET", Path: "/databases/get-extensions-snapshot/", OperationID: "v2_databases_get_extensions_snapshot_retrieve"},
+	{Method: "GET", Path: "/extensions/overview/", OperationID: "v2_extensions_overview_retrieve"},
+	{Method: "GET", Path: "/extensions/overview/databases/", OperationID: "v2_extensions_overview_databases_retrieve"},
 	{Method: "POST", Path: "/databases/health-check/", OperationID: "v2_databases_health_check_create"},
 	{Method: "GET", Path: "/databases/list-databases/", OperationID: "v2_databases_list_databases_retrieve"},
 	{Method: "GET", Path: "/databases/list-ib-users/", OperationID: "v2_databases_list_ib_users_retrieve"},
