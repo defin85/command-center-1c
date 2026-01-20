@@ -783,12 +783,12 @@ class EventSubscriber:
                         update_fields["error_code"] = ""
                         if should_update_extensions_snapshot and database_id:
                             try:
-                                from apps.databases.extensions_snapshot import normalize_extensions_snapshot
+                                from apps.databases.extensions_snapshot import build_extensions_snapshot_from_worker_result
                                 snapshot_data = result.get("data")
                                 DatabaseExtensionsSnapshot.objects.update_or_create(
                                     database_id=database_id,
                                     defaults={
-                                        "snapshot": normalize_extensions_snapshot(snapshot_data),
+                                        "snapshot": build_extensions_snapshot_from_worker_result(snapshot_data),
                                         "source_operation_id": str(operation_id),
                                     },
                                 )
