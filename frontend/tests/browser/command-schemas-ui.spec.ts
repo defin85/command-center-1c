@@ -427,6 +427,58 @@ test('Command Schemas: promote latest to approved (smoke)', async ({ page }) => 
   await expect(page.getByText('Base approved: v-latest')).toBeVisible()
 })
 
+test('Command Schemas: copy latest base driver_schema into overrides (smoke)', async ({ page }) => {
+  const baseApprovedCatalog = {
+    catalog_version: 2,
+    driver: 'ibcmd',
+    platform_version: '8.3.27',
+    source: { type: 'its_import', doc_id: 'TI000', doc_url: 'http://example' },
+    generated_at: '2026-01-01T00:00:00Z',
+    commands_by_id: {
+      'ibcmd.infobase.dump': {
+        label: 'Dump',
+        description: 'Dump infobase',
+        argv: ['ibcmd', 'infobase', 'dump'],
+        scope: 'per_database',
+        risk_level: 'safe',
+        params_by_name: {},
+      },
+    },
+  }
+
+  const driverSchema = { connection: { remote: { kind: 'flag', flag: '--remote', expects_value: true } } }
+  const baseLatestCatalog = { ...baseApprovedCatalog, driver_schema: driverSchema }
+
+  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const state = {
+    baseApprovedCatalog,
+    baseLatestCatalog,
+    baseApprovedVersion: 'v-approved',
+    baseLatestVersion: 'v-latest',
+    activeOverridesVersion: 'ovr-0',
+    overridesByVersion: {
+      'ovr-0': { catalog_version: 2, driver: 'ibcmd', overrides: { commands_by_id: {} } },
+    } as Record<string, AnyRecord>,
+    reasonsByVersion: { 'ovr-0': 'initial' } as Record<string, string>,
+    captures,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/settings/command-schemas', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('tab', { name: 'Driver', exact: true }).click()
+  await page.getByTestId('command-schemas-driver-schema-copy-latest').click()
+
+  await page.getByTestId('command-schemas-save-open').click()
+  await page.getByTestId('command-schemas-save-reason').fill('copy latest driver schema')
+  await page.getByTestId('command-schemas-save-confirm').click()
+
+  await expect.poll(() => captures.overridesUpdate.length).toBe(1)
+  expect(captures.overridesUpdate[0]?.catalog?.overrides?.driver_schema).toEqual(driverSchema)
+})
+
 test('Command Schemas: validate shows global issues (driver schema)', async ({ page }) => {
   const baseCatalog = {
     catalog_version: 2,

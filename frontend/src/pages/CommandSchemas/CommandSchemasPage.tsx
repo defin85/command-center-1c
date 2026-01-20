@@ -249,6 +249,7 @@ export function CommandSchemasPage() {
 
   const [driverSchemaText, setDriverSchemaText] = useState('{}')
   const [driverSchemaTextError, setDriverSchemaTextError] = useState<string | null>(null)
+  const [copyLatestDriverSchemaLoading, setCopyLatestDriverSchemaLoading] = useState(false)
 
   const fetchView = useCallback(async () => {
     setLoading(true)
@@ -1673,8 +1674,41 @@ export function CommandSchemasPage() {
       message.success('Copied effective driver schema into overrides')
     }
 
+    const copyLatestBase = async () => {
+      if (copyLatestDriverSchemaLoading) return
+      setCopyLatestDriverSchemaLoading(true)
+      try {
+        const latestView = await getCommandSchemasEditorView(activeDriver, 'raw')
+        const latestSchema = safeCatalogDriverSchema(latestView.catalogs?.base)
+        if (Object.keys(latestSchema).length === 0) {
+          message.info('Latest base driver schema is empty')
+          return
+        }
+        applyText(JSON.stringify(latestSchema, null, 2))
+        message.success('Copied latest base driver schema into overrides')
+      } catch (err) {
+        const text = err instanceof Error ? err.message : 'Failed to load latest base catalog'
+        message.error(text)
+      } finally {
+        setCopyLatestDriverSchemaLoading(false)
+      }
+    }
+
     return (
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        {canPromoteLatest && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Base latest differs from approved"
+            description="Guided mode edits overrides against approved base, while Raw mode shows base=latest. Promote latest → approved to make guided/effective reflect it."
+            action={(
+              <Button size="small" onClick={openPromote} disabled={promoting || loading || saving}>
+                Promote latest...
+              </Button>
+            )}
+          />
+        )}
         <Alert
           type="info"
           showIcon
@@ -1687,6 +1721,14 @@ export function CommandSchemasPage() {
           extra={(
             <Space>
               <Button onClick={copyEffective}>Copy effective</Button>
+              <Button
+                data-testid="command-schemas-driver-schema-copy-latest"
+                onClick={copyLatestBase}
+                loading={copyLatestDriverSchemaLoading}
+                disabled={loading || saving || promoting}
+              >
+                Copy latest base
+              </Button>
               <Button danger onClick={resetOverrides}>Reset</Button>
             </Space>
           )}
