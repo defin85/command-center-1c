@@ -418,8 +418,11 @@ def test_get_extensions_snapshot_requires_permission_and_returns_empty(client, u
 
     DatabaseExtensionsSnapshot.objects.update_or_create(
         database_id=db.id,
-        defaults={"snapshot": {"extensions": []}, "source_operation_id": "op-1"},
+        defaults={"snapshot": {"stdout": "ok", "exit_code": 0}, "source_operation_id": "op-1"},
     )
     resp2 = client.get("/api/v2/databases/get-extensions-snapshot/", {"database_id": str(db.id)})
     assert resp2.status_code == 200
-    assert resp2.json()["snapshot"] == {"extensions": []}
+    snapshot = resp2.json()["snapshot"]
+    assert snapshot["extensions"] == []
+    assert snapshot["raw"] == {"stdout": "ok", "exit_code": 0}
+    assert snapshot["parse_error"] is None

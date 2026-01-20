@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.core import permission_codes as perms
+from apps.databases.extensions_snapshot import normalize_extensions_snapshot
 from apps.databases.models import Cluster, Database, DatabaseExtensionsSnapshot, InfobaseUserMapping, PermissionLevel
 from apps.databases.services import PermissionService
 from apps.databases.serializers import (
@@ -682,6 +683,8 @@ def get_extensions_snapshot(request):
     try:
         snapshot_obj = db.extensions_snapshot
         snapshot = snapshot_obj.snapshot or {}
+        if snapshot:
+            snapshot = normalize_extensions_snapshot(snapshot)
         updated_at = snapshot_obj.updated_at
         source_operation_id = snapshot_obj.source_operation_id or ""
     except DatabaseExtensionsSnapshot.DoesNotExist:
