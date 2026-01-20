@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
-import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined } from '@ant-design/icons'
+import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { MenuProps } from 'antd'
@@ -76,6 +76,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       key: '/databases',
       icon: <DatabaseOutlined />,
       label: 'Databases',
+    },
+    {
+      key: '/extensions',
+      icon: <AppstoreOutlined />,
+      label: 'Extensions',
     },
     {
       key: '/operations',

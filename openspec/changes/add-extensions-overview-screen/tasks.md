@@ -3,7 +3,7 @@
 - [x] 1.2 Реализовать парсинг результата extensions list/sync в нормализованный список расширений
 - [x] 1.3 Добавить API v2: агрегированная таблица расширений по доступным базам (пагинация/фильтры/поиск)
 - [x] 1.4 Добавить API v2: drill-down (список баз по выбранному расширению/версии/статусу)
-- [ ] 1.5 UI: новый экран `/extensions` (таблица, фильтры, drill-down, ссылки на `/databases` и snapshot freshness)
+- [x] 1.5 UI: новый экран `/extensions` (таблица, фильтры, drill-down, ссылки на `/databases` и snapshot freshness)
 - [ ] 1.6 Тесты: backend (парсер + API + RBAC) и frontend (рендер + фильтры на моках)
 - [x] 1.7 Контракты: обновить `contracts/orchestrator/openapi.yaml`, прогнать `./contracts/scripts/validate-specs.sh`, регенерировать клиенты
 - [ ] 1.8 Docs: обновить roadmap/описание возможностей

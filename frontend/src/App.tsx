@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { Dashboard } from './pages/Dashboard/Dashboard'
 import { Operations } from './pages/Operations'
 import { Databases } from './pages/Databases/Databases'
+import { Extensions } from './pages/Extensions/Extensions'
 import { Clusters } from './pages/Clusters/Clusters'
 import { SystemStatus } from './pages/SystemStatus/SystemStatus'
 import { WorkflowList, WorkflowDesigner, WorkflowMonitor, WorkflowExecutions } from './pages/Workflows'
@@ -204,6 +205,13 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Databases />
+              </MainLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/extensions" element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Extensions />
               </MainLayout>
             </ProtectedRoute>
           } />

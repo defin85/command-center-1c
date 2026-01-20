@@ -94,6 +94,11 @@ export const queryKeys = {
     all: ['users'] as const,
     list: (filters?: unknown) => [...queryKeys.users.all, 'list', filters] as const,
   },
+  extensions: {
+    all: ['extensions'] as const,
+    overview: (filters?: unknown) => [...queryKeys.extensions.all, 'overview', filters] as const,
+    overviewDatabases: (filters?: unknown) => [...queryKeys.extensions.all, 'overview-databases', filters] as const,
+  },
 } as const
 
 export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
@@ -121,6 +126,7 @@ export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata, useActionCatalog } from './ui'
 export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
 export type { UserSummary } from './users'
+export { useExtensionsOverview, useExtensionsOverviewDatabases } from './extensions'
 export {
   useInfobaseUsers,
   useCreateInfobaseUser,
