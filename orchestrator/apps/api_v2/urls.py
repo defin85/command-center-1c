@@ -10,6 +10,7 @@ from django.urls import path
 from .views import (
     databases,
     clusters,
+    extensions,
     operations,
     workflows,
     system,
@@ -62,6 +63,12 @@ urlpatterns = [
     path('databases/set-status/', databases.set_status, name='set-status'),
     path('databases/stream-ticket/', databases.get_database_stream_ticket, name='database-stream-ticket'),
     path('databases/stream/', databases.database_stream, name='database-stream'),
+
+    # ========================================================================
+    # Extensions
+    # ========================================================================
+    path('extensions/overview/', extensions.get_extensions_overview, name='extensions-overview'),
+    path('extensions/overview/databases/', extensions.get_extensions_overview_databases, name='extensions-overview-databases'),
 
     # ========================================================================
     # Clusters
