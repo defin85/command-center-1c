@@ -40,7 +40,14 @@ from apps.operations.driver_catalog_effective import (
     invalidate_driver_catalog_cache,
     load_catalog_json,
 )
-from apps.operations.ibcmd_cli_builder import mask_argv
+from apps.operations.ibcmd_cli_builder import (
+    build_ibcmd_cli_argv,
+    build_ibcmd_cli_argv_manual,
+    build_ibcmd_connection_args,
+    detect_connection_option_conflicts,
+    flatten_connection_params,
+    mask_argv,
+)
 from apps.operations.models import AdminActionAuditLog
 from apps.operations.services.admin_action_audit import log_admin_action
 from apps.operations.prometheus_metrics import (
@@ -220,6 +227,7 @@ class CommandSchemasPreviewRequestSerializer(serializers.Serializer):
     driver = serializers.ChoiceField(choices=COMMAND_SCHEMA_DRIVER_CHOICES)
     command_id = serializers.CharField()
     mode = serializers.ChoiceField(choices=["guided", "manual"], default="guided")
+    connection = serializers.DictField(required=False, allow_null=True, default=dict)
     params = serializers.DictField(required=False, default=dict)
     additional_args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     catalog = serializers.DictField(required=False, allow_null=True)
@@ -2337,6 +2345,7 @@ def preview_command_schemas(request):
 
     mode = serializer.validated_data.get("mode") or "guided"
     strict = mode == "guided"
+    connection = serializer.validated_data.get("connection") or {}
     params = serializer.validated_data.get("params") or {}
     additional_args = serializer.validated_data.get("additional_args") or []
     draft_overrides = serializer.validated_data.get("catalog")
@@ -2420,12 +2429,52 @@ def preview_command_schemas(request):
         }, status=400)
 
     try:
-        argv, argv_masked = _build_command_argv(
-            command=copy.deepcopy(effective_command),
-            params=params,
-            additional_args=additional_args,
-            strict=strict,
-        )
+        if driver == "ibcmd":
+            connection_dict = dict(connection) if isinstance(connection, dict) else {}
+
+            for token in additional_args:
+                t = str(token or "").strip().lower()
+                if t in {"--pid", "-p"} or t.startswith("--pid=") or t.startswith("-p=") or t.startswith("-p "):
+                    raise ValueError("Use connection.pid instead of --pid in additional_args")
+
+            flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
+            if flattened_connection:
+                conflicts = detect_connection_option_conflicts(
+                    connection_params=flattened_connection,
+                    additional_args=list(additional_args or []),
+                )
+                if conflicts:
+                    conflict_list = ", ".join(sorted(set(conflicts)))
+                    raise ValueError(f"duplicate driver-level options in additional_args: {conflict_list}")
+
+                if isinstance(params, dict) and params:
+                    overlap = [
+                        key
+                        for key in flattened_connection.keys()
+                        if key in params and params.get(key) not in (None, "")
+                    ]
+                    if overlap:
+                        overlap_list = ", ".join(sorted(set(str(k) for k in overlap)))
+                        raise ValueError(f"driver-level options must be provided via connection (not params): {overlap_list}")
+
+            pre_args = build_ibcmd_connection_args(
+                driver_schema=base_catalog.get("driver_schema") if isinstance(base_catalog, dict) else None,
+                connection=connection_dict,
+            )
+            builder = build_ibcmd_cli_argv if strict else build_ibcmd_cli_argv_manual
+            argv, argv_masked = builder(
+                command=copy.deepcopy(effective_command),
+                params=params,
+                additional_args=additional_args,
+                pre_args=pre_args,
+            )
+        else:
+            argv, argv_masked = _build_command_argv(
+                command=copy.deepcopy(effective_command),
+                params=params,
+                additional_args=additional_args,
+                strict=strict,
+            )
     except ValueError as exc:
         record_driver_catalog_editor_error(driver, action="preview", code="INVALID_PREVIEW")
         return Response({

@@ -8379,6 +8379,8 @@ components:
         params:
           type: object
           additionalProperties: {}
+        connection:
+          $ref: '#/components/schemas/IbcmdCliConnection'
         additional_args:
           type: array
           items:

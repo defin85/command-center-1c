@@ -224,6 +224,8 @@ export function CommandSchemasPage() {
   const [rollbackVersion, setRollbackVersion] = useState<string>('')
 
   const [previewMode, setPreviewMode] = useState<'guided' | 'manual'>('guided')
+  const [previewConnectionText, setPreviewConnectionText] = useState('{}')
+  const [previewConnectionError, setPreviewConnectionError] = useState<string | null>(null)
   const [previewParams, setPreviewParams] = useState<Record<string, unknown>>({})
   const [previewArgsText, setPreviewArgsText] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -259,6 +261,8 @@ export function CommandSchemasPage() {
       const effectiveCommands = safeCommandsById(data.catalogs?.effective?.catalog)
       const firstId = Object.keys(effectiveCommands).sort()[0] ?? ''
       setSelectedCommandId((prev) => (prev && effectiveCommands[prev] ? prev : firstId))
+      setPreviewConnectionText('{}')
+      setPreviewConnectionError(null)
       setPreviewParams({})
       setPreviewArgsText('')
       setPreviewArgv([])
@@ -794,10 +798,19 @@ export function CommandSchemasPage() {
         .split('\n')
         .map((item) => item.trim())
         .filter((item) => item.length > 0)
+
+      const parsedConnection = activeDriver === 'ibcmd' ? parseJsonObject(previewConnectionText) : {}
+      if (activeDriver === 'ibcmd' && !parsedConnection) {
+        setPreviewError('Invalid connection JSON: expected a JSON object')
+        setPreviewArgv([])
+        setPreviewArgvMasked([])
+        return
+      }
       const response = await previewCommandSchemas({
         driver: activeDriver,
         command_id: selectedCommandId,
         mode: previewMode,
+        ...(activeDriver === 'ibcmd' ? { connection: parsedConnection ?? {} } : {}),
         params: previewParams,
         additional_args: additionalArgs,
         catalog: draftOverrides,
@@ -876,6 +889,8 @@ export function CommandSchemasPage() {
                       setSelectedCommandId(item.id)
                       setActiveEditorTab('basics')
                       setActiveSideTab('preview')
+                      setPreviewConnectionText('{}')
+                      setPreviewConnectionError(null)
                       setPreviewParams({})
                       setPreviewArgsText('')
                       setPreviewArgv([])
@@ -1681,10 +1696,33 @@ export function CommandSchemasPage() {
                       { value: 'manual', label: 'manual' },
                     ]}
                   />
-                  <Button onClick={buildPreview} loading={previewLoading} disabled={!hasSelection}>
+                  <Button
+                    onClick={buildPreview}
+                    loading={previewLoading}
+                    disabled={!hasSelection || (activeDriver === 'ibcmd' && Boolean(previewConnectionError))}
+                  >
                     Build argv
                   </Button>
                 </Space>
+
+                {activeDriver === 'ibcmd' && (
+                  <Card size="small" title="Connection (ibcmd)">
+                    <LazyJsonCodeEditor
+                      value={previewConnectionText}
+                      onChange={(nextText) => {
+                        setPreviewConnectionText(nextText)
+                        setPreviewConnectionError(parseJsonObject(nextText) ? null : 'Invalid JSON: expected a JSON object')
+                      }}
+                      height={180}
+                      path={`command-schemas-${activeDriver}-${selectedCommandId}-preview-connection.json`}
+                    />
+                    {previewConnectionError && (
+                      <div style={{ marginTop: 8 }}>
+                        <Alert type="error" showIcon message={previewConnectionError} />
+                      </div>
+                    )}
+                  </Card>
+                )}
 
                 {paramNames.length > 0 && (
                   <Card size="small" title="Params">

@@ -257,6 +257,7 @@ export type CommandSchemasPreviewRequest = {
   driver: CommandSchemaDriver
   command_id: string
   mode?: CommandSchemasPreviewMode
+  connection?: Record<string, unknown>
   params?: Record<string, unknown>
   additional_args?: string[]
   catalog?: CommandSchemasOverridesCatalogV2

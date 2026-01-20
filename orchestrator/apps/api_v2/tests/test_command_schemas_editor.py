@@ -629,6 +629,14 @@ def test_command_schemas_preview_diff_and_validate_support_draft_overrides(clien
                     "pid": {"kind": "flag", "required": False, "expects_value": True, "flag": "--pid"},
                 },
             },
+            "ibcmd.infobase.extension.list": {
+                "label": "List extensions",
+                "description": "List extensions",
+                "argv": ["ibcmd", "infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
         },
     }
     overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {"commands_by_id": {}}}
@@ -725,6 +733,46 @@ def test_command_schemas_preview_diff_and_validate_support_draft_overrides(clien
         "--pid=123",
         "--remote-url=http://host:1545",
     ]
+
+    preview_conn_resp = client.post(
+        "/api/v2/settings/command-schemas/preview/",
+        data={
+            "driver": "ibcmd",
+            "command_id": "ibcmd.infobase.extension.list",
+            "mode": "guided",
+            "connection": {"remote": "http://host:1545"},
+            "params": {},
+            "additional_args": [],
+        },
+        format="json",
+    )
+    assert preview_conn_resp.status_code == 200
+    preview_conn_payload = preview_conn_resp.json()
+    assert preview_conn_payload["command_id"] == "ibcmd.infobase.extension.list"
+    assert preview_conn_payload["argv"] == [
+        "ibcmd",
+        "infobase",
+        "extension",
+        "list",
+        "--remote=http://host:1545",
+    ]
+
+    preview_conflict_resp = client.post(
+        "/api/v2/settings/command-schemas/preview/",
+        data={
+            "driver": "ibcmd",
+            "command_id": "ibcmd.infobase.extension.list",
+            "mode": "guided",
+            "connection": {"remote": "http://host:1545"},
+            "params": {},
+            "additional_args": ["--remote=http://other:1545"],
+        },
+        format="json",
+    )
+    assert preview_conflict_resp.status_code == 400
+    preview_conflict_payload = preview_conflict_resp.json()
+    assert preview_conflict_payload["success"] is False
+    assert preview_conflict_payload["error"]["code"] == "INVALID_PREVIEW"
 
     diff_resp = client.post(
         "/api/v2/settings/command-schemas/diff/",
