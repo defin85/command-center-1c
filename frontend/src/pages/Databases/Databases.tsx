@@ -8,6 +8,7 @@ import type { Database } from '../../api/generated/model/database'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { ActionCatalogAction } from '../../api/generated/model/actionCatalogAction'
+import type { ExecuteIbcmdCliOperationRequest } from '../../api/generated/model/executeIbcmdCliOperationRequest'
 import { getV2 } from '../../api/generated'
 import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
@@ -268,7 +269,7 @@ export const Databases = () => {
       }
 
       const timeoutSeconds = executor.fixed?.timeout_seconds
-      const payload: Record<string, unknown> = {
+      const payload: ExecuteIbcmdCliOperationRequest = {
         command_id: commandId,
         mode: executor.mode === 'manual' ? 'manual' : 'guided',
         database_ids: databaseIds,
@@ -276,9 +277,7 @@ export const Databases = () => {
         additional_args: executor.additional_args ?? [],
         stdin: executor.stdin ?? '',
         confirm_dangerous: executor.fixed?.confirm_dangerous === true,
-      }
-      if (typeof timeoutSeconds === 'number') {
-        payload.timeout_seconds = timeoutSeconds
+        timeout_seconds: typeof timeoutSeconds === 'number' ? timeoutSeconds : undefined,
       }
 
       const res = await api.postOperationsExecuteIbcmdCli(payload)

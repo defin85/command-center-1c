@@ -3,6 +3,8 @@ import pytest
 from apps.operations.ibcmd_cli_builder import (
     build_ibcmd_cli_argv,
     build_ibcmd_cli_argv_manual,
+    build_ibcmd_connection_args,
+    detect_connection_option_conflicts,
     mask_argv,
 )
 
@@ -136,3 +138,62 @@ def test_build_ibcmd_cli_argv_manual_ignores_unknown_params_and_required_constra
 
     assert argv == ["server", "config", "init", "--bar=baz"]
     assert masked == ["server", "config", "init", "--bar=baz"]
+
+
+def test_build_ibcmd_connection_args_uses_driver_schema_and_orders_stably():
+    driver_schema = {
+        "connection": {
+            "remote": {"kind": "flag", "flag": "--remote-url", "expects_value": True, "required": False},
+            "pid": {"kind": "flag", "flag": "-p", "expects_value": True, "required": False},
+            "offline": {
+                "db_user": {"kind": "flag", "flag": "--db-user", "expects_value": True, "required": False},
+                "db_server": {"kind": "flag", "flag": "--db-server", "expects_value": True, "required": False},
+            },
+        },
+    }
+    connection = {
+        "remote": "http://localhost:1545",
+        "pid": 123,
+        "offline": {"db_user": "admin", "db_server": "srv"},
+    }
+
+    args = build_ibcmd_connection_args(driver_schema=driver_schema, connection=connection)
+    assert args == [
+        "--remote-url=http://localhost:1545",
+        "-p=123",
+        "--db-server=srv",
+        "--db-user=admin",
+    ]
+
+
+def test_build_ibcmd_cli_argv_inserts_pre_args_before_command_params_and_additional_args():
+    command = {
+        "argv": ["infobase", "extension", "list"],
+        "params_by_name": {
+            "format": {"kind": "flag", "flag": "--format", "expects_value": True, "required": False},
+        },
+    }
+
+    argv, _ = build_ibcmd_cli_argv(
+        command=command,
+        params={"format": "json"},
+        additional_args=["--z-last=1"],
+        pre_args=["--remote=http://localhost:1545"],
+    )
+
+    assert argv == [
+        "infobase",
+        "extension",
+        "list",
+        "--remote=http://localhost:1545",
+        "--format=json",
+        "--z-last=1",
+    ]
+
+
+def test_detect_connection_option_conflicts_matches_remote_aliases_and_equals_forms():
+    conflicts = detect_connection_option_conflicts(
+        connection_params={"remote": "http://host:1545"},
+        additional_args=["--remote=http://other:1545"],
+    )
+    assert conflicts == ["remote"]

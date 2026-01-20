@@ -29,7 +29,7 @@ const { Title, Text } = Typography
 const buildEmptyOverrides = (driver: CommandSchemaDriver): CommandSchemasOverridesCatalogV2 => ({
   catalog_version: 2,
   driver,
-  overrides: { commands_by_id: {} },
+  overrides: { driver_schema: {}, commands_by_id: {} },
 })
 
 const deepCopy = <T,>(value: T): T => {
@@ -71,6 +71,63 @@ const safeOverridesById = (
   const commandsById = (overrides as { commands_by_id?: unknown }).commands_by_id
   if (!commandsById || typeof commandsById !== 'object') return {}
   return commandsById as Record<string, CommandSchemaCommandPatch>
+}
+
+const safeOverridesDriverSchema = (
+  catalog: CommandSchemasOverridesCatalogV2 | undefined | null
+): Record<string, unknown> => {
+  if (!catalog || typeof catalog !== 'object') return {}
+  const overrides = (catalog as { overrides?: unknown }).overrides
+  if (!overrides || typeof overrides !== 'object') return {}
+  const driverSchema = (overrides as { driver_schema?: unknown }).driver_schema
+  if (!driverSchema || typeof driverSchema !== 'object' || Array.isArray(driverSchema)) return {}
+  return driverSchema as Record<string, unknown>
+}
+
+const safeCatalogDriverSchema = (catalog: DriverCatalogV2 | undefined | null): Record<string, unknown> => {
+  if (!catalog || typeof catalog !== 'object') return {}
+  const driverSchema = (catalog as { driver_schema?: unknown }).driver_schema
+  if (!driverSchema || typeof driverSchema !== 'object' || Array.isArray(driverSchema)) return {}
+  return driverSchema as Record<string, unknown>
+}
+
+const normalizeOverridesCatalog = (
+  driver: CommandSchemaDriver,
+  catalog: CommandSchemasOverridesCatalogV2 | undefined | null
+): CommandSchemasOverridesCatalogV2 => {
+  const base = catalog ?? buildEmptyOverrides(driver)
+  const next = deepCopy(base)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const overrides: any = (next as any).overrides
+  if (!overrides || typeof overrides !== 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(next as any).overrides = { driver_schema: {}, commands_by_id: {} }
+    return next
+  }
+
+  if (!overrides.commands_by_id || typeof overrides.commands_by_id !== 'object') {
+    overrides.commands_by_id = {}
+  }
+  if (!overrides.driver_schema || typeof overrides.driver_schema !== 'object' || Array.isArray(overrides.driver_schema)) {
+    overrides.driver_schema = {}
+  }
+
+  return next
+}
+
+const parseJsonObject = (raw: string): Record<string, unknown> | null => {
+  const text = raw.trim()
+  if (!text) return {}
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null
+    }
+    return parsed as Record<string, unknown>
+  } catch (_err) {
+    return null
+  }
 }
 
 const safeText = (value: unknown): string => {
@@ -147,7 +204,7 @@ export function CommandSchemasPage() {
   const [onlyModified, setOnlyModified] = useState(false)
   const [hideDisabled, setHideDisabled] = useState(false)
 
-  const [activeEditorTab, setActiveEditorTab] = useState<'basics' | 'permissions' | 'params' | 'advanced'>('basics')
+  const [activeEditorTab, setActiveEditorTab] = useState<'driver' | 'basics' | 'permissions' | 'params' | 'advanced'>('basics')
   const [activeSideTab, setActiveSideTab] = useState<'preview' | 'diff' | 'validate'>('preview')
 
   const [saveOpen, setSaveOpen] = useState(false)
@@ -183,6 +240,9 @@ export function CommandSchemasPage() {
   const [validateIssues, setValidateIssues] = useState<CommandSchemaIssue[]>([])
   const [validateSummary, setValidateSummary] = useState<{ ok: boolean; errors: number; warnings: number } | null>(null)
 
+  const [driverSchemaText, setDriverSchemaText] = useState('{}')
+  const [driverSchemaTextError, setDriverSchemaTextError] = useState<string | null>(null)
+
   const fetchView = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -190,9 +250,11 @@ export function CommandSchemasPage() {
       const data = await getCommandSchemasEditorView(activeDriver, mode)
       setView(data)
 
-      const server = data.catalogs?.overrides ?? buildEmptyOverrides(activeDriver)
-      setServerOverrides(server)
-      setDraftOverrides(deepCopy(server))
+      const normalizedServer = normalizeOverridesCatalog(activeDriver, data.catalogs?.overrides)
+      setServerOverrides(normalizedServer)
+      setDraftOverrides(deepCopy(normalizedServer))
+      setDriverSchemaText(JSON.stringify(safeOverridesDriverSchema(normalizedServer), null, 2))
+      setDriverSchemaTextError(null)
 
       const effectiveCommands = safeCommandsById(data.catalogs?.effective?.catalog)
       const firstId = Object.keys(effectiveCommands).sort()[0] ?? ''
@@ -227,6 +289,7 @@ export function CommandSchemasPage() {
 
   const baseCommandsById = useMemo(() => safeCommandsById(baseCatalog), [baseCatalog])
   const overridesById = useMemo(() => safeOverridesById(draftOverrides), [draftOverrides])
+  const overridesDriverSchema = useMemo(() => safeOverridesDriverSchema(draftOverrides), [draftOverrides])
 
   const draftEffectiveCommandsById = useMemo(() => {
     const out: Record<string, DriverCommandV2> = {}
@@ -343,8 +406,9 @@ export function CommandSchemasPage() {
         : {}
       paramsCount += Object.keys(paramsByName).length
     }
-    return { commands: commandIds.length, params: paramsCount, permissions: permissionsCount }
-  }, [overridesById])
+    const driverSchemaCount = Object.keys(overridesDriverSchema).length > 0 ? 1 : 0
+    return { commands: commandIds.length, params: paramsCount, permissions: permissionsCount, driver_schema: driverSchemaCount }
+  }, [overridesById, overridesDriverSchema])
 
   const setCommandPatch = useCallback((commandId: string, updater: (patch: CommandSchemaCommandPatch) => void) => {
     setDraftOverrides((prev) => {
@@ -378,7 +442,10 @@ export function CommandSchemasPage() {
       okButtonProps: { danger: true },
       cancelText: 'Cancel',
       onOk: () => {
-        setDraftOverrides(deepCopy(serverOverrides))
+        const next = deepCopy(serverOverrides)
+        setDraftOverrides(next)
+        setDriverSchemaText(JSON.stringify(safeOverridesDriverSchema(next), null, 2))
+        setDriverSchemaTextError(null)
         message.success('Changes discarded')
       },
     })
@@ -751,6 +818,10 @@ export function CommandSchemasPage() {
     if (!selectedCommandId) return []
     return validateIssues.filter((issue) => issue.command_id === selectedCommandId || issue.command_id === displayCommandId(activeDriver, selectedCommandId))
   }, [activeDriver, selectedCommandId, validateIssues])
+
+  const globalIssues = useMemo(() => {
+    return validateIssues.filter((issue) => !issue.command_id)
+  }, [validateIssues])
 
   const renderCommandList = () => (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -1493,14 +1564,99 @@ export function CommandSchemasPage() {
     )
   }
 
-  const renderSidePanel = () => {
-    if (!selectedCommandId || !selectedEffective) {
-      return <Alert type="info" message="Select a command to preview/diff" showIcon />
+  const renderDriverSchemaEditor = () => {
+    if (!view) {
+      return <Alert type="info" showIcon message="Editor data is not loaded yet" />
     }
 
-    const paramsByName = (selectedEffective.params_by_name && typeof selectedEffective.params_by_name === 'object')
-      ? (selectedEffective.params_by_name as Record<string, DriverCommandParamV2>)
-      : {}
+    const baseSchema = safeCatalogDriverSchema(view.catalogs?.base)
+    const effectiveSchema = safeCatalogDriverSchema(view.catalogs?.effective?.catalog)
+
+    const applyText = (nextText: string) => {
+      setDriverSchemaText(nextText)
+      const parsed = parseJsonObject(nextText)
+      if (!parsed) {
+        setDriverSchemaTextError('Invalid JSON: expected a JSON object')
+        return
+      }
+      setDriverSchemaTextError(null)
+      setDraftOverrides((prev) => ({
+        ...prev,
+        overrides: {
+          ...prev.overrides,
+          driver_schema: parsed,
+        },
+      }))
+    }
+
+    const resetOverrides = () => {
+      applyText('{}')
+      message.success('Driver schema overrides reset')
+    }
+
+    const copyEffective = () => {
+      applyText(JSON.stringify(effectiveSchema ?? {}, null, 2))
+      message.success('Copied effective driver schema into overrides')
+    }
+
+    return (
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="Driver-level schema"
+          description="Shared connection/options schema for this driver (independent from any selected command)."
+        />
+        <Card
+          size="small"
+          title="Driver schema patch (draft overrides)"
+          extra={(
+            <Space>
+              <Button onClick={copyEffective}>Copy effective</Button>
+              <Button danger onClick={resetOverrides}>Reset</Button>
+            </Space>
+          )}
+        >
+          <LazyJsonCodeEditor
+            value={driverSchemaText}
+            onChange={applyText}
+            height={260}
+            path={`command-schemas-${activeDriver}-driver-schema-overrides.json`}
+          />
+          {driverSchemaTextError && (
+            <div style={{ marginTop: 8 }}>
+              <Alert type="error" showIcon message={driverSchemaTextError} />
+            </div>
+          )}
+        </Card>
+        <Card size="small" title="Base driver schema (read-only)">
+          <LazyJsonCodeEditor
+            value={JSON.stringify(baseSchema ?? {}, null, 2)}
+            onChange={() => {}}
+            height={260}
+            path={`command-schemas-${activeDriver}-driver-schema-base.json`}
+            readOnly
+          />
+        </Card>
+        <Card size="small" title="Effective driver schema (read-only)">
+          <LazyJsonCodeEditor
+            value={JSON.stringify(effectiveSchema ?? {}, null, 2)}
+            onChange={() => {}}
+            height={260}
+            path={`command-schemas-${activeDriver}-driver-schema-effective.json`}
+            readOnly
+          />
+        </Card>
+      </Space>
+    )
+  }
+
+  const renderSidePanel = () => {
+    const hasSelection = Boolean(selectedCommandId && selectedEffective)
+    const paramsByName =
+      hasSelection && selectedEffective && selectedEffective.params_by_name && typeof selectedEffective.params_by_name === 'object'
+        ? (selectedEffective.params_by_name as Record<string, DriverCommandParamV2>)
+        : {}
 
     const paramNames = Object.keys(paramsByName).sort()
 
@@ -1514,6 +1670,7 @@ export function CommandSchemasPage() {
             label: 'Preview',
             children: (
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                {!hasSelection && <Alert type="info" showIcon message="Select a command to preview" />}
                 <Space wrap>
                   <Select
                     value={previewMode}
@@ -1524,7 +1681,7 @@ export function CommandSchemasPage() {
                       { value: 'manual', label: 'manual' },
                     ]}
                   />
-                  <Button onClick={buildPreview} loading={previewLoading}>
+                  <Button onClick={buildPreview} loading={previewLoading} disabled={!hasSelection}>
                     Build argv
                   </Button>
                 </Space>
@@ -1628,7 +1785,8 @@ export function CommandSchemasPage() {
             label: 'Diff',
             children: (
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <Button onClick={loadDiff} loading={diffLoading}>
+                {!hasSelection && <Alert type="info" showIcon message="Select a command to diff" />}
+                <Button onClick={loadDiff} loading={diffLoading} disabled={!hasSelection}>
                   Load diff (base to effective)
                 </Button>
                 {diffError && <Alert type="warning" showIcon message="Diff error" description={diffError} />}
@@ -1684,8 +1842,27 @@ export function CommandSchemasPage() {
                     description={`errors=${validateSummary.errors}, warnings=${validateSummary.warnings}`}
                   />
                 )}
+                <Card size="small" title={`Global issues (${globalIssues.length})`}>
+                  {globalIssues.length === 0 ? (
+                    <Text type="secondary">No issues</Text>
+                  ) : (
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      {globalIssues.map((issue, idx) => (
+                        <Alert
+                          key={`${issue.code}-${idx}`}
+                          type={issue.severity === 'error' ? 'error' : 'warning'}
+                          showIcon
+                          message={`${issue.code}: ${issue.message}`}
+                          description={issue.path ? <Text code>{issue.path}</Text> : undefined}
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
                 <Card size="small" title={`Issues for selected command (${issuesForSelected.length})`}>
-                  {issuesForSelected.length === 0 ? (
+                  {!hasSelection ? (
+                    <Text type="secondary">No command selected</Text>
+                  ) : issuesForSelected.length === 0 ? (
                     <Text type="secondary">No issues</Text>
                   ) : (
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -1756,7 +1933,7 @@ export function CommandSchemasPage() {
             type="warning"
             showIcon
             message="Unsaved changes"
-            description={`commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
+            description={`driver_schema=${overridesCounts.driver_schema}, commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
             action={(
               <Space>
                 <Button size="small" onClick={discardChanges} disabled={saving}>
@@ -1820,8 +1997,9 @@ export function CommandSchemasPage() {
             >
               <Tabs
                 activeKey={activeEditorTab}
-                onChange={(key) => setActiveEditorTab(key as 'basics' | 'permissions' | 'params' | 'advanced')}
+                onChange={(key) => setActiveEditorTab(key as 'driver' | 'basics' | 'permissions' | 'params' | 'advanced')}
                 items={[
+                  { key: 'driver', label: 'Driver', children: renderDriverSchemaEditor() },
                   { key: 'basics', label: 'Basics', children: renderBasicsEditor() },
                   { key: 'permissions', label: 'Permissions', children: renderPermissionsEditor() },
                   { key: 'params', label: 'Params', children: renderParamsEditor() },
@@ -1849,7 +2027,7 @@ export function CommandSchemasPage() {
                 type="info"
                 showIcon
                 message="Summary"
-                description={`commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
+                description={`driver_schema=${overridesCounts.driver_schema}, commands=${overridesCounts.commands}, params=${overridesCounts.params}, permissions=${overridesCounts.permissions}`}
               />
               <Text type="secondary">Reason (required)</Text>
               <Input.TextArea

@@ -22,6 +22,30 @@ _SENSITIVE_FLAG_PREFIXES = (
     "--api-key",
 )
 
+_CONNECTION_PARAM_FLAGS = {
+    "remote": "--remote",
+    "pid": "--pid",
+    "config": "--config",
+    "data": "--data",
+    "dbms": "--dbms",
+    "db_server": "--db-server",
+    "db_name": "--db-name",
+    "db_user": "--db-user",
+    "db_pwd": "--db-pwd",
+}
+
+_CONNECTION_FLAG_PREFIXES_BY_KEY: dict[str, tuple[str, ...]] = {
+    "remote": ("--remote", "-r"),
+    "pid": ("--pid", "-p"),
+    "config": ("--config", "-c"),
+    "data": ("--data", "-d"),
+    "dbms": ("--dbms",),
+    "db_server": ("--db-server", "--database-server"),
+    "db_name": ("--db-name", "--database-name"),
+    "db_user": ("--db-user", "--database-user"),
+    "db_pwd": ("--db-pwd", "--database-password"),
+}
+
 
 def flatten_connection_params(connection: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(connection, dict):
@@ -44,6 +68,153 @@ def flatten_connection_params(connection: dict[str, Any]) -> dict[str, Any]:
                 params[key] = offline.get(key)
 
     return params
+
+
+def detect_connection_option_conflicts(*, connection_params: dict[str, Any], additional_args: list[str]) -> list[str]:
+    """
+    Returns list of connection option keys that are also present in additional_args.
+
+    This is used to enforce a strict policy for driver-level flags:
+    duplicates across connection vs additional_args should be treated as validation errors.
+    """
+    if not isinstance(connection_params, dict) or not connection_params:
+        return []
+    if not isinstance(additional_args, list) or not additional_args:
+        return []
+
+    normalized_args: list[str] = []
+    for raw in additional_args:
+        token = str(raw or "").strip()
+        if token:
+            normalized_args.append(token)
+
+    if not normalized_args:
+        return []
+
+    conflicts: list[str] = []
+    for key, value in connection_params.items():
+        if value is None or value == "":
+            continue
+        prefixes = _CONNECTION_FLAG_PREFIXES_BY_KEY.get(str(key))
+        if not prefixes:
+            continue
+
+        matched = False
+        for token in normalized_args:
+            lowered = token.lower()
+            for prefix in prefixes:
+                p = prefix.lower()
+                if lowered == p or lowered.startswith(p + "=") or lowered.startswith(p + " "):
+                    matched = True
+                    break
+            if matched:
+                break
+
+        if matched:
+            conflicts.append(str(key))
+
+    return conflicts
+
+
+def ibcmd_default_driver_schema() -> dict[str, Any]:
+    return {
+        "connection": {
+            "remote": {"kind": "flag", "flag": "--remote", "expects_value": True, "required": False},
+            "pid": {"kind": "flag", "flag": "--pid", "expects_value": True, "required": False},
+            "offline": {
+                "config": {"kind": "flag", "flag": "--config", "expects_value": True, "required": False},
+                "data": {"kind": "flag", "flag": "--data", "expects_value": True, "required": False},
+                "dbms": {"kind": "flag", "flag": "--dbms", "expects_value": True, "required": False},
+                "db_server": {"kind": "flag", "flag": "--db-server", "expects_value": True, "required": False},
+                "db_name": {"kind": "flag", "flag": "--db-name", "expects_value": True, "required": False},
+                "db_user": {"kind": "flag", "flag": "--db-user", "expects_value": True, "required": False},
+                "db_pwd": {"kind": "flag", "flag": "--db-pwd", "expects_value": True, "required": False},
+            },
+        },
+    }
+
+
+def build_ibcmd_connection_args(*, driver_schema: dict[str, Any] | None, connection: dict[str, Any]) -> list[str]:
+    if not isinstance(connection, dict) or not connection:
+        return []
+
+    schema = driver_schema if isinstance(driver_schema, dict) else {}
+    if not schema:
+        schema = ibcmd_default_driver_schema()
+
+    connection_schema = schema.get("connection") if isinstance(schema, dict) else None
+    if not isinstance(connection_schema, dict):
+        connection_schema = {}
+
+    offline_schema = connection_schema.get("offline")
+    if not isinstance(offline_schema, dict):
+        offline_schema = {}
+
+    flattened = flatten_connection_params(connection)
+    if not flattened:
+        return []
+
+    def _build_flag(schema_obj: dict[str, Any] | None, *, key: str, value: Any) -> str | None:
+        if value is None or value == "":
+            return None
+
+        if isinstance(schema_obj, dict):
+            kind = str(schema_obj.get("kind") or "").strip()
+            if kind == "positional":
+                return _stringify_value(value, name=key) or None
+
+            if kind == "flag":
+                flag = schema_obj.get("flag")
+                if not isinstance(flag, str) or not flag.startswith("-"):
+                    return None
+                expects_value = bool(schema_obj.get("expects_value", False))
+                if not expects_value:
+                    return flag if _is_truthy(value) else None
+                rendered = _stringify_value(value, name=key)
+                return f"{flag}={rendered}" if rendered else None
+
+        fallback_flag = _CONNECTION_PARAM_FLAGS.get(key)
+        if fallback_flag:
+            rendered = _stringify_value(value, name=key)
+            return f"{fallback_flag}={rendered}" if rendered else None
+
+        return None
+
+    args: list[str] = []
+    for key in ("remote", "pid"):
+        if key in flattened:
+            schema_obj = connection_schema.get(key) if isinstance(connection_schema, dict) else None
+            token = _build_flag(schema_obj, key=key, value=flattened.get(key))
+            if token:
+                args.append(token)
+
+    for key in sorted(k for k in flattened.keys() if k not in {"remote", "pid"}):
+        schema_obj = offline_schema.get(key) if isinstance(offline_schema, dict) else None
+        token = _build_flag(schema_obj, key=key, value=flattened.get(key))
+        if token:
+            args.append(token)
+
+    return args
+
+
+def connection_params_to_additional_args(connection_params: dict[str, Any]) -> list[str]:
+    if not isinstance(connection_params, dict) or not connection_params:
+        return []
+
+    args: list[str] = []
+    for key in sorted(connection_params.keys()):
+        flag = _CONNECTION_PARAM_FLAGS.get(key)
+        if not flag:
+            continue
+        raw_value = connection_params.get(key)
+        if raw_value is None or raw_value == "":
+            continue
+        value = _stringify_value(raw_value, name=key)
+        if not value:
+            continue
+        args.append(f"{flag}={value}")
+
+    return args
 
 
 def strip_infobase_auth_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -85,6 +256,7 @@ def build_ibcmd_cli_argv(
     command: dict[str, Any],
     params: dict[str, Any],
     additional_args: list[str],
+    pre_args: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     argv = command.get("argv")
     if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x.strip() for x in argv):
@@ -165,7 +337,8 @@ def build_ibcmd_cli_argv(
     flags.sort()
     positionals.sort(key=lambda item: item[0])
 
-    argv_out = [token.strip() for token in argv] + flags + [v for _, v in positionals] + extra_args
+    pre = [str(x).strip() for x in (pre_args or []) if x is not None and str(x).strip()]
+    argv_out = [token.strip() for token in argv] + pre + flags + [v for _, v in positionals] + extra_args
     masked = mask_argv(argv_out)
     return argv_out, masked
 
@@ -175,6 +348,7 @@ def build_ibcmd_cli_argv_manual(
     command: dict[str, Any],
     params: dict[str, Any],
     additional_args: list[str],
+    pre_args: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     argv = command.get("argv")
     if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x.strip() for x in argv):
@@ -244,7 +418,8 @@ def build_ibcmd_cli_argv_manual(
     flags.sort()
     positionals.sort(key=lambda item: item[0])
 
-    argv_out = [token.strip() for token in argv] + flags + [v for _, v in positionals] + extra_args
+    pre = [str(x).strip() for x in (pre_args or []) if x is not None and str(x).strip()]
+    argv_out = [token.strip() for token in argv] + pre + flags + [v for _, v in positionals] + extra_args
     masked = mask_argv(argv_out)
     return argv_out, masked
 

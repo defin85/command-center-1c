@@ -22,6 +22,7 @@ export type CommandSchemasOverridesCatalogV2 = {
   catalog_version: 2
   driver: CommandSchemaDriver
   overrides: {
+    driver_schema?: Record<string, unknown>
     commands_by_id: Record<string, CommandSchemaCommandPatch>
   }
 }

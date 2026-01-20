@@ -665,6 +665,35 @@ def test_command_schemas_preview_diff_and_validate_support_draft_overrides(clien
     assert validate_payload["ok"] is False
     assert any(item["code"] == "DUPLICATE_FLAG" for item in validate_payload["issues"])
 
+    validate_driver_schema_resp = client.post(
+        "/api/v2/settings/command-schemas/validate/",
+        data={
+            "driver": "ibcmd",
+            "catalog": {
+                "catalog_version": 2,
+                "driver": "ibcmd",
+                "overrides": {
+                    "driver_schema": {
+                        "connection": {
+                            "remote": {"kind": "flag", "required": False, "expects_value": True, "flag": "--pid"},
+                            "pid": {"kind": "flag", "required": False, "expects_value": True, "flag": "--pid"},
+                        }
+                    },
+                    "commands_by_id": {},
+                },
+            },
+        },
+        format="json",
+    )
+    assert validate_driver_schema_resp.status_code == 200
+    validate_driver_schema_payload = validate_driver_schema_resp.json()
+    assert validate_driver_schema_payload["ok"] is False
+    assert any(
+        item["code"] == "DUPLICATE_FLAG"
+        and str(item.get("path") or "").startswith("driver_schema.connection")
+        for item in validate_driver_schema_payload["issues"]
+    )
+
     preview_resp = client.post(
         "/api/v2/settings/command-schemas/preview/",
         data={

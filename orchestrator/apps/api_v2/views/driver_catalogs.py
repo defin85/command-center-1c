@@ -491,12 +491,23 @@ def _build_command_argv(
 
 
 def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
-    issues: list[dict] = []
-
     params_by_name = command.get("params_by_name") or {}
     if params_by_name and not isinstance(params_by_name, dict):
-        issues.append(_issue("error", "PARAMS_INVALID", "params_by_name must be an object", command_id=command_id))
-        return issues
+        return [_issue("error", "PARAMS_INVALID", "params_by_name must be an object", command_id=command_id)]
+
+    return _collect_params_by_name_issues(
+        params_by_name=params_by_name,
+        command_id=command_id,
+        path_prefix=f"commands_by_id.{command_id}.params_by_name",
+    )
+
+def _collect_params_by_name_issues(
+    *,
+    params_by_name: dict,
+    path_prefix: str,
+    command_id: str | None = None,
+) -> list[dict]:
+    issues: list[dict] = []
 
     used_flags: dict[str, str] = {}
     used_positions: dict[int, str] = {}
@@ -516,7 +527,7 @@ def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
                 "PARAM_KIND_INVALID",
                 f"{name}.kind must be flag|positional",
                 command_id=command_id,
-                path=f"commands_by_id.{command_id}.params_by_name.{name}.kind",
+                path=f"{path_prefix}.{name}.kind",
             ))
             continue
 
@@ -528,7 +539,7 @@ def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
                     "FLAG_INVALID",
                     f"{name}.flag must be a flag string",
                     command_id=command_id,
-                    path=f"commands_by_id.{command_id}.params_by_name.{name}.flag",
+                    path=f"{path_prefix}.{name}.flag",
                 ))
                 continue
 
@@ -539,7 +550,7 @@ def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
                     "DUPLICATE_FLAG",
                     f"duplicate flag {flag}: {prev} and {name}",
                     command_id=command_id,
-                    path=f"commands_by_id.{command_id}.params_by_name.{name}.flag",
+                    path=f"{path_prefix}.{name}.flag",
                 ))
             else:
                 used_flags[flag] = name
@@ -552,7 +563,7 @@ def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
                     "POSITION_INVALID",
                     f"{name}.position must be >= 1",
                     command_id=command_id,
-                    path=f"commands_by_id.{command_id}.params_by_name.{name}.position",
+                    path=f"{path_prefix}.{name}.position",
                 ))
                 continue
 
@@ -563,10 +574,91 @@ def _collect_command_param_issues(command_id: str, command: dict) -> list[dict]:
                     "DUPLICATE_POSITION",
                     f"duplicate position {pos}: {prev} and {name}",
                     command_id=command_id,
-                    path=f"commands_by_id.{command_id}.params_by_name.{name}.position",
+                    path=f"{path_prefix}.{name}.position",
                 ))
             else:
                 used_positions[pos] = name
+
+    return issues
+
+
+def _collect_ibcmd_driver_schema_issues(catalog: dict) -> list[dict]:
+    issues: list[dict] = []
+    if not isinstance(catalog, dict):
+        return issues
+
+    driver_schema = catalog.get("driver_schema")
+    if driver_schema is None:
+        return issues
+    if not isinstance(driver_schema, dict):
+        return [_issue("error", "DRIVER_SCHEMA_INVALID", "driver_schema must be an object", path="driver_schema")]
+
+    connection = driver_schema.get("connection")
+    if connection is None:
+        return issues
+    if not isinstance(connection, dict):
+        return [_issue("error", "DRIVER_SCHEMA_INVALID", "driver_schema.connection must be an object", path="driver_schema.connection")]
+
+    connection_params: dict[str, dict] = {}
+    for key in ("remote", "pid"):
+        schema = connection.get(key)
+        if schema is None:
+            continue
+        if not isinstance(schema, dict):
+            issues.append(_issue(
+                "error",
+                "PARAM_SCHEMA_INVALID",
+                f"{key} must be an object",
+                path=f"driver_schema.connection.{key}",
+            ))
+            continue
+        connection_params[key] = schema
+
+    if connection_params:
+        issues.extend(_collect_params_by_name_issues(
+            params_by_name=connection_params,
+            path_prefix="driver_schema.connection",
+        ))
+
+    offline = connection.get("offline")
+    if offline is not None:
+        if not isinstance(offline, dict):
+            issues.append(_issue(
+                "error",
+                "DRIVER_SCHEMA_INVALID",
+                "driver_schema.connection.offline must be an object",
+                path="driver_schema.connection.offline",
+            ))
+        else:
+            issues.extend(_collect_params_by_name_issues(
+                params_by_name=offline,
+                path_prefix="driver_schema.connection.offline",
+            ))
+
+    used_flags: dict[str, str] = {}
+    for name, schema in connection_params.items():
+        if isinstance(schema, dict) and schema.get("kind") == "flag":
+            flag = schema.get("flag")
+            if isinstance(flag, str) and flag.startswith("-"):
+                used_flags[flag] = f"driver_schema.connection.{name}"
+
+    if isinstance(offline, dict):
+        for name, schema in offline.items():
+            if not isinstance(schema, dict) or schema.get("kind") != "flag":
+                continue
+            flag = schema.get("flag")
+            if not isinstance(flag, str) or not flag.startswith("-"):
+                continue
+            prev = used_flags.get(flag)
+            if prev is not None and prev != f"driver_schema.connection.offline.{name}":
+                issues.append(_issue(
+                    "error",
+                    "DUPLICATE_FLAG",
+                    f"duplicate flag {flag}: {prev} and driver_schema.connection.offline.{name}",
+                    path=f"driver_schema.connection.offline.{name}.flag",
+                ))
+            else:
+                used_flags[flag] = f"driver_schema.connection.offline.{name}"
 
     return issues
 
@@ -2074,6 +2166,7 @@ def validate_command_schemas(request):
         if driver == "ibcmd":
             for err in validate_ibcmd_catalog_v2(draft_effective):
                 issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+            issues.extend(_collect_ibcmd_driver_schema_issues(draft_effective))
             for cmd_id, cmd in _get_commands_by_id(draft_effective).items():
                 if isinstance(cmd_id, str) and isinstance(cmd, dict):
                     issues.extend(_collect_command_param_issues(cmd_id, cmd))
@@ -2155,7 +2248,7 @@ def validate_command_schemas(request):
             overrides_catalog = load_catalog_json(overrides_active) if overrides_active else {
                 "catalog_version": 2,
                 "driver": driver,
-                "overrides": {"commands_by_id": {}},
+                "overrides": {"commands_by_id": {}, "driver_schema": {}},
             }
         except ArtifactStorageError as exc:
             record_driver_catalog_editor_error(driver, action="validate", code="STORAGE_ERROR")
@@ -2178,6 +2271,7 @@ def validate_command_schemas(request):
     if driver == "ibcmd":
         for err in validate_ibcmd_catalog_v2(base_catalog):
             issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+        issues.extend(_collect_ibcmd_driver_schema_issues(base_catalog))
         for cmd_id, cmd in _get_commands_by_id(base_catalog).items():
             if isinstance(cmd_id, str) and isinstance(cmd, dict):
                 issues.extend(_collect_command_param_issues(cmd_id, cmd))
@@ -2298,7 +2392,7 @@ def preview_command_schemas(request):
             overrides_catalog = load_catalog_json(overrides_active) if overrides_active else {
                 "catalog_version": 2,
                 "driver": driver,
-                "overrides": {"commands_by_id": {}},
+                "overrides": {"commands_by_id": {}, "driver_schema": {}},
             }
         except ArtifactStorageError as exc:
             record_driver_catalog_editor_error(driver, action="preview", code="STORAGE_ERROR")
@@ -2313,30 +2407,21 @@ def preview_command_schemas(request):
                 status=500,
             )
 
-    base_command = _get_commands_by_id(base_catalog).get(command_id)
+    patch = overrides_catalog.get("overrides") if isinstance(overrides_catalog, dict) else None
+    if isinstance(patch, dict):
+        _deep_merge_dict(base_catalog, patch)
 
-    overrides_patch = None
-    if isinstance(overrides_catalog, dict):
-        patch = overrides_catalog.get("overrides")
-        if isinstance(patch, dict):
-            commands_patch = patch.get("commands_by_id")
-            if isinstance(commands_patch, dict):
-                overrides_patch = commands_patch.get(command_id)
-
-    if not isinstance(base_command, dict) and not isinstance(overrides_patch, dict):
+    effective_command = _get_commands_by_id(base_catalog).get(command_id)
+    if not isinstance(effective_command, dict):
         record_driver_catalog_editor_error(driver, action="preview", code="COMMAND_NOT_FOUND")
         return Response({
             "success": False,
             "error": {"code": "COMMAND_NOT_FOUND", "message": f"Unknown command_id: {command_id}"},
         }, status=400)
 
-    effective_command: dict = copy.deepcopy(base_command) if isinstance(base_command, dict) else {}
-    if isinstance(overrides_patch, dict):
-        _deep_merge_dict(effective_command, overrides_patch)
-
     try:
         argv, argv_masked = _build_command_argv(
-            command=effective_command,
+            command=copy.deepcopy(effective_command),
             params=params,
             additional_args=additional_args,
             strict=strict,

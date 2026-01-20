@@ -35,7 +35,13 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.operations.models import BatchOperation, Task, DriverCommandShortcut
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
-from apps.operations.ibcmd_cli_builder import build_ibcmd_cli_argv, build_ibcmd_cli_argv_manual, flatten_connection_params
+from apps.operations.ibcmd_cli_builder import (
+    build_ibcmd_cli_argv,
+    build_ibcmd_cli_argv_manual,
+    build_ibcmd_connection_args,
+    detect_connection_option_conflicts,
+    flatten_connection_params,
+)
 from apps.operations.driver_catalog_effective import (
     compute_actor_roles_hash,
     compute_driver_catalog_etag,
@@ -1630,20 +1636,53 @@ def _execute_ibcmd_cli_validated(
 
     for token in additional_args:
         t = str(token or "").strip().lower()
-        if t == "--pid" or t.startswith("--pid="):
+        if t in {"--pid", "-p"} or t.startswith("--pid=") or t.startswith("-p=") or t.startswith("-p "):
             return Response({
                 "success": False,
                 "error": {"code": "PID_IN_ARGS_NOT_ALLOWED", "message": "Use connection.pid instead of --pid in additional_args"},
             }, status=400)
 
+    flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
+    if flattened_connection:
+        conflicts = detect_connection_option_conflicts(
+            connection_params=flattened_connection,
+            additional_args=list(additional_args or []),
+        )
+        if conflicts:
+            conflict_list = ", ".join(sorted(set(conflicts)))
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"duplicate driver-level options in additional_args: {conflict_list}",
+                },
+            }, status=400)
+
+        if isinstance(params, dict) and params:
+            overlap = [
+                key
+                for key in flattened_connection.keys()
+                if key in params and params.get(key) not in (None, "")
+            ]
+            if overlap:
+                overlap_list = ", ".join(sorted(set(str(k) for k in overlap)))
+                return Response({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": f"driver-level options must be provided via connection (not params): {overlap_list}",
+                    },
+                }, status=400)
+
     if "pid" not in connection_dict:
-        for key, value in (params or {}).items():
+        for key, value in list(merged_params.items()):
             if str(key or "").strip().lower() != "pid":
                 continue
             if value is None or value == "":
                 break
             try:
                 connection_dict["pid"] = int(value)
+                merged_params.pop(key, None)
             except (TypeError, ValueError):
                 return Response({
                     "success": False,
@@ -1659,13 +1698,14 @@ def _execute_ibcmd_cli_validated(
                 "error": {"code": "PID_NOT_ALLOWED", "message": "--pid is not allowed in production"},
             }, status=400)
 
-    if connection_dict:
-        for key, value in flatten_connection_params(connection_dict).items():
-            merged_params.setdefault(key, value)
+    pre_args = build_ibcmd_connection_args(
+        driver_schema=catalog.get("driver_schema") if isinstance(catalog, dict) else None,
+        connection=connection_dict,
+    )
 
     try:
         builder = build_ibcmd_cli_argv_manual if mode == "manual" else build_ibcmd_cli_argv
-        argv, argv_masked = builder(command=command, params=merged_params, additional_args=additional_args)
+        argv, argv_masked = builder(command=command, params=merged_params, additional_args=additional_args, pre_args=pre_args)
     except ValueError as exc:
         return Response({
             "success": False,

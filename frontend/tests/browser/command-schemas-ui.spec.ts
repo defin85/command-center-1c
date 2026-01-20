@@ -49,6 +49,13 @@ const deepMerge = (target: AnyRecord, patch: AnyRecord): void => {
 
 function buildEffectiveCatalog(base: AnyRecord, overridesCatalog: AnyRecord): AnyRecord {
   const effective = deepCopy(base)
+  const driverSchemaPatch = overridesCatalog?.overrides?.driver_schema
+  if (isPlainObject(driverSchemaPatch)) {
+    if (!isPlainObject(effective.driver_schema)) {
+      effective.driver_schema = {}
+    }
+    deepMerge(effective.driver_schema, driverSchemaPatch)
+  }
   const commandsPatch = overridesCatalog?.overrides?.commands_by_id
   if (!isPlainObject(commandsPatch)) return effective
 
@@ -78,6 +85,7 @@ async function setupApiMocks(
     activeOverridesVersion: string
     overridesByVersion: Record<string, AnyRecord>
     reasonsByVersion: Record<string, string>
+    validateIssues?: AnyRecord[]
     captures: {
       overridesUpdate: any[]
       overridesRollback: any[]
@@ -150,16 +158,19 @@ async function setupApiMocks(
       const body = request.postDataJSON()
       state.captures.validate.push(body)
       const usesEffective = Boolean(body.effective_catalog)
+      const issues = Array.isArray(state.validateIssues) ? state.validateIssues : []
+      const errorsCount = issues.filter((item) => item?.severity === 'error').length
+      const warningsCount = issues.filter((item) => item?.severity === 'warning').length
       return fulfillJson(route, {
         driver: body.driver,
-        ok: true,
+        ok: errorsCount === 0,
         base_version: usesEffective ? null : state.baseApprovedVersion,
         base_version_id: usesEffective ? null : 'base-id-approved',
         overrides_version: usesEffective ? null : state.activeOverridesVersion,
         overrides_version_id: usesEffective ? null : `ovr-id-${state.activeOverridesVersion}`,
-        issues: [],
-        errors_count: 0,
-        warnings_count: 0,
+        issues,
+        errors_count: errorsCount,
+        warnings_count: warningsCount,
       })
     }
 
@@ -348,6 +359,61 @@ test('Command Schemas: load + save + rollback (smoke)', async ({ page }) => {
 
   await expect.poll(() => captures.overridesRollback.length).toBe(1)
   await expect(page.getByText('Overrides active: ovr-0')).toBeVisible()
+})
+
+test('Command Schemas: validate shows global issues (driver schema)', async ({ page }) => {
+  const baseCatalog = {
+    catalog_version: 2,
+    driver: 'ibcmd',
+    platform_version: '8.3.27',
+    driver_schema: { connection: { remote: { kind: 'flag', flag: '--remote', expects_value: true } } },
+    source: { type: 'its_import', doc_id: 'TI000', doc_url: 'http://example' },
+    generated_at: '2026-01-01T00:00:00Z',
+    commands_by_id: {
+      'ibcmd.infobase.dump': {
+        label: 'Dump',
+        description: 'Dump infobase',
+        argv: ['ibcmd', 'infobase', 'dump'],
+        scope: 'per_database',
+        risk_level: 'safe',
+        params_by_name: {},
+      },
+    },
+  }
+
+  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const state = {
+    baseApprovedCatalog: baseCatalog,
+    baseLatestCatalog: baseCatalog,
+    baseApprovedVersion: 'v-base',
+    baseLatestVersion: 'v-base',
+    activeOverridesVersion: 'ovr-0',
+    overridesByVersion: {
+      'ovr-0': { catalog_version: 2, driver: 'ibcmd', overrides: { commands_by_id: {} } },
+    } as Record<string, AnyRecord>,
+    reasonsByVersion: { 'ovr-0': 'initial' } as Record<string, string>,
+    validateIssues: [
+      {
+        severity: 'error',
+        code: 'DUPLICATE_FLAG',
+        message: 'duplicate flag --pid: driver_schema.connection.remote and driver_schema.connection.pid',
+        command_id: null,
+        path: 'driver_schema.connection.pid.flag',
+      },
+    ],
+    captures,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/settings/command-schemas', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('tab', { name: 'Validate', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate effective catalog', exact: true }).click()
+
+  await expect(page.getByText('Global issues (1)', { exact: true })).toBeVisible()
+  await expect(page.getByText(/DUPLICATE_FLAG:/)).toBeVisible()
 })
 
 test('Command Schemas: raw mode save base/overrides/effective (smoke)', async ({ page }) => {

@@ -345,6 +345,108 @@ def test_execute_ibcmd_cli_per_database_success_creates_tasks(client, user, targ
 
 
 @pytest.mark.django_db
+def test_execute_ibcmd_cli_allows_connection_remote_when_command_has_no_params_schema(client, user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(client, user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(user, target_db)
+
+    monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
+
+    def fake_enqueue(_operation_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=_operation_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=_operation_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", fake_enqueue)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.extension.list",
+            "database_ids": [target_db.id],
+            "connection": {"remote": "http://localhost:1545"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 202
+    op_id = resp.json()["operation_id"]
+
+    op = BatchOperation.objects.get(id=op_id)
+    argv = op.payload.get("data", {}).get("argv", [])
+    assert "--remote=http://localhost:1545" in argv
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_allows_connection_offline_params_when_command_has_no_params_schema(client, user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(client, user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(user, target_db)
+
+    monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
+
+    def fake_enqueue(_operation_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=_operation_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=_operation_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", fake_enqueue)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.extension.list",
+            "database_ids": [target_db.id],
+            "connection": {"offline": {"db_user": "admin"}},
+        },
+        format="json",
+    )
+    assert resp.status_code == 202
+    op_id = resp.json()["operation_id"]
+
+    op = BatchOperation.objects.get(id=op_id)
+    argv = op.payload.get("data", {}).get("argv", [])
+    assert "--db-user=admin" in argv
+
+
+@pytest.mark.django_db
 def test_execute_ibcmd_cli_global_success_creates_global_task(client, user, auth_db, monkeypatch):
     base_catalog = {
         "catalog_version": 2,
@@ -493,6 +595,50 @@ def test_execute_ibcmd_cli_pid_in_args_not_allowed(client, user, auth_db, monkey
     payload = resp.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "PID_IN_ARGS_NOT_ALLOWED"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_remote_conflict_between_connection_and_additional_args_returns_400(client, user, auth_db, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "server.config.init": {
+                "label": "server config init",
+                "description": "Init server config",
+                "argv": ["server", "config", "init"],
+                "scope": "global",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(client, user, "execute_safe_operation")
+    _allow_operate(user, auth_db)
+    monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "server.config.init",
+            "database_ids": [],
+            "auth_database_id": auth_db.id,
+            "connection": {"remote": "http://host:1545"},
+            "additional_args": ["--remote=http://other:1545"],
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "remote" in payload["error"]["message"].lower()
 
 
 @pytest.mark.django_db

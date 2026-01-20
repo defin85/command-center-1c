@@ -198,6 +198,7 @@ def build_empty_overrides_catalog(driver: str) -> dict[str, Any]:
         "driver": driver,
         "overrides": {
             "commands_by_id": {},
+            "driver_schema": {},
         },
     }
 

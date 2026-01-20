@@ -136,6 +136,21 @@ def build_base_catalog_from_its(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "catalog_version": 2,
         "driver": "ibcmd",
+        "driver_schema": {
+            "connection": {
+                "remote": {"kind": "flag", "flag": "--remote", "expects_value": True, "required": False},
+                "pid": {"kind": "flag", "flag": "--pid", "expects_value": True, "required": False},
+                "offline": {
+                    "config": {"kind": "flag", "flag": "--config", "expects_value": True, "required": False},
+                    "data": {"kind": "flag", "flag": "--data", "expects_value": True, "required": False},
+                    "dbms": {"kind": "flag", "flag": "--dbms", "expects_value": True, "required": False},
+                    "db_server": {"kind": "flag", "flag": "--db-server", "expects_value": True, "required": False},
+                    "db_name": {"kind": "flag", "flag": "--db-name", "expects_value": True, "required": False},
+                    "db_user": {"kind": "flag", "flag": "--db-user", "expects_value": True, "required": False},
+                    "db_pwd": {"kind": "flag", "flag": "--db-pwd", "expects_value": True, "required": False},
+                },
+            },
+        },
         "platform_version": platform_version,
         "source": {
             "type": "its_import",

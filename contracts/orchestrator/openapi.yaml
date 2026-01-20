@@ -9234,6 +9234,9 @@ components:
           type: string
         platform_version:
           type: string
+        driver_schema:
+          type: object
+          additionalProperties: {}
         source:
           $ref: '#/components/schemas/DriverCatalogV2Source'
         generated_at:

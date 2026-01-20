@@ -43,6 +43,7 @@ export interface DriverCatalogV2 {
   catalog_version: number
   driver: string
   platform_version?: string
+  driver_schema?: Record<string, unknown>
   source?: {
     type?: string
     doc_id?: string
@@ -119,4 +120,3 @@ async function fetchDriverCommandsUncached(
   driverCommandsCache.set(driver, { etag, data: response.data })
   return response.data
 }
-
