@@ -93,8 +93,27 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
   await expect(page.getByText('extensions.list', { exact: true })).toBeVisible()
 
+  await page.getByTestId('action-catalog-add').click()
+  await expect(page.getByTestId('action-catalog-editor-driver')).toHaveValue('ibcmd')
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.new')
+  await page.getByTestId('action-catalog-editor-label').fill('New action')
+  await page.getByTestId('action-catalog-editor-command-id').fill('infobase.extension.list')
+  await page.getByTestId('action-catalog-editor-apply').click()
+
+  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('3')
+  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
+  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
+
+  const newRow = page.locator('tr', { has: page.getByText('extensions.new', { exact: true }) })
+  await newRow.getByRole('button', { name: 'Disable', exact: true }).click()
+  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
+  await expect(page.getByTestId('action-catalog-disabled-count')).toContainText('Disabled: 1')
+
+  await page.getByTestId('action-catalog-restore-last').click()
+  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('3')
+  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
+
   await page.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
   await expect(page.getByText('ui.action_catalog', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Format', exact: true })).toBeVisible()
 })
-
