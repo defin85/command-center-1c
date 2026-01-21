@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, RollbackOutlined } from '@ant-design/icons'
 
@@ -40,6 +40,12 @@ type DiffItem = {
   kind: DiffKind
   before?: unknown
   after?: unknown
+}
+
+type SaveErrorHint = {
+  message: string
+  action_pos?: number
+  action_id?: string
 }
 
 type ActionFormValues = {
@@ -111,6 +117,12 @@ const parseJson = (raw: string): unknown => {
   }
 }
 
+const normalizeActionId = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
 const extractBackendErrors = (error: unknown): string[] => {
   const err = error as { response?: { status?: number; data?: any }; message?: string } | null
   const data = err?.response?.data
@@ -126,6 +138,21 @@ const extractBackendErrors = (error: unknown): string[] => {
   }
   return ['Unknown error']
 }
+
+const parseSaveErrorHint = (message: string, actionIdsByPos: Array<string | null> | null): SaveErrorHint => {
+  const match = /^extensions\.actions\[(\d+)\](?:\.[^:]*)?:/.exec(message)
+  if (!match) return { message }
+  const pos = Number(match[1])
+  if (!Number.isFinite(pos) || pos < 0) return { message }
+
+  const actionId = actionIdsByPos?.[pos] ?? null
+  if (!actionId) return { message, action_pos: pos }
+  return { message, action_pos: pos, action_id: actionId }
+}
+
+const isValidUuid = (value: string): boolean => (
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+)
 
 const safeText = (value: unknown, maxLen = 120): string => {
   const raw = (() => {
@@ -455,6 +482,7 @@ export function ActionCatalogPage() {
   const [settingDescription, setSettingDescription] = useState<string | null>(null)
   const [disabledActions, setDisabledActions] = useState<PlainObject[]>([])
   const [saveErrors, setSaveErrors] = useState<string[]>([])
+  const [saveErrorsDraftActionIds, setSaveErrorsDraftActionIds] = useState<Array<string | null> | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -505,6 +533,16 @@ export function ActionCatalogPage() {
     }))
   }, [workflowTemplatesQuery.data])
 
+  const driverCatalogUnavailable = Boolean(
+    (editorOpen && (editorKind === 'ibcmd_cli' || editorKind === 'designer_cli'))
+    && (commandsQuery.isError || (!commandsQuery.isLoading && commandOptions.length === 0))
+  )
+
+  const workflowTemplatesUnavailable = Boolean(
+    (editorOpen && editorKind === 'workflow')
+    && (workflowTemplatesQuery.isError || (!workflowTemplatesQuery.isLoading && workflowOptions.length === 0))
+  )
+
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(DISABLED_ACTIONS_STORAGE_KEY)
@@ -535,6 +573,7 @@ export function ActionCatalogPage() {
     setLoading(true)
     setError(null)
     setSaveErrors([])
+    setSaveErrorsDraftActionIds(null)
     setSaveSuccess(false)
     try {
       const settings = await getRuntimeSettings()
@@ -592,10 +631,23 @@ export function ActionCatalogPage() {
       errors.push('catalog_version must be 1')
     }
 
+    const rootKeys = Object.keys(draftParsed)
+    for (const key of rootKeys) {
+      if (key !== 'catalog_version' && key !== 'extensions') {
+        errors.push(`Unknown root key: ${key}`)
+      }
+    }
+
     const extensions = draftParsed.extensions
     if (!isPlainObject(extensions)) {
       warnings.push('extensions is missing or not an object')
       return { ok: errors.length === 0, errors, warnings, actionsCount: 0 }
+    }
+
+    for (const key of Object.keys(extensions)) {
+      if (key !== 'actions') {
+        errors.push(`Unknown extensions key: ${key}`)
+      }
     }
 
     const actions = (extensions as PlainObject).actions
@@ -604,8 +656,131 @@ export function ActionCatalogPage() {
       return { ok: errors.length === 0, errors, warnings, actionsCount: 0 }
     }
 
-    return { ok: errors.length === 0, errors, warnings, actionsCount: actions.filter(Boolean).length }
+    const seenIds = new Set<string>()
+
+    for (let idx = 0; idx < actions.length; idx += 1) {
+      const action = actions[idx]
+      if (action === null || action === undefined) {
+        errors.push(`extensions.actions[${idx}]: must be an object`)
+        continue
+      }
+      if (!isPlainObject(action)) {
+        errors.push(`extensions.actions[${idx}]: must be an object`)
+        continue
+      }
+
+      for (const key of Object.keys(action)) {
+        if (key !== 'id' && key !== 'label' && key !== 'contexts' && key !== 'executor') {
+          errors.push(`extensions.actions[${idx}]: unknown key: ${key}`)
+        }
+      }
+
+      const id = normalizeActionId(action.id)
+      if (!id) {
+        errors.push(`extensions.actions[${idx}].id: must be a non-empty string`)
+      } else if (seenIds.has(id)) {
+        errors.push(`extensions.actions[${idx}].id: must be unique (duplicate: ${id})`)
+      } else {
+        seenIds.add(id)
+      }
+
+      const label = normalizeActionId(action.label)
+      if (!label) {
+        errors.push(`extensions.actions[${idx}].label: must be a non-empty string`)
+      }
+
+      const contexts = action.contexts
+      if (!Array.isArray(contexts) || contexts.length === 0) {
+        errors.push(`extensions.actions[${idx}].contexts: must be a non-empty array`)
+      } else {
+        const normalized = contexts
+          .filter((c) => typeof c === 'string')
+          .map((c) => c.trim())
+          .filter(Boolean)
+        const unknown = normalized.filter((c) => c !== 'database_card' && c !== 'bulk_page')
+        if (unknown.length > 0) {
+          errors.push(`extensions.actions[${idx}].contexts: unknown values: ${unknown.join(', ')}`)
+        }
+      }
+
+      const executor = isPlainObject(action.executor) ? action.executor as PlainObject : null
+      if (!executor) {
+        errors.push(`extensions.actions[${idx}].executor: must be an object`)
+        continue
+      }
+
+      for (const key of Object.keys(executor)) {
+        if (
+          key !== 'kind'
+          && key !== 'driver'
+          && key !== 'command_id'
+          && key !== 'workflow_id'
+          && key !== 'mode'
+          && key !== 'params'
+          && key !== 'additional_args'
+          && key !== 'stdin'
+          && key !== 'fixed'
+        ) {
+          errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
+        }
+      }
+
+      const kind = normalizeActionId(executor.kind)
+      if (kind !== 'ibcmd_cli' && kind !== 'designer_cli' && kind !== 'workflow') {
+        errors.push(`extensions.actions[${idx}].executor.kind: must be one of ibcmd_cli, designer_cli, workflow`)
+        continue
+      }
+
+      if (kind === 'workflow') {
+        const workflowId = normalizeActionId(executor.workflow_id)
+        if (!workflowId) {
+          errors.push(`extensions.actions[${idx}].executor.workflow_id: must be a non-empty string`)
+        } else if (!isValidUuid(workflowId)) {
+          warnings.push(`extensions.actions[${idx}].executor.workflow_id: not a UUID (${workflowId})`)
+        }
+      } else {
+        const driver = normalizeActionId(executor.driver)
+        if (driver !== 'ibcmd' && driver !== 'cli') {
+          errors.push(`extensions.actions[${idx}].executor.driver: must be ibcmd or cli`)
+        }
+        const commandId = normalizeActionId(executor.command_id)
+        if (!commandId) {
+          errors.push(`extensions.actions[${idx}].executor.command_id: must be a non-empty string`)
+        }
+      }
+
+      if (executor.fixed !== undefined) {
+        const fixed = isPlainObject(executor.fixed) ? executor.fixed as PlainObject : null
+        if (!fixed) {
+          errors.push(`extensions.actions[${idx}].executor.fixed: must be an object`)
+        } else {
+          for (const key of Object.keys(fixed)) {
+            if (key !== 'confirm_dangerous' && key !== 'timeout_seconds') {
+              errors.push(`extensions.actions[${idx}].executor.fixed: unknown key: ${key}`)
+            }
+          }
+        }
+      }
+    }
+
+    return { ok: errors.length === 0, errors, warnings, actionsCount: actions.length }
   }, [draftParsed])
+
+  const saveErrorHints = useMemo(() => {
+    return saveErrors.map((msg) => parseSaveErrorHint(msg, saveErrorsDraftActionIds))
+  }, [saveErrors, saveErrorsDraftActionIds])
+
+  const saveErrorsByActionPos = useMemo(() => {
+    const map = new Map<number, string[]>()
+    for (const item of saveErrorHints) {
+      const pos = item.action_pos
+      if (typeof pos !== 'number') continue
+      const existing = map.get(pos) ?? []
+      existing.push(item.message)
+      map.set(pos, existing)
+    }
+    return map
+  }, [saveErrorHints])
 
   const diffItems = useMemo(() => {
     if (!dirty) return []
@@ -633,6 +808,7 @@ export function ActionCatalogPage() {
     if (saving) return
     setSaveSuccess(false)
     setSaveErrors([])
+    setSaveErrorsDraftActionIds(null)
     setError(null)
 
     const parsed = parseJson(draftRaw)
@@ -645,6 +821,15 @@ export function ActionCatalogPage() {
       return
     }
 
+    const actionIdsByPos: Array<string | null> = []
+    const extensions = parsed.extensions
+    const actions = isPlainObject(extensions) ? (extensions.actions as unknown) : null
+    if (Array.isArray(actions)) {
+      for (const item of actions) {
+        actionIdsByPos.push(isPlainObject(item) ? normalizeActionId((item as PlainObject).id) : null)
+      }
+    }
+    setSaveErrorsDraftActionIds(actionIdsByPos)
     setSaving(true)
     try {
       const updated = await updateRuntimeSetting(ACTION_CATALOG_KEY, parsed)
@@ -827,7 +1012,25 @@ export function ActionCatalogPage() {
       dataIndex: 'id',
       key: 'id',
       width: 260,
-      render: (value: string) => <Text code>{value}</Text>,
+      render: (value: string, record) => {
+        const errs = saveErrorsByActionPos.get(record.pos) ?? []
+        if (errs.length === 0) return <Text code>{value}</Text>
+        return (
+          <Space size={6}>
+            <Text code>{value}</Text>
+            <Tooltip title={(
+              <Space direction="vertical" size={0}>
+                {errs.slice(0, 6).map((msg, idx) => (
+                  <Text key={`${idx}:${msg}`}>{msg}</Text>
+                ))}
+                {errs.length > 6 && <Text type="secondary">… and {errs.length - 6} more</Text>}
+              </Space>
+            )}>
+              <Tag color="red">ERR</Tag>
+            </Tooltip>
+          </Space>
+        )
+      },
     },
     {
       title: 'Label',
@@ -917,7 +1120,7 @@ export function ActionCatalogPage() {
         </Space>
       ),
     },
-  ]), [actionRows.length, actionsEditable, disableAction, moveAction, openEditor])
+  ]), [actionRows.length, actionsEditable, disableAction, moveAction, openEditor, saveErrorsByActionPos])
 
   const tabs = useMemo(() => ([
     {
@@ -931,6 +1134,14 @@ export function ActionCatalogPage() {
               showIcon
               message="Текущий draft не является валидным JSON"
               description="Перейдите в Raw режим, чтобы исправить JSON."
+            />
+          )}
+          {saveErrorHints.length > 0 && (
+            <Alert
+              type="error"
+              showIcon
+              message="Server validation errors"
+              description="См. список ошибок выше; строки таблицы с ошибками помечены ERR."
             />
           )}
 
@@ -1063,7 +1274,7 @@ export function ActionCatalogPage() {
         </Space>
       ),
     },
-  ]), [actionRows, actionsEditable, columns, diffItems, diffSummary, dirty, disabledActions.length, draftIsValidJson, draftRaw, openEditor, rawValidation, restoreLastDisabled, serverRaw])
+  ]), [actionRows, actionsEditable, columns, diffItems, diffSummary, dirty, disabledActions.length, draftIsValidJson, draftRaw, openEditor, rawValidation, restoreLastDisabled, saveErrorHints.length, serverRaw])
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -1088,8 +1299,13 @@ export function ActionCatalogPage() {
           message="Save failed"
               description={(
             <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {saveErrors.map((msg, idx) => (
-                <li key={`${idx}:${msg}`}><Text>{msg}</Text></li>
+              {saveErrorHints.map((item, idx) => (
+                <li key={`${idx}:${item.message}`}>
+                  <Text>{item.message}</Text>
+                  {item.action_id && (
+                    <Text type="secondary">{` (action_id=${item.action_id})`}</Text>
+                  )}
+                </li>
               ))}
             </ul>
           )}
@@ -1222,15 +1438,23 @@ export function ActionCatalogPage() {
                 { whitespace: true, message: 'workflow_id is required' },
               ]}
             >
-              <Select
-                showSearch
-                options={workflowOptions}
-                loading={workflowTemplatesQuery.isLoading}
-                filterOption={false}
-                onSearch={(value) => setWorkflowSearch(value)}
-                placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates...' : 'Select workflow template'}
-                data-testid="action-catalog-editor-workflow-id"
-              />
+              {workflowTemplatesUnavailable ? (
+                <Input
+                  placeholder="Workflow templates unavailable — enter workflow_id manually"
+                  data-testid="action-catalog-editor-workflow-id"
+                />
+              ) : (
+                <Select
+                  showSearch
+                  options={workflowOptions}
+                  loading={workflowTemplatesQuery.isLoading}
+                  filterOption={false}
+                  onSearch={(value) => setWorkflowSearch(value)}
+                  placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates...' : 'Select workflow template'}
+                  data-testid="action-catalog-editor-workflow-id"
+                  notFoundContent={workflowTemplatesQuery.isError ? 'Failed to load workflow templates' : 'No templates'}
+                />
+              )}
             </Form.Item>
           ) : (
             <Space size="middle" style={{ width: '100%' }} align="start">
@@ -1254,14 +1478,22 @@ export function ActionCatalogPage() {
                 rules={[{ required: true, message: 'command_id is required' }]}
                 style={{ flex: 2 }}
               >
-                <Select
-                  showSearch
-                  options={commandOptions}
-                  loading={commandsQuery.isLoading}
-                  placeholder={commandsQuery.isLoading ? 'Loading driver catalog...' : 'Select command_id'}
-                  optionFilterProp="label"
-                  data-testid="action-catalog-editor-command-id"
-                />
+                {driverCatalogUnavailable ? (
+                  <Input
+                    placeholder="Driver catalog unavailable — enter command_id manually"
+                    data-testid="action-catalog-editor-command-id"
+                  />
+                ) : (
+                  <Select
+                    showSearch
+                    options={commandOptions}
+                    loading={commandsQuery.isLoading}
+                    placeholder={commandsQuery.isLoading ? 'Loading driver catalog...' : 'Select command_id'}
+                    optionFilterProp="label"
+                    data-testid="action-catalog-editor-command-id"
+                    notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}
+                  />
+                )}
               </Form.Item>
             </Space>
           )}
@@ -1345,11 +1577,14 @@ export function ActionCatalogPage() {
             </Space>
           </Card>
 
-          <Alert
-            type="info"
-            showIcon
-            message="Executor fields редактируются в guided; Save + серверная валидация — следующий шаг."
-          />
+          {(commandsQuery.isError || workflowTemplatesQuery.isError) && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Catalogs unavailable"
+              description="Если списки команд/шаблонов не загрузились, можно ввести command_id/workflow_id вручную и сохранить — сервер проверит ссылки."
+            />
+          )}
         </Form>
       </Modal>
     </Space>
