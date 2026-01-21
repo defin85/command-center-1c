@@ -49,6 +49,33 @@ async function setupApiMocks(page: Page, state: { runtimeSettings: AnyRecord[] }
       return fulfillJson(route, { settings: state.runtimeSettings })
     }
 
+    if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
+      const driver = String(url.searchParams.get('driver') || 'ibcmd')
+      return fulfillJson(route, {
+        driver,
+        base_version: 'v1',
+        overrides_version: null,
+        generated_at: '2026-01-01T00:00:00Z',
+        catalog: {
+          catalog_version: 2,
+          driver,
+          platform_version: '8.3.27',
+          source: { type: 'test' },
+          generated_at: '2026-01-01T00:00:00Z',
+          commands_by_id: {
+            'infobase.extension.list': {
+              label: 'list extensions',
+              description: 'List extensions',
+              argv: ['infobase', 'extension', 'list'],
+              scope: 'per_database',
+              risk_level: 'safe',
+              params_by_name: {},
+            },
+          },
+        },
+      })
+    }
+
     return fulfillJson(route, {}, 200)
   })
 }
@@ -94,10 +121,11 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByText('extensions.list', { exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
-  await expect(page.getByTestId('action-catalog-editor-driver')).toHaveValue('ibcmd')
   await page.getByTestId('action-catalog-editor-id').fill('extensions.new')
   await page.getByTestId('action-catalog-editor-label').fill('New action')
-  await page.getByTestId('action-catalog-editor-command-id').fill('infobase.extension.list')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
   await page.getByTestId('action-catalog-editor-apply').click()
 
   await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('3')

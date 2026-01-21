@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, RollbackOutlined } from '@ant-design/icons'
 
 import { useMe } from '../../api/queries/me'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
+import { useDriverCommands } from '../../api/queries/driverCommands'
+import type { DriverName } from '../../api/driverCommands'
+import { useWorkflowTemplates } from '../../api/queries/workflowTemplates'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 
 const { Title, Text } = Typography
@@ -36,9 +39,17 @@ type ActionFormValues = {
   contexts: ActionContext[]
   executor: {
     kind: ExecutorKind
-    driver?: string
+    driver?: DriverName
     command_id?: string
     workflow_id?: string
+    mode?: 'guided' | 'manual'
+    params_json?: string
+    additional_args?: string[]
+    stdin?: string
+    fixed?: {
+      confirm_dangerous?: boolean
+      timeout_seconds?: number
+    }
   }
 }
 
@@ -51,6 +62,16 @@ const EXECUTOR_KIND_OPTIONS: { value: ExecutorKind; label: string }[] = [
   { value: 'ibcmd_cli', label: 'ibcmd_cli' },
   { value: 'designer_cli', label: 'designer_cli' },
   { value: 'workflow', label: 'workflow' },
+]
+
+const DRIVER_OPTIONS: { value: DriverName; label: string }[] = [
+  { value: 'ibcmd', label: 'ibcmd' },
+  { value: 'cli', label: 'cli' },
+]
+
+const MODE_OPTIONS: { value: 'guided' | 'manual'; label: string }[] = [
+  { value: 'guided', label: 'guided' },
+  { value: 'manual', label: 'manual' },
 ]
 
 const isPlainObject = (value: unknown): value is PlainObject => (
@@ -104,6 +125,10 @@ const buildDefaultAction = (): PlainObject => ({
     kind: 'ibcmd_cli',
     driver: 'ibcmd',
     command_id: '',
+    mode: 'guided',
+    params: {},
+    additional_args: [],
+    stdin: '',
   },
 })
 
@@ -119,9 +144,23 @@ const deriveActionFormValues = (action: PlainObject | null): ActionFormValues =>
   const kind = (executorRaw.kind === 'ibcmd_cli' || executorRaw.kind === 'designer_cli' || executorRaw.kind === 'workflow')
     ? executorRaw.kind
     : 'ibcmd_cli'
-  const driver = typeof executorRaw.driver === 'string' ? executorRaw.driver : ''
+  const driver = (executorRaw.driver === 'cli' || executorRaw.driver === 'ibcmd') ? executorRaw.driver : undefined
   const commandId = typeof executorRaw.command_id === 'string' ? executorRaw.command_id : ''
   const workflowId = typeof executorRaw.workflow_id === 'string' ? executorRaw.workflow_id : ''
+
+  const mode = executorRaw.mode === 'manual' ? 'manual' : 'guided'
+
+  const params = isPlainObject(executorRaw.params) ? executorRaw.params : {}
+  const paramsJson = safeJsonStringify(params)
+
+  const additionalArgs = Array.isArray(executorRaw.additional_args)
+    ? executorRaw.additional_args.filter((item) => typeof item === 'string') as string[]
+    : []
+  const stdin = typeof executorRaw.stdin === 'string' ? executorRaw.stdin : ''
+
+  const fixed = isPlainObject(executorRaw.fixed) ? executorRaw.fixed as PlainObject : {}
+  const confirmDangerous = fixed.confirm_dangerous === true
+  const timeoutSeconds = typeof fixed.timeout_seconds === 'number' ? fixed.timeout_seconds : undefined
 
   return {
     id,
@@ -132,6 +171,14 @@ const deriveActionFormValues = (action: PlainObject | null): ActionFormValues =>
       driver,
       command_id: commandId,
       workflow_id: workflowId,
+      mode,
+      params_json: paramsJson,
+      additional_args: additionalArgs,
+      stdin,
+      fixed: {
+        confirm_dangerous: confirmDangerous,
+        timeout_seconds: timeoutSeconds,
+      },
     },
   }
 }
@@ -155,6 +202,55 @@ const buildActionFromForm = (base: PlainObject | null, values: ActionFormValues)
     executor.driver = (values.executor.driver ?? '').trim()
     executor.command_id = (values.executor.command_id ?? '').trim()
     delete executor.workflow_id
+  }
+
+  const mode = values.executor.mode === 'manual' ? 'manual' : (values.executor.mode === 'guided' ? 'guided' : undefined)
+  if (mode) {
+    executor.mode = mode
+  } else {
+    delete executor.mode
+  }
+
+  const stdin = typeof values.executor.stdin === 'string' ? values.executor.stdin : ''
+  if (stdin.trim()) {
+    executor.stdin = stdin
+  } else {
+    delete executor.stdin
+  }
+
+  const additionalArgs = Array.isArray(values.executor.additional_args)
+    ? values.executor.additional_args.filter((item) => typeof item === 'string' && item.trim()) as string[]
+    : []
+  if (additionalArgs.length) {
+    executor.additional_args = additionalArgs
+  } else {
+    delete executor.additional_args
+  }
+
+  const paramsRaw = typeof values.executor.params_json === 'string' ? values.executor.params_json : ''
+  if (paramsRaw.trim()) {
+    const parsed = parseJson(paramsRaw)
+    if (isPlainObject(parsed)) {
+      executor.params = parsed
+    } else {
+      delete executor.params
+    }
+  } else {
+    delete executor.params
+  }
+
+  const fixedNext: PlainObject = {}
+  const fixedForm = values.executor.fixed
+  if (fixedForm?.confirm_dangerous === true) {
+    fixedNext.confirm_dangerous = true
+  }
+  if (typeof fixedForm?.timeout_seconds === 'number' && Number.isFinite(fixedForm.timeout_seconds)) {
+    fixedNext.timeout_seconds = fixedForm.timeout_seconds
+  }
+  if (Object.keys(fixedNext).length) {
+    executor.fixed = fixedNext
+  } else {
+    delete executor.fixed
   }
 
   next.executor = executor
@@ -222,8 +318,47 @@ export function ActionCatalogPage() {
   const [editingPos, setEditingPos] = useState<number | null>(null)
   const [editingBase, setEditingBase] = useState<PlainObject | null>(null)
   const [editorValues, setEditorValues] = useState<ActionFormValues | null>(null)
+  const [workflowSearch, setWorkflowSearch] = useState('')
 
   const [form] = Form.useForm<ActionFormValues>()
+
+  const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
+  const editorDriver = Form.useWatch(['executor', 'driver'], form) as DriverName | undefined
+  const commandsDriver: DriverName = (editorDriver === 'cli' || editorDriver === 'ibcmd')
+    ? editorDriver
+    : (editorKind === 'designer_cli' ? 'cli' : 'ibcmd')
+
+  const commandsQuery = useDriverCommands(
+    commandsDriver,
+    editorOpen && (editorKind === 'ibcmd_cli' || editorKind === 'designer_cli')
+  )
+
+  const workflowTemplatesQuery = useWorkflowTemplates(
+    workflowSearch.trim() ? { search: workflowSearch.trim() } : undefined,
+    editorOpen && editorKind === 'workflow'
+  )
+
+  const commandOptions = useMemo(() => {
+    const commandsById = commandsQuery.data?.catalog?.commands_by_id
+    if (!commandsById || typeof commandsById !== 'object') return []
+    return Object.entries(commandsById)
+      .map(([id, cmd]) => {
+        const label = cmd?.label ? String(cmd.label) : ''
+        const risk = cmd?.risk_level ? String(cmd.risk_level) : ''
+        const suffix = label ? ` — ${label}` : ''
+        const riskSuffix = risk ? ` (${risk})` : ''
+        return { value: id, label: `${id}${suffix}${riskSuffix}` }
+      })
+      .sort((a, b) => a.value.localeCompare(b.value))
+  }, [commandsQuery.data])
+
+  const workflowOptions = useMemo(() => {
+    const items = workflowTemplatesQuery.data?.templates ?? []
+    return items.map((tpl) => ({
+      value: tpl.id,
+      label: `${tpl.name} (${tpl.category})`,
+    }))
+  }, [workflowTemplatesQuery.data])
 
   useEffect(() => {
     try {
@@ -316,10 +451,13 @@ export function ActionCatalogPage() {
     const usedIds = new Set(actions.map((a) => (typeof a.id === 'string' ? a.id : '')).filter(Boolean))
 
     if (opts.mode === 'add') {
+      const nextValues = deriveActionFormValues(null)
       setEditorTitle('Add action')
       setEditingPos(null)
       setEditingBase(null)
-      setEditorValues(deriveActionFormValues(null))
+      setEditorValues(nextValues)
+      form.resetFields()
+      form.setFieldsValue(nextValues)
       setEditorOpen(true)
       return
     }
@@ -330,10 +468,13 @@ export function ActionCatalogPage() {
     }
 
     if (opts.mode === 'edit') {
+      const nextValues = deriveActionFormValues(base)
       setEditorTitle('Edit action')
       setEditingPos(pos)
       setEditingBase(base)
-      setEditorValues(deriveActionFormValues(base))
+      setEditorValues(nextValues)
+      form.resetFields()
+      form.setFieldsValue(nextValues)
       setEditorOpen(true)
       return
     }
@@ -342,12 +483,15 @@ export function ActionCatalogPage() {
     const baseId = typeof copied.id === 'string' ? copied.id : 'action'
     const candidate = `${baseId}.copy`
     copied.id = ensureUniqueId(candidate, usedIds)
+    const nextValues = deriveActionFormValues(copied)
     setEditorTitle('Copy action')
     setEditingPos(null)
     setEditingBase(copied)
-    setEditorValues(deriveActionFormValues(copied))
+    setEditorValues(nextValues)
+    form.resetFields()
+    form.setFieldsValue(nextValues)
     setEditorOpen(true)
-  }, [draftRaw])
+  }, [draftRaw, form])
 
   const closeEditor = useCallback(() => {
     setEditorOpen(false)
@@ -666,12 +810,6 @@ export function ActionCatalogPage() {
         open={editorOpen}
         onCancel={closeEditor}
         onOk={() => void submitEditor()}
-        afterOpenChange={(open) => {
-          if (!open || !editorValues) {
-            return
-          }
-          form.setFieldsValue(editorValues)
-        }}
         okText="Apply"
         okButtonProps={{ 'data-testid': 'action-catalog-editor-apply' }}
         destroyOnClose
@@ -680,6 +818,7 @@ export function ActionCatalogPage() {
           form={form}
           layout="vertical"
           preserve={false}
+          initialValues={editorValues ?? undefined}
         >
           <Form.Item
             label="ID"
@@ -725,60 +864,159 @@ export function ActionCatalogPage() {
             <Select
               options={EXECUTOR_KIND_OPTIONS}
               data-testid="action-catalog-editor-executor-kind"
+              onChange={(next: ExecutorKind) => {
+                if (next === 'workflow') {
+                  form.setFieldValue(['executor', 'driver'], undefined)
+                  form.setFieldValue(['executor', 'command_id'], undefined)
+                  form.setFieldValue(['executor', 'workflow_id'], form.getFieldValue(['executor', 'workflow_id']) ?? '')
+                  return
+                }
+                form.setFieldValue(['executor', 'workflow_id'], undefined)
+                const currentDriver = form.getFieldValue(['executor', 'driver']) as unknown
+                if (currentDriver !== 'cli' && currentDriver !== 'ibcmd') {
+                  form.setFieldValue(['executor', 'driver'], next === 'designer_cli' ? 'cli' : 'ibcmd')
+                }
+                form.setFieldValue(['executor', 'command_id'], undefined)
+              }}
             />
           </Form.Item>
 
-          <Form.Item noStyle shouldUpdate={(prev, next) => prev.executor?.kind !== next.executor?.kind}>
-            {({ getFieldValue }) => {
-              const kind = getFieldValue(['executor', 'kind']) as ExecutorKind | undefined
-              if (kind === 'workflow') {
-                return (
-                  <Form.Item
-                    label="workflow_id"
-                    name={['executor', 'workflow_id']}
-                    rules={[
-                      { required: true, message: 'workflow_id is required' },
-                      { whitespace: true, message: 'workflow_id is required' },
-                    ]}
-                  >
-                    <Input data-testid="action-catalog-editor-workflow-id" />
-                  </Form.Item>
-                )
-              }
+          {editorKind === 'workflow' ? (
+            <Form.Item
+              label="workflow_id"
+              name={['executor', 'workflow_id']}
+              rules={[
+                { required: true, message: 'workflow_id is required' },
+                { whitespace: true, message: 'workflow_id is required' },
+              ]}
+            >
+              <Select
+                showSearch
+                options={workflowOptions}
+                loading={workflowTemplatesQuery.isLoading}
+                filterOption={false}
+                onSearch={(value) => setWorkflowSearch(value)}
+                placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates...' : 'Select workflow template'}
+                data-testid="action-catalog-editor-workflow-id"
+              />
+            </Form.Item>
+          ) : (
+            <Space size="middle" style={{ width: '100%' }} align="start">
+              <Form.Item
+                label="driver"
+                name={['executor', 'driver']}
+                rules={[{ required: true, message: 'driver is required' }]}
+                style={{ flex: 1 }}
+              >
+                <Select
+                  options={DRIVER_OPTIONS}
+                  data-testid="action-catalog-editor-driver"
+                  onChange={() => {
+                    form.setFieldValue(['executor', 'command_id'], undefined)
+                  }}
+                />
+              </Form.Item>
+              <Form.Item
+                label="command_id"
+                name={['executor', 'command_id']}
+                rules={[{ required: true, message: 'command_id is required' }]}
+                style={{ flex: 2 }}
+              >
+                <Select
+                  showSearch
+                  options={commandOptions}
+                  loading={commandsQuery.isLoading}
+                  placeholder={commandsQuery.isLoading ? 'Loading driver catalog...' : 'Select command_id'}
+                  optionFilterProp="label"
+                  data-testid="action-catalog-editor-command-id"
+                />
+              </Form.Item>
+            </Space>
+          )}
 
-              return (
-                <Space size="middle" style={{ width: '100%' }} align="start">
-                  <Form.Item
-                    label="driver"
-                    name={['executor', 'driver']}
-                    rules={[
-                      { required: true, message: 'driver is required' },
-                      { whitespace: true, message: 'driver is required' },
-                    ]}
-                    style={{ flex: 1 }}
-                  >
-                    <Input data-testid="action-catalog-editor-driver" />
-                  </Form.Item>
-                  <Form.Item
-                    label="command_id"
-                    name={['executor', 'command_id']}
-                    rules={[
-                      { required: true, message: 'command_id is required' },
-                      { whitespace: true, message: 'command_id is required' },
-                    ]}
-                    style={{ flex: 2 }}
-                  >
-                    <Input data-testid="action-catalog-editor-command-id" />
-                  </Form.Item>
-                </Space>
-              )
-            }}
-          </Form.Item>
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                <Form.Item
+                  label="additional_args"
+                  name={['executor', 'additional_args']}
+                  tooltip="Для designer_cli это args; для ibcmd_cli — дополнительные argv-параметры."
+                >
+                  <Select
+                    mode="tags"
+                    tokenSeparators={['\n', ' ']}
+                    placeholder="Enter args (space/newline-separated)"
+                    data-testid="action-catalog-editor-additional-args"
+                  />
+                </Form.Item>
+              )}
+
+              {editorKind === 'ibcmd_cli' && (
+                <Form.Item label="mode" name={['executor', 'mode']}>
+                  <Select options={MODE_OPTIONS} data-testid="action-catalog-editor-mode" />
+                </Form.Item>
+              )}
+
+              <Form.Item
+                label="params (JSON object)"
+                name={['executor', 'params_json']}
+                rules={[
+                  {
+                    validator: async (_rule, value) => {
+                      const raw = typeof value === 'string' ? value : ''
+                      if (!raw.trim()) return
+                      const parsed = parseJson(raw)
+                      if (!isPlainObject(parsed)) {
+                        throw new Error('params must be a JSON object')
+                      }
+                    },
+                  },
+                ]}
+              >
+                <Input.TextArea
+                  rows={6}
+                  placeholder="{ }"
+                  data-testid="action-catalog-editor-params"
+                />
+              </Form.Item>
+
+              {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                <Form.Item label="stdin" name={['executor', 'stdin']}>
+                  <Input.TextArea
+                    rows={3}
+                    placeholder="Optional stdin"
+                    data-testid="action-catalog-editor-stdin"
+                  />
+                </Form.Item>
+              )}
+
+              <Space size="middle" wrap>
+                <Form.Item
+                  label="fixed.confirm_dangerous"
+                  name={['executor', 'fixed', 'confirm_dangerous']}
+                  valuePropName="checked"
+                >
+                  <Switch data-testid="action-catalog-editor-confirm-dangerous" />
+                </Form.Item>
+                <Form.Item
+                  label="fixed.timeout_seconds"
+                  name={['executor', 'fixed', 'timeout_seconds']}
+                >
+                  <InputNumber
+                    min={1}
+                    max={3600}
+                    style={{ width: 160 }}
+                    data-testid="action-catalog-editor-timeout"
+                  />
+                </Form.Item>
+              </Space>
+            </Space>
+          </Card>
 
           <Alert
             type="info"
             showIcon
-            message="Advanced executor fields (mode/params/additional_args/stdin/fixed) пока не редактируются в guided."
+            message="Executor fields редактируются в guided; Save + серверная валидация — следующий шаг."
           />
         </Form>
       </Modal>
