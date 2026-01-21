@@ -166,6 +166,18 @@ def test_build_ibcmd_connection_args_uses_driver_schema_and_orders_stably():
     ]
 
 
+def test_build_ibcmd_connection_args_falls_back_to_default_flags_when_schema_flag_invalid():
+    driver_schema = {
+        "connection": {
+            "remote": {"kind": "flag", "flag": "remote", "expects_value": True, "required": False},
+        },
+    }
+    connection = {"remote": "http://localhost:1545"}
+
+    args = build_ibcmd_connection_args(driver_schema=driver_schema, connection=connection)
+    assert args == ["--remote=http://localhost:1545"]
+
+
 def test_build_ibcmd_cli_argv_inserts_pre_args_before_command_params_and_additional_args():
     command = {
         "argv": ["infobase", "extension", "list"],
@@ -197,3 +209,11 @@ def test_detect_connection_option_conflicts_matches_remote_aliases_and_equals_fo
         additional_args=["--remote=http://other:1545"],
     )
     assert conflicts == ["remote"]
+
+
+def test_detect_connection_option_conflicts_matches_pid_short_concatenated_form():
+    conflicts = detect_connection_option_conflicts(
+        connection_params={"pid": 123},
+        additional_args=["-p123"],
+    )
+    assert conflicts == ["pid"]

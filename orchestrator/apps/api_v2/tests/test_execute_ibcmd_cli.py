@@ -596,6 +596,22 @@ def test_execute_ibcmd_cli_pid_in_args_not_allowed(client, user, auth_db, monkey
     assert payload["success"] is False
     assert payload["error"]["code"] == "PID_IN_ARGS_NOT_ALLOWED"
 
+    resp_short = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "server.config.init",
+            "database_ids": [],
+            "auth_database_id": auth_db.id,
+            "connection": {"remote": "http://host:1545"},
+            "additional_args": ["-p123"],
+        },
+        format="json",
+    )
+    assert resp_short.status_code == 400
+    payload_short = resp_short.json()
+    assert payload_short["success"] is False
+    assert payload_short["error"]["code"] == "PID_IN_ARGS_NOT_ALLOWED"
+
 
 @pytest.mark.django_db
 def test_execute_ibcmd_cli_remote_conflict_between_connection_and_additional_args_returns_400(client, user, auth_db, monkeypatch):

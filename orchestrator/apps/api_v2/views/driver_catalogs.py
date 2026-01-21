@@ -1235,8 +1235,15 @@ def update_command_schema_overrides(request):
         if isinstance(patch, dict):
             effective = copy.deepcopy(base_catalog)
             _deep_merge_dict(effective, patch)
-            validation_errors = validate_ibcmd_catalog_v2(effective)
-            if validation_errors:
+            validation_issues: list[dict] = []
+            for err in validate_ibcmd_catalog_v2(effective):
+                validation_issues.append(_issue("error", "IBCMD_CATALOG_INVALID", err))
+            validation_issues.extend(_collect_ibcmd_driver_schema_issues(effective))
+            for cmd_id, cmd in _get_commands_by_id(effective).items():
+                if isinstance(cmd_id, str) and isinstance(cmd, dict):
+                    validation_issues.extend(_collect_command_param_issues(cmd_id, cmd))
+
+            if any(item.get("severity") == "error" for item in validation_issues):
                 record_driver_catalog_editor_validation_failed(driver, stage="overrides.update", kind="invalid_effective")
                 record_driver_catalog_editor_error(driver, action="overrides.update", code="INVALID_EFFECTIVE_CATALOG")
                 log_admin_action(
@@ -1253,7 +1260,7 @@ def update_command_schema_overrides(request):
                     "error": {
                         "code": "INVALID_EFFECTIVE_CATALOG",
                         "message": "Invalid effective catalog",
-                        "details": validation_errors,
+                        "details": validation_issues,
                     },
                 }, status=400)
 
@@ -2434,7 +2441,13 @@ def preview_command_schemas(request):
 
             for token in additional_args:
                 t = str(token or "").strip().lower()
-                if t in {"--pid", "-p"} or t.startswith("--pid=") or t.startswith("-p=") or t.startswith("-p "):
+                if (
+                    t in {"--pid", "-p"}
+                    or t.startswith("--pid=")
+                    or t.startswith("-p=")
+                    or t.startswith("-p ")
+                    or (t.startswith("-p") and len(t) > 2 and t[2].isdigit())
+                ):
                     raise ValueError("Use connection.pid instead of --pid in additional_args")
 
             flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}

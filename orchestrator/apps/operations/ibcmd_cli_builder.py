@@ -107,6 +107,9 @@ def detect_connection_option_conflicts(*, connection_params: dict[str, Any], add
                 if lowered == p or lowered.startswith(p + "=") or lowered.startswith(p + " "):
                     matched = True
                     break
+                if p == "-p" and lowered.startswith("-p") and len(lowered) > 2 and lowered[2].isdigit():
+                    matched = True
+                    break
             if matched:
                 break
 
@@ -166,12 +169,13 @@ def build_ibcmd_connection_args(*, driver_schema: dict[str, Any] | None, connect
             if kind == "flag":
                 flag = schema_obj.get("flag")
                 if not isinstance(flag, str) or not flag.startswith("-"):
-                    return None
+                    flag = None
                 expects_value = bool(schema_obj.get("expects_value", False))
-                if not expects_value:
+                if flag and not expects_value:
                     return flag if _is_truthy(value) else None
                 rendered = _stringify_value(value, name=key)
-                return f"{flag}={rendered}" if rendered else None
+                if flag and rendered:
+                    return f"{flag}={rendered}"
 
         fallback_flag = _CONNECTION_PARAM_FLAGS.get(key)
         if fallback_flag:

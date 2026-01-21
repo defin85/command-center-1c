@@ -541,6 +541,7 @@ class DriverCatalogV2Serializer(serializers.Serializer):
     catalog_version = serializers.IntegerField()
     driver = serializers.CharField()
     platform_version = serializers.CharField(required=False, allow_blank=True)
+    driver_schema = serializers.DictField(required=False)
     source = DriverCatalogV2SourceSerializer(required=False)
     generated_at = serializers.CharField(required=False, allow_blank=True)
     commands_by_id = serializers.DictField(child=DriverCommandV2Serializer())
@@ -1636,7 +1637,13 @@ def _execute_ibcmd_cli_validated(
 
     for token in additional_args:
         t = str(token or "").strip().lower()
-        if t in {"--pid", "-p"} or t.startswith("--pid=") or t.startswith("-p=") or t.startswith("-p "):
+        if (
+            t in {"--pid", "-p"}
+            or t.startswith("--pid=")
+            or t.startswith("-p=")
+            or t.startswith("-p ")
+            or (t.startswith("-p") and len(t) > 2 and t[2].isdigit())
+        ):
             return Response({
                 "success": False,
                 "error": {"code": "PID_IN_ARGS_NOT_ALLOWED", "message": "Use connection.pid instead of --pid in additional_args"},
