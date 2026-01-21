@@ -161,6 +161,8 @@ def test_update_runtime_setting_ui_action_catalog_rejects_unknown_command_refere
     assert payload["error"]["code"] == "VALIDATION_ERROR"
     assert isinstance(payload["error"]["message"], list)
     assert any("unknown command_id" in msg for msg in payload["error"]["message"])
+    assert any("extensions.actions[0]" in msg for msg in payload["error"]["message"])
+    assert any("executor.command_id" in msg for msg in payload["error"]["message"])
 
 
 @pytest.mark.django_db
@@ -192,6 +194,8 @@ def test_update_runtime_setting_ui_action_catalog_rejects_unknown_workflow_refer
     assert payload["error"]["code"] == "VALIDATION_ERROR"
     assert isinstance(payload["error"]["message"], list)
     assert any("workflow not found" in msg for msg in payload["error"]["message"])
+    assert any("extensions.actions[0]" in msg for msg in payload["error"]["message"])
+    assert any("executor.workflow_id" in msg for msg in payload["error"]["message"])
 
 
 @pytest.mark.django_db

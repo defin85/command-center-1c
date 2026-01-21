@@ -22,7 +22,14 @@ async function setupAuth(page: Page) {
   })
 }
 
-async function setupApiMocks(page: Page, state: { runtimeSettings: AnyRecord[] }) {
+async function setupApiMocks(
+  page: Page,
+  state: {
+    runtimeSettings: AnyRecord[]
+    patchFailCount?: number
+    patchFailMessages?: string[]
+  }
+) {
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -58,6 +65,17 @@ async function setupApiMocks(page: Page, state: { runtimeSettings: AnyRecord[] }
         payload = JSON.parse(request.postData() || '{}') as AnyRecord
       } catch (_err) {
         payload = {}
+      }
+
+      if ((state.patchFailCount ?? 0) > 0) {
+        state.patchFailCount = (state.patchFailCount ?? 0) - 1
+        return fulfillJson(route, {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: state.patchFailMessages ?? ['extensions.actions[0].executor.command_id: unknown command_id'],
+          },
+        }, 400)
       }
 
       const updated: AnyRecord = existing
@@ -187,4 +205,50 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
 
   await expect(page.getByRole('button', { name: 'Format', exact: true })).toBeVisible()
+})
+
+test('Action Catalog: shows backend validation errors on save', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    patchFailCount: 1,
+    patchFailMessages: [
+      'extensions.actions[0].executor.command_id: unknown command_id "unknown.command"',
+      'extensions.actions[0].id: must be unique',
+    ],
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+  await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.bad')
+  await page.getByTestId('action-catalog-editor-label').fill('Bad action')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-apply').click()
+
+  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-save')).toBeEnabled()
+
+  await page.getByTestId('action-catalog-save').click()
+  await expect(page.getByText('Save failed', { exact: true })).toBeVisible()
+  await expect(page.getByText('extensions.actions[0].executor.command_id: unknown command_id "unknown.command"', { exact: true })).toBeVisible()
+  await expect(page.getByText('extensions.actions[0].id: must be unique', { exact: true })).toBeVisible()
+
+  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-save')).toBeEnabled()
 })
