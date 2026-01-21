@@ -33,6 +33,15 @@ type ExecutorKind = 'ibcmd_cli' | 'designer_cli' | 'workflow'
 
 type PlainObject = Record<string, unknown>
 
+type DiffKind = 'added' | 'removed' | 'changed'
+
+type DiffItem = {
+  path: string
+  kind: DiffKind
+  before?: unknown
+  after?: unknown
+}
+
 type ActionFormValues = {
   id: string
   label: string
@@ -100,6 +109,22 @@ const parseJson = (raw: string): unknown => {
   } catch (_err) {
     return null
   }
+}
+
+const safeText = (value: unknown, maxLen = 120): string => {
+  const raw = (() => {
+    if (value === null) return 'null'
+    if (value === undefined) return 'undefined'
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    try {
+      return JSON.stringify(value)
+    } catch (_err) {
+      return String(value)
+    }
+  })()
+  if (raw.length <= maxLen) return raw
+  return `${raw.slice(0, maxLen - 1)}…`
 }
 
 const getCatalogActions = (catalog: unknown): PlainObject[] => {
@@ -267,6 +292,107 @@ const ensureUniqueId = (candidate: string, used: Set<string>): string => {
   return `${base}.${Date.now()}`
 }
 
+const isIdObjectArray = (value: unknown): value is PlainObject[] => {
+  if (!Array.isArray(value)) return false
+  if (!value.every(isPlainObject)) return false
+  return value.every((item) => typeof item.id === 'string' && Boolean(String(item.id).trim()))
+}
+
+const diffUnknown = (
+  before: unknown,
+  after: unknown,
+  path: string,
+  out: DiffItem[],
+  budget: { remaining: number }
+) => {
+  if (budget.remaining <= 0) return
+
+  const add = (item: DiffItem) => {
+    if (budget.remaining <= 0) return
+    out.push(item)
+    budget.remaining -= 1
+  }
+
+  if (before === after) return
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const beforeIdArray = isIdObjectArray(before)
+    const afterIdArray = isIdObjectArray(after)
+    if (beforeIdArray && afterIdArray) {
+      const beforeById = new Map(before.map((item) => [String(item.id), item]))
+      const afterById = new Map(after.map((item) => [String(item.id), item]))
+      const ids = new Set([...beforeById.keys(), ...afterById.keys()])
+      for (const id of Array.from(ids).sort()) {
+        if (budget.remaining <= 0) return
+        const b = beforeById.get(id)
+        const a = afterById.get(id)
+        const itemPath = `${path}[id=${id}]`
+        if (b && !a) {
+          add({ path: itemPath, kind: 'removed', before: b })
+          continue
+        }
+        if (!b && a) {
+          add({ path: itemPath, kind: 'added', after: a })
+          continue
+        }
+        diffUnknown(b, a, itemPath, out, budget)
+      }
+      return
+    }
+
+    if (before.length !== after.length) {
+      add({ path, kind: 'changed', before: `len=${before.length}`, after: `len=${after.length}` })
+    }
+
+    const len = Math.max(before.length, after.length)
+    for (let i = 0; i < len; i += 1) {
+      if (budget.remaining <= 0) return
+      const b = before[i]
+      const a = after[i]
+      const itemPath = `${path}[${i}]`
+      if (i >= before.length) {
+        add({ path: itemPath, kind: 'added', after: a })
+        continue
+      }
+      if (i >= after.length) {
+        add({ path: itemPath, kind: 'removed', before: b })
+        continue
+      }
+      diffUnknown(b, a, itemPath, out, budget)
+    }
+    return
+  }
+
+  if (isPlainObject(before) && isPlainObject(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of Array.from(keys).sort()) {
+      if (budget.remaining <= 0) return
+      const b = before[key]
+      const a = after[key]
+      const nextPath = path ? `${path}.${key}` : key
+      if (!(key in before)) {
+        add({ path: nextPath, kind: 'added', after: a })
+        continue
+      }
+      if (!(key in after)) {
+        add({ path: nextPath, kind: 'removed', before: b })
+        continue
+      }
+      diffUnknown(b, a, nextPath, out, budget)
+    }
+    return
+  }
+
+  add({ path, kind: 'changed', before, after })
+}
+
+const computeDiff = (before: unknown, after: unknown, maxItems = 200): DiffItem[] => {
+  const out: DiffItem[] = []
+  const budget = { remaining: maxItems }
+  diffUnknown(before, after, '', out, budget)
+  return out
+}
+
 const buildActionRows = (value: unknown): ActionRow[] => {
   const actions = getCatalogActions(value)
 
@@ -421,9 +547,58 @@ export function ActionCatalogPage() {
     return serverRaw !== null && draftRaw !== serverRaw
   }, [draftRaw, serverRaw])
 
+  const serverParsed = useMemo(() => (serverRaw === null ? null : parseJson(serverRaw)), [serverRaw])
   const draftParsed = useMemo(() => parseJson(draftRaw), [draftRaw])
   const draftIsValidJson = draftParsed !== null
   const actionRows = useMemo(() => buildActionRows(draftParsed), [draftParsed])
+
+  const rawValidation = useMemo(() => {
+    const errors: string[] = []
+    const warnings: string[] = []
+
+    if (draftParsed === null) {
+      errors.push('Draft is not a valid JSON')
+      return { ok: false, errors, warnings, actionsCount: 0 }
+    }
+
+    if (!isPlainObject(draftParsed)) {
+      errors.push('Draft must be a JSON object')
+      return { ok: false, errors, warnings, actionsCount: 0 }
+    }
+
+    const version = draftParsed.catalog_version
+    if (version !== 1) {
+      warnings.push('catalog_version is not 1')
+    }
+
+    const extensions = draftParsed.extensions
+    if (!isPlainObject(extensions)) {
+      warnings.push('extensions is missing or not an object')
+      return { ok: true, errors, warnings, actionsCount: 0 }
+    }
+
+    const actions = (extensions as PlainObject).actions
+    if (!Array.isArray(actions)) {
+      warnings.push('extensions.actions is missing or not an array')
+      return { ok: true, errors, warnings, actionsCount: 0 }
+    }
+
+    return { ok: true, errors, warnings, actionsCount: actions.filter(Boolean).length }
+  }, [draftParsed])
+
+  const diffItems = useMemo(() => {
+    if (!dirty) return []
+    if (serverParsed === null || draftParsed === null) return []
+    return computeDiff(serverParsed, draftParsed)
+  }, [dirty, draftParsed, serverParsed])
+
+  const diffSummary = useMemo(() => {
+    const summary = { added: 0, removed: 0, changed: 0 }
+    for (const item of diffItems) {
+      summary[item.kind] += 1
+    }
+    return summary
+  }, [diffItems])
 
   const updateActions = useCallback((updater: (actions: PlainObject[]) => PlainObject[]) => {
     const parsed = parseJson(draftRaw)
@@ -749,6 +924,57 @@ export function ActionCatalogPage() {
       children: (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           {dirty && <Tag color="orange" data-testid="action-catalog-dirty-raw">Unsaved changes</Tag>}
+          {!rawValidation.ok && (
+            <Alert
+              type="error"
+              showIcon
+              message="Draft JSON is invalid"
+              description={rawValidation.errors.join('; ')}
+            />
+          )}
+          {rawValidation.ok && rawValidation.warnings.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Draft JSON warnings"
+              description={rawValidation.warnings.join('; ')}
+            />
+          )}
+
+          <Card size="small">
+            <Space size="middle" wrap>
+              <Text strong>Preview:</Text>
+              <Tag>Actions: {rawValidation.actionsCount}</Tag>
+              {dirty && (
+                <Tag data-testid="action-catalog-diff-count">
+                  Changes: {diffItems.length}
+                </Tag>
+              )}
+              {dirty && (
+                <Text type="secondary">
+                  Added: {diffSummary.added}, Removed: {diffSummary.removed}, Changed: {diffSummary.changed}
+                </Text>
+              )}
+            </Space>
+          </Card>
+
+          {dirty && diffItems.length > 0 && (
+            <Table<DiffItem>
+              data-testid="action-catalog-diff-table"
+              size="small"
+              bordered
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              rowKey={(row) => `${row.kind}:${row.path}`}
+              columns={[
+                { title: 'Path', dataIndex: 'path', key: 'path', width: 320, render: (v: string) => <Text code>{v || '(root)'}</Text> },
+                { title: 'Kind', dataIndex: 'kind', key: 'kind', width: 110, render: (v: string) => <Tag>{v}</Tag> },
+                { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => <Text>{safeText(v)}</Text> },
+                { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => <Text>{safeText(v)}</Text> },
+              ]}
+              dataSource={diffItems}
+            />
+          )}
+
           <LazyJsonCodeEditor
             id="action-catalog-raw"
             title={ACTION_CATALOG_KEY}
@@ -760,10 +986,24 @@ export function ActionCatalogPage() {
             enableCopy
             path="ui.action_catalog"
           />
+
+          {serverRaw !== null && (
+            <LazyJsonCodeEditor
+              id="action-catalog-server"
+              title="Server snapshot (read-only)"
+              value={serverRaw}
+              onChange={() => {}}
+              height={280}
+              readOnly
+              enableFormat={false}
+              enableCopy
+              path="ui.action_catalog.server"
+            />
+          )}
         </Space>
       ),
     },
-  ]), [actionRows, actionsEditable, columns, dirty, disabledActions.length, draftIsValidJson, draftRaw, openEditor, restoreLastDisabled])
+  ]), [actionRows, actionsEditable, columns, diffItems, diffSummary, dirty, disabledActions.length, draftIsValidJson, draftRaw, openEditor, rawValidation, restoreLastDisabled, serverRaw])
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>

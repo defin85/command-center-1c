@@ -142,6 +142,9 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
 
   await page.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
-  await expect(page.getByText('ui.action_catalog', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('action-catalog-dirty-raw')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-diff-count')).toContainText('Changes: ')
+  await expect(page.getByTestId('action-catalog-diff-table')).toBeVisible()
+
   await expect(page.getByRole('button', { name: 'Format', exact: true })).toBeVisible()
 })
