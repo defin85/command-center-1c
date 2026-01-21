@@ -16,7 +16,7 @@ import { UsersPage } from './pages/Users/UsersPage'
 import { TemplatesPage } from './pages/Templates/TemplatesPage'
 import { CommandSchemasPage } from './pages/CommandSchemas/CommandSchemasPage'
 import { DLQPage } from './pages/DLQ'
-import { RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
+import { ActionCatalogPage, RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
 import { Login } from './pages/Login/Login'
 import { ArtifactsPage } from './pages/Artifacts'
 import { ForbiddenPage } from './pages/Forbidden/ForbiddenPage'
@@ -295,6 +295,13 @@ function App() {
             <StaffRoute>
               <MainLayout>
                 <RuntimeSettingsPage />
+              </MainLayout>
+            </StaffRoute>
+          } />
+          <Route path="/settings/action-catalog" element={
+            <StaffRoute>
+              <MainLayout>
+                <ActionCatalogPage />
               </MainLayout>
             </StaffRoute>
           } />
