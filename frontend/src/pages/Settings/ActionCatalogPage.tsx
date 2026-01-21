@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, RollbackOutlined } from '@ant-design/icons'
 
 import { useMe } from '../../api/queries/me'
-import { getRuntimeSettings } from '../../api/runtimeSettings'
+import { getRuntimeSettings, updateRuntimeSetting } from '../../api/runtimeSettings'
 import { useDriverCommands } from '../../api/queries/driverCommands'
 import type { DriverName } from '../../api/driverCommands'
 import { useWorkflowTemplates } from '../../api/queries/workflowTemplates'
@@ -109,6 +109,22 @@ const parseJson = (raw: string): unknown => {
   } catch (_err) {
     return null
   }
+}
+
+const extractBackendErrors = (error: unknown): string[] => {
+  const err = error as { response?: { status?: number; data?: any }; message?: string } | null
+  const data = err?.response?.data
+  const message = data?.error?.message
+  if (Array.isArray(message)) {
+    return message.filter((item: unknown) => typeof item === 'string') as string[]
+  }
+  if (typeof message === 'string') {
+    return [message]
+  }
+  if (err?.message) {
+    return [err.message]
+  }
+  return ['Unknown error']
 }
 
 const safeText = (value: unknown, maxLen = 120): string => {
@@ -438,6 +454,9 @@ export function ActionCatalogPage() {
   const [draftRaw, setDraftRaw] = useState<string>('{}')
   const [settingDescription, setSettingDescription] = useState<string | null>(null)
   const [disabledActions, setDisabledActions] = useState<PlainObject[]>([])
+  const [saveErrors, setSaveErrors] = useState<string[]>([])
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorTitle, setEditorTitle] = useState('Edit action')
@@ -515,6 +534,8 @@ export function ActionCatalogPage() {
   const loadCatalog = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setSaveErrors([])
+    setSaveSuccess(false)
     try {
       const settings = await getRuntimeSettings()
       const entry = settings.find((item) => item.key === ACTION_CATALOG_KEY)
@@ -568,22 +589,22 @@ export function ActionCatalogPage() {
 
     const version = draftParsed.catalog_version
     if (version !== 1) {
-      warnings.push('catalog_version is not 1')
+      errors.push('catalog_version must be 1')
     }
 
     const extensions = draftParsed.extensions
     if (!isPlainObject(extensions)) {
       warnings.push('extensions is missing or not an object')
-      return { ok: true, errors, warnings, actionsCount: 0 }
+      return { ok: errors.length === 0, errors, warnings, actionsCount: 0 }
     }
 
     const actions = (extensions as PlainObject).actions
     if (!Array.isArray(actions)) {
       warnings.push('extensions.actions is missing or not an array')
-      return { ok: true, errors, warnings, actionsCount: 0 }
+      return { ok: errors.length === 0, errors, warnings, actionsCount: 0 }
     }
 
-    return { ok: true, errors, warnings, actionsCount: actions.filter(Boolean).length }
+    return { ok: errors.length === 0, errors, warnings, actionsCount: actions.filter(Boolean).length }
   }, [draftParsed])
 
   const diffItems = useMemo(() => {
@@ -599,6 +620,45 @@ export function ActionCatalogPage() {
     }
     return summary
   }, [diffItems])
+
+  const canSave = Boolean(
+    isStaff
+    && dirty
+    && rawValidation.ok
+    && isPlainObject(draftParsed)
+    && !saving
+  )
+
+  const handleSave = useCallback(async () => {
+    if (saving) return
+    setSaveSuccess(false)
+    setSaveErrors([])
+    setError(null)
+
+    const parsed = parseJson(draftRaw)
+    if (!isPlainObject(parsed)) {
+      setSaveErrors(['Draft must be a JSON object'])
+      return
+    }
+    if (parsed.catalog_version !== 1) {
+      setSaveErrors(['catalog_version must be 1'])
+      return
+    }
+
+    setSaving(true)
+    try {
+      const updated = await updateRuntimeSetting(ACTION_CATALOG_KEY, parsed)
+      const nextServerRaw = safeJsonStringify(updated.value)
+      setServerRaw(nextServerRaw)
+      setDraftRaw(nextServerRaw)
+      setSaveSuccess(true)
+      setSaveErrors([])
+    } catch (err) {
+      setSaveErrors(extractBackendErrors(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [draftRaw, saving])
 
   const updateActions = useCallback((updater: (actions: PlainObject[]) => PlainObject[]) => {
     const parsed = parseJson(draftRaw)
@@ -1021,11 +1081,43 @@ export function ActionCatalogPage() {
       </div>
 
       {error && <Alert type="error" showIcon message={error} />}
+      {saveErrors.length > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          message="Save failed"
+              description={(
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {saveErrors.map((msg, idx) => (
+                <li key={`${idx}:${msg}`}><Text>{msg}</Text></li>
+              ))}
+            </ul>
+          )}
+        />
+      )}
+      {saveSuccess && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          message="Saved"
+          onClose={() => setSaveSuccess(false)}
+        />
+      )}
 
       <Card size="small">
         <Space wrap>
           <Button onClick={loadCatalog} disabled={loading || dirty} data-testid="action-catalog-reload">
             Reload
+          </Button>
+          <Button
+            type="primary"
+            onClick={() => void handleSave()}
+            disabled={!canSave}
+            loading={saving}
+            data-testid="action-catalog-save"
+          >
+            Save
           </Button>
           {dirty && (
             <Text type="secondary">Reload disabled while draft has unsaved changes.</Text>

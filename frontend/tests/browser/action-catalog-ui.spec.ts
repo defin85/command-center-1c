@@ -49,6 +49,38 @@ async function setupApiMocks(page: Page, state: { runtimeSettings: AnyRecord[] }
       return fulfillJson(route, { settings: state.runtimeSettings })
     }
 
+    if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime/')) {
+      const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
+      const existing = state.runtimeSettings.find((item) => item.key === key)
+
+      let payload: AnyRecord = {}
+      try {
+        payload = JSON.parse(request.postData() || '{}') as AnyRecord
+      } catch (_err) {
+        payload = {}
+      }
+
+      const updated: AnyRecord = existing
+        ? { ...existing, value: payload.value }
+        : {
+          key,
+          value_type: 'json',
+          description: '',
+          min_value: null,
+          max_value: null,
+          default: null,
+          value: payload.value,
+        }
+
+      if (existing) {
+        existing.value = payload.value
+      } else {
+        state.runtimeSettings.push(updated)
+      }
+
+      return fulfillJson(route, updated)
+    }
+
     if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
       const driver = String(url.searchParams.get('driver') || 'ibcmd')
       return fulfillJson(route, {
@@ -145,6 +177,14 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByTestId('action-catalog-dirty-raw')).toBeVisible()
   await expect(page.getByTestId('action-catalog-diff-count')).toContainText('Changes: ')
   await expect(page.getByTestId('action-catalog-diff-table')).toBeVisible()
+
+  await page.getByTestId('action-catalog-save').click()
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-testid="action-catalog-dirty"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="action-catalog-dirty-raw"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="action-catalog-diff-table"]')).toHaveCount(0)
+  await expect(page.getByTestId('action-catalog-reload')).toBeEnabled()
+  await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
 
   await expect(page.getByRole('button', { name: 'Format', exact: true })).toBeVisible()
 })
