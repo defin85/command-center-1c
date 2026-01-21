@@ -28,6 +28,7 @@ export const Extensions = () => {
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<Status | undefined>(undefined)
+  const [version, setVersion] = useState('')
   const [clusterId, setClusterId] = useState<string | undefined>(undefined)
 
   const [page, setPage] = useState(1)
@@ -44,6 +45,7 @@ export const Extensions = () => {
   const overviewQuery = useExtensionsOverview({
     search: search.trim() || undefined,
     status,
+    version: version.trim() || undefined,
     cluster_id: clusterId,
     limit: pageSize,
     offset: (page - 1) * pageSize,
@@ -263,6 +265,14 @@ export const Extensions = () => {
             { value: 'unknown', label: 'unknown' },
           ]}
         />
+        <Input
+          data-testid="extensions-overview-version"
+          value={version}
+          onChange={(e) => { setVersion(e.target.value); setPage(1) }}
+          placeholder="Version (exact)"
+          style={{ width: 220 }}
+          allowClear
+        />
         <Select
           value={clusterId}
           onChange={(v) => { setClusterId(v); setPage(1) }}
@@ -343,4 +353,3 @@ export const Extensions = () => {
     </Space>
   )
 }
-

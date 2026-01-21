@@ -64,7 +64,13 @@ def _load_snapshot_state(db: Database) -> _SnapshotState:
     except DatabaseExtensionsSnapshot.DoesNotExist:
         return _SnapshotState(ok=False, updated_at=None, extensions=[])
 
-    payload = normalize_extensions_snapshot(snapshot_obj.snapshot or {})
+    raw_snapshot = snapshot_obj.snapshot or {}
+    # Legacy snapshots stored raw worker payload (stdout/stderr/...) without reserved keys.
+    # Treat them as "unknown" for overview/drill-down, to avoid misclassifying them as "missing".
+    if isinstance(raw_snapshot, dict) and not any(k in raw_snapshot for k in ("extensions", "raw", "parse_error")):
+        return _SnapshotState(ok=False, updated_at=snapshot_obj.updated_at, extensions=[])
+
+    payload = normalize_extensions_snapshot(raw_snapshot)
     if payload.get("parse_error"):
         return _SnapshotState(ok=False, updated_at=snapshot_obj.updated_at, extensions=[])
 
@@ -348,4 +354,3 @@ def get_extensions_overview_databases(request):
     page = rows[offset:offset + limit]
 
     return Response({"databases": page, "count": len(page), "total": total})
-

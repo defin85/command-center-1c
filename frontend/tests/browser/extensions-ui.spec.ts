@@ -55,9 +55,13 @@ async function setupApiMocks(page: Page, state: {
     if (method === 'GET' && path === '/api/v2/extensions/overview/') {
       const status = (url.searchParams.get('status') || '').trim().toLowerCase()
       const search = (url.searchParams.get('search') || '').trim().toLowerCase()
+      const version = (url.searchParams.get('version') || '').trim()
       let rows = [...state.overview]
       if (search) {
         rows = rows.filter((r) => String(r.name || '').toLowerCase().includes(search))
+      }
+      if (version) {
+        rows = rows.filter((r) => Array.isArray(r.versions) && r.versions.some((v: any) => String(v?.version || '') === version))
       }
       if (status) {
         const key = `${status}_count`
@@ -123,10 +127,16 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
   await expect(page.getByRole('heading', { name: 'Extensions', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toBeVisible()
 
+  await page.getByTestId('extensions-overview-version').fill('2.0')
+  await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'ExtB', exact: true })).toBeVisible()
+
+  await page.getByTestId('extensions-overview-version').fill('')
+  await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toBeVisible()
+
   await page.getByRole('button', { name: 'ExtA', exact: true }).click()
   await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
 
   await expect(page.getByText('db1', { exact: true })).toBeVisible()
   await expect(page.getByText('db2', { exact: true })).toBeVisible()
 })
-

@@ -158,3 +158,75 @@ def test_extensions_overview_drilldown_filters_by_status():
     assert payload_missing["count"] == 1
     assert payload_missing["databases"][0]["database_name"] == "db2"
 
+
+@pytest.mark.django_db
+def test_extensions_overview_treats_legacy_snapshot_as_unknown_not_missing():
+    user = User.objects.create_user(username="u3", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    _grant_view_database(client, user)
+
+    db1 = Database.objects.create(
+        name="db1",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+    db2 = Database.objects.create(
+        name="db2-legacy-snapshot",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+
+    DatabasePermission.objects.create(user=user, database=db1, level=PermissionLevel.VIEW)
+    DatabasePermission.objects.create(user=user, database=db2, level=PermissionLevel.VIEW)
+
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db1.id,
+        defaults={
+            "snapshot": {
+                "extensions": [{"name": "ExtA", "version": "1.0", "is_active": True}],
+                "raw": {"stdout": "ok"},
+                "parse_error": None,
+            },
+            "source_operation_id": "op-1",
+        },
+    )
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db2.id,
+        defaults={
+            # Legacy: raw worker payload without reserved keys (extensions/raw/parse_error)
+            "snapshot": {"stdout": "name | version | active\nExtA | 1.0 | yes"},
+            "source_operation_id": "op-legacy",
+        },
+    )
+
+    resp = client.get("/api/v2/extensions/overview/", {"search": "ExtA"})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total_databases"] == 2
+    assert payload["count"] == 1
+    row = payload["extensions"][0]
+    assert row["name"] == "ExtA"
+    assert row["installed_count"] == 1
+    assert row["active_count"] == 1
+    assert row["missing_count"] == 0
+    assert row["unknown_count"] == 1
+
+    resp_drill = client.get("/api/v2/extensions/overview/databases/", {"name": "ExtA"})
+    assert resp_drill.status_code == 200
+    drill = resp_drill.json()
+    assert drill["count"] == 2
+    statuses = {row["database_name"]: row["status"] for row in drill["databases"]}
+    assert statuses["db1"] == "active"
+    assert statuses["db2-legacy-snapshot"] == "unknown"
+
+    resp_missing = client.get("/api/v2/extensions/overview/databases/", {"name": "ExtA", "status": "missing"})
+    assert resp_missing.status_code == 200
+    missing = resp_missing.json()
+    assert missing["count"] == 0
