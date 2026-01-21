@@ -130,6 +130,10 @@
 - Бизнес-метрики
 - Skill matrix для команды
 
+#### ⚙️ [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
+**Для кого:** Staff operators (настройка runtime)
+**Содержание:** как настроить `ui.action_catalog` в UI, значения `contexts`/`executor.kind`, типовые ошибки валидации и их исправление.
+
 **Приложения:**
 - Sprint planning templates
 - Architecture Decision Record (ADR) template

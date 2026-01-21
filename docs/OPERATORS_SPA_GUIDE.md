@@ -26,6 +26,11 @@
 - Просмотр шаблонов операций.
 - **Sync from registry** (staff-only): синхронизация шаблонов из in-code registry.
 
+### Action Catalog (`/settings/action-catalog`)
+- Настройка `ui.action_catalog` через staff-only UI: какие действия по расширениям показывать в `/databases` и как их исполнять (ibcmd/CLI/workflow).
+- Guided + Raw JSON, diff/preview и Save с серверной валидацией.
+- Подробная инструкция: [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
+
 ### Command Schemas (`/settings/command-schemas`)
 - Редактирование схем команд для `cli`/`ibcmd` (driver catalogs v2) через UI (save/validate/preview/diff/rollback).
 - Доступ: `is_staff=true` + право `operations.manage_driver_catalogs` (иначе будет 403/скрытый пункт меню).
