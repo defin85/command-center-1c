@@ -797,7 +797,9 @@ class EventSubscriber:
                     else:
                         update_fields["error_message"] = result.get("error") or "Unknown error"
                         update_fields["error_code"] = result.get("error_code") or "UNKNOWN_ERROR"
-                        update_fields["result"] = None
+                        # Preserve worker-provided debug data (stdout/stderr/exit_code, etc.)
+                        # for failed tasks; TaskSerializer masks sensitive keys in API responses.
+                        update_fields["result"] = result.get("data")
 
                     task_qs.update(**update_fields)
 

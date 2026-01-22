@@ -159,7 +159,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			"duration_ms":    externalDuration.Milliseconds(),
 			"error":          err.Error(),
 		}, workflowMetadata))
-		return d.failResult(msg, databaseID, start, err.Error(), "IBCMD_ERROR"), nil
+		return d.failResultWithExecution(msg, databaseID, start, err.Error(), "IBCMD_ERROR", res, request.ArtifactPath), nil
 	}
 
 	result := d.buildResult(msg, databaseID, start, res, request.ArtifactPath)
@@ -220,6 +220,49 @@ func (d *Driver) failResult(msg *models.OperationMessage, databaseID string, sta
 		Error:      message,
 		ErrorCode:  code,
 		Duration:   duration.Seconds(),
+	}
+}
+
+func (d *Driver) failResultWithExecution(
+	msg *models.OperationMessage,
+	databaseID string,
+	start time.Time,
+	message string,
+	code string,
+	res *ibcmd.ExecutionResult,
+	artifactPath string,
+) models.DatabaseResultV2 {
+	duration := time.Since(start)
+
+	data := map[string]interface{}{
+		"duration_ms": duration.Milliseconds(),
+	}
+	if res != nil {
+		data["exit_code"] = res.ExitCode
+		data["stdout"] = res.Stdout
+		data["stderr"] = res.Stderr
+		data["stdout_truncated"] = res.StdoutTruncated
+		data["stderr_truncated"] = res.StderrTruncated
+		data["wait_delay_hit"] = res.WaitDelayHit
+	}
+	if artifactPath != "" {
+		data["artifact_path"] = artifactPath
+	}
+
+	eventBase := fmt.Sprintf("ibcmd.%s", msg.OperationType)
+	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
+		"database_id": databaseID,
+		"error":       message,
+		"duration_ms": duration.Milliseconds(),
+	}, events.WorkflowMetadataFromMessage(msg)))
+
+	return models.DatabaseResultV2{
+		DatabaseID: databaseID,
+		Success:    false,
+		Error:      message,
+		ErrorCode:  code,
+		Duration:   duration.Seconds(),
+		Data:       data,
 	}
 }
 

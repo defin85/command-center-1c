@@ -316,9 +316,27 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 	// Execute operation
 	result := c.processor.Process(taskCtx, &msg)
 
-	// Publish result to appropriate stream BEFORE ACK (FIX #1)
+	// Publish result BEFORE ACK (FIX #1).
+	//
+	// IMPORTANT: Always publish the full OperationResultV2 to the "completed" stream,
+	// even when result.Status is "failed" or "timeout". Otherwise, Orchestrator only
+	// receives a summarized error in events:worker:failed and loses per-database
+	// results (stdout/stderr/exit_code), making troubleshooting impossible.
 	var publishSuccess bool
-	if result.Status == "completed" {
+	if result.Status != "completed" {
+		// Record failed status before publishing (failed path is less critical)
+		c.timeline.Record(ctx, msg.OperationID, "message.failed", map[string]interface{}{
+			"message_id": messageID,
+			"status":     result.Status,
+			"error":      getErrorSummary(result),
+		})
+	}
+
+	// Always publish the full result; Orchestrator decides final BatchOperation status from payload.status.
+	publishSuccess = c.publishCompletedResult(ctx, result, envelope.CorrelationID)
+
+	// Preserve previous semantics: extend lock only for successful (completed) operations.
+	if publishSuccess && result.Status == "completed" {
 		// FIX MINOR #2: Extend lock only if we still own it (atomic check-and-extend)
 		// Prevents overwriting lock if another worker took over after we crashed/timed out
 		extendScript := redis.NewScript(`
@@ -333,23 +351,14 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 		} else if extendResult == 0 {
 			log.Warnf("lock for %s was taken by another worker, skipping extend", msg.OperationID)
 		}
-		publishSuccess = c.publishCompletedResult(ctx, result, envelope.CorrelationID)
+	}
 
-		// Record message.completed in timeline AFTER successful publish (FIX #5)
-		if publishSuccess {
-			c.timeline.Record(ctx, msg.OperationID, "message.completed", map[string]interface{}{
-				"message_id": messageID,
-				"status":     result.Status,
-			})
-		}
-	} else {
-		// Record failed status before publishing (failed path is less critical)
-		c.timeline.Record(ctx, msg.OperationID, "message.failed", map[string]interface{}{
+	// Record message.completed in timeline AFTER successful publish (FIX #5)
+	if publishSuccess && result.Status == "completed" {
+		c.timeline.Record(ctx, msg.OperationID, "message.completed", map[string]interface{}{
 			"message_id": messageID,
 			"status":     result.Status,
-			"error":      getErrorSummary(result),
 		})
-		publishSuccess = c.publishFailedResult(ctx, result.OperationID, envelope.CorrelationID, messageID, getErrorSummary(result))
 	}
 
 	// FIX MINOR #2: Verify lock ownership before ACK

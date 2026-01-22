@@ -369,6 +369,47 @@ class EventSubscriberTest(TestCase):
 
     @patch('apps.operations.event_subscriber.operations_redis_client')
     @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_completed_failed_task_preserves_result_data(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='IBCMD Failed',
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity='Infobase',
+            status=BatchOperation.STATUS_PROCESSING,
+        )
+        task = Task.objects.create(
+            id='task-1',
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': op.id,
+                'status': 'failed',
+                'results': [{
+                    'database_id': str(self.database.id),
+                    'success': False,
+                    'error': 'exit status 2',
+                    'error_code': 'IBCMD_ERROR',
+                    'data': {'exit_code': 2, 'stderr': 'boom'},
+                }],
+                'summary': {'total': 1, 'succeeded': 0, 'failed': 1},
+            },
+            'corr-999',
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_FAILED)
+        self.assertEqual(task.error_message, 'exit status 2')
+        self.assertEqual(task.error_code, 'IBCMD_ERROR')
+        self.assertEqual(task.result, {'exit_code': 2, 'stderr': 'boom'})
+
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
     def test_handle_worker_failed_updates_global_task(self, mock_redis_class, mock_ops_redis):
         subscriber = EventSubscriber()
 
