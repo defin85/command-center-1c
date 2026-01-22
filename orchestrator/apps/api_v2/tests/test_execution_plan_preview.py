@@ -225,7 +225,25 @@ def test_get_operation_hides_execution_plan_for_non_staff(client, user):
             "bindings": [{"target_ref": "stdin", "source_ref": "x", "resolve_at": "api", "sensitive": True, "status": "applied"}],
         },
     )
-    Task.objects.create(id=uuid.uuid4().hex, batch_operation_id=op_id, database=None, status=Task.STATUS_PENDING)
+    Task.objects.create(
+        id=uuid.uuid4().hex,
+        batch_operation_id=op_id,
+        database=None,
+        status=Task.STATUS_PENDING,
+        result={
+            "stderr": "boom",
+            "runtime_bindings": [
+                {
+                    "target_ref": "infobase_auth",
+                    "source_ref": "credentials.ib_user_mapping",
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "skipped",
+                    "reason": "unsupported_for_command",
+                }
+            ],
+        },
+    )
 
     resp = client.get("/api/v2/operations/get-operation/", {"operation_id": op_id})
     assert resp.status_code == 200
@@ -234,6 +252,9 @@ def test_get_operation_hides_execution_plan_for_non_staff(client, user):
     assert "bindings" not in payload
     assert "execution_plan" not in (payload.get("operation", {}).get("metadata") or {})
     assert "bindings" not in (payload.get("operation", {}).get("metadata") or {})
+    assert isinstance(payload.get("tasks"), list)
+    assert payload["tasks"][0]["result"]["stderr"] == "boom"
+    assert "runtime_bindings" not in payload["tasks"][0]["result"]
 
 
 @pytest.mark.django_db
@@ -254,10 +275,31 @@ def test_get_operation_includes_execution_plan_for_staff(staff_client, staff_use
             "bindings": [{"target_ref": "stdin", "source_ref": "x", "resolve_at": "api", "sensitive": True, "status": "applied"}],
         },
     )
-    Task.objects.create(id=uuid.uuid4().hex, batch_operation_id=op_id, database=None, status=Task.STATUS_PENDING)
+    Task.objects.create(
+        id=uuid.uuid4().hex,
+        batch_operation_id=op_id,
+        database=None,
+        status=Task.STATUS_PENDING,
+        result={
+            "stderr": "boom",
+            "runtime_bindings": [
+                {
+                    "target_ref": "infobase_auth",
+                    "source_ref": "credentials.ib_user_mapping",
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "skipped",
+                    "reason": "unsupported_for_command",
+                }
+            ],
+        },
+    )
 
     resp = staff_client.get("/api/v2/operations/get-operation/", {"operation_id": op_id})
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["execution_plan"]["kind"] == "ibcmd_cli"
     assert isinstance(payload["bindings"], list)
+    assert isinstance(payload.get("tasks"), list)
+    assert payload["tasks"][0]["result"]["stderr"] == "boom"
+    assert isinstance(payload["tasks"][0]["result"]["runtime_bindings"], list)

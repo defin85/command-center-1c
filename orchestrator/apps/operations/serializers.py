@@ -83,6 +83,10 @@ class TaskSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         if "result" in data:
             data["result"] = _mask_value(data["result"])
+            request = self.context.get("request") if isinstance(getattr(self, "context", None), dict) else None
+            is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+            if not is_staff and isinstance(data.get("result"), dict):
+                data["result"].pop("runtime_bindings", None)
         return data
 
     def get_database_name(self, obj: Task) -> str | None:

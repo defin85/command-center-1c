@@ -9,7 +9,7 @@
  * - Trace viewer integration
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   Layout,
@@ -21,6 +21,7 @@ import {
   Progress,
   Tag,
   Timeline,
+  Table,
   Spin,
   Alert,
   Collapse,
@@ -44,6 +45,7 @@ import {
   MinusCircleOutlined,
   ExportOutlined
 } from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
 import { WorkflowCanvas } from '../../components/workflow'
 import { TraceViewerModal } from '../../components/workflow/TraceViewerModal'
 import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
@@ -51,6 +53,7 @@ import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '
 import { getV2 } from '../../api/generated'
 import { convertExecutionToLegacy, convertDAGToLegacy } from '../../utils/workflowTransforms'
 import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
+import { useAuthz } from '../../authz'
 import './WorkflowMonitor.css'
 
 // v2 migration: использовать env variable для Jaeger UI
@@ -87,10 +90,14 @@ const statusIcons: Record<WorkflowStatusType, React.ReactNode> = {
 const WorkflowMonitor = () => {
   const { executionId } = useParams<{ executionId: string }>()
   const navigate = useNavigate()
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
 
   // Execution data from API (initial load)
   const [execution, setExecution] = useState<WorkflowExecution | null>(null)
   const [dagStructure, setDagStructure] = useState<DAGStructure | null>(null)
+  const [executionPlan, setExecutionPlan] = useState<unknown | null>(null)
+  const [executionBindings, setExecutionBindings] = useState<unknown | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
@@ -132,6 +139,8 @@ const WorkflowMonitor = () => {
         const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
         const execData = convertExecutionToLegacy(execResponse.execution)
         setExecution(execData)
+        setExecutionPlan((execResponse as unknown as { execution_plan?: unknown }).execution_plan ?? null)
+        setExecutionBindings((execResponse as unknown as { bindings?: unknown }).bindings ?? null)
 
         // Load template for DAG structure
         const templateResponse = await api.getWorkflowsGetWorkflow({ workflow_id: execData.workflow_template })
@@ -148,6 +157,59 @@ const WorkflowMonitor = () => {
 
     loadData()
   }, [executionId])
+
+  type UIBinding = {
+    target_ref?: string
+    source_ref?: string
+    resolve_at?: string
+    sensitive?: boolean
+    status?: string
+    reason?: string | null
+  }
+
+  const bindings = useMemo(() => {
+    if (!isStaff) return [] as UIBinding[]
+    return Array.isArray(executionBindings) ? (executionBindings as UIBinding[]) : []
+  }, [executionBindings, isStaff])
+
+  const executionPlanText = useMemo(() => {
+    if (!isStaff) return null
+    const plan = executionPlan as Record<string, unknown> | undefined
+    if (!plan || typeof plan !== 'object') return null
+
+    const kind = String(plan.kind ?? '')
+    const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
+    const inputContextMasked = plan.input_context_masked as unknown
+    const targets = plan.targets as unknown
+
+    const lines: string[] = []
+    if (kind) lines.push(`kind: ${kind}`)
+    if (workflowId) lines.push(`workflow_id: ${workflowId}`)
+    if (targets && typeof targets === 'object') {
+      lines.push('targets:')
+      lines.push(JSON.stringify(targets, null, 2))
+    }
+    if (inputContextMasked && typeof inputContextMasked === 'object') {
+      lines.push('input_context_masked:')
+      lines.push(JSON.stringify(inputContextMasked, null, 2))
+    }
+    return lines.length > 0 ? lines.join('\n') : null
+  }, [executionPlan, isStaff])
+
+  const bindingColumns: ColumnsType<UIBinding> = [
+    { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
+    { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
+    { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
+    {
+      title: 'Sensitive',
+      dataIndex: 'sensitive',
+      key: 'sensitive',
+      width: 90,
+      render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
+    },
+    { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
+    { title: 'Reason', dataIndex: 'reason', key: 'reason' },
+  ]
 
   // Handle node selection
   const handleNodeSelect = useCallback((nodeId: string | null) => {
@@ -425,10 +487,10 @@ const WorkflowMonitor = () => {
           )}
         </Content>
 
-        {/* Right Sider - Info & Timeline */}
-        <Sider width={320} className="monitor-sider">
-          <Card title="Execution Info" size="small" className="info-card">
-            <Descriptions column={1} size="small">
+	        {/* Right Sider - Info & Timeline */}
+	        <Sider width={320} className="monitor-sider">
+	          <Card title="Execution Info" size="small" className="info-card">
+	            <Descriptions column={1} size="small">
               <Descriptions.Item label="ID">
                 <Text
                   copyable={executionId ? { text: executionId } : false}
@@ -462,13 +524,37 @@ const WorkflowMonitor = () => {
                   </Text>
                 </Descriptions.Item>
               )}
-            </Descriptions>
-          </Card>
+	            </Descriptions>
+	          </Card>
 
-          <Card title="Statistics" size="small" className="stats-card">
-            <Row gutter={[16, 16]}>
-              <Col span={12}>
-                <Statistic
+	          {isStaff && (
+	            <Card title="Execution Plan (staff)" size="small" className="stats-card">
+	              {executionPlanText ? (
+	                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
+	              ) : (
+	                <Text type="secondary">Not available</Text>
+	              )}
+	              <div style={{ marginTop: 12, fontWeight: 600 }}>Binding Provenance (staff):</div>
+	              {bindings.length > 0 ? (
+	                <Table
+	                  style={{ marginTop: 8 }}
+	                  size="small"
+	                  rowKey={(_, idx) => String(idx)}
+	                  pagination={false}
+	                  dataSource={bindings}
+	                  columns={bindingColumns}
+	                  scroll={{ x: 900 }}
+	                />
+	              ) : (
+	                <Text type="secondary">No bindings</Text>
+	              )}
+	            </Card>
+	          )}
+
+	          <Card title="Statistics" size="small" className="stats-card">
+	            <Row gutter={[16, 16]}>
+	              <Col span={12}>
+	                <Statistic
                   title="Completed"
                   value={Object.values(nodeStatuses).filter(n => n.status === 'completed').length}
                   valueStyle={{ color: '#52c41a' }}

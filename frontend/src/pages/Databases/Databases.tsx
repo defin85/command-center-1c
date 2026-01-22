@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { App, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input } from 'antd'
+import { App, Button, Space, Tag, Select, Breadcrumb, Modal, Form, Typography, Dropdown, Tooltip, Input, Table } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined, KeyOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -344,6 +345,23 @@ export const Databases = () => {
       return response.data as unknown
     }
 
+    type UIBinding = {
+      target_ref?: string
+      source_ref?: string
+      resolve_at?: string
+      sensitive?: boolean
+      status?: string
+      reason?: string | null
+    }
+
+    const extractBindings = (preview: unknown): UIBinding[] => {
+      if (!preview || typeof preview !== 'object') return []
+      const p = preview as Record<string, unknown>
+      const raw = p.bindings
+      if (!Array.isArray(raw)) return []
+      return raw.filter((item) => item && typeof item === 'object') as UIBinding[]
+    }
+
     const formatPreview = (preview: unknown): string => {
       if (!preview || typeof preview !== 'object') return ''
       const p = preview as Record<string, unknown>
@@ -362,6 +380,21 @@ export const Databases = () => {
       return lines.join('\n')
     }
 
+    const bindingColumns: ColumnsType<UIBinding> = [
+      { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
+      { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
+      { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
+      {
+        title: 'Sensitive',
+        dataIndex: 'sensitive',
+        key: 'sensitive',
+        width: 90,
+        render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
+      },
+      { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
+      { title: 'Reason', dataIndex: 'reason', key: 'reason' },
+    ]
+
     const doRun = async () => {
       setExtensionsActionPendingId(action.id)
       try {
@@ -378,9 +411,11 @@ export const Databases = () => {
       const count = databaseIds.length
       let previewText = ''
       let previewError = ''
+      let previewBindings: UIBinding[] = []
       try {
         const preview = await loadPreview()
         previewText = formatPreview(preview)
+        previewBindings = extractBindings(preview)
       } catch (e: unknown) {
         previewError = e instanceof Error ? e.message : 'preview failed'
       }
@@ -400,6 +435,21 @@ export const Databases = () => {
             ) : (
               <div style={{ opacity: 0.7 }}>Preview not available</div>
             )}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
+              {previewBindings.length > 0 ? (
+                <Table
+                  size="small"
+                  rowKey={(_, idx) => String(idx)}
+                  pagination={false}
+                  dataSource={previewBindings}
+                  columns={bindingColumns}
+                  scroll={{ x: 900 }}
+                />
+              ) : (
+                <div style={{ opacity: 0.7 }}>No bindings</div>
+              )}
+            </div>
           </div>
         ),
         okText: 'Выполнить',

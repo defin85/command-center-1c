@@ -1013,7 +1013,7 @@ def list_operations(request):
     total = qs.count()
     qs = qs[offset:offset + limit]
 
-    serializer = BatchOperationSerializer(qs, many=True)
+    serializer = BatchOperationSerializer(qs, many=True, context={"request": request})
 
     return Response({
         'operations': serializer.data,
@@ -1149,7 +1149,7 @@ def get_operation(request):
             }
         }, status=403)
 
-    serializer = BatchOperationSerializer(operation)
+    serializer = BatchOperationSerializer(operation, context={"request": request})
 
     # Build progress info
     tasks = operation.tasks.all()
@@ -1195,7 +1195,7 @@ def get_operation(request):
             if apply_sort_error:
                 return Response({"success": False, "error": apply_sort_error}, status=400)
 
-        task_serializer = TaskSerializer(tasks_qs[task_offset:task_offset + task_limit], many=True)
+        task_serializer = TaskSerializer(tasks_qs[task_offset:task_offset + task_limit], many=True, context={"request": request})
         response_data['tasks'] = task_serializer.data
 
     return Response(response_data)
