@@ -62,6 +62,8 @@ export interface UIBatchOperation {
   success_rate: number | null
   created_by: string
   metadata: unknown
+  execution_plan?: unknown
+  bindings?: unknown
   workflow_execution_id?: string
   node_id?: string
   trace_id?: string

@@ -1356,6 +1356,38 @@ class OperationsService:
 
         operation_id = str(uuid.uuid4())
 
+        command = str((config or {}).get("command") or "").strip()
+        raw_args = (config or {}).get("args") or []
+        args_list = [str(x) for x in raw_args if x is not None]
+        argv_masked = [command] + ["/P***" if a.startswith("/P") and len(a) > 2 else a for a in args_list]
+        bindings = [
+            {
+                "target_ref": "command",
+                "source_ref": "request.config.command",
+                "resolve_at": "api",
+                "sensitive": False,
+                "status": "applied",
+            }
+        ]
+        for idx, token in enumerate(args_list):
+            is_sensitive = token.startswith("/P") or "pwd" in token.lower() or "password" in token.lower()
+            bindings.append(
+                {
+                    "target_ref": f"args[{idx}]",
+                    "source_ref": f"request.config.args[{idx}]",
+                    "resolve_at": "api",
+                    "sensitive": bool(is_sensitive),
+                    "status": "applied",
+                }
+            )
+
+        execution_plan = {
+            "kind": "designer_cli",
+            "plan_version": 1,
+            "argv_masked": argv_masked,
+            "targets": {"database_ids_count": len(databases)},
+        }
+
         batch_operation = BatchOperation.objects.create(
             id=operation_id,
             name=f"{operation_type} - {len(databases)} databases",
@@ -1373,6 +1405,8 @@ class OperationsService:
             created_by=user.username if user else "system",
             metadata={
                 "tags": ["cli", operation_type],
+                "execution_plan": execution_plan,
+                "bindings": bindings,
             },
         )
         batch_operation.target_databases.set(databases)

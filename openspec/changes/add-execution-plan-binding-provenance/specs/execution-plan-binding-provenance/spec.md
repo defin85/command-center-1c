@@ -1,0 +1,87 @@
+# Спецификация: execution-plan-binding-provenance
+
+## Purpose
+Определяет явное понятие **Execution Plan** и **Binding Provenance** для executors (`ibcmd_cli`, `designer_cli`, `workflow`), чтобы UI мог показывать:
+- что будет/было выполнено (без хранения секретов),
+- откуда берутся значения и где подставляются,
+а система — логировать это безопасно.
+
+## ADDED Requirements
+### Requirement: Execution Plan и Binding Provenance как явные данные
+Система ДОЛЖНА (SHALL) формировать структуру Execution Plan и Binding Provenance для каждого запуска действия через executors `ibcmd_cli`, `designer_cli` и `workflow`.
+
+Execution Plan MUST:
+- для CLI содержать `argv_masked[]` (и `stdin_masked`, если применимо);
+- для workflow содержать `workflow_id` и `input_context_masked` (в безопасном виде);
+- содержать таргеты выполнения (например per-database и список/количество баз).
+
+Binding Provenance MUST содержать список биндингов, где каждый биндинг включает:
+- `target_ref` (куда подставляем),
+- `source_ref` (откуда берём),
+- `resolve_at` (`api|worker`),
+- `sensitive` (true/false),
+- `status` (`applied|skipped|unresolved`) и `reason` (если не applied).
+
+#### Scenario: CLI action имеет plan+bindings без секретов
+- **WHEN** staff делает preview или запускает `ibcmd_cli`/`designer_cli` action
+- **THEN** система возвращает `argv_masked[]` и `bindings[]`, в которых секретные источники отмечены `sensitive=true`, а raw значения секретов отсутствуют
+
+#### Scenario: Workflow action имеет plan+bindings без секретов
+- **WHEN** staff делает preview или запускает `workflow` action
+- **THEN** система возвращает `workflow_id`, `input_context_masked` и `bindings[]` без raw секретов
+
+### Requirement: Preview plan/provenance до запуска
+Система ДОЛЖНА (SHALL) предоставить staff-only preview API, который возвращает Execution Plan + Binding Provenance **без создания операции/исполнения**.
+
+#### Scenario: Preview доступен из /databases drawer для staff
+- **GIVEN** пользователь является staff
+- **WHEN** staff открывает drawer запуска действия и запрашивает preview
+- **THEN** UI получает plan+bindings и отображает их до запуска
+
+#### Scenario: Preview доступен из редактора ui.action_catalog
+- **GIVEN** пользователь является staff
+- **WHEN** staff в `/settings/action-catalog` выбирает действие и запрашивает preview
+- **THEN** UI получает plan+bindings и отображает их
+
+### Requirement: Persisted plan/provenance доступен в details
+Система ДОЛЖНА (SHALL) сохранять Execution Plan + Binding Provenance (без секретов) вместе с созданным исполнением и отображать их staff пользователю в details:
+- `/operations` (для операций),
+- `/workflows/executions` (для workflow executions).
+
+#### Scenario: /operations details показывает persisted plan
+- **WHEN** staff открывает details выполненной операции
+- **THEN** UI отображает сохранённый plan+bindings и их статусы (без секретов)
+
+#### Scenario: /workflows/executions details показывает persisted plan
+- **WHEN** staff открывает details workflow execution
+- **THEN** UI отображает сохранённый plan+bindings (без секретов)
+
+### Requirement: Staff-only видимость с расширением через RBAC
+По умолчанию система ДОЛЖНА (SHALL) ограничивать доступ к plan/provenance только staff пользователям.
+Система ДОЛЖНА (SHALL) предусмотреть возможность расширить доступ через RBAC (например отдельным permission), не меняя формат plan/provenance.
+
+#### Scenario: Non-staff не видит plan/provenance
+- **WHEN** non-staff запрашивает детали операции или preview
+- **THEN** plan/provenance не выдаются (403 или поля отсутствуют), и секреты не раскрываются
+
+### Requirement: Безопасное логирование и отсутствие секретов
+Система ДОЛЖНА (SHALL) гарантировать, что plan/provenance не содержат raw секретов в:
+- API ответах,
+- persisted данных,
+- событиях/стримах,
+- логах.
+
+#### Scenario: Секреты не попадают в события и логи
+- **WHEN** выполнение использует источники значений, помеченные как `sensitive=true` (env/credentials store/database password)
+- **THEN** в plan/provenance присутствуют только masked представления и метаданные источников, без raw значений
+
+### Requirement: Runtime-only биндинги репортятся worker'ом безопасно
+Если часть биндингов резолвится на worker (например per-database контекст, allowlist-инъекции, runtime transforms), worker ДОЛЖЕН (SHALL) репортить в результат:
+- `status` (`applied|skipped`) и `reason`,
+- без раскрытия значений.
+
+#### Scenario: Worker помечает skipped биндинг как unsupported
+- **GIVEN** биндинг предполагает добавление аргумента, который не поддерживается для выбранной команды
+- **WHEN** worker определяет, что биндинг неприменим
+- **THEN** результат содержит `status=skipped` и `reason=unsupported_for_command`, а значения не раскрываются
+

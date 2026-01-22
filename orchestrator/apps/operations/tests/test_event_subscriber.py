@@ -395,7 +395,20 @@ class EventSubscriberTest(TestCase):
                     'success': False,
                     'error': 'exit status 2',
                     'error_code': 'IBCMD_ERROR',
-                    'data': {'exit_code': 2, 'stderr': 'boom'},
+                    'data': {
+                        'exit_code': 2,
+                        'stderr': 'boom',
+                        'runtime_bindings': [
+                            {
+                                'target_ref': 'infobase_auth',
+                                'source_ref': 'credentials.ib_user_mapping',
+                                'resolve_at': 'worker',
+                                'sensitive': True,
+                                'status': 'skipped',
+                                'reason': 'unsupported_for_command',
+                            },
+                        ],
+                    },
                 }],
                 'summary': {'total': 1, 'succeeded': 0, 'failed': 1},
             },
@@ -406,7 +419,23 @@ class EventSubscriberTest(TestCase):
         self.assertEqual(task.status, Task.STATUS_FAILED)
         self.assertEqual(task.error_message, 'exit status 2')
         self.assertEqual(task.error_code, 'IBCMD_ERROR')
-        self.assertEqual(task.result, {'exit_code': 2, 'stderr': 'boom'})
+        self.assertEqual(
+            task.result,
+            {
+                'exit_code': 2,
+                'stderr': 'boom',
+                'runtime_bindings': [
+                    {
+                        'target_ref': 'infobase_auth',
+                        'source_ref': 'credentials.ib_user_mapping',
+                        'resolve_at': 'worker',
+                        'sensitive': True,
+                        'status': 'skipped',
+                        'reason': 'unsupported_for_command',
+                    },
+                ],
+            },
+        )
 
     @patch('apps.operations.event_subscriber.operations_redis_client')
     @patch('apps.operations.event_subscriber.redis.Redis')

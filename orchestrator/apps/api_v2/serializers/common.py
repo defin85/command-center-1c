@@ -19,3 +19,54 @@ class ErrorResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField(default=False)
     error = ErrorDetailSerializer()
+
+
+class ExecutionBindingSerializer(serializers.Serializer):
+    """
+    Binding provenance for execution plan.
+
+    IMPORTANT: This structure must never contain raw secret values.
+    """
+
+    target_ref = serializers.CharField(help_text="Where the value is applied (flag/argv index/workflow path).")
+    source_ref = serializers.CharField(help_text="Where the value comes from (typed source reference).")
+    resolve_at = serializers.ChoiceField(choices=["api", "worker"], help_text="Where the binding is resolved.")
+    sensitive = serializers.BooleanField(help_text="True if the source is secret (value must not be stored/logged).")
+    status = serializers.ChoiceField(
+        choices=["applied", "skipped", "unresolved"],
+        help_text="Binding status. Preview may include unresolved bindings.",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Reason for skipped/unresolved (e.g., missing_source, blocked_by_allowlist).",
+    )
+
+
+class ExecutionPlanSerializer(serializers.Serializer):
+    """
+    Safe execution plan representation.
+
+    IMPORTANT: This structure must never contain raw secret values.
+    """
+
+    kind = serializers.ChoiceField(choices=["ibcmd_cli", "designer_cli", "workflow"])
+    plan_version = serializers.IntegerField(required=False, default=1)
+
+    argv_masked = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    stdin_masked = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+
+    workflow_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    input_context_masked = serializers.DictField(required=False, default=dict)
+
+    targets = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text="Execution targets summary (e.g., scope, database_ids count).",
+    )
+
+
+class ExecutionPlanWithBindingsSerializer(serializers.Serializer):
+    execution_plan = ExecutionPlanSerializer()
+    bindings = ExecutionBindingSerializer(many=True)

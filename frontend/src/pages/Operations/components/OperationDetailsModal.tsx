@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip } from 'antd'
+import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
 import { MonitorOutlined, BranchesOutlined, FilterOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { OperationDetailsModalProps, UITask } from '../types'
@@ -13,6 +13,7 @@ import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
+import { useAuthz } from '../../../authz'
 
 const { Paragraph, Link } = Typography
 
@@ -108,6 +109,8 @@ export const OperationDetailsModal = ({
   onTimeline,
   liveEvent,
 }: OperationDetailsModalProps) => {
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
   const operationId = operation?.id ?? null
   const [operationState, setOperationState] = useState(operation)
 
@@ -202,6 +205,63 @@ export const OperationDetailsModal = ({
       setOperationState(freshOperation)
     }
   }, [freshOperation])
+
+  type UIBinding = {
+    target_ref?: string
+    source_ref?: string
+    resolve_at?: string
+    sensitive?: boolean
+    status?: string
+    reason?: string | null
+  }
+
+  const executionPlanText = useMemo(() => {
+    if (!operationState || !isStaff) return null
+    const plan = operationState.execution_plan as Record<string, unknown> | undefined
+    if (!plan || typeof plan !== 'object') return null
+
+    const kind = String(plan.kind ?? '')
+    const argv = Array.isArray(plan.argv_masked) ? plan.argv_masked.filter((x) => typeof x === 'string') : []
+    const stdinMasked = typeof plan.stdin_masked === 'string' ? plan.stdin_masked : null
+    const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
+    const inputContextMasked = plan.input_context_masked as unknown
+
+    const lines: string[] = []
+    if (kind) lines.push(`kind: ${kind}`)
+    if (workflowId) lines.push(`workflow_id: ${workflowId}`)
+    if (argv.length > 0) {
+      lines.push('argv_masked:')
+      lines.push(...argv.map((x) => `  ${x}`))
+    }
+    if (stdinMasked) {
+      lines.push(`stdin_masked: ${stdinMasked}`)
+    }
+    if (inputContextMasked && typeof inputContextMasked === 'object') {
+      lines.push('input_context_masked:')
+      lines.push(JSON.stringify(inputContextMasked, null, 2))
+    }
+    return lines.length > 0 ? lines.join('\n') : null
+  }, [isStaff, operationState])
+
+  const bindings = useMemo(() => {
+    if (!operationState || !isStaff) return [] as UIBinding[]
+    return Array.isArray(operationState.bindings) ? (operationState.bindings as UIBinding[]) : []
+  }, [isStaff, operationState])
+
+  const bindingColumns: ColumnsType<UIBinding> = [
+    { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
+    { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
+    { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
+    {
+      title: 'Sensitive',
+      dataIndex: 'sensitive',
+      key: 'sensitive',
+      width: 90,
+      render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
+    },
+    { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
+    { title: 'Reason', dataIndex: 'reason', key: 'reason' },
+  ]
 
   return (
     <Modal
@@ -302,6 +362,30 @@ export const OperationDetailsModal = ({
             <div>
               <strong>Target Entity:</strong> {operationState.target_entity || '-'}
             </div>
+            {isStaff && (
+              <div>
+                <strong>Execution Plan (staff):</strong>
+                {executionPlanText ? (
+                  <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
+                ) : (
+                  <div style={{ marginTop: 8, opacity: 0.7 }}>Not available</div>
+                )}
+              </div>
+            )}
+            {isStaff && bindings.length > 0 && (
+              <div>
+                <strong>Binding Provenance (staff):</strong>
+                <Table
+                  style={{ marginTop: 8 }}
+                  size="small"
+                  rowKey={(_, idx) => String(idx)}
+                  pagination={false}
+                  dataSource={bindings}
+                  columns={bindingColumns}
+                  scroll={{ x: 900 }}
+                />
+              </div>
+            )}
             <div>
               <strong>Progress:</strong> <Progress percent={operationState.progress} />
             </div>

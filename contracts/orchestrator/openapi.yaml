@@ -5782,6 +5782,50 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/ui/execution-plan/preview/:
+    post:
+      operationId: v2_ui_execution_plan_preview_create
+      description: |-
+        Build safe Execution Plan + Binding Provenance for an executor without creating an operation/execution.
+
+        Notes:
+        - Intended for staff-only UI (Action Catalog editor, Databases drawer).
+        - Response MUST NOT contain raw secret values.
+      summary: Preview execution plan
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPlanWithBindings'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/users/create/:
     post:
       operationId: v2_users_create_create
@@ -10102,6 +10146,12 @@ components:
       properties:
         execution:
           $ref: '#/components/schemas/WorkflowExecutionDetail'
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
         steps:
           type: array
           items:
@@ -10842,6 +10892,12 @@ components:
       properties:
         operation:
           $ref: '#/components/schemas/BatchOperation'
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
         tasks:
           type: array
           items:
@@ -12280,6 +12336,108 @@ components:
       required:
       - catalog_version
       - extensions
+    ExecutionBinding:
+      type: object
+      description: Binding provenance item (never contains raw secret values).
+      properties:
+        target_ref:
+          type: string
+          description: Where the value is applied (flag/argv index/workflow path).
+        source_ref:
+          type: string
+          description: Where the value comes from (typed source reference).
+        resolve_at:
+          enum:
+          - api
+          - worker
+          type: string
+        sensitive:
+          type: boolean
+          description: True if the source is secret (value must not be stored/logged).
+        status:
+          enum:
+          - applied
+          - skipped
+          - unresolved
+          type: string
+        reason:
+          type: string
+          nullable: true
+          description: Reason for skipped/unresolved (e.g., missing_source, blocked_by_allowlist).
+      required:
+      - resolve_at
+      - sensitive
+      - source_ref
+      - status
+      - target_ref
+    ExecutionPlan:
+      type: object
+      description: Safe execution plan representation (never contains raw secret values).
+      properties:
+        kind:
+          enum:
+          - ibcmd_cli
+          - designer_cli
+          - workflow
+          type: string
+        plan_version:
+          type: integer
+          default: 1
+        argv_masked:
+          type: array
+          items:
+            type: string
+        stdin_masked:
+          type: string
+          nullable: true
+        workflow_id:
+          type: string
+          nullable: true
+        input_context_masked:
+          type: object
+          additionalProperties: {}
+        targets:
+          type: object
+          additionalProperties: {}
+          description: Execution targets summary (e.g., scope, database_ids count).
+      required:
+      - kind
+    ExecutionPlanPreviewRequest:
+      type: object
+      description: Request for execution plan preview (staff-only).
+      properties:
+        executor:
+          $ref: '#/components/schemas/ActionCatalogExecutor'
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Optional list of database UUIDs (per_database / bulk).
+          maxItems: 500
+        auth_database_id:
+          type: string
+          format: uuid
+          description: Anchor database for global commands (optional).
+        connection:
+          type: object
+          additionalProperties: {}
+          description: Optional connection options (driver-level).
+      required:
+      - executor
+    ExecutionPlanWithBindings:
+      type: object
+      description: Preview/persisted execution plan with binding provenance.
+      properties:
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
+      required:
+      - bindings
+      - execution_plan
     Task:
       type: object
       description: Serializer for Task model.

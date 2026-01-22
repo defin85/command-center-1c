@@ -10,6 +10,7 @@ import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '.
 import type { ActionCatalogAction } from '../../api/generated/model/actionCatalogAction'
 import type { ExecuteIbcmdCliOperationRequest } from '../../api/generated/model/executeIbcmdCliOperationRequest'
 import { getV2 } from '../../api/generated'
+import { apiClient } from '../../api/client'
 import { DatabaseActionsMenu, BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
@@ -335,6 +336,32 @@ export const Databases = () => {
   const runExtensionsAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
     if (extensionsActionPendingId) return
 
+    const loadPreview = async () => {
+      const response = await apiClient.post('/api/v2/ui/execution-plan/preview/', {
+        executor: action.executor,
+        database_ids: databaseIds,
+      })
+      return response.data as unknown
+    }
+
+    const formatPreview = (preview: unknown): string => {
+      if (!preview || typeof preview !== 'object') return ''
+      const p = preview as Record<string, unknown>
+      const plan = p.execution_plan as Record<string, unknown> | undefined
+      if (!plan || typeof plan !== 'object') return ''
+      const kind = String(plan.kind ?? '')
+      const argv = Array.isArray(plan.argv_masked) ? plan.argv_masked.filter((x) => typeof x === 'string') : []
+      const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
+      const lines: string[] = []
+      if (kind) lines.push(`kind: ${kind}`)
+      if (workflowId) lines.push(`workflow_id: ${workflowId}`)
+      if (argv.length > 0) {
+        lines.push('argv_masked:')
+        lines.push(...argv.map((x) => `  ${x}`))
+      }
+      return lines.join('\n')
+    }
+
     const doRun = async () => {
       setExtensionsActionPendingId(action.id)
       try {
@@ -345,6 +372,42 @@ export const Databases = () => {
       } finally {
         setExtensionsActionPendingId(null)
       }
+    }
+
+    if (isStaff) {
+      const count = databaseIds.length
+      let previewText = ''
+      let previewError = ''
+      try {
+        const preview = await loadPreview()
+        previewText = formatPreview(preview)
+      } catch (e: unknown) {
+        previewError = e instanceof Error ? e.message : 'preview failed'
+      }
+
+      modal.confirm({
+        title: action.executor.fixed?.confirm_dangerous === true ? 'Подтвердить опасное действие?' : 'Подтвердить действие?',
+        content: (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              Действие &quot;{action.label}&quot; будет выполнено для {count} баз(ы).
+            </div>
+            {previewError ? (
+              <div style={{ marginBottom: 8, color: '#cf1322' }}>Preview error: {previewError}</div>
+            ) : null}
+            {previewText ? (
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
+            ) : (
+              <div style={{ opacity: 0.7 }}>Preview not available</div>
+            )}
+          </div>
+        ),
+        okText: 'Выполнить',
+        cancelText: 'Отмена',
+        okButtonProps: { danger: action.executor.fixed?.confirm_dangerous === true },
+        onOk: doRun,
+      })
+      return
     }
 
     if (action.executor.fixed?.confirm_dangerous === true) {
@@ -361,7 +424,7 @@ export const Databases = () => {
     }
 
     await doRun()
-  }, [executeExtensionsAction, extensionsActionPendingId, message, modal])
+  }, [executeExtensionsAction, extensionsActionPendingId, isStaff, message, modal])
 
   // Row selection configuration
   const rowSelection: TableRowSelection<Database> | undefined = canSelectRows

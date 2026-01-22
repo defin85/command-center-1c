@@ -88,9 +88,13 @@ export async function fetchOperation(
     { signal }
   )
   const operation = transformBatchOperation(response.operation)
+  const executionPlan = (response as unknown as { execution_plan?: unknown }).execution_plan
+  const bindings = (response as unknown as { bindings?: unknown }).bindings
   return {
     ...operation,
     tasks: response.tasks ? response.tasks.map(transformTask) : operation.tasks,
+    execution_plan: executionPlan,
+    bindings,
   }
 }
 

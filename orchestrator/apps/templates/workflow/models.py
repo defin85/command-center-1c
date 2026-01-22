@@ -594,6 +594,16 @@ class WorkflowExecution(models.Model):
     input_context = models.JSONField(
         default=dict, help_text="Initial input data for the workflow"
     )
+    execution_plan = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Safe execution plan (masked; MUST NOT contain raw secret values)",
+    )
+    bindings = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Binding provenance list (MUST NOT contain raw secret values)",
+    )
     final_result = models.JSONField(
         null=True, blank=True, help_text="Final workflow output data"
     )

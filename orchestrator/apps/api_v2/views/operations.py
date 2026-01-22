@@ -32,6 +32,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
+from apps.api_v2.serializers.common import ExecutionBindingSerializer, ExecutionPlanSerializer
 from apps.operations.models import BatchOperation, Task, DriverCommandShortcut
 from apps.operations.serializers import BatchOperationSerializer, TaskSerializer
 from apps.operations.services import OperationsService
@@ -74,6 +75,29 @@ from apps.operations.prometheus_metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_KEYS: set[str] = {
+    "db_password",
+    "db_pwd",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "access_key",
+    "secret_key",
+    "stdin",
+}
+
+
+def _is_sensitive_key(key: str) -> bool:
+    key_norm = (key or "").strip().lower()
+    if not key_norm:
+        return False
+    if key_norm in _SENSITIVE_KEYS:
+        return True
+    if key_norm.endswith("_password") or key_norm.endswith("_pwd"):
+        return True
+    return False
 
 # =============================================================================
 # SSE Ticket Constants
@@ -244,6 +268,8 @@ class OperationListResponseSerializer(serializers.Serializer):
 class OperationDetailResponseSerializer(serializers.Serializer):
     """Response for get_operation endpoint."""
     operation = BatchOperationSerializer()
+    execution_plan = ExecutionPlanSerializer(required=False)
+    bindings = ExecutionBindingSerializer(many=True, required=False)
     tasks = TaskSerializer(many=True, required=False, help_text="Task details (if include_tasks=true)")
     progress = OperationProgressSerializer()
 
@@ -1141,6 +1167,15 @@ def get_operation(request):
         'progress': progress,
     }
 
+    if getattr(request.user, "is_staff", False):
+        metadata = operation.metadata if isinstance(operation.metadata, dict) else {}
+        execution_plan = metadata.get("execution_plan")
+        bindings = metadata.get("bindings")
+        if isinstance(execution_plan, dict):
+            response_data["execution_plan"] = execution_plan
+        if isinstance(bindings, list):
+            response_data["bindings"] = bindings
+
     if include_tasks:
         tasks_qs = tasks
 
@@ -1776,6 +1811,84 @@ def _execute_ibcmd_cli_validated(
     else:
         operation_name = f"{operation_name} (global)"
 
+    final_flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
+    execution_plan = {
+        "kind": "ibcmd_cli",
+        "plan_version": 1,
+        "argv_masked": argv_masked,
+        "stdin_masked": "***" if stdin else None,
+        "targets": {
+            "scope": scope,
+            "database_ids_count": len(database_ids) if scope == "per_database" else 0,
+        },
+    }
+    bindings = [
+        {
+            "target_ref": "command_id",
+            "source_ref": "request.command_id",
+            "resolve_at": "api",
+            "sensitive": False,
+            "status": "applied",
+        },
+        {
+            "target_ref": "mode",
+            "source_ref": "request.mode",
+            "resolve_at": "api",
+            "sensitive": False,
+            "status": "applied",
+        },
+    ]
+    if scope == "global":
+        bindings.append(
+            {
+                "target_ref": "auth_database_id",
+                "source_ref": "request.auth_database_id",
+                "resolve_at": "api",
+                "sensitive": False,
+                "status": "applied",
+            }
+        )
+    for key in sorted((merged_params or {}).keys()):
+        bindings.append(
+            {
+                "target_ref": f"params.{key}",
+                "source_ref": f"request.params.{key}",
+                "resolve_at": "api",
+                "sensitive": _is_sensitive_key(str(key)),
+                "status": "applied",
+            }
+        )
+    for idx, token in enumerate(additional_args or []):
+        bindings.append(
+            {
+                "target_ref": f"additional_args[{idx}]",
+                "source_ref": f"request.additional_args[{idx}]",
+                "resolve_at": "api",
+                "sensitive": _is_sensitive_key(str(token)),
+                "status": "applied",
+            }
+        )
+    for key in sorted(final_flattened_connection.keys()):
+        bindings.append(
+            {
+                "target_ref": f"connection.{key}",
+                "source_ref": f"request.connection.{key}",
+                "resolve_at": "api",
+                "sensitive": _is_sensitive_key(str(key)),
+                "status": "applied",
+            }
+        )
+    if stdin:
+        bindings.append(
+            {
+                "target_ref": "stdin",
+                "source_ref": "request.stdin",
+                "resolve_at": "api",
+                "sensitive": True,
+                "status": "applied",
+            }
+        )
+
     batch_operation = BatchOperation.objects.create(
         id=operation_id,
         name=operation_name,
@@ -1809,6 +1922,8 @@ def _execute_ibcmd_cli_validated(
                 str(effective.overrides_version_id) if effective.overrides_version_id else None
             ),
             "legacy_operation_type": legacy_operation_type,
+            "execution_plan": execution_plan,
+            "bindings": bindings,
         },
     )
 

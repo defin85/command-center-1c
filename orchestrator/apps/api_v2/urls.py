@@ -44,6 +44,7 @@ urlpatterns = [
     # ========================================================================
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
     path('ui/action-catalog/', ui.get_action_catalog, name='ui-action-catalog'),
+    path('ui/execution-plan/preview/', ui.preview_execution_plan, name='ui-execution-plan-preview'),
 
     # ========================================================================
     # Databases

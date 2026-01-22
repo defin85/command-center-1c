@@ -113,3 +113,45 @@
   - `bulk_page`: в массовых действиях по выбранным базам.
 - Если действие не отображается обычному пользователю, это может быть “fail-closed” (невалидные ссылки/опасные команды/нет доступа). Проверь ошибки, risk_level команд и RBAC.
 
+## Execution Plan / Binding Provenance (staff-only)
+
+Иногда важно понять “что именно будет выполнено” и “откуда система берёт значения”, не раскрывая секреты.
+Для этого UI показывает **Execution Plan** и **Binding Provenance** (только для staff):
+
+- **/settings/action-catalog**: кнопка **Preview** у действия показывает план выполнения и provenance (в JSON).
+- **/databases**:
+  - Для staff перед запуском действия расширений показывается подтверждение с preview (например `argv_masked`).
+- **/operations** (details):
+  - Для staff отображаются `Execution Plan (staff)` и таблица `Binding Provenance (staff)`.
+  - В `tasks[].result.runtime_bindings` могут появляться runtime-заметки от worker (например нормализация argv или `infobase_auth` “skipped” с причиной).
+
+### Что именно показывается
+
+- **Execution Plan** — безопасное описание того, что будет/было выполнено:
+  - для CLI: `argv_masked[]` (секреты замаскированы);
+  - для workflow: `workflow_id` и `input_context_masked` (секретные поля заменяются на `***`).
+- **Binding Provenance** — список “что куда подставляется”:
+  - `target_ref` — куда применяется значение,
+  - `source_ref` — откуда оно берётся,
+  - `resolve_at` — где резолвится (`api` или `worker`),
+  - `sensitive` — пометка, что значение секретное (значения не показываются),
+  - `status`/`reason` — применилось или было пропущено (и почему).
+
+## Дебаг: ошибки выполнения (например unsupported flags)
+
+Если операция упала (например `exit status 2`), чтобы понять причину:
+
+1) Открой `/operations` → Details нужной операции.
+2) Посмотри:
+   - `Execution Plan (staff)` — какие аргументы реально ушли (в `argv_masked`).
+   - `Binding Provenance (staff)` — откуда эти аргументы взялись (UI params/additional_args/connection и т.п.).
+   - `Tasks` → `result.stderr` / `result.exit_code` (часто содержит точное сообщение `ibcmd`).
+   - `Tasks` → `result.runtime_bindings` (если есть): runtime-решения worker’а (например `infobase_auth` со `status=skipped` и `reason=unsupported_for_command`).
+
+3) Сверься со справкой драйвера/команды:
+   - Флаги должны соответствовать **схеме команды** (driver catalog). Если флаг отсутствует в схеме команды — скорее всего `ibcmd` его не принимает для этой команды.
+
+4) Исправление обычно одно из:
+   - Убрать/поправить лишние `additional_args` в action catalog.
+   - Перенести driver-level опции в `connection.*` (если это connection options).
+   - Пересобрать action catalog так, чтобы `command_id` ссылался на корректную команду каталога.

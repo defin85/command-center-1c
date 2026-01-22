@@ -121,6 +121,10 @@ class BatchOperationSerializer(serializers.ModelSerializer):
             data["config"] = _mask_value(data["config"])
         if "metadata" in data:
             data["metadata"] = _mask_value(data["metadata"])
+            if isinstance(data["metadata"], dict):
+                # execution_plan/bindings are staff-only and exposed via dedicated fields in details responses.
+                data["metadata"].pop("execution_plan", None)
+                data["metadata"].pop("bindings", None)
         return data
     
     def get_database_names(self, obj: BatchOperation) -> List[str]:

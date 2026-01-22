@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, RollbackOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, RollbackOutlined } from '@ant-design/icons'
 
 import { useMe } from '../../api/queries/me'
+import { apiClient } from '../../api/client'
 import { getRuntimeSettings, updateRuntimeSetting } from '../../api/runtimeSettings'
 import { useDriverCommands } from '../../api/queries/driverCommands'
 import type { DriverName } from '../../api/driverCommands'
@@ -1006,6 +1007,45 @@ export function ActionCatalogPage() {
 
   const actionsEditable = isStaff && draftIsValidJson && isPlainObject(draftParsed)
 
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean
+    title: string
+    loading: boolean
+    error: string | null
+    payload: unknown | null
+  }>({ open: false, title: 'Preview', loading: false, error: null, payload: null })
+
+  const closePreview = useCallback(() => {
+    setPreviewModal({ open: false, title: 'Preview', loading: false, error: null, payload: null })
+  }, [])
+
+  const openPreview = useCallback(async (pos: number) => {
+    if (!actionsEditable) return
+    const parsed = draftParsed
+    if (!parsed || typeof parsed !== 'object') return
+    const root = parsed as PlainObject
+    const extensions = root.extensions
+    if (!isPlainObject(extensions)) return
+    const actions = (extensions as PlainObject).actions
+    if (!Array.isArray(actions)) return
+    const action = actions[pos]
+    if (!isPlainObject(action)) return
+    const executor = action.executor
+    if (!isPlainObject(executor)) return
+
+    setPreviewModal({ open: true, title: `Preview: ${String(action.id ?? 'action')}`, loading: true, error: null, payload: null })
+    try {
+      const response = await apiClient.post('/api/v2/ui/execution-plan/preview/', {
+        executor,
+        database_ids: [],
+      })
+      setPreviewModal((current) => ({ ...current, loading: false, payload: response.data as unknown }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'preview failed'
+      setPreviewModal((current) => ({ ...current, loading: false, error: msg }))
+    }
+  }, [actionsEditable, draftParsed])
+
   const columns: ColumnsType<ActionRow> = useMemo(() => ([
     {
       title: 'ID',
@@ -1073,7 +1113,7 @@ export function ActionCatalogPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 190,
+      width: 230,
       render: (_value, record) => (
         <Space size={0}>
           <Button
@@ -1103,6 +1143,14 @@ export function ActionCatalogPage() {
           <Button
             size="small"
             type="text"
+            icon={<EyeOutlined />}
+            aria-label="Preview"
+            onClick={() => void openPreview(record.pos)}
+            disabled={!actionsEditable}
+          />
+          <Button
+            size="small"
+            type="text"
             icon={<CopyOutlined />}
             aria-label="Copy"
             onClick={() => openEditor({ mode: 'copy', pos: record.pos })}
@@ -1120,7 +1168,7 @@ export function ActionCatalogPage() {
         </Space>
       ),
     },
-  ]), [actionRows.length, actionsEditable, disableAction, moveAction, openEditor, saveErrorsByActionPos])
+  ]), [actionRows.length, actionsEditable, disableAction, moveAction, openEditor, openPreview, saveErrorsByActionPos])
 
   const tabs = useMemo(() => ([
     {
@@ -1586,6 +1634,26 @@ export function ActionCatalogPage() {
             />
           )}
         </Form>
+      </Modal>
+
+      <Modal
+        title={previewModal.title}
+        open={previewModal.open}
+        onCancel={closePreview}
+        footer={[
+          <Button key="close" onClick={closePreview}>Close</Button>,
+        ]}
+        width={900}
+      >
+        {previewModal.loading ? (
+          <Spin />
+        ) : previewModal.error ? (
+          <Alert type="error" showIcon message="Preview failed" description={previewModal.error} />
+        ) : (
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(previewModal.payload, null, 2)}
+          </pre>
+        )}
       </Modal>
     </Space>
   )

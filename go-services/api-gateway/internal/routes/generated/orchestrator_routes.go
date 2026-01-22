@@ -154,6 +154,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/templates/update-template/", OperationID: "v2_templates_update_template_create"},
 	{Method: "GET", Path: "/ui/table-metadata/", OperationID: "v2_ui_table_metadata_retrieve"},
 	{Method: "GET", Path: "/ui/action-catalog/", OperationID: "v2_ui_action_catalog_retrieve"},
+	{Method: "POST", Path: "/ui/execution-plan/preview/", OperationID: "v2_ui_execution_plan_preview_create"},
 	{Method: "POST", Path: "/users/create/", OperationID: "v2_users_create_create"},
 	{Method: "GET", Path: "/users/list/", OperationID: "v2_users_list_retrieve"},
 	{Method: "POST", Path: "/users/set-password/", OperationID: "v2_users_set_password_create"},

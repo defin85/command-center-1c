@@ -126,6 +126,18 @@ async function setupApiMocks(
       })
     }
 
+    if (method === 'POST' && path === '/api/v2/ui/execution-plan/preview/') {
+      return fulfillJson(route, {
+        execution_plan: {
+          kind: 'ibcmd_cli',
+          argv_masked: ['infobase', 'config', 'extension', 'list', '--db-pwd=***'],
+        },
+        bindings: [
+          { target_ref: 'command_id', source_ref: 'request.executor.command_id', resolve_at: 'api', sensitive: false, status: 'applied' },
+        ],
+      })
+    }
+
     return fulfillJson(route, {}, 200)
   })
 }
@@ -169,6 +181,12 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
   await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
   await expect(page.getByText('extensions.list', { exact: true })).toBeVisible()
+
+  const listRow = page.locator('tr', { has: page.getByText('extensions.list', { exact: true }) })
+  await listRow.getByRole('button', { name: 'Preview', exact: true }).click()
+  await expect(page.getByText('Preview: extensions.list')).toBeVisible()
+  await expect(page.getByText('execution_plan', { exact: false })).toBeVisible()
+  await page.locator('.ant-modal-footer').getByRole('button', { name: 'Close', exact: true }).click()
 
   await page.getByTestId('action-catalog-add').click()
   await page.getByTestId('action-catalog-editor-id').fill('extensions.new')

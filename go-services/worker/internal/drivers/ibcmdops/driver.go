@@ -159,10 +159,10 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			"duration_ms":    externalDuration.Milliseconds(),
 			"error":          err.Error(),
 		}, workflowMetadata))
-		return d.failResultWithExecution(msg, databaseID, start, err.Error(), "IBCMD_ERROR", res, request.ArtifactPath), nil
+		return d.failResultWithExecution(msg, databaseID, start, err.Error(), "IBCMD_ERROR", res, request.RuntimeBindings, request.ArtifactPath), nil
 	}
 
-	result := d.buildResult(msg, databaseID, start, res, request.ArtifactPath)
+	result := d.buildResult(msg, databaseID, start, res, request.RuntimeBindings, request.ArtifactPath)
 
 	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.finished", events.MergeMetadata(map[string]interface{}{
 		"database_id":    databaseID,
@@ -174,12 +174,22 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	return result, nil
 }
 
-func (d *Driver) buildResult(msg *models.OperationMessage, databaseID string, start time.Time, res *ibcmd.ExecutionResult, artifactPath string) models.DatabaseResultV2 {
+func (d *Driver) buildResult(
+	msg *models.OperationMessage,
+	databaseID string,
+	start time.Time,
+	res *ibcmd.ExecutionResult,
+	runtimeBindings []map[string]interface{},
+	artifactPath string,
+) models.DatabaseResultV2 {
 	duration := time.Since(start)
 	eventBase := fmt.Sprintf("ibcmd.%s", msg.OperationType)
 
 	data := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
+	}
+	if len(runtimeBindings) > 0 {
+		data["runtime_bindings"] = runtimeBindings
 	}
 	if res != nil {
 		data["exit_code"] = res.ExitCode
@@ -230,12 +240,16 @@ func (d *Driver) failResultWithExecution(
 	message string,
 	code string,
 	res *ibcmd.ExecutionResult,
+	runtimeBindings []map[string]interface{},
 	artifactPath string,
 ) models.DatabaseResultV2 {
 	duration := time.Since(start)
 
 	data := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
+	}
+	if len(runtimeBindings) > 0 {
+		data["runtime_bindings"] = runtimeBindings
 	}
 	if res != nil {
 		data["exit_code"] = res.ExitCode
@@ -346,12 +360,13 @@ func buildAgentConfig(data map[string]interface{}, creds *credentials.DatabaseCr
 }
 
 type ibcmdRequest struct {
-	Args           []string
-	Stdin          string
-	ArtifactPath   string
-	inputCleanup   func()
-	outputCleanup  func()
-	outputFinalize func(ctx context.Context) error
+	Args            []string
+	Stdin           string
+	ArtifactPath    string
+	RuntimeBindings []map[string]interface{}
+	inputCleanup    func()
+	outputCleanup   func()
+	outputFinalize  func(ctx context.Context) error
 }
 
 type dbConfig struct {
@@ -503,22 +518,73 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			}
 		}
 
+		runtimeBindings := make([]map[string]interface{}, 0)
+
+		beforeNormalize := append([]string(nil), resolvedArgs...)
 		resolvedArgs = normalizeIbcmdArgv(resolvedArgs)
+		if !stringSliceEqual(beforeNormalize, resolvedArgs) {
+			runtimeBindings = append(runtimeBindings, map[string]interface{}{
+				"target_ref": "argv",
+				"source_ref": "worker.normalizeIbcmdArgv",
+				"resolve_at": "worker",
+				"sensitive":  false,
+				"status":     "applied",
+			})
+		}
+
 		credsArgs := resolvedArgs
 		if shouldInjectInfobaseAuthArgs(commandID, resolvedArgs) {
+			runtimeBindings = append(runtimeBindings,
+				map[string]interface{}{
+					"target_ref": "flag:--user",
+					"source_ref": "credentials.ib_user_mapping",
+					"resolve_at": "worker",
+					"sensitive":  false,
+					"status":     "applied",
+				},
+				map[string]interface{}{
+					"target_ref": "flag:--password",
+					"source_ref": "credentials.ib_user_mapping",
+					"resolve_at": "worker",
+					"sensitive":  true,
+					"status":     "applied",
+				},
+			)
 			credsArgs = injectInfobaseAuthArgs(resolvedArgs, creds)
+		} else if commandID != "" {
+			runtimeBindings = append(runtimeBindings, map[string]interface{}{
+				"target_ref": "infobase_auth",
+				"source_ref": "credentials.ib_user_mapping",
+				"resolve_at": "worker",
+				"sensitive":  true,
+				"status":     "skipped",
+				"reason":     "unsupported_for_command",
+			})
 		}
 		return &ibcmdRequest{
-			Args:           credsArgs,
-			Stdin:          extractString(data, "stdin"),
-			ArtifactPath:   artifactPath,
-			inputCleanup:   combinedInputCleanup,
-			outputCleanup:  outputCleanup,
-			outputFinalize: outputFinalize,
+			Args:            credsArgs,
+			Stdin:           extractString(data, "stdin"),
+			ArtifactPath:    artifactPath,
+			RuntimeBindings: runtimeBindings,
+			inputCleanup:    combinedInputCleanup,
+			outputCleanup:   outputCleanup,
+			outputFinalize:  outputFinalize,
 		}, nil
 	}
 
 	return nil, fmt.Errorf("unsupported operation type: %s", msg.OperationType)
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func buildDBArgs(cfg dbConfig) []string {

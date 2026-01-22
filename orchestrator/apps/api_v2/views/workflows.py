@@ -29,10 +29,51 @@ from apps.templates.workflow.serializers import (
     WorkflowExecutionDetailSerializer,
     WorkflowStepResultSerializer,
 )
-from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.api_v2.serializers.common import ErrorResponseSerializer, ExecutionBindingSerializer, ExecutionPlanSerializer
 from apps.operations.utils.feature_flags import is_go_workflow_engine_enabled
 
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_KEYS: set[str] = {
+    "db_password",
+    "db_pwd",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "access_key",
+    "secret_key",
+}
+
+
+def _is_sensitive_key(key: str) -> bool:
+    key_norm = (key or "").strip().lower()
+    if not key_norm:
+        return False
+    if key_norm in _SENSITIVE_KEYS:
+        return True
+    if key_norm.endswith("_password") or key_norm.endswith("_pwd"):
+        return True
+    return False
+
+
+def _mask_json_value(value):
+    if isinstance(value, dict):
+        return _mask_json_dict(value)
+    if isinstance(value, list):
+        return [_mask_json_value(item) for item in value]
+    return value
+
+
+def _mask_json_dict(data: dict):
+    masked: dict = {}
+    for key, value in data.items():
+        key_str = str(key or "")
+        if _is_sensitive_key(key_str):
+            masked[key] = "***"
+            continue
+        masked[key] = _mask_json_value(value)
+    return masked
 
 
 def _permission_denied(message: str):
@@ -328,6 +369,8 @@ class ExecutionListResponseSerializer(serializers.Serializer):
 class ExecutionDetailResponseSerializer(serializers.Serializer):
     """Response for get_execution endpoint."""
     execution = WorkflowExecutionDetailSerializer()
+    execution_plan = ExecutionPlanSerializer(required=False)
+    bindings = ExecutionBindingSerializer(many=True, required=False)
     steps = WorkflowStepResultSerializer(many=True)
 
 
@@ -685,8 +728,10 @@ def execute_workflow(request):
 
     input_context = dict(raw_input_context)
 
+    executed_by_username = None
     if request.user and getattr(request.user, "is_authenticated", False):
-        input_context["executed_by"] = request.user.get_username() or request.user.username
+        executed_by_username = request.user.get_username() or request.user.username
+        input_context["executed_by"] = executed_by_username
 
     if not workflow_id:
         return Response({
@@ -739,6 +784,52 @@ def execute_workflow(request):
                 from apps.templates.workflow.engine import WorkflowEngine
                 engine = WorkflowEngine()
                 execution = engine.execute_workflow_sync(workflow, input_context)
+                try:
+                    raw_database_ids = input_context.get("database_ids")
+                    database_ids = raw_database_ids if isinstance(raw_database_ids, list) else []
+
+                    bindings = [
+                        {
+                            "target_ref": "workflow_id",
+                            "source_ref": "request.workflow_id",
+                            "resolve_at": "api",
+                            "sensitive": False,
+                            "status": "applied",
+                        },
+                    ]
+                    for key in sorted(input_context.keys()):
+                        if key == "executed_by" and executed_by_username:
+                            bindings.append(
+                                {
+                                    "target_ref": "input_context.executed_by",
+                                    "source_ref": "api.user.username",
+                                    "resolve_at": "api",
+                                    "sensitive": False,
+                                    "status": "applied",
+                                }
+                            )
+                            continue
+                        bindings.append(
+                            {
+                                "target_ref": f"input_context.{key}",
+                                "source_ref": f"request.input_context.{key}",
+                                "resolve_at": "api",
+                                "sensitive": _is_sensitive_key(str(key)),
+                                "status": "applied",
+                            }
+                        )
+
+                    execution.execution_plan = {
+                        "kind": "workflow",
+                        "plan_version": 1,
+                        "workflow_id": str(workflow_id),
+                        "input_context_masked": _mask_json_dict(input_context),
+                        "targets": {"database_ids_count": len(database_ids)},
+                    }
+                    execution.bindings = bindings
+                    execution.save(update_fields=["execution_plan", "bindings"])
+                except Exception:
+                    pass
 
                 # Audit logging
                 logger.info(
@@ -772,6 +863,53 @@ def execute_workflow(request):
 
         # Execute asynchronously via Go Worker (feature-flag), legacy Celery, or in-process runner
         execution = workflow.create_execution(input_context)
+        try:
+            raw_database_ids = input_context.get("database_ids")
+            database_ids = raw_database_ids if isinstance(raw_database_ids, list) else []
+
+            bindings = [
+                {
+                    "target_ref": "workflow_id",
+                    "source_ref": "request.workflow_id",
+                    "resolve_at": "api",
+                    "sensitive": False,
+                    "status": "applied",
+                },
+            ]
+            for key in sorted(input_context.keys()):
+                if key == "executed_by" and executed_by_username:
+                    bindings.append(
+                        {
+                            "target_ref": "input_context.executed_by",
+                            "source_ref": "api.user.username",
+                            "resolve_at": "api",
+                            "sensitive": False,
+                            "status": "applied",
+                        }
+                    )
+                    continue
+                bindings.append(
+                    {
+                        "target_ref": f"input_context.{key}",
+                        "source_ref": f"request.input_context.{key}",
+                        "resolve_at": "api",
+                        "sensitive": _is_sensitive_key(str(key)),
+                        "status": "applied",
+                    }
+                )
+
+            execution.execution_plan = {
+                "kind": "workflow",
+                "plan_version": 1,
+                "workflow_id": str(workflow_id),
+                "input_context_masked": _mask_json_dict(input_context),
+                "targets": {"database_ids_count": len(database_ids)},
+            }
+            execution.bindings = bindings
+            execution.save(update_fields=["execution_plan", "bindings"])
+        except Exception:
+            # Best-effort: never block execution because of plan/provenance generation
+            pass
 
         from apps.operations.services import OperationsService
 
@@ -1711,10 +1849,17 @@ def get_execution(request):
         }
     )
 
-    return Response({
+    response_data = {
         'execution': execution_serializer.data,
         'steps': steps_serializer.data,
-    })
+    }
+    if getattr(request.user, "is_staff", False):
+        if isinstance(getattr(execution, "execution_plan", None), dict) and execution.execution_plan:
+            response_data["execution_plan"] = execution.execution_plan
+        if isinstance(getattr(execution, "bindings", None), list) and execution.bindings:
+            response_data["bindings"] = execution.bindings
+
+    return Response(response_data)
 
 
 @extend_schema(

@@ -85,6 +85,15 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
+	if len(req.RuntimeBindings) != 2 {
+		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	}
+	if req.RuntimeBindings[0]["target_ref"] != "flag:--user" || req.RuntimeBindings[0]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
+	}
+	if req.RuntimeBindings[1]["target_ref"] != "flag:--password" || req.RuntimeBindings[1]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	}
 }
 
 func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
@@ -116,6 +125,49 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 	expected := []string{"infobase", "restore", "--user=ibuser", "--password=ibpass"}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+	if len(req.RuntimeBindings) != 2 {
+		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	}
+}
+
+func TestBuildRequestIbcmdCliRecordsNormalizeAndSkipsUnsupportedAuth(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.extension.list",
+				"argv":       []string{"infobase", "extension", "list"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{"infobase", "config", "extension", "list"}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+	if len(req.RuntimeBindings) != 2 {
+		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	}
+	if req.RuntimeBindings[0]["source_ref"] != "worker.normalizeIbcmdArgv" || req.RuntimeBindings[0]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
+	}
+	if req.RuntimeBindings[1]["target_ref"] != "infobase_auth" || req.RuntimeBindings[1]["status"] != "skipped" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	}
+	if req.RuntimeBindings[1]["reason"] != "unsupported_for_command" {
+		t.Fatalf("unexpected runtime binding reason: %#v", req.RuntimeBindings[1])
 	}
 }
 
