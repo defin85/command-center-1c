@@ -503,7 +503,11 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			}
 		}
 
-		credsArgs := injectInfobaseAuthArgs(resolvedArgs, creds)
+		resolvedArgs = normalizeIbcmdArgv(resolvedArgs)
+		credsArgs := resolvedArgs
+		if shouldInjectInfobaseAuthArgs(commandID, resolvedArgs) {
+			credsArgs = injectInfobaseAuthArgs(resolvedArgs, creds)
+		}
 		return &ibcmdRequest{
 			Args:           credsArgs,
 			Stdin:          extractString(data, "stdin"),
@@ -618,6 +622,36 @@ func injectInfobaseAuthArgs(args []string, creds *credentials.DatabaseCredential
 	cleaned = append(cleaned, fmt.Sprintf("--user=%s", username))
 	cleaned = append(cleaned, fmt.Sprintf("--password=%s", password))
 	return cleaned
+}
+
+func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
+	// NOTE: ibcmd supports --user/--password only for a limited set of commands
+	// (e.g. infobase dump/restore). Passing these flags to other commands (like
+	// extensions list/sync) fails with "error parsing parameter: --user=...".
+	//
+	// Keep this conservative; expand only with proven requirements.
+	cmd := strings.TrimSpace(commandID)
+	if cmd == "infobase.dump" || cmd == "infobase.restore" {
+		return true
+	}
+	if len(argv) >= 2 && strings.TrimSpace(argv[0]) == "infobase" {
+		sub := strings.TrimSpace(argv[1])
+		return sub == "dump" || sub == "restore"
+	}
+	return false
+}
+
+func normalizeIbcmdArgv(argv []string) []string {
+	// Backward compatible alias:
+	// Driver catalog IDs intentionally flatten "infobase config extension <cmd>"
+	// into "infobase extension <cmd>". The real ibcmd CLI expects "config" here.
+	if len(argv) >= 2 && argv[0] == "infobase" && argv[1] == "extension" {
+		next := make([]string, 0, len(argv)+1)
+		next = append(next, "infobase", "config")
+		next = append(next, argv[1:]...)
+		return next
+	}
+	return argv
 }
 
 func stripInfobaseAuthArgs(args []string) []string {

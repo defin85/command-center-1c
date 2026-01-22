@@ -58,7 +58,7 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 		OperationType: "ibcmd_cli",
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
-				"argv":  []string{"server", "config", "init"},
+				"argv":  []string{"infobase", "dump"},
 				"stdin": "hello",
 			},
 		},
@@ -81,7 +81,7 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 		t.Fatalf("expected stdin=hello, got %q", req.Stdin)
 	}
 
-	expected := []string{"server", "config", "init", "--user=ibuser", "--password=ibpass"}
+	expected := []string{"infobase", "dump", "--user=ibuser", "--password=ibpass"}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
@@ -94,9 +94,8 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
 				"argv": []string{
-					"server",
-					"config",
-					"init",
+					"infobase",
+					"restore",
 					"--user=old",
 					"--password=old",
 				},
@@ -114,7 +113,7 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"server", "config", "init", "--user=ibuser", "--password=ibpass"}
+	expected := []string{"infobase", "restore", "--user=ibuser", "--password=ibpass"}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}

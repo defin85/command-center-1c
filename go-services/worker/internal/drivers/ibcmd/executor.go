@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"unicode/utf8"
 
 	"github.com/commandcenter1c/commandcenter/worker/internal/commandrunner/process"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
 
 // ExecutionResult contains the result of subprocess execution.
@@ -83,8 +86,8 @@ func (e *Executor) Execute(ctx context.Context, args []string, stdin string) (*E
 	})
 
 	result := &ExecutionResult{
-		Stdout:          runResult.Stdout,
-		Stderr:          runResult.Stderr,
+		Stdout:          decodeWindowsConsoleOutput(runResult.Stdout),
+		Stderr:          decodeWindowsConsoleOutput(runResult.Stderr),
 		ExitCode:        runResult.ExitCode,
 		Duration:        runResult.Duration,
 		StdoutTruncated: runResult.StdoutTruncated,
@@ -93,4 +96,21 @@ func (e *Executor) Execute(ctx context.Context, args []string, stdin string) (*E
 	}
 
 	return result, err
+}
+
+func decodeWindowsConsoleOutput(value string) string {
+	// Windows binaries executed under WSL often write text in OEM codepage (CP866).
+	// If we pass raw bytes through JSON, Go will replace invalid UTF-8 sequences
+	// with U+FFFD, losing the actual error message. Decode to UTF-8 early.
+	if value == "" || utf8.ValidString(value) {
+		return value
+	}
+
+	if decoded, _, err := transform.String(charmap.CodePage866.NewDecoder(), value); err == nil && decoded != "" {
+		return decoded
+	}
+	if decoded, _, err := transform.String(charmap.Windows1251.NewDecoder(), value); err == nil && decoded != "" {
+		return decoded
+	}
+	return value
 }
