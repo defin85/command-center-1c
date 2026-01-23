@@ -1,6 +1,6 @@
 # Change: Добавить Execution Plan + Binding Provenance (без хранения секретов)
 
-## Почему
+## Why
 Сейчас пользователь (и даже staff) не видит прозрачного ответа на вопросы:
 - **Что именно будет выполнено** (какая команда/argv или какой workflow + какой input)?
 - **Откуда берутся значения** (UI, action catalog, driver schema, Database connection, RuntimeSetting, env/secret store)?
@@ -11,7 +11,7 @@
 - поведение выглядит “магическим” и не воспроизводится при ручном повторе;
 - сложно безопасно логировать и объяснять итоговое выполнение, не раскрывая секретов.
 
-## Что меняется
+## What Changes
 - Вводим явные сущности **Execution Plan** и **Binding Provenance**:
   - Execution Plan описывает “что будет выполнено” в безопасном виде (например `argv_masked[]`).
   - Binding Provenance описывает “откуда что берётся и где подставляется” без хранения секретов.
@@ -22,7 +22,7 @@
 - По умолчанию plan/provenance видимы **только staff**, с заделом на расширение через RBAC (отдельное разрешение/роль).
 - Система логирует plan/provenance безопасно: без raw значений секретов, только masked и метаданные источников/статусов.
 
-## Влияние
+## Impact
 - Спеки:
   - **Новая capability:** `execution-plan-binding-provenance`
   - **Модификации:** `command-schemas-driver-options`, `ui-action-catalog-editor`, `extensions-action-catalog`
@@ -31,4 +31,3 @@
   - Worker: репорт runtime-only биндингов (applied/skipped + reason), безопасная доставка в результат/таймлайн
   - Frontend: отображение plan+provenance в 3 точках, роль-based гейтинг
   - Contracts/OpenAPI: добавление полей/эндпоинтов (additive)
-

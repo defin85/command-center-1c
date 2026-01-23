@@ -2,7 +2,6 @@
 
 ## Purpose
 Определяет разделение схемы на driver-level (`driver_schema`) и command-level (`commands_by_id.<id>.params_by_name`) для schema-driven драйверов (MVP: `ibcmd`), включая правила сборки канонического `argv[]` и политику конфликтов.
-
 ## Requirements
 ### Requirement: Driver schema для schema-driven драйверов
 Система ДОЛЖНА (SHALL) поддерживать driver-level schema (отдельно от command schema) для schema-driven драйверов (минимум `ibcmd`).
@@ -25,9 +24,11 @@
 2) command-level params (`params`)
 3) `additional_args` после нормализации
 
-#### Scenario: Preview/execute отражает driver options в argv
-- **WHEN** пользователь выполняет preview или execute schema-driven команды с заполненным `connection.remote`
-- **THEN** `argv[]` содержит `--remote=<url>` (или эквивалентный driver-level флаг), а `argv_masked[]` маскирует секреты согласно правилам маскирования
+Система ДОЛЖНА (SHALL) дополнительно формировать `bindings[]` (Binding Provenance), описывающий происхождение каждого добавленного/нормализованного элемента `argv` и его источник (request/driver catalog/action catalog/database/env), без хранения секретов.
+
+#### Scenario: Preview отражает provenance для argv
+- **WHEN** staff делает preview для schema-driven команды с заполненными `connection`/`params`/`additional_args`
+- **THEN** preview возвращает `argv_masked[]` и `bindings[]`, где видно, какие элементы пришли из `connection`, какие из `params`, а какие из `additional_args`/нормализации
 
 ### Requirement: Поддержка overrides для driver schema
 Система ДОЛЖНА (SHALL) позволять переопределять driver-level schema через overrides (аналогично overrides для команд), чтобы изменения проходили через те же пайплайны “Command Schemas”.
@@ -43,3 +44,4 @@
 #### Scenario: Конфликт remote между connection и additional_args
 - **WHEN** пользователь задаёт `connection.remote` и одновременно добавляет `--remote=...` в `additional_args`
 - **THEN** система возвращает ошибку валидации (error), и это поведение документировано
+
