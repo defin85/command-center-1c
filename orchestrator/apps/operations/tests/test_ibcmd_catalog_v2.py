@@ -45,6 +45,14 @@ def test_build_base_catalog_from_its_parses_command_section(marker_param, marker
     assert catalog["driver"] == "ibcmd"
     assert catalog["platform_version"] == "8.3.27"
 
+    driver_schema = catalog.get("driver_schema")
+    assert isinstance(driver_schema, dict)
+    assert "connection" in driver_schema
+    assert "timeout_seconds" in driver_schema
+    assert driver_schema["timeout_seconds"]["default"] == 900
+    assert driver_schema["auth_database_id"]["kind"] == "database_ref"
+    assert driver_schema["ui"]["version"] == 1
+
     cmd = catalog["commands_by_id"]["server.config.init"]
     assert cmd["argv"] == ["server", "config", "init"]
     assert cmd["scope"] == "global"

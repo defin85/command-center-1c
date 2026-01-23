@@ -57,6 +57,8 @@ const formatDateTime = (value: string) => {
   return parsed.isValid() ? parsed.format('DD.MM.YYYY HH:mm') : value
 }
 
+const yesNo = (value: boolean) => (value ? 'Yes' : 'No')
+
 /**
  * Format configuration for display based on operation type
  */
@@ -122,26 +124,17 @@ const formatConfigForDisplay = (
           }
         }
         const opt = dc.cli_options ?? {}
-        items.push({
-          label: 'Disable Messages',
-          value: opt.disable_startup_messages === false ? 'No' : 'Yes',
-        })
-        items.push({
-          label: 'Disable Dialogs',
-          value: opt.disable_startup_dialogs === false ? 'No' : 'Yes',
-        })
-        items.push({
-          label: 'Capture Log',
-          value: opt.log_capture ? 'Yes' : 'No',
-        })
+        items.push({ label: 'Driver options: Disable startup messages', value: yesNo(opt.disable_startup_messages !== false) })
+        items.push({ label: 'Driver options: Disable startup dialogs', value: yesNo(opt.disable_startup_dialogs !== false) })
+        items.push({ label: 'Driver options: Capture 1C log (/Out)', value: yesNo(opt.log_capture === true) })
         if (opt.log_capture && opt.log_path) {
-          items.push({ label: 'Log Path', value: opt.log_path })
+          items.push({ label: 'Driver options: Log file path', value: opt.log_path })
         }
         if (opt.log_capture) {
-          items.push({
-            label: 'Append Log',
-            value: opt.log_no_truncate ? 'Yes' : 'No',
-          })
+          items.push({ label: 'Driver options: Append log (-NoTruncate)', value: yesNo(opt.log_no_truncate === true) })
+        }
+        if (dc.command_risk_level) {
+          items.push({ label: 'Risk', value: dc.command_risk_level })
         }
         if (dc.command_risk_level === 'dangerous') {
           items.push({
@@ -185,17 +178,17 @@ const formatConfigForDisplay = (
           items.push({ label: 'Risk', value: dc.command_risk_level })
         }
         if (dc.command_scope === 'global' && dc.auth_database_id) {
-          items.push({ label: 'Auth database', value: dc.auth_database_id })
+          items.push({ label: 'Driver options: Auth mapping infobase', value: dc.auth_database_id })
         }
         if (typeof dc.timeout_seconds === 'number') {
-          items.push({ label: 'Timeout', value: `${dc.timeout_seconds}s` })
+          items.push({ label: 'Driver options: Timeout (seconds)', value: String(dc.timeout_seconds) })
         }
         const connection = dc.connection
         if (connection?.remote) {
-          items.push({ label: 'Remote', value: connection.remote })
+          items.push({ label: 'Driver options: Connection / Remote', value: connection.remote })
         }
         if (typeof connection?.pid === 'number') {
-          items.push({ label: 'PID', value: String(connection.pid) })
+          items.push({ label: 'Driver options: Connection / PID', value: String(connection.pid) })
         }
         const offline = connection?.offline
         if (offline && typeof offline === 'object') {
@@ -206,16 +199,16 @@ const formatConfigForDisplay = (
           if (offline.db_server) offlineParts.push(`db_server=${offline.db_server}`)
           if (offline.db_name) offlineParts.push(`db_name=${offline.db_name}`)
           if (offline.db_user) offlineParts.push(`db_user=${offline.db_user}`)
-        if (offlineParts.length > 0) {
-          items.push({ label: 'Offline', value: offlineParts.join('\n') })
+          if (offlineParts.length > 0) {
+            items.push({ label: 'Driver options: Connection / Offline', value: offlineParts.join('\n') })
+          }
         }
-      }
         if (dc.args_text) {
           const maskedArgs = maskArgvTextLines(dc.args_text)
-          items.push({ label: 'Additional args', value: maskedArgs || '***' })
+          items.push({ label: 'Extra arguments', value: maskedArgs || '***' })
         }
         if (dc.stdin) {
-          items.push({ label: 'Stdin', value: '***' })
+          items.push({ label: 'Driver options: Stdin', value: '***' })
         }
         if (dc.command_risk_level === 'dangerous') {
           items.push({

@@ -22,6 +22,68 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def cli_default_driver_schema() -> dict[str, Any]:
+    # Driver-level options for designer CLI execution payloads (not command params).
+    return {
+        "cli_options": {
+            "disable_startup_messages": {
+                "kind": "bool",
+                "required": False,
+                "default": True,
+                "label": "Disable startup messages",
+            },
+            "disable_startup_dialogs": {
+                "kind": "bool",
+                "required": False,
+                "default": True,
+                "label": "Disable startup dialogs",
+            },
+            "log_capture": {
+                "kind": "bool",
+                "required": False,
+                "default": False,
+                "label": "Capture 1C log (/Out)",
+            },
+            "log_path": {
+                "kind": "string",
+                "required": False,
+                "label": "Log file path",
+                "description": "Optional. Auto if empty.",
+                "ui": {"visible_when": {"path": "cli_options.log_capture", "equals": True}},
+            },
+            "log_no_truncate": {
+                "kind": "bool",
+                "required": False,
+                "default": False,
+                "label": "Append log (-NoTruncate)",
+                "ui": {"visible_when": {"path": "cli_options.log_capture", "equals": True}},
+            },
+        },
+        "ui": {
+            "version": 1,
+            "sections": [
+                {
+                    "id": "cli.startup",
+                    "title": "Startup options",
+                    "paths": [
+                        "cli_options.disable_startup_messages",
+                        "cli_options.disable_startup_dialogs",
+                    ],
+                },
+                {
+                    "id": "cli.logging",
+                    "title": "Logging",
+                    "paths": [
+                        "cli_options.log_capture",
+                        "cli_options.log_path",
+                        "cli_options.log_no_truncate",
+                    ],
+                },
+            ],
+        },
+    }
+
+
 def cli_catalog_v1_to_v2(cli_catalog: dict[str, Any]) -> dict[str, Any]:
     version = str(cli_catalog.get("version") or "").strip() or "unknown"
     source_hint = str(cli_catalog.get("source") or "").strip() or "legacy_cli_config"
@@ -85,6 +147,7 @@ def cli_catalog_v1_to_v2(cli_catalog: dict[str, Any]) -> dict[str, Any]:
         "catalog_version": CATALOG_VERSION_V2,
         "driver": "cli",
         "platform_version": version,
+        "driver_schema": cli_default_driver_schema(),
         "source": {"type": "legacy_cli_config", "hint": source_hint},
         "generated_at": generated_at,
         "commands_by_id": commands_by_id,

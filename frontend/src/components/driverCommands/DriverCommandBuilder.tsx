@@ -143,6 +143,48 @@ const parseLines = (value: string | undefined): string[] => {
     .filter((item) => item.length > 0)
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const getValueAtPath = (root: unknown, path: string): unknown => {
+  const parts = path.split('.').filter(Boolean)
+  let node: unknown = root
+  for (const part of parts) {
+    if (!isRecord(node)) return undefined
+    node = node[part]
+  }
+  return node
+}
+
+const getSchemaAtPath = (driverSchema: Record<string, unknown> | undefined, path: string): Record<string, unknown> | undefined => {
+  if (!driverSchema) return undefined
+  const parts = path.split('.').filter(Boolean)
+  let node: unknown = driverSchema
+  for (const part of parts) {
+    if (!isRecord(node)) return undefined
+    node = node[part]
+  }
+  return isRecord(node) ? node : undefined
+}
+
+const setObjectPath = (root: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> => {
+  const parts = path.split('.').filter(Boolean)
+  if (parts.length === 0) return root
+
+  const nextRoot: Record<string, unknown> = { ...root }
+  let cursor: Record<string, unknown> = nextRoot
+  for (let idx = 0; idx < parts.length - 1; idx += 1) {
+    const key = parts[idx]
+    const current = cursor[key]
+    const next = isRecord(current) ? { ...current } : {}
+    cursor[key] = next
+    cursor = next
+  }
+  const lastKey = parts[parts.length - 1]
+  cursor[lastKey] = value
+  return nextRoot
+}
+
 const detectIbcmdPidInArgs = (value: string | undefined): number[] => {
   if (!value) return []
   const badLines: number[] = []
@@ -824,6 +866,10 @@ export function DriverCommandBuilder({
   const driverCommandsQuery = useDriverCommands(driver, true)
   const catalog = driverCommandsQuery.data?.catalog
   const commandsById = useMemo(() => catalog?.commands_by_id ?? EMPTY_COMMANDS_BY_ID, [catalog?.commands_by_id])
+  const driverSchema = useMemo(
+    () => (isRecord(catalog?.driver_schema) ? (catalog?.driver_schema as Record<string, unknown>) : undefined),
+    [catalog?.driver_schema]
+  )
 
   const shortcutsEnabled = driver === 'ibcmd'
   const shortcutsQuery = useDriverCommandShortcuts('ibcmd', shortcutsEnabled)
@@ -834,6 +880,7 @@ export function DriverCommandBuilder({
   const commandId = (config.command_id || '').trim()
   const params = useMemo(() => (config.params ?? EMPTY_PARAMS) as Record<string, unknown>, [config.params])
   const confirmDangerous = config.confirm_dangerous === true
+  const [dangerousConfirmPending, setDangerousConfirmPending] = useState(false)
   const pidInArgsLines = useMemo(() => (driver === 'ibcmd' ? detectIbcmdPidInArgs(config.args_text) : []), [config.args_text, driver])
 
   const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
@@ -880,7 +927,10 @@ export function DriverCommandBuilder({
     if (risk !== 'dangerous' && confirmDangerous) {
       onChange({ confirm_dangerous: false })
     }
-  }, [confirmDangerous, onChange, risk])
+    if (risk !== 'dangerous' && dangerousConfirmPending) {
+      setDangerousConfirmPending(false)
+    }
+  }, [confirmDangerous, dangerousConfirmPending, onChange, risk])
 
   useEffect(() => {
     if (!selectedShortcutId) return
@@ -985,61 +1035,161 @@ export function DriverCommandBuilder({
     onChange({ resolved_args: nextArgs })
   }, [additionalArgs, commandId, config.resolved_args, driver, mode, onChange, params, selectedCommand])
 
-  const renderCliOptions = () => {
-    const opt = config.cli_options ?? {}
-    const update = (updates: Partial<CliExtraOptions>) => {
-      onChange({ cli_options: { ...opt, ...updates } })
+  const getConfigValueAtPath = (path: string): unknown => {
+    if (path.startsWith('connection.')) {
+      const subPath = path.slice('connection.'.length)
+      const connection = (config.connection ?? {}) as Record<string, unknown>
+      return getValueAtPath(connection, subPath)
+    }
+    if (path.startsWith('cli_options.')) {
+      const subPath = path.slice('cli_options.'.length)
+      const cliOptions = (config.cli_options ?? {}) as Record<string, unknown>
+      return getValueAtPath(cliOptions, subPath)
+    }
+    return (config as unknown as Record<string, unknown>)[path]
+  }
+
+  const updateConfigAtPath = (path: string, value: unknown) => {
+    if (path.startsWith('connection.')) {
+      const subPath = path.slice('connection.'.length)
+      const connection = (config.connection ?? {}) as Record<string, unknown>
+      onChange({ connection: setObjectPath(connection, subPath, value) as unknown as IbcmdCliConnection })
+      return
+    }
+    if (path.startsWith('cli_options.')) {
+      const subPath = path.slice('cli_options.'.length)
+      const cliOptions = (config.cli_options ?? {}) as Record<string, unknown>
+      onChange({ cli_options: setObjectPath(cliOptions, subPath, value) as unknown as CliExtraOptions })
+      return
+    }
+    onChange({ [path]: value } as Partial<DriverCommandOperationConfig>)
+  }
+
+  const isVisibleBySchema = (schema: Record<string, unknown> | undefined): boolean => {
+    if (!schema) return true
+    const ui = schema.ui
+    if (!isRecord(ui)) return true
+    const visibleWhen = ui.visible_when
+    if (!isRecord(visibleWhen)) return true
+
+    const condPath = typeof visibleWhen.path === 'string' ? visibleWhen.path : ''
+    if (!condPath) return true
+    const condValue = (visibleWhen as Record<string, unknown>).equals
+    return getConfigValueAtPath(condPath) === condValue
+  }
+
+  const isRequiredBySchema = (schema: Record<string, unknown> | undefined): boolean => {
+    if (!schema) return false
+    if (schema.required === true) return true
+    const ui = schema.ui
+    if (!isRecord(ui)) return false
+    const requiredWhen = ui.required_when
+    if (!isRecord(requiredWhen)) return false
+    const scopeCond = typeof requiredWhen.command_scope === 'string' ? requiredWhen.command_scope : ''
+    return scopeCond !== '' && scopeCond === scope
+  }
+
+  const renderDriverOptionField = (path: string) => {
+    const schema = getSchemaAtPath(driverSchema, path)
+    if (!schema) return null
+    if (!isVisibleBySchema(schema)) return null
+
+    const label = (typeof schema.label === 'string' ? schema.label : path.split('.').slice(-1)[0]).trim()
+    const description = typeof schema.description === 'string' ? schema.description : undefined
+    const required = isRequiredBySchema(schema)
+    const kind = typeof schema.kind === 'string' ? schema.kind : ''
+    const valueType = typeof schema.value_type === 'string' ? schema.value_type : ''
+    const sensitive = schema.sensitive === true
+
+    const rawValue = getConfigValueAtPath(path)
+
+    if (kind === 'database_ref') {
+      return (
+        <Form.Item key={path} label={label} required={required} style={{ marginBottom: 12 }} help={description}>
+          <Select
+            showSearch
+            disabled={readOnly}
+            value={typeof rawValue === 'string' ? rawValue : undefined}
+            options={databaseOptions}
+            onChange={(next) => updateConfigAtPath(path, next)}
+            optionFilterProp="label"
+          />
+        </Form.Item>
+      )
+    }
+
+    const asBool = (fallback: boolean): boolean => (typeof rawValue === 'boolean' ? rawValue : fallback)
+    const asNumber = (fallback?: number): number | undefined => (typeof rawValue === 'number' ? rawValue : fallback)
+    const asString = (): string => (typeof rawValue === 'string' ? rawValue : '')
+
+    const expectsValue = schema.expects_value === true
+    const defaultValue = schema.default
+    const min = typeof schema.min === 'number' ? schema.min : undefined
+    const max = typeof schema.max === 'number' ? schema.max : undefined
+
+    if (kind === 'bool' || (kind === 'flag' && !expectsValue)) {
+      const fallback = typeof defaultValue === 'boolean' ? defaultValue : false
+      return (
+        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+          <Switch checked={asBool(fallback)} disabled={readOnly} onChange={(checked) => updateConfigAtPath(path, checked)} />
+        </Form.Item>
+      )
+    }
+
+    if (kind === 'int' || kind === 'float' || (kind === 'flag' && valueType === 'int')) {
+      const fallback = typeof defaultValue === 'number' ? defaultValue : undefined
+      const emptyValue = typeof defaultValue === 'number' ? defaultValue : null
+      return (
+        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+          <InputNumber
+            min={min}
+            max={max}
+            style={{ width: '100%' }}
+            disabled={readOnly}
+            value={asNumber(fallback)}
+            onChange={(next) => updateConfigAtPath(path, typeof next === 'number' ? next : emptyValue)}
+          />
+        </Form.Item>
+      )
+    }
+
+    if (kind === 'text') {
+      const ui = schema.ui
+      const rows = isRecord(ui) && typeof ui.rows === 'number' ? ui.rows : 4
+      return (
+        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+          <Input.TextArea
+            rows={rows}
+            disabled={readOnly}
+            value={asString()}
+            onChange={(event) => updateConfigAtPath(path, event.target.value)}
+          />
+        </Form.Item>
+      )
+    }
+
+    if (sensitive) {
+      return (
+        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+          <Input.Password
+            disabled={readOnly}
+            value={asString()}
+            placeholder={typeof schema.flag === 'string' ? schema.flag : undefined}
+            onChange={(event) => updateConfigAtPath(path, event.target.value)}
+          />
+        </Form.Item>
+      )
     }
 
     return (
-      <Space direction="vertical" style={{ width: '100%' }} size="small">
-        <Text strong>Startup options</Text>
-        <Space>
-          <Switch
-            checked={opt.disable_startup_messages !== false}
-            disabled={readOnly}
-            onChange={(checked) => update({ disable_startup_messages: checked })}
-          />
-          <Text>Disable startup messages</Text>
-        </Space>
-        <Space>
-          <Switch
-            checked={opt.disable_startup_dialogs !== false}
-            disabled={readOnly}
-            onChange={(checked) => update({ disable_startup_dialogs: checked })}
-          />
-          <Text>Disable startup dialogs</Text>
-        </Space>
-
-        <Divider style={{ margin: '12px 0' }} />
-        <Text strong>Logging</Text>
-        <Space>
-          <Switch
-            checked={opt.log_capture === true}
-            disabled={readOnly}
-            onChange={(checked) => update({ log_capture: checked })}
-          />
-          <Text>Capture 1C log (/Out)</Text>
-        </Space>
-        {opt.log_capture && (
-          <Space direction="vertical" style={{ width: '100%' }} size="small">
-            <Input
-              value={opt.log_path || ''}
-              disabled={readOnly}
-              placeholder="Log file path (optional, auto if empty)"
-              onChange={(event) => update({ log_path: event.target.value })}
-            />
-            <Space>
-              <Switch
-                checked={opt.log_no_truncate === true}
-                disabled={readOnly}
-                onChange={(checked) => update({ log_no_truncate: checked })}
-              />
-              <Text>Append log (-NoTruncate)</Text>
-            </Space>
-          </Space>
-        )}
-      </Space>
+      <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+        <Input
+          disabled={readOnly}
+          value={asString()}
+          placeholder={typeof schema.flag === 'string' ? schema.flag : undefined}
+          onChange={(event) => updateConfigAtPath(path, event.target.value)}
+        />
+      </Form.Item>
     )
   }
 
@@ -1048,7 +1198,9 @@ export function DriverCommandBuilder({
       onChange({ confirm_dangerous: false })
       return
     }
+    if (dangerousConfirmPending) return
 
+    setDangerousConfirmPending(true)
     modal.confirm({
       title: 'Confirm dangerous command',
       okText: 'Confirm',
@@ -1065,12 +1217,18 @@ export function DriverCommandBuilder({
           <Text type="secondary">Command: {selectedCommand?.label || commandId}</Text>
         </Space>
       ),
-      onOk: () => onChange({ confirm_dangerous: true }),
-      onCancel: () => onChange({ confirm_dangerous: false }),
+      onOk: () => {
+        setDangerousConfirmPending(false)
+        onChange({ confirm_dangerous: true })
+      },
+      onCancel: () => {
+        setDangerousConfirmPending(false)
+        onChange({ confirm_dangerous: false })
+      },
     })
   }
 
-  const renderIbcmdExecution = () => {
+  const renderLegacyIbcmdExecution = () => {
     const connection = config.connection ?? {}
     const timeout = typeof config.timeout_seconds === 'number' ? config.timeout_seconds : 900
 
@@ -1137,6 +1295,141 @@ export function DriverCommandBuilder({
             />
           </Form.Item>
         </Form>
+      </Space>
+    )
+  }
+
+  const renderLegacyCliOptions = () => {
+    const opt = config.cli_options ?? {}
+    const update = (updates: Partial<CliExtraOptions>) => {
+      onChange({ cli_options: { ...opt, ...updates } })
+    }
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Text strong>Startup options</Text>
+        <Space>
+          <Switch
+            checked={opt.disable_startup_messages !== false}
+            disabled={readOnly}
+            onChange={(checked) => update({ disable_startup_messages: checked })}
+          />
+          <Text>Disable startup messages</Text>
+        </Space>
+        <Space>
+          <Switch
+            checked={opt.disable_startup_dialogs !== false}
+            disabled={readOnly}
+            onChange={(checked) => update({ disable_startup_dialogs: checked })}
+          />
+          <Text>Disable startup dialogs</Text>
+        </Space>
+
+        <Divider style={{ margin: '12px 0' }} />
+        <Text strong>Logging</Text>
+        <Space>
+          <Switch
+            checked={opt.log_capture === true}
+            disabled={readOnly}
+            onChange={(checked) => update({ log_capture: checked })}
+          />
+          <Text>Capture 1C log (/Out)</Text>
+        </Space>
+        {opt.log_capture && (
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Input
+              value={opt.log_path || ''}
+              disabled={readOnly}
+              placeholder="Log file path (optional, auto if empty)"
+              onChange={(event) => update({ log_path: event.target.value })}
+            />
+            <Space>
+              <Switch
+                checked={opt.log_no_truncate === true}
+                disabled={readOnly}
+                onChange={(checked) => update({ log_no_truncate: checked })}
+              />
+              <Text>Append log (-NoTruncate)</Text>
+            </Space>
+          </Space>
+        )}
+      </Space>
+    )
+  }
+
+  const renderDriverOptions = () => {
+    const ui = isRecord(driverSchema?.ui) ? (driverSchema?.ui as Record<string, unknown>) : undefined
+    const sections = Array.isArray(ui?.sections) ? ui?.sections : undefined
+    const version = typeof ui?.version === 'number' ? ui.version : undefined
+
+    if (!driverSchema || version !== 1 || !sections) {
+      return driver === 'ibcmd' ? renderLegacyIbcmdExecution() : renderLegacyCliOptions()
+    }
+
+    type UiSection = { id: string; title: string; paths: string[]; when?: Record<string, unknown> }
+
+    const visibleSections: UiSection[] = []
+    for (const raw of sections) {
+      if (!isRecord(raw)) continue
+      const id = typeof raw.id === 'string' ? raw.id : ''
+      const title = typeof raw.title === 'string' ? raw.title : ''
+      const paths = Array.isArray(raw.paths) ? raw.paths.filter((p): p is string => typeof p === 'string' && p.length > 0) : []
+      if (!id || !title || paths.length === 0) continue
+      const when = isRecord(raw.when) ? (raw.when as Record<string, unknown>) : undefined
+      if (when && typeof when.command_scope === 'string' && when.command_scope !== scope) continue
+      visibleSections.push({ id, title, paths, when })
+    }
+
+    if (visibleSections.length === 0) {
+      return null
+    }
+
+    const renderSectionFields = (paths: string[]) => {
+      const offlinePaths = paths.filter((p) => p.startsWith('connection.offline.'))
+      const mainPaths = paths.filter((p) => !p.startsWith('connection.offline.'))
+      return (
+        <>
+          {mainPaths.map((path) => renderDriverOptionField(path))}
+          {offlinePaths.length > 0 && (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              <Text strong>Offline</Text>
+              {offlinePaths.map((path) => renderDriverOptionField(path))}
+            </>
+          )}
+        </>
+      )
+    }
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {driver === 'ibcmd' && scope === 'global' && (
+          <Alert
+            type="info"
+            showIcon
+            message="Global scope command"
+            description="This command will run once. Selected databases are used only for RBAC and infobase user mapping (auth_database_id)."
+          />
+        )}
+
+        {visibleSections.map((section, idx) => (
+          <Space key={section.id} direction="vertical" style={{ width: '100%' }} size="small">
+            {idx > 0 && <Divider style={{ margin: '12px 0' }} />}
+            <Text strong>{section.title}</Text>
+            <Form layout="vertical">
+              {renderSectionFields(section.paths)}
+            </Form>
+          </Space>
+        ))}
+
+        {driver === 'ibcmd' && scope === 'global' && !hasIbcmdConnection(config.connection) && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Connection required for global scope"
+            description="Set remote, pid, or offline connection parameters."
+          />
+        )}
       </Space>
     )
   }
@@ -1340,33 +1633,6 @@ export function DriverCommandBuilder({
         <Text type="secondary">Source: {selectedCommand.source_section}</Text>
       )}
 
-      {risk === 'dangerous' && (
-        <Alert
-          type="warning"
-          showIcon
-          message="Dangerous command"
-          description="This command is marked as dangerous. Review carefully before execution."
-        />
-      )}
-
-      {risk === 'dangerous' && (
-        <Form layout="vertical">
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Checkbox
-              checked={confirmDangerous}
-              disabled={readOnly}
-              onChange={(event) => handleDangerousConfirmChange(event.target.checked)}
-            >
-              I confirm this dangerous command
-            </Checkbox>
-          </Form.Item>
-        </Form>
-      )}
-
-      {driver === 'ibcmd' && renderIbcmdExecution()}
-
-      {driver === 'cli' && renderCliOptions()}
-
       {mode === 'guided' && renderGuidedParams()}
 
       {(mode === 'manual' || driver === 'ibcmd') && (
@@ -1403,6 +1669,11 @@ export function DriverCommandBuilder({
         </Space>
       )}
 
+      <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Text strong>Driver options</Text>
+        {renderDriverOptions()}
+      </Space>
+
       {commandId && preview.argv_masked.length > 0 && (
         <Alert
           type="info"
@@ -1410,6 +1681,32 @@ export function DriverCommandBuilder({
           message="Preview"
           description={preview.argv_masked.join('\n')}
         />
+      )}
+
+      {risk === 'dangerous' && (
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+          <Text strong>Safety</Text>
+          <Alert
+            type="warning"
+            showIcon
+            message="Dangerous command"
+            description="This command is marked as dangerous. Review carefully before execution."
+          />
+        </Space>
+      )}
+
+      {risk === 'dangerous' && (
+        <Form layout="vertical">
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Checkbox
+              checked={confirmDangerous}
+              disabled={readOnly || dangerousConfirmPending}
+              onChange={(event) => handleDangerousConfirmChange(event.target.checked)}
+            >
+              I confirm this dangerous command
+            </Checkbox>
+          </Form.Item>
+        </Form>
       )}
     </Space>
   )
