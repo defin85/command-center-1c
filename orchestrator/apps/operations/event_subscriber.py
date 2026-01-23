@@ -125,6 +125,28 @@ def _get_workflow_metadata(batch_op) -> Dict[str, Any]:
     return result
 
 
+def _release_idempotency_lock_for_operation(batch_op) -> None:
+    operation_type = str(getattr(batch_op, "operation_type", "") or "").strip()
+    payload = getattr(batch_op, "payload", None) or {}
+
+    if operation_type == "sync_cluster":
+        cluster_id = str(payload.get("cluster_id") or "").strip()
+        if cluster_id:
+            try:
+                operations_redis_client.release_lock(f"sync_cluster:{cluster_id}")
+            except Exception:
+                pass
+        return
+
+    if operation_type == "discover_clusters":
+        ras_server = str(payload.get("ras_server") or "").strip()
+        if ras_server:
+            try:
+                operations_redis_client.release_lock(f"discover_clusters:{ras_server}")
+            except Exception:
+                pass
+
+
 class EventSubscriber:
     """
     Subscribes to Redis Streams from Go services.
@@ -842,6 +864,7 @@ class EventSubscriber:
                 'failed_tasks',
                 'updated_at',
             ])
+            _release_idempotency_lock_for_operation(batch_op)
             try:
                 operations_redis_client.add_timeline_event(
                     operation_id,
@@ -942,6 +965,7 @@ class EventSubscriber:
 
             batch_op.metadata['error'] = error_msg
             batch_op.save(update_fields=['status', 'progress', 'completed_at', 'metadata', 'updated_at'])
+            _release_idempotency_lock_for_operation(batch_op)
             workflow_metadata = _get_workflow_metadata(batch_op)
             now = timezone.now()
             Task.objects.filter(batch_operation=batch_op, database__isnull=True).update(

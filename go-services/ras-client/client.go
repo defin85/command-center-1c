@@ -305,6 +305,7 @@ func (c *Client) dialFn(ctx context.Context) (net.Conn, error) {
 	}
 
 	var dialer net.Dialer
+	dialer.Timeout = 10 * time.Second
 
 	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
 	if err != nil {

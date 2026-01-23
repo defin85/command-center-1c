@@ -481,10 +481,17 @@ class OperationsService:
             )
 
         # Build payload with full cluster data for Worker
+        ras_server = str(cluster.ras_server or "").strip()
+        if getattr(cluster, "ras_host", None):
+            ras_host = str(cluster.ras_host or "").strip()
+            ras_port = int(cluster.ras_port or 1545) if getattr(cluster, "ras_port", None) else 1545
+            if ras_host:
+                ras_server = f"{ras_host}:{ras_port}"
+
         cluster_data = {
             "cluster_id": str(cluster.id),
             "cluster_name": cluster.name,
-            "ras_server": cluster.ras_server,
+            "ras_server": ras_server,
             "ras_cluster_uuid": str(cluster.ras_cluster_uuid) if cluster.ras_cluster_uuid else "",
             "cluster_user": cluster.cluster_user or "",
             "cluster_pwd": cluster.cluster_pwd or "",

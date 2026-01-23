@@ -471,6 +471,60 @@ class EventSubscriberTest(TestCase):
         self.assertEqual(global_task.error_code, 'WORKER_FAILED')
         mock_ops_redis.release_global_target_lock.assert_called_with("deadbeef")
 
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_completed_releases_sync_cluster_idempotency_lock(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        cluster_id = str(uuid.uuid4())
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Sync cluster',
+            operation_type=BatchOperation.TYPE_SYNC_CLUSTER,
+            target_entity='Cluster',
+            status=BatchOperation.STATUS_PROCESSING,
+            payload={'cluster_id': cluster_id},
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': op.id,
+                'status': 'failed',
+                'results': [],
+                'summary': {'total': 1, 'succeeded': 0, 'failed': 1},
+            },
+            'corr-sync-1',
+        )
+
+        mock_ops_redis.release_lock.assert_any_call(f"sync_cluster:{cluster_id}")
+
+    @patch('apps.operations.event_subscriber.operations_redis_client')
+    @patch('apps.operations.event_subscriber.redis.Redis')
+    def test_handle_worker_completed_releases_discover_clusters_idempotency_lock(self, mock_redis_class, mock_ops_redis):
+        subscriber = EventSubscriber()
+
+        ras_server = "127.0.0.1:1545"
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name='Discover clusters',
+            operation_type=BatchOperation.TYPE_DISCOVER_CLUSTERS,
+            target_entity='Cluster',
+            status=BatchOperation.STATUS_PROCESSING,
+            payload={'ras_server': ras_server},
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                'operation_id': op.id,
+                'status': 'failed',
+                'results': [],
+                'summary': {'total': 1, 'succeeded': 0, 'failed': 1},
+            },
+            'corr-discover-1',
+        )
+
+        mock_ops_redis.release_lock.assert_any_call(f"discover_clusters:{ras_server}")
+
     @patch('apps.operations.event_subscriber.redis.Redis')
     @patch('apps.operations.event_subscriber.time.sleep')
     def test_run_forever_handles_connection_error(self, mock_sleep, mock_redis_class):
