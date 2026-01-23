@@ -1,8 +1,13 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Request, type Route } from '@playwright/test'
 
-type AnyRecord = Record<string, any>
+declare global {
+  interface Window {
+    __CC1C_ENV__?: Record<string, string>
+    __TEST_IS_STAFF__?: boolean
+  }
+}
 
-async function fulfillJson(route: any, data: unknown, status = 200) {
+async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: 'application/json',
@@ -13,19 +18,19 @@ async function fulfillJson(route: any, data: unknown, status = 200) {
 
 async function setupAuth(page: Page, isStaff: boolean) {
   await page.addInitScript((staff) => {
-    ;(window as any).__CC1C_ENV__ = {
+    window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:5173',
       VITE_WS_HOST: '127.0.0.1:5173',
     }
     localStorage.setItem('auth_token', 'test-token')
-    ;(window as any).__TEST_IS_STAFF__ = staff
+    window.__TEST_IS_STAFF__ = staff
   }, isStaff)
 }
 
 async function setupCommonApiMocks(page: Page, opts: {
   isStaff: boolean
-  handlers: (method: string, path: string, url: URL, request: any) => Promise<{ status: number; data: unknown } | null>
+  handlers: (method: string, path: string, url: URL, request: Request) => Promise<{ status: number; data: unknown } | null>
 }) {
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -66,7 +71,7 @@ test('Databases: staff bulk Extensions action shows preview confirm (smoke)', as
   await setupAuth(page, true)
   await setupCommonApiMocks(page, {
     isStaff: true,
-    handlers: async (method, path, url) => {
+    handlers: async (method, path, _url) => {
       if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
         return {
           status: 200,
@@ -185,7 +190,7 @@ test('Databases: staff bulk Extensions action shows preview confirm (smoke)', as
   await page.goto('/databases', { waitUntil: 'domcontentloaded' })
   await expect(page.getByText('db1', { exact: true })).toBeVisible()
 
-  const firstRow = page.locator('tr[data-row-key=\"11111111-1111-1111-1111-111111111111\"]')
+  const firstRow = page.locator('tr[data-row-key="11111111-1111-1111-1111-111111111111"]')
   await firstRow.locator('input.ant-checkbox-input').check({ force: true })
 
   await page.getByRole('button', { name: /Extensions/ }).click()

@@ -941,24 +941,29 @@ export function CommandSchemasPage() {
             <div style={{ marginTop: 6 }}>
               {groupedCommands.groups[groupKey].map((item) => {
                 const selected = item.id === selectedCommandId
+                const handleSelect = () => {
+                  setSelectedCommandId(item.id)
+                  setActiveEditorTab('basics')
+                  setActiveSideTab('preview')
+                  setPreviewConnectionText('{}')
+                  setPreviewConnectionError(null)
+                  setPreviewParams({})
+                  setPreviewArgsText('')
+                  setPreviewArgv([])
+                  setPreviewArgvMasked([])
+                  setPreviewError(null)
+                  setDiffItems([])
+                  setDiffError(null)
+                }
+
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={item.id}
                     data-testid={`command-schemas-command-${item.id}`}
-                    onClick={() => {
-                      setSelectedCommandId(item.id)
-                      setActiveEditorTab('basics')
-                      setActiveSideTab('preview')
-                      setPreviewConnectionText('{}')
-                      setPreviewConnectionError(null)
-                      setPreviewParams({})
-                      setPreviewArgsText('')
-                      setPreviewArgv([])
-                      setPreviewArgvMasked([])
-                      setPreviewError(null)
-                      setDiffItems([])
-                      setDiffError(null)
-                    }}
+                    onClick={handleSelect}
+                    aria-current={selected ? 'true' : undefined}
+                    aria-label={`Select command ${item.display_id}`}
                     style={{
                       cursor: 'pointer',
                       border: '1px solid #f0f0f0',
@@ -966,6 +971,8 @@ export function CommandSchemasPage() {
                       padding: 10,
                       marginBottom: 8,
                       background: selected ? '#e6f4ff' : '#fff',
+                      width: '100%',
+                      textAlign: 'left',
                     }}
                   >
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
@@ -980,7 +987,7 @@ export function CommandSchemasPage() {
                         <Text type="secondary" ellipsis={{ tooltip: item.description }}>{item.description}</Text>
                       )}
                     </Space>
-                  </div>
+                  </button>
                 )
               })}
             </div>

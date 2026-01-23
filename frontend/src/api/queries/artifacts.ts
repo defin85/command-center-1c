@@ -17,7 +17,7 @@ import {
   type ArtifactPurgeResponse,
   type ArtifactPurgeJob,
 } from '../artifacts'
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 export const useArtifacts = (params: ArtifactListParams, options?: { enabled?: boolean }) => {
   return useQuery<ArtifactListResponse, Error>({

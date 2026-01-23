@@ -1,10 +1,12 @@
 import { Alert, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-export function RbacPermissionsTable(props: {
-  columns: ColumnsType<any>
-  dataSource: any[]
-  rowKey: (row: any) => string
+type AnyRow = Record<string, unknown>
+
+export function RbacPermissionsTable<T extends AnyRow = AnyRow>(props: {
+  columns: ColumnsType<T>
+  dataSource: T[]
+  rowKey: (row: T) => string
   loading: boolean
   total: number
   page: number
@@ -23,7 +25,7 @@ export function RbacPermissionsTable(props: {
         />
       )}
 
-      <Table
+      <Table<T>
         size="small"
         columns={props.columns}
         dataSource={props.dataSource}
@@ -40,4 +42,3 @@ export function RbacPermissionsTable(props: {
     </>
   )
 }
-

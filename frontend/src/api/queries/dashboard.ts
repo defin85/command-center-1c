@@ -12,7 +12,7 @@ import type { Cluster } from '../generated/model/cluster'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
 import { getV2 } from '../generated'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 // =============================================================================
 // Raw Data Type (before statistics calculation)

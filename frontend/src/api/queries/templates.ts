@@ -9,7 +9,7 @@ import type { OperationTemplateSyncResponse } from '../generated/model/operation
 import type { OperationTemplateId } from '../generated/model/operationTemplateId'
 import type { OperationTemplateDetailResponse } from '../generated/model/operationTemplateDetailResponse'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 const api = getV2()
 

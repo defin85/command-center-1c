@@ -24,7 +24,8 @@ import {
   type ExecuteOperationResponse,
 } from '../operations'
 
-import { queryKeys, type DatabaseFilters } from './index'
+import { queryKeys } from './queryKeys'
+import type { DatabaseFilters } from './types'
 
 // Initialize API client (generated)
 const api = getV2()

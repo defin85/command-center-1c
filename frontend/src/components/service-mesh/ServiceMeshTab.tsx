@@ -79,7 +79,7 @@ const ServiceMeshTab: React.FC = () => {
   if (services.length === 0 && !connectionError) {
     return (
       <div className="service-mesh-tab__loading">
-        <Spin size="large" tip="Loading service mesh...">
+        <Spin size="large" tip="Loading service mesh\u2026">
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>

@@ -125,11 +125,19 @@ const normalizeActionId = (value: unknown): string | null => {
 }
 
 const extractBackendErrors = (error: unknown): string[] => {
-  const err = error as { response?: { status?: number; data?: any }; message?: string } | null
+  const err = error as { response?: { status?: number; data?: unknown }; message?: string } | null
   const data = err?.response?.data
-  const message = data?.error?.message
+
+  const message = (() => {
+    if (!data || typeof data !== 'object') return null
+    const maybeError = (data as Record<string, unknown>).error
+    if (typeof maybeError === 'string') return maybeError
+    if (!maybeError || typeof maybeError !== 'object') return null
+    return (maybeError as Record<string, unknown>).message ?? null
+  })()
+
   if (Array.isArray(message)) {
-    return message.filter((item: unknown) => typeof item === 'string') as string[]
+    return message.filter((item) => typeof item === 'string')
   }
   if (typeof message === 'string') {
     return [message]
@@ -1498,7 +1506,7 @@ export function ActionCatalogPage() {
                   loading={workflowTemplatesQuery.isLoading}
                   filterOption={false}
                   onSearch={(value) => setWorkflowSearch(value)}
-                  placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates...' : 'Select workflow template'}
+                  placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates\u2026' : 'Select workflow template'}
                   data-testid="action-catalog-editor-workflow-id"
                   notFoundContent={workflowTemplatesQuery.isError ? 'Failed to load workflow templates' : 'No templates'}
                 />
@@ -1536,7 +1544,7 @@ export function ActionCatalogPage() {
                     showSearch
                     options={commandOptions}
                     loading={commandsQuery.isLoading}
-                    placeholder={commandsQuery.isLoading ? 'Loading driver catalog...' : 'Select command_id'}
+                    placeholder={commandsQuery.isLoading ? 'Loading driver catalog\u2026' : 'Select command_id'}
                     optionFilterProp="label"
                     data-testid="action-catalog-editor-command-id"
                     notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}

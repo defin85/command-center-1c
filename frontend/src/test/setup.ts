@@ -27,6 +27,16 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 })
 
+// JSDOM does not implement pseudo-element styles. Some UI libs call getComputedStyle(el, '::before').
+// Ignore pseudo-element argument to prevent noisy "Not implemented" warnings in tests.
+{
+  const originalGetComputedStyle = window.getComputedStyle.bind(window)
+  Object.defineProperty(window, 'getComputedStyle', {
+    writable: true,
+    value: (elt: Element) => originalGetComputedStyle(elt),
+  })
+}
+
 // Mock IntersectionObserver (used by some Ant Design components)
 global.IntersectionObserver = class IntersectionObserver {
   constructor() {}

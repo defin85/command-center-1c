@@ -106,12 +106,23 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
     onSelect(metrics.name)
   }
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleClick()
+    }
+  }
+
   return (
     <div
       className={`service-node ${isSelected ? 'service-node--selected' : ''} ${operationClass}`}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open service details for ${metrics.displayName || metrics.name}`}
       style={{
         borderColor: isSelected ? STATUS_COLORS[metrics.status] : undefined,
       }}

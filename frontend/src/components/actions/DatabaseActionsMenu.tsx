@@ -37,7 +37,7 @@ const menuItems: MenuProps['items'] = [
     danger: op.danger,
   })),
   { type: 'divider' as const },
-  { key: 'more', icon: <MoreOutlined />, label: 'More Operations...' },
+  { key: 'more', icon: <MoreOutlined />, label: 'More Operations\u2026' },
 ];
 
 export const DatabaseActionsMenu: React.FC<DatabaseActionsMenuProps> = ({
@@ -58,7 +58,7 @@ export const DatabaseActionsMenu: React.FC<DatabaseActionsMenuProps> = ({
       trigger={['click']}
       disabled={isDisabled}
     >
-      <Button icon={<EllipsisOutlined />} size="small" />
+      <Button icon={<EllipsisOutlined />} size="small" aria-label="Database actions" />
     </Dropdown>
   );
 };

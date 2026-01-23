@@ -124,7 +124,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
       {/* Connection status */}
       {!isConnected && (
         <Alert
-          message="Подключение к real-time обновлениям..."
+          message="Подключение к real-time обновлениям\u2026"
           type="info"
           showIcon
           style={{ marginBottom: 16 }}

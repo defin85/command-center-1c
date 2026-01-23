@@ -365,7 +365,7 @@ const WorkflowDesigner = () => {
   if (state.isLoading) {
     return (
       <div className="workflow-designer-loading">
-        <Spin size="large" tip="Loading workflow...">
+        <Spin size="large" tip="Loading workflow\u2026">
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>

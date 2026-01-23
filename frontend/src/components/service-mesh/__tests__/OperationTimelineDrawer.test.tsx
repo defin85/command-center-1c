@@ -92,7 +92,7 @@ describe('OperationTimelineDrawer', () => {
       expect(screen.queryByText('Operation Timeline')).not.toBeInTheDocument()
     })
 
-    it('renders when visible is true', () => {
+    it('renders when visible is true', async () => {
       vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
@@ -104,6 +104,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       expect(screen.getByText('Operation Timeline')).toBeInTheDocument()
+      await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
     })
 
     it('calls onClose when drawer is closed', async () => {
@@ -141,12 +142,12 @@ describe('OperationTimelineDrawer', () => {
         // Drawer renders into document.body, use document.body to search
         const titleElement = document.querySelector('.operation-timeline-drawer__id')
         expect(titleElement).toBeInTheDocument()
-        // ID should be truncated: first 8 chars + ... + last 4 chars
-        expect(titleElement).toHaveTextContent('op-12345...2345')
+        // ID should be truncated: first 8 chars + … + last 4 chars
+        expect(titleElement).toHaveTextContent('op-12345\u20262345')
       })
     })
 
-    it('displays full operation ID when shorter than 12 chars', () => {
+    it('displays full operation ID when shorter than 12 chars', async () => {
       vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
@@ -157,7 +158,8 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      expect(screen.getByText('short-id')).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByText('short-id')).toBeInTheDocument())
+      await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
     })
   })
 
@@ -334,6 +336,10 @@ describe('OperationTimelineDrawer', () => {
   })
 
   describe('Error State', () => {
+    beforeEach(() => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
     it('shows error message on API failure', async () => {
       vi.mocked(apiClient.post).mockRejectedValue(new Error('Network error'))
 
@@ -609,12 +615,12 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      expect(screen.queryByText('Loading timeline...')).not.toBeInTheDocument()
+      expect(screen.queryByText('Loading timeline\u2026')).not.toBeInTheDocument()
     })
   })
 
   describe('Drawer Configuration', () => {
-    it('renders with correct width', () => {
+    it('renders with correct width', async () => {
       vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
@@ -628,10 +634,11 @@ describe('OperationTimelineDrawer', () => {
       // Drawer renders into document.body portal
       const drawer = document.querySelector('.ant-drawer')
       expect(drawer).toBeInTheDocument()
+      await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
       // Width is set via inline styles by Ant Design
     })
 
-    it('renders on right side', () => {
+    it('renders on right side', async () => {
       vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
@@ -645,9 +652,10 @@ describe('OperationTimelineDrawer', () => {
       // Drawer renders into document.body portal
       const drawer = document.querySelector('.ant-drawer-right')
       expect(drawer).toBeInTheDocument()
+      await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
     })
 
-    it('has correct CSS class', () => {
+    it('has correct CSS class', async () => {
       vi.mocked(apiClient.post).mockResolvedValue({ data: mockTimelineResponse })
 
       render(
@@ -661,6 +669,7 @@ describe('OperationTimelineDrawer', () => {
       // Drawer renders into document.body portal
       const drawer = document.querySelector('.operation-timeline-drawer')
       expect(drawer).toBeInTheDocument()
+      await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
     })
   })
 

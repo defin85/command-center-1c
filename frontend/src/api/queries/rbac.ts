@@ -9,7 +9,7 @@ import type { GrantDatabasePermissionRequest } from '../generated/model/grantDat
 import type { RevokeClusterPermissionRequest } from '../generated/model/revokeClusterPermissionRequest'
 import type { RevokeDatabasePermissionRequest } from '../generated/model/revokeDatabasePermissionRequest'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 import { apiClient } from '../client'
 
 const api = getV2()

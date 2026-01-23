@@ -44,7 +44,7 @@ export function RbacResourceBrowser(props: {
           />
           {props.loading && (
             <div style={{ padding: 8, textAlign: 'center' }}>
-              <Text type="secondary">{props.loadingText ?? 'Loading...'}</Text>
+              <Text type="secondary">{props.loadingText ?? 'Loading\u2026'}</Text>
             </div>
           )}
         </div>

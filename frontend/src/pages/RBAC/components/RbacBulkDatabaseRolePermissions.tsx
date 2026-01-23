@@ -108,7 +108,7 @@ export function RbacBulkDatabaseRolePermissions(props: {
                         {values.notes ? <Text><Text strong>{i18n.notesLabel ?? 'Notes'}:</Text> {values.notes}</Text> : null}
                         <Text><Text strong>{i18n.countLabel ?? 'Count'}:</Text> {databaseIds.length}</Text>
                         <Text type="secondary">
-                          {i18n.exampleLabel ?? 'Example'}: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', ...' : ''}
+                          {i18n.exampleLabel ?? 'Example'}: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', \u2026' : ''}
                         </Text>
                       </Space>
                     ),
@@ -187,7 +187,7 @@ export function RbacBulkDatabaseRolePermissions(props: {
                         <Text><Text strong>{i18n.roleLabel ?? 'Role'}:</Text> {roleName} #{values.group_id}</Text>
                         <Text><Text strong>{i18n.countLabel ?? 'Count'}:</Text> {databaseIds.length}</Text>
                         <Text type="secondary">
-                          {i18n.exampleLabel ?? 'Example'}: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', ...' : ''}
+                          {i18n.exampleLabel ?? 'Example'}: {databaseIds.slice(0, 5).join(', ')}{databaseIds.length > 5 ? ', \u2026' : ''}
                         </Text>
                       </Space>
                     ),

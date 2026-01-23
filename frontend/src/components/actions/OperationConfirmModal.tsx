@@ -134,7 +134,7 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
             rules={[{ required: true, message: 'Please enter a message' }]}
             htmlFor="operation-confirm-message"
           >
-            <Input.TextArea id="operation-confirm-message" rows={2} placeholder="Maintenance in progress..." />
+            <Input.TextArea id="operation-confirm-message" rows={2} placeholder="Maintenance in progress\u2026" />
           </Form.Item>
 
           <Form.Item

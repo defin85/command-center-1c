@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TableFilters, TableFilterConfig, TableSortState } from '../types'
 
 export interface TableColumnConfig {
@@ -144,12 +144,33 @@ export const useTablePreferences = (
     ].join(':')).join('|'),
     [filters]
   )
-  const stableColumns = useMemo(() => columns, [columnsSignature])
-  const stableFilters = useMemo(() => filters, [filtersSignature])
-  const defaultPreset = useMemo(
-    () => buildDefaultPreset(stableColumns, stableFilters),
-    [columnsSignature, filtersSignature, stableColumns, stableFilters]
-  )
+  const stableColumnsRef = useRef<{ signature: string; value: TableColumnConfig[] }>({
+    signature: '',
+    value: columns,
+  })
+  const stableColumns = useMemo(() => {
+    if (stableColumnsRef.current.signature === columnsSignature) {
+      return stableColumnsRef.current.value
+    }
+    stableColumnsRef.current = { signature: columnsSignature, value: columns }
+    return columns
+  }, [columns, columnsSignature])
+
+  const stableFiltersRef = useRef<{ signature: string; value: TableFilterConfig[] }>({
+    signature: '',
+    value: filters,
+  })
+  const stableFilters = useMemo(() => {
+    if (stableFiltersRef.current.signature === filtersSignature) {
+      return stableFiltersRef.current.value
+    }
+    stableFiltersRef.current = { signature: filtersSignature, value: filters }
+    return filters
+  }, [filters, filtersSignature])
+
+  const defaultPreset = useMemo(() => {
+    return buildDefaultPreset(stableColumns, stableFilters)
+  }, [stableColumns, stableFilters])
   const [preferences, setPreferences] = useState<TablePreferences>(() => ({
     activePresetId: defaultPreset.id,
     presets: [defaultPreset],

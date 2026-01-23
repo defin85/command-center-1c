@@ -139,7 +139,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
    */
   const formatOperationId = (id: string): string => {
     if (id.length <= 12) return id
-    return `${id.slice(0, 8)}...${id.slice(-4)}`
+    return `${id.slice(0, 8)}\u2026${id.slice(-4)}`
   }
 
   return (
@@ -164,7 +164,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       {/* Loading state */}
       {loading && (
         <div className="operation-timeline-drawer__loading">
-          <Spin size="large" tip="Loading timeline...">
+          <Spin size="large" tip="Loading timeline\u2026">
             <div style={{ minHeight: 200 }} />
           </Spin>
         </div>

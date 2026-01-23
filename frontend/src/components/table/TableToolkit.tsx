@@ -77,9 +77,10 @@ export const TableToolkit = <T,>({
     () => `table-toolkit-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
     [rawId]
   )
+  const filterConfigs = table.filterConfigs
   const filterConfigByKey = useMemo(
-    () => new Map(table.filterConfigs.map((config) => [config.key, config])),
-    [table.filterConfigs]
+    () => new Map(filterConfigs.map((config) => [config.key, config])),
+    [filterConfigs]
   )
 
   const decoratedColumns = useMemo<ColumnsType<T>>(() => {
@@ -112,17 +113,7 @@ export const TableToolkit = <T,>({
         sortOrder,
       }
     })
-  }, [
-    columns,
-    filterConfigByKey,
-    table.canHideFilter,
-    table.columnConfigs,
-    table.filterVisibility,
-    table.sort.key,
-    table.sort.order,
-    table.sortableColumns,
-    table.toggleFilterVisibility,
-  ])
+  }, [columns, filterConfigByKey, table])
 
   const tableColumns = useMemo<ColumnsType<T>>(() => {
     if (table.groupedColumns.length === 0) {

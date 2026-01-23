@@ -17,7 +17,8 @@ import type { ResetSyncStatusResponse } from '../generated/model/resetSyncStatus
 import type { SystemConfig } from '../generated/model/systemConfig'
 
 import { apiClient } from '../client'
-import { queryKeys, type ClusterFilters } from './index'
+import { queryKeys } from './queryKeys'
+import type { ClusterFilters } from './types'
 
 // Initialize API client
 const api = getV2()

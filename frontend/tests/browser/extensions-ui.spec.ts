@@ -1,8 +1,14 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 
-type AnyRecord = Record<string, any>
+type AnyRecord = Record<string, unknown>
 
-async function fulfillJson(route: any, data: unknown, status = 200) {
+declare global {
+  interface Window {
+    __CC1C_ENV__?: Record<string, string>
+  }
+}
+
+async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: 'application/json',
@@ -13,7 +19,7 @@ async function fulfillJson(route: any, data: unknown, status = 200) {
 
 async function setupAuth(page: Page) {
   await page.addInitScript(() => {
-    ;(window as any).__CC1C_ENV__ = {
+    window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:5173',
       VITE_WS_HOST: '127.0.0.1:5173',
@@ -61,7 +67,15 @@ async function setupApiMocks(page: Page, state: {
         rows = rows.filter((r) => String(r.name || '').toLowerCase().includes(search))
       }
       if (version) {
-        rows = rows.filter((r) => Array.isArray(r.versions) && r.versions.some((v: any) => String(v?.version || '') === version))
+        rows = rows.filter((r) => {
+          const versions = r['versions']
+          if (!Array.isArray(versions)) return false
+          return versions.some((v) => {
+            if (!v || typeof v !== 'object') return false
+            const maybeVersion = (v as Record<string, unknown>)['version']
+            return String(maybeVersion ?? '') === version
+          })
+        })
       }
       if (status) {
         const key = `${status}_count`

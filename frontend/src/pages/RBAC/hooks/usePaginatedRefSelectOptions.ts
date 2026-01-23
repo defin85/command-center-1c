@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type UIEvent } from 'react'
 
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 
@@ -37,24 +37,38 @@ export function usePaginatedRefSelectOptions<TItem, TFilters, TData>(params: {
   getId: (item: TItem) => string
   getLabel: (item: TItem) => string
 }) {
-  const debounceMs = params.debounceMs ?? 300
+  const {
+    enabled,
+    pageSize,
+    debounceMs: debounceMsParam,
+    queryHook,
+    buildFilters,
+    getItems,
+    getId,
+    getLabel,
+  } = params
+
+  const debounceMs = debounceMsParam ?? 300
   const [search, setSearch] = useState<string>('')
   const debouncedSearch = useDebouncedValue(search, debounceMs)
   const [offset, setOffset] = useState<number>(0)
   const [options, setOptions] = useState<SelectOption[]>([])
   const labelById = useRef<Map<string, string>>(new Map())
 
-  const filters = params.buildFilters({
+  const filters = buildFilters({
     search: debouncedSearch.trim() ? debouncedSearch : undefined,
-    limit: params.pageSize,
+    limit: pageSize,
     offset,
   })
 
-  const query = params.queryHook(filters, { enabled: params.enabled })
+  const query = queryHook(filters, { enabled })
 
-  const total = typeof (query.data as any)?.total === 'number'
-    ? Number((query.data as any).total)
-    : options.length
+  const total = (() => {
+    const data = query.data as unknown
+    if (!data || typeof data !== 'object') return options.length
+    const maybeTotal = (data as Record<string, unknown>)['total']
+    return typeof maybeTotal === 'number' ? maybeTotal : options.length
+  })()
 
   useEffect(() => {
     setOffset(0)
@@ -62,13 +76,13 @@ export function usePaginatedRefSelectOptions<TItem, TFilters, TData>(params: {
   }, [debouncedSearch])
 
   useEffect(() => {
-    const page = params.getItems(query.data)
+    const page = getItems(query.data)
     if (!page) return
     page.forEach((item) => {
-      const id = params.getId(item)
-      labelById.current.set(id, params.getLabel(item))
+      const id = getId(item)
+      labelById.current.set(id, getLabel(item))
     })
-    const nextOptions = page.map((item) => ({ label: params.getLabel(item), value: params.getId(item) }))
+    const nextOptions = page.map((item) => ({ label: getLabel(item), value: getId(item) }))
     setOptions((prev) => {
       if (offset === 0) {
         if (prev.length === nextOptions.length) {
@@ -81,15 +95,14 @@ export function usePaginatedRefSelectOptions<TItem, TFilters, TData>(params: {
       }
       return mergeSelectOptions(prev, nextOptions)
     })
-  }, [query.data, offset, params.getId, params.getItems, params.getLabel])
+  }, [getId, getItems, getLabel, offset, query.data])
 
-  const handlePopupScroll = (event: any) => {
-    const target = event?.target as HTMLElement | undefined
-    if (!target) return
+  const handlePopupScroll = (event: UIEvent<HTMLElement>) => {
+    const target = event.currentTarget
     if (!isScrollNearBottom(target)) return
     if (query.isFetching) return
     if (options.length >= total) return
-    setOffset((prev) => prev + params.pageSize)
+    setOffset((prev) => prev + pageSize)
   }
 
   return {

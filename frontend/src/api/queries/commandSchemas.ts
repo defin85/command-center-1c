@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { listCommandSchemasAudit } from '../commandSchemas'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
   return useQuery({
@@ -24,4 +24,3 @@ export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
     enabled: options?.enabled ?? true,
   })
 }
-

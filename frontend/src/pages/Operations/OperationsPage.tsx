@@ -14,10 +14,11 @@ import { getV2 } from '../../api/generated'
 import { executeOperation, type RASOperationType } from '../../api/operations'
 import { apiClient } from '../../api/client'
 import { getRuntimeSettings } from '../../api/runtimeSettings'
-import { useAuthz } from '../../authz'
+import { useAuthz } from '../../authz/useAuthz'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
-import { OperationsTable, buildOperationsColumns } from './components/OperationsTable'
+import { OperationsTable } from './components/OperationsTable'
+import { buildOperationsColumns } from './components/OperationsTableColumns'
 import { OperationDetailsModal } from './components/OperationDetailsModal'
 import { NewOperationWizard } from './components/NewOperationWizard'
 import OperationTimelineDrawer from '../../components/service-mesh/OperationTimelineDrawer'
@@ -41,6 +42,7 @@ const toNumber = (value: unknown): number | null => {
 const DEFAULT_MAX_LIVE_STREAMS = 10
 const DEFAULT_MAX_SUBSCRIPTIONS = 200
 const ACTIVE_STATUSES = ['pending', 'queued', 'processing'] as const
+const EMPTY_OPERATIONS: UIBatchOperation[] = []
 const isActiveStatus = (
   status: UIBatchOperation['status']
 ): status is (typeof ACTIVE_STATUSES)[number] =>
@@ -131,10 +133,10 @@ export const OperationsPage = () => {
   )
 
   // Show operation details modal
-  const handleViewDetails = (operation: UIBatchOperation) => {
+  const handleViewDetails = useCallback((operation: UIBatchOperation) => {
     setSelectedOperation(operation)
     setDetailsVisible(true)
-  }
+  }, [])
 
   const updateSearchParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -212,10 +214,11 @@ export const OperationsPage = () => {
     initialPageSize: 50,
   })
 
+  const setFilter = table.setFilter
   useEffect(() => {
-    table.setFilter('id', operationIdFilter ?? null)
-    table.setFilter('workflow_execution_id', workflowExecutionId ?? null)
-  }, [operationIdFilter, table.setFilter, workflowExecutionId])
+    setFilter('id', operationIdFilter ?? null)
+    setFilter('workflow_execution_id', workflowExecutionId ?? null)
+  }, [operationIdFilter, setFilter, workflowExecutionId])
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
 
@@ -236,7 +239,7 @@ export const OperationsPage = () => {
     },
   })
 
-  const operations = operationsResponse?.operations ?? []
+  const operations = operationsResponse?.operations ?? EMPTY_OPERATIONS
   const totalOperations = typeof operationsResponse?.total === 'number'
     ? operationsResponse.total
     : operations.length
@@ -507,7 +510,7 @@ export const OperationsPage = () => {
 
       throw new Error(`Operation type ${data.operationType} is not supported in wizard`)
     },
-    [api, handleRefresh]
+    [handleRefresh]
   )
 
   const activeOperationIds = canStreamOperations

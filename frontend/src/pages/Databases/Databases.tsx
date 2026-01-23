@@ -6,6 +6,7 @@ import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutline
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import type { Database } from '../../api/generated/model/database'
+import type { Cluster } from '../../api/generated/model/cluster'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { ActionCatalogAction } from '../../api/generated/model/actionCatalogAction'
@@ -26,7 +27,7 @@ import {
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 import { useActionCatalog } from '../../api/queries/ui'
-import { useAuthz } from '../../authz'
+import { useAuthz } from '../../authz/useAuthz'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -34,6 +35,8 @@ import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 
 const api = getV2()
+const EMPTY_CLUSTERS: Cluster[] = []
+const EMPTY_ACTIONS: ActionCatalogAction[] = []
 
 export const Databases = () => {
   const navigate = useNavigate()
@@ -89,7 +92,7 @@ export const Databases = () => {
 
   // React Query hooks
   const { data: clustersResponse, isLoading: clustersLoading } = useClusters()
-  const clusters = clustersResponse?.clusters ?? []
+  const clusters = clustersResponse?.clusters ?? EMPTY_CLUSTERS
   const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamStatus()
   const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
   const actionCatalogQuery = useActionCatalog()
@@ -131,7 +134,7 @@ export const Databases = () => {
     [selectedDatabases, canManageDatabase]
   )
 
-  const extensionsActions: ActionCatalogAction[] = (actionCatalogQuery.data?.extensions?.actions ?? []) as ActionCatalogAction[]
+  const extensionsActions: ActionCatalogAction[] = actionCatalogQuery.data?.extensions?.actions ?? EMPTY_ACTIONS
   const extensionsDatabaseCardActions = useMemo(
     () => extensionsActions.filter((action) => action.contexts.includes('database_card')),
     [extensionsActions]

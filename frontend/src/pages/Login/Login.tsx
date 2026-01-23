@@ -90,6 +90,9 @@ export const Login = () => {
                             id="login-username"
                             prefix={<UserOutlined />}
                             placeholder="Имя пользователя"
+                            aria-label="Имя пользователя"
+                            autoComplete="username"
+                            spellCheck={false}
                         />
                     </Form.Item>
 
@@ -101,6 +104,8 @@ export const Login = () => {
                             id="login-password"
                             prefix={<LockOutlined />}
                             placeholder="Пароль"
+                            aria-label="Пароль"
+                            autoComplete="current-password"
                         />
                     </Form.Item>
 

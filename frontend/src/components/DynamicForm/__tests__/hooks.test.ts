@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useSchemaValidation } from '../hooks/useSchemaValidation'
 import { useConditionalFields } from '../hooks/useConditionalFields'
 import { useFieldOrder } from '../hooks/useFieldOrder'
@@ -25,11 +25,17 @@ describe('useSchemaValidation', () => {
     const { result } = renderHook(() => useSchemaValidation(schema))
 
     // Valid data - should pass
-    const validResult = result.current.validate({ name: 'John', email: 'john@example.com' })
+    let validResult = true
+    act(() => {
+      validResult = result.current.validate({ name: 'John', email: 'john@example.com' })
+    })
     expect(validResult).toBe(true)
 
     // Missing required field - should fail
-    const invalidResult = result.current.validate({ name: 'John' })
+    let invalidResult = true
+    act(() => {
+      invalidResult = result.current.validate({ name: 'John' })
+    })
     expect(invalidResult).toBe(false)
 
     // After validation fails, errors should be populated
@@ -55,14 +61,20 @@ describe('useSchemaValidation', () => {
     const { result } = renderHook(() => useSchemaValidation(schema))
 
     // Too short - should fail
-    const invalidResult = result.current.validate({ username: 'ab' })
+    let invalidResult = true
+    act(() => {
+      invalidResult = result.current.validate({ username: 'ab' })
+    })
     expect(invalidResult).toBe(false)
     await waitFor(() => {
       expect(result.current.errors[0].code).toBe('minLength')
     })
 
     // Valid length - should pass
-    const validResult = result.current.validate({ username: 'abc' })
+    let validResult = true
+    act(() => {
+      validResult = result.current.validate({ username: 'abc' })
+    })
     expect(validResult).toBe(true)
   })
 
@@ -82,21 +94,30 @@ describe('useSchemaValidation', () => {
     const { result } = renderHook(() => useSchemaValidation(schema))
 
     // Below minimum - should fail
-    const belowMin = result.current.validate({ age: 17 })
+    let belowMin = true
+    act(() => {
+      belowMin = result.current.validate({ age: 17 })
+    })
     expect(belowMin).toBe(false)
     await waitFor(() => {
       expect(result.current.errors[0].code).toBe('minimum')
     })
 
     // Above maximum - should fail
-    const aboveMax = result.current.validate({ age: 101 })
+    let aboveMax = true
+    act(() => {
+      aboveMax = result.current.validate({ age: 101 })
+    })
     expect(aboveMax).toBe(false)
     await waitFor(() => {
       expect(result.current.errors[0].code).toBe('maximum')
     })
 
     // Within range - should pass
-    const validResult = result.current.validate({ age: 25 })
+    let validResult = true
+    act(() => {
+      validResult = result.current.validate({ age: 25 })
+    })
     expect(validResult).toBe(true)
   })
 
@@ -115,14 +136,20 @@ describe('useSchemaValidation', () => {
     const { result } = renderHook(() => useSchemaValidation(schema))
 
     // Invalid email - should fail
-    const invalidResult = result.current.validate({ email: 'invalid-email' })
+    let invalidResult = true
+    act(() => {
+      invalidResult = result.current.validate({ email: 'invalid-email' })
+    })
     expect(invalidResult).toBe(false)
     await waitFor(() => {
       expect(result.current.errors[0].code).toBe('format')
     })
 
     // Valid email - should pass
-    const validResult = result.current.validate({ email: 'test@example.com' })
+    let validResult = true
+    act(() => {
+      validResult = result.current.validate({ email: 'test@example.com' })
+    })
     expect(validResult).toBe(true)
   })
 
@@ -138,7 +165,11 @@ describe('useSchemaValidation', () => {
 
     const { result } = renderHook(() => useSchemaValidation(schema))
 
-    expect(result.current.validate({ name: 'John', age: 30 })).toBe(true)
+    let ok = true
+    act(() => {
+      ok = result.current.validate({ name: 'John', age: 30 })
+    })
+    expect(ok).toBe(true)
     expect(result.current.errors).toHaveLength(0)
     expect(result.current.errorMap).toEqual({})
   })
@@ -153,7 +184,10 @@ describe('useSchemaValidation', () => {
 
     const { result } = renderHook(() => useSchemaValidation(schema))
 
-    const invalidResult = result.current.validate({ name: 'ab' })
+    let invalidResult = true
+    act(() => {
+      invalidResult = result.current.validate({ name: 'ab' })
+    })
     expect(invalidResult).toBe(false)
 
     await waitFor(() => {
@@ -174,14 +208,19 @@ describe('useSchemaValidation', () => {
     const { result } = renderHook(() => useSchemaValidation(schema))
 
     // Create validation error
-    const invalidResult = result.current.validate({})
+    let invalidResult = true
+    act(() => {
+      invalidResult = result.current.validate({})
+    })
     expect(invalidResult).toBe(false)
     await waitFor(() => {
       expect(result.current.errors.length).toBeGreaterThan(0)
     })
 
     // Clear errors
-    result.current.clearErrors()
+    act(() => {
+      result.current.clearErrors()
+    })
     await waitFor(() => {
       expect(result.current.errors).toHaveLength(0)
     })

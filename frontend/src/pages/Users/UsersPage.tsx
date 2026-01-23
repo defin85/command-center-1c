@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { App, Button, Card, Form, Input, Modal, Space, Switch, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -32,6 +32,45 @@ export function UsersPage() {
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const setUserPassword = useSetUserPassword()
+
+  const openCreateModal = useCallback(() => {
+    setEditingUser(null)
+    form.resetFields()
+    form.setFieldsValue({ is_active: true, is_staff: false })
+    setUserModalVisible(true)
+  }, [form])
+
+  const openEditModal = useCallback((user: UserSummary) => {
+    setEditingUser(user)
+    form.setFieldsValue({
+      username: user.username,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      is_staff: user.is_staff,
+      is_active: user.is_active,
+    })
+    setUserModalVisible(true)
+  }, [form])
+
+  const openPasswordModal = useCallback((user: UserSummary) => {
+    setPasswordUser(user)
+    passwordForm.resetFields()
+    setPasswordModalVisible(true)
+  }, [passwordForm])
+
+  const toggleActive = useCallback((user: UserSummary) => {
+    modal.confirm({
+      title: user.is_active ? 'Deactivate user?' : 'Activate user?',
+      content: user.is_active
+        ? 'User will not be able to log in.'
+        : 'User will be able to log in again.',
+      okText: user.is_active ? 'Deactivate' : 'Activate',
+      cancelText: 'Cancel',
+      okButtonProps: { danger: user.is_active },
+      onOk: () => updateUser.mutate({ id: user.id, is_active: !user.is_active }),
+    })
+  }, [modal, updateUser])
 
   const fallbackColumns = useMemo(() => [
     { key: 'username', label: 'Username', groupKey: 'core', groupLabel: 'Core', sortable: true },
@@ -104,7 +143,7 @@ export function UsersPage() {
         </Space>
       ),
     },
-  ], [])
+  ], [openEditModal, openPasswordModal, toggleActive])
 
   const table = useTableToolkit({
     tableId: 'users',
@@ -137,26 +176,6 @@ export function UsersPage() {
         <Typography.Text type="warning">Users доступны только для staff пользователей.</Typography.Text>
       </div>
     )
-  }
-
-  const openCreateModal = () => {
-    setEditingUser(null)
-    form.resetFields()
-    form.setFieldsValue({ is_active: true, is_staff: false })
-    setUserModalVisible(true)
-  }
-
-  const openEditModal = (user: UserSummary) => {
-    setEditingUser(user)
-    form.setFieldsValue({
-      username: user.username,
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      is_staff: user.is_staff,
-      is_active: user.is_active,
-    })
-    setUserModalVisible(true)
   }
 
   const handleUserSave = async () => {
@@ -201,12 +220,6 @@ export function UsersPage() {
     })
   }
 
-  const openPasswordModal = (user: UserSummary) => {
-    setPasswordUser(user)
-    passwordForm.resetFields()
-    setPasswordModalVisible(true)
-  }
-
   const handlePasswordSave = async () => {
     if (!passwordUser) return
     const values = await passwordForm.validateFields()
@@ -220,19 +233,6 @@ export function UsersPage() {
         },
       }
     )
-  }
-
-  const toggleActive = (user: UserSummary) => {
-    modal.confirm({
-      title: user.is_active ? 'Deactivate user?' : 'Activate user?',
-      content: user.is_active
-        ? 'User will not be able to log in.'
-        : 'User will be able to log in again.',
-      okText: user.is_active ? 'Deactivate' : 'Activate',
-      cancelText: 'Cancel',
-      okButtonProps: { danger: user.is_active },
-      onOk: () => updateUser.mutate({ id: user.id, is_active: !user.is_active }),
-    })
   }
 
   return (

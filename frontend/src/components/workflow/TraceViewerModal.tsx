@@ -297,7 +297,7 @@ export const TraceViewerModal = ({
           <span>Trace Viewer</span>
           {trace && (
             <Text type="secondary" className="trace-id-header">
-              {trace.traceId.slice(0, 16)}...
+              {trace.traceId.slice(0, 16)}{'\u2026'}
             </Text>
           )}
         </Space>
@@ -310,7 +310,7 @@ export const TraceViewerModal = ({
     >
       {isLoading && (
         <div className="trace-loading">
-          <Spin size="large" tip="Loading trace...">
+          <Spin size="large" tip="Loading trace\u2026">
             <div style={{ minHeight: 200 }} />
           </Spin>
         </div>

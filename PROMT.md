@@ -1,1 +1,2 @@
-план фиксирован. Доделай Milestone 1 (декомпозиция RBACPage). Никаких изменений плана. Любой блокер — вопрос и стоп.
+- vercel-react-best-practices: “Сделай perf-аудит фронта по Vercel React Best Practices (bundle/code-splitting, re-render, data fetching), предложи и внеси правки”.
+- web-design-guidelines: “Проведи UI/UX/a11y аудит страниц фронта по Web Interface Guidelines и дай список нарушений/правок по file:line + исправь критичное”.

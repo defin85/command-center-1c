@@ -1,9 +1,15 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test'
 
 type MockUser = { id: number; username: string; is_staff?: boolean }
 type MockRole = { id: number; name: string; users_count: number; permissions_count: number; permission_codes: string[] }
 type MockCluster = { id: string; name: string }
 type MockDatabase = { id: string; name: string; cluster_id: string | null }
+
+declare global {
+  interface Window {
+    __CC1C_ENV__?: Record<string, string>
+  }
+}
 
 type MockState = {
   me: { id: number; username: string; is_staff: boolean }
@@ -18,12 +24,12 @@ type MockState = {
     level: string
     granted_by: { id: number; username: string } | null
     granted_at: string
-    notes?: string
+      notes?: string
   }>
-  effectiveAccess: any
+  effectiveAccess: unknown
 }
 
-async function fulfillJson(route: any, data: unknown, status = 200) {
+async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: 'application/json',
@@ -94,7 +100,7 @@ function defaultState(): MockState {
 
 async function setupAuth(page: Page) {
   await page.addInitScript(() => {
-    ;(window as any).__CC1C_ENV__ = {
+    window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:5173',
       VITE_WS_HOST: '127.0.0.1:5173',
@@ -107,7 +113,7 @@ async function setupApiMocks(
   page: Page,
   state: MockState,
   captures?: {
-    setUserRoles?: any[]
+    setUserRoles?: unknown[]
   }
 ) {
   await page.route('**/api/v2/**', async (route) => {
@@ -323,7 +329,7 @@ test('RBAC: no English UI tokens (smoke)', async ({ page }) => {
 
 test('RBAC: user roles replace empty shows guard + diff', async ({ page }) => {
   const state = defaultState()
-  const setUserRoles: any[] = []
+  const setUserRoles: unknown[] = []
 
   await setupAuth(page)
   await setupApiMocks(page, state, { setUserRoles })

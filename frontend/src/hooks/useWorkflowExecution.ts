@@ -345,7 +345,7 @@ export const useWorkflowExecution = (
           )
 
           console.debug(`WebSocket reconnecting in ${delay}ms (attempt ${attempts + 1})`)
-          setConnectionError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s...`)
+          setConnectionError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s\u2026`)
 
           reconnectTimeoutRef.current = setTimeout(() => {
             setReconnectAttemptsSafe((prev) => prev + 1)
@@ -426,7 +426,7 @@ export const useWorkflowExecution = (
     return () => {
       disconnect()
     }
-  }, [executionId, connect, disconnect])
+  }, [executionId, connect, disconnect, setReconnectAttemptsSafe])
 
   // Send periodic ping to keep connection alive
   useEffect(() => {

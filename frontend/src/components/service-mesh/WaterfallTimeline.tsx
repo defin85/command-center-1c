@@ -176,10 +176,14 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
 
           return (
             <div key={item.id} className="waterfall-row-wrapper">
-              <div
+              <button
+                type="button"
                 className={`waterfall-row ${isExpanded ? 'waterfall-row-expanded' : ''} ${isSlow ? 'waterfall-row-slow' : ''}`}
-                onClick={() => hasMetadata && handleToggleExpand(item.id)}
+                onClick={() => handleToggleExpand(item.id)}
+                disabled={!hasMetadata}
                 style={{ cursor: hasMetadata ? 'pointer' : 'default' }}
+                aria-expanded={hasMetadata ? isExpanded : undefined}
+                aria-label={hasMetadata ? `Toggle details for ${item.eventLabel}` : undefined}
               >
                 {/* Event label with service icon */}
                 <div className="waterfall-label">
@@ -235,7 +239,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
                     slow
                   </Tag>
                 )}
-              </div>
+              </button>
 
               {/* Expanded metadata */}
               {hasMetadata && (

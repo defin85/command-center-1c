@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { fetchDriverCommands, type DriverCommandsResponseV2, type DriverName } from '../driverCommands'
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 export function useDriverCommands(driver: DriverName, enabled = true) {
   return useQuery<DriverCommandsResponseV2, Error>({

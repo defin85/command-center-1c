@@ -1,4 +1,5 @@
 import { Select } from 'antd'
+import type { UIEvent } from 'react'
 
 import type { ClusterRef, DatabaseRef } from '../../../api/queries/rbac'
 import { RbacClusterDatabasePicker, type RbacClusterDatabasePickerI18n } from './RbacClusterDatabasePicker'
@@ -13,7 +14,7 @@ export type RbacResourceSelectConfig = {
   showSearch?: boolean
   filterOption?: boolean
   onSearch?: (value: string) => void
-  onPopupScroll?: (event: any) => void
+  onPopupScroll?: (event: UIEvent<HTMLDivElement>) => void
 }
 
 export function RbacResourcePicker(props: {

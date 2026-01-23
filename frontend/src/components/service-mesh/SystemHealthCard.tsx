@@ -164,7 +164,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
                   ? connectionError
                   : isConnected
                   ? `Last update: ${formatTimestamp(timestamp)}`
-                  : 'Connecting...'
+                  : 'Connecting\u2026'
               }
             >
               <span>

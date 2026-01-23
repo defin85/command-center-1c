@@ -168,7 +168,7 @@ export const useOperationStream = (
             return
           }
           setIsConnected(false)
-          setError('Connection lost. Reconnecting...')
+          setError('Connection lost. Reconnecting\u2026')
           if (streamCloseRef.current) {
             streamCloseRef.current()
             streamCloseRef.current = null

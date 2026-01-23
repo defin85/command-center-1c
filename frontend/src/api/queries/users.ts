@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 
 import { apiClient } from '../client'
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 export type UserSummary = {
   id: number

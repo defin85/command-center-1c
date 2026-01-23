@@ -4,7 +4,9 @@ import type { ColumnsType } from 'antd/es/table'
 
 import { RbacPermissionsTable } from './RbacPermissionsTable'
 
-export function PermissionsTable(props: {
+type AnyRow = Record<string, unknown>
+
+export function PermissionsTable<T extends AnyRow = AnyRow>(props: {
   title: string
   style?: CSSProperties
   preamble?: ReactNode
@@ -13,9 +15,9 @@ export function PermissionsTable(props: {
     show: boolean
     description: ReactNode
   }
-  columns: ColumnsType<any>
-  rows: any[]
-  rowKey: (row: any) => string
+  columns: ColumnsType<T>
+  rows: T[]
+  rowKey: (row: T) => string
   loading: boolean
   total: number
   page: number

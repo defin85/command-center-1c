@@ -70,10 +70,25 @@
   align-items: center;
   padding: 8px 0;
   transition: background-color 0.2s;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .waterfall-row:hover {
   background-color: #fafafa;
+}
+
+.waterfall-row:disabled:hover {
+  background-color: transparent;
+}
+
+.waterfall-row:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
 }
 
 .waterfall-row-expanded {

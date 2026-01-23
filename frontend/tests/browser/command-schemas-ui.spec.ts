@@ -1,8 +1,22 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 
-type AnyRecord = Record<string, any>
+type AnyRecord = Record<string, unknown>
 
-async function fulfillJson(route: any, data: unknown, status = 200) {
+type Captures = {
+  overridesUpdate: AnyRecord[]
+  overridesRollback: AnyRecord[]
+  baseUpdate: AnyRecord[]
+  effectiveUpdate: AnyRecord[]
+  validate: AnyRecord[]
+}
+
+declare global {
+  interface Window {
+    __CC1C_ENV__?: Record<string, string>
+  }
+}
+
+async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: 'application/json',
@@ -15,7 +29,7 @@ async function fulfillJson(route: any, data: unknown, status = 200) {
 
 async function setupAuth(page: Page) {
   await page.addInitScript(() => {
-    ;(window as any).__CC1C_ENV__ = {
+    window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:5173',
       VITE_WS_HOST: '127.0.0.1:5173',
@@ -86,13 +100,7 @@ async function setupApiMocks(
     overridesByVersion: Record<string, AnyRecord>
     reasonsByVersion: Record<string, string>
     validateIssues?: AnyRecord[]
-    captures: {
-      overridesUpdate: any[]
-      overridesRollback: any[]
-      baseUpdate: any[]
-      effectiveUpdate: any[]
-      validate: any[]
-    }
+    captures: Captures
   }
 ) {
   await page.route('**/api/v2/**', async (route) => {
@@ -319,7 +327,7 @@ test('Command Schemas: load + save + rollback (smoke)', async ({ page }) => {
     },
   }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const captures: Captures = { overridesUpdate: [], overridesRollback: [], baseUpdate: [], effectiveUpdate: [], validate: [] }
   const state = {
     baseApprovedCatalog: baseCatalog,
     baseLatestCatalog: baseCatalog,
@@ -397,7 +405,7 @@ test('Command Schemas: promote latest to approved (smoke)', async ({ page }) => 
     driver_schema: { connection: { remote: { kind: 'flag', flag: '--remote', expects_value: true } } },
   }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const captures: Captures = { overridesUpdate: [], overridesRollback: [], baseUpdate: [], effectiveUpdate: [], validate: [] }
   const state = {
     baseApprovedCatalog,
     baseLatestCatalog,
@@ -449,7 +457,7 @@ test('Command Schemas: copy latest base driver_schema into overrides (smoke)', a
   const driverSchema = { connection: { remote: { kind: 'flag', flag: '--remote', expects_value: true } } }
   const baseLatestCatalog = { ...baseApprovedCatalog, driver_schema: driverSchema }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const captures: Captures = { overridesUpdate: [], overridesRollback: [], baseUpdate: [], effectiveUpdate: [], validate: [] }
   const state = {
     baseApprovedCatalog,
     baseLatestCatalog,
@@ -499,7 +507,7 @@ test('Command Schemas: validate shows global issues (driver schema)', async ({ p
     },
   }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const captures: Captures = { overridesUpdate: [], overridesRollback: [], baseUpdate: [], effectiveUpdate: [], validate: [] }
   const state = {
     baseApprovedCatalog: baseCatalog,
     baseLatestCatalog: baseCatalog,
@@ -555,7 +563,7 @@ test('Command Schemas: raw mode save base/overrides/effective (smoke)', async ({
     },
   }
 
-  const captures = { overridesUpdate: [] as any[], overridesRollback: [] as any[], baseUpdate: [] as any[], effectiveUpdate: [] as any[], validate: [] as any[] }
+  const captures: Captures = { overridesUpdate: [], overridesRollback: [], baseUpdate: [], effectiveUpdate: [], validate: [] }
   const state = {
     baseApprovedCatalog: baseCatalog,
     baseLatestCatalog: baseCatalog,

@@ -141,6 +141,12 @@ const ColumnsTab = memo(({
                   key={col.key}
                   draggable
                   onClick={() => onSelect(col.key)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onSelect(col.key)
+                    }
+                  }}
                   onDragStart={() => setDraggingKey(col.key)}
                   onDragEnd={() => setDraggingKey(null)}
                   onDragOver={(event) => event.preventDefault()}
@@ -153,6 +159,9 @@ const ColumnsTab = memo(({
                     onReorder(draggingKey, col.key)
                     setDraggingKey(null)
                   }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select column ${col.label}`}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -541,7 +550,7 @@ export const TablePreferencesModal = ({
     setSelectedColumnKey((prev) => prev ?? activePreset.columnOrder[0] ?? null)
   }, [activePreset, open])
 
-  const updateDefaultFilter = (key: string, value: TableFilters[string]) => {
+  const updateDefaultFilter = useCallback((key: string, value: TableFilters[string]) => {
     setDraft((prev) => ({
       ...prev,
       defaultFilters: {
@@ -549,7 +558,7 @@ export const TablePreferencesModal = ({
         [key]: value,
       },
     }))
-  }
+  }, [])
 
   const columnsByKey = useMemo(() => {
     const map = new Map<string, TableColumnConfig>()
@@ -818,21 +827,19 @@ export const TablePreferencesModal = ({
   ]), [
     columns,
     columnSearch,
-    columnsByKey,
     filterSearch,
     draft.defaultFilters,
     draft.filterOrder,
     draft.filterVisibility,
     draft.sortableColumns,
     draft.visibleColumns,
-    draft.columnOrder,
-    draft.columnGroups,
     filters,
     groupKeyByColumn,
     groupLabelByKey,
     groupOptions,
     handleChangeColumnGroup,
     handleMoveColumn,
+    handleReorderColumn,
     handleReorderFilter,
     handleMoveFilter,
     handleToggleColumn,
@@ -843,6 +850,8 @@ export const TablePreferencesModal = ({
     updateDefaultFilter,
     orderedColumns,
     selectedColumnKey,
+    baseId,
+    canToggleFilter,
   ])
 
   return (

@@ -11,6 +11,7 @@ import {
   type CommandSchemaDriver,
   type CommandSchemaIssue,
   type CommandSchemasEditorView,
+  type CommandSchemasOverridesCatalogV2,
 } from '../../api/commandSchemas'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 
@@ -152,7 +153,7 @@ export function CommandSchemasRawEditor({
     try {
       const payload =
         target === 'overrides'
-          ? { driver, catalog: catalog as unknown as any }
+          ? { driver, catalog: catalog as unknown as CommandSchemasOverridesCatalogV2 }
           : { driver, effective_catalog: catalog as unknown as DriverCatalogV2 }
 
       const response = await validateCommandSchemas(payload)

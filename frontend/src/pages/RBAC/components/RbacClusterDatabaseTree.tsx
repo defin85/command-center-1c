@@ -57,8 +57,8 @@ export function RbacClusterDatabaseTree(props: {
     return [props.mode === 'clusters' ? clusterKey(props.value) : databaseKey(props.value)]
   }, [props.mode, props.value])
 
-  const loadingText = props.loadingText ?? 'Loading...'
-  const loadMoreText = props.loadMoreText ?? 'Load more...'
+  const loadingText = props.loadingText ?? 'Loading\u2026'
+  const loadMoreText = props.loadMoreText ?? 'Load more\u2026'
 
   const treeData: DataNode[] = useMemo(() => {
     return filteredClusters.map((cluster) => {

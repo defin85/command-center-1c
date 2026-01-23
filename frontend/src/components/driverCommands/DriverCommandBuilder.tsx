@@ -23,6 +23,7 @@ import type {
   DriverCommandRiskLevel,
 } from '../../api/driverCommands'
 import type { ArtifactKind } from '../../api/artifacts'
+import type { DriverCommandShortcut } from '../../api/commandShortcuts'
 
 const { Text } = Typography
 
@@ -78,6 +79,7 @@ export interface DriverCommandOperationConfig {
 const ARTIFACT_PREFIX = 'artifact://'
 
 const EMPTY_COMMANDS_BY_ID: Record<string, DriverCommandV2> = {}
+const EMPTY_SHORTCUT_ITEMS: DriverCommandShortcut[] = []
 const EMPTY_PARAMS: Record<string, unknown> = {}
 const EMPTY_DB_IDS: string[] = []
 
@@ -837,7 +839,7 @@ export function DriverCommandBuilder({
   const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
   const selectedCommand: DriverCommandV2 | undefined = commandId ? commandsById[commandId] : undefined
 
-  const shortcutItems = shortcutsQuery.data?.items ?? []
+  const shortcutItems = shortcutsQuery.data?.items ?? EMPTY_SHORTCUT_ITEMS
   const shortcutsById = useMemo(() => {
     const map: Record<string, { id: string; command_id: string; title: string }> = {}
     for (const item of shortcutItems) {
@@ -1266,7 +1268,7 @@ export function DriverCommandBuilder({
         ]}
       />
 
-      {driverCommandsQuery.isLoading && <Spin tip="Loading driver commands..." />}
+      {driverCommandsQuery.isLoading && <Spin tip="Loading driver commands\u2026" />}
       {driverCommandsQuery.error && (
         <Alert
           type="warning"

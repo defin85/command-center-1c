@@ -6,7 +6,7 @@ import type { DLQListResponse } from '../generated/model/dLQListResponse'
 import type { DLQRetryRequest } from '../generated/model/dLQRetryRequest'
 import type { DLQRetryResponse } from '../generated/model/dLQRetryResponse'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 const api = getV2()
 

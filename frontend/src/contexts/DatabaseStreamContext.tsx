@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react'
 import { useDatabaseStreamInvalidation } from '../hooks/useDatabaseStreamInvalidation'
-import { useAuthz } from '../authz'
+import { useAuthz } from '../authz/useAuthz'
 
 type DatabaseStreamStatus = {
   isConnected: boolean

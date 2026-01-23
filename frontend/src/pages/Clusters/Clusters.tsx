@@ -23,7 +23,7 @@ import {
     useResetClusterSyncStatus,
     useUpdateClusterCredentials,
 } from '../../api/queries/clusters'
-import { useAuthz } from '../../authz'
+import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
@@ -386,6 +386,7 @@ export const Clusters = () => {
                             icon={<SyncOutlined spin={syncCluster.isPending} />}
                             onClick={() => handleSync(record.id, record.name)}
                             title="Sync with RAS"
+                            aria-label="Sync with RAS"
                             disabled={!canOperate || syncCluster.isPending}
                         />
                         {canResetSync && (
@@ -400,6 +401,7 @@ export const Clusters = () => {
                                     size="small"
                                     icon={<UnlockOutlined />}
                                     title="Reset sync status"
+                                    aria-label="Reset sync status"
                                     loading={resettingClusterId === record.id}
                                 />
                             </Popconfirm>
@@ -409,6 +411,7 @@ export const Clusters = () => {
                             icon={<KeyOutlined />}
                             onClick={() => openCredentialsModal(record)}
                             title="Credentials"
+                            aria-label="Credentials"
                             disabled={!canManage}
                         />
                         <Button
@@ -416,6 +419,7 @@ export const Clusters = () => {
                             icon={<EditOutlined />}
                             onClick={() => handleEdit(record)}
                             title="Edit"
+                            aria-label="Edit"
                             disabled={!canManage}
                         />
                         <Popconfirm
@@ -431,6 +435,7 @@ export const Clusters = () => {
                                 danger
                                 icon={<DeleteOutlined />}
                                 title="Delete"
+                                aria-label="Delete"
                                 loading={deleteCluster.isPending}
                                 disabled={!canAdmin}
                             />

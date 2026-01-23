@@ -66,10 +66,12 @@ import {
   useSetRoleCapabilities,
   useSetUserRoles,
   useUpdateRole,
+  type Capability,
   type ArtifactGroupPermission,
   type ArtifactPermission,
   type ClusterGroupPermission,
   type DatabaseGroupPermission,
+  type ClusterRef,
   type OperationTemplateGroupPermission,
   type OperationTemplatePermission,
   type RbacRole,
@@ -107,14 +109,15 @@ const { Title, Text } = Typography
 type PermissionLevelCode = 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
 type RbacPermissionsResourceKey = 'clusters' | 'databases' | 'operation-templates' | 'workflow-templates' | 'artifacts'
 type SelectOption = { label: string; value: string }
+type PermissionsTableRow = Record<string, unknown>
 type RbacPermissionsTableConfig = {
-  columns: ColumnsType<any>
-  rows: any[]
+  columns: ColumnsType<PermissionsTableRow>
+  rows: PermissionsTableRow[]
   total: number
   loading: boolean
   fetching: boolean
   error: unknown
-  rowKey: (row: any) => string
+  rowKey: (row: PermissionsTableRow) => string
   refetch: () => void
 }
 
@@ -129,6 +132,17 @@ const LEVEL_OPTIONS: Array<{ label: PermissionLevelCode; value: PermissionLevelC
   { label: 'MANAGE', value: 'MANAGE' },
   { label: 'ADMIN', value: 'ADMIN' },
 ]
+
+const EMPTY_CLUSTER_REFS: ClusterRef[] = []
+const EMPTY_ROLES: RbacRole[] = []
+const EMPTY_CAPABILITIES: Capability[] = []
+
+const IB_AUTH_TYPE_LABELS: Record<string, string> = {
+  local: 'Локальная',
+  ad: 'AD',
+  service: 'Сервисная',
+  other: 'Другая',
+}
 
 function envFlag(key: string, defaultValue: boolean): boolean {
   const raw = (import.meta.env as Record<string, unknown>)[key]
@@ -195,7 +209,7 @@ export function RBACPage() {
     limit: 1000,
     offset: 0,
   }, { enabled: canManageRbac })
-  const clusters = clustersRefQuery.data?.clusters ?? []
+  const clusters = clustersRefQuery.data?.clusters ?? EMPTY_CLUSTER_REFS
   const [clustersRefSearch, setClustersRefSearch] = useState<string>('')
 
   const {
@@ -859,7 +873,7 @@ export function RBACPage() {
     }
   })()
 
-  const handleIbUserEdit = (record: InfobaseUserMapping) => {
+  const handleIbUserEdit = useCallback((record: InfobaseUserMapping) => {
     setSelectedIbDatabaseId(record.database_id)
     setEditingIbUser(record)
     ibUserForm.setFieldsValue({
@@ -873,7 +887,7 @@ export function RBACPage() {
       is_service: record.is_service,
       notes: record.notes ?? '',
     })
-  }
+  }, [ibUserForm])
 
   const handleIbUserResetForm = () => {
     setEditingIbUser(null)
@@ -909,7 +923,7 @@ export function RBACPage() {
     )
   }
 
-  const handleIbUserDelete = (record: InfobaseUserMapping) => {
+  const handleIbUserDelete = useCallback((record: InfobaseUserMapping) => {
     modal.confirm({
       title: `Удалить пользователя ИБ ${record.ib_username}?`,
       content: 'Запись будет удалена только в Command Center.',
@@ -918,7 +932,7 @@ export function RBACPage() {
       okButtonProps: { danger: true },
       onOk: () => deleteInfobaseUser.mutate({ id: record.id, databaseId: record.database_id }),
     })
-  }
+  }, [deleteInfobaseUser, modal])
 
   const handleIbUserPasswordUpdate = async () => {
     if (!editingIbUser) {
@@ -1687,13 +1701,6 @@ export function RBACPage() {
     []
   )
 
-  const ibAuthTypeLabels: Record<string, string> = {
-    local: 'Локальная',
-    ad: 'AD',
-    service: 'Сервисная',
-    other: 'Другая',
-  }
-
   const ibUsersColumns: ColumnsType<InfobaseUserMapping> = useMemo(
     () => [
       {
@@ -1734,7 +1741,7 @@ export function RBACPage() {
         title: 'Аутентификация',
         key: 'auth_type',
         render: (_: unknown, row) => (
-          <Tag>{ibAuthTypeLabels[row.auth_type] || row.auth_type}</Tag>
+          <Tag>{IB_AUTH_TYPE_LABELS[row.auth_type] || row.auth_type}</Tag>
         ),
       },
       {
@@ -2128,7 +2135,7 @@ export function RBACPage() {
     new Map(clusters.map((c) => [c.id, c.name]))
   ), [clusters])
 
-  const roles = rolesQuery.data?.roles ?? []
+  const roles = rolesQuery.data?.roles ?? EMPTY_ROLES
   const roleNameById = useMemo(() => (
     new Map(roles.map((role) => [role.id, role.name]))
   ), [roles])
@@ -2276,7 +2283,7 @@ export function RBACPage() {
     || roleUsageArtifactsQuery.error
   )
 
-  const capabilities = capabilitiesQuery.data?.capabilities ?? []
+  const capabilities = capabilitiesQuery.data?.capabilities ?? EMPTY_CAPABILITIES
   const capabilityOptions = useMemo(() => (
     capabilities.map((cap) => ({ label: cap.exists ? cap.code : `${cap.code} (нет)`, value: cap.code }))
   ), [capabilities])
@@ -2555,13 +2562,16 @@ export function RBACPage() {
         ? rbacPermissionsClustersUserQuery.data.total
         : rows.length
       return {
-        columns: clusterColumns,
-        rows,
+        columns: clusterColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsClustersUserQuery.isLoading,
         fetching: rbacPermissionsClustersUserQuery.isFetching,
         error: rbacPermissionsClustersUserQuery.error,
-        rowKey: (row) => `${row.user?.id}:${row.cluster?.id}`,
+        rowKey: (row) => {
+          const record = row as { user?: { id?: number | null }; cluster?: { id?: string | null } }
+          return `${record.user?.id}:${record.cluster?.id}`
+        },
         refetch: () => { rbacPermissionsClustersUserQuery.refetch() },
       }
     }
@@ -2572,13 +2582,16 @@ export function RBACPage() {
         ? rbacPermissionsClustersRoleQuery.data.total
         : rows.length
       return {
-        columns: clusterGroupColumns,
-        rows,
+        columns: clusterGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsClustersRoleQuery.isLoading,
         fetching: rbacPermissionsClustersRoleQuery.isFetching,
         error: rbacPermissionsClustersRoleQuery.error,
-        rowKey: (row) => `${row.group?.id}:${row.cluster?.id}`,
+        rowKey: (row) => {
+          const record = row as { group?: { id?: number | null }; cluster?: { id?: string | null } }
+          return `${record.group?.id}:${record.cluster?.id}`
+        },
         refetch: () => { rbacPermissionsClustersRoleQuery.refetch() },
       }
     }
@@ -2589,13 +2602,16 @@ export function RBACPage() {
         ? rbacPermissionsDatabasesUserQuery.data.total
         : rows.length
       return {
-        columns: databaseColumns,
-        rows,
+        columns: databaseColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsDatabasesUserQuery.isLoading,
         fetching: rbacPermissionsDatabasesUserQuery.isFetching,
         error: rbacPermissionsDatabasesUserQuery.error,
-        rowKey: (row) => `${row.user?.id}:${row.database?.id}`,
+        rowKey: (row) => {
+          const record = row as { user?: { id?: number | null }; database?: { id?: string | null } }
+          return `${record.user?.id}:${record.database?.id}`
+        },
         refetch: () => { rbacPermissionsDatabasesUserQuery.refetch() },
       }
     }
@@ -2606,13 +2622,16 @@ export function RBACPage() {
         ? rbacPermissionsDatabasesRoleQuery.data.total
         : rows.length
       return {
-        columns: databaseGroupColumns,
-        rows,
+        columns: databaseGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsDatabasesRoleQuery.isLoading,
         fetching: rbacPermissionsDatabasesRoleQuery.isFetching,
         error: rbacPermissionsDatabasesRoleQuery.error,
-        rowKey: (row) => `${row.group?.id}:${row.database?.id}`,
+        rowKey: (row) => {
+          const record = row as { group?: { id?: number | null }; database?: { id?: string | null } }
+          return `${record.group?.id}:${record.database?.id}`
+        },
         refetch: () => { rbacPermissionsDatabasesRoleQuery.refetch() },
       }
     }
@@ -2623,13 +2642,16 @@ export function RBACPage() {
         ? rbacPermissionsOperationTemplatesUserQuery.data.total
         : rows.length
       return {
-        columns: operationTemplateUserColumns,
-        rows,
+        columns: operationTemplateUserColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsOperationTemplatesUserQuery.isLoading,
         fetching: rbacPermissionsOperationTemplatesUserQuery.isFetching,
         error: rbacPermissionsOperationTemplatesUserQuery.error,
-        rowKey: (row) => `${row.user?.id}:${row.template?.id}`,
+        rowKey: (row) => {
+          const record = row as { user?: { id?: number | null }; template?: { id?: string | null } }
+          return `${record.user?.id}:${record.template?.id}`
+        },
         refetch: () => { rbacPermissionsOperationTemplatesUserQuery.refetch() },
       }
     }
@@ -2640,13 +2662,16 @@ export function RBACPage() {
         ? rbacPermissionsOperationTemplatesRoleQuery.data.total
         : rows.length
       return {
-        columns: operationTemplateGroupColumns,
-        rows,
+        columns: operationTemplateGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsOperationTemplatesRoleQuery.isLoading,
         fetching: rbacPermissionsOperationTemplatesRoleQuery.isFetching,
         error: rbacPermissionsOperationTemplatesRoleQuery.error,
-        rowKey: (row) => `${row.group?.id}:${row.template?.id}`,
+        rowKey: (row) => {
+          const record = row as { group?: { id?: number | null }; template?: { id?: string | null } }
+          return `${record.group?.id}:${record.template?.id}`
+        },
         refetch: () => { rbacPermissionsOperationTemplatesRoleQuery.refetch() },
       }
     }
@@ -2657,13 +2682,16 @@ export function RBACPage() {
         ? rbacPermissionsWorkflowTemplatesUserQuery.data.total
         : rows.length
       return {
-        columns: workflowTemplateUserColumns,
-        rows,
+        columns: workflowTemplateUserColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsWorkflowTemplatesUserQuery.isLoading,
         fetching: rbacPermissionsWorkflowTemplatesUserQuery.isFetching,
         error: rbacPermissionsWorkflowTemplatesUserQuery.error,
-        rowKey: (row) => `${row.user?.id}:${row.template?.id}`,
+        rowKey: (row) => {
+          const record = row as { user?: { id?: number | null }; template?: { id?: string | null } }
+          return `${record.user?.id}:${record.template?.id}`
+        },
         refetch: () => { rbacPermissionsWorkflowTemplatesUserQuery.refetch() },
       }
     }
@@ -2674,13 +2702,16 @@ export function RBACPage() {
         ? rbacPermissionsWorkflowTemplatesRoleQuery.data.total
         : rows.length
       return {
-        columns: workflowTemplateGroupColumns,
-        rows,
+        columns: workflowTemplateGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsWorkflowTemplatesRoleQuery.isLoading,
         fetching: rbacPermissionsWorkflowTemplatesRoleQuery.isFetching,
         error: rbacPermissionsWorkflowTemplatesRoleQuery.error,
-        rowKey: (row) => `${row.group?.id}:${row.template?.id}`,
+        rowKey: (row) => {
+          const record = row as { group?: { id?: number | null }; template?: { id?: string | null } }
+          return `${record.group?.id}:${record.template?.id}`
+        },
         refetch: () => { rbacPermissionsWorkflowTemplatesRoleQuery.refetch() },
       }
     }
@@ -2691,13 +2722,16 @@ export function RBACPage() {
         ? rbacPermissionsArtifactsUserQuery.data.total
         : rows.length
       return {
-        columns: artifactUserColumns,
-        rows,
+        columns: artifactUserColumns as unknown as ColumnsType<PermissionsTableRow>,
+        rows: rows as unknown as PermissionsTableRow[],
         total,
         loading: rbacPermissionsArtifactsUserQuery.isLoading,
         fetching: rbacPermissionsArtifactsUserQuery.isFetching,
         error: rbacPermissionsArtifactsUserQuery.error,
-        rowKey: (row) => `${row.user?.id}:${row.artifact?.id}`,
+        rowKey: (row) => {
+          const record = row as { user?: { id?: number | null }; artifact?: { id?: string | null } }
+          return `${record.user?.id}:${record.artifact?.id}`
+        },
         refetch: () => { rbacPermissionsArtifactsUserQuery.refetch() },
       }
     }
@@ -2707,13 +2741,16 @@ export function RBACPage() {
       ? rbacPermissionsArtifactsRoleQuery.data.total
       : rows.length
     return {
-      columns: artifactGroupColumns,
-      rows,
+      columns: artifactGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
+      rows: rows as unknown as PermissionsTableRow[],
       total,
       loading: rbacPermissionsArtifactsRoleQuery.isLoading,
       fetching: rbacPermissionsArtifactsRoleQuery.isFetching,
       error: rbacPermissionsArtifactsRoleQuery.error,
-      rowKey: (row) => `${row.group?.id}:${row.artifact?.id}`,
+      rowKey: (row) => {
+        const record = row as { group?: { id?: number | null }; artifact?: { id?: string | null } }
+        return `${record.group?.id}:${record.artifact?.id}`
+      },
       refetch: () => { rbacPermissionsArtifactsRoleQuery.refetch() },
     }
   })()

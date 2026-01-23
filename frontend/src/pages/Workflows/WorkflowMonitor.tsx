@@ -53,7 +53,7 @@ import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '
 import { getV2 } from '../../api/generated'
 import { convertExecutionToLegacy, convertDAGToLegacy } from '../../utils/workflowTransforms'
 import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
-import { useAuthz } from '../../authz'
+import { useAuthz } from '../../authz/useAuthz'
 import './WorkflowMonitor.css'
 
 // v2 migration: использовать env variable для Jaeger UI
@@ -321,7 +321,7 @@ const WorkflowMonitor = () => {
         color,
         dot,
         children: (
-          <div className="timeline-item" onClick={() => handleNodeSelect(ns.nodeId)}>
+          <button type="button" className="timeline-item" onClick={() => handleNodeSelect(ns.nodeId)}>
             <Text strong>{nodeName}</Text>
             <Text type="secondary" style={{ marginLeft: 8 }}>
               {ns.status}
@@ -331,7 +331,7 @@ const WorkflowMonitor = () => {
                 ({(ns.durationMs / 1000).toFixed(2)}s)
               </Text>
             )}
-          </div>
+          </button>
         )
       }
     })
@@ -339,7 +339,7 @@ const WorkflowMonitor = () => {
   if (isLoading) {
     return (
       <div className="workflow-monitor-loading">
-        <Spin size="large" tip="Loading execution...">
+        <Spin size="large" tip="Loading execution\u2026">
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>

@@ -23,20 +23,23 @@ export interface UseServiceMeshResult {
   lastInvalidation: InvalidationEvent | null
 }
 
-export const useServiceMesh = (): UseServiceMeshResult => {
+export const useServiceMesh = (options?: { enabled?: boolean }): UseServiceMeshResult => {
+  const enabled = options?.enabled ?? true
   const [state, setState] = useState(() => serviceMeshManager.getState())
 
   useEffect(() => {
+    if (!enabled) return
     const unsubscribe = serviceMeshManager.subscribe(setState)
     return () => unsubscribe()
-  }, [])
+  }, [enabled])
 
   useEffect(() => {
+    if (!enabled) return
     serviceMeshManager.start()
     return () => {
       serviceMeshManager.stop()
     }
-  }, [])
+  }, [enabled])
 
   const refresh = useCallback(() => {
     serviceMeshManager.refresh()

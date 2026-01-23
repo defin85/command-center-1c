@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getV2 } from '../generated'
 import type { CurrentUser } from '../generated/model/currentUser'
 
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 const api = getV2()
 

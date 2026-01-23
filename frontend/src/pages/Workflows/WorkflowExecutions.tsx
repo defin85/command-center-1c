@@ -37,6 +37,8 @@ const { Title, Text } = Typography
 type ExecutionStatus = WorkflowExecutionList['status']
 type StatusFilter = ExecutionStatus | 'all'
 
+const EMPTY_EXECUTIONS: WorkflowExecutionList[] = []
+
 const statusMeta: Record<ExecutionStatus, { color: string; label: string }> = {
   pending: { color: 'default', label: 'Pending' },
   running: { color: 'blue', label: 'Running' },
@@ -151,7 +153,7 @@ const WorkflowExecutions = () => {
     }),
   })
 
-  const executions = executionsQuery.data?.executions ?? []
+  const executions = executionsQuery.data?.executions ?? EMPTY_EXECUTIONS
   const totalExecutions = typeof executionsQuery.data?.total === 'number'
     ? executionsQuery.data.total
     : executions.length

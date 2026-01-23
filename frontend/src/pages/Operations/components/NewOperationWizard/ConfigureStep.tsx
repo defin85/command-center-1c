@@ -107,7 +107,7 @@ const BlockSessionsForm = ({
         <TextArea
           id="wizard-block-message"
           rows={3}
-          placeholder="Technical maintenance. Please wait..."
+          placeholder="Technical maintenance. Please wait\u2026"
           value={config.message || ''}
           onChange={(e) => onChange({ message: e.target.value })}
         />

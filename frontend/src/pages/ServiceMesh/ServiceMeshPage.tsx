@@ -6,7 +6,7 @@
  */
 import React from 'react'
 import { Typography } from 'antd'
-import { ServiceMeshTab } from '../../components/service-mesh'
+import ServiceMeshTab from '../../components/service-mesh/ServiceMeshTab'
 import './ServiceMeshPage.css'
 
 const { Title } = Typography

@@ -268,7 +268,7 @@ class DatabaseStreamManager {
             this.scheduleCooldownRetry()
             return
           }
-          this.setState({ isConnected: false, error: 'Connection lost. Reconnecting...', isConnecting: false })
+          this.setState({ isConnected: false, error: 'Connection lost. Reconnecting\u2026', isConnecting: false })
           this.isConnecting = false
           this.isStreaming = false
           if (this.streamClose) {
@@ -335,7 +335,7 @@ class DatabaseStreamManager {
                   this.scheduleCooldownRetry()
                   return
                 }
-                this.setState({ isConnected: false, error: 'Connection lost. Reconnecting...', isConnecting: false })
+                this.setState({ isConnected: false, error: 'Connection lost. Reconnecting\u2026', isConnecting: false })
                 this.isConnecting = false
                 this.isStreaming = false
                 if (this.streamClose) {

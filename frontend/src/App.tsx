@@ -1,55 +1,74 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ConfigProvider, App as AntApp } from 'antd'
+import { ConfigProvider, App as AntApp, Spin } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { Dashboard } from './pages/Dashboard/Dashboard'
-import { Operations } from './pages/Operations'
-import { Databases } from './pages/Databases/Databases'
-import { Extensions } from './pages/Extensions/Extensions'
-import { Clusters } from './pages/Clusters/Clusters'
-import { SystemStatus } from './pages/SystemStatus/SystemStatus'
-import { WorkflowList, WorkflowDesigner, WorkflowMonitor, WorkflowExecutions } from './pages/Workflows'
-import { ServiceMeshPage } from './pages/ServiceMesh'
-import { RBACPage } from './pages/RBAC/RBACPage'
-import { UsersPage } from './pages/Users/UsersPage'
-import { TemplatesPage } from './pages/Templates/TemplatesPage'
-import { CommandSchemasPage } from './pages/CommandSchemas/CommandSchemasPage'
-import { DLQPage } from './pages/DLQ'
-import { ActionCatalogPage, RuntimeSettingsPage, TimelineSettingsPage } from './pages/Settings'
-import { Login } from './pages/Login/Login'
-import { ArtifactsPage } from './pages/Artifacts'
-import { ForbiddenPage } from './pages/Forbidden/ForbiddenPage'
 import { API_ERROR_EVENT } from './api/client'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useMe } from './api/queries/me'
 import { useCanManageRbac } from './api/queries/rbac'
-import { useCanManageDriverCatalogs } from './api/queries'
+import { useCanManageDriverCatalogs } from './api/queries/commandSchemas'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
 
-// Компонент для защиты маршрутов
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('auth_token')
+const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
+const Operations = lazy(() => import('./pages/Operations/OperationsPage').then((m) => ({ default: m.OperationsPage })))
+const Databases = lazy(() => import('./pages/Databases/Databases').then((m) => ({ default: m.Databases })))
+const Extensions = lazy(() => import('./pages/Extensions/Extensions').then((m) => ({ default: m.Extensions })))
+const Clusters = lazy(() => import('./pages/Clusters/Clusters').then((m) => ({ default: m.Clusters })))
+const SystemStatus = lazy(() => import('./pages/SystemStatus/SystemStatus').then((m) => ({ default: m.SystemStatus })))
+const WorkflowList = lazy(() => import('./pages/Workflows/WorkflowList'))
+const WorkflowDesigner = lazy(() => import('./pages/Workflows/WorkflowDesigner'))
+const WorkflowMonitor = lazy(() => import('./pages/Workflows/WorkflowMonitor'))
+const WorkflowExecutions = lazy(() => import('./pages/Workflows/WorkflowExecutions'))
+const ServiceMeshPage = lazy(() => import('./pages/ServiceMesh/ServiceMeshPage'))
+const RBACPage = lazy(() => import('./pages/RBAC/RBACPage').then((m) => ({ default: m.RBACPage })))
+const UsersPage = lazy(() => import('./pages/Users/UsersPage').then((m) => ({ default: m.UsersPage })))
+const TemplatesPage = lazy(() => import('./pages/Templates/TemplatesPage').then((m) => ({ default: m.TemplatesPage })))
+const CommandSchemasPage = lazy(() => import('./pages/CommandSchemas/CommandSchemasPage'))
+const DLQPage = lazy(() => import('./pages/DLQ/DLQPage').then((m) => ({ default: m.DLQPage })))
+const ActionCatalogPage = lazy(() => import('./pages/Settings/ActionCatalogPage').then((m) => ({ default: m.ActionCatalogPage })))
+const RuntimeSettingsPage = lazy(() => import('./pages/Settings/RuntimeSettingsPage').then((m) => ({ default: m.RuntimeSettingsPage })))
+const TimelineSettingsPage = lazy(() => import('./pages/Settings/TimelineSettingsPage').then((m) => ({ default: m.TimelineSettingsPage })))
+const Login = lazy(() => import('./pages/Login/Login').then((m) => ({ default: m.Login })))
+const ArtifactsPage = lazy(() => import('./pages/Artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })))
+const ForbiddenPage = lazy(() => import('./pages/Forbidden/ForbiddenPage').then((m) => ({ default: m.ForbiddenPage })))
 
-  if (!token) {
+function RouteLoading() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240 }}>
+      <Spin size="large" />
+    </div>
+  )
+}
+
+function LazyBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<RouteLoading />}>
+      {children}
+    </Suspense>
+  )
+}
+
+// Компонент для защиты маршрутов
+const ProtectedRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+  if (!authToken) {
     return <Navigate to="/login" replace />
   }
 
   return <>{children}</>
 }
 
-const StaffRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('auth_token')
-  const meQuery = useMe()
+const StaffRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+  const meQuery = useMe({ enabled: Boolean(authToken) })
 
-  if (!token) {
+  if (!authToken) {
     return <Navigate to="/login" replace />
   }
 
   if (meQuery.isLoading) {
-    return <div />
+    return <RouteLoading />
   }
 
   if (!meQuery.data?.is_staff) {
@@ -59,16 +78,15 @@ const StaffRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>
 }
 
-const RbacRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('auth_token')
-  const canManageRbacQuery = useCanManageRbac({ enabled: Boolean(token) })
+const RbacRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+  const canManageRbacQuery = useCanManageRbac({ enabled: Boolean(authToken) })
 
-  if (!token) {
+  if (!authToken) {
     return <Navigate to="/login" replace />
   }
 
   if (canManageRbacQuery.isLoading) {
-    return <div />
+    return <RouteLoading />
   }
 
   if (!canManageRbacQuery.data) {
@@ -78,16 +96,15 @@ const RbacRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>
 }
 
-const DriverCatalogsRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('auth_token')
-  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: Boolean(token) })
+const DriverCatalogsRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: Boolean(authToken) })
 
-  if (!token) {
+  if (!authToken) {
     return <Navigate to="/login" replace />
   }
 
   if (canManageDriverCatalogsQuery.isLoading) {
-    return <div />
+    return <RouteLoading />
   }
 
   if (!canManageDriverCatalogsQuery.data) {
@@ -145,9 +162,9 @@ function GlobalApiErrorHandler() {
 }
 
 function App() {
-  // Enable real-time cache invalidation via WebSocket
-  useRealtimeInvalidation()
   const [authToken, setAuthToken] = useState(() => getAuthToken())
+  // Enable real-time cache invalidation via WebSocket only for authenticated sessions
+  useRealtimeInvalidation(Boolean(authToken))
 
   useEffect(() => {
     return subscribeAuthChange(() => {
@@ -168,162 +185,162 @@ function App() {
             <DatabaseStreamProvider>
               <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <Routes>
-          {/* Публичный маршрут - логин */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/forbidden" element={<ForbiddenPage />} />
+                  {/* Публичный маршрут - логин */}
+                  <Route path="/login" element={<LazyBoundary><Login /></LazyBoundary>} />
+                  <Route path="/forbidden" element={<LazyBoundary><ForbiddenPage /></LazyBoundary>} />
 
-          {/* Защищенные маршруты */}
-          <Route path="/" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Dashboard />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/clusters" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Clusters />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/operations" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Operations />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/artifacts" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <ArtifactsPage />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/databases" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Databases />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/extensions" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Extensions />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          {/* Legacy routes - redirect to unified Operations page */}
-          <Route path="/installation-monitor" element={<Navigate to="/operations?tab=list" replace />} />
-          <Route path="/operation-monitor" element={<Navigate to="/operations?tab=monitor" replace />} />
-          <Route path="/system-status" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <SystemStatus />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          {/* Workflow routes */}
-          <Route path="/workflows" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <WorkflowList />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/workflows/executions" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <WorkflowExecutions />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/workflows/new" element={
-            <ProtectedRoute>
-              <WorkflowDesigner />
-            </ProtectedRoute>
-          } />
-          <Route path="/workflows/:id" element={
-            <ProtectedRoute>
-              <WorkflowDesigner />
-            </ProtectedRoute>
-          } />
-          <Route path="/workflows/executions/:executionId" element={
-            <ProtectedRoute>
-              <WorkflowMonitor />
-            </ProtectedRoute>
-          } />
-          <Route path="/templates" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <TemplatesPage />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          {/* Service Mesh route */}
-          <Route path="/service-mesh" element={
-            <ProtectedRoute>
-              <MainLayout>
-                <ServiceMeshPage />
-              </MainLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/rbac" element={
-            <RbacRoute>
-              <MainLayout>
-                <RBACPage />
-              </MainLayout>
-            </RbacRoute>
-          } />
-          <Route path="/users" element={
-            <StaffRoute>
-              <MainLayout>
-                <UsersPage />
-              </MainLayout>
-            </StaffRoute>
-          } />
-          <Route path="/dlq" element={
-            <StaffRoute>
-              <MainLayout>
-                <DLQPage />
-              </MainLayout>
-            </StaffRoute>
-          } />
-          <Route path="/settings/runtime" element={
-            <StaffRoute>
-              <MainLayout>
-                <RuntimeSettingsPage />
-              </MainLayout>
-            </StaffRoute>
-          } />
-          <Route path="/settings/action-catalog" element={
-            <StaffRoute>
-              <MainLayout>
-                <ActionCatalogPage />
-              </MainLayout>
-            </StaffRoute>
-          } />
-          <Route path="/settings/driver-catalogs" element={
-            <DriverCatalogsRoute>
-              <Navigate to="/settings/command-schemas?mode=raw" replace />
-            </DriverCatalogsRoute>
-          } />
-          <Route path="/settings/command-schemas" element={
-            <DriverCatalogsRoute>
-              <MainLayout>
-                <CommandSchemasPage />
-              </MainLayout>
-            </DriverCatalogsRoute>
-          } />
-          <Route path="/settings/timeline" element={
-            <StaffRoute>
-              <MainLayout>
-                <TimelineSettingsPage />
-              </MainLayout>
-            </StaffRoute>
-          } />
+                  {/* Защищенные маршруты */}
+                  <Route path="/" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><Dashboard /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/clusters" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><Clusters /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/operations" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><Operations /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/artifacts" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><ArtifactsPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/databases" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><Databases /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/extensions" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><Extensions /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  {/* Legacy routes - redirect to unified Operations page */}
+                  <Route path="/installation-monitor" element={<Navigate to="/operations?tab=list" replace />} />
+                  <Route path="/operation-monitor" element={<Navigate to="/operations?tab=monitor" replace />} />
+                  <Route path="/system-status" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><SystemStatus /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  {/* Workflow routes */}
+                  <Route path="/workflows" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><WorkflowList /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/workflows/executions" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><WorkflowExecutions /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/workflows/new" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <LazyBoundary><WorkflowDesigner /></LazyBoundary>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/workflows/:id" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <LazyBoundary><WorkflowDesigner /></LazyBoundary>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/workflows/executions/:executionId" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <LazyBoundary><WorkflowMonitor /></LazyBoundary>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/templates" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><TemplatesPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  {/* Service Mesh route */}
+                  <Route path="/service-mesh" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><ServiceMeshPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/rbac" element={
+                    <RbacRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><RBACPage /></LazyBoundary>
+                      </MainLayout>
+                    </RbacRoute>
+                  } />
+                  <Route path="/users" element={
+                    <StaffRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><UsersPage /></LazyBoundary>
+                      </MainLayout>
+                    </StaffRoute>
+                  } />
+                  <Route path="/dlq" element={
+                    <StaffRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><DLQPage /></LazyBoundary>
+                      </MainLayout>
+                    </StaffRoute>
+                  } />
+                  <Route path="/settings/runtime" element={
+                    <StaffRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><RuntimeSettingsPage /></LazyBoundary>
+                      </MainLayout>
+                    </StaffRoute>
+                  } />
+                  <Route path="/settings/action-catalog" element={
+                    <StaffRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><ActionCatalogPage /></LazyBoundary>
+                      </MainLayout>
+                    </StaffRoute>
+                  } />
+                  <Route path="/settings/driver-catalogs" element={
+                    <DriverCatalogsRoute authToken={authToken}>
+                      <Navigate to="/settings/command-schemas?mode=raw" replace />
+                    </DriverCatalogsRoute>
+                  } />
+                  <Route path="/settings/command-schemas" element={
+                    <DriverCatalogsRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><CommandSchemasPage /></LazyBoundary>
+                      </MainLayout>
+                    </DriverCatalogsRoute>
+                  } />
+                  <Route path="/settings/timeline" element={
+                    <StaffRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><TimelineSettingsPage /></LazyBoundary>
+                      </MainLayout>
+                    </StaffRoute>
+                  } />
                 </Routes>
               </BrowserRouter>
             </DatabaseStreamProvider>

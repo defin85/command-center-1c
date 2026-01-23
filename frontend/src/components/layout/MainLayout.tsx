@@ -173,7 +173,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
                 <Typography.Text strong>Database stream</Typography.Text>
                 <Tag color={isDatabaseStreamConnected ? 'green' : 'default'}>
                   {isDatabaseStreamConnecting
-                    ? 'Connecting...'
+                    ? 'Connecting\u2026'
                     : isDatabaseStreamConnected
                       ? 'Connected'
                       : 'Fallback'}
@@ -207,7 +207,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           )}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
-              {meQuery.data?.username ?? '...'}
+              {meQuery.data?.username ?? '\u2026'}
             </Button>
           </Dropdown>
         </Space>

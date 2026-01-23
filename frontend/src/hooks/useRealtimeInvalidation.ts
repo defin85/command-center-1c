@@ -18,11 +18,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useServiceMesh } from './useServiceMesh'
 import { queryKeys } from '../api/queries'
 
-export function useRealtimeInvalidation() {
+export function useRealtimeInvalidation(enabled = true) {
   const queryClient = useQueryClient()
-  const { lastInvalidation } = useServiceMesh()
+  const { lastInvalidation } = useServiceMesh({ enabled })
 
   useEffect(() => {
+    if (!enabled) return
     if (!lastInvalidation) return
 
     const { scope } = lastInvalidation
@@ -45,7 +46,7 @@ export function useRealtimeInvalidation() {
         queryClient.invalidateQueries()
         break
     }
-  }, [lastInvalidation, queryClient])
+  }, [enabled, lastInvalidation, queryClient])
 }
 
 export default useRealtimeInvalidation

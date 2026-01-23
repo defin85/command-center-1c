@@ -397,7 +397,7 @@ export function DesignerCliBuilder({ config, onChange, readOnly }: DesignerCliBu
       {mode === 'guided' && (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           {loading && (
-            <Spin tip="Loading CLI catalog..." />
+            <Spin tip="Loading CLI catalog\u2026" />
           )}
           {error && (
             <Alert type="warning" showIcon message="CLI catalog unavailable" description={error} />

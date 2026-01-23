@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import type { UIEvent } from 'react'
 
 import { usePaginatedRefSelectOptions } from '../usePaginatedRefSelectOptions'
 
@@ -43,24 +44,21 @@ describe('usePaginatedRefSelectOptions', () => {
     await waitFor(() => expect(result.current.options).toHaveLength(2))
     expect(result.current.labelById.current.get('id-1')).toBe('Item 1')
 
+    const scrollTarget = { scrollTop: 80, clientHeight: 40, scrollHeight: 100 } as unknown as HTMLElement
+    const scrollEvent = { currentTarget: scrollTarget } as unknown as UIEvent<HTMLElement>
+
     act(() => {
-      result.current.handlePopupScroll({
-        target: { scrollTop: 80, clientHeight: 40, scrollHeight: 100 },
-      })
+      result.current.handlePopupScroll(scrollEvent)
     })
     await waitFor(() => expect(result.current.options).toHaveLength(4))
 
     act(() => {
-      result.current.handlePopupScroll({
-        target: { scrollTop: 80, clientHeight: 40, scrollHeight: 100 },
-      })
+      result.current.handlePopupScroll(scrollEvent)
     })
     await waitFor(() => expect(result.current.options).toHaveLength(5))
 
     act(() => {
-      result.current.handlePopupScroll({
-        target: { scrollTop: 80, clientHeight: 40, scrollHeight: 100 },
-      })
+      result.current.handlePopupScroll(scrollEvent)
     })
     await waitFor(() => expect(result.current.options).toHaveLength(5))
   })
@@ -88,4 +86,3 @@ describe('usePaginatedRefSelectOptions', () => {
     expect(result.current.options[0]?.value).toBe('foo-1')
   })
 })
-

@@ -13,7 +13,7 @@ import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
-import { useAuthz } from '../../../authz'
+import { useAuthz } from '../../../authz/useAuthz'
 
 const { Paragraph, Link } = Typography
 

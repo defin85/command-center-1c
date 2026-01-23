@@ -34,6 +34,8 @@ type RbacAuditPanelI18n = {
   formatUndoTitle?: (cmd: UndoCommand, item: AdminAuditLogItem) => string
 }
 
+const EMPTY_I18N: RbacAuditPanelI18n = {}
+
 function getNumber(meta: Record<string, unknown>, key: string): number | null {
   const value = meta[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -521,7 +523,7 @@ export function RbacAuditPanel(props: {
   i18n?: RbacAuditPanelI18n
 }) {
   const { modal, message } = App.useApp()
-  const i18n = props.i18n ?? {}
+  const i18n = props.i18n ?? EMPTY_I18N
   const [search, setSearch] = useState<string>('')
   const [page, setPage] = useState<number>(1)
   const [pageSize, setPageSize] = useState<number>(100)

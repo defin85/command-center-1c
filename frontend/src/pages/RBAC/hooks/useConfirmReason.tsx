@@ -1,18 +1,35 @@
 import { Input } from 'antd'
-import { useCallback } from 'react'
+import { useCallback, type ReactNode } from 'react'
 
 type ModalRef = {
-  update: (config: any) => void
+  update: (config: ModalUpdateConfig) => void
   destroy: () => void
 }
 
 type ModalApi = {
-  confirm: (config: any) => ModalRef
+  confirm: (config: ModalConfirmConfig) => ModalRef
 }
 
 type MessageApi = {
   error: (content: string) => void
 }
+
+type ModalButtonProps = {
+  disabled?: boolean
+}
+
+type ModalUpdateConfig = {
+  okButtonProps?: ModalButtonProps
+} & Record<string, unknown>
+
+type ModalConfirmConfig = {
+  title: string
+  content: ReactNode
+  okText?: string
+  cancelText?: string
+  okButtonProps?: ModalButtonProps
+  onOk?: () => Promise<void>
+} & Record<string, unknown>
 
 export type ConfirmReasonLabels = {
   placeholder?: string

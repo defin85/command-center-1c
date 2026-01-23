@@ -68,6 +68,9 @@ const KIND_LABELS: Record<ArtifactKind, string> = {
   other: 'Другое',
 }
 
+const EMPTY_VERSIONS: ArtifactVersion[] = []
+const EMPTY_ALIASES: ArtifactAlias[] = []
+
 const formatBytes = (value: number) => {
   if (!Number.isFinite(value)) return '-'
   if (value < 1024) return `${value} B`
@@ -487,6 +490,7 @@ export const ArtifactsPage = () => {
     fileList,
     form,
     handleOpenDetails,
+    message,
     queryClient,
     resetCreateForm,
     updateUploadStats,
@@ -785,8 +789,8 @@ export const ArtifactsPage = () => {
   const aliasesQuery = useArtifactAliases(selectedArtifactId)
   const aliasMutation = useUpsertArtifactAlias(selectedArtifactId)
 
-  const versions = versionsQuery.data?.versions ?? []
-  const aliases = aliasesQuery.data?.aliases ?? []
+  const versions = versionsQuery.data?.versions ?? EMPTY_VERSIONS
+  const aliases = aliasesQuery.data?.aliases ?? EMPTY_ALIASES
 
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null
 
@@ -1544,7 +1548,7 @@ export const ArtifactsPage = () => {
       </Drawer>
 
       <Modal
-        title={purgeJobId ? 'Deleting permanently...' : `Delete permanently "${purgeTarget?.name ?? ''}"?`}
+        title={purgeJobId ? 'Deleting permanently\u2026' : `Delete permanently "${purgeTarget?.name ?? ''}"?`}
         open={purgeOpen}
         onCancel={closePurgeModal}
         okText={purgeJobId ? 'In progress' : 'Delete permanently'}
@@ -1567,7 +1571,7 @@ export const ArtifactsPage = () => {
         {!purgeTarget ? (
           <Text type="secondary">Select an artifact.</Text>
         ) : (
-          <Spin spinning={purgePreflightLoading} tip="Building purge plan...">
+          <Spin spinning={purgePreflightLoading} tip="Building purge plan\u2026">
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               {purgePreflightError && (
                 <Alert type="error" message={purgePreflightError} showIcon />

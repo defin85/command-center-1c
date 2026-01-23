@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   App,
   Button,
@@ -90,7 +90,7 @@ const WorkflowList = () => {
       dataIndex: 'name',
       key: 'name',
       render: (name, record) => (
-        <a onClick={() => navigate(`/workflows/${record.id}`)}>{name}</a>
+        <Link to={`/workflows/${record.id}`}>{name}</Link>
       )
     },
     {
@@ -143,6 +143,7 @@ const WorkflowList = () => {
             <Button
               icon={<EditOutlined />}
               size="small"
+              aria-label="Edit workflow"
               onClick={() => navigate(`/workflows/${record.id}`)}
             />
           </Tooltip>
@@ -150,6 +151,7 @@ const WorkflowList = () => {
             <Button
               icon={<CopyOutlined />}
               size="small"
+              aria-label="Clone workflow"
               onClick={() => handleClone(record.id, record.name)}
             />
           </Tooltip>
@@ -157,6 +159,7 @@ const WorkflowList = () => {
             <Button
               icon={<PlayCircleOutlined />}
               size="small"
+              aria-label="Execute workflow"
               disabled={!record.is_valid}
               onClick={() => navigate(`/workflows/${record.id}?execute=true`)}
             />
@@ -169,7 +172,7 @@ const WorkflowList = () => {
             okButtonProps={{ danger: true }}
           >
             <Tooltip title="Delete">
-              <Button icon={<DeleteOutlined />} size="small" danger />
+              <Button icon={<DeleteOutlined />} size="small" danger aria-label="Delete workflow" />
             </Tooltip>
           </Popconfirm>
         </Space>

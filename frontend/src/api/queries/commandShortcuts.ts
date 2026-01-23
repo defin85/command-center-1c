@@ -6,7 +6,7 @@ import {
   deleteDriverCommandShortcut,
   listDriverCommandShortcuts,
 } from '../commandShortcuts'
-import { queryKeys } from './index'
+import { queryKeys } from './queryKeys'
 
 export function useDriverCommandShortcuts(driver: DriverCommandShortcutDriver, enabled = true) {
   return useQuery({
@@ -40,4 +40,3 @@ export function useDeleteDriverCommandShortcut(driver: DriverCommandShortcutDriv
     },
   })
 }
-

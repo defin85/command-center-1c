@@ -7,6 +7,7 @@ import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { Checkbox, Space, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Key } from 'react'
+import type { Cluster } from '../../../../api/generated/model/cluster'
 import type { Database } from '../../../../api/generated/model/database'
 import { useDatabases } from '../../../../api/queries/databases'
 import { useClusters } from '../../../../api/queries/clusters'
@@ -14,9 +15,12 @@ import type { SelectTargetStepProps } from './types'
 import { getHealthTag, getStatusTag } from '../../../../utils/databaseStatus'
 import { TableToolkit } from '../../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../../components/table/hooks/useTableToolkit'
-import { useAuthz } from '../../../../authz'
+import { useAuthz } from '../../../../authz/useAuthz'
 
 const { Title, Text } = Typography
+
+const EMPTY_CLUSTERS: Cluster[] = []
+const EMPTY_DATABASES: Database[] = []
 
 export const SelectTargetStep = ({
   selectedDatabases,
@@ -28,7 +32,7 @@ export const SelectTargetStep = ({
   const authz = useAuthz()
 
   const clustersQuery = useClusters()
-  const clusters = clustersQuery.data?.clusters ?? []
+  const clusters = clustersQuery.data?.clusters ?? EMPTY_CLUSTERS
   const clusterNameById = useMemo(() => {
     const map = new Map<string, string>()
     clusters.forEach((cluster) => {
@@ -128,7 +132,7 @@ export const SelectTargetStep = ({
       offset: pageStart,
     },
   })
-  const databases = databasesResponse?.databases ?? []
+  const databases = databasesResponse?.databases ?? EMPTY_DATABASES
   const totalDatabases = typeof databasesResponse?.total === 'number'
     ? databasesResponse.total
     : databases.length

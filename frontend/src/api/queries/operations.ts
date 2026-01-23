@@ -13,7 +13,8 @@ import type { OperationListResponse } from '../generated/model/operationListResp
 import { transformBatchOperation, transformTask } from '../../utils/operationTransforms'
 import type { UIBatchOperation } from '../../utils/operationTransforms'
 
-import { queryKeys, type OperationFilters } from './index'
+import { queryKeys } from './queryKeys'
+import type { OperationFilters } from './types'
 
 const api = getV2()
 

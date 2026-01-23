@@ -34,5 +34,71 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return undefined
+
+          if (id.includes('/node_modules/monaco-editor/') || id.includes('/node_modules/@monaco-editor/')) {
+            return 'monaco'
+          }
+
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/scheduler/') ||
+            id.includes('/node_modules/react-router') ||
+            id.includes('/node_modules/react-router-dom/')
+          ) {
+            return 'react'
+          }
+
+          if (id.includes('/node_modules/@tanstack/')) {
+            return 'tanstack'
+          }
+
+          if (id.includes('/node_modules/antd/')) {
+            const match = /\/node_modules\/antd\/(?:es|lib)\/([^/]+)\//.exec(id)
+            const sub = match?.[1] ?? ''
+            if (sub === 'table') return 'antd-table'
+            if (sub === 'form') return 'antd-form'
+            if (sub === 'date-picker' || sub === 'time-picker' || sub === 'calendar') return 'antd-date'
+            if (sub === 'select' || sub === 'tree-select') return 'antd-select'
+            if (sub === 'drawer' || sub === 'modal' || sub === 'tooltip' || sub === 'popover') return 'antd-overlay'
+            return 'antd-core'
+          }
+
+          if (id.includes('/node_modules/@ant-design/')) {
+            return 'ant-design'
+          }
+
+          if (id.includes('/node_modules/@rc-component/') || id.includes('/node_modules/rc-')) {
+            return 'rc'
+          }
+
+          if (id.includes('/node_modules/socket.io-client/') || id.includes('/node_modules/engine.io-client/')) {
+            return 'socket-io'
+          }
+
+          if (id.includes('/node_modules/recharts/') || id.includes('/node_modules/d3-')) {
+            return 'charts'
+          }
+
+          if (id.includes('/node_modules/reactflow/')) {
+            return 'reactflow'
+          }
+
+          if (id.includes('/node_modules/zustand/')) {
+            return 'zustand'
+          }
+
+          if (id.includes('/node_modules/axios/')) {
+            return 'axios'
+          }
+
+          return 'vendor'
+        },
+      },
+    },
   }
 })
