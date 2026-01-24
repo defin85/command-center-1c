@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
@@ -214,5 +214,118 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
       availableDatabaseIds: ['db1'],
     })
     expect(screen.queryByText('Auth context')).not.toBeInTheDocument()
+  })
+
+  it('includes ibcmd connection args in preview (remote)', async () => {
+    const user = userEvent.setup()
+
+    const ibcmdCatalog: DriverCommandsResponseV2['catalog'] = {
+      catalog_version: 2,
+      driver: 'ibcmd',
+      driver_schema: {
+        connection: {
+          remote: { kind: 'flag', flag: '--remote', expects_value: true, required: false, label: 'Remote', value_type: 'string' },
+          pid: { kind: 'flag', flag: '--pid', expects_value: true, required: false, label: 'PID', value_type: 'int' },
+          offline: {
+            config: { kind: 'flag', flag: '--config', expects_value: true, required: false, label: 'Config', value_type: 'string' },
+          },
+        },
+        timeout_seconds: { kind: 'int', default: 900, min: 1, max: 3600, label: 'Timeout (seconds)', required: false },
+        stdin: { kind: 'text', label: 'Stdin (optional)', required: false, ui: { rows: 4 } },
+        auth_database_id: {
+          kind: 'database_ref',
+          label: 'Auth mapping infobase',
+          required: false,
+          ui: { required_when: { command_scope: 'global' } },
+        },
+        ui: {
+          version: 1,
+          sections: [
+            { id: 'ibcmd.auth', title: 'Auth context', paths: ['auth_database_id'], when: { command_scope: 'global' } },
+            { id: 'ibcmd.connection', title: 'Connection', paths: ['connection.remote', 'connection.pid', 'connection.offline.config'] },
+            { id: 'ibcmd.execution', title: 'Execution', paths: ['timeout_seconds', 'stdin'] },
+          ],
+        },
+      },
+      commands_by_id: {
+        'server.config.init': {
+          label: 'Init server config',
+          argv: ['server', 'config', 'init'],
+          scope: 'global',
+          risk_level: 'safe',
+          params_by_name: {},
+        },
+      },
+    }
+
+    mockUseDriverCommands.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: { catalog: ibcmdCatalog },
+    })
+
+    renderBuilder({
+      driver: 'ibcmd',
+      initialConfig: { driver: 'ibcmd', mode: 'guided', command_id: 'server.config.init', params: {}, connection: {} },
+      availableDatabaseIds: ['db1'],
+    })
+
+    const remoteLabel = screen.getByText('Remote')
+    const remoteItem = remoteLabel.closest('.ant-form-item')
+    expect(remoteItem).not.toBeNull()
+    const remoteInput = within(remoteItem as HTMLElement).getByRole('textbox')
+    await user.type(remoteInput, 'http://host:1545')
+
+    expect(screen.getByText(/--remote=http:\/\/host:1545/)).toBeInTheDocument()
+  })
+
+  it('shows dangerous confirm modal and updates confirm_dangerous only on confirm', async () => {
+    const user = userEvent.setup()
+
+    const cliCatalog: DriverCommandsResponseV2['catalog'] = {
+      catalog_version: 2,
+      driver: 'cli',
+      driver_schema: {
+        ui: { version: 1, sections: [] },
+      },
+      commands_by_id: {
+        Drop: {
+          label: 'Drop something',
+          argv: ['/Drop'],
+          scope: 'per_database',
+          risk_level: 'dangerous',
+          params_by_name: {},
+        },
+      },
+    }
+
+    mockUseDriverCommands.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: { catalog: cliCatalog },
+    })
+
+    renderBuilder({
+      driver: 'cli',
+      initialConfig: { driver: 'cli', mode: 'guided', command_id: 'Drop', params: {} },
+    })
+
+    const getCheckbox = () => screen.getByRole('checkbox', { name: 'I confirm this dangerous command' })
+
+    await user.click(getCheckbox())
+    const dialog1 = await screen.findByRole('dialog')
+    expect(within(dialog1).getByText('Confirm dangerous command')).toBeInTheDocument()
+
+    await user.click(within(dialog1).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(getCheckbox()).not.toBeChecked()
+
+    await user.click(getCheckbox())
+    const dialog2 = await screen.findByRole('dialog')
+    expect(within(dialog2).getByText('Confirm dangerous command')).toBeInTheDocument()
+
+    await user.click(within(dialog2).getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(getCheckbox()).toBeChecked()
   })
 })

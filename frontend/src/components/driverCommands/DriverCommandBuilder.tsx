@@ -1,7 +1,7 @@
 import '../../lib/monacoEnv'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, Button, Checkbox, Divider, Form, Input, InputNumber, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 
@@ -403,6 +403,66 @@ const flattenIbcmdConnection = (connection?: IbcmdCliConnection): Record<string,
   }
 
   return out
+}
+
+const IBCMD_CONNECTION_DEFAULT_FLAGS: Record<string, string> = {
+  remote: '--remote',
+  pid: '--pid',
+  config: '--config',
+  data: '--data',
+  dbms: '--dbms',
+  db_server: '--db-server',
+  db_name: '--db-name',
+  db_user: '--db-user',
+  db_pwd: '--db-pwd',
+}
+
+const buildIbcmdConnectionArgsPreview = (
+  driverSchema: Record<string, unknown> | undefined,
+  connection: IbcmdCliConnection | undefined,
+): string[] => {
+  const flattened = flattenIbcmdConnection(connection)
+  if (Object.keys(flattened).length === 0) return []
+
+  const renderFlag = (path: string, key: string, value: unknown): string | undefined => {
+    if (value === null || value === undefined || value === '') return undefined
+
+    const schema = getSchemaAtPath(driverSchema, path)
+    const kind = typeof schema?.kind === 'string' ? schema.kind : ''
+    const expectsValue = schema?.expects_value === true
+    const schemaFlag = typeof schema?.flag === 'string' && schema.flag.startsWith('-') ? schema.flag : undefined
+
+    const fallbackFlag = IBCMD_CONNECTION_DEFAULT_FLAGS[key]
+    const flag = schemaFlag ?? fallbackFlag
+    if (!flag) return undefined
+
+    if (kind === 'flag' && !expectsValue) {
+      return value === true ? flag : undefined
+    }
+
+    const rendered = typeof value === 'number' || typeof value === 'boolean' ? String(value) : String(value).trim()
+    if (!rendered) return undefined
+    return `${flag}=${rendered}`
+  }
+
+  const args: string[] = []
+
+  for (const key of ['remote', 'pid'] as const) {
+    if (!(key in flattened)) continue
+    const token = renderFlag(`connection.${key}`, key, flattened[key])
+    if (token) args.push(token)
+  }
+
+  const offlineKeys = Object.keys(flattened)
+    .filter((key) => key !== 'remote' && key !== 'pid')
+    .sort()
+
+  for (const key of offlineKeys) {
+    const token = renderFlag(`connection.offline.${key}`, key, flattened[key])
+    if (token) args.push(token)
+  }
+
+  return args
 }
 
 const sortParams = (entries: Array<{ name: string; schema: DriverCommandParamV2 }>) =>
@@ -955,13 +1015,23 @@ export function DriverCommandBuilder({
   }, [argsEditorRef, config.args_text, driver])
 
   const availableDbIds = useMemo(() => availableDatabaseIds ?? EMPTY_DB_IDS, [availableDatabaseIds])
+  const stableAvailableDbIds = useMemo(() => {
+    if (availableDbIds.length < 2) return availableDbIds
+    const copy = [...availableDbIds]
+    copy.sort((a, b) => {
+      const la = databaseNamesById?.[a] ? `${databaseNamesById[a]} (${a})` : a
+      const lb = databaseNamesById?.[b] ? `${databaseNamesById[b]} (${b})` : b
+      return la.localeCompare(lb)
+    })
+    return copy
+  }, [availableDbIds, databaseNamesById])
   const databaseOptions = useMemo(
     () =>
-      availableDbIds.map((id) => ({
+      stableAvailableDbIds.map((id) => ({
         value: id,
         label: databaseNamesById?.[id] ? `${databaseNamesById[id]} (${id})` : id,
       })),
-    [availableDbIds, databaseNamesById]
+    [stableAvailableDbIds, databaseNamesById]
   )
 
   useEffect(() => {
@@ -972,12 +1042,12 @@ export function DriverCommandBuilder({
       }
       return
     }
-    if (availableDbIds.length === 0) return
+    if (stableAvailableDbIds.length === 0) return
 
     const current = config.auth_database_id
-    if (typeof current === 'string' && availableDbIds.includes(current)) return
-    onChange({ auth_database_id: availableDbIds[0] })
-  }, [availableDbIds, config.auth_database_id, driver, onChange, scope])
+    if (typeof current === 'string' && stableAvailableDbIds.includes(current)) return
+    onChange({ auth_database_id: stableAvailableDbIds[0] })
+  }, [config.auth_database_id, driver, onChange, scope, stableAvailableDbIds])
 
   const handleModeChange = (nextMode: string) => {
     onChange({ mode: nextMode as DriverCommandBuilderMode })
@@ -1009,12 +1079,20 @@ export function DriverCommandBuilder({
       return { argv, argv_masked: maskArgv(argv) }
     }
 
-    const mergedParams = {
-      ...params,
-      ...flattenIbcmdConnection(config.connection),
+    const preArgs = buildIbcmdConnectionArgsPreview(driverSchema, config.connection)
+    if (mode === 'manual') {
+      const argv = [...(selectedCommand.argv ?? []), ...preArgs, ...additionalArgs]
+      return { argv, argv_masked: maskArgv(argv) }
     }
-    return buildIbcmdArgvPreview(selectedCommand, mergedParams, additionalArgs)
-  }, [additionalArgs, commandId, config.connection, driver, mode, params, selectedCommand])
+
+    const argvPreview = buildIbcmdArgvPreview(selectedCommand, params, additionalArgs)
+    const argv = [
+      ...(selectedCommand.argv ?? []),
+      ...preArgs,
+      ...argvPreview.argv.slice((selectedCommand.argv ?? []).length),
+    ]
+    return { argv, argv_masked: maskArgv(argv) }
+  }, [additionalArgs, commandId, config.connection, driver, driverSchema, mode, params, selectedCommand])
 
   useEffect(() => {
     if (driver !== 'cli') return
@@ -1102,13 +1180,30 @@ export function DriverCommandBuilder({
     const sensitive = schema.sensitive === true
 
     const rawValue = getConfigValueAtPath(path)
+    const hasDefault = schema.default !== undefined
+    const isEmpty = rawValue === null || rawValue === undefined || rawValue === ''
+    const missingRequired = required && !hasDefault && isEmpty
+
+    const helpParts: string[] = []
+    if (description) helpParts.push(description)
+    if (missingRequired) helpParts.push('Required.')
 
     if (kind === 'database_ref') {
+      if (databaseOptions.length === 0) {
+        helpParts.push('Select at least one target database to provide options.')
+      }
       return (
-        <Form.Item key={path} label={label} required={required} style={{ marginBottom: 12 }} help={description}>
+        <Form.Item
+          key={path}
+          label={label}
+          required={required}
+          validateStatus={missingRequired ? 'error' : undefined}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+        >
           <Select
             showSearch
-            disabled={readOnly}
+            disabled={readOnly || databaseOptions.length === 0}
             value={typeof rawValue === 'string' ? rawValue : undefined}
             options={databaseOptions}
             onChange={(next) => updateConfigAtPath(path, next)}
@@ -1130,7 +1225,14 @@ export function DriverCommandBuilder({
     if (kind === 'bool' || (kind === 'flag' && !expectsValue)) {
       const fallback = typeof defaultValue === 'boolean' ? defaultValue : false
       return (
-        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+          required={required}
+          validateStatus={missingRequired ? 'error' : undefined}
+        >
           <Switch checked={asBool(fallback)} disabled={readOnly} onChange={(checked) => updateConfigAtPath(path, checked)} />
         </Form.Item>
       )
@@ -1140,7 +1242,14 @@ export function DriverCommandBuilder({
       const fallback = typeof defaultValue === 'number' ? defaultValue : undefined
       const emptyValue = typeof defaultValue === 'number' ? defaultValue : null
       return (
-        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+          required={required}
+          validateStatus={missingRequired ? 'error' : undefined}
+        >
           <InputNumber
             min={min}
             max={max}
@@ -1157,7 +1266,14 @@ export function DriverCommandBuilder({
       const ui = schema.ui
       const rows = isRecord(ui) && typeof ui.rows === 'number' ? ui.rows : 4
       return (
-        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+          required={required}
+          validateStatus={missingRequired ? 'error' : undefined}
+        >
           <Input.TextArea
             rows={rows}
             disabled={readOnly}
@@ -1170,7 +1286,14 @@ export function DriverCommandBuilder({
 
     if (sensitive) {
       return (
-        <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+          required={required}
+          validateStatus={missingRequired ? 'error' : undefined}
+        >
           <Input.Password
             disabled={readOnly}
             value={asString()}
@@ -1182,7 +1305,14 @@ export function DriverCommandBuilder({
     }
 
     return (
-      <Form.Item key={path} label={label} style={{ marginBottom: 12 }} help={description} required={required}>
+      <Form.Item
+        key={path}
+        label={label}
+        style={{ marginBottom: 12 }}
+        help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+        required={required}
+        validateStatus={missingRequired ? 'error' : undefined}
+      >
         <Input
           disabled={readOnly}
           value={asString()}
@@ -1201,31 +1331,6 @@ export function DriverCommandBuilder({
     if (dangerousConfirmPending) return
 
     setDangerousConfirmPending(true)
-    modal.confirm({
-      title: 'Confirm dangerous command',
-      okText: 'Confirm',
-      cancelText: 'Cancel',
-      okButtonProps: { danger: true },
-      content: (
-        <Space direction="vertical" size="small">
-          <Text>
-            This command is marked as dangerous and may cause irreversible changes. Review the command and its
-            parameters before proceeding.
-          </Text>
-          {selectedCommand?.description && <Text type="secondary">{selectedCommand.description}</Text>}
-          {selectedCommand?.source_section && <Text type="secondary">Source: {selectedCommand.source_section}</Text>}
-          <Text type="secondary">Command: {selectedCommand?.label || commandId}</Text>
-        </Space>
-      ),
-      onOk: () => {
-        setDangerousConfirmPending(false)
-        onChange({ confirm_dangerous: true })
-      },
-      onCancel: () => {
-        setDangerousConfirmPending(false)
-        onChange({ confirm_dangerous: false })
-      },
-    })
   }
 
   const renderLegacyIbcmdExecution = () => {
@@ -1358,26 +1463,79 @@ export function DriverCommandBuilder({
   }
 
   const renderDriverOptions = () => {
-    const ui = isRecord(driverSchema?.ui) ? (driverSchema?.ui as Record<string, unknown>) : undefined
-    const sections = Array.isArray(ui?.sections) ? ui?.sections : undefined
-    const version = typeof ui?.version === 'number' ? ui.version : undefined
+    type UiSection = { id: string; title: string; paths: string[]; when?: Record<string, unknown> }
 
-    if (!driverSchema || version !== 1 || !sections) {
+    const parseUiSections = (rawSections: unknown): UiSection[] => {
+      if (!Array.isArray(rawSections)) return []
+      const out: UiSection[] = []
+      for (const raw of rawSections) {
+        if (!isRecord(raw)) continue
+        const id = typeof raw.id === 'string' ? raw.id : ''
+        const title = typeof raw.title === 'string' ? raw.title : ''
+        const paths = Array.isArray(raw.paths) ? raw.paths.filter((p): p is string => typeof p === 'string' && p.length > 0) : []
+        if (!id || !title || paths.length === 0) continue
+        const when = isRecord(raw.when) ? (raw.when as Record<string, unknown>) : undefined
+        out.push({ id, title, paths, when })
+      }
+      return out
+    }
+
+    const synthesizeUiSections = (schema: Record<string, unknown>): UiSection[] => {
+      if (driver === 'cli') {
+        const hasCliOptions = isRecord(schema.cli_options)
+        if (!hasCliOptions) return []
+        const startupPaths = ['cli_options.disable_startup_messages', 'cli_options.disable_startup_dialogs']
+          .filter((path) => Boolean(getSchemaAtPath(schema, path)))
+        const loggingPaths = ['cli_options.log_capture', 'cli_options.log_path', 'cli_options.log_no_truncate']
+          .filter((path) => Boolean(getSchemaAtPath(schema, path)))
+        const out: UiSection[] = []
+        if (startupPaths.length > 0) out.push({ id: 'cli.startup', title: 'Startup options', paths: startupPaths })
+        if (loggingPaths.length > 0) out.push({ id: 'cli.logging', title: 'Logging', paths: loggingPaths })
+        return out
+      }
+
+      const hasConnection = isRecord(schema.connection)
+      if (!hasConnection) return []
+
+      const authPaths = ['auth_database_id'].filter((path) => Boolean(getSchemaAtPath(schema, path)))
+      const connectionPaths: string[] = []
+      for (const key of ['remote', 'pid'] as const) {
+        const path = `connection.${key}`
+        if (getSchemaAtPath(schema, path)) connectionPaths.push(path)
+      }
+      const offlineKeys = ['config', 'data', 'dbms', 'db_server', 'db_name', 'db_user', 'db_pwd']
+        .filter((key) => Boolean(getSchemaAtPath(schema, `connection.offline.${key}`)))
+        .sort()
+      for (const key of offlineKeys) {
+        connectionPaths.push(`connection.offline.${key}`)
+      }
+      const executionPaths = ['timeout_seconds', 'stdin'].filter((path) => Boolean(getSchemaAtPath(schema, path)))
+
+      const out: UiSection[] = []
+      if (authPaths.length > 0) out.push({ id: 'ibcmd.auth', title: 'Auth context', paths: authPaths, when: { command_scope: 'global' } })
+      if (connectionPaths.length > 0) out.push({ id: 'ibcmd.connection', title: 'Connection', paths: connectionPaths })
+      if (executionPaths.length > 0) out.push({ id: 'ibcmd.execution', title: 'Execution', paths: executionPaths })
+      return out
+    }
+
+    const ui = isRecord(driverSchema?.ui) ? (driverSchema?.ui as Record<string, unknown>) : undefined
+    const version = typeof ui?.version === 'number' ? ui.version : undefined
+    const schemaSections = version === 1 ? parseUiSections(ui?.sections) : []
+    const sections = schemaSections.length > 0
+      ? schemaSections
+      : driverSchema
+        ? synthesizeUiSections(driverSchema)
+        : []
+
+    if (!driverSchema || sections.length === 0) {
       return driver === 'ibcmd' ? renderLegacyIbcmdExecution() : renderLegacyCliOptions()
     }
 
-    type UiSection = { id: string; title: string; paths: string[]; when?: Record<string, unknown> }
-
     const visibleSections: UiSection[] = []
-    for (const raw of sections) {
-      if (!isRecord(raw)) continue
-      const id = typeof raw.id === 'string' ? raw.id : ''
-      const title = typeof raw.title === 'string' ? raw.title : ''
-      const paths = Array.isArray(raw.paths) ? raw.paths.filter((p): p is string => typeof p === 'string' && p.length > 0) : []
-      if (!id || !title || paths.length === 0) continue
-      const when = isRecord(raw.when) ? (raw.when as Record<string, unknown>) : undefined
+    for (const section of sections) {
+      const when = section.when
       if (when && typeof when.command_scope === 'string' && when.command_scope !== scope) continue
-      visibleSections.push({ id, title, paths, when })
+      visibleSections.push(section)
     }
 
     if (visibleSections.length === 0) {
@@ -1409,6 +1567,14 @@ export function DriverCommandBuilder({
             showIcon
             message="Global scope command"
             description="This command will run once. Selected databases are used only for RBAC and infobase user mapping (auth_database_id)."
+          />
+        )}
+        {driver === 'ibcmd' && scope === 'global' && stableAvailableDbIds.length === 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Auth context requires selected targets"
+            description="Select at least one database target to provide auth_database_id options."
           />
         )}
 
@@ -1708,6 +1874,30 @@ export function DriverCommandBuilder({
           </Form.Item>
         </Form>
       )}
+
+      <Modal
+        title="Confirm dangerous command"
+        open={dangerousConfirmPending}
+        okText="Confirm"
+        cancelText="Cancel"
+        okButtonProps={{ danger: true }}
+        onOk={() => {
+          setDangerousConfirmPending(false)
+          onChange({ confirm_dangerous: true })
+        }}
+        onCancel={() => {
+          setDangerousConfirmPending(false)
+        }}
+      >
+        <Space direction="vertical" size="small">
+          <Text>
+            This command is marked as dangerous and may cause irreversible changes. Review the command and its parameters before proceeding.
+          </Text>
+          {selectedCommand?.description && <Text type="secondary">{selectedCommand.description}</Text>}
+          {selectedCommand?.source_section && <Text type="secondary">Source: {selectedCommand.source_section}</Text>}
+          <Text type="secondary">Command: {selectedCommand?.label || commandId}</Text>
+        </Space>
+      </Modal>
     </Space>
   )
 }
