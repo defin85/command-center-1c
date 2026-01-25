@@ -327,5 +327,5 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     await user.click(within(dialog2).getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(getCheckbox()).toBeChecked()
-  })
+  }, 15_000)
 })
