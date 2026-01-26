@@ -383,9 +383,25 @@ def build_ibcmd_cli_argv(
 
     normalized_params: dict[str, Any] = strip_infobase_auth_params(params or {})
     extra_args = strip_infobase_auth_args(additional_args or [])
+    pre = [str(x).strip() for x in (pre_args or []) if x is not None and str(x).strip()]
 
     if not isinstance(normalized_params, dict):
         raise ValueError("params must be an object")
+
+    pre_lowered = [token.lower() for token in pre]
+
+    def _required_flag_satisfied_by_pre(schema: dict[str, Any]) -> bool:
+        kind = str(schema.get("kind") or "").strip()
+        if kind != "flag":
+            return False
+        flag = schema.get("flag")
+        if not isinstance(flag, str) or not flag.startswith("-"):
+            return False
+        f = flag.strip().lower()
+        for token in pre_lowered:
+            if token == f or token.startswith(f + "=") or token.startswith(f + " "):
+                return True
+        return False
 
     if params_by_name:
         unknown = [key for key in normalized_params.keys() if key not in params_by_name]
@@ -403,12 +419,16 @@ def build_ibcmd_cli_argv(
             continue
         if name not in normalized_params:
             if schema.get("required") is True:
+                if _required_flag_satisfied_by_pre(schema):
+                    continue
                 raise ValueError(f"missing required param: {name}")
             continue
 
         raw_value = normalized_params.get(name)
         if raw_value is None or raw_value == "":
             if schema.get("required") is True:
+                if _required_flag_satisfied_by_pre(schema):
+                    continue
                 raise ValueError(f"missing required param: {name}")
             continue
 
@@ -452,7 +472,6 @@ def build_ibcmd_cli_argv(
     flags.sort()
     positionals.sort(key=lambda item: item[0])
 
-    pre = [str(x).strip() for x in (pre_args or []) if x is not None and str(x).strip()]
     argv_out = [token.strip() for token in argv] + pre + flags + [v for _, v in positionals] + extra_args
     masked = mask_argv(argv_out)
     return argv_out, masked

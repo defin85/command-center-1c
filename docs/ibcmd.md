@@ -40,7 +40,8 @@ database:
 
 Ограничения:
 - `ib_auth.strategy=service` разрешён только для allowlist safe‑команд (первый этап: `infobase.extension.list`, `infobase.extension.info`) и только для staff/пользователей с отдельным permission.
-- stdin‑флаг `--request-db-pwd` (`-W`) запрещён в guided (fail-closed). Используйте `connection.offline.db_pwd`.
+- `dbms_auth.strategy=service` разрешён только для allowlist safe‑команд (первый этап: `infobase.extension.list`, `infobase.extension.info`) и только для staff/пользователей с отдельным permission.
+- stdin‑флаг `--request-db-pwd` (`-W`) запрещён (fail-closed). DBMS credentials резолвятся через `DbmsUserMapping`.
 
 Пример (per_database):
 
@@ -52,13 +53,11 @@ database:
   "connection": {
     "offline": {
       "dbms": "PostgreSQL",
-      "db_server": "db-host",
-      "db_name": "mydb",
-      "db_user": "dbuser",
-      "db_pwd": "secret"
+      "db_server": "db-host"
     }
   },
   "ib_auth": { "strategy": "actor" },
+  "dbms_auth": { "strategy": "actor" },
   "params": {
     "output_path": "db-123/backup_20250101.dt",
     "force": true
@@ -168,15 +167,13 @@ payload (`ibcmd_cli`):
 {
   "command_id": "infobase.dump",
   "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
-  "connection": {
-    "offline": {
-      "dbms": "PostgreSQL",
-      "db_server": "db-host",
-      "db_name": "mydb",
-      "db_user": "dbuser",
-      "db_pwd": "secret"
-    }
-  },
+	  "connection": {
+	    "offline": {
+	      "dbms": "PostgreSQL",
+	      "db_server": "db-host",
+	      "db_name": "mydb"
+	    }
+	  },
   "ib_auth": { "strategy": "actor" },
   "params": {
     "output_path": "db-123/backup_20250101.dt",
@@ -202,15 +199,13 @@ payload (backup, `ibcmd_cli`):
 {
   "command_id": "infobase.dump",
   "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
-  "connection": {
-    "offline": {
-      "dbms": "PostgreSQL",
-      "db_server": "db-host",
-      "db_name": "mydb",
-      "db_user": "dbuser",
-      "db_pwd": "secret"
-    }
-  },
+	  "connection": {
+	    "offline": {
+	      "dbms": "PostgreSQL",
+	      "db_server": "db-host",
+	      "db_name": "mydb"
+	    }
+	  },
   "ib_auth": { "strategy": "actor" },
   "params": {
     "output_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt",
@@ -224,15 +219,13 @@ payload (restore, `ibcmd_cli`):
 {
   "command_id": "infobase.restore",
   "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
-  "connection": {
-    "offline": {
-      "dbms": "PostgreSQL",
-      "db_server": "db-host",
-      "db_name": "mydb",
-      "db_user": "dbuser",
-      "db_pwd": "secret"
-    }
-  },
+	  "connection": {
+	    "offline": {
+	      "dbms": "PostgreSQL",
+	      "db_server": "db-host",
+	      "db_name": "mydb"
+	    }
+	  },
   "ib_auth": { "strategy": "actor" },
   "params": {
     "input_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt",
@@ -258,15 +251,13 @@ payload (пример, `ibcmd_cli` + AgentMode):
   "agent_base_dir": "/var/lib/1c/agent",
   "command_id": "infobase.dump",
   "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
-  "connection": {
-    "offline": {
-      "dbms": "PostgreSQL",
-      "db_server": "db-host",
-      "db_name": "mydb",
-      "db_user": "dbuser",
-      "db_pwd": "secret"
-    }
-  },
+	  "connection": {
+	    "offline": {
+	      "dbms": "PostgreSQL",
+	      "db_server": "db-host",
+	      "db_name": "mydb"
+	    }
+	  },
   "ib_auth": { "strategy": "actor" },
   "params": {
     "output_path": "db-123/backup_20250101.dt",

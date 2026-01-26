@@ -703,6 +703,14 @@ class IbcmdCliIbAuthSerializer(serializers.Serializer):
     strategy = serializers.ChoiceField(choices=STRATEGY_CHOICES, required=False)
 
 
+class IbcmdCliDbmsAuthSerializer(serializers.Serializer):
+    STRATEGY_CHOICES = [
+        ("actor", "actor"),
+        ("service", "service"),
+    ]
+    strategy = serializers.ChoiceField(choices=STRATEGY_CHOICES, required=False)
+
+
 class ExecuteIbcmdCliOperationRequestSerializer(serializers.Serializer):
     """Request body for execute_ibcmd_cli_operation endpoint."""
 
@@ -728,6 +736,7 @@ class ExecuteIbcmdCliOperationRequestSerializer(serializers.Serializer):
 
     connection = IbcmdCliConnectionSerializer(required=False)
     ib_auth = IbcmdCliIbAuthSerializer(required=False)
+    dbms_auth = IbcmdCliDbmsAuthSerializer(required=False)
     params = serializers.DictField(required=False, default=dict)
     additional_args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     stdin = serializers.CharField(required=False, allow_blank=True, default="")
@@ -1522,7 +1531,7 @@ def _execute_ibcmd_cli_validated(
     *,
     legacy_operation_type: str | None = None,
 ):
-    from apps.databases.models import Database, PermissionLevel
+    from apps.databases.models import Database, PermissionLevel, DbmsUserMapping
     from apps.databases.services import PermissionService
     from apps.operations.models import BatchOperation, Task
 
@@ -1532,6 +1541,7 @@ def _execute_ibcmd_cli_validated(
     auth_database_id = validated_data.get('auth_database_id')
     connection = validated_data.get('connection') or {}
     ib_auth = validated_data.get("ib_auth") or {}
+    dbms_auth = validated_data.get("dbms_auth") or {}
     params = validated_data.get('params') or {}
     additional_args = validated_data.get('additional_args') or []
     stdin = validated_data.get('stdin') or ""
@@ -1676,6 +1686,45 @@ def _execute_ibcmd_cli_validated(
                 status=403,
             )
 
+    dbms_auth_strategy_raw = ""
+    dbms_auth_strategy_explicit = False
+    if isinstance(dbms_auth, dict):
+        if "strategy" in dbms_auth and dbms_auth.get("strategy") is not None:
+            dbms_auth_strategy_explicit = True
+        dbms_auth_strategy_raw = str(dbms_auth.get("strategy") or "").strip().lower()
+    dbms_auth_strategy = dbms_auth_strategy_raw or "actor"
+
+    if dbms_auth_strategy not in {"actor", "service"}:
+        return Response({
+            "success": False,
+            "error": {"code": "DBMS_AUTH_STRATEGY_INVALID", "message": "dbms_auth.strategy must be actor|service"},
+        }, status=400)
+
+    if scope != "per_database" and dbms_auth_strategy_explicit:
+        # Keep semantics tight: per-target DBMS creds resolution is meaningful only for per_database operations.
+        return Response({
+            "success": False,
+            "error": {"code": "DBMS_AUTH_NOT_ALLOWED", "message": "dbms_auth.strategy is not allowed for global scope commands"},
+        }, status=400)
+
+    if dbms_auth_strategy == "service":
+        if risk_level != "safe":
+            return Response({
+                "success": False,
+                "error": {"code": "DBMS_AUTH_SERVICE_NOT_ALLOWED", "message": "dbms_auth.strategy=service is allowed only for safe commands"},
+            }, status=400)
+        if command_id not in service_allowlist:
+            return Response({
+                "success": False,
+                "error": {"code": "DBMS_AUTH_SERVICE_NOT_ALLOWED", "message": f"dbms_auth.strategy=service is not allowed for command_id={command_id}"},
+            }, status=400)
+        if not (getattr(request.user, "is_staff", False) or request.user.has_perm(perms.PERM_OPERATIONS_USE_SERVICE_DBMS_AUTH)):
+            record_driver_command_denied("ibcmd", "dbms_auth_service_denied")
+            return Response(
+                {"success": False, "error": {"code": "PERMISSION_DENIED", "message": "You do not have permission to use service DBMS authentication."}},
+                status=403,
+            )
+
     required_level = PermissionLevel.OPERATE
     if risk_level == "dangerous":
         required_level = PermissionLevel.MANAGE
@@ -1755,21 +1804,32 @@ def _execute_ibcmd_cli_validated(
                 "error": {"code": "PID_IN_ARGS_NOT_ALLOWED", "message": "Use connection.pid instead of --pid in additional_args"},
             }, status=400)
 
-    if mode == "guided":
-        for token in additional_args:
-            t = str(token or "").strip().lower()
-            if (
-                t in {"--request-db-pwd", "--request-database-password", "-w"}
-                or t.startswith("--request-db-pwd=")
-                or t.startswith("--request-database-password=")
-            ):
-                return Response({
-                    "success": False,
-                    "error": {
-                        "code": "REQUEST_DB_PWD_NOT_ALLOWED",
-                        "message": "stdin flag --request-db-pwd (-W) is not allowed in guided mode; use connection.offline.db_pwd instead",
-                    },
-                }, status=400)
+    for token in additional_args:
+        t = str(token or "").strip().lower()
+        if (
+            t in {"--request-db-pwd", "--request-database-password", "-w"}
+            or t.startswith("--request-db-pwd=")
+            or t.startswith("--request-database-password=")
+        ):
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "REQUEST_DB_PWD_NOT_ALLOWED",
+                    "message": "stdin flag --request-db-pwd (-W) is not allowed; DBMS credentials are resolved via DBMS user mapping",
+                },
+            }, status=400)
+
+    # DBMS credentials must not be provided via API/UI; they are resolved per database via DbmsUserMapping.
+    if isinstance(connection_dict.get("offline"), dict):
+        offline_dict = connection_dict.get("offline") or {}
+        if any(k in offline_dict and offline_dict.get(k) not in (None, "") for k in ("db_user", "db_pwd", "db_password")):
+            return Response({
+                "success": False,
+                "error": {
+                    "code": "DBMS_CREDS_NOT_ALLOWED",
+                    "message": "DBMS credentials must not be provided in connection.offline; configure DbmsUserMapping instead",
+                },
+            }, status=400)
 
     flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
     if flattened_connection:
@@ -1849,6 +1909,7 @@ def _execute_ibcmd_cli_validated(
         "stdin": stdin,
         "connection": connection_dict,
         "ib_auth": {"strategy": ib_auth_strategy},
+        "dbms_auth": {"strategy": dbms_auth_strategy},
     }
     payload_options: dict[str, Any] = {}
     if scope == "global":
@@ -1891,6 +1952,33 @@ def _execute_ibcmd_cli_validated(
                     "message": f"Unknown database_ids: {', '.join(missing[:5])}",
                 },
             }, status=400)
+
+        # Fail closed early if DBMS mapping is not configured for selected targets.
+        # Skip this check for non-offline modes (remote/pid) and for file DB connections (db_path).
+        connection_remote = str((connection_dict or {}).get("remote") or "").strip()
+        connection_pid = (connection_dict or {}).get("pid")
+        offline = (connection_dict or {}).get("offline") if isinstance(connection_dict, dict) else None
+        offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
+        if not connection_remote and not connection_pid and not offline_db_path:
+            if dbms_auth_strategy == "service":
+                qs = DbmsUserMapping.objects.filter(
+                    database__in=databases,
+                    is_service=True,
+                    user__isnull=True,
+                )
+            else:
+                qs = DbmsUserMapping.objects.filter(database__in=databases, user=request.user)
+            configured = {str(row.database_id) for row in qs}
+            missing_dbs = [db for db in databases if str(db.id) not in configured]
+            if missing_dbs:
+                preview = ", ".join((db.name or str(db.id)) for db in missing_dbs[:5])
+                msg = f"DBMS user mapping is not configured for {len(missing_dbs)} database(s): {preview}"
+                if len(missing_dbs) > 5:
+                    msg += f" and {len(missing_dbs) - 5} more"
+                return Response({
+                    "success": False,
+                    "error": {"code": "DBMS_MAPPING_NOT_CONFIGURED", "message": msg},
+                }, status=400)
 
     operation_id = str(uuid.uuid4())
     operation_name = f"ibcmd_cli {command_id}"
@@ -1944,6 +2032,15 @@ def _execute_ibcmd_cli_validated(
             "status": "applied",
         }
     )
+    bindings.append(
+        {
+            "target_ref": "dbms_auth.strategy",
+            "source_ref": "request.dbms_auth.strategy" if dbms_auth_strategy_explicit else "default.dbms_auth.strategy",
+            "resolve_at": "api",
+            "sensitive": False,
+            "status": "applied",
+        }
+    )
     if ib_auth_strategy in {"actor", "service"} and scope == "per_database":
         bindings.append(
             {
@@ -1956,6 +2053,48 @@ def _execute_ibcmd_cli_validated(
                 "status": "pending",
             }
         )
+    if scope == "per_database":
+        connection_remote = str((connection_dict or {}).get("remote") or "").strip()
+        connection_pid = (connection_dict or {}).get("pid")
+        offline = (connection_dict or {}).get("offline") if isinstance(connection_dict, dict) else None
+        offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
+        if not connection_remote and not connection_pid and not offline_db_path:
+            offline_defaults = dict(offline) if isinstance(offline, dict) else {}
+            for key, source_key in (
+                ("dbms", "dbms"),
+                ("db_server", "db_server"),
+                ("db_name", "db_name"),
+            ):
+                if str(offline_defaults.get(key) or "").strip():
+                    continue
+                bindings.append(
+                    {
+                        "target_ref": f"connection.offline.{key}",
+                        "source_ref": f"target_db.metadata.{source_key}",
+                        "resolve_at": "worker",
+                        "sensitive": False,
+                        "status": "pending",
+                    }
+                )
+            dbms_source = "credentials.db_user_mapping" if dbms_auth_strategy == "actor" else "credentials.db_service_mapping"
+            bindings.append(
+                {
+                    "target_ref": "connection.offline.db_user",
+                    "source_ref": dbms_source,
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "pending",
+                }
+            )
+            bindings.append(
+                {
+                    "target_ref": "connection.offline.db_pwd",
+                    "source_ref": dbms_source,
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "pending",
+                }
+            )
     for key in sorted((merged_params or {}).keys()):
         bindings.append(
             {

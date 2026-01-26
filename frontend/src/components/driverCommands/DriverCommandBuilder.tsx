@@ -61,6 +61,10 @@ export interface IbcmdIbAuth {
   strategy?: 'actor' | 'service' | 'none'
 }
 
+export interface IbcmdDbmsAuth {
+  strategy?: 'actor' | 'service'
+}
+
 export interface CliExtraOptions {
   disable_startup_messages?: boolean
   disable_startup_dialogs?: boolean
@@ -85,6 +89,7 @@ export interface DriverCommandOperationConfig {
   // IBCMD-only execution context
   connection?: IbcmdCliConnection
   ib_auth?: IbcmdIbAuth
+  dbms_auth?: IbcmdDbmsAuth
   stdin?: string
   timeout_seconds?: number
   auth_database_id?: string
@@ -913,22 +918,6 @@ function IbcmdConnectionForm({
           onChange={(event) => updateOffline({ db_name: event.target.value })}
         />
       </Form.Item>
-      <Form.Item label="DB user" style={{ marginBottom: 12 }}>
-        <Input
-          value={offline.db_user || ''}
-          disabled={readOnly}
-          placeholder="dbuser"
-          onChange={(event) => updateOffline({ db_user: event.target.value })}
-        />
-      </Form.Item>
-      <Form.Item label="DB password" style={{ marginBottom: 12 }}>
-        <Input.Password
-          value={offline.db_pwd || ''}
-          disabled={readOnly}
-          placeholder="db password"
-          onChange={(event) => updateOffline({ db_pwd: event.target.value })}
-        />
-      </Form.Item>
     </Form>
   )
 }
@@ -1294,6 +1283,36 @@ export function DriverCommandBuilder({
       ]
       const rawValue = getConfigValueAtPath(path)
       const value = (rawValue === 'actor' || rawValue === 'service' || rawValue === 'none') ? rawValue : 'actor'
+
+      return (
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+        >
+          <Select
+            disabled={readOnly}
+            value={value}
+            options={options}
+            onChange={(next) => updateConfigAtPath(path, next)}
+          />
+        </Form.Item>
+      )
+    }
+
+    if (driver === 'ibcmd' && path === 'dbms_auth.strategy') {
+      const allowedServiceCommands = new Set(['infobase.extension.list', 'infobase.extension.info'])
+      const canShow = Boolean(selectedCommand) && selectedCommand?.risk_level === 'safe' && allowedServiceCommands.has(commandId)
+      if (!canShow) return null
+
+      const canUseService = meQuery.data?.is_staff === true
+      const options = [
+        { value: 'actor', label: 'actor (per-user mapping)' },
+        ...(canUseService ? [{ value: 'service', label: 'service (service account)' }] : []),
+      ]
+      const rawValue = getConfigValueAtPath(path)
+      const value = (rawValue === 'actor' || rawValue === 'service') ? rawValue : 'actor'
 
       return (
         <Form.Item
@@ -1872,6 +1891,15 @@ export function DriverCommandBuilder({
         out.ib_auth = nextIbAuth as unknown as IbcmdIbAuth
       }
 
+      const rawDbmsAuth = cfg.dbms_auth
+      if (isRecord(rawDbmsAuth)) {
+        const nextDbmsAuth: Record<string, unknown> = {}
+        if (rawDbmsAuth.strategy === 'actor' || rawDbmsAuth.strategy === 'service') {
+          nextDbmsAuth.strategy = rawDbmsAuth.strategy
+        }
+        out.dbms_auth = nextDbmsAuth as unknown as IbcmdDbmsAuth
+      }
+
       const rawConnection = cfg.connection
       if (isRecord(rawConnection)) {
         const nextConnection: Record<string, unknown> = {}
@@ -2032,6 +2060,7 @@ export function DriverCommandBuilder({
             timeout_seconds: config.timeout_seconds,
             auth_database_id: config.auth_database_id,
             ib_auth: config.ib_auth ?? {},
+            dbms_auth: config.dbms_auth ?? {},
           },
         }
         await createShortcutMutation.mutateAsync({ driver: 'ibcmd', command_id: commandId, title, payload })

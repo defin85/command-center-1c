@@ -1607,6 +1607,44 @@ def _preview_ibcmd_cli(
                 "status": "applied",
             }
         )
+
+    # For per_database ibcmd_cli, some offline parameters and DBMS creds are resolved at runtime per target database.
+    connection_remote = str(connection_dict.get("remote") or "").strip()
+    connection_pid = connection_dict.get("pid")
+    offline = connection_dict.get("offline") if isinstance(connection_dict.get("offline"), dict) else None
+    offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
+    if str(command.get("scope") or "").strip() == "per_database" and database_ids and not connection_remote and not connection_pid and not offline_db_path:
+        offline_defaults = dict(offline) if isinstance(offline, dict) else {}
+        for key, source_key in (("dbms", "dbms"), ("db_server", "db_server"), ("db_name", "db_name")):
+            if str(offline_defaults.get(key) or "").strip():
+                continue
+            bindings.append(
+                {
+                    "target_ref": f"connection.offline.{key}",
+                    "source_ref": f"target_db.metadata.{source_key}",
+                    "resolve_at": "worker",
+                    "sensitive": False,
+                    "status": "pending",
+                }
+            )
+        bindings.append(
+            {
+                "target_ref": "connection.offline.db_user",
+                "source_ref": "credentials.db_user_mapping",
+                "resolve_at": "worker",
+                "sensitive": True,
+                "status": "pending",
+            }
+        )
+        bindings.append(
+            {
+                "target_ref": "connection.offline.db_pwd",
+                "source_ref": "credentials.db_user_mapping",
+                "resolve_at": "worker",
+                "sensitive": True,
+                "status": "pending",
+            }
+        )
     if stdin:
         bindings.append(
             {

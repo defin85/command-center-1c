@@ -221,6 +221,62 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/artifacts/{artifact_id}/purge/:
+    post:
+      operationId: v2_artifacts_purge_create
+      summary: Purge artifact (permanent delete)
+      parameters:
+      - in: path
+        name: artifact_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArtifactPurgeRequest'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPurgeResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
   /api/v2/artifacts/{artifact_id}/restore/:
     post:
       operationId: v2_artifacts_restore_create
@@ -249,63 +305,6 @@ paths:
         '403':
           description: Forbidden
         '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-  /api/v2/artifacts/{artifact_id}/purge/:
-    post:
-      operationId: v2_artifacts_purge_create
-      summary: Purge artifact (permanent delete)
-      parameters:
-      - in: path
-        name: artifact_id
-        schema:
-          type: string
-          format: uuid
-        required: true
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ArtifactPurgeRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ArtifactPurgeRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ArtifactPurgeRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ArtifactPurgeResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '409':
           content:
             application/json:
               schema:
@@ -1140,6 +1139,46 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/databases/create-dbms-user/:
+    post:
+      operationId: v2_databases_create_dbms_user_create
+      description: Create a manual DBMS user mapping for a database (offline ibcmd
+        connection).
+      summary: Create DBMS user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingCreate'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DbmsUserMapping'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Database not found
+        '409':
+          description: Duplicate entry
   /api/v2/databases/create-ib-user/:
     post:
       operationId: v2_databases_create_ib_user_create
@@ -1179,6 +1218,39 @@ paths:
           description: Database not found
         '409':
           description: Duplicate entry
+  /api/v2/databases/delete-dbms-user/:
+    post:
+      operationId: v2_databases_delete_dbms_user_create
+      description: Delete a manual DBMS user mapping.
+      summary: Delete DBMS user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingDelete'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingDelete'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingDelete'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Deleted
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/databases/delete-ib-user/:
     post:
       operationId: v2_databases_delete_ib_user_create
@@ -1245,8 +1317,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
         '404':
           content:
             application/json:
@@ -1293,117 +1363,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
-  /api/v2/extensions/overview/:
-    get:
-      operationId: v2_extensions_overview_retrieve
-      description: Aggregated extensions overview across accessible databases (snapshot-driven).
-      summary: Extensions overview (aggregated)
-      parameters:
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by extension name (substring)
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: Filter by status (active|inactive|missing|unknown)
-      - in: query
-        name: version
-        schema:
-          type: string
-        description: Filter rows where this version exists
-      - in: query
-        name: cluster_id
-        schema:
-          type: string
-        description: Restrict to a cluster
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: Max items (default 100, max 1000)
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: Offset (default 0)
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsOverviewResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/extensions/overview/databases/:
-    get:
-      operationId: v2_extensions_overview_databases_retrieve
-      description: List databases for a given extension name/version/status (snapshot-driven).
-      summary: Extensions overview drill-down (databases)
-      parameters:
-      - in: query
-        name: name
-        schema:
-          type: string
-        description: Extension name (exact match)
-        required: true
-      - in: query
-        name: version
-        schema:
-          type: string
-        description: Filter by exact version
-      - in: query
-        name: status
-        schema:
-          type: string
-        description: Filter by status (active|inactive|missing|unknown)
-      - in: query
-        name: cluster_id
-        schema:
-          type: string
-        description: Restrict to a cluster
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: Max items (default 100, max 1000)
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: Offset (default 0)
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsOverviewDatabasesResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DatabaseErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -1508,6 +1467,69 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/databases/list-dbms-users/:
+    get:
+      operationId: v2_databases_list_dbms_users_retrieve
+      description: List manually mapped DBMS users for offline ibcmd connection for
+        a database.
+      summary: List DBMS users
+      parameters:
+      - in: query
+        name: auth_type
+        schema:
+          type: string
+        description: Filter by auth type
+      - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Database ID
+        required: true
+      - in: query
+        name: has_user
+        schema:
+          type: boolean
+        description: Filter by linked CC user
+      - in: query
+        name: is_service
+        schema:
+          type: boolean
+        description: Filter by service account
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 'Maximum results (default: 100, max: 1000)'
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: 'Pagination offset (default: 0)'
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by DB username or linked CC user
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DbmsUserListResponse'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Database not found
   /api/v2/databases/list-ib-users/:
     get:
       operationId: v2_databases_list_ib_users_retrieve
@@ -1570,6 +1592,39 @@ paths:
           description: Forbidden
         '404':
           description: Database not found
+  /api/v2/databases/reset-dbms-user-password/:
+    post:
+      operationId: v2_databases_reset_dbms_user_password_create
+      description: Reset password for a manual DBMS user mapping.
+      summary: Reset DBMS user password
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordReset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordReset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordReset'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Password reset
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/databases/reset-ib-user-password/:
     post:
       operationId: v2_databases_reset_ib_user_password_create
@@ -1595,6 +1650,43 @@ paths:
       responses:
         '200':
           description: Password reset
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/databases/set-dbms-user-password/:
+    post:
+      operationId: v2_databases_set_dbms_user_password_create
+      description: Set password for a manual DBMS user mapping.
+      summary: Set DBMS user password
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordSet'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordSet'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DbmsUserPasswordSet'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DbmsUserMapping'
+          description: ''
         '400':
           description: Invalid request
         '401':
@@ -1767,6 +1859,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+  /api/v2/databases/update-dbms-user/:
+    post:
+      operationId: v2_databases_update_dbms_user_create
+      description: Update a manual DBMS user mapping.
+      summary: Update DBMS user mapping
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DbmsUserMappingUpdate'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DbmsUserMapping'
+          description: ''
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Duplicate entry
   /api/v2/databases/update-ib-user/:
     post:
       operationId: v2_databases_update_ib_user_create
@@ -2010,6 +2141,113 @@ paths:
           description: Forbidden
         '500':
           description: Internal server error
+  /api/v2/extensions/overview/:
+    get:
+      operationId: v2_extensions_overview_retrieve
+      description: Aggregated extensions overview across accessible databases (snapshot-driven).
+      summary: Extensions overview (aggregated)
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Restrict to a cluster
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 100, max 1000)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search by extension name (substring)
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: 'Filter by status: active|inactive|missing|unknown'
+      - in: query
+        name: version
+        schema:
+          type: string
+        description: Filter rows where this version exists
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsOverviewResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/extensions/overview/databases/:
+    get:
+      operationId: v2_extensions_overview_databases_retrieve
+      description: List databases for a given extension name/version/status (snapshot-driven).
+      summary: Extensions overview drill-down (databases)
+      parameters:
+      - in: query
+        name: cluster_id
+        schema:
+          type: string
+        description: Restrict to a cluster
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 100, max 1000)
+      - in: query
+        name: name
+        schema:
+          type: string
+        description: Extension name (exact match)
+        required: true
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: 'Filter by status: active|inactive|missing|unknown'
+      - in: query
+        name: version
+        schema:
+          type: string
+        description: Filter by exact version
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsOverviewDatabasesResponse'
+          description: ''
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/files/delete/{file_id}/:
     delete:
       operationId: v2_files_delete_destroy
@@ -2300,15 +2538,6 @@ paths:
           type: string
         description: Driver name (cli/ibcmd)
         required: true
-      - in: query
-        name: mode
-        schema:
-          type: string
-          enum:
-          - guided
-          - raw
-        description: Editor mode (guided/raw). In raw mode, base catalog is loaded from base alias latest.
-        required: false
       tags:
       - v2
       security:
@@ -4924,6 +5153,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/CommandSchemasAuditListResponse'
           description: ''
+  /api/v2/settings/command-schemas/base/update/:
+    post:
+      operationId: v2_settings_command_schemas_base_update_create
+      description: |-
+        Upload new base catalog version (v2) and move base alias latest only (approved is not touched) (staff-only). Requires reason.
+
+        Supports optimistic concurrency via If-Match header or expected_etag in request body.
+      summary: Update command schemas base (v2)
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandSchemasBaseUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '409':
+          description: Conflict
   /api/v2/settings/command-schemas/diff/:
     post:
       operationId: v2_settings_command_schemas_diff_create
@@ -4979,6 +5250,12 @@ paths:
           type: string
         description: Driver name (cli/ibcmd)
         required: true
+      - in: query
+        name: mode
+        schema:
+          type: string
+        description: Editor mode (guided/raw). In raw mode, base catalog is loaded
+          from base alias latest.
       tags:
       - v2
       security:
@@ -5001,53 +5278,11 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-  /api/v2/settings/command-schemas/base/update/:
-    post:
-      operationId: v2_settings_command_schemas_base_update_create
-      description: |-
-        Upload new base catalog version (v2) and move base alias `latest` only (staff-only). Requires reason.
-
-        Supports optimistic concurrency via If-Match header or expected_etag in request body.
-      summary: Update command schemas base (v2)
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/CommandSchemasBaseUpdateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CommandSchemasBaseUpdateResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '409':
-          description: Conflict
   /api/v2/settings/command-schemas/effective/update/:
     post:
       operationId: v2_settings_command_schemas_effective_update_create
       description: |-
-        DANGEROUS: Replace effective catalog by uploading it as a new base version (move `latest` + `approved`) and resetting overrides (staff-only). Requires reason.
+        DANGEROUS: Replace effective catalog by uploading it as a new base version and resetting overrides (staff-only). Requires reason.
 
         Supports optimistic concurrency via If-Match header or expected_etag in request body.
       summary: Update command schemas effective (v2)
@@ -5725,6 +5960,65 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/ui/action-catalog/:
+    get:
+      operationId: v2_ui_action_catalog_retrieve
+      description: Returns effective action catalog for the current user (RBAC + driver
+        catalogs + workflows).
+      summary: Get effective action catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/ui/execution-plan/preview/:
+    post:
+      operationId: v2_ui_execution_plan_preview_create
+      description: Build safe Execution Plan + Binding Provenance (staff-only).
+      summary: Preview execution plan
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPlanWithBindings'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/ui/table-metadata/:
     get:
       operationId: v2_ui_table_metadata_retrieve
@@ -5763,69 +6057,6 @@ paths:
           description: ''
         '401':
           description: Unauthorized
-  /api/v2/ui/action-catalog/:
-    get:
-      operationId: v2_ui_action_catalog_retrieve
-      description: Returns effective action catalog for the current user (RBAC + driver catalogs + workflows).
-      summary: Get effective action catalog
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionCatalogResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-  /api/v2/ui/execution-plan/preview/:
-    post:
-      operationId: v2_ui_execution_plan_preview_create
-      description: |-
-        Build safe Execution Plan + Binding Provenance for an executor without creating an operation/execution.
-
-        Notes:
-        - Intended for staff-only UI (Action Catalog editor, Databases drawer).
-        - Response MUST NOT contain raw secret values.
-      summary: Preview execution plan
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExecutionPlanPreviewRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExecutionPlanWithBindings'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
   /api/v2/users/create/:
     post:
       operationId: v2_users_create_create
@@ -6739,6 +6970,67 @@ paths:
           description: Stream already active
 components:
   schemas:
+    ActionCatalogAction:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        contexts:
+          type: array
+          items:
+            type: string
+        executor:
+          $ref: '#/components/schemas/ActionCatalogExecutor'
+      required:
+      - contexts
+      - executor
+      - id
+      - label
+    ActionCatalogExecutor:
+      type: object
+      properties:
+        kind:
+          type: string
+        driver:
+          type: string
+        command_id:
+          type: string
+        workflow_id:
+          type: string
+        mode:
+          type: string
+        params:
+          type: object
+          additionalProperties: {}
+        additional_args:
+          type: array
+          items:
+            type: string
+        stdin:
+          type: string
+        fixed:
+          $ref: '#/components/schemas/ActionCatalogExecutorFixed'
+      required:
+      - kind
+    ActionCatalogExecutorFixed:
+      type: object
+      properties:
+        confirm_dangerous:
+          type: boolean
+        timeout_seconds:
+          type: integer
+    ActionCatalogResponse:
+      type: object
+      properties:
+        catalog_version:
+          type: integer
+        extensions:
+          $ref: '#/components/schemas/ExtensionsActionCatalog'
+      required:
+      - catalog_version
+      - extensions
     AdminAuditLogItem:
       type: object
       properties:
@@ -6815,12 +7107,6 @@ components:
           nullable: true
         purge_state:
           type: string
-          enum:
-          - none
-          - scheduled
-          - blocked
-          - running
-          - failed
         purge_after:
           type: string
           format: date-time
@@ -6844,141 +7130,6 @@ components:
       - kind
       - name
       - purge_state
-    ArtifactPurgeBlocker:
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-          - batch_operation
-          - workflow_execution
-        id:
-          type: string
-        status:
-          type: string
-        name:
-          type: string
-        details:
-          type: string
-      required:
-      - id
-      - status
-      - type
-    ArtifactPurgeJob:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        artifact_id:
-          type: string
-          format: uuid
-        mode:
-          type: string
-          enum:
-          - manual
-          - ttl
-        status:
-          type: string
-          enum:
-          - queued
-          - running
-          - success
-          - failed
-        reason:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        total_objects:
-          type: integer
-        deleted_objects:
-          type: integer
-        total_bytes:
-          type: integer
-          format: int64
-        deleted_bytes:
-          type: integer
-          format: int64
-        error_code:
-          type: string
-          nullable: true
-        error_message:
-          type: string
-          nullable: true
-      required:
-      - artifact_id
-      - created_at
-      - deleted_bytes
-      - deleted_objects
-      - id
-      - mode
-      - status
-      - total_bytes
-      - total_objects
-    ArtifactPurgePlan:
-      type: object
-      properties:
-        artifact_id:
-          type: string
-          format: uuid
-        versions_count:
-          type: integer
-        aliases_count:
-          type: integer
-        total_bytes:
-          type: integer
-          format: int64
-        storage_keys:
-          type: array
-          items:
-            type: string
-        storage_keys_total:
-          type: integer
-        prefix:
-          type: string
-      required:
-      - aliases_count
-      - artifact_id
-      - prefix
-      - storage_keys
-      - storage_keys_total
-      - total_bytes
-      - versions_count
-    ArtifactPurgeRequest:
-      type: object
-      properties:
-        reason:
-          type: string
-        dry_run:
-          type: boolean
-          default: false
-    ArtifactPurgeResponse:
-      type: object
-      properties:
-        job_id:
-          type: string
-          format: uuid
-          nullable: true
-        plan:
-          $ref: '#/components/schemas/ArtifactPurgePlan'
-        blockers:
-          type: array
-          items:
-            $ref: '#/components/schemas/ArtifactPurgeBlocker'
-      required:
-      - blockers
-      - job_id
-      - plan
     ArtifactAlias:
       type: object
       properties:
@@ -7185,6 +7336,133 @@ components:
       required:
       - created
       - permission
+    ArtifactPurgeBlocker:
+      type: object
+      properties:
+        type:
+          enum:
+          - batch_operation
+          - workflow_execution
+          type: string
+          description: |-
+            * `batch_operation` - batch_operation
+            * `workflow_execution` - workflow_execution
+          x-spec-enum-id: a58e5a11bda4f638
+        id:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+          default: ''
+        details:
+          type: string
+          default: ''
+      required:
+      - id
+      - status
+      - type
+    ArtifactPurgeJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_objects:
+          type: integer
+        deleted_objects:
+          type: integer
+        total_bytes:
+          type: integer
+        deleted_bytes:
+          type: integer
+        error_code:
+          type: string
+        error_message:
+          type: string
+      required:
+      - artifact_id
+      - created_at
+      - deleted_bytes
+      - deleted_objects
+      - id
+      - mode
+      - status
+      - total_bytes
+      - total_objects
+    ArtifactPurgePlan:
+      type: object
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        versions_count:
+          type: integer
+        aliases_count:
+          type: integer
+        total_bytes:
+          type: integer
+        storage_keys:
+          type: array
+          items:
+            type: string
+        storage_keys_total:
+          type: integer
+        prefix:
+          type: string
+      required:
+      - aliases_count
+      - artifact_id
+      - prefix
+      - storage_keys
+      - storage_keys_total
+      - total_bytes
+      - versions_count
+    ArtifactPurgeRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+        dry_run:
+          type: boolean
+          default: false
+    ArtifactPurgeResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          nullable: true
+        plan:
+          $ref: '#/components/schemas/ArtifactPurgePlan'
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactPurgeBlocker'
+      required:
+      - blockers
+      - plan
     ArtifactRef:
       type: object
       properties:
@@ -8211,6 +8489,43 @@ components:
       - outcome
       - target_id
       - target_type
+    CommandSchemasBaseUpdateRequest:
+      type: object
+      properties:
+        driver:
+          enum:
+          - cli
+          - ibcmd
+          type: string
+          description: |-
+            * `cli` - cli
+            * `ibcmd` - ibcmd
+          x-spec-enum-id: 04e91cd3f4c47669
+        catalog:
+          type: object
+          additionalProperties: {}
+        reason:
+          type: string
+        expected_etag:
+          type: string
+          nullable: true
+      required:
+      - catalog
+      - driver
+      - reason
+    CommandSchemasBaseUpdateResponse:
+      type: object
+      properties:
+        driver:
+          type: string
+        base_version:
+          type: string
+        etag:
+          type: string
+      required:
+      - base_version
+      - driver
+      - etag
     CommandSchemasDiffItem:
       type: object
       properties:
@@ -8292,43 +8607,6 @@ components:
       - driver
       - etag
       - overrides
-    CommandSchemasBaseUpdateRequest:
-      type: object
-      properties:
-        driver:
-          enum:
-          - cli
-          - ibcmd
-          type: string
-          description: |-
-            * `cli` - cli
-            * `ibcmd` - ibcmd
-          x-spec-enum-id: 04e91cd3f4c47669
-        catalog:
-          type: object
-          additionalProperties: {}
-        reason:
-          type: string
-        expected_etag:
-          type: string
-          nullable: true
-      required:
-      - catalog
-      - driver
-      - reason
-    CommandSchemasBaseUpdateResponse:
-      type: object
-      properties:
-        driver:
-          type: string
-        base_version:
-          type: string
-        etag:
-          type: string
-      required:
-      - base_version
-      - driver
-      - etag
     CommandSchemasEffectiveUpdateRequest:
       type: object
       properties:
@@ -8531,11 +8809,13 @@ components:
             * `manual` - manual
           x-spec-enum-id: bd50d848143873c7
           default: guided
+        connection:
+          type: object
+          additionalProperties: {}
+          nullable: true
         params:
           type: object
           additionalProperties: {}
-        connection:
-          $ref: '#/components/schemas/IbcmdCliConnection'
         additional_args:
           type: array
           items:
@@ -8746,6 +9026,7 @@ components:
         title:
           type: string
           maxLength: 255
+        payload: {}
       required:
       - command_id
       - driver
@@ -9114,134 +9395,6 @@ components:
           description: Cluster info if database belongs to a cluster
       required:
       - database
-    DatabaseExtensionsSnapshotResponse:
-      type: object
-      description: Response for get_extensions_snapshot endpoint.
-      properties:
-        database_id:
-          type: string
-          format: uuid
-          description: Database UUID
-        snapshot:
-          type: object
-          additionalProperties: {}
-          description: Latest known extensions snapshot (empty object if not available)
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-        source_operation_id:
-          type: string
-      required:
-      - database_id
-      - snapshot
-    ExtensionsOverviewResponse:
-      type: object
-      description: Aggregated extensions overview across accessible databases.
-      properties:
-        extensions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionsOverviewRow'
-        count:
-          type: integer
-        total:
-          type: integer
-        total_databases:
-          type: integer
-      required:
-      - extensions
-      - count
-      - total
-      - total_databases
-    ExtensionsOverviewRow:
-      type: object
-      properties:
-        name:
-          type: string
-        installed_count:
-          type: integer
-        active_count:
-          type: integer
-        inactive_count:
-          type: integer
-        missing_count:
-          type: integer
-        unknown_count:
-          type: integer
-        versions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionsOverviewVersionCount'
-        latest_snapshot_at:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-      - name
-      - installed_count
-      - active_count
-      - inactive_count
-      - missing_count
-      - unknown_count
-      - versions
-    ExtensionsOverviewVersionCount:
-      type: object
-      properties:
-        version:
-          type: string
-          nullable: true
-        count:
-          type: integer
-      required:
-      - version
-      - count
-    ExtensionsOverviewDatabasesResponse:
-      type: object
-      properties:
-        databases:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionsOverviewDatabaseRow'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-      - databases
-      - count
-      - total
-    ExtensionsOverviewDatabaseRow:
-      type: object
-      properties:
-        database_id:
-          type: string
-          format: uuid
-        database_name:
-          type: string
-        cluster_id:
-          type: string
-          format: uuid
-          nullable: true
-        cluster_name:
-          type: string
-        status:
-          type: string
-        version:
-          type: string
-          nullable: true
-        snapshot_updated_at:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-      - database_id
-      - database_name
-      - cluster_id
-      - cluster_name
-      - status
-      - version
-      - snapshot_updated_at
     DatabaseErrorDetail:
       type: object
       description: Error detail structure.
@@ -9270,6 +9423,25 @@ components:
           $ref: '#/components/schemas/DatabaseErrorDetail'
       required:
       - error
+    DatabaseExtensionsSnapshotResponse:
+      type: object
+      description: Response for get_extensions_snapshot endpoint.
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: Database UUID
+        snapshot:
+          description: Latest known extensions snapshot (empty object if not available)
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        source_operation_id:
+          type: string
+      required:
+      - database_id
+      - snapshot
     DatabaseGroupPermission:
       type: object
       properties:
@@ -9432,6 +9604,154 @@ components:
       - message
       - stream_url
       - ticket
+    DbmsUserListResponse:
+      type: object
+      description: Response for list_dbms_users endpoint.
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/DbmsUserMapping'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - total
+      - users
+    DbmsUserMapping:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        database_id:
+          type: string
+          readOnly: true
+        user:
+          allOf:
+          - $ref: '#/components/schemas/UserRef'
+          nullable: true
+        db_username:
+          type: string
+          maxLength: 128
+        db_password_configured:
+          type: boolean
+          readOnly: true
+        auth_type:
+          enum:
+          - local
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 2b98a5ef99ffe7da
+        is_service:
+          type: boolean
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - database_id
+      - db_password_configured
+      - db_username
+      - id
+      - updated_at
+    DbmsUserMappingCreate:
+      type: object
+      properties:
+        database_id:
+          type: string
+        user_id:
+          type: integer
+          nullable: true
+        db_username:
+          type: string
+        db_password:
+          type: string
+          writeOnly: true
+        auth_type:
+          enum:
+          - local
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 2b98a5ef99ffe7da
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - database_id
+      - db_username
+    DbmsUserMappingDelete:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    DbmsUserMappingUpdate:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        db_username:
+          type: string
+        auth_type:
+          enum:
+          - local
+          - service
+          - other
+          type: string
+          description: |-
+            * `local` - Local
+            * `service` - Service
+            * `other` - Other
+          x-spec-enum-id: 2b98a5ef99ffe7da
+        is_service:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - id
+    DbmsUserPasswordReset:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    DbmsUserPasswordSet:
+      type: object
+      properties:
+        id:
+          type: integer
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - id
+      - password
     DeleteDriverCommandShortcutRequest:
       type: object
       properties:
@@ -9594,6 +9914,11 @@ components:
         command_id:
           type: string
         title:
+          type: string
+        payload: {}
+        catalog_base_version:
+          type: string
+        catalog_overrides_version:
           type: string
         created_at:
           type: string
@@ -9969,6 +10294,10 @@ components:
           description: Anchor database for global commands (RBAC + infobase user mapping)
         connection:
           $ref: '#/components/schemas/IbcmdCliConnection'
+        ib_auth:
+          $ref: '#/components/schemas/IbcmdCliIbAuth'
+        dbms_auth:
+          $ref: '#/components/schemas/IbcmdCliDbmsAuth'
         params:
           type: object
           additionalProperties: {}
@@ -10112,6 +10441,56 @@ components:
       - message
       - mode
       - status
+    ExecutionBinding:
+      type: object
+      description: |-
+        Binding provenance for execution plan.
+
+        IMPORTANT: This structure must never contain raw secret values.
+      properties:
+        target_ref:
+          type: string
+          description: Where the value is applied (flag/argv index/workflow path).
+        source_ref:
+          type: string
+          description: Where the value comes from (typed source reference).
+        resolve_at:
+          enum:
+          - api
+          - worker
+          type: string
+          x-spec-enum-id: 322e5807054b95a4
+          description: |-
+            Where the binding is resolved.
+
+            * `api` - api
+            * `worker` - worker
+        sensitive:
+          type: boolean
+          description: True if the source is secret (value must not be stored/logged).
+        status:
+          enum:
+          - applied
+          - skipped
+          - unresolved
+          type: string
+          x-spec-enum-id: 6a95160f9de2839c
+          description: |-
+            Binding status. Preview may include unresolved bindings.
+
+            * `applied` - applied
+            * `skipped` - skipped
+            * `unresolved` - unresolved
+        reason:
+          type: string
+          nullable: true
+          description: Reason for skipped/unresolved (e.g., missing_source, blocked_by_allowlist).
+      required:
+      - resolve_at
+      - sensitive
+      - source_ref
+      - status
+      - target_ref
     ExecutionCancelRequest:
       type: object
       description: Request for cancel_execution endpoint.
@@ -10177,6 +10556,78 @@ components:
       - count
       - executions
       - total
+    ExecutionPlan:
+      type: object
+      description: |-
+        Safe execution plan representation.
+
+        IMPORTANT: This structure must never contain raw secret values.
+      properties:
+        kind:
+          enum:
+          - ibcmd_cli
+          - designer_cli
+          - workflow
+          type: string
+          description: |-
+            * `ibcmd_cli` - ibcmd_cli
+            * `designer_cli` - designer_cli
+            * `workflow` - workflow
+          x-spec-enum-id: c85d7aca906e8c83
+        plan_version:
+          type: integer
+          default: 1
+        argv_masked:
+          type: array
+          items:
+            type: string
+        stdin_masked:
+          type: string
+          nullable: true
+        workflow_id:
+          type: string
+          nullable: true
+        input_context_masked:
+          type: object
+          additionalProperties: {}
+        targets:
+          type: object
+          additionalProperties: {}
+          description: Execution targets summary (e.g., scope, database_ids count).
+      required:
+      - kind
+    ExecutionPlanPreviewRequest:
+      type: object
+      properties:
+        executor:
+          $ref: '#/components/schemas/ActionCatalogExecutor'
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 500
+        auth_database_id:
+          type: string
+          format: uuid
+        connection:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - executor
+    ExecutionPlanWithBindings:
+      type: object
+      properties:
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
+      required:
+      - bindings
+      - execution_plan
     ExecutionStepsResponse:
       type: object
       description: Response for get_execution_steps endpoint.
@@ -10190,6 +10641,107 @@ components:
       required:
       - count
       - steps
+    ExtensionsActionCatalog:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCatalogAction'
+      required:
+      - actions
+    ExtensionsOverviewDatabaseRow:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        cluster_name:
+          type: string
+        status:
+          type: string
+        version:
+          type: string
+          nullable: true
+        snapshot_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - database_id
+      - database_name
+      - status
+    ExtensionsOverviewDatabasesResponse:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsOverviewDatabaseRow'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - databases
+      - total
+    ExtensionsOverviewResponse:
+      type: object
+      properties:
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsOverviewRow'
+        count:
+          type: integer
+        total:
+          type: integer
+        total_databases:
+          type: integer
+      required:
+      - count
+      - extensions
+      - total
+      - total_databases
+    ExtensionsOverviewRow:
+      type: object
+      properties:
+        name:
+          type: string
+        installed_count:
+          type: integer
+        active_count:
+          type: integer
+        inactive_count:
+          type: integer
+        missing_count:
+          type: integer
+        unknown_count:
+          type: integer
+        versions:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        latest_snapshot_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - active_count
+      - inactive_count
+      - installed_count
+      - missing_count
+      - name
+      - unknown_count
+      - versions
     FileDeleteResponse:
       type: object
       description: Response for file delete endpoint.
@@ -10547,11 +11099,59 @@ components:
           type: string
         db_name:
           type: string
+        db_path:
+          type: string
         db_user:
           type: string
         db_pwd:
           type: string
           writeOnly: true
+        ftext2_data:
+          type: string
+        ftext_data:
+          type: string
+        lock:
+          type: string
+        log_data:
+          type: string
+        openid_data:
+          type: string
+        session_data:
+          type: string
+        stt_data:
+          type: string
+        system:
+          type: string
+        temp:
+          type: string
+        users_data:
+          type: string
+    IbcmdCliDbmsAuth:
+      type: object
+      properties:
+        strategy:
+          enum:
+          - actor
+          - service
+          type: string
+          description: |-
+            * `actor` - actor
+            * `service` - service
+          x-spec-enum-id: 4476b54fec6d0650
+    IbcmdCliIbAuth:
+      type: object
+      properties:
+        strategy:
+          enum:
+          - actor
+          - service
+          - none
+          type: string
+          description: |-
+            * `actor` - actor
+            * `service` - service
+            * `none` - none
+          x-spec-enum-id: 9881a45e36c57532
     InfobaseUserListResponse:
       type: object
       description: Response for list_infobase_users endpoint.
@@ -12266,178 +12866,6 @@ components:
       - columns
       - table_id
       - version
-    ActionCatalogExecutorFixed:
-      type: object
-      properties:
-        confirm_dangerous:
-          type: boolean
-        timeout_seconds:
-          type: integer
-      additionalProperties: false
-    ActionCatalogExecutor:
-      type: object
-      properties:
-        kind:
-          type: string
-        driver:
-          type: string
-        command_id:
-          type: string
-        workflow_id:
-          type: string
-        mode:
-          type: string
-        params:
-          type: object
-        additional_args:
-          type: array
-          items:
-            type: string
-        stdin:
-          type: string
-        fixed:
-          $ref: '#/components/schemas/ActionCatalogExecutorFixed'
-      required:
-      - kind
-    ActionCatalogAction:
-      type: object
-      properties:
-        id:
-          type: string
-        label:
-          type: string
-        contexts:
-          type: array
-          items:
-            type: string
-        executor:
-          $ref: '#/components/schemas/ActionCatalogExecutor'
-      required:
-      - id
-      - label
-      - contexts
-      - executor
-    ExtensionsActionCatalog:
-      type: object
-      properties:
-        actions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ActionCatalogAction'
-      required:
-      - actions
-    ActionCatalogResponse:
-      type: object
-      properties:
-        catalog_version:
-          type: integer
-        extensions:
-          $ref: '#/components/schemas/ExtensionsActionCatalog'
-      required:
-      - catalog_version
-      - extensions
-    ExecutionBinding:
-      type: object
-      description: Binding provenance item (never contains raw secret values).
-      properties:
-        target_ref:
-          type: string
-          description: Where the value is applied (flag/argv index/workflow path).
-        source_ref:
-          type: string
-          description: Where the value comes from (typed source reference).
-        resolve_at:
-          enum:
-          - api
-          - worker
-          type: string
-        sensitive:
-          type: boolean
-          description: True if the source is secret (value must not be stored/logged).
-        status:
-          enum:
-          - applied
-          - skipped
-          - unresolved
-          type: string
-        reason:
-          type: string
-          nullable: true
-          description: Reason for skipped/unresolved (e.g., missing_source, blocked_by_allowlist).
-      required:
-      - resolve_at
-      - sensitive
-      - source_ref
-      - status
-      - target_ref
-    ExecutionPlan:
-      type: object
-      description: Safe execution plan representation (never contains raw secret values).
-      properties:
-        kind:
-          enum:
-          - ibcmd_cli
-          - designer_cli
-          - workflow
-          type: string
-        plan_version:
-          type: integer
-          default: 1
-        argv_masked:
-          type: array
-          items:
-            type: string
-        stdin_masked:
-          type: string
-          nullable: true
-        workflow_id:
-          type: string
-          nullable: true
-        input_context_masked:
-          type: object
-          additionalProperties: {}
-        targets:
-          type: object
-          additionalProperties: {}
-          description: Execution targets summary (e.g., scope, database_ids count).
-      required:
-      - kind
-    ExecutionPlanPreviewRequest:
-      type: object
-      description: Request for execution plan preview (staff-only).
-      properties:
-        executor:
-          $ref: '#/components/schemas/ActionCatalogExecutor'
-        database_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: Optional list of database UUIDs (per_database / bulk).
-          maxItems: 500
-        auth_database_id:
-          type: string
-          format: uuid
-          description: Anchor database for global commands (optional).
-        connection:
-          type: object
-          additionalProperties: {}
-          description: Optional connection options (driver-level).
-      required:
-      - executor
-    ExecutionPlanWithBindings:
-      type: object
-      description: Preview/persisted execution plan with binding provenance.
-      properties:
-        execution_plan:
-          $ref: '#/components/schemas/ExecutionPlan'
-        bindings:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExecutionBinding'
-      required:
-      - bindings
-      - execution_plan
     Task:
       type: object
       description: Serializer for Task model.

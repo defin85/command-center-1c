@@ -16,6 +16,7 @@ import redis.asyncio as redis_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -1524,17 +1525,19 @@ def create_dbms_user(request):
         }, status=400)
 
     try:
-        mapping = DbmsUserMapping.objects.create(
-            database=db,
-            user=user,
-            db_username=data['db_username'].strip(),
-            db_password=data.get('db_password', ''),
-            auth_type=data.get('auth_type', DbmsUserMapping._meta.get_field('auth_type').default),
-            is_service=is_service,
-            notes=data.get('notes', '').strip(),
-            created_by=request.user,
-            updated_by=request.user,
-        )
+        # Keep DB errors isolated (esp. under transactional test runners).
+        with transaction.atomic():
+            mapping = DbmsUserMapping.objects.create(
+                database=db,
+                user=user,
+                db_username=data['db_username'].strip(),
+                db_password=data.get('db_password', ''),
+                auth_type=data.get('auth_type', DbmsUserMapping._meta.get_field('auth_type').default),
+                is_service=is_service,
+                notes=data.get('notes', '').strip(),
+                created_by=request.user,
+                updated_by=request.user,
+            )
     except IntegrityError:
         return Response({
             'success': False,
@@ -1634,7 +1637,9 @@ def update_dbms_user(request):
 
     mapping.updated_by = request.user
     try:
-        mapping.save()
+        # Keep DB errors isolated (esp. under transactional test runners).
+        with transaction.atomic():
+            mapping.save()
     except IntegrityError:
         return Response({
             'success': False,

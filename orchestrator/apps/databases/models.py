@@ -970,7 +970,7 @@ class DbmsUserMapping(models.Model):
                 condition=Q(is_service=True),
             ),
             models.CheckConstraint(
-                check=Q(user__isnull=False) | Q(is_service=True),
+                condition=Q(user__isnull=False) | Q(is_service=True),
                 name="dbms_map_user_or_service",
             ),
         ]

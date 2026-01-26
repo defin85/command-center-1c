@@ -76,6 +76,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	credsCtx := credentials.WithRequestedBy(ctx, strings.TrimSpace(msg.Metadata.CreatedBy))
 	if msg.OperationType == "ibcmd_cli" {
 		credsCtx = credentials.WithIbAuthStrategy(credsCtx, extractIbcmdIbAuthStrategy(msg.Payload.Data))
+		credsCtx = credentials.WithDbmsAuthStrategy(credsCtx, extractIbcmdDbmsAuthStrategy(msg.Payload.Data))
 	}
 	creds, err := d.fetchCredentials(credsCtx, databaseID)
 	if err != nil {
@@ -519,14 +520,23 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			})
 		}
 
-		withDBArgs, dbBindings, err := injectDbmsOfflineArgs(resolvedArgs, creds)
-		if err != nil {
-			combinedInputCleanup()
-			if outputCleanup != nil {
-				outputCleanup()
+			dbmsAuthStrategy := extractIbcmdDbmsAuthStrategy(data)
+			if dbmsAuthStrategy == "service" && commandID != "" && !isServiceDbmsAuthAllowed(commandID) {
+				return nil, fmt.Errorf("dbms_auth.strategy=service is not allowed for command_id=%s", commandID)
 			}
-			return nil, err
-		}
+			dbSourceRef := "credentials.db_user_mapping"
+			if dbmsAuthStrategy == "service" {
+				dbSourceRef = "credentials.db_service_mapping"
+			}
+
+			withDBArgs, dbBindings, err := injectDbmsOfflineArgs(resolvedArgs, creds, dbSourceRef)
+			if err != nil {
+				combinedInputCleanup()
+				if outputCleanup != nil {
+					outputCleanup()
+				}
+				return nil, err
+			}
 		if len(dbBindings) > 0 {
 			runtimeBindings = append(runtimeBindings, dbBindings...)
 		}
@@ -734,7 +744,7 @@ func hasAnyFlag(args []string, flags ...string) bool {
 	return false
 }
 
-func injectDbmsOfflineArgs(args []string, creds *credentials.DatabaseCredentials) ([]string, []map[string]interface{}, error) {
+func injectDbmsOfflineArgs(args []string, creds *credentials.DatabaseCredentials, sourceRef string) ([]string, []map[string]interface{}, error) {
 	if len(args) == 0 {
 		return args, nil, nil
 	}
@@ -757,10 +767,23 @@ func injectDbmsOfflineArgs(args []string, creds *credentials.DatabaseCredentials
 	}
 
 	hasDBPath := hasAnyFlag(args, "--db-path", "--database-path")
+	if hasDBPath {
+		// File infobase: no DBMS credentials should be injected/required.
+		return args, []map[string]interface{}{
+			{
+				"target_ref": "dbms_offline",
+				"source_ref": "credentials.db_metadata",
+				"resolve_at": "worker",
+				"sensitive":  false,
+				"status":     "skipped",
+				"reason":     "file_db_path",
+			},
+		}, nil
+	}
 
 	needsDBMS := !hasAnyFlag(args, "--dbms", "--database-management-system")
 	needsDBServer := !hasAnyFlag(args, "--db-server", "--database-server")
-	needsDBName := !hasDBPath && !hasAnyFlag(args, "--db-name", "--database-name")
+	needsDBName := !hasAnyFlag(args, "--db-name", "--database-name")
 	needsDBUser := !hasAnyFlag(args, "--db-user", "--database-user")
 	needsDBPwd := !hasAnyFlag(args, "--db-pwd", "--database-password")
 
@@ -867,7 +890,7 @@ func injectDbmsOfflineArgs(args []string, creds *credentials.DatabaseCredentials
 		injected = append(injected, fmt.Sprintf("--db-user=%s", dbUser))
 		bindings = append(bindings, map[string]interface{}{
 			"target_ref": "flag:--db-user",
-			"source_ref": "credentials.db_user_mapping",
+			"source_ref": sourceRef,
 			"resolve_at": "worker",
 			"sensitive":  false,
 			"status":     "applied",
@@ -877,7 +900,7 @@ func injectDbmsOfflineArgs(args []string, creds *credentials.DatabaseCredentials
 		injected = append(injected, fmt.Sprintf("--db-pwd=%s", dbPwd))
 		bindings = append(bindings, map[string]interface{}{
 			"target_ref": "flag:--db-pwd",
-			"source_ref": "credentials.db_user_mapping",
+			"source_ref": sourceRef,
 			"resolve_at": "worker",
 			"sensitive":  true,
 			"status":     "applied",
@@ -916,6 +939,11 @@ func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
 		}
 	}
 	return false
+}
+
+func isServiceDbmsAuthAllowed(commandID string) bool {
+	// Keep this intentionally tight; expand only with explicit approval.
+	return commandID == "infobase.extension.list" || commandID == "infobase.extension.info"
 }
 
 func isServiceIbAuthAllowed(commandID string) bool {
@@ -959,6 +987,31 @@ func extractIbcmdIbAuthStrategy(data map[string]interface{}) string {
 	strategy := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", strategyRaw)))
 	switch strategy {
 	case "actor", "service", "none":
+		return strategy
+	default:
+		return "actor"
+	}
+}
+
+func extractIbcmdDbmsAuthStrategy(data map[string]interface{}) string {
+	if data == nil {
+		return "actor"
+	}
+	raw, ok := data["dbms_auth"]
+	if !ok || raw == nil {
+		return "actor"
+	}
+	dbmsAuth, ok := raw.(map[string]interface{})
+	if !ok || dbmsAuth == nil {
+		return "actor"
+	}
+	strategyRaw, ok := dbmsAuth["strategy"]
+	if !ok || strategyRaw == nil {
+		return "actor"
+	}
+	strategy := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", strategyRaw)))
+	switch strategy {
+	case "actor", "service":
 		return strategy
 	default:
 		return "actor"

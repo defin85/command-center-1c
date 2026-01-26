@@ -308,6 +308,103 @@ func TestBuildRequestIbcmdCliServiceStrategyFailsClosedOutsideAllowlist(t *testi
 	}
 }
 
+func TestBuildRequestIbcmdCliDbmsServiceStrategyUsesServiceMappingSourceRefForExtensionsList(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.extension.list",
+				"argv":       []string{"infobase", "extension", "list"},
+				"dbms_auth":  map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "svc_db",
+			DBPassword: "svcpwd",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+
+	findBinding := func(targetRef string) map[string]interface{} {
+		for _, raw := range req.RuntimeBindings {
+			if raw == nil {
+				continue
+			}
+			if v, ok := raw["target_ref"]; ok && v == targetRef {
+				return raw
+			}
+		}
+		return nil
+	}
+
+	dbUser := findBinding("flag:--db-user")
+	if dbUser == nil {
+		t.Fatalf("expected flag:--db-user binding, got %#v", req.RuntimeBindings)
+	}
+	if dbUser["source_ref"] != "credentials.db_service_mapping" {
+		t.Fatalf("unexpected db user source_ref: %#v", dbUser)
+	}
+
+	dbPwd := findBinding("flag:--db-pwd")
+	if dbPwd == nil {
+		t.Fatalf("expected flag:--db-pwd binding, got %#v", req.RuntimeBindings)
+	}
+	if dbPwd["source_ref"] != "credentials.db_service_mapping" {
+		t.Fatalf("unexpected db password source_ref: %#v", dbPwd)
+	}
+}
+
+func TestBuildRequestIbcmdCliDbmsServiceStrategyFailsClosedOutsideAllowlist(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.dump",
+				"argv":       []string{"infobase", "dump"},
+				"dbms_auth":  map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	_, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "svc_db",
+			DBPassword: "svcpwd",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
+		nil,
+	)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestBuildRequestIbcmdCliNoneStrategySkipsInfobaseAuth(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",

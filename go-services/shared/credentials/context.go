@@ -6,6 +6,8 @@ type requesterKey struct{}
 
 type ibAuthStrategyKey struct{}
 
+type dbmsAuthStrategyKey struct{}
+
 // WithRequestedBy stores the CC username in context for credentials lookup.
 func WithRequestedBy(ctx context.Context, username string) context.Context {
 	if username == "" {
@@ -26,6 +28,18 @@ func WithIbAuthStrategy(ctx context.Context, strategy string) context.Context {
 	return context.WithValue(ctx, ibAuthStrategyKey{}, s)
 }
 
+// WithDbmsAuthStrategy stores DBMS auth strategy (actor|service) in context for credentials lookup.
+func WithDbmsAuthStrategy(ctx context.Context, strategy string) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	s := strategy
+	if s == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, dbmsAuthStrategyKey{}, s)
+}
+
 // RequestedByFromContext returns the CC username stored in context, if any.
 func RequestedByFromContext(ctx context.Context) string {
 	if ctx == nil {
@@ -44,6 +58,18 @@ func IbAuthStrategyFromContext(ctx context.Context) string {
 		return ""
 	}
 	value := ctx.Value(ibAuthStrategyKey{})
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// DbmsAuthStrategyFromContext returns the stored DBMS auth strategy (actor|service), if any.
+func DbmsAuthStrategyFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value := ctx.Value(dbmsAuthStrategyKey{})
 	if s, ok := value.(string); ok {
 		return s
 	}

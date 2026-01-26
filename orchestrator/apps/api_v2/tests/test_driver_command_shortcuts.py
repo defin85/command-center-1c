@@ -94,17 +94,38 @@ def test_driver_command_shortcuts_crud(monkeypatch):
 
     create_resp = c.post(
         "/api/v2/operations/create-command-shortcut/",
-        {"driver": "ibcmd", "command_id": "server.config.init", "title": "Init server config"},
+        {
+            "driver": "ibcmd",
+            "command_id": "server.config.init",
+            "title": "Init server config",
+            "payload": {
+                "version": 1,
+                "config": {
+                    "mode": "guided",
+                    "args_text": "",
+                    "stdin": "leak",
+                    "connection": {"offline": {"db_user": "admin", "db_pwd": "secret"}},
+                    "ib_auth": {"strategy": "actor", "user": "u", "password": "p"},
+                },
+            },
+        },
         format="json",
     )
     assert create_resp.status_code == 201
-    shortcut_id = create_resp.json()["id"]
+    created = create_resp.json()
+    shortcut_id = created["id"]
+    assert created.get("payload", {}).get("config", {}).get("stdin") is None
+    assert created.get("payload", {}).get("config", {}).get("connection", {}).get("offline", {}).get("db_user") is None
+    assert created.get("payload", {}).get("config", {}).get("connection", {}).get("offline", {}).get("db_pwd") is None
+    assert created.get("payload", {}).get("config", {}).get("ib_auth", {}).get("user") is None
+    assert created.get("payload", {}).get("config", {}).get("ib_auth", {}).get("password") is None
 
     list_resp = c.get("/api/v2/operations/list-command-shortcuts/", {"driver": "ibcmd"})
     assert list_resp.status_code == 200
     payload = list_resp.json()
     assert payload["count"] == 1
     assert payload["items"][0]["id"] == shortcut_id
+    assert payload["items"][0].get("payload", {}).get("config", {}).get("stdin") is None
 
     delete_resp = c.post(
         "/api/v2/operations/delete-command-shortcut/",

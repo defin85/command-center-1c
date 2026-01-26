@@ -429,6 +429,16 @@ def _ibcmd_driver_schema_fallback() -> dict[str, Any]:
                 "ui": {"aliases": ["-P"]},
             },
         },
+        "dbms_auth": {
+            "strategy": {
+                "kind": "enum",
+                "required": False,
+                "default": "actor",
+                "enum": ["actor", "service"],
+                "label": "DBMS auth strategy",
+                "description": "How to resolve DBMS credentials for offline connection: actor (per-user mapping) or service (service account).",
+            },
+        },
         "timeout_seconds": {
             "kind": "int",
             "required": False,
@@ -465,6 +475,7 @@ def _ibcmd_driver_schema_fallback() -> dict[str, Any]:
                     "id": "ibcmd.connection",
                     "title": "Connection",
                     "paths": [
+                        "dbms_auth.strategy",
                         "connection.remote",
                         "connection.pid",
                         "connection.offline.config",

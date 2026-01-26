@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
 from apps.artifacts.storage import ArtifactStorageClient
-from apps.databases.models import Database, DatabasePermission, PermissionLevel
+from apps.databases.models import Database, DatabasePermission, PermissionLevel, DbmsUserMapping
 from apps.operations.models import BatchOperation, Task
 from apps.operations.redis_client import redis_client
 from apps.operations.services import EnqueueResult, OperationsService
@@ -420,6 +420,9 @@ def test_execute_ibcmd_cli_allows_connection_offline_params_when_command_has_no_
     _grant_operation_permission(client, user, "execute_safe_operation")
     target_db = target_dbs[0]
     _allow_operate(user, target_db)
+    target_db.metadata = {"dbms": "PostgreSQL", "db_server": "localhost", "db_name": "testdb"}
+    target_db.save(update_fields=["metadata"])
+    DbmsUserMapping.objects.create(database=target_db, user=user, db_username="postgres", db_password="secret")
 
     monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
 
@@ -434,7 +437,7 @@ def test_execute_ibcmd_cli_allows_connection_offline_params_when_command_has_no_
         {
             "command_id": "infobase.extension.list",
             "database_ids": [target_db.id],
-            "connection": {"offline": {"db_user": "admin"}},
+            "connection": {"offline": {"dbms": "PostgreSQL"}},
         },
         format="json",
     )
@@ -443,7 +446,51 @@ def test_execute_ibcmd_cli_allows_connection_offline_params_when_command_has_no_
 
     op = BatchOperation.objects.get(id=op_id)
     argv = op.payload.get("data", {}).get("argv", [])
-    assert "--db-user=admin" in argv
+    assert "--dbms=PostgreSQL" in argv
+    assert all("--db-user" not in token.lower() for token in argv)
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_rejects_inline_dbms_credentials(client, user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(client, user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(user, target_db)
+
+    monkeypatch.setattr(redis_client, "check_global_target_lock", lambda _target_ref: False)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.extension.list",
+            "database_ids": [target_db.id],
+            "connection": {"offline": {"db_user": "admin"}},
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "DBMS_CREDS_NOT_ALLOWED"
 
 
 @pytest.mark.django_db
@@ -873,3 +920,134 @@ def test_execute_ibcmd_cli_service_rejected_for_non_allowlist(staff_client, staf
     payload = resp.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "IB_AUTH_SERVICE_NOT_ALLOWED"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_dbms_service_requires_permission(client, user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(client, user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(user, target_db)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.extension.list",
+            "database_ids": [target_db.id],
+            "connection": {"remote": "http://host:1545"},
+            "dbms_auth": {"strategy": "service"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 403
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_dbms_service_allowed_for_staff_on_allowlist(staff_client, staff_user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(staff_client, staff_user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(staff_user, target_db)
+
+    def fake_enqueue(_operation_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=_operation_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=_operation_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", fake_enqueue)
+
+    resp = staff_client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.extension.list",
+            "database_ids": [target_db.id],
+            "connection": {"remote": "http://host:1545"},
+            "dbms_auth": {"strategy": "service"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 202
+    op = BatchOperation.objects.get(id=resp.json()["operation_id"])
+    assert op.payload["data"]["dbms_auth"]["strategy"] == "service"
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_dbms_service_rejected_for_non_allowlist(staff_client, staff_user, target_dbs, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.dump": {
+                "label": "dump",
+                "description": "Dump",
+                "argv": ["infobase", "dump"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    _grant_operation_permission(staff_client, staff_user, "execute_safe_operation")
+    target_db = target_dbs[0]
+    _allow_operate(staff_user, target_db)
+
+    resp = staff_client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "infobase.dump",
+            "database_ids": [target_db.id],
+            "connection": {"remote": "http://host:1545"},
+            "dbms_auth": {"strategy": "service"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "DBMS_AUTH_SERVICE_NOT_ALLOWED"

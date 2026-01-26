@@ -86,6 +86,23 @@ def test_build_ibcmd_cli_argv_requires_required_param():
         build_ibcmd_cli_argv(command=command, params={}, additional_args=[])
 
 
+def test_build_ibcmd_cli_argv_required_flag_can_be_satisfied_by_pre_args():
+    command = {
+        "argv": ["server", "config", "init"],
+        "params_by_name": {
+            "remote": {"kind": "flag", "flag": "--remote", "expects_value": True, "required": True},
+        },
+    }
+
+    argv, _ = build_ibcmd_cli_argv(
+        command=command,
+        params={},
+        additional_args=[],
+        pre_args=["--remote=http://host:1545"],
+    )
+    assert argv == ["server", "config", "init", "--remote=http://host:1545"]
+
+
 def test_build_ibcmd_cli_argv_builds_positionals_in_order():
     command = {
         "argv": ["infobase", "extension", "update"],

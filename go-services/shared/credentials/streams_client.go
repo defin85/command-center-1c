@@ -215,6 +215,9 @@ func (c *StreamsClient) request(ctx context.Context, databaseID string) (*creden
 	if strategy := IbAuthStrategyFromContext(ctx); strategy != "" {
 		requestPayload["ib_auth_strategy"] = strategy
 	}
+	if strategy := DbmsAuthStrategyFromContext(ctx); strategy != "" {
+		requestPayload["dbms_auth_strategy"] = strategy
+	}
 
 	// Publish request
 	if err := c.redisClient.XAdd(ctx, &redis.XAddArgs{
