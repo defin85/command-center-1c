@@ -18,6 +18,7 @@
   - вводит правила резолва DBMS connection/creds для `ibcmd` per‑database (значения могут отличаться на каждом таргете) без передачи DBMS кредов из UI.
 - Worker:
   - инжектит DBMS креды в `argv` на рантайме на основе маппинга и конкретного таргета (и продолжает инжектить IB креды по `ib_auth.strategy` как сейчас).
+  - применяет “Configure” параметры к списку выбранных баз: одна операция → N задач, где часть offline‑параметров берётся per target (например `--db-name`), а часть — из общего шаблона (например `--dbms/--db-server`, если заданы).
 
 ## Impact
 - Affected specs:
@@ -30,4 +31,3 @@
   - `orchestrator/apps/operations/models/driver_command_shortcut.py` + API v2 views/serializers
   - `orchestrator/apps/databases/models.py` (+ migrations) и связанные сервисы/эндпоинты
   - `go-services/worker` (резолв и инжект DBMS creds per target для ibcmd)
-

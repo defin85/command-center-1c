@@ -27,6 +27,13 @@
 - **WHEN** операция выполняется
 - **THEN** каждый task использует свой `--db-name`, полученный из настроек/метаданных конкретной базы
 
+#### Scenario: Общий шаблон Configure дополняется per-target значениями
+- **GIVEN** пользователь выбрал N баз и задал `connection.offline.dbms` и `connection.offline.db_server` в Configure
+- **AND** `connection.offline.db_name` не задан явно в Configure
+- **WHEN** операция выполняется
+- **THEN** `--dbms` и `--db-server` берутся из Configure (общие значения)
+- **AND** `--db-name` берётся per target из настроек/метаданных базы
+
 ## MODIFIED Requirements
 ### Requirement: Семантика credential-флагов и одновременная передача DBMS + IB creds
 Система ДОЛЖНА (SHALL) формировать канонический `argv[]` для `ibcmd`, где одновременно присутствуют:
@@ -40,4 +47,3 @@
 - **GIVEN** `scope=per_database` и выбраны N таргетов
 - **WHEN** операция выполняется
 - **THEN** каждый таргет получает свой набор DBMS creds + IB creds в `argv[]`
-
