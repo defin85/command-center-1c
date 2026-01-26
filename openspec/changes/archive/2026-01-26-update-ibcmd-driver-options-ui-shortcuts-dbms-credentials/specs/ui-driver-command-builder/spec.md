@@ -11,6 +11,7 @@
 - **THEN** поля сгруппированы и доступны через сворачиваемые блоки (минимум: `Auth context`, `Connection`, `Execution`, `Advanced`)
 - **AND** по умолчанию показаны только “common” и/или заполненные поля, а “advanced” скрыты до явного действия пользователя
 
+## ADDED Requirements
 ### Requirement: DBMS креды не вводятся в DriverCommandBuilder
 Система ДОЛЖНА (SHALL) не отображать в `DriverCommandBuilder` поля для DBMS кредов (`connection.offline.db_user/db_pwd`) и не позволять вводить/сохранять их в UI state/shortcuts.
 
