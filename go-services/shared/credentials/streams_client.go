@@ -212,6 +212,9 @@ func (c *StreamsClient) request(ctx context.Context, databaseID string) (*creden
 	if requestedBy := RequestedByFromContext(ctx); requestedBy != "" {
 		requestPayload["created_by"] = requestedBy
 	}
+	if strategy := IbAuthStrategyFromContext(ctx); strategy != "" {
+		requestPayload["ib_auth_strategy"] = strategy
+	}
 
 	// Publish request
 	if err := c.redisClient.XAdd(ctx, &redis.XAddArgs{

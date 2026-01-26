@@ -139,6 +139,7 @@ class BatchOperation(models.Model):
         permissions = (
             ("execute_safe_operation", "Can execute safe operations"),
             ("execute_dangerous_operation", "Can execute dangerous operations"),
+            ("use_service_ib_auth", "Can use service infobase authentication"),
             ("cancel_operation", "Can cancel operations"),
             ("view_operation_logs", "Can view operation logs"),
             ("manage_driver_catalogs", "Can manage driver catalogs"),

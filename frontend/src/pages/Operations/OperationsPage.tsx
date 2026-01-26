@@ -473,6 +473,7 @@ export const OperationsPage = () => {
           database_ids: scope === 'global' ? [] : data.databaseIds,
           auth_database_id: scope === 'global' ? authDatabaseId : undefined,
           connection: dc.connection,
+          ib_auth: dc.ib_auth,
           params: dc.params ?? {},
           additional_args: additionalArgs,
           stdin: typeof dc.stdin === 'string' ? dc.stdin : '',

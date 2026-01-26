@@ -153,6 +153,55 @@ def test_build_base_catalog_from_its_parses_flag_variants_with_extra_placeholder
     assert errors == []
 
 
+def test_build_base_catalog_from_its_parses_common_params_into_driver_schema():
+    payload = {
+        "version": "8.3.27",
+        "pointer_ti": "TI000001149",
+        "sections": [
+            {
+                "title": f"4.10.2. {_ru('\\u041e\\u0431\\u0449\\u0438\\u0435 \\u043f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440\\u044b')}",
+                "blocks": [
+                    {
+                        "kind": "table",
+                        "rows": [
+                            [_ru("\\u041f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440"), _ru("\\u041e\\u043f\\u0438\\u0441\\u0430\\u043d\\u0438\\u0435")],
+                            ["--database-path=<path> --db-path=<path>", "DB path."],
+                            ["--database-password=<password> --db-pwd=<password>", "DB password."],
+                            ["--database-user=<name> --db-user=<name>", "DB user."],
+                            ["--user=<name> -u <name>", "IB user."],
+                            ["--password=<password> -P <password>", "IB password."],
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+
+    catalog = build_base_catalog_from_its(payload)
+    driver_schema = catalog.get("driver_schema")
+    assert isinstance(driver_schema, dict)
+
+    offline = driver_schema.get("connection", {}).get("offline", {})
+    assert isinstance(offline, dict)
+    assert "db_path" in offline
+    assert offline["db_path"]["flag"] == "--db-path"
+    assert "db_pwd" in offline
+    assert offline["db_pwd"]["flag"] == "--db-pwd"
+    assert offline["db_pwd"]["sensitive"] is True
+    assert offline["db_pwd"]["semantics"]["credential_kind"] == "db_password"
+    assert "--database-password" in (offline["db_pwd"].get("ui") or {}).get("aliases", [])
+
+    ib_auth = driver_schema.get("ib_auth")
+    assert isinstance(ib_auth, dict)
+    assert ib_auth["strategy"]["default"] == "actor"
+    assert ib_auth["user"]["flag"] == "--user"
+    assert ib_auth["user"]["semantics"]["credential_kind"] == "ib_user"
+    assert ib_auth["password"]["flag"] == "--password"
+    assert ib_auth["password"]["sensitive"] is True
+    assert ib_auth["password"]["semantics"]["credential_kind"] == "ib_password"
+    assert "-P" in (ib_auth["password"].get("ui") or {}).get("aliases", [])
+
+
 def test_build_base_catalog_from_its_parses_enum_values_with_blank_lines_in_text():
     marker_param = _ru("\\u041f\\u0430\\u0440\\u0430\\u043c\\u0435\\u0442\\u0440")
     marker_desc = _ru("\\u041e\\u043f\\u0438\\u0441\\u0430\\u043d\\u0438\\u0435")

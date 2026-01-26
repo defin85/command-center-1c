@@ -33,7 +33,14 @@ database:
 
 `ibcmd_cli` использует driver-catalog v2 (base@approved + overrides@active) для валидации `command_id` и сборки `argv[]`.
 
-Важно: некоторые команды `ibcmd` интерактивно запрашивают аутентификацию в ИБ (например `infobase.extension.list`). Для таких команд worker подает логин/пароль через `stdin` из `credentials.ib_user_mapping`, если `stdin` не задан явно в payload.
+Важно: некоторые команды `ibcmd` требуют аутентификации в ИБ (например `infobase.extension.list`). В CommandCenter1C интерактива нет: worker резолвит креды ИБ и подставляет их в `argv` через `--user/--password` в зависимости от `ib_auth.strategy`:
+- `actor` — per-user mapping (`credentials.ib_user_mapping`, по `created_by`);
+- `service` — сервисный mapping (`credentials.ib_service_mapping`, `is_service=true`, `user=NULL`);
+- `none` — не подставлять креды ИБ.
+
+Ограничения:
+- `ib_auth.strategy=service` разрешён только для allowlist safe‑команд (первый этап: `infobase.extension.list`, `infobase.extension.info`) и только для staff/пользователей с отдельным permission.
+- stdin‑флаг `--request-db-pwd` (`-W`) запрещён в guided (fail-closed). Используйте `connection.offline.db_pwd`.
 
 Пример (per_database):
 
@@ -42,6 +49,16 @@ database:
   "command_id": "infobase.dump",
   "mode": "guided",
   "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "connection": {
+    "offline": {
+      "dbms": "PostgreSQL",
+      "db_server": "db-host",
+      "db_name": "mydb",
+      "db_user": "dbuser",
+      "db_pwd": "secret"
+    }
+  },
+  "ib_auth": { "strategy": "actor" },
   "params": {
     "output_path": "db-123/backup_20250101.dt",
     "force": true
@@ -146,15 +163,25 @@ env (Worker):
 - `IBCMD_STORAGE_BACKEND=local`
 - `IBCMD_STORAGE_PATH=/var/lib/cc1c/ibcmd`
 
-payload:
+payload (`ibcmd_cli`):
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "output_path": "db-123/backup_20250101.dt"
+  "command_id": "infobase.dump",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "connection": {
+    "offline": {
+      "dbms": "PostgreSQL",
+      "db_server": "db-host",
+      "db_name": "mydb",
+      "db_user": "dbuser",
+      "db_pwd": "secret"
+    }
+  },
+  "ib_auth": { "strategy": "actor" },
+  "params": {
+    "output_path": "db-123/backup_20250101.dt",
+    "force": true
+  }
 }
 ```
 
@@ -170,29 +197,48 @@ env (Worker):
 - `IBCMD_S3_PREFIX=backups`
 - `IBCMD_S3_USE_SSL=false`
 
-payload (backup):
+payload (backup, `ibcmd_cli`):
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "output_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt"
+  "command_id": "infobase.dump",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "connection": {
+    "offline": {
+      "dbms": "PostgreSQL",
+      "db_server": "db-host",
+      "db_name": "mydb",
+      "db_user": "dbuser",
+      "db_pwd": "secret"
+    }
+  },
+  "ib_auth": { "strategy": "actor" },
+  "params": {
+    "output_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt",
+    "force": true
+  }
 }
 ```
 
-payload (restore):
+payload (restore, `ibcmd_cli`):
 ```json
 {
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "input_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt",
-  "create_database": true,
-  "force": true
+  "command_id": "infobase.restore",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "connection": {
+    "offline": {
+      "dbms": "PostgreSQL",
+      "db_server": "db-host",
+      "db_name": "mydb",
+      "db_user": "dbuser",
+      "db_pwd": "secret"
+    }
+  },
+  "ib_auth": { "strategy": "actor" },
+  "params": {
+    "input_path": "s3://cc1c-ibcmd/backups/db-123/backup_20250101.dt",
+    "create_database": true,
+    "force": true
+  }
 }
 ```
 
@@ -203,18 +249,28 @@ env (Worker):
 - `APP_ENV=development`
 - `PLATFORM_1C_BIN_PATH=/opt/1c/8.3.27/bin`
 
-payload:
+payload (пример, `ibcmd_cli` + AgentMode):
 ```json
 {
   "use_ibsrv": true,
   "agent_port": 1543,
   "agent_ssh_host_key_auto": true,
   "agent_base_dir": "/var/lib/1c/agent",
-  "dbms": "PostgreSQL",
-  "db_server": "db-host:5432",
-  "db_name": "mydb",
-  "db_user": "dbuser",
-  "db_password": "secret",
-  "output_path": "db-123/backup_20250101.dt"
+  "command_id": "infobase.dump",
+  "database_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "connection": {
+    "offline": {
+      "dbms": "PostgreSQL",
+      "db_server": "db-host",
+      "db_name": "mydb",
+      "db_user": "dbuser",
+      "db_pwd": "secret"
+    }
+  },
+  "ib_auth": { "strategy": "actor" },
+  "params": {
+    "output_path": "db-123/backup_20250101.dt",
+    "force": true
+  }
 }
 ```

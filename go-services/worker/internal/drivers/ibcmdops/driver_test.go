@@ -131,7 +131,7 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 	}
 }
 
-func TestBuildRequestIbcmdCliRecordsNormalizeAndProvidesInfobaseAuthViaStdin(t *testing.T) {
+func TestBuildRequestIbcmdCliRecordsNormalizeAndInjectsInfobaseAuthArgsForExtensionsList(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",
 		OperationType: "ibcmd_cli",
@@ -153,21 +153,114 @@ func TestBuildRequestIbcmdCliRecordsNormalizeAndProvidesInfobaseAuthViaStdin(t *
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"infobase", "config", "extension", "list"}
+	expected := []string{"infobase", "config", "extension", "list", "--user=ibuser", "--password=ibpass"}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
-	if len(req.RuntimeBindings) != 2 {
-		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	if len(req.RuntimeBindings) != 3 {
+		t.Fatalf("expected 3 runtime bindings, got %#v", req.RuntimeBindings)
 	}
 	if req.RuntimeBindings[0]["source_ref"] != "worker.normalizeIbcmdArgv" || req.RuntimeBindings[0]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
 	}
-	if req.RuntimeBindings[1]["target_ref"] != "stdin" || req.RuntimeBindings[1]["status"] != "applied" {
+	if req.RuntimeBindings[1]["target_ref"] != "flag:--user" || req.RuntimeBindings[1]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
 	}
-	if req.Stdin != "ibuser\nibpass\n" {
+	if req.RuntimeBindings[2]["target_ref"] != "flag:--password" || req.RuntimeBindings[2]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[2])
+	}
+	if req.Stdin != "" {
 		t.Fatalf("unexpected stdin: %q", req.Stdin)
+	}
+}
+
+func TestBuildRequestIbcmdCliServiceStrategyInjectsInfobaseAuthArgsForExtensionsList(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.extension.list",
+				"argv":       []string{"infobase", "extension", "list"},
+				"ib_auth":    map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "svc", IBPassword: "svcpwd"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--user=svc") {
+		t.Fatalf("expected --user=svc in args, got %#v", req.Args)
+	}
+	if req.RuntimeBindings[1]["source_ref"] != "credentials.ib_service_mapping" {
+		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[1])
+	}
+	if req.RuntimeBindings[2]["source_ref"] != "credentials.ib_service_mapping" {
+		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[2])
+	}
+}
+
+func TestBuildRequestIbcmdCliServiceStrategyFailsClosedOutsideAllowlist(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.dump",
+				"argv":       []string{"infobase", "dump"},
+				"ib_auth":    map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	_, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "svc", IBPassword: "svcpwd"},
+		nil,
+	)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestBuildRequestIbcmdCliNoneStrategySkipsInfobaseAuth(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.extension.list",
+				"argv":       []string{"infobase", "extension", "list"},
+				"ib_auth":    map[string]interface{}{"strategy": "none"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(strings.Join(req.Args, " "), "--user=") || strings.Contains(strings.Join(req.Args, " "), "--password=") {
+		t.Fatalf("did not expect infobase auth flags in args: %#v", req.Args)
+	}
+	if len(req.RuntimeBindings) == 0 || req.RuntimeBindings[len(req.RuntimeBindings)-1]["reason"] != "strategy_none" {
+		t.Fatalf("expected skipped binding with reason=strategy_none, got %#v", req.RuntimeBindings)
 	}
 }
 

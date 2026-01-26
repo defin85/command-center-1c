@@ -49,6 +49,25 @@ _INFO_TITLES = {
     _RU_COMMON_PARAMS,
 }
 
+_COMMON_PARAMS_SECTION_PREFIX = "4.10.2."
+
+_COMMON_PARAMS_KEY_RENAMES: dict[str, str] = {
+    # Keep backward-compatible field names used across API/UI, even if canonical flag is --database-*.
+    "database_name": "db_name",
+    "database_server": "db_server",
+    "database_user": "db_user",
+    "database_password": "db_pwd",
+    "database_path": "db_path",
+    "request_database_password": "request_db_pwd",
+}
+
+_CREDENTIAL_SEMANTICS: dict[str, dict[str, Any]] = {
+    "db_user": {"credential_kind": "db_user"},
+    "db_pwd": {"credential_kind": "db_password"},
+    "user": {"credential_kind": "ib_user"},
+    "password": {"credential_kind": "ib_password"},
+}
+
 
 @dataclass(frozen=True)
 class _TitleEntry:
@@ -68,6 +87,8 @@ def build_base_catalog_from_its(payload: dict[str, Any]) -> dict[str, Any]:
 
     commands_by_id: dict[str, Any] = {}
     stack: dict[int, _TitleEntry] = {}
+
+    common_params_section = _find_common_params_section(payload)
 
     for section in payload.get("sections") or []:
         if not isinstance(section, dict):
@@ -133,151 +154,12 @@ def build_base_catalog_from_its(payload: dict[str, Any]) -> dict[str, Any]:
             )
             continue
 
+    driver_schema = _build_ibcmd_driver_schema_from_common_params(common_params_section)
+
     return {
         "catalog_version": 2,
         "driver": "ibcmd",
-        "driver_schema": {
-            "connection": {
-                "remote": {
-                    "kind": "flag",
-                    "flag": "--remote",
-                    "expects_value": True,
-                    "required": False,
-                    "label": "Remote",
-                    "description": "Remote agent URL (optional).",
-                    "value_type": "string",
-                },
-                "pid": {
-                    "kind": "flag",
-                    "flag": "--pid",
-                    "expects_value": True,
-                    "required": False,
-                    "label": "PID",
-                    "description": "Attach to an existing ibcmd process (optional).",
-                    "value_type": "int",
-                },
-                "offline": {
-                    "config": {
-                        "kind": "flag",
-                        "flag": "--config",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "Config",
-                        "description": "Offline connection: path to configuration file (optional).",
-                        "value_type": "string",
-                    },
-                    "data": {
-                        "kind": "flag",
-                        "flag": "--data",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "Data",
-                        "description": "Offline connection: path to data directory (optional).",
-                        "value_type": "string",
-                    },
-                    "dbms": {
-                        "kind": "flag",
-                        "flag": "--dbms",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "DBMS",
-                        "description": "Offline connection: DBMS kind (optional).",
-                        "value_type": "string",
-                    },
-                    "db_server": {
-                        "kind": "flag",
-                        "flag": "--db-server",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "DB server",
-                        "description": "Offline connection: database server name (optional).",
-                        "value_type": "string",
-                    },
-                    "db_name": {
-                        "kind": "flag",
-                        "flag": "--db-name",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "DB name",
-                        "description": "Offline connection: database name (optional).",
-                        "value_type": "string",
-                    },
-                    "db_user": {
-                        "kind": "flag",
-                        "flag": "--db-user",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "DB user",
-                        "description": "Offline connection: database username (optional).",
-                        "value_type": "string",
-                    },
-                    "db_pwd": {
-                        "kind": "flag",
-                        "flag": "--db-pwd",
-                        "expects_value": True,
-                        "required": False,
-                        "label": "DB password",
-                        "description": "Offline connection: database password (optional).",
-                        "sensitive": True,
-                        "value_type": "string",
-                    },
-                },
-            },
-            "timeout_seconds": {
-                "kind": "int",
-                "required": False,
-                "default": 900,
-                "min": 1,
-                "max": 3600,
-                "label": "Timeout (seconds)",
-                "description": "Maximum execution time for this command.",
-            },
-            "stdin": {
-                "kind": "text",
-                "required": False,
-                "label": "Stdin (optional)",
-                "description": "Optional stdin payload for ibcmd (use with caution).",
-                "ui": {"widget": "textarea", "rows": 4},
-            },
-            "auth_database_id": {
-                "kind": "database_ref",
-                "required": False,
-                "label": "Auth mapping infobase",
-                "description": "Used for RBAC and infobase user mapping. Not an execution target.",
-                "ui": {"source": "selected_targets", "required_when": {"command_scope": "global"}},
-            },
-            "ui": {
-                "version": 1,
-                "sections": [
-                    {
-                        "id": "ibcmd.auth",
-                        "title": "Auth context",
-                        "paths": ["auth_database_id"],
-                        "when": {"command_scope": "global"},
-                    },
-                    {
-                        "id": "ibcmd.connection",
-                        "title": "Connection",
-                        "paths": [
-                            "connection.remote",
-                            "connection.pid",
-                            "connection.offline.config",
-                            "connection.offline.data",
-                            "connection.offline.dbms",
-                            "connection.offline.db_server",
-                            "connection.offline.db_name",
-                            "connection.offline.db_user",
-                            "connection.offline.db_pwd",
-                        ],
-                    },
-                    {
-                        "id": "ibcmd.execution",
-                        "title": "Execution",
-                        "paths": ["timeout_seconds", "stdin"],
-                    },
-                ],
-            },
-        },
+        "driver_schema": driver_schema,
         "platform_version": platform_version,
         "source": {
             "type": "its_import",
@@ -422,6 +304,386 @@ def _normalize_argv_prefix(prefix: list[str]) -> list[str]:
     if prefix[:3] == ["infobase", "config", "extension"]:
         return ["infobase", "extension"]
     return prefix
+
+
+def _ibcmd_driver_schema_fallback() -> dict[str, Any]:
+    return {
+        "connection": {
+            "remote": {
+                "kind": "flag",
+                "flag": "--remote",
+                "expects_value": True,
+                "required": False,
+                "label": "Remote",
+                "description": "Remote agent URL (optional).",
+                "value_type": "string",
+            },
+            "pid": {
+                "kind": "flag",
+                "flag": "--pid",
+                "expects_value": True,
+                "required": False,
+                "label": "PID",
+                "description": "Attach to an existing ibcmd process (optional).",
+                "value_type": "int",
+            },
+            "offline": {
+                "config": {
+                    "kind": "flag",
+                    "flag": "--config",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "Config",
+                    "description": "Offline connection: path to configuration file (optional).",
+                    "value_type": "string",
+                },
+                "data": {
+                    "kind": "flag",
+                    "flag": "--data",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "Data",
+                    "description": "Offline connection: path to data directory (optional).",
+                    "value_type": "string",
+                },
+                "dbms": {
+                    "kind": "flag",
+                    "flag": "--dbms",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "DBMS",
+                    "description": "Offline connection: DBMS kind (optional).",
+                    "value_type": "string",
+                },
+                "db_server": {
+                    "kind": "flag",
+                    "flag": "--db-server",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "DB server",
+                    "description": "Offline connection: database server name (optional).",
+                    "value_type": "string",
+                },
+                "db_name": {
+                    "kind": "flag",
+                    "flag": "--db-name",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "DB name",
+                    "description": "Offline connection: database name (optional).",
+                    "value_type": "string",
+                },
+                "db_user": {
+                    "kind": "flag",
+                    "flag": "--db-user",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "DB user",
+                    "description": "Offline connection: database username (optional).",
+                    "value_type": "string",
+                    "semantics": _CREDENTIAL_SEMANTICS["db_user"],
+                },
+                "db_pwd": {
+                    "kind": "flag",
+                    "flag": "--db-pwd",
+                    "expects_value": True,
+                    "required": False,
+                    "label": "DB password",
+                    "description": "Offline connection: database password (optional).",
+                    "sensitive": True,
+                    "value_type": "string",
+                    "semantics": _CREDENTIAL_SEMANTICS["db_pwd"],
+                },
+            },
+        },
+        "ib_auth": {
+            "strategy": {
+                "kind": "enum",
+                "required": False,
+                "default": "actor",
+                "enum": ["actor", "service", "none"],
+                "label": "IB auth strategy",
+                "description": "How to authenticate in the infobase: actor (per-user mapping), service (service account), or none.",
+            },
+            "user": {
+                "kind": "flag",
+                "flag": "--user",
+                "expects_value": True,
+                "required": False,
+                "label": "IB user",
+                "description": "Infobase user for ibcmd operations (optional).",
+                "value_type": "string",
+                "semantics": _CREDENTIAL_SEMANTICS["user"],
+                "ui": {"aliases": ["-u"]},
+            },
+            "password": {
+                "kind": "flag",
+                "flag": "--password",
+                "expects_value": True,
+                "required": False,
+                "label": "IB password",
+                "description": "Infobase password for ibcmd operations (optional).",
+                "value_type": "string",
+                "sensitive": True,
+                "semantics": _CREDENTIAL_SEMANTICS["password"],
+                "ui": {"aliases": ["-P"]},
+            },
+        },
+        "timeout_seconds": {
+            "kind": "int",
+            "required": False,
+            "default": 900,
+            "min": 1,
+            "max": 3600,
+            "label": "Timeout (seconds)",
+            "description": "Maximum execution time for this command.",
+        },
+        "stdin": {
+            "kind": "text",
+            "required": False,
+            "label": "Stdin (optional)",
+            "description": "Optional stdin payload for ibcmd (use with caution).",
+            "ui": {"widget": "textarea", "rows": 4},
+        },
+        "auth_database_id": {
+            "kind": "database_ref",
+            "required": False,
+            "label": "Auth mapping infobase",
+            "description": "Used for RBAC and infobase user mapping. Not an execution target.",
+            "ui": {"source": "selected_targets", "required_when": {"command_scope": "global"}},
+        },
+        "ui": {
+            "version": 1,
+            "sections": [
+                {
+                    "id": "ibcmd.auth",
+                    "title": "Auth context",
+                    "paths": ["auth_database_id", "ib_auth.strategy", "ib_auth.user", "ib_auth.password"],
+                    "when": {"command_scope": "global"},
+                },
+                {
+                    "id": "ibcmd.connection",
+                    "title": "Connection",
+                    "paths": [
+                        "connection.remote",
+                        "connection.pid",
+                        "connection.offline.config",
+                        "connection.offline.data",
+                        "connection.offline.dbms",
+                        "connection.offline.db_server",
+                        "connection.offline.db_name",
+                        "connection.offline.db_user",
+                        "connection.offline.db_pwd",
+                    ],
+                },
+                {
+                    "id": "ibcmd.execution",
+                    "title": "Execution",
+                    "paths": ["timeout_seconds", "stdin"],
+                },
+            ],
+        },
+    }
+
+
+def _find_common_params_section(payload: dict[str, Any]) -> dict[str, Any] | None:
+    for section in payload.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        title = str(section.get("title") or "").strip()
+        if not title.startswith(_COMMON_PARAMS_SECTION_PREFIX):
+            continue
+        if _RU_COMMON_PARAMS not in title:
+            continue
+        return section
+    return None
+
+
+def _iter_common_params_rows(section: dict[str, Any]) -> Iterable[tuple[str, str]]:
+    blocks = section.get("blocks")
+    if not isinstance(blocks, list):
+        return
+
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if block.get("kind") != "table":
+            continue
+        rows = block.get("rows")
+        if not isinstance(rows, list) or len(rows) < 2:
+            continue
+        header = rows[0]
+        if not isinstance(header, list) or len(header) < 2:
+            continue
+        if str(header[0] or "").strip() != _RU_PARAM:
+            continue
+        if str(header[1] or "").strip() != _RU_DESCRIPTION:
+            continue
+        for row in rows[1:]:
+            if not isinstance(row, list) or len(row) < 2:
+                continue
+            variants_cell = str(row[0] or "").strip()
+            desc_cell = str(row[1] or "").strip()
+            if not variants_cell:
+                continue
+            yield variants_cell, desc_cell
+
+
+def _split_common_param_variants(cell: str) -> list[str]:
+    tokens = [t for t in str(cell or "").split() if t]
+    variants: list[str] = []
+    current: list[str] = []
+    for tok in tokens:
+        if tok.startswith("-"):
+            if current:
+                variants.append(" ".join(current))
+            current = [tok]
+            continue
+        if current:
+            current.append(tok)
+    if current:
+        variants.append(" ".join(current))
+    return variants
+
+
+def _pick_canonical_long_flag(flag_tokens: list[str]) -> str:
+    long_flags = [t for t in flag_tokens if t.startswith("--")]
+    if not long_flags:
+        return flag_tokens[0] if flag_tokens else ""
+    # Prefer shorter canonical long flag (keeps stable db_* variants vs database_*).
+    return sorted(set(long_flags), key=lambda t: (len(t), t))[0]
+
+
+def _build_driver_flag_schema(*, variants_cell: str, description: str) -> tuple[str, dict[str, Any]] | None:
+    variants = _split_common_param_variants(variants_cell)
+    if not variants:
+        return None
+
+    flag_tokens: list[str] = []
+    expects_value = False
+    for v in variants:
+        tok, exp = _parse_flag_variant(v)
+        if not tok:
+            continue
+        flag_tokens.append(tok)
+        expects_value = expects_value or exp
+
+    if not flag_tokens:
+        return None
+
+    canonical_flag = _pick_canonical_long_flag(flag_tokens)
+    aliases = sorted({t for t in flag_tokens if t and t != canonical_flag}, key=_flag_preference_key)
+
+    key = _flag_name_to_param_name(canonical_flag)
+    key = _COMMON_PARAMS_KEY_RENAMES.get(key, key)
+
+    value_type = "bool"
+    if expects_value:
+        value_type = "int" if key == "pid" else "string"
+
+    schema: dict[str, Any] = {
+        "kind": "flag",
+        "flag": canonical_flag,
+        "expects_value": expects_value,
+        "required": False,
+        "label": canonical_flag,
+        "description": _first_paragraph(description or ""),
+        "value_type": value_type,
+    }
+
+    enum_values = _extract_enum(description or "")
+    if enum_values:
+        schema["enum"] = enum_values
+
+    if aliases:
+        schema["ui"] = {"aliases": aliases}
+
+    return key, schema
+
+
+def _build_ibcmd_driver_schema_from_common_params(common_params_section: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Extends the fallback schema with all common flags from 4.10.2 (including aliases).
+
+    Note: only the driver_schema is derived from 4.10.2; command params are still parsed from their own sections.
+    """
+    schema = _ibcmd_driver_schema_fallback()
+    if not isinstance(common_params_section, dict):
+        return schema
+
+    connection = schema.get("connection")
+    if not isinstance(connection, dict):
+        connection = {}
+        schema["connection"] = connection
+
+    offline = connection.get("offline")
+    if not isinstance(offline, dict):
+        offline = {}
+        connection["offline"] = offline
+
+    base_ib_auth = schema.get("ib_auth") if isinstance(schema.get("ib_auth"), dict) else {}
+    ib_auth: dict[str, Any] = {}
+    connection_paths: list[str] = ["connection.remote", "connection.pid"]
+
+    for variants_cell, desc in _iter_common_params_rows(common_params_section):
+        built = _build_driver_flag_schema(variants_cell=variants_cell, description=desc)
+        if not built:
+            continue
+        key, flag_schema = built
+
+        if key in {"db_user", "db_pwd"}:
+            flag_schema["semantics"] = _CREDENTIAL_SEMANTICS[key]
+            if key == "db_pwd":
+                flag_schema["sensitive"] = True
+
+        if key in {"remote", "pid"}:
+            connection[key] = flag_schema
+            connection_paths.append(f"connection.{key}")
+            continue
+
+        if key in {"user", "password"}:
+            flag_schema["semantics"] = _CREDENTIAL_SEMANTICS[key]
+            if key == "password":
+                flag_schema["sensitive"] = True
+            ib_auth[key] = flag_schema
+            continue
+
+        prev = offline.get(key)
+        if isinstance(prev, dict) and prev.get("sensitive") is True and flag_schema.get("sensitive") is not True:
+            flag_schema["sensitive"] = True
+        offline[key] = flag_schema
+        connection_paths.append(f"connection.offline.{key}")
+
+    if ib_auth:
+        if "strategy" in base_ib_auth and "strategy" not in ib_auth:
+            ib_auth["strategy"] = base_ib_auth.get("strategy")
+        schema["ib_auth"] = ib_auth
+        ui = schema.get("ui")
+        if isinstance(ui, dict):
+            sections = ui.get("sections")
+            if isinstance(sections, list):
+                for sec in sections:
+                    if isinstance(sec, dict) and sec.get("id") == "ibcmd.auth":
+                        paths = sec.get("paths")
+                        if isinstance(paths, list):
+                            for p in ("ib_auth.strategy", "ib_auth.user", "ib_auth.password"):
+                                if p not in paths:
+                                    paths.append(p)
+                        break
+
+    ui = schema.get("ui")
+    if isinstance(ui, dict):
+        sections = ui.get("sections")
+        if isinstance(sections, list):
+            for sec in sections:
+                if not isinstance(sec, dict):
+                    continue
+                if sec.get("id") != "ibcmd.connection":
+                    continue
+                sec["paths"] = sorted(set(connection_paths), key=lambda p: (0 if p.startswith("connection.") else 1, p))
+                break
+
+    return schema
 
 
 def _iter_group_commands(text: str) -> Iterable[tuple[str, str, str, dict[str, Any]]]:

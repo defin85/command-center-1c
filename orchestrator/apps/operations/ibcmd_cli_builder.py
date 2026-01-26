@@ -30,8 +30,19 @@ _CONNECTION_PARAM_FLAGS = {
     "dbms": "--dbms",
     "db_server": "--db-server",
     "db_name": "--db-name",
+    "db_path": "--db-path",
     "db_user": "--db-user",
     "db_pwd": "--db-pwd",
+    "ftext2_data": "--ftext2-data",
+    "ftext_data": "--ftext-data",
+    "lock": "--lock",
+    "log_data": "--log-data",
+    "openid_data": "--openid-data",
+    "session_data": "--session-data",
+    "stt_data": "--stt-data",
+    "system": "--system",
+    "temp": "--temp",
+    "users_data": "--users-data",
 }
 
 _CONNECTION_FLAG_PREFIXES_BY_KEY: dict[str, tuple[str, ...]] = {
@@ -42,8 +53,19 @@ _CONNECTION_FLAG_PREFIXES_BY_KEY: dict[str, tuple[str, ...]] = {
     "dbms": ("--dbms",),
     "db_server": ("--db-server", "--database-server"),
     "db_name": ("--db-name", "--database-name"),
+    "db_path": ("--db-path", "--database-path"),
     "db_user": ("--db-user", "--database-user"),
     "db_pwd": ("--db-pwd", "--database-password"),
+    "ftext2_data": ("--ftext2-data",),
+    "ftext_data": ("--ftext-data",),
+    "lock": ("--lock",),
+    "log_data": ("--log-data",),
+    "openid_data": ("--openid-data",),
+    "session_data": ("--session-data",),
+    "stt_data": ("--stt-data",),
+    "system": ("--system",),
+    "temp": ("--temp", "-t"),
+    "users_data": ("--users-data",),
 }
 
 
@@ -63,9 +85,12 @@ def flatten_connection_params(connection: dict[str, Any]) -> dict[str, Any]:
 
     offline = connection.get("offline")
     if isinstance(offline, dict):
-        for key in ("config", "data", "dbms", "db_server", "db_name", "db_user", "db_pwd"):
-            if key in offline:
-                params[key] = offline.get(key)
+        for key, value in offline.items():
+            if key in {"remote", "pid"}:
+                continue
+            if value is None or value == "":
+                continue
+            params[str(key)] = value
 
     return params
 

@@ -74,25 +74,12 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 	}
 
 	credsCtx := credentials.WithRequestedBy(ctx, strings.TrimSpace(msg.Metadata.CreatedBy))
+	if msg.OperationType == "ibcmd_cli" {
+		credsCtx = credentials.WithIbAuthStrategy(credsCtx, extractIbcmdIbAuthStrategy(msg.Payload.Data))
+	}
 	creds, err := d.fetchCredentials(credsCtx, databaseID)
 	if err != nil {
 		return d.failResult(msg, databaseID, start, fmt.Sprintf("failed to fetch credentials: %v", err), "CREDENTIALS_ERROR"), nil
-	}
-	if msg.OperationType == "ibcmd_cli" {
-		username := strings.TrimSpace(creds.IBUsername)
-		if username == "" {
-			createdBy := strings.TrimSpace(msg.Metadata.CreatedBy)
-			if createdBy == "" {
-				createdBy = "unknown"
-			}
-			return d.failResult(
-				msg,
-				databaseID,
-				start,
-				fmt.Sprintf("infobase user mapping not configured for created_by=%s", createdBy),
-				"CREDENTIALS_ERROR",
-			), nil
-		}
 	}
 
 	var agent *ibsrv.AgentProcess
@@ -534,49 +521,60 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 
 		credsArgs := resolvedArgs
 		stdin := extractString(data, "stdin")
-		appliedStdin := false
+		ibAuthStrategy := extractIbcmdIbAuthStrategy(data)
 		needsAuthArgs := shouldInjectInfobaseAuthArgs(commandID, resolvedArgs)
 
-		if needsAuthArgs {
+		if ibAuthStrategy == "service" && commandID != "" && !isServiceIbAuthAllowed(commandID) {
+			return nil, fmt.Errorf("ib_auth.strategy=service is not allowed for command_id=%s", commandID)
+		}
+
+		sourceRef := "credentials.ib_user_mapping"
+		if ibAuthStrategy == "service" {
+			sourceRef = "credentials.ib_service_mapping"
+		}
+
+		if needsAuthArgs && ibAuthStrategy != "none" {
+			username := pickIBUsername(creds)
+			if username == "" {
+				if ibAuthStrategy == "service" {
+					return nil, fmt.Errorf("service infobase user mapping is not configured for database_id=%s", databaseID)
+				}
+				createdBy := strings.TrimSpace(msg.Metadata.CreatedBy)
+				if createdBy == "" {
+					createdBy = "unknown"
+				}
+				return nil, fmt.Errorf("infobase user mapping not configured for created_by=%s", createdBy)
+			}
+
 			runtimeBindings = append(runtimeBindings,
 				map[string]interface{}{
 					"target_ref": "flag:--user",
-					"source_ref": "credentials.ib_user_mapping",
+					"source_ref": sourceRef,
 					"resolve_at": "worker",
 					"sensitive":  false,
 					"status":     "applied",
 				},
 				map[string]interface{}{
 					"target_ref": "flag:--password",
-					"source_ref": "credentials.ib_user_mapping",
+					"source_ref": sourceRef,
 					"resolve_at": "worker",
 					"sensitive":  true,
 					"status":     "applied",
 				},
 			)
 			credsArgs = injectInfobaseAuthArgs(resolvedArgs, creds)
-		} else if stdin == "" && shouldProvideInfobaseAuthViaStdin(commandID, resolvedArgs) {
-			stdin = buildInfobaseAuthStdin(creds)
-			if stdin != "" {
-				appliedStdin = true
-				runtimeBindings = append(runtimeBindings, map[string]interface{}{
-					"target_ref": "stdin",
-					"source_ref": "credentials.ib_user_mapping",
-					"resolve_at": "worker",
-					"sensitive":  true,
-					"status":     "applied",
-				})
+		} else if commandID != "" {
+			reason := "unsupported_for_command"
+			if ibAuthStrategy == "none" {
+				reason = "strategy_none"
 			}
-		}
-
-		if commandID != "" && !needsAuthArgs && !appliedStdin {
 			runtimeBindings = append(runtimeBindings, map[string]interface{}{
 				"target_ref": "infobase_auth",
-				"source_ref": "credentials.ib_user_mapping",
+				"source_ref": sourceRef,
 				"resolve_at": "worker",
 				"sensitive":  true,
 				"status":     "skipped",
-				"reason":     "unsupported_for_command",
+				"reason":     reason,
 			})
 		}
 		return &ibcmdRequest{
@@ -708,60 +706,40 @@ func injectInfobaseAuthArgs(args []string, creds *credentials.DatabaseCredential
 	return cleaned
 }
 
-func buildInfobaseAuthStdin(creds *credentials.DatabaseCredentials) string {
-	if creds == nil {
-		return ""
-	}
-
-	username := strings.TrimSpace(creds.IBUsername)
-	if username == "" {
-		return ""
-	}
-
-	password := strings.TrimSpace(creds.IBPassword)
-	if password == "" {
-		// Prefer a fast failure to a hang on interactive password prompt.
-		return username + "\n"
-	}
-
-	return username + "\n" + password + "\n"
-}
-
 func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
-	// NOTE: ibcmd supports --user/--password only for a limited set of commands
-	// (e.g. infobase dump/restore). Passing these flags to other commands (like
-	// extensions list/sync) fails with "error parsing parameter: --user=...".
-	//
-	// Keep this conservative; expand only with proven requirements.
 	cmd := strings.TrimSpace(commandID)
-	if cmd == "infobase.dump" || cmd == "infobase.restore" {
+	if cmd == "infobase.dump" || cmd == "infobase.restore" || cmd == "infobase.extension.list" || cmd == "infobase.extension.info" {
 		return true
 	}
 	if len(argv) >= 2 && strings.TrimSpace(argv[0]) == "infobase" {
 		sub := strings.TrimSpace(argv[1])
-		return sub == "dump" || sub == "restore"
+		if sub == "dump" || sub == "restore" {
+			return true
+		}
+		// Some catalog command IDs flatten "infobase config extension <cmd>" into "infobase extension <cmd>".
+		// By this point argv may already include "config" (normalizeIbcmdArgv), but we keep this robust.
+		if sub == "extension" {
+			if len(argv) >= 3 {
+				action := strings.TrimSpace(argv[2])
+				return action == "list" || action == "info"
+			}
+			return false
+		}
+		if sub == "config" && len(argv) >= 4 && strings.TrimSpace(argv[2]) == "extension" {
+			action := strings.TrimSpace(argv[3])
+			return action == "list" || action == "info"
+		}
 	}
 	return false
 }
 
-func shouldProvideInfobaseAuthViaStdin(commandID string, argv []string) bool {
-	// Some infobase-scoped commands require interactive IB auth. Providing credentials
-	// via --user/--password is not reliable across platform versions, so use stdin.
-	cmd := strings.TrimSpace(commandID)
-	if strings.HasPrefix(cmd, "infobase.extension.") {
+func isServiceIbAuthAllowed(commandID string) bool {
+	switch strings.TrimSpace(commandID) {
+	case "infobase.extension.list", "infobase.extension.info":
 		return true
+	default:
+		return false
 	}
-
-	// Also cover cases without command_id (manual mode) and the pre-normalized argv.
-	// By this point argv may already include "config" (normalizeIbcmdArgv).
-	if len(argv) >= 4 && argv[0] == "infobase" && argv[1] == "config" && argv[2] == "extension" {
-		return true
-	}
-	if len(argv) >= 3 && argv[0] == "infobase" && argv[1] == "extension" {
-		return true
-	}
-
-	return false
 }
 
 func normalizeIbcmdArgv(argv []string) []string {
@@ -775,6 +753,31 @@ func normalizeIbcmdArgv(argv []string) []string {
 		return next
 	}
 	return argv
+}
+
+func extractIbcmdIbAuthStrategy(data map[string]interface{}) string {
+	if data == nil {
+		return "actor"
+	}
+	raw, ok := data["ib_auth"]
+	if !ok || raw == nil {
+		return "actor"
+	}
+	ibAuth, ok := raw.(map[string]interface{})
+	if !ok || ibAuth == nil {
+		return "actor"
+	}
+	strategyRaw, ok := ibAuth["strategy"]
+	if !ok || strategyRaw == nil {
+		return "actor"
+	}
+	strategy := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", strategyRaw)))
+	switch strategy {
+	case "actor", "service", "none":
+		return strategy
+	default:
+		return "actor"
+	}
 }
 
 func stripInfobaseAuthArgs(args []string) []string {

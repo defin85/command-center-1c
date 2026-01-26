@@ -669,14 +669,34 @@ class IbcmdCliConnectionOfflineSerializer(serializers.Serializer):
     dbms = serializers.CharField(required=False, allow_blank=False)
     db_server = serializers.CharField(required=False, allow_blank=False)
     db_name = serializers.CharField(required=False, allow_blank=False)
+    db_path = serializers.CharField(required=False, allow_blank=False)
     db_user = serializers.CharField(required=False, allow_blank=False)
     db_pwd = serializers.CharField(required=False, allow_blank=False, write_only=True)
+    ftext2_data = serializers.CharField(required=False, allow_blank=False)
+    ftext_data = serializers.CharField(required=False, allow_blank=False)
+    lock = serializers.CharField(required=False, allow_blank=False)
+    log_data = serializers.CharField(required=False, allow_blank=False)
+    openid_data = serializers.CharField(required=False, allow_blank=False)
+    session_data = serializers.CharField(required=False, allow_blank=False)
+    stt_data = serializers.CharField(required=False, allow_blank=False)
+    system = serializers.CharField(required=False, allow_blank=False)
+    temp = serializers.CharField(required=False, allow_blank=False)
+    users_data = serializers.CharField(required=False, allow_blank=False)
 
 
 class IbcmdCliConnectionSerializer(serializers.Serializer):
     remote = serializers.CharField(required=False, allow_blank=False)
     pid = serializers.IntegerField(required=False, allow_null=True)
     offline = IbcmdCliConnectionOfflineSerializer(required=False)
+
+
+class IbcmdCliIbAuthSerializer(serializers.Serializer):
+    STRATEGY_CHOICES = [
+        ("actor", "actor"),
+        ("service", "service"),
+        ("none", "none"),
+    ]
+    strategy = serializers.ChoiceField(choices=STRATEGY_CHOICES, required=False)
 
 
 class ExecuteIbcmdCliOperationRequestSerializer(serializers.Serializer):
@@ -703,6 +723,7 @@ class ExecuteIbcmdCliOperationRequestSerializer(serializers.Serializer):
     )
 
     connection = IbcmdCliConnectionSerializer(required=False)
+    ib_auth = IbcmdCliIbAuthSerializer(required=False)
     params = serializers.DictField(required=False, default=dict)
     additional_args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     stdin = serializers.CharField(required=False, allow_blank=True, default="")
@@ -1506,6 +1527,7 @@ def _execute_ibcmd_cli_validated(
     database_ids = [str(db_id) for db_id in (validated_data.get('database_ids') or [])]
     auth_database_id = validated_data.get('auth_database_id')
     connection = validated_data.get('connection') or {}
+    ib_auth = validated_data.get("ib_auth") or {}
     params = validated_data.get('params') or {}
     additional_args = validated_data.get('additional_args') or []
     stdin = validated_data.get('stdin') or ""
@@ -1605,6 +1627,51 @@ def _execute_ibcmd_cli_validated(
             },
         }, status=400)
 
+    service_allowlist = {
+        # Keep this intentionally tight; expand only with explicit approval.
+        "infobase.extension.list",
+        "infobase.extension.info",
+    }
+    ib_auth_strategy_raw = ""
+    ib_auth_strategy_explicit = False
+    if isinstance(ib_auth, dict):
+        if "strategy" in ib_auth and ib_auth.get("strategy") is not None:
+            ib_auth_strategy_explicit = True
+        ib_auth_strategy_raw = str(ib_auth.get("strategy") or "").strip().lower()
+    ib_auth_strategy = ib_auth_strategy_raw or ("actor" if scope == "per_database" else "none")
+
+    if ib_auth_strategy not in {"actor", "service", "none"}:
+        return Response({
+            "success": False,
+            "error": {"code": "IB_AUTH_STRATEGY_INVALID", "message": "ib_auth.strategy must be actor|service|none"},
+        }, status=400)
+
+    if scope != "per_database":
+        if ib_auth_strategy_explicit and ib_auth_strategy != "none":
+            return Response({
+                "success": False,
+                "error": {"code": "IB_AUTH_NOT_ALLOWED", "message": "ib_auth.strategy is not allowed for global scope commands"},
+            }, status=400)
+        ib_auth_strategy = "none"
+
+    if ib_auth_strategy == "service":
+        if risk_level != "safe":
+            return Response({
+                "success": False,
+                "error": {"code": "IB_AUTH_SERVICE_NOT_ALLOWED", "message": "ib_auth.strategy=service is allowed only for safe commands"},
+            }, status=400)
+        if command_id not in service_allowlist:
+            return Response({
+                "success": False,
+                "error": {"code": "IB_AUTH_SERVICE_NOT_ALLOWED", "message": f"ib_auth.strategy=service is not allowed for command_id={command_id}"},
+            }, status=400)
+        if not (getattr(request.user, "is_staff", False) or request.user.has_perm(perms.PERM_OPERATIONS_USE_SERVICE_IB_AUTH)):
+            record_driver_command_denied("ibcmd", "ib_auth_service_denied")
+            return Response(
+                {"success": False, "error": {"code": "PERMISSION_DENIED", "message": "You do not have permission to use service infobase authentication."}},
+                status=403,
+            )
+
     required_level = PermissionLevel.OPERATE
     if risk_level == "dangerous":
         required_level = PermissionLevel.MANAGE
@@ -1684,6 +1751,22 @@ def _execute_ibcmd_cli_validated(
                 "error": {"code": "PID_IN_ARGS_NOT_ALLOWED", "message": "Use connection.pid instead of --pid in additional_args"},
             }, status=400)
 
+    if mode == "guided":
+        for token in additional_args:
+            t = str(token or "").strip().lower()
+            if (
+                t in {"--request-db-pwd", "--request-database-password", "-w"}
+                or t.startswith("--request-db-pwd=")
+                or t.startswith("--request-database-password=")
+            ):
+                return Response({
+                    "success": False,
+                    "error": {
+                        "code": "REQUEST_DB_PWD_NOT_ALLOWED",
+                        "message": "stdin flag --request-db-pwd (-W) is not allowed in guided mode; use connection.offline.db_pwd instead",
+                    },
+                }, status=400)
+
     flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
     if flattened_connection:
         conflicts = detect_connection_option_conflicts(
@@ -1761,6 +1844,7 @@ def _execute_ibcmd_cli_validated(
         "argv_masked": argv_masked,
         "stdin": stdin,
         "connection": connection_dict,
+        "ib_auth": {"strategy": ib_auth_strategy},
     }
     payload_options: dict[str, Any] = {}
     if scope == "global":
@@ -1811,7 +1895,6 @@ def _execute_ibcmd_cli_validated(
     else:
         operation_name = f"{operation_name} (global)"
 
-    final_flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
     execution_plan = {
         "kind": "ibcmd_cli",
         "plan_version": 1,
@@ -1848,6 +1931,27 @@ def _execute_ibcmd_cli_validated(
                 "status": "applied",
             }
         )
+    bindings.append(
+        {
+            "target_ref": "ib_auth.strategy",
+            "source_ref": "request.ib_auth.strategy" if ib_auth_strategy_explicit else "default.ib_auth.strategy",
+            "resolve_at": "api",
+            "sensitive": False,
+            "status": "applied",
+        }
+    )
+    if ib_auth_strategy in {"actor", "service"} and scope == "per_database":
+        bindings.append(
+            {
+                "target_ref": "infobase_auth",
+                "source_ref": (
+                    "credentials.ib_user_mapping" if ib_auth_strategy == "actor" else "credentials.ib_service_mapping"
+                ),
+                "resolve_at": "worker",
+                "sensitive": True,
+                "status": "pending",
+            }
+        )
     for key in sorted((merged_params or {}).keys()):
         bindings.append(
             {
@@ -1868,16 +1972,29 @@ def _execute_ibcmd_cli_validated(
                 "status": "applied",
             }
         )
-    for key in sorted(final_flattened_connection.keys()):
-        bindings.append(
-            {
-                "target_ref": f"connection.{key}",
-                "source_ref": f"request.connection.{key}",
-                "resolve_at": "api",
-                "sensitive": _is_sensitive_key(str(key)),
-                "status": "applied",
-            }
-        )
+    if isinstance(connection_dict, dict):
+        for key in sorted(k for k in connection_dict.keys() if k in {"remote", "pid"}):
+            bindings.append(
+                {
+                    "target_ref": f"connection.{key}",
+                    "source_ref": f"request.connection.{key}",
+                    "resolve_at": "api",
+                    "sensitive": _is_sensitive_key(str(key)),
+                    "status": "applied",
+                }
+            )
+        offline_dict = connection_dict.get("offline")
+        if isinstance(offline_dict, dict):
+            for key in sorted(str(k) for k in offline_dict.keys()):
+                bindings.append(
+                    {
+                        "target_ref": f"connection.offline.{key}",
+                        "source_ref": f"request.connection.offline.{key}",
+                        "resolve_at": "api",
+                        "sensitive": _is_sensitive_key(str(key)),
+                        "status": "applied",
+                    }
+                )
     if stdin:
         bindings.append(
             {

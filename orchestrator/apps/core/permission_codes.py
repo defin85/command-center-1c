@@ -54,6 +54,7 @@ PERM_ARTIFACTS_DOWNLOAD_ARTIFACT_VERSION: Final[str] = "artifacts.download_artif
 PERM_OPERATIONS_VIEW_BATCH_OPERATION: Final[str] = "operations.view_batchoperation"
 PERM_OPERATIONS_EXECUTE_SAFE_OPERATION: Final[str] = "operations.execute_safe_operation"
 PERM_OPERATIONS_EXECUTE_DANGEROUS_OPERATION: Final[str] = "operations.execute_dangerous_operation"
+PERM_OPERATIONS_USE_SERVICE_IB_AUTH: Final[str] = "operations.use_service_ib_auth"
 PERM_OPERATIONS_CANCEL_OPERATION: Final[str] = "operations.cancel_operation"
 PERM_OPERATIONS_VIEW_OPERATION_LOGS: Final[str] = "operations.view_operation_logs"
 PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS: Final[str] = "operations.manage_driver_catalogs"

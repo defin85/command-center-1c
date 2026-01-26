@@ -1550,6 +1550,7 @@ class EventSubscriber:
         request_correlation_id = data.get('correlation_id', correlation_id)
         database_id = data.get('database_id', '')
         created_by = (data.get('created_by') or '').strip()
+        ib_auth_strategy = str(data.get("ib_auth_strategy") or "").strip().lower()
 
         logger.info(
             f"Processing get-database-credentials request: database_id={database_id}, "
@@ -1578,7 +1579,16 @@ class EventSubscriber:
 
             ib_username = ''
             ib_password = ''
-            if created_by:
+            if ib_auth_strategy == "service":
+                mapping = InfobaseUserMapping.objects.filter(
+                    database=database,
+                    is_service=True,
+                    user__isnull=True,
+                ).first()
+                if mapping:
+                    ib_username = mapping.ib_username
+                    ib_password = mapping.ib_password
+            elif created_by:
                 user_model = get_user_model()
                 user = user_model.objects.filter(username=created_by).first()
                 if user:

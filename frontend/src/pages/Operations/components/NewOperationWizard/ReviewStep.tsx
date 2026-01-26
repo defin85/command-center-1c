@@ -180,6 +180,9 @@ const formatConfigForDisplay = (
         if (dc.command_scope === 'global' && dc.auth_database_id) {
           items.push({ label: 'Driver options: Auth mapping infobase', value: dc.auth_database_id })
         }
+        if (dc.ib_auth?.strategy) {
+          items.push({ label: 'Driver options: IB auth strategy', value: dc.ib_auth.strategy })
+        }
         if (typeof dc.timeout_seconds === 'number') {
           items.push({ label: 'Driver options: Timeout (seconds)', value: String(dc.timeout_seconds) })
         }
@@ -192,13 +195,10 @@ const formatConfigForDisplay = (
         }
         const offline = connection?.offline
         if (offline && typeof offline === 'object') {
-          const offlineParts: string[] = []
-          if (offline.config) offlineParts.push(`config=${offline.config}`)
-          if (offline.data) offlineParts.push(`data=${offline.data}`)
-          if (offline.dbms) offlineParts.push(`dbms=${offline.dbms}`)
-          if (offline.db_server) offlineParts.push(`db_server=${offline.db_server}`)
-          if (offline.db_name) offlineParts.push(`db_name=${offline.db_name}`)
-          if (offline.db_user) offlineParts.push(`db_user=${offline.db_user}`)
+          const offlineParts = Object.entries(offline)
+            .filter(([key, value]) => key !== 'db_pwd' && typeof value === 'string' && value.trim().length > 0)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([key, value]) => `${key}=${value.trim()}`)
           if (offlineParts.length > 0) {
             items.push({ label: 'Driver options: Connection / Offline', value: offlineParts.join('\n') })
           }

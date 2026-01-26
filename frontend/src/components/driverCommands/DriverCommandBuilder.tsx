@@ -8,6 +8,7 @@ import type * as Monaco from 'monaco-editor'
 import { maskArgv } from '../../lib/masking'
 import {
   useDriverCommands,
+  useMe,
   useArtifacts,
   useArtifactAliases,
   useArtifactVersions,
@@ -35,14 +36,29 @@ export interface IbcmdCliConnectionOffline {
   dbms?: string
   db_server?: string
   db_name?: string
+  db_path?: string
   db_user?: string
   db_pwd?: string
+  ftext2_data?: string
+  ftext_data?: string
+  lock?: string
+  log_data?: string
+  openid_data?: string
+  session_data?: string
+  stt_data?: string
+  system?: string
+  temp?: string
+  users_data?: string
 }
 
 export interface IbcmdCliConnection {
   remote?: string
   pid?: number | null
   offline?: IbcmdCliConnectionOffline
+}
+
+export interface IbcmdIbAuth {
+  strategy?: 'actor' | 'service' | 'none'
 }
 
 export interface CliExtraOptions {
@@ -68,6 +84,7 @@ export interface DriverCommandOperationConfig {
 
   // IBCMD-only execution context
   connection?: IbcmdCliConnection
+  ib_auth?: IbcmdIbAuth
   stdin?: string
   timeout_seconds?: number
   auth_database_id?: string
@@ -98,8 +115,19 @@ const IBCMD_CONNECTION_PARAM_NAMES = new Set([
   'dbms',
   'db_server',
   'db_name',
+  'db_path',
   'db_user',
   'db_pwd',
+  'ftext2_data',
+  'ftext_data',
+  'lock',
+  'log_data',
+  'openid_data',
+  'session_data',
+  'stt_data',
+  'system',
+  'temp',
+  'users_data',
 ])
 
 const ensureArgvLanguage = (monaco: MonacoInstance) => {
@@ -394,10 +422,14 @@ const flattenIbcmdConnection = (connection?: IbcmdCliConnection): Record<string,
 
   const offline = connection.offline
   if (offline && typeof offline === 'object') {
-    for (const key of ['config', 'data', 'dbms', 'db_server', 'db_name', 'db_user', 'db_pwd'] as const) {
-      const value = offline[key]
-      if (typeof value === 'string' && value.trim().length > 0) {
-        out[key] = value.trim()
+    for (const [key, raw] of Object.entries(offline as Record<string, unknown>)) {
+      if (typeof raw === 'string') {
+        const value = raw.trim()
+        if (value) out[key] = value
+        continue
+      }
+      if (raw === true) {
+        out[key] = true
       }
     }
   }
@@ -413,8 +445,19 @@ const IBCMD_CONNECTION_DEFAULT_FLAGS: Record<string, string> = {
   dbms: '--dbms',
   db_server: '--db-server',
   db_name: '--db-name',
+  db_path: '--db-path',
   db_user: '--db-user',
   db_pwd: '--db-pwd',
+  ftext2_data: '--ftext2-data',
+  ftext_data: '--ftext-data',
+  lock: '--lock',
+  log_data: '--log-data',
+  openid_data: '--openid-data',
+  session_data: '--session-data',
+  stt_data: '--stt-data',
+  system: '--system',
+  temp: '--temp',
+  users_data: '--users-data',
 }
 
 const buildIbcmdConnectionArgsPreview = (
@@ -935,12 +978,14 @@ export function DriverCommandBuilder({
   const shortcutsQuery = useDriverCommandShortcuts('ibcmd', shortcutsEnabled)
   const createShortcutMutation = useCreateDriverCommandShortcut('ibcmd')
   const deleteShortcutMutation = useDeleteDriverCommandShortcut('ibcmd')
+  const meQuery = useMe()
 
   const mode: DriverCommandBuilderMode = config.mode ?? 'guided'
   const commandId = (config.command_id || '').trim()
   const params = useMemo(() => (config.params ?? EMPTY_PARAMS) as Record<string, unknown>, [config.params])
   const confirmDangerous = config.confirm_dangerous === true
   const [dangerousConfirmPending, setDangerousConfirmPending] = useState(false)
+  const [driverOptionsQuery, setDriverOptionsQuery] = useState('')
   const pidInArgsLines = useMemo(() => (driver === 'ibcmd' ? detectIbcmdPidInArgs(config.args_text) : []), [config.args_text, driver])
 
   const commandOptions = useMemo(() => buildCommandOptions(commandsById), [commandsById])
@@ -1119,6 +1164,11 @@ export function DriverCommandBuilder({
       const connection = (config.connection ?? {}) as Record<string, unknown>
       return getValueAtPath(connection, subPath)
     }
+    if (path.startsWith('ib_auth.')) {
+      const subPath = path.slice('ib_auth.'.length)
+      const ibAuth = (config.ib_auth ?? {}) as Record<string, unknown>
+      return getValueAtPath(ibAuth, subPath)
+    }
     if (path.startsWith('cli_options.')) {
       const subPath = path.slice('cli_options.'.length)
       const cliOptions = (config.cli_options ?? {}) as Record<string, unknown>
@@ -1132,6 +1182,12 @@ export function DriverCommandBuilder({
       const subPath = path.slice('connection.'.length)
       const connection = (config.connection ?? {}) as Record<string, unknown>
       onChange({ connection: setObjectPath(connection, subPath, value) as unknown as IbcmdCliConnection })
+      return
+    }
+    if (path.startsWith('ib_auth.')) {
+      const subPath = path.slice('ib_auth.'.length)
+      const ibAuth = (config.ib_auth ?? {}) as Record<string, unknown>
+      onChange({ ib_auth: setObjectPath(ibAuth, subPath, value) as unknown as IbcmdIbAuth })
       return
     }
     if (path.startsWith('cli_options.')) {
@@ -1172,6 +1228,11 @@ export function DriverCommandBuilder({
     if (!schema) return null
     if (!isVisibleBySchema(schema)) return null
 
+    if (driver === 'ibcmd' && (path === 'ib_auth.user' || path === 'ib_auth.password')) {
+      // These are resolved at runtime via credentials mapping; do not expose raw IB creds in UI.
+      return null
+    }
+
     const label = (typeof schema.label === 'string' ? schema.label : path.split('.').slice(-1)[0]).trim()
     const description = typeof schema.description === 'string' ? schema.description : undefined
     const required = isRequiredBySchema(schema)
@@ -1186,7 +1247,43 @@ export function DriverCommandBuilder({
 
     const helpParts: string[] = []
     if (description) helpParts.push(description)
+    const ui = schema.ui
+    const aliases = isRecord(ui) && Array.isArray(ui.aliases)
+      ? (ui.aliases as unknown[]).filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
+      : []
+    if (aliases.length > 0) helpParts.push(`Aliases: ${aliases.join(' ')}`)
     if (missingRequired) helpParts.push('Required.')
+
+    if (driver === 'ibcmd' && path === 'ib_auth.strategy') {
+      const allowedServiceCommands = new Set(['infobase.extension.list', 'infobase.extension.info'])
+      const canShow = Boolean(selectedCommand) && selectedCommand?.risk_level === 'safe' && allowedServiceCommands.has(commandId)
+      if (!canShow) return null
+
+      const canUseService = meQuery.data?.is_staff === true
+      const options = [
+        { value: 'actor', label: 'actor (per-user mapping)' },
+        ...(canUseService ? [{ value: 'service', label: 'service (service account)' }] : []),
+        { value: 'none', label: 'none (no IB auth)' },
+      ]
+      const rawValue = getConfigValueAtPath(path)
+      const value = (rawValue === 'actor' || rawValue === 'service' || rawValue === 'none') ? rawValue : 'actor'
+
+      return (
+        <Form.Item
+          key={path}
+          label={label}
+          style={{ marginBottom: 12 }}
+          help={helpParts.length > 0 ? helpParts.join(' ') : undefined}
+        >
+          <Select
+            disabled={readOnly}
+            value={value}
+            options={options}
+            onChange={(next) => updateConfigAtPath(path, next)}
+          />
+        </Form.Item>
+      )
+    }
 
     if (kind === 'database_ref') {
       if (databaseOptions.length === 0) {
@@ -1503,9 +1600,12 @@ export function DriverCommandBuilder({
         const path = `connection.${key}`
         if (getSchemaAtPath(schema, path)) connectionPaths.push(path)
       }
-      const offlineKeys = ['config', 'data', 'dbms', 'db_server', 'db_name', 'db_user', 'db_pwd']
-        .filter((key) => Boolean(getSchemaAtPath(schema, `connection.offline.${key}`)))
-        .sort()
+      const offlineSchema = getSchemaAtPath(schema, 'connection.offline')
+      const offlineKeys = isRecord(offlineSchema)
+        ? Object.keys(offlineSchema)
+          .filter((key) => Boolean(getSchemaAtPath(schema, `connection.offline.${key}`)))
+          .sort()
+        : []
       for (const key of offlineKeys) {
         connectionPaths.push(`connection.offline.${key}`)
       }
@@ -1540,6 +1640,40 @@ export function DriverCommandBuilder({
 
     if (visibleSections.length === 0) {
       return null
+    }
+
+    const query = driverOptionsQuery.trim().toLowerCase()
+    const matchesQuery = (path: string) => {
+      if (!query) return true
+      const schema = getSchemaAtPath(driverSchema, path)
+      const label = typeof schema?.label === 'string' ? schema.label : ''
+      const description = typeof schema?.description === 'string' ? schema.description : ''
+      const flag = typeof schema?.flag === 'string' ? schema.flag : ''
+      const ui = schema?.ui
+      const aliases = isRecord(ui) && Array.isArray(ui.aliases)
+        ? (ui.aliases as unknown[]).filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
+        : []
+
+      const haystack = [path, label, description, flag, ...aliases].join(' ').toLowerCase()
+      return haystack.includes(query)
+    }
+
+    const filteredSections: UiSection[] = []
+    for (const section of visibleSections) {
+      const nextPaths = query ? section.paths.filter(matchesQuery) : section.paths
+      if (nextPaths.length === 0) continue
+      filteredSections.push({ ...section, paths: nextPaths })
+    }
+
+    if (filteredSections.length === 0) {
+      return (
+        <Alert
+          type="info"
+          showIcon
+          message="No driver options matched"
+          description="Clear the search query to show all available driver options."
+        />
+      )
     }
 
     const renderSectionFields = (paths: string[]) => {
@@ -1578,7 +1712,14 @@ export function DriverCommandBuilder({
           />
         )}
 
-        {visibleSections.map((section, idx) => (
+        <Input
+          allowClear
+          value={driverOptionsQuery}
+          onChange={(event) => setDriverOptionsQuery(event.target.value)}
+          placeholder="Search driver options..."
+        />
+
+        {filteredSections.map((section, idx) => (
           <Space key={section.id} direction="vertical" style={{ width: '100%' }} size="small">
             {idx > 0 && <Divider style={{ margin: '12px 0' }} />}
             <Text strong>{section.title}</Text>

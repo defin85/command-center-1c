@@ -2450,6 +2450,18 @@ def preview_command_schemas(request):
                 ):
                     raise ValueError("Use connection.pid instead of --pid in additional_args")
 
+            if strict:
+                for token in additional_args:
+                    t = str(token or "").strip().lower()
+                    if (
+                        t in {"--request-db-pwd", "--request-database-password", "-w"}
+                        or t.startswith("--request-db-pwd=")
+                        or t.startswith("--request-database-password=")
+                    ):
+                        raise ValueError(
+                            "stdin flag --request-db-pwd (-W) is not allowed in guided mode; use connection.offline.db_pwd instead"
+                        )
+
             flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
             if flattened_connection:
                 conflicts = detect_connection_option_conflicts(
