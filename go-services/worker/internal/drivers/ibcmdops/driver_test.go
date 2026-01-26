@@ -131,7 +131,7 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 	}
 }
 
-func TestBuildRequestIbcmdCliRecordsNormalizeAndSkipsUnsupportedAuth(t *testing.T) {
+func TestBuildRequestIbcmdCliRecordsNormalizeAndProvidesInfobaseAuthViaStdin(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",
 		OperationType: "ibcmd_cli",
@@ -163,11 +163,11 @@ func TestBuildRequestIbcmdCliRecordsNormalizeAndSkipsUnsupportedAuth(t *testing.
 	if req.RuntimeBindings[0]["source_ref"] != "worker.normalizeIbcmdArgv" || req.RuntimeBindings[0]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
 	}
-	if req.RuntimeBindings[1]["target_ref"] != "infobase_auth" || req.RuntimeBindings[1]["status"] != "skipped" {
+	if req.RuntimeBindings[1]["target_ref"] != "stdin" || req.RuntimeBindings[1]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
 	}
-	if req.RuntimeBindings[1]["reason"] != "unsupported_for_command" {
-		t.Fatalf("unexpected runtime binding reason: %#v", req.RuntimeBindings[1])
+	if req.Stdin != "ibuser\nibpass\n" {
+		t.Fatalf("unexpected stdin: %q", req.Stdin)
 	}
 }
 

@@ -533,7 +533,11 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 		}
 
 		credsArgs := resolvedArgs
-		if shouldInjectInfobaseAuthArgs(commandID, resolvedArgs) {
+		stdin := extractString(data, "stdin")
+		appliedStdin := false
+		needsAuthArgs := shouldInjectInfobaseAuthArgs(commandID, resolvedArgs)
+
+		if needsAuthArgs {
 			runtimeBindings = append(runtimeBindings,
 				map[string]interface{}{
 					"target_ref": "flag:--user",
@@ -551,7 +555,21 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 				},
 			)
 			credsArgs = injectInfobaseAuthArgs(resolvedArgs, creds)
-		} else if commandID != "" {
+		} else if stdin == "" && shouldProvideInfobaseAuthViaStdin(commandID, resolvedArgs) {
+			stdin = buildInfobaseAuthStdin(creds)
+			if stdin != "" {
+				appliedStdin = true
+				runtimeBindings = append(runtimeBindings, map[string]interface{}{
+					"target_ref": "stdin",
+					"source_ref": "credentials.ib_user_mapping",
+					"resolve_at": "worker",
+					"sensitive":  true,
+					"status":     "applied",
+				})
+			}
+		}
+
+		if commandID != "" && !needsAuthArgs && !appliedStdin {
 			runtimeBindings = append(runtimeBindings, map[string]interface{}{
 				"target_ref": "infobase_auth",
 				"source_ref": "credentials.ib_user_mapping",
@@ -563,7 +581,7 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 		}
 		return &ibcmdRequest{
 			Args:            credsArgs,
-			Stdin:           extractString(data, "stdin"),
+			Stdin:           stdin,
 			ArtifactPath:    artifactPath,
 			RuntimeBindings: runtimeBindings,
 			inputCleanup:    combinedInputCleanup,
@@ -690,6 +708,25 @@ func injectInfobaseAuthArgs(args []string, creds *credentials.DatabaseCredential
 	return cleaned
 }
 
+func buildInfobaseAuthStdin(creds *credentials.DatabaseCredentials) string {
+	if creds == nil {
+		return ""
+	}
+
+	username := strings.TrimSpace(creds.IBUsername)
+	if username == "" {
+		return ""
+	}
+
+	password := strings.TrimSpace(creds.IBPassword)
+	if password == "" {
+		// Prefer a fast failure to a hang on interactive password prompt.
+		return username + "\n"
+	}
+
+	return username + "\n" + password + "\n"
+}
+
 func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
 	// NOTE: ibcmd supports --user/--password only for a limited set of commands
 	// (e.g. infobase dump/restore). Passing these flags to other commands (like
@@ -704,6 +741,26 @@ func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
 		sub := strings.TrimSpace(argv[1])
 		return sub == "dump" || sub == "restore"
 	}
+	return false
+}
+
+func shouldProvideInfobaseAuthViaStdin(commandID string, argv []string) bool {
+	// Some infobase-scoped commands require interactive IB auth. Providing credentials
+	// via --user/--password is not reliable across platform versions, so use stdin.
+	cmd := strings.TrimSpace(commandID)
+	if strings.HasPrefix(cmd, "infobase.extension.") {
+		return true
+	}
+
+	// Also cover cases without command_id (manual mode) and the pre-normalized argv.
+	// By this point argv may already include "config" (normalizeIbcmdArgv).
+	if len(argv) >= 4 && argv[0] == "infobase" && argv[1] == "config" && argv[2] == "extension" {
+		return true
+	}
+	if len(argv) >= 3 && argv[0] == "infobase" && argv[1] == "extension" {
+		return true
+	}
+
 	return false
 }
 

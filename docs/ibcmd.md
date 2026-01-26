@@ -33,6 +33,8 @@ database:
 
 `ibcmd_cli` использует driver-catalog v2 (base@approved + overrides@active) для валидации `command_id` и сборки `argv[]`.
 
+Важно: некоторые команды `ibcmd` интерактивно запрашивают аутентификацию в ИБ (например `infobase.extension.list`). Для таких команд worker подает логин/пароль через `stdin` из `credentials.ib_user_mapping`, если `stdin` не задан явно в payload.
+
 Пример (per_database):
 
 ```json
