@@ -5,10 +5,10 @@
 - [x] 1.4 Обновить worker: инжект DBMS creds per target (argv-only), запрет интерактива
 - [x] 1.5 Оптимизировать UI `Driver options` (сворачиваемые секции + “common/advanced” + скрытие DBMS кредов)
 - [x] 1.6 Shortcuts v2: сохранять/загружать полную конфигурацию (`driver options`/`params`/`args`) + валидация/миграция при изменении схемы
-- [ ] 1.7 Обновить тесты: Django unit + frontend e2e (shortcuts, скрытие кредов, layout), worker unit (частично: go unit + TS lint прогнаны; pytest/e2e не прогонялись в этом окружении)
+- [x] 1.7 Обновить тесты: Django unit + frontend e2e (shortcuts, скрытие кредов, layout), worker unit
 - [x] 1.8 Обновить документацию (миграция поведения, что креды не вводятся в UI, как заводить маппинги)
 
 ## 2. Validation
 - [x] 2.1 `openspec validate update-ibcmd-driver-options-ui-shortcuts-dbms-credentials --strict --no-interactive`
 - [x] 2.2 `./scripts/dev/lint.sh` (после apply‑стадии; есть не‑critical ruff warnings вне текущей задачи)
-- [ ] 2.3 Точечные тесты: `pytest` (orchestrator) + `frontend` tests + worker tests (частично: `go test` для worker/shared OK; в окружении нет модуля `pytest`, frontend tests не прогонялись)
+- [x] 2.3 Точечные тесты: `pytest` (orchestrator) + `frontend` tests + worker tests
