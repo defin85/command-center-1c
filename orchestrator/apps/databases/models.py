@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
@@ -896,6 +897,90 @@ class InfobaseUserMapping(models.Model):
 
     def __str__(self):
         return f"{self.database.name}: {self.ib_username}"
+
+
+# =============================================================================
+# DBMS Users (manual mapping for offline ibcmd connection)
+# =============================================================================
+
+class DbmsAuthType(models.TextChoices):
+    LOCAL = "local", "Local"
+    SERVICE = "service", "Service"
+    OTHER = "other", "Other"
+
+
+class DbmsUserMapping(models.Model):
+    """Manual mapping between CC users and DBMS users for offline ibcmd operations."""
+
+    from django.conf import settings as django_settings
+
+    database = models.ForeignKey(
+        "Database",
+        on_delete=models.CASCADE,
+        related_name="dbms_user_mappings",
+    )
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dbms_user_mappings",
+    )
+    db_username = models.CharField(max_length=128)
+    db_password = EncryptedCharField(max_length=255, blank=True)
+    auth_type = models.CharField(
+        max_length=32,
+        choices=DbmsAuthType.choices,
+        default=DbmsAuthType.LOCAL,
+    )
+    is_service = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dbms_user_mappings_created",
+    )
+    updated_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dbms_user_mappings_updated",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "databases_dbms_user_mappings"
+        indexes = [
+            models.Index(fields=["database", "is_service"], name="dbms_map_db_svc_idx"),
+            models.Index(fields=["database", "user"], name="dbms_map_db_user_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["database", "user"],
+                name="dbms_map_unique_user",
+                condition=Q(user__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["database"],
+                name="dbms_map_unique_service",
+                condition=Q(is_service=True),
+            ),
+            models.CheckConstraint(
+                check=Q(user__isnull=False) | Q(is_service=True),
+                name="dbms_map_user_or_service",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        if self.is_service:
+            return f"{self.database.name}: DBMS service"
+        if self.user_id:
+            return f"{self.database.name}: {self.user_id}"
+        return f"{self.database.name}: {self.db_username}"
 
 
 class DatabaseExtensionsSnapshot(models.Model):

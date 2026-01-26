@@ -41,6 +41,11 @@ func TestDriverExecute_OnNonZeroExit_PreservesStdoutStderrInData(t *testing.T) {
 
 	driver := NewDriver(&fakeCredsFetcher{
 		creds: &credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
 			IBUsername: "user",
 			IBPassword: "pass",
 		},
@@ -82,4 +87,3 @@ func TestDriverExecute_OnNonZeroExit_PreservesStdoutStderrInData(t *testing.T) {
 		t.Fatalf("expected stderr to be preserved, got %#v", res.Data["stderr"])
 	}
 }
-

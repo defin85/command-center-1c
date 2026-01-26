@@ -68,7 +68,15 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		nil,
 	)
 	if err != nil {
@@ -81,18 +89,31 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 		t.Fatalf("expected stdin=hello, got %q", req.Stdin)
 	}
 
-	expected := []string{"infobase", "dump", "--user=ibuser", "--password=ibpass"}
+	expected := []string{
+		"infobase",
+		"dump",
+		"--dbms=PostgreSQL",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
+		"--db-pwd=dbpass",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
-	if len(req.RuntimeBindings) != 2 {
-		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	if len(req.RuntimeBindings) != 7 {
+		t.Fatalf("expected 7 runtime bindings, got %#v", req.RuntimeBindings)
 	}
-	if req.RuntimeBindings[0]["target_ref"] != "flag:--user" || req.RuntimeBindings[0]["status"] != "applied" {
+	if req.RuntimeBindings[0]["target_ref"] != "flag:--dbms" || req.RuntimeBindings[0]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
 	}
-	if req.RuntimeBindings[1]["target_ref"] != "flag:--password" || req.RuntimeBindings[1]["status"] != "applied" {
-		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	if req.RuntimeBindings[5]["target_ref"] != "flag:--user" || req.RuntimeBindings[5]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[5])
+	}
+	if req.RuntimeBindings[6]["target_ref"] != "flag:--password" || req.RuntimeBindings[6]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[6])
 	}
 }
 
@@ -116,18 +137,36 @@ func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"infobase", "restore", "--user=ibuser", "--password=ibpass"}
+	expected := []string{
+		"infobase",
+		"restore",
+		"--dbms=PostgreSQL",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
+		"--db-pwd=dbpass",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
-	if len(req.RuntimeBindings) != 2 {
-		t.Fatalf("expected 2 runtime bindings, got %#v", req.RuntimeBindings)
+	if len(req.RuntimeBindings) != 7 {
+		t.Fatalf("expected 7 runtime bindings, got %#v", req.RuntimeBindings)
 	}
 }
 
@@ -147,27 +186,47 @@ func TestBuildRequestIbcmdCliRecordsNormalizeAndInjectsInfobaseAuthArgsForExtens
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"infobase", "config", "extension", "list", "--user=ibuser", "--password=ibpass"}
+	expected := []string{
+		"infobase",
+		"config",
+		"extension",
+		"list",
+		"--dbms=PostgreSQL",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
+		"--db-pwd=dbpass",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
 	if !reflect.DeepEqual(req.Args, expected) {
 		t.Fatalf("unexpected args: %#v", req.Args)
 	}
-	if len(req.RuntimeBindings) != 3 {
-		t.Fatalf("expected 3 runtime bindings, got %#v", req.RuntimeBindings)
+	if len(req.RuntimeBindings) != 8 {
+		t.Fatalf("expected 8 runtime bindings, got %#v", req.RuntimeBindings)
 	}
 	if req.RuntimeBindings[0]["source_ref"] != "worker.normalizeIbcmdArgv" || req.RuntimeBindings[0]["status"] != "applied" {
 		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
 	}
-	if req.RuntimeBindings[1]["target_ref"] != "flag:--user" || req.RuntimeBindings[1]["status"] != "applied" {
-		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	if req.RuntimeBindings[6]["target_ref"] != "flag:--user" || req.RuntimeBindings[6]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[6])
 	}
-	if req.RuntimeBindings[2]["target_ref"] != "flag:--password" || req.RuntimeBindings[2]["status"] != "applied" {
-		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[2])
+	if req.RuntimeBindings[7]["target_ref"] != "flag:--password" || req.RuntimeBindings[7]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[7])
 	}
 	if req.Stdin != "" {
 		t.Fatalf("unexpected stdin: %q", req.Stdin)
@@ -191,7 +250,15 @@ func TestBuildRequestIbcmdCliServiceStrategyInjectsInfobaseAuthArgsForExtensions
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "svc", IBPassword: "svcpwd"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "svc",
+			IBPassword: "svcpwd",
+		},
 		nil,
 	)
 	if err != nil {
@@ -200,11 +267,11 @@ func TestBuildRequestIbcmdCliServiceStrategyInjectsInfobaseAuthArgsForExtensions
 	if !strings.Contains(strings.Join(req.Args, " "), "--user=svc") {
 		t.Fatalf("expected --user=svc in args, got %#v", req.Args)
 	}
-	if req.RuntimeBindings[1]["source_ref"] != "credentials.ib_service_mapping" {
-		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[1])
+	if req.RuntimeBindings[6]["source_ref"] != "credentials.ib_service_mapping" {
+		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[6])
 	}
-	if req.RuntimeBindings[2]["source_ref"] != "credentials.ib_service_mapping" {
-		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[2])
+	if req.RuntimeBindings[7]["source_ref"] != "credentials.ib_service_mapping" {
+		t.Fatalf("unexpected source_ref: %#v", req.RuntimeBindings[7])
 	}
 }
 
@@ -225,7 +292,15 @@ func TestBuildRequestIbcmdCliServiceStrategyFailsClosedOutsideAllowlist(t *testi
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "svc", IBPassword: "svcpwd"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "svc",
+			IBPassword: "svcpwd",
+		},
 		nil,
 	)
 	if err == nil {
@@ -250,7 +325,15 @@ func TestBuildRequestIbcmdCliNoneStrategySkipsInfobaseAuth(t *testing.T) {
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		nil,
 	)
 	if err != nil {
@@ -314,7 +397,13 @@ func TestBuildRequestIbcmdCliInfobaseDumpUsesStoragePrepareOutput(t *testing.T) 
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		store,
 	)
 	if err != nil {
@@ -332,9 +421,68 @@ func TestBuildRequestIbcmdCliInfobaseDumpUsesStoragePrepareOutput(t *testing.T) 
 	expected := []string{
 		"infobase",
 		"dump",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
 		"--dbms=PostgreSQL",
 		"--db-pwd=secret",
 		"/tmp/out.dt",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+}
+
+func TestBuildRequestIbcmdCliInjectsOfflineDbmsArgsFromCredentials(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.extension.list",
+				"argv": []string{
+					"infobase",
+					"extension",
+					"list",
+				},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+
+	expected := []string{
+		"infobase",
+		"config",
+		"extension",
+		"list",
+		"--dbms=PostgreSQL",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
+		"--db-pwd=dbpass",
 		"--user=ibuser",
 		"--password=ibpass",
 	}
@@ -371,7 +519,13 @@ func TestBuildRequestIbcmdCliInfobaseRestoreUsesStorageResolveInput(t *testing.T
 		context.Background(),
 		msg,
 		"db-1",
-		&credentials.DatabaseCredentials{IBUsername: "ibuser", IBPassword: "ibpass"},
+		&credentials.DatabaseCredentials{
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
 		store,
 	)
 	if err != nil {
@@ -386,6 +540,9 @@ func TestBuildRequestIbcmdCliInfobaseRestoreUsesStorageResolveInput(t *testing.T
 	expected := []string{
 		"infobase",
 		"restore",
+		"--db-server=localhost",
+		"--db-name=testdb",
+		"--db-user=dbuser",
 		"--dbms=PostgreSQL",
 		"--db-pwd=secret",
 		"/tmp/input.dt",

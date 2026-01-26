@@ -1,7 +1,7 @@
 import '../../lib/monacoEnv'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Collapse, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Tabs, Typography } from 'antd'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 
@@ -993,9 +993,16 @@ export function DriverCommandBuilder({
 
   const shortcutItems = shortcutsQuery.data?.items ?? EMPTY_SHORTCUT_ITEMS
   const shortcutsById = useMemo(() => {
-    const map: Record<string, { id: string; command_id: string; title: string }> = {}
+    const map: Record<string, { id: string; command_id: string; title: string; payload?: unknown; catalog_base_version?: string; catalog_overrides_version?: string }> = {}
     for (const item of shortcutItems) {
-      map[item.id] = { id: item.id, command_id: item.command_id, title: item.title }
+      map[item.id] = {
+        id: item.id,
+        command_id: item.command_id,
+        title: item.title,
+        payload: item.payload,
+        catalog_base_version: item.catalog_base_version,
+        catalog_overrides_version: item.catalog_overrides_version,
+      }
     }
     return map
   }, [shortcutItems])
@@ -1007,6 +1014,20 @@ export function DriverCommandBuilder({
 
   const scope: DriverCommandScope | undefined = selectedCommand?.scope
   const risk: DriverCommandRiskLevel | undefined = selectedCommand?.risk_level
+
+  useEffect(() => {
+    if (driver !== 'ibcmd') return
+    const connection = config.connection
+    const offline = connection?.offline
+    if (!offline) return
+    if (!('db_user' in offline) && !('db_pwd' in offline)) return
+
+    const nextOffline = { ...(offline as IbcmdCliConnectionOffline) }
+    delete (nextOffline as Record<string, unknown>).db_user
+    delete (nextOffline as Record<string, unknown>).db_pwd
+
+    onChange({ connection: { ...(connection ?? {}), offline: nextOffline } })
+  }, [config.connection, driver, onChange])
 
   useEffect(() => {
     const nextLabel = selectedCommand?.label
@@ -1228,8 +1249,15 @@ export function DriverCommandBuilder({
     if (!schema) return null
     if (!isVisibleBySchema(schema)) return null
 
-    if (driver === 'ibcmd' && (path === 'ib_auth.user' || path === 'ib_auth.password')) {
-      // These are resolved at runtime via credentials mapping; do not expose raw IB creds in UI.
+    const ui = schema.ui
+    if (isRecord(ui) && ui.hidden === true) {
+      return null
+    }
+
+    const semantics = isRecord(schema.semantics) ? (schema.semantics as Record<string, unknown>) : undefined
+    const credentialKind = typeof semantics?.credential_kind === 'string' ? semantics.credential_kind : ''
+    if (driver === 'ibcmd' && (credentialKind === 'db_user' || credentialKind === 'db_password' || credentialKind === 'ib_user' || credentialKind === 'ib_password')) {
+      // Credentials are resolved at runtime via mappings; do not expose raw secrets in UI.
       return null
     }
 
@@ -1247,7 +1275,6 @@ export function DriverCommandBuilder({
 
     const helpParts: string[] = []
     if (description) helpParts.push(description)
-    const ui = schema.ui
     const aliases = isRecord(ui) && Array.isArray(ui.aliases)
       ? (ui.aliases as unknown[]).filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
       : []
@@ -1679,6 +1706,14 @@ export function DriverCommandBuilder({
     const renderSectionFields = (paths: string[]) => {
       const offlinePaths = paths.filter((p) => p.startsWith('connection.offline.'))
       const mainPaths = paths.filter((p) => !p.startsWith('connection.offline.'))
+      const offlineDbCore = new Set([
+        'connection.offline.dbms',
+        'connection.offline.db_server',
+        'connection.offline.db_name',
+        'connection.offline.db_path',
+      ])
+      const offlineDbPaths = offlinePaths.filter((p) => offlineDbCore.has(p))
+      const offlineOtherPaths = offlinePaths.filter((p) => !offlineDbCore.has(p))
       return (
         <>
           {mainPaths.map((path) => renderDriverOptionField(path))}
@@ -1686,7 +1721,28 @@ export function DriverCommandBuilder({
             <>
               <Divider style={{ margin: '12px 0' }} />
               <Text strong>Offline</Text>
-              {offlinePaths.map((path) => renderDriverOptionField(path))}
+              {driver === 'ibcmd' && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ margin: '8px 0 12px' }}
+                  message="Offline DB connection"
+                  description="DBMS credentials are resolved per database via mapping; some parameters (e.g. db_name) may be resolved per target."
+                />
+              )}
+              {offlineDbPaths.map((path) => renderDriverOptionField(path))}
+              {offlineOtherPaths.length > 0 && (
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'offline-advanced',
+                      label: 'Offline: advanced',
+                      children: <>{offlineOtherPaths.map((path) => renderDriverOptionField(path))}</>,
+                    },
+                  ]}
+                />
+              )}
             </>
           )}
         </>
@@ -1779,6 +1835,94 @@ export function DriverCommandBuilder({
     ? 'Manual mode: you are responsible for the command syntax and parameters.'
     : 'Extra ibcmd arguments appended after canonical argv.'
 
+  const currentCatalogBaseVersion = driverCommandsQuery.data?.base_version ?? ''
+  const currentCatalogOverridesVersion = driverCommandsQuery.data?.overrides_version ?? ''
+
+  const parseShortcutConfig = (payload: unknown): Partial<DriverCommandOperationConfig> => {
+    if (!isRecord(payload)) return {}
+    const maybeConfig = payload.config
+    if (isRecord(maybeConfig)) return maybeConfig as unknown as Partial<DriverCommandOperationConfig>
+    return payload as unknown as Partial<DriverCommandOperationConfig>
+  }
+
+  const sanitizeLoadedShortcutConfig = (
+    cfg: Partial<DriverCommandOperationConfig>,
+    cmd: DriverCommandV2 | undefined,
+  ): { config: Partial<DriverCommandOperationConfig>; dropped: string[] } => {
+    const dropped: string[] = []
+    const out: Partial<DriverCommandOperationConfig> = {}
+
+    if (cfg.mode === 'guided' || cfg.mode === 'manual') out.mode = cfg.mode
+    if (typeof cfg.args_text === 'string') out.args_text = cfg.args_text
+    if (typeof cfg.timeout_seconds === 'number') out.timeout_seconds = cfg.timeout_seconds
+    if (typeof cfg.auth_database_id === 'string') out.auth_database_id = cfg.auth_database_id
+
+    // Never load raw stdin from shortcuts (safety).
+    if (typeof (cfg as Record<string, unknown>).stdin === 'string' && (cfg as Record<string, unknown>).stdin) {
+      dropped.push('stdin')
+    }
+
+    if (driver === 'ibcmd') {
+      const rawIbAuth = cfg.ib_auth
+      if (isRecord(rawIbAuth)) {
+        const nextIbAuth: Record<string, unknown> = {}
+        if (rawIbAuth.strategy === 'actor' || rawIbAuth.strategy === 'service' || rawIbAuth.strategy === 'none') {
+          nextIbAuth.strategy = rawIbAuth.strategy
+        }
+        out.ib_auth = nextIbAuth as unknown as IbcmdIbAuth
+      }
+
+      const rawConnection = cfg.connection
+      if (isRecord(rawConnection)) {
+        const nextConnection: Record<string, unknown> = {}
+        if (typeof rawConnection.remote === 'string') nextConnection.remote = rawConnection.remote
+        if (typeof rawConnection.pid === 'number' || rawConnection.pid === null) nextConnection.pid = rawConnection.pid
+
+        const rawOffline = rawConnection.offline
+        if (isRecord(rawOffline)) {
+          const nextOffline: Record<string, unknown> = {}
+          const offlineSchema = getSchemaAtPath(driverSchema, 'connection.offline')
+          const allowedKeys = isRecord(offlineSchema) ? new Set(Object.keys(offlineSchema)) : new Set<string>()
+
+          for (const [key, value] of Object.entries(rawOffline)) {
+            if (key === 'db_user' || key === 'db_pwd') {
+              dropped.push(`connection.offline.${key}`)
+              continue
+            }
+            if (allowedKeys.size > 0 && !allowedKeys.has(key)) {
+              dropped.push(`connection.offline.${key}`)
+              continue
+            }
+            if (typeof value === 'string' && value.trim()) nextOffline[key] = value
+          }
+
+          nextConnection.offline = nextOffline
+        }
+
+        out.connection = nextConnection as unknown as IbcmdCliConnection
+      }
+    }
+
+    // Filter params by current command schema.
+    const rawParams = cfg.params
+    if (cmd && isRecord(rawParams)) {
+      const allowed = new Set(Object.keys(cmd.params_by_name ?? {}))
+      const nextParams: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(rawParams)) {
+        if (!allowed.has(key)) {
+          dropped.push(`params.${key}`)
+          continue
+        }
+        nextParams[key] = value
+      }
+      out.params = nextParams
+    } else if (isRecord(rawParams)) {
+      out.params = rawParams
+    }
+
+    return { config: out, dropped }
+  }
+
   const handleShortcutSelect = (shortcutId?: string) => {
     if (!shortcutId) {
       setSelectedShortcutId(undefined)
@@ -1789,8 +1933,58 @@ export function DriverCommandBuilder({
       setSelectedShortcutId(undefined)
       return
     }
-    setSelectedShortcutId(shortcutId)
-    onChange({ command_id: shortcut.command_id, mode: 'guided' })
+    const cmd = shortcut.command_id ? commandsById[shortcut.command_id] : undefined
+    const loaded = parseShortcutConfig(shortcut.payload)
+    const sanitized = sanitizeLoadedShortcutConfig(loaded, cmd)
+    const isLegacy = !shortcut.payload || Object.keys(loaded).length === 0
+
+    const baseMismatch = (shortcut.catalog_base_version || '') !== (currentCatalogBaseVersion || '')
+    const overridesMismatch = (shortcut.catalog_overrides_version || '') !== (currentCatalogOverridesVersion || '')
+    const hasMismatch = baseMismatch || overridesMismatch
+
+    const apply = () => {
+      setSelectedShortcutId(shortcutId)
+      if (isLegacy) {
+        onChange({
+          command_id: shortcut.command_id,
+          mode: 'guided',
+          params: {},
+          args_text: '',
+          connection: undefined,
+          ib_auth: undefined,
+          timeout_seconds: undefined,
+        })
+        return
+      }
+
+      onChange({ command_id: shortcut.command_id, ...sanitized.config })
+    }
+
+    if (hasMismatch || sanitized.dropped.length > 0) {
+      modal.confirm({
+        title: 'Load shortcut',
+        okText: 'Apply',
+        cancelText: 'Cancel',
+        content: (
+          <Space direction="vertical" size="small">
+            {hasMismatch && (
+              <Text type="warning">
+                Shortcut was saved for a different driver catalog version. It may require adjustments.
+              </Text>
+            )}
+            {sanitized.dropped.length > 0 && (
+              <Text type="secondary">
+                Dropped fields: {sanitized.dropped.join(', ')}
+              </Text>
+            )}
+          </Space>
+        ),
+        onOk: apply,
+      })
+      return
+    }
+
+    apply()
   }
 
   const handleSaveShortcut = () => {
@@ -1828,7 +2022,19 @@ export function DriverCommandBuilder({
           modal.error({ title: 'Title required', content: 'Shortcut title cannot be empty.' })
           return
         }
-        await createShortcutMutation.mutateAsync({ driver: 'ibcmd', command_id: commandId, title })
+        const payload = {
+          version: 1,
+          config: {
+            mode,
+            params: config.params ?? {},
+            args_text: config.args_text ?? '',
+            connection: config.connection ?? {},
+            timeout_seconds: config.timeout_seconds,
+            auth_database_id: config.auth_database_id,
+            ib_auth: config.ib_auth ?? {},
+          },
+        }
+        await createShortcutMutation.mutateAsync({ driver: 'ibcmd', command_id: commandId, title, payload })
       },
     })
   }

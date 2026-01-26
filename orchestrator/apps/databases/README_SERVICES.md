@@ -167,6 +167,14 @@ for db in cluster.databases.all():
     db.save()
 ```
 
+### Сценарий 1.1: Маппинги пользователей для `ibcmd` (IB + DBMS)
+
+Для schema-driven `ibcmd_cli` креды не вводятся в UI напрямую:
+- IB creds берутся из `InfobaseUserMapping` (см. API v2 `databases/*-ib-user*`).
+- DBMS creds для offline-подключения берутся из `DbmsUserMapping` (см. API v2 `databases/*-dbms-user*`).
+
+Оба типа маппинга поддерживают service-аккаунты (поле `is_service=true`). Политика разрешений на их использование задаётся на уровне операций (RBAC/allowlist).
+
 ### Сценарий 2: Health Check всех баз
 
 ```python

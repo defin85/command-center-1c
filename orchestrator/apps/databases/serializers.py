@@ -3,7 +3,7 @@
 from typing import Optional
 
 from rest_framework import serializers
-from .models import Database, DatabaseGroup, Cluster, InfobaseUserMapping
+from .models import Database, DatabaseGroup, Cluster, InfobaseUserMapping, DbmsUserMapping
 
 
 class DatabaseSerializer(serializers.ModelSerializer):
@@ -291,4 +291,65 @@ class InfobaseUserPasswordSetSerializer(serializers.Serializer):
 
 
 class InfobaseUserPasswordResetSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+
+
+class DbmsUserMappingSerializer(serializers.ModelSerializer):
+    user = UserRefSerializer(allow_null=True, required=False)
+    db_password_configured = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DbmsUserMapping
+        fields = [
+            'id',
+            'database_id',
+            'user',
+            'db_username',
+            'db_password_configured',
+            'auth_type',
+            'is_service',
+            'notes',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_db_password_configured(self, obj: DbmsUserMapping) -> bool:
+        return bool(obj.db_password)
+
+
+class DbmsUserMappingCreateSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    db_username = serializers.CharField()
+    db_password = serializers.CharField(required=False, allow_blank=False, write_only=True)
+    auth_type = serializers.ChoiceField(
+        choices=DbmsUserMapping._meta.get_field('auth_type').choices,
+        required=False,
+    )
+    is_service = serializers.BooleanField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class DbmsUserMappingUpdateSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    db_username = serializers.CharField(required=False)
+    auth_type = serializers.ChoiceField(
+        choices=DbmsUserMapping._meta.get_field('auth_type').choices,
+        required=False,
+    )
+    is_service = serializers.BooleanField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class DbmsUserMappingDeleteSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+
+
+class DbmsUserPasswordSetSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    password = serializers.CharField(write_only=True)
+
+
+class DbmsUserPasswordResetSerializer(serializers.Serializer):
     id = serializers.IntegerField()

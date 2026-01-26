@@ -586,6 +586,9 @@ class DriverCommandShortcutSerializer(serializers.Serializer):
     driver = serializers.CharField()
     command_id = serializers.CharField()
     title = serializers.CharField()
+    payload = serializers.JSONField(required=False)
+    catalog_base_version = serializers.CharField(required=False, allow_blank=True)
+    catalog_overrides_version = serializers.CharField(required=False, allow_blank=True)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
 
@@ -599,6 +602,7 @@ class CreateDriverCommandShortcutRequestSerializer(serializers.Serializer):
     driver = serializers.ChoiceField(choices=[("ibcmd", "ibcmd")])
     command_id = serializers.CharField()
     title = serializers.CharField(max_length=255)
+    payload = serializers.JSONField(required=False)
 
 
 class DeleteDriverCommandShortcutRequestSerializer(serializers.Serializer):
@@ -2661,17 +2665,21 @@ def list_driver_command_shortcuts(request):
                 qs = qs.filter(command_id__in=list(commands_by_id.keys()))
         except Exception:
             pass
-    items = [
-        {
-            "id": row.id,
-            "driver": row.driver,
-            "command_id": row.command_id,
-            "title": row.title,
-            "created_at": row.created_at,
-            "updated_at": row.updated_at,
-        }
-        for row in qs
-    ]
+    items = []
+    for row in qs:
+        items.append(
+            {
+                "id": row.id,
+                "driver": row.driver,
+                "command_id": row.command_id,
+                "title": row.title,
+                "payload": row.payload or {},
+                "catalog_base_version": row.catalog_base_version or "",
+                "catalog_overrides_version": row.catalog_overrides_version or "",
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+        )
 
     return Response({"items": items, "count": len(items)})
 
@@ -2690,12 +2698,54 @@ def list_driver_command_shortcuts(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_driver_command_shortcut(request):
+    def _sanitize_shortcut_payload(value):
+        if not isinstance(value, dict):
+            return {}
+
+        def sanitize_config(cfg):
+            if not isinstance(cfg, dict):
+                return {}
+            out = dict(cfg)
+            # Do not store stdin in shortcuts by default.
+            out.pop("stdin", None)
+
+            connection = out.get("connection")
+            if isinstance(connection, dict):
+                offline = connection.get("offline")
+                if isinstance(offline, dict):
+                    next_offline = dict(offline)
+                    next_offline.pop("db_user", None)
+                    next_offline.pop("db_pwd", None)
+                    next_offline.pop("db_password", None)
+                    next_connection = dict(connection)
+                    next_connection["offline"] = next_offline
+                    out["connection"] = next_connection
+
+            ib_auth = out.get("ib_auth")
+            if isinstance(ib_auth, dict):
+                next_ib_auth = dict(ib_auth)
+                next_ib_auth.pop("user", None)
+                next_ib_auth.pop("password", None)
+                out["ib_auth"] = next_ib_auth
+
+            return out
+
+        # Support both payload formats:
+        # - {"mode": "...", "connection": {...}, ...}
+        # - {"version": 1, "config": {...}}
+        if isinstance(value.get("config"), dict):
+            out = dict(value)
+            out["config"] = sanitize_config(out["config"])
+            return out
+        return sanitize_config(value)
+
     serializer = CreateDriverCommandShortcutRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
     driver = str(serializer.validated_data["driver"] or "").strip().lower()
     command_id = str(serializer.validated_data["command_id"] or "").strip()
     title = str(serializer.validated_data["title"] or "").strip()
+    payload = _sanitize_shortcut_payload(serializer.validated_data.get("payload"))
 
     if not command_id:
         return Response(
@@ -2740,6 +2790,9 @@ def create_driver_command_shortcut(request):
         driver=driver,
         command_id=command_id,
         title=title,
+        payload=payload,
+        catalog_base_version=str(resolved.base_version or ""),
+        catalog_overrides_version=str(resolved.overrides_version or "") if resolved.overrides_version else "",
     )
 
     return Response(
@@ -2748,6 +2801,9 @@ def create_driver_command_shortcut(request):
             "driver": shortcut.driver,
             "command_id": shortcut.command_id,
             "title": shortcut.title,
+            "payload": shortcut.payload or {},
+            "catalog_base_version": shortcut.catalog_base_version or "",
+            "catalog_overrides_version": shortcut.catalog_overrides_version or "",
             "created_at": shortcut.created_at,
             "updated_at": shortcut.updated_at,
         },

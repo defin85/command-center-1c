@@ -11,6 +11,12 @@ type DatabaseCredentials struct {
 	// Infobase (DESIGNER) credentials, mapped per CC user
 	IBUsername string `json:"ib_username,omitempty"`
 	IBPassword string `json:"ib_password,omitempty"`
+	// DBMS credentials + metadata (offline ibcmd connection)
+	DBMS       string `json:"dbms,omitempty"`
+	DBServer   string `json:"db_server,omitempty"`
+	DBName     string `json:"db_name,omitempty"`
+	DBUser     string `json:"db_user,omitempty"`
+	DBPassword string `json:"db_password,omitempty"`
 	// Legacy fields (for OData)
 	Host     string `json:"host"`
 	Port     int    `json:"port"`

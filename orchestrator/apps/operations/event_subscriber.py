@@ -1544,13 +1544,16 @@ class EventSubscriber:
         Credentials payload is encrypted via apps.databases.encryption.encrypt_credentials_for_transport.
         """
         from django.contrib.auth import get_user_model
-        from apps.databases.models import Database, InfobaseUserMapping
+        from apps.databases.models import Database, InfobaseUserMapping, DbmsUserMapping
         from apps.databases.encryption import encrypt_credentials_for_transport
 
         request_correlation_id = data.get('correlation_id', correlation_id)
         database_id = data.get('database_id', '')
         created_by = (data.get('created_by') or '').strip()
         ib_auth_strategy = str(data.get("ib_auth_strategy") or "").strip().lower()
+        dbms_auth_strategy = str(data.get("dbms_auth_strategy") or "").strip().lower()
+        if dbms_auth_strategy not in {"actor", "service", ""}:
+            dbms_auth_strategy = ""
 
         logger.info(
             f"Processing get-database-credentials request: database_id={database_id}, "
@@ -1597,6 +1600,26 @@ class EventSubscriber:
                         ib_username = mapping.ib_username
                         ib_password = mapping.ib_password
 
+            db_user = ''
+            db_password = ''
+            if dbms_auth_strategy == "service":
+                dbms_mapping = DbmsUserMapping.objects.filter(
+                    database=database,
+                    is_service=True,
+                    user__isnull=True,
+                ).first()
+                if dbms_mapping:
+                    db_user = dbms_mapping.db_username
+                    db_password = dbms_mapping.db_password
+            elif created_by:
+                user_model = get_user_model()
+                user = user_model.objects.filter(username=created_by).first()
+                if user:
+                    dbms_mapping = DbmsUserMapping.objects.filter(database=database, user=user).first()
+                    if dbms_mapping:
+                        db_user = dbms_mapping.db_username
+                        db_password = dbms_mapping.db_password
+
             if not database.cluster:
                 response['error'] = 'Database cluster is not configured'
                 logger.warning(
@@ -1623,6 +1646,11 @@ class EventSubscriber:
                 "password": database.password,  # EncryptedCharField auto-decrypts
                 "ib_username": ib_username,
                 "ib_password": ib_password,
+                "dbms": (database.metadata or {}).get("dbms", ""),
+                "db_server": (database.metadata or {}).get("db_server", ""),
+                "db_name": (database.metadata or {}).get("db_name", ""),
+                "db_user": db_user,
+                "db_password": db_password,
                 "host": database.host,
                 "port": database.port,
                 "base_name": database.base_name,

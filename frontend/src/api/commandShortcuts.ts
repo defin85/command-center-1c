@@ -7,6 +7,9 @@ export interface DriverCommandShortcut {
   driver: DriverCommandShortcutDriver
   command_id: string
   title: string
+  payload?: unknown
+  catalog_base_version?: string
+  catalog_overrides_version?: string
   created_at: string
   updated_at: string
 }
@@ -20,6 +23,7 @@ export interface CreateDriverCommandShortcutRequest {
   driver: DriverCommandShortcutDriver
   command_id: string
   title: string
+  payload?: unknown
 }
 
 export interface DeleteDriverCommandShortcutResponse {
@@ -54,4 +58,3 @@ export async function deleteDriverCommandShortcut(shortcutId: string): Promise<D
   )
   return response.data
 }
-
