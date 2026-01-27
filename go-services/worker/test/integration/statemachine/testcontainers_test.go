@@ -100,7 +100,6 @@ func TestStateMachine_RedisUnavailable(t *testing.T) {
 	// =============================================================================
 
 	publisher, responderSubscriber := helpers.SetupEventBus(t, redisClient)
-	_, smSubscriber := helpers.SetupEventBus(t, redisClient)
 
 	correlationID := fmt.Sprintf("test-redis-unavail-%d", time.Now().UnixNano())
 
@@ -131,7 +130,6 @@ func TestStateMachine_RedisUnavailable(t *testing.T) {
 		"db-123",
 		correlationID,
 		publisher,
-		smSubscriber,
 		redisClient,
 		helpers.TestConfig(),
 	)
@@ -141,9 +139,6 @@ func TestStateMachine_RedisUnavailable(t *testing.T) {
 	sm.InfobaseID = "test-infobase"
 	sm.ExtensionPath = "/test/ext.cfe"
 	sm.ExtensionName = "TestExtension"
-
-	go smSubscriber.Run(smCtx)
-	time.Sleep(1 * time.Second)
 
 	// =============================================================================
 	// Run State Machine and Stop Redis Mid-Workflow
@@ -278,7 +273,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 	t.Log("🚀 PHASE 1: Starting first State Machine instance...")
 
 	publisher1, responderSubscriber1 := helpers.SetupEventBus(t, redisClient)
-	_, smSubscriber1 := helpers.SetupEventBus(t, redisClient)
 
 	correlationID := fmt.Sprintf("test-crash-recovery-%d", time.Now().UnixNano())
 
@@ -306,7 +300,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 		"db-456",
 		correlationID,
 		publisher1,
-		smSubscriber1,
 		redisClient,
 		helpers.TestConfig(),
 	)
@@ -316,9 +309,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 	sm1.InfobaseID = "test-infobase"
 	sm1.ExtensionPath = "/test/ext.cfe"
 	sm1.ExtensionName = "TestExtension"
-
-	go smSubscriber1.Run(sm1Ctx)
-	time.Sleep(1 * time.Second)
 
 	// Run State Machine in goroutine
 	sm1ErrChan := make(chan error, 1)
@@ -372,7 +362,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 
 	// Create new event bus components
 	publisher2, responderSubscriber2 := helpers.SetupEventBus(t, redisClient)
-	_, smSubscriber2 := helpers.SetupEventBus(t, redisClient)
 
 	// Create new Mock Responder for remaining steps
 	responder2 := helpers.NewMockEventResponder(
@@ -398,7 +387,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 		"db-456",
 		correlationID, // SAME correlation ID
 		publisher2,
-		smSubscriber2,
 		redisClient,
 		helpers.TestConfig(),
 	)
@@ -409,9 +397,6 @@ func TestStateMachine_WorkerCrashRecovery(t *testing.T) {
 	sm2.InfobaseID = "test-infobase"
 	sm2.ExtensionPath = "/test/ext.cfe"
 	sm2.ExtensionName = "TestExtension"
-
-	go smSubscriber2.Run(sm2Ctx)
-	time.Sleep(1 * time.Second)
 
 	t.Log("🚀 Running second State Machine instance (should resume from persisted state)...")
 

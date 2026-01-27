@@ -33,19 +33,19 @@ type LockStore struct {
 	client redis.Cmdable
 
 	// Lua scripts (compiled once, reused)
-	acquireLockScript   *redis.Script
-	releaseLockScript   *redis.Script
-	extendLockScript    *redis.Script
+	acquireLockScript    *redis.Script
+	releaseLockScript    *redis.Script
+	extendLockScript     *redis.Script
 	cleanupExpiredScript *redis.Script
 }
 
 // NewLockStore creates a new LockStore.
 func NewLockStore(client redis.Cmdable) *LockStore {
 	return &LockStore{
-		client:              client,
-		acquireLockScript:   redis.NewScript(acquireLockLua),
-		releaseLockScript:   redis.NewScript(releaseLockLua),
-		extendLockScript:    redis.NewScript(extendLockLua),
+		client:               client,
+		acquireLockScript:    redis.NewScript(acquireLockLua),
+		releaseLockScript:    redis.NewScript(releaseLockLua),
+		extendLockScript:     redis.NewScript(extendLockLua),
 		cleanupExpiredScript: redis.NewScript(cleanupExpiredLua),
 	}
 }

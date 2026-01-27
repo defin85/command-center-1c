@@ -66,4 +66,3 @@ func (d *CLIMetaDriver) Execute(ctx context.Context, msg *models.OperationMessag
 		},
 	}, nil
 }
-

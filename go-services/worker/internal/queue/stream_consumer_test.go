@@ -183,9 +183,9 @@ func TestExtractFallbackIDs_MixedValidAndInvalid(t *testing.T) {
 		ID: "1702389123456-0",
 		Values: map[string]interface{}{
 			"data":           `{"version":"1.0"}`,
-			"correlation_id": "valid-corr",    // Valid string
-			"operation_id":   123,             // Invalid: int
-			"event_type":     "valid.event",   // Valid string
+			"correlation_id": "valid-corr",  // Valid string
+			"operation_id":   123,           // Invalid: int
+			"event_type":     "valid.event", // Valid string
 		},
 	}
 

@@ -31,10 +31,6 @@ func TestStateMachine_HappyPath(t *testing.T) {
 	// Setup Event Bus
 	publisher, responderSubscriber := helpers.SetupEventBus(t, redisClient)
 
-	// Create SEPARATE subscriber for State Machine
-	// (Watermill требует что все handlers регистрируются ПЕРЕД router.Run())
-	_, stateMachineSubscriber := helpers.SetupEventBus(t, redisClient)
-
 	// Generate unique correlation ID for this test
 	correlationID := fmt.Sprintf("test-happy-%d", time.Now().UnixNano())
 
@@ -67,7 +63,6 @@ func TestStateMachine_HappyPath(t *testing.T) {
 		"db-456",
 		correlationID,
 		publisher,
-		stateMachineSubscriber, // SEPARATE subscriber!
 		redisClient,
 		helpers.TestConfig(),
 	)
@@ -78,17 +73,6 @@ func TestStateMachine_HappyPath(t *testing.T) {
 	sm.InfobaseID = "ib-001"
 	sm.ExtensionPath = "/test/extension.cfe"
 	sm.ExtensionName = "TestExtension"
-
-	// ВАЖНО: Запустить State Machine subscriber в фоне ПЕРЕД sm.Run()
-	// потому что sm.Run() вызывает listenEvents() который регистрирует handlers,
-	// но router уже должен быть запущен
-	smSubscriberCtx, smSubscriberCancel := context.WithCancel(ctx)
-	defer smSubscriberCancel()
-
-	go stateMachineSubscriber.Run(smSubscriberCtx)
-
-	// Дать время subscriber'у запуститься
-	time.Sleep(1 * time.Second)
 
 	// Run State Machine
 	t.Log("Starting State Machine execution...")
