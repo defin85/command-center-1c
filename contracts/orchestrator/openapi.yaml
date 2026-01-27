@@ -9679,9 +9679,6 @@ components:
           nullable: true
         db_username:
           type: string
-        db_password:
-          type: string
-          writeOnly: true
         auth_type:
           enum:
           - local

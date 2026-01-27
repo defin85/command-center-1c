@@ -1424,10 +1424,18 @@ def list_dbms_users(request):
 
     qs = DbmsUserMapping.objects.filter(database=db).select_related('user')
     if search:
-        qs = qs.filter(
-            Q(db_username__icontains=search)
-            | Q(user__username__icontains=search)
-        )
+        search_user_id = None
+        if search.isdigit():
+            try:
+                search_user_id = int(search)
+            except ValueError:
+                search_user_id = None
+
+        search_q = Q(db_username__icontains=search) | Q(user__username__icontains=search)
+        if search_user_id is not None:
+            search_q = search_q | Q(user__id=search_user_id)
+
+        qs = qs.filter(search_q)
     if auth_type in {'local', 'service', 'other'}:
         qs = qs.filter(auth_type=auth_type)
     if is_service in {'true', '1', 'yes'}:
@@ -1531,7 +1539,7 @@ def create_dbms_user(request):
                 database=db,
                 user=user,
                 db_username=data['db_username'].strip(),
-                db_password=data.get('db_password', ''),
+                db_password='',
                 auth_type=data.get('auth_type', DbmsUserMapping._meta.get_field('auth_type').default),
                 is_service=is_service,
                 notes=data.get('notes', '').strip(),
