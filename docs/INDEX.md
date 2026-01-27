@@ -63,6 +63,10 @@
 - Connection pooling и rate limiting
 - Horizontal scaling для Workers
 
+#### 🧩 [ENGINEERING_GUIDELINES.md](./ENGINEERING_GUIDELINES.md)
+**Для кого:** Engineers (поддержка, рефакторинг, работа с AI)
+**Содержание:** инженерные соглашения (в т.ч. цель по размеру файлов ~700 строк) и команды для отчёта.
+
 ---
 
 ### Уровень 3: Project Planning & Roadmap

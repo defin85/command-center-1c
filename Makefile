@@ -1,4 +1,5 @@
 .PHONY: help dev test build deploy-staging deploy-prod logs stop clean
+.PHONY: file-sizes
 
 # Default target
 .DEFAULT_GOAL := help
@@ -65,6 +66,10 @@ lint-python:
 lint-frontend:
 	@echo "$(BLUE)Linting Frontend code...$(NC)"
 	cd frontend && npm run lint
+
+## file-sizes: Отчёт по крупным исходным файлам (цель: <=700 строк)
+file-sizes:
+	@python3 ./scripts/dev/file-size-report.py
 
 ## build: Собрать все Docker образы
 build:

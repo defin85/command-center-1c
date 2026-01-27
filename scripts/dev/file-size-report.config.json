@@ -1,0 +1,36 @@
+{
+  "default_limit": 700,
+  "default_top": 30,
+  "include_extensions": [
+    ".ts",
+    ".tsx",
+    ".py",
+    ".go"
+  ],
+  "include_tests": true,
+  "exclude_prefixes": [
+    "frontend/src/api/generated/",
+    "frontend/src/api/generated-gateway/",
+    "frontend/dist/",
+    "frontend/node_modules/",
+    "generated/",
+    "orchestrator/tests/archive/",
+    "docs/archive/"
+  ],
+  "exclude_path_contains": [
+    "/migrations/"
+  ],
+  "scopes": {
+    "all": [],
+    "frontend": [
+      "frontend/"
+    ],
+    "orchestrator": [
+      "orchestrator/"
+    ],
+    "go-services": [
+      "go-services/"
+    ]
+  }
+}
+
