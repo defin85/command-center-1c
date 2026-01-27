@@ -43,6 +43,10 @@ database:
 - `dbms_auth.strategy=service` разрешён только для allowlist safe‑команд (первый этап: `infobase.extension.list`, `infobase.extension.info`) и только для staff/пользователей с отдельным permission.
 - stdin‑флаг `--request-db-pwd` (`-W`) запрещён (fail-closed). DBMS credentials резолвятся через `DbmsUserMapping`.
 
+Где настраивать DBMS credentials (offline `ibcmd`):
+- UI (staff-only): `RBAC` → вкладка `Пользователи DBMS` → выбрать базу → создать/отредактировать mapping (actor/service) → действия `Установить пароль` / `Сбросить пароль`.
+- Важно: UI не показывает текущий пароль; отображается только признак “задан / не задан”.
+
 Пример (per_database):
 
 ```json

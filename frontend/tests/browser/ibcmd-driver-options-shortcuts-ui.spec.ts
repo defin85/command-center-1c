@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Request, type Route } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 
 type AnyRecord = Record<string, unknown>
 

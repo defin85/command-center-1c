@@ -14,6 +14,7 @@ import type { EffectiveAccessWorkflowTemplateItem } from '../../api/generated/mo
 import type { EffectiveAccessWorkflowTemplateSourceItem } from '../../api/generated/model/effectiveAccessWorkflowTemplateSourceItem'
 import type { EffectiveAccessArtifactItem } from '../../api/generated/model/effectiveAccessArtifactItem'
 import type { EffectiveAccessArtifactSourceItem } from '../../api/generated/model/effectiveAccessArtifactSourceItem'
+import type { DbmsUserMapping } from '../../api/generated/model/dbmsUserMapping'
 import { useMe } from '../../api/queries/me'
 import {
   useCanManageRbac,
@@ -86,6 +87,12 @@ import {
   useDeleteInfobaseUser,
   useSetInfobaseUserPassword,
   useResetInfobaseUserPassword,
+  useDbmsUsers,
+  useCreateDbmsUser,
+  useUpdateDbmsUser,
+  useDeleteDbmsUser,
+  useSetDbmsUserPassword,
+  useResetDbmsUserPassword,
   type InfobaseUserMapping,
 } from '../../api/queries/databases'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -103,6 +110,7 @@ import { ReasonModal } from './components/ReasonModal'
 import { useConfirmReason } from './hooks/useConfirmReason'
 import { usePaginatedRefSelectOptions } from './hooks/usePaginatedRefSelectOptions'
 import { getEffectiveAccessSourceTagColor } from './utils/effectiveAccessSourceTag'
+import { getDbmsAuthTypeLabel, getDbmsPasswordConfiguredLabel, validateDbmsUserId } from './utils/dbmsUsers'
 
 const { Title, Text } = Typography
 
@@ -346,11 +354,24 @@ export function RBACPage() {
   const setInfobaseUserPassword = useSetInfobaseUserPassword()
   const resetInfobaseUserPassword = useResetInfobaseUserPassword()
 
+  const createDbmsUser = useCreateDbmsUser()
+  const updateDbmsUser = useUpdateDbmsUser()
+  const deleteDbmsUser = useDeleteDbmsUser()
+  const setDbmsUserPassword = useSetDbmsUserPassword()
+  const resetDbmsUserPassword = useResetDbmsUserPassword()
+
   const [selectedIbDatabaseId, setSelectedIbDatabaseId] = useState<string | undefined>()
   const [editingIbUser, setEditingIbUser] = useState<InfobaseUserMapping | null>(null)
   const [ibAuthFilter, setIbAuthFilter] = useState<string>('any')
   const [ibServiceFilter, setIbServiceFilter] = useState<string>('any')
   const [ibHasUserFilter, setIbHasUserFilter] = useState<string>('any')
+
+  const [selectedDbmsDatabaseId, setSelectedDbmsDatabaseId] = useState<string | undefined>()
+  const [editingDbmsUser, setEditingDbmsUser] = useState<DbmsUserMapping | null>(null)
+  const [dbmsAuthFilter, setDbmsAuthFilter] = useState<string>('any')
+  const [dbmsServiceFilter, setDbmsServiceFilter] = useState<string>('any')
+  const [dbmsHasUserFilter, setDbmsHasUserFilter] = useState<string>('any')
+
   const [userSearch, setUserSearch] = useState<string>('')
   const [roleSearch, setRoleSearch] = useState<string>('')
 
@@ -630,8 +651,19 @@ export function RBACPage() {
     notes?: string
   }>()
 
+  const [dbmsUserForm] = Form.useForm<{
+    database_id: string
+    user_id?: number | null
+    db_username: string
+    auth_type?: DbmsUserMapping['auth_type']
+    is_service?: boolean
+    notes?: string
+  }>()
+
 	  const rbacPermissionsGrantResourceId = Form.useWatch('resource_id', rbacPermissionsGrantForm)
 	  const ibUserFormDatabaseId = Form.useWatch('database_id', ibUserForm)
+	  const dbmsUserFormDatabaseId = Form.useWatch('database_id', dbmsUserForm)
+	  const dbmsUserFormIsService = Form.useWatch('is_service', dbmsUserForm)
 	  const userRolesEditorMode = Form.useWatch('mode', userRolesEditorForm)
 	  const userRolesEditorGroupIds = Form.useWatch('group_ids', userRolesEditorForm)
 	  const userRolesEditorReason = Form.useWatch('reason', userRolesEditorForm)
@@ -645,6 +677,11 @@ export function RBACPage() {
 	  const userRolesEditorCanSubmit = Boolean(userRolesEditorUser)
 	    && Boolean(userRolesEditorTrimmedReason)
 	    && (userRolesEditorModeValue === 'replace' || userRolesEditorSelectedIdsUnique.length > 0)
+
+	  useEffect(() => {
+	    if (!dbmsUserFormIsService) return
+	    dbmsUserForm.setFieldValue('user_id', null)
+	  }, [dbmsUserFormIsService, dbmsUserForm])
 
 	  useEffect(() => {
 	    if (rbacPermissionsViewMode !== 'resource') return
@@ -692,6 +729,8 @@ export function RBACPage() {
       ...(rbacPermissionsResourceKey === 'databases' ? rbacPermissionsSelectedResourceIds : []),
       selectedIbDatabaseId,
       typeof ibUserFormDatabaseId === 'string' ? ibUserFormDatabaseId : undefined,
+      selectedDbmsDatabaseId,
+      typeof dbmsUserFormDatabaseId === 'string' ? dbmsUserFormDatabaseId : undefined,
     ],
     databasesLabelById.current
   )
@@ -972,6 +1011,106 @@ export function RBACPage() {
       }),
     })
   }
+
+  const handleDbmsUserEdit = useCallback((record: DbmsUserMapping) => {
+    setSelectedDbmsDatabaseId(record.database_id)
+    setEditingDbmsUser(record)
+    dbmsUserForm.setFieldsValue({
+      database_id: record.database_id,
+      user_id: record.user?.id ?? null,
+      db_username: record.db_username,
+      auth_type: record.auth_type ?? 'local',
+      is_service: Boolean(record.is_service),
+      notes: record.notes ?? '',
+    })
+  }, [dbmsUserForm])
+
+  const handleDbmsUserResetForm = () => {
+    setEditingDbmsUser(null)
+    dbmsUserForm.resetFields()
+    if (selectedDbmsDatabaseId) {
+      dbmsUserForm.setFieldsValue({ database_id: selectedDbmsDatabaseId })
+    }
+  }
+
+  const handleDbmsUserSave = async () => {
+    const values = await dbmsUserForm.validateFields()
+    const isService = Boolean(values.is_service)
+    const payloadBase = {
+      user_id: isService ? null : (values.user_id ?? null),
+      db_username: values.db_username?.trim(),
+      auth_type: values.auth_type,
+      is_service: isService,
+      notes: values.notes?.trim(),
+    }
+
+    if (editingDbmsUser) {
+      updateDbmsUser.mutate(
+        { id: editingDbmsUser.id, ...payloadBase },
+        { onSuccess: handleDbmsUserResetForm }
+      )
+      return
+    }
+
+    createDbmsUser.mutate(
+      { database_id: values.database_id, ...payloadBase },
+      { onSuccess: handleDbmsUserResetForm }
+    )
+  }
+
+  const handleDbmsUserDelete = useCallback((record: DbmsUserMapping) => {
+    modal.confirm({
+      title: `Удалить DBMS mapping ${record.db_username}?`,
+      content: 'Запись будет удалена только в Command Center.',
+      okText: 'Удалить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: () => deleteDbmsUser.mutate({ id: record.id, databaseId: record.database_id }),
+    })
+  }, [deleteDbmsUser, modal])
+
+  const handleDbmsUserPasswordSet = useCallback((record: DbmsUserMapping) => {
+    let password = ''
+    modal.confirm({
+      title: `Установить пароль для ${record.db_username}?`,
+      okText: 'Установить',
+      cancelText: 'Отмена',
+      okButtonProps: { 'data-testid': 'rbac-dbms-user-set-password-ok' },
+      content: (
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          <Text type="secondary">Текущий пароль не отображается.</Text>
+          <Input.Password
+            data-testid="rbac-dbms-user-set-password-input"
+            placeholder="Новый пароль"
+            onChange={(e) => {
+              password = e.target.value
+            }}
+          />
+        </Space>
+      ),
+      onOk: async () => {
+        const trimmed = password.trim()
+        if (!trimmed) {
+          message.error('Введите пароль')
+          throw new Error('Password is empty')
+        }
+        await setDbmsUserPassword.mutateAsync({ id: record.id, password: trimmed })
+      },
+    })
+  }, [message, modal, setDbmsUserPassword])
+
+  const handleDbmsUserPasswordReset = useCallback((record: DbmsUserMapping) => {
+    modal.confirm({
+      title: `Сбросить пароль для ${record.db_username}?`,
+      content: 'Пароль будет очищен.',
+      okText: 'Сбросить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true, 'data-testid': 'rbac-dbms-user-reset-password-ok' },
+      onOk: async () => {
+        await resetDbmsUserPassword.mutateAsync({ id: record.id, databaseId: record.database_id })
+      },
+    })
+  }, [modal, resetDbmsUserPassword])
 
   const handleRbacPermissionsGrant = async (values: {
     principal_id: number
@@ -1785,6 +1924,106 @@ export function RBACPage() {
     [deleteInfobaseUser.isPending, handleIbUserDelete, handleIbUserEdit]
   )
 
+  const dbmsUsersColumns: ColumnsType<DbmsUserMapping> = useMemo(
+    () => [
+      {
+        title: 'Пользователь DBMS',
+        key: 'db_username',
+        render: (_: unknown, row) => (
+          <span>{row.db_username}</span>
+        ),
+      },
+      {
+        title: 'Пользователь CC',
+        key: 'cc_user',
+        render: (_: unknown, row) => (
+          row.user
+            ? (
+              <span>
+                {row.user.username} <Text type="secondary">#{row.user.id}</Text>
+              </span>
+            )
+            : '-'
+        ),
+      },
+      {
+        title: 'Аутентификация',
+        key: 'auth_type',
+        render: (_: unknown, row) => (
+          <Tag>{getDbmsAuthTypeLabel(row.auth_type)}</Tag>
+        ),
+      },
+      {
+        title: 'Сервисный',
+        key: 'is_service',
+        render: (_: unknown, row) => (
+          <Tag color={row.is_service ? 'blue' : 'default'}>
+            {row.is_service ? 'Да' : 'Нет'}
+          </Tag>
+        ),
+      },
+      {
+        title: 'Пароль',
+        key: 'password',
+        render: (_: unknown, row) => (
+          <Tag color={row.db_password_configured ? 'green' : 'default'}>
+            {getDbmsPasswordConfiguredLabel(row.db_password_configured)}
+          </Tag>
+        ),
+      },
+      {
+        title: 'Действия',
+        key: 'actions',
+        render: (_: unknown, row) => (
+          <Space size="small">
+            <Button
+              size="small"
+              data-testid={`rbac-dbms-user-edit-${row.id}`}
+              onClick={() => handleDbmsUserEdit(row)}
+            >
+              Редактировать
+            </Button>
+            <Button
+              size="small"
+              loading={setDbmsUserPassword.isPending}
+              data-testid={`rbac-dbms-user-set-password-${row.id}`}
+              onClick={() => handleDbmsUserPasswordSet(row)}
+            >
+              Установить пароль
+            </Button>
+            <Button
+              danger
+              size="small"
+              loading={resetDbmsUserPassword.isPending}
+              data-testid={`rbac-dbms-user-reset-password-${row.id}`}
+              onClick={() => handleDbmsUserPasswordReset(row)}
+            >
+              Сбросить пароль
+            </Button>
+            <Button
+              danger
+              size="small"
+              loading={deleteDbmsUser.isPending}
+              data-testid={`rbac-dbms-user-delete-${row.id}`}
+              onClick={() => handleDbmsUserDelete(row)}
+            >
+              Удалить
+            </Button>
+          </Space>
+        ),
+      },
+    ],
+    [
+      deleteDbmsUser.isPending,
+      handleDbmsUserDelete,
+      handleDbmsUserEdit,
+      handleDbmsUserPasswordReset,
+      handleDbmsUserPasswordSet,
+      resetDbmsUserPassword.isPending,
+      setDbmsUserPassword.isPending,
+    ]
+  )
+
   const clusterTable = useTableToolkit({
     tableId: 'rbac_clusters',
     columns: clusterColumns,
@@ -1815,9 +2054,24 @@ export function RBACPage() {
     initialPageSize: 25,
   })
 
+  const dbmsUsersTable = useTableToolkit({
+    tableId: 'rbac_dbms_users',
+    columns: dbmsUsersColumns,
+    fallbackColumns: [
+      { key: 'db_username', label: 'Пользователь DBMS', groupKey: 'core', groupLabel: 'Основное' },
+      { key: 'cc_user', label: 'Пользователь CC', groupKey: 'core', groupLabel: 'Основное' },
+      { key: 'auth_type', label: 'Аутентификация', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'is_service', label: 'Сервисный', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'password', label: 'Пароль', groupKey: 'meta', groupLabel: 'Метаданные' },
+      { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
+    ],
+    initialPageSize: 25,
+  })
+
   const clusterPageStart = (clusterTable.pagination.page - 1) * clusterTable.pagination.pageSize
   const databasePageStart = (databaseTable.pagination.page - 1) * databaseTable.pagination.pageSize
   const ibUsersPageStart = (ibUsersTable.pagination.page - 1) * ibUsersTable.pagination.pageSize
+  const dbmsUsersPageStart = (dbmsUsersTable.pagination.page - 1) * dbmsUsersTable.pagination.pageSize
 
   const clusterPermissionsQuery = useClusterPermissions({
     user_id: parseUserId(clusterTable.filters.user_id),
@@ -1843,6 +2097,16 @@ export function RBACPage() {
     hasUser: ibHasUserFilter === 'any' ? undefined : ibHasUserFilter === 'true',
     limit: ibUsersTable.pagination.pageSize,
     offset: ibUsersPageStart,
+  })
+
+  const dbmsUsersQuery = useDbmsUsers({
+    databaseId: isStaff ? selectedDbmsDatabaseId : undefined,
+    search: dbmsUsersTable.search || undefined,
+    authType: dbmsAuthFilter === 'any' ? undefined : (dbmsAuthFilter as 'local' | 'service' | 'other'),
+    isService: dbmsServiceFilter === 'any' ? undefined : dbmsServiceFilter === 'true',
+    hasUser: dbmsHasUserFilter === 'any' ? undefined : dbmsHasUserFilter === 'true',
+    limit: dbmsUsersTable.pagination.pageSize,
+    offset: dbmsUsersPageStart,
   })
 
   const debouncedUserSearch = useDebouncedValue(userSearch, 300)
@@ -2116,10 +2380,21 @@ export function RBACPage() {
     ? ibUsersQuery.data.total
     : ibUsers.length
 
+  const dbmsUsers = dbmsUsersQuery.data?.users ?? []
+  const totalDbmsUsers = typeof dbmsUsersQuery.data?.total === 'number'
+    ? dbmsUsersQuery.data.total
+    : dbmsUsers.length
+
+  const dbmsUsersAccessDenied = (() => {
+    const status = (dbmsUsersQuery.error as { response?: { status?: number } } | null)?.response?.status
+    return status === 401 || status === 403
+  })()
+
   const userOptions = useMemo(() => {
     const base = usersQuery.data?.users ?? []
     const extra = [
       ...(editingIbUser?.user ? [editingIbUser.user] : []),
+      ...(editingDbmsUser?.user ? [editingDbmsUser.user] : []),
     ]
     const combined = [...base, ...extra]
     const map = new Map<number, { label: string; value: number }>()
@@ -2129,7 +2404,7 @@ export function RBACPage() {
       }
     })
     return Array.from(map.values())
-  }, [usersQuery.data?.users, editingIbUser?.user])
+  }, [usersQuery.data?.users, editingIbUser?.user, editingDbmsUser?.user])
 
   const clusterNameById = useMemo(() => (
     new Map(clusters.map((c) => [c.id, c.name]))
@@ -5125,6 +5400,225 @@ export function RBACPage() {
                 </Space>
               ),
             },
+            {
+              key: 'dbms-users',
+              label: <span data-testid="rbac-tab-dbms-users">Пользователи DBMS</span>,
+              children: dbmsUsersAccessDenied ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="Недостаточно прав для управления DBMS mappings"
+                />
+              ) : (
+                <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                  <Card title="Пользователи DBMS" size="small">
+                    {!selectedDbmsDatabaseId && (
+                      <Alert
+                        type="info"
+                        message="Выберите базу, чтобы посмотреть DBMS mappings"
+                        style={{ marginBottom: 12 }}
+                      />
+                    )}
+                    <TableToolkit
+                      table={dbmsUsersTable}
+                      data={selectedDbmsDatabaseId ? dbmsUsers : []}
+                      total={selectedDbmsDatabaseId ? totalDbmsUsers : 0}
+                      loading={dbmsUsersQuery.isLoading}
+                      rowKey="id"
+                      columns={dbmsUsersColumns}
+                      searchPlaceholder="Поиск пользователей DBMS"
+                      toolbarActions={(
+                        <Space>
+                          <Select
+                            style={{ width: 320 }}
+                            placeholder="База"
+                            allowClear
+                            data-testid="rbac-dbms-users-toolbar-database"
+                            value={selectedDbmsDatabaseId}
+                            onChange={(value) => {
+                              setSelectedDbmsDatabaseId(value)
+                              if (!editingDbmsUser) {
+                                dbmsUserForm.setFieldsValue({ database_id: value })
+                              }
+                            }}
+                            showSearch
+                            filterOption={false}
+                            onSearch={setDatabasesRefSearch}
+                            onPopupScroll={handleDatabasesPopupScroll}
+                            options={databasesSelectOptions}
+                            loading={databasesRefQuery.isFetching}
+                            optionFilterProp="label"
+                          />
+                          <Select
+                            style={{ width: 180 }}
+                            value={dbmsAuthFilter}
+                            onChange={setDbmsAuthFilter}
+                            options={[
+                              { label: 'Аутентификация: любая', value: 'any' },
+                              { label: 'Аутентификация: local', value: 'local' },
+                              { label: 'Аутентификация: service', value: 'service' },
+                              { label: 'Аутентификация: другое', value: 'other' },
+                            ]}
+                          />
+                          <Select
+                            style={{ width: 160 }}
+                            value={dbmsServiceFilter}
+                            onChange={setDbmsServiceFilter}
+                            options={[
+                              { label: 'Сервисный: любой', value: 'any' },
+                              { label: 'Сервисный: да', value: 'true' },
+                              { label: 'Сервисный: нет', value: 'false' },
+                            ]}
+                          />
+                          <Select
+                            style={{ width: 180 }}
+                            value={dbmsHasUserFilter}
+                            onChange={setDbmsHasUserFilter}
+                            options={[
+                              { label: 'CC пользователь: любой', value: 'any' },
+                              { label: 'CC пользователь: привязан', value: 'true' },
+                              { label: 'CC пользователь: не привязан', value: 'false' },
+                            ]}
+                          />
+                          <Button
+                            data-testid="rbac-dbms-users-refresh"
+                            onClick={() => dbmsUsersQuery.refetch()}
+                            disabled={!selectedDbmsDatabaseId}
+                            loading={dbmsUsersQuery.isFetching}
+                          >
+                            Обновить
+                          </Button>
+                        </Space>
+                      )}
+                    />
+                  </Card>
+
+                  <Card title={editingDbmsUser ? 'Редактировать DBMS mapping' : 'Добавить DBMS mapping'} size="small">
+                    <Form
+                      form={dbmsUserForm}
+                      layout="vertical"
+                      initialValues={{ auth_type: 'local', is_service: false }}
+                    >
+                      <Space size="large" align="start" wrap>
+                        <Form.Item
+                          label="База"
+                          name="database_id"
+                          rules={[{ required: true, message: 'Выберите базу' }]}
+                        >
+                          <Select
+                            style={{ width: 320 }}
+                            placeholder="База"
+                            data-testid="rbac-dbms-user-form-database"
+                            showSearch
+                            filterOption={false}
+                            onSearch={setDatabasesRefSearch}
+                            onPopupScroll={handleDatabasesPopupScroll}
+                            options={databasesSelectOptions}
+                            loading={databasesRefQuery.isFetching}
+                            optionFilterProp="label"
+                            disabled={Boolean(editingDbmsUser)}
+                            onChange={(value) => setSelectedDbmsDatabaseId(value)}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label="Логин DBMS"
+                          name="db_username"
+                          rules={[{ required: true, message: 'Укажите логин DBMS' }]}
+                        >
+                          <Input data-testid="rbac-dbms-user-form-db-username" placeholder="db_user" />
+                        </Form.Item>
+                        <Form.Item label="Сервисный аккаунт" name="is_service" valuePropName="checked">
+                          <Switch data-testid="rbac-dbms-user-form-is-service" />
+                        </Form.Item>
+                        <Form.Item
+                          label="Пользователь CC"
+                          name="user_id"
+                          rules={[
+                            ({ getFieldValue }) => ({
+                              validator: (_rule, value) => {
+                                const isService = Boolean(getFieldValue('is_service'))
+                                const result = validateDbmsUserId(isService, value)
+                                if (result === 'ok') return Promise.resolve()
+                                if (result === 'must_be_empty') {
+                                  return Promise.reject(new Error('Для сервисного аккаунта пользователь CC не должен быть указан'))
+                                }
+                                return Promise.reject(new Error('Выберите пользователя CC'))
+                              },
+                            }),
+                          ]}
+                        >
+                          <Select
+                            showSearch
+                            allowClear
+                            data-testid="rbac-dbms-user-form-user-id"
+                            placeholder={dbmsUserFormIsService ? 'Недоступно для service mapping' : 'Выберите пользователя'}
+                            filterOption={false}
+                            onSearch={(value) => setUserSearch(value)}
+                            options={userOptions}
+                            loading={usersQuery.isFetching}
+                            style={{ width: 240 }}
+                            disabled={Boolean(dbmsUserFormIsService)}
+                          />
+                        </Form.Item>
+                        <Form.Item label="Тип аутентификации" name="auth_type">
+                          <Select
+                            style={{ width: 180 }}
+                            options={[
+                              { label: 'Локальная', value: 'local' },
+                              { label: 'Сервисная', value: 'service' },
+                              { label: 'Другая', value: 'other' },
+                            ]}
+                          />
+                        </Form.Item>
+                      </Space>
+                      <Form.Item label="Пароль">
+                        <Space size="small" wrap>
+                          <Tag color={editingDbmsUser?.db_password_configured ? 'green' : 'default'}>
+                            {getDbmsPasswordConfiguredLabel(Boolean(editingDbmsUser?.db_password_configured))}
+                          </Tag>
+                          <Text type="secondary">Текущий пароль не отображается.</Text>
+                          {editingDbmsUser && (
+                            <Button
+                              onClick={() => handleDbmsUserPasswordSet(editingDbmsUser)}
+                              loading={setDbmsUserPassword.isPending}
+                            >
+                              Установить пароль
+                            </Button>
+                          )}
+                          {editingDbmsUser && (
+                            <Button
+                              danger
+                              onClick={() => handleDbmsUserPasswordReset(editingDbmsUser)}
+                              loading={resetDbmsUserPassword.isPending}
+                            >
+                              Сбросить пароль
+                            </Button>
+                          )}
+                        </Space>
+                      </Form.Item>
+                      <Form.Item label="Комментарий" name="notes">
+                        <Input placeholder="Комментарий (опционально)" />
+                      </Form.Item>
+                      <Space>
+                        <Button
+                          type="primary"
+                          data-testid="rbac-dbms-user-form-save"
+                          onClick={handleDbmsUserSave}
+                          loading={createDbmsUser.isPending || updateDbmsUser.isPending}
+                        >
+                          {editingDbmsUser ? 'Сохранить' : 'Добавить'}
+                        </Button>
+                        {editingDbmsUser && (
+                          <Button data-testid="rbac-dbms-user-form-cancel" onClick={handleDbmsUserResetForm}>
+                            Отменить редактирование
+                          </Button>
+                        )}
+                      </Space>
+                    </Form>
+                  </Card>
+                </Space>
+              ),
+            },
           ] : []),
           ]
 
@@ -5138,7 +5632,7 @@ export function RBACPage() {
             'user-roles',
             'effective-access',
             'audit',
-            ...(isStaff ? ['ib-users'] : []),
+            ...(isStaff ? ['ib-users', 'dbms-users'] : []),
           ])
           return items.filter((item) => allowedKeys.has(String(item.key)))
         })()}

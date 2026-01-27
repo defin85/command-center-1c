@@ -22,6 +22,9 @@ export const queryKeys = {
     ibUsers: (filters?: { databaseId?: string; search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.databases.all, 'ib-users', filters] as const
     ),
+    dbmsUsers: (filters?: { databaseId?: string; search?: string; limit?: number; offset?: number }) => (
+      [...queryKeys.databases.all, 'dbms-users', filters] as const
+    ),
   },
   clusters: {
     all: ['clusters'] as const,
@@ -102,4 +105,3 @@ export const queryKeys = {
 } as const
 
 export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'
-

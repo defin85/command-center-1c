@@ -14,6 +14,10 @@ import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
 import type { DatabaseExtensionsSnapshotResponse } from '../generated/model/databaseExtensionsSnapshotResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
+import type { DbmsUserListResponse } from '../generated/model/dbmsUserListResponse'
+import type { DbmsUserMapping } from '../generated/model/dbmsUserMapping'
+import type { DbmsUserMappingCreate } from '../generated/model/dbmsUserMappingCreate'
+import type { DbmsUserMappingUpdate } from '../generated/model/dbmsUserMappingUpdate'
 import { apiClient } from '../client'
 import type { SetDatabaseStatusRequest } from '../generated/model/setDatabaseStatusRequest'
 import type { SetDatabaseStatusResponse } from '../generated/model/setDatabaseStatusResponse'
@@ -203,6 +207,16 @@ export type InfobaseUsersQuery = {
   offset?: number
 }
 
+export type DbmsUsersQuery = {
+  databaseId?: string
+  search?: string
+  authType?: 'local' | 'service' | 'other'
+  isService?: boolean
+  hasUser?: boolean
+  limit?: number
+  offset?: number
+}
+
 /**
  * React Query hook for fetching single database details.
  */
@@ -328,6 +342,29 @@ export function useInfobaseUsers(query: InfobaseUsersQuery) {
   })
 }
 
+export function useDbmsUsers(query: DbmsUsersQuery) {
+  return useQuery({
+    queryKey: queryKeys.databases.dbmsUsers(query),
+    queryFn: async ({ signal }): Promise<DbmsUserListResponse> => {
+      const response = await apiClient.get('/api/v2/databases/list-dbms-users/', {
+        params: {
+          database_id: query.databaseId,
+          search: query.search,
+          auth_type: query.authType,
+          is_service: query.isService,
+          has_user: query.hasUser,
+          limit: query.limit ?? 100,
+          offset: query.offset ?? 0,
+        },
+        signal,
+      })
+      return response.data
+    },
+    enabled: Boolean(query.databaseId),
+    placeholderData: (previousData) => previousData,
+  })
+}
+
 export function useCreateInfobaseUser() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
@@ -349,6 +386,29 @@ export function useCreateInfobaseUser() {
   })
 }
 
+export type DbmsUserCreateRequest = Omit<DbmsUserMappingCreate, 'db_password'>
+
+export function useCreateDbmsUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: DbmsUserCreateRequest): Promise<DbmsUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/create-dbms-user/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`DBMS user ${data.db_username} created`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.dbmsUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to create DBMS user mapping')
+    },
+  })
+}
+
 export function useUpdateInfobaseUser() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
@@ -366,6 +426,27 @@ export function useUpdateInfobaseUser() {
     },
     onError: (error: Error) => {
       message.error(error.message || 'Failed to update infobase user')
+    },
+  })
+}
+
+export function useUpdateDbmsUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: DbmsUserMappingUpdate): Promise<DbmsUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/update-dbms-user/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`DBMS user ${data.db_username} updated`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.dbmsUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to update DBMS user mapping')
     },
   })
 }
@@ -396,6 +477,31 @@ export function useDeleteInfobaseUser() {
   })
 }
 
+export function useDeleteDbmsUser() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: { id: number; databaseId?: string }): Promise<void> => {
+      await apiClient.post('/api/v2/databases/delete-dbms-user/', { id: payload.id })
+    },
+    onSuccess: (_data, variables) => {
+      message.success('DBMS user mapping deleted')
+      if (variables.databaseId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.databases.dbmsUsers({ databaseId: variables.databaseId }),
+        })
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.databases.dbmsUsers(undefined) })
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to delete DBMS user mapping')
+    },
+  })
+}
+
 export function useSetInfobaseUserPassword() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
@@ -417,6 +523,27 @@ export function useSetInfobaseUserPassword() {
   })
 }
 
+export function useSetDbmsUserPassword() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: { id: number; password: string }): Promise<DbmsUserMapping> => {
+      const response = await apiClient.post('/api/v2/databases/set-dbms-user-password/', payload)
+      return response.data
+    },
+    onSuccess: (data) => {
+      message.success(`Password updated for ${data.db_username}`)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.dbmsUsers({ databaseId: data.database_id }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to set DBMS user password')
+    },
+  })
+}
+
 export function useResetInfobaseUserPassword() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
@@ -434,6 +561,26 @@ export function useResetInfobaseUserPassword() {
     },
     onError: (error: Error) => {
       message.error(error.message || 'Failed to reset infobase user password')
+    },
+  })
+}
+
+export function useResetDbmsUserPassword() {
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
+
+  return useMutation({
+    mutationFn: async (payload: { id: number; databaseId: string }): Promise<void> => {
+      await apiClient.post('/api/v2/databases/reset-dbms-user-password/', { id: payload.id })
+    },
+    onSuccess: (_data, variables) => {
+      message.success('Password reset')
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.dbmsUsers({ databaseId: variables.databaseId }),
+      })
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Failed to reset DBMS user password')
     },
   })
 }

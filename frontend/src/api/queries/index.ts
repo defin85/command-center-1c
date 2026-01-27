@@ -32,6 +32,12 @@ export {
   useDeleteInfobaseUser,
   useSetInfobaseUserPassword,
   useResetInfobaseUserPassword,
+  useDbmsUsers,
+  useCreateDbmsUser,
+  useUpdateDbmsUser,
+  useDeleteDbmsUser,
+  useSetDbmsUserPassword,
+  useResetDbmsUserPassword,
 } from './databases'
 export {
   useArtifacts,

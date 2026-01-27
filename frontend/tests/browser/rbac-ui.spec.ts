@@ -4,6 +4,18 @@ type MockUser = { id: number; username: string; is_staff?: boolean }
 type MockRole = { id: number; name: string; users_count: number; permissions_count: number; permission_codes: string[] }
 type MockCluster = { id: string; name: string }
 type MockDatabase = { id: string; name: string; cluster_id: string | null }
+type MockDbmsUserMapping = {
+  id: number
+  database_id: string
+  user?: { id: number; username: string } | null
+  db_username: string
+  db_password_configured: boolean
+  auth_type?: string
+  is_service?: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
 
 declare global {
   interface Window {
@@ -18,6 +30,7 @@ type MockState = {
   userRoleIdsByUserId: Record<number, number[]>
   clusters: MockCluster[]
   databases: MockDatabase[]
+  dbmsUsers: MockDbmsUserMapping[]
   databasePermissions: Array<{
     user: { id: number; username: string }
     database: { id: string; name: string; cluster_id: string | null }
@@ -67,6 +80,7 @@ function defaultState(): MockState {
     },
     clusters,
     databases,
+    dbmsUsers: [],
     databasePermissions: [
       {
         user: { id: 101, username: 'alice' },
@@ -214,6 +228,123 @@ async function setupApiMocks(
 
     if (method === 'GET' && path === '/api/v2/rbac/list-admin-audit/') {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/databases/list-dbms-users/') {
+      const databaseId = url.searchParams.get('database_id')
+      const search = (url.searchParams.get('search') ?? '').trim().toLowerCase()
+      const authType = (url.searchParams.get('auth_type') ?? '').trim()
+      const isServiceRaw = url.searchParams.get('is_service')
+      const hasUserRaw = url.searchParams.get('has_user')
+      const limit = Number(url.searchParams.get('limit') ?? '100')
+      const offset = Number(url.searchParams.get('offset') ?? '0')
+
+      let filtered = state.dbmsUsers.filter((u) => u.database_id === databaseId)
+      if (search) {
+        filtered = filtered.filter((u) => (
+          u.db_username.toLowerCase().includes(search)
+          || (u.user?.username ?? '').toLowerCase().includes(search)
+          || String(u.user?.id ?? '').includes(search)
+        ))
+      }
+      if (authType) {
+        filtered = filtered.filter((u) => (u.auth_type ?? '') === authType)
+      }
+      if (isServiceRaw === 'true') {
+        filtered = filtered.filter((u) => Boolean(u.is_service))
+      } else if (isServiceRaw === 'false') {
+        filtered = filtered.filter((u) => !u.is_service)
+      }
+      if (hasUserRaw === 'true') {
+        filtered = filtered.filter((u) => Boolean(u.user))
+      } else if (hasUserRaw === 'false') {
+        filtered = filtered.filter((u) => !u.user)
+      }
+
+      const pageItems = filtered.slice(offset, offset + limit)
+      return fulfillJson(route, { users: pageItems, count: pageItems.length, total: filtered.length })
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/create-dbms-user/') {
+      const body = request.postDataJSON() as {
+        database_id: string
+        user_id?: number | null
+        db_username: string
+        auth_type?: string
+        is_service?: boolean
+        notes?: string
+      }
+      const now = new Date().toISOString()
+      const nextId = Math.max(0, ...state.dbmsUsers.map((u) => u.id)) + 1
+      const isService = Boolean(body.is_service)
+      const user = !isService && typeof body.user_id === 'number'
+        ? state.users.find((u) => u.id === body.user_id) ?? null
+        : null
+      const record: MockDbmsUserMapping = {
+        id: nextId,
+        database_id: body.database_id,
+        user: user ? { id: user.id, username: user.username } : null,
+        db_username: body.db_username,
+        db_password_configured: false,
+        auth_type: body.auth_type ?? 'local',
+        is_service: isService,
+        notes: body.notes,
+        created_at: now,
+        updated_at: now,
+      }
+      state.dbmsUsers.unshift(record)
+      return fulfillJson(route, record)
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/update-dbms-user/') {
+      const body = request.postDataJSON() as {
+        id: number
+        user_id?: number | null
+        db_username?: string
+        auth_type?: string
+        is_service?: boolean
+        notes?: string
+      }
+      const record = state.dbmsUsers.find((u) => u.id === body.id)
+      if (!record) return fulfillJson(route, {}, 404)
+      const now = new Date().toISOString()
+      const isService = typeof body.is_service === 'boolean' ? body.is_service : Boolean(record.is_service)
+      record.is_service = isService
+      if (typeof body.db_username === 'string') record.db_username = body.db_username
+      if (typeof body.auth_type === 'string') record.auth_type = body.auth_type
+      if (typeof body.notes === 'string') record.notes = body.notes
+      if (body.user_id === null || body.user_id === undefined) {
+        record.user = null
+      } else if (!isService && typeof body.user_id === 'number') {
+        const user = state.users.find((u) => u.id === body.user_id)
+        record.user = user ? { id: user.id, username: user.username } : null
+      }
+      record.updated_at = now
+      return fulfillJson(route, record)
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/delete-dbms-user/') {
+      const body = request.postDataJSON() as { id: number }
+      state.dbmsUsers = state.dbmsUsers.filter((u) => u.id !== body.id)
+      return fulfillJson(route, {})
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/set-dbms-user-password/') {
+      const body = request.postDataJSON() as { id: number; password: string }
+      const record = state.dbmsUsers.find((u) => u.id === body.id)
+      if (!record) return fulfillJson(route, {}, 404)
+      record.db_password_configured = true
+      record.updated_at = new Date().toISOString()
+      return fulfillJson(route, record)
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/reset-dbms-user-password/') {
+      const body = request.postDataJSON() as { id: number }
+      const record = state.dbmsUsers.find((u) => u.id === body.id)
+      if (!record) return fulfillJson(route, {}, 404)
+      record.db_password_configured = false
+      record.updated_at = new Date().toISOString()
+      return fulfillJson(route, {})
     }
 
     if (method === 'POST' && path === '/api/v2/rbac/set-user-roles/') {
@@ -375,4 +506,55 @@ test('RBAC: user roles replace empty shows guard + diff', async ({ page }) => {
     mode: 'replace',
     reason: 'test reason',
   })
+})
+
+test('RBAC: DBMS user mappings CRUD + password configured (smoke)', async ({ page }) => {
+  const state = defaultState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/rbac', { waitUntil: 'domcontentloaded' })
+
+  await page.getByTestId('rbac-tab-dbms-users').click()
+  await expect(page.locator('text=Пользователи DBMS').first()).toBeVisible()
+
+  const toolbarDbSelect = page.getByTestId('rbac-dbms-users-toolbar-database')
+  await toolbarDbSelect.click()
+  await page.locator('.ant-select-dropdown').last().getByText('Database One').click()
+
+  await expect(page.getByText('Выберите базу, чтобы посмотреть DBMS mappings')).toHaveCount(0)
+
+  await page.getByTestId('rbac-dbms-user-form-db-username').fill('db_user_1')
+
+  const userSelect = page.getByTestId('rbac-dbms-user-form-user-id')
+  await userSelect.click()
+  await page.locator('.ant-select-dropdown').last().getByText('alice').click()
+
+  await page.getByTestId('rbac-dbms-user-form-save').click()
+
+  const row = page.locator('tr').filter({ hasText: 'db_user_1' }).first()
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Не задан')
+
+  await row.getByText('Установить пароль').click()
+  await page.getByTestId('rbac-dbms-user-set-password-input').fill('secret')
+  await page.getByTestId('rbac-dbms-user-set-password-ok').click()
+
+  await expect(row).toContainText('Задан')
+
+  await row.getByText('Редактировать').click()
+  await page.getByTestId('rbac-dbms-user-form-db-username').fill('db_user_2')
+  await page.getByTestId('rbac-dbms-user-form-save').click()
+
+  const updatedRow = page.locator('tr').filter({ hasText: 'db_user_2' }).first()
+  await expect(updatedRow).toBeVisible()
+
+  await updatedRow.getByText('Сбросить пароль').click()
+  await page.getByTestId('rbac-dbms-user-reset-password-ok').click()
+  await expect(updatedRow).toContainText('Не задан')
+
+  await updatedRow.getByText('Удалить').click()
+  await page.locator('.ant-modal').last().getByRole('button', { name: 'Удалить' }).click()
+  await expect(page.locator('tr').filter({ hasText: 'db_user_2' })).toHaveCount(0)
 })
