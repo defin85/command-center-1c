@@ -1,7 +1,7 @@
 import { Alert, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-type AnyRow = Record<string, unknown>
+type AnyRow = object
 
 export function RbacPermissionsTable<T extends AnyRow = AnyRow>(props: {
   columns: ColumnsType<T>

@@ -1,7 +1,52 @@
 import type { ColumnsType } from 'antd/es/table'
 
-import { useArtifactGroupPermissions, useArtifactPermissions, useClusterGroupPermissions, useClusterPermissions, useDatabaseGroupPermissions, useDatabasePermissions, useOperationTemplateGroupPermissions, useOperationTemplatePermissions, useWorkflowTemplateGroupPermissions, useWorkflowTemplatePermissions } from '../../../../api/queries/rbac'
-import type { RbacPermissionsListState, RbacPermissionsResourceKey, RbacPermissionsTableConfig, PermissionsTableRow } from './types'
+import type { ClusterPermission } from '../../../../api/generated/model/clusterPermission'
+import type { DatabasePermission } from '../../../../api/generated/model/databasePermission'
+import {
+  useArtifactGroupPermissions,
+  useArtifactPermissions,
+  useClusterGroupPermissions,
+  useClusterPermissions,
+  useDatabaseGroupPermissions,
+  useDatabasePermissions,
+  useOperationTemplateGroupPermissions,
+  useOperationTemplatePermissions,
+  useWorkflowTemplateGroupPermissions,
+  useWorkflowTemplatePermissions,
+  type ArtifactGroupPermission,
+  type ArtifactPermission,
+  type ClusterGroupPermission,
+  type DatabaseGroupPermission,
+  type OperationTemplateGroupPermission,
+  type OperationTemplatePermission,
+  type WorkflowTemplateGroupPermission,
+  type WorkflowTemplatePermission,
+} from '../../../../api/queries/rbac'
+import type { RbacPermissionsListState, RbacPermissionsResourceKey } from './types'
+
+export type TableConfig<TKind extends string, TRow> = {
+  kind: TKind
+  columns: ColumnsType<TRow>
+  rows: TRow[]
+  total: number
+  loading: boolean
+  fetching: boolean
+  error: unknown
+  rowKey: (row: TRow) => string
+  refetch: () => void
+}
+
+export type PermissionsTableConfig =
+  | TableConfig<'clusters/user', ClusterPermission>
+  | TableConfig<'clusters/role', ClusterGroupPermission>
+  | TableConfig<'databases/user', DatabasePermission>
+  | TableConfig<'databases/role', DatabaseGroupPermission>
+  | TableConfig<'operation-templates/user', OperationTemplatePermission>
+  | TableConfig<'operation-templates/role', OperationTemplateGroupPermission>
+  | TableConfig<'workflow-templates/user', WorkflowTemplatePermission>
+  | TableConfig<'workflow-templates/role', WorkflowTemplateGroupPermission>
+  | TableConfig<'artifacts/user', ArtifactPermission>
+  | TableConfig<'artifacts/role', ArtifactGroupPermission>
 
 export function usePermissionsTableConfig(params: {
   enabled: boolean
@@ -10,18 +55,18 @@ export function usePermissionsTableConfig(params: {
   list: RbacPermissionsListState
   debouncedSearch: string
   columns: {
-    clusterColumns: ColumnsType<any>
-    databaseColumns: ColumnsType<any>
-    clusterGroupColumns: ColumnsType<any>
-    databaseGroupColumns: ColumnsType<any>
-    operationTemplateUserColumns: ColumnsType<any>
-    operationTemplateGroupColumns: ColumnsType<any>
-    workflowTemplateUserColumns: ColumnsType<any>
-    workflowTemplateGroupColumns: ColumnsType<any>
-    artifactUserColumns: ColumnsType<any>
-    artifactGroupColumns: ColumnsType<any>
+    clusterColumns: ColumnsType<ClusterPermission>
+    databaseColumns: ColumnsType<DatabasePermission>
+    clusterGroupColumns: ColumnsType<ClusterGroupPermission>
+    databaseGroupColumns: ColumnsType<DatabaseGroupPermission>
+    operationTemplateUserColumns: ColumnsType<OperationTemplatePermission>
+    operationTemplateGroupColumns: ColumnsType<OperationTemplateGroupPermission>
+    workflowTemplateUserColumns: ColumnsType<WorkflowTemplatePermission>
+    workflowTemplateGroupColumns: ColumnsType<WorkflowTemplateGroupPermission>
+    artifactUserColumns: ColumnsType<ArtifactPermission>
+    artifactGroupColumns: ColumnsType<ArtifactGroupPermission>
   }
-}): RbacPermissionsTableConfig {
+}): PermissionsTableConfig {
   const { enabled, resourceKey, principalType, list, debouncedSearch, columns } = params
 
   const offset = (list.page - 1) * list.pageSize
@@ -143,16 +188,14 @@ export function usePermissionsTableConfig(params: {
       ? clustersUserQuery.data.total
       : rows.length
     return {
-      columns: columns.clusterColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'clusters/user',
+      columns: columns.clusterColumns,
+      rows,
       total,
       loading: clustersUserQuery.isLoading,
       fetching: clustersUserQuery.isFetching,
       error: clustersUserQuery.error,
-      rowKey: (row) => {
-        const record = row as { user?: { id?: number | null }; cluster?: { id?: string | null } }
-        return `${record.user?.id}:${record.cluster?.id}`
-      },
+      rowKey: (row) => `${row.user.id}:${row.cluster.id}`,
       refetch: () => { clustersUserQuery.refetch() },
     }
   }
@@ -163,16 +206,14 @@ export function usePermissionsTableConfig(params: {
       ? clustersRoleQuery.data.total
       : rows.length
     return {
-      columns: columns.clusterGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'clusters/role',
+      columns: columns.clusterGroupColumns,
+      rows,
       total,
       loading: clustersRoleQuery.isLoading,
       fetching: clustersRoleQuery.isFetching,
       error: clustersRoleQuery.error,
-      rowKey: (row) => {
-        const record = row as { group?: { id?: number | null }; cluster?: { id?: string | null } }
-        return `${record.group?.id}:${record.cluster?.id}`
-      },
+      rowKey: (row) => `${row.group.id}:${row.cluster.id}`,
       refetch: () => { clustersRoleQuery.refetch() },
     }
   }
@@ -183,16 +224,14 @@ export function usePermissionsTableConfig(params: {
       ? databasesUserQuery.data.total
       : rows.length
     return {
-      columns: columns.databaseColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'databases/user',
+      columns: columns.databaseColumns,
+      rows,
       total,
       loading: databasesUserQuery.isLoading,
       fetching: databasesUserQuery.isFetching,
       error: databasesUserQuery.error,
-      rowKey: (row) => {
-        const record = row as { user?: { id?: number | null }; database?: { id?: string | null } }
-        return `${record.user?.id}:${record.database?.id}`
-      },
+      rowKey: (row) => `${row.user.id}:${row.database.id}`,
       refetch: () => { databasesUserQuery.refetch() },
     }
   }
@@ -203,16 +242,14 @@ export function usePermissionsTableConfig(params: {
       ? databasesRoleQuery.data.total
       : rows.length
     return {
-      columns: columns.databaseGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'databases/role',
+      columns: columns.databaseGroupColumns,
+      rows,
       total,
       loading: databasesRoleQuery.isLoading,
       fetching: databasesRoleQuery.isFetching,
       error: databasesRoleQuery.error,
-      rowKey: (row) => {
-        const record = row as { group?: { id?: number | null }; database?: { id?: string | null } }
-        return `${record.group?.id}:${record.database?.id}`
-      },
+      rowKey: (row) => `${row.group.id}:${row.database.id}`,
       refetch: () => { databasesRoleQuery.refetch() },
     }
   }
@@ -223,16 +260,14 @@ export function usePermissionsTableConfig(params: {
       ? operationTemplatesUserQuery.data.total
       : rows.length
     return {
-      columns: columns.operationTemplateUserColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'operation-templates/user',
+      columns: columns.operationTemplateUserColumns,
+      rows,
       total,
       loading: operationTemplatesUserQuery.isLoading,
       fetching: operationTemplatesUserQuery.isFetching,
       error: operationTemplatesUserQuery.error,
-      rowKey: (row) => {
-        const record = row as { user?: { id?: number | null }; template?: { id?: string | null } }
-        return `${record.user?.id}:${record.template?.id}`
-      },
+      rowKey: (row) => `${row.user.id}:${row.template.id}`,
       refetch: () => { operationTemplatesUserQuery.refetch() },
     }
   }
@@ -243,16 +278,14 @@ export function usePermissionsTableConfig(params: {
       ? operationTemplatesRoleQuery.data.total
       : rows.length
     return {
-      columns: columns.operationTemplateGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'operation-templates/role',
+      columns: columns.operationTemplateGroupColumns,
+      rows,
       total,
       loading: operationTemplatesRoleQuery.isLoading,
       fetching: operationTemplatesRoleQuery.isFetching,
       error: operationTemplatesRoleQuery.error,
-      rowKey: (row) => {
-        const record = row as { group?: { id?: number | null }; template?: { id?: string | null } }
-        return `${record.group?.id}:${record.template?.id}`
-      },
+      rowKey: (row) => `${row.group.id}:${row.template.id}`,
       refetch: () => { operationTemplatesRoleQuery.refetch() },
     }
   }
@@ -263,16 +296,14 @@ export function usePermissionsTableConfig(params: {
       ? workflowTemplatesUserQuery.data.total
       : rows.length
     return {
-      columns: columns.workflowTemplateUserColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'workflow-templates/user',
+      columns: columns.workflowTemplateUserColumns,
+      rows,
       total,
       loading: workflowTemplatesUserQuery.isLoading,
       fetching: workflowTemplatesUserQuery.isFetching,
       error: workflowTemplatesUserQuery.error,
-      rowKey: (row) => {
-        const record = row as { user?: { id?: number | null }; template?: { id?: string | null } }
-        return `${record.user?.id}:${record.template?.id}`
-      },
+      rowKey: (row) => `${row.user.id}:${row.template.id}`,
       refetch: () => { workflowTemplatesUserQuery.refetch() },
     }
   }
@@ -283,16 +314,14 @@ export function usePermissionsTableConfig(params: {
       ? workflowTemplatesRoleQuery.data.total
       : rows.length
     return {
-      columns: columns.workflowTemplateGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'workflow-templates/role',
+      columns: columns.workflowTemplateGroupColumns,
+      rows,
       total,
       loading: workflowTemplatesRoleQuery.isLoading,
       fetching: workflowTemplatesRoleQuery.isFetching,
       error: workflowTemplatesRoleQuery.error,
-      rowKey: (row) => {
-        const record = row as { group?: { id?: number | null }; template?: { id?: string | null } }
-        return `${record.group?.id}:${record.template?.id}`
-      },
+      rowKey: (row) => `${row.group.id}:${row.template.id}`,
       refetch: () => { workflowTemplatesRoleQuery.refetch() },
     }
   }
@@ -303,16 +332,14 @@ export function usePermissionsTableConfig(params: {
       ? artifactsUserQuery.data.total
       : rows.length
     return {
-      columns: columns.artifactUserColumns as unknown as ColumnsType<PermissionsTableRow>,
-      rows: rows as unknown as PermissionsTableRow[],
+      kind: 'artifacts/user',
+      columns: columns.artifactUserColumns,
+      rows,
       total,
       loading: artifactsUserQuery.isLoading,
       fetching: artifactsUserQuery.isFetching,
       error: artifactsUserQuery.error,
-      rowKey: (row) => {
-        const record = row as { user?: { id?: number | null }; artifact?: { id?: string | null } }
-        return `${record.user?.id}:${record.artifact?.id}`
-      },
+      rowKey: (row) => `${row.user.id}:${row.artifact.id}`,
       refetch: () => { artifactsUserQuery.refetch() },
     }
   }
@@ -322,16 +349,14 @@ export function usePermissionsTableConfig(params: {
     ? artifactsRoleQuery.data.total
     : rows.length
   return {
-    columns: columns.artifactGroupColumns as unknown as ColumnsType<PermissionsTableRow>,
-    rows: rows as unknown as PermissionsTableRow[],
+    kind: 'artifacts/role',
+    columns: columns.artifactGroupColumns,
+    rows,
     total,
     loading: artifactsRoleQuery.isLoading,
     fetching: artifactsRoleQuery.isFetching,
     error: artifactsRoleQuery.error,
-    rowKey: (row) => {
-      const record = row as { group?: { id?: number | null }; artifact?: { id?: string | null } }
-      return `${record.group?.id}:${record.artifact?.id}`
-    },
+    rowKey: (row) => `${row.group.id}:${row.artifact.id}`,
     refetch: () => { artifactsRoleQuery.refetch() },
   }
 }

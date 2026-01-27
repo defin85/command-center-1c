@@ -30,7 +30,6 @@ import {
   useRevokeWorkflowTemplatePermission,
   useRoles,
 } from '../../../api/queries/rbac'
-import { PermissionsTable } from '../components/PermissionsTable'
 import { RbacBulkClusterRolePermissions } from '../components/RbacBulkClusterRolePermissions'
 import { RbacBulkDatabaseRolePermissions } from '../components/RbacBulkDatabaseRolePermissions'
 import { RbacClusterDatabaseTree } from '../components/RbacClusterDatabaseTree'
@@ -40,6 +39,7 @@ import { RbacResourcePicker } from '../components/RbacResourcePicker'
 import { useConfirmReason } from '../hooks/useConfirmReason'
 import { CLUSTER_BULK_I18N, DATABASE_BULK_I18N } from './permissions/bulkI18n'
 import { LEVEL_OPTIONS, type PermissionLevelCode, type RbacPermissionsListState, type RbacPermissionsResourceKey } from './permissions/types'
+import { PermissionsAssignmentsTable } from './permissions/PermissionsAssignmentsTable'
 import { usePermissionColumns } from './permissions/usePermissionColumns'
 import { usePermissionsTableConfig } from './permissions/usePermissionsTableConfig'
 import { useRbacResourceRefs } from './permissions/useRbacResourceRefs'
@@ -522,7 +522,7 @@ export function PermissionsTab(props: {
             />
           )}
 
-          <PermissionsTable
+          <PermissionsAssignmentsTable
             title="Назначения"
             style={{ flex: 1, minWidth: 0 }}
             empty={{
@@ -569,15 +569,10 @@ export function PermissionsTab(props: {
                 </Button>
               </>
             )}
-            columns={tableConfig.columns}
-            rows={tableConfig.rows}
-            loading={tableConfig.loading}
-            rowKey={tableConfig.rowKey}
-            total={tableConfig.total}
+            tableConfig={tableConfig}
             page={rbacPermissionsList.page}
             pageSize={rbacPermissionsList.pageSize}
             onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
-            error={tableConfig.error}
             errorMessage="Не удалось загрузить назначения"
           />
         </div>
@@ -610,7 +605,7 @@ export function PermissionsTab(props: {
       )}
 
       {rbacPermissionsViewMode === 'principal' && (
-        <PermissionsTable
+        <PermissionsAssignmentsTable
           title="Назначения"
           preamble={(!rbacPermissionsList.principal_id
             && !rbacPermissionsList.resource_id
@@ -682,15 +677,10 @@ export function PermissionsTab(props: {
               </Button>
             </>
           )}
-          columns={tableConfig.columns}
-          rows={tableConfig.rows}
-          loading={tableConfig.loading}
-          rowKey={tableConfig.rowKey}
-          total={tableConfig.total}
+          tableConfig={tableConfig}
           page={rbacPermissionsList.page}
           pageSize={rbacPermissionsList.pageSize}
           onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
-          error={tableConfig.error}
           errorMessage="Не удалось загрузить назначения"
         />
       )}
