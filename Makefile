@@ -39,7 +39,7 @@ test-go:
 ## test-python: Запустить Python тесты
 test-python:
 	@echo "$(BLUE)Running Python tests...$(NC)"
-	cd orchestrator && pytest --cov=. --cov-report=html --cov-report=term
+	./scripts/dev/pytest.sh --cov=. --cov-report=html --cov-report=term
 
 ## test-frontend: Запустить Frontend тесты
 test-frontend:

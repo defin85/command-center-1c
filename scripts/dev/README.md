@@ -619,7 +619,8 @@ cp .env.example .env.local
 # Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
 
 # 3. Установить зависимости
-cd orchestrator && python -m venv venv && source venv/Scripts/activate && pip install -r requirements.txt && cd ..
+cd orchestrator && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && cd ..
+# Windows: source venv/Scripts/activate
 cd frontend && npm install && npx playwright install && cd ..
 cd go-services/api-gateway && go mod download && cd ../..
 
@@ -657,6 +658,9 @@ cd go-services/api-gateway && go mod download && cd ../..
 
 # Проверить статус всех сервисов
 ./scripts/dev/health-check.sh
+
+# Запустить Python тесты (использует orchestrator/venv)
+make test-python
 ```
 
 ### 📦 После git pull

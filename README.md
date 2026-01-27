@@ -92,7 +92,8 @@ cp .env.example .env.local
 # Отредактировать .env.local (DB_HOST=localhost, REDIS_HOST=localhost)
 
 # Установить зависимости
-cd orchestrator && python -m venv venv && source venv/Scripts/activate && pip install -r requirements.txt && cd ..
+cd orchestrator && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && cd ..
+# Windows: source venv/Scripts/activate
 cd frontend && npm install && npx playwright install && cd ..
 
 # Запустить все сервисы (с умной автопересборкой)
