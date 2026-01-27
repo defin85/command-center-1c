@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Button, Space, Tag, Modal, Form, Input, Popconfirm, Select, App, InputNumber, Row, Col } from 'antd'
+import { Button, Space, Tag, Popconfirm, App, Form } from 'antd'
 import { PlusOutlined, SyncOutlined, EditOutlined, DeleteOutlined, DatabaseOutlined, SearchOutlined, UnlockOutlined, KeyOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../../api/generated/model/cluster'
@@ -27,7 +27,8 @@ import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
-const { TextArea } = Input
+import { ClusterCredentialsModal } from './components/ClusterCredentialsModal'
+import { ClusterUpsertModal } from './components/ClusterUpsertModal'
 
 export const Clusters = () => {
     const navigate = useNavigate()
@@ -469,6 +470,8 @@ export const Clusters = () => {
         ? clustersResponse.total
         : clusters.length
 
+    const defaultRasHostPlaceholder = parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER).host
+
     return (
         <div>
             <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
@@ -515,226 +518,33 @@ export const Clusters = () => {
                 searchPlaceholder="Search clusters"
             />
 
-            <Modal
-                title={editingCluster ? 'Edit Cluster' : 'Add New Cluster'}
+            <ClusterUpsertModal
                 open={modalVisible}
-                onOk={handleSubmit}
+                editingCluster={editingCluster}
+                form={form}
+                confirmLoading={createCluster.isPending || updateCluster.isPending}
+                defaultRasHostPlaceholder={defaultRasHostPlaceholder}
+                onSubmit={handleSubmit}
+                onOpenCredentials={openCredentialsModal}
                 onCancel={() => {
                     setModalVisible(false)
                     form.resetFields()
                 }}
-                width={600}
-                okText={editingCluster ? 'Update' : 'Create'}
-                confirmLoading={createCluster.isPending || updateCluster.isPending}
-            >
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        label="Cluster Name"
-                        name="name"
-                        rules={[{ required: true, message: 'Please enter cluster name' }]}
-                        htmlFor="cluster-name"
-                    >
-                        <Input id="cluster-name" placeholder="Production Cluster" />
-                    </Form.Item>
+            />
 
-                    <Form.Item label="Description" name="description" htmlFor="cluster-description">
-                        <TextArea id="cluster-description" rows={3} placeholder="Optional description" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="RAS Host"
-                        name="ras_host"
-                        rules={[{ required: true, message: 'Please enter RAS host' }]}
-                        htmlFor="cluster-ras-host"
-                    >
-                        <Input id="cluster-ras-host" placeholder={parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER).host} />
-                    </Form.Item>
-                    <Form.Item
-                        label="RAS Port"
-                        name="ras_port"
-                        rules={[{ required: true, message: 'Please enter RAS port' }]}
-                        htmlFor="cluster-ras-port"
-                    >
-                        <InputNumber
-                            id="cluster-ras-port"
-                            min={1}
-                            max={65535}
-                            style={{ width: '100%' }}
-                            placeholder={String(DEFAULT_RAS_PORT)}
-                        />
-                    </Form.Item>
-
-                    <Row gutter={12}>
-                        <Col span={16}>
-                            <Form.Item
-                                label="RMNGR Host"
-                                name="rmngr_host"
-                                rules={[{ required: true, message: 'Please enter RMNGR host' }]}
-                                htmlFor="cluster-rmngr-host"
-                            >
-                                <Input id="cluster-rmngr-host" placeholder="localhost" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item
-                                label="RMNGR Port"
-                                name="rmngr_port"
-                                rules={[{ required: true, message: 'Please enter RMNGR port' }]}
-                                htmlFor="cluster-rmngr-port"
-                            >
-                                <InputNumber
-                                    id="cluster-rmngr-port"
-                                    min={1}
-                                    max={65535}
-                                    style={{ width: '100%' }}
-                                    placeholder={String(DEFAULT_RMNGR_PORT)}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={12}>
-                        <Col span={16}>
-                            <Form.Item label="RAGENT Host" name="ragent_host" htmlFor="cluster-ragent-host">
-                                <Input id="cluster-ragent-host" placeholder="localhost" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item label="RAGENT Port" name="ragent_port" htmlFor="cluster-ragent-port">
-                                <InputNumber
-                                    id="cluster-ragent-port"
-                                    min={1}
-                                    max={65535}
-                                    style={{ width: '100%' }}
-                                    placeholder={String(DEFAULT_RAGENT_PORT)}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={12}>
-                        <Col span={12}>
-                            <Form.Item label="RPHOST Port From" name="rphost_port_from" htmlFor="cluster-rphost-port-from">
-                                <InputNumber
-                                    id="cluster-rphost-port-from"
-                                    min={1}
-                                    max={65535}
-                                    style={{ width: '100%' }}
-                                    placeholder={String(DEFAULT_RPHOST_PORT_FROM)}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item label="RPHOST Port To" name="rphost_port_to" htmlFor="cluster-rphost-port-to">
-                                <InputNumber
-                                    id="cluster-rphost-port-to"
-                                    min={1}
-                                    max={65535}
-                                    style={{ width: '100%' }}
-                                    placeholder={String(DEFAULT_RPHOST_PORT_TO)}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item
-                        label="Cluster Service URL"
-                        name="cluster_service_url"
-                        rules={[{ required: true, message: 'Please enter cluster service URL' }]}
-                        htmlFor="cluster-service-url"
-                    >
-                        <Input id="cluster-service-url" placeholder={DEFAULT_CLUSTER_SERVICE_URL} />
-                    </Form.Item>
-
-                    {editingCluster ? (
-                        <Form.Item
-                            label="Cluster Credentials"
-                            htmlFor="cluster-credentials-button"
-                            extra="Use Credentials to update or reset username/password."
-                        >
-                            <Button
-                                id="cluster-credentials-button"
-                                icon={<KeyOutlined />}
-                                onClick={() => editingCluster && openCredentialsModal(editingCluster)}
-                            >
-                                Open Credentials
-                            </Button>
-                        </Form.Item>
-                    ) : (
-                        <>
-                            <Form.Item label="Cluster Admin User" name="cluster_user" htmlFor="cluster-admin-user">
-                                <Input id="cluster-admin-user" placeholder="Optional cluster admin username" />
-                            </Form.Item>
-                            <Form.Item label="Cluster Admin Password" name="cluster_pwd" htmlFor="cluster-admin-password">
-                                <Input.Password
-                                    id="cluster-admin-password"
-                                    placeholder="Optional cluster admin password"
-                                    autoComplete="new-password"
-                                />
-                            </Form.Item>
-                        </>
-                    )}
-
-                    <Form.Item label="Status" name="status" htmlFor="cluster-status">
-                        <Select id="cluster-status">
-                            <Select.Option value="active">Active</Select.Option>
-                            <Select.Option value="inactive">Inactive</Select.Option>
-                            <Select.Option value="maintenance">Maintenance</Select.Option>
-                            <Select.Option value="error">Error</Select.Option>
-                        </Select>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            <Modal
-                title={credentialsCluster ? `Credentials: ${credentialsCluster.name}` : 'Credentials'}
+            <ClusterCredentialsModal
                 open={credentialsModalVisible}
+                cluster={credentialsCluster}
+                form={credentialsForm}
+                saving={updateClusterCredentials.isPending}
+                onSave={handleCredentialsSave}
+                onReset={handleCredentialsReset}
                 onCancel={() => {
                     setCredentialsModalVisible(false)
                     setCredentialsCluster(null)
                     credentialsForm.resetFields()
                 }}
-                footer={[
-                    <Button
-                        key="reset"
-                        danger
-                        onClick={handleCredentialsReset}
-                        disabled={!credentialsCluster?.cluster_pwd_configured}
-                    >
-                        Reset
-                    </Button>,
-                    <Button
-                        key="cancel"
-                        onClick={() => {
-                            setCredentialsModalVisible(false)
-                            setCredentialsCluster(null)
-                            credentialsForm.resetFields()
-                        }}
-                    >
-                        Cancel
-                    </Button>,
-                    <Button
-                        key="save"
-                        type="primary"
-                        onClick={handleCredentialsSave}
-                        loading={updateClusterCredentials.isPending}
-                    >
-                        Save
-                    </Button>,
-                ]}
-            >
-                <Form form={credentialsForm} layout="vertical">
-                    <Form.Item label="Cluster Admin User" name="username" htmlFor="cluster-credentials-username">
-                        <Input id="cluster-credentials-username" placeholder="Optional cluster admin username" />
-                    </Form.Item>
-                    <Form.Item label="Cluster Admin Password" name="password" htmlFor="cluster-credentials-password">
-                        <Input.Password
-                            id="cluster-credentials-password"
-                            placeholder={credentialsCluster?.cluster_pwd_configured ? 'Configured' : 'Enter password'}
-                        />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            />
 
             <DiscoverClustersModal
                 visible={discoverModalVisible}

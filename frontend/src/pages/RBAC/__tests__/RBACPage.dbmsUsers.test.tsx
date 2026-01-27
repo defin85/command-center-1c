@@ -132,7 +132,9 @@ describe('RBACPage: DBMS users tab', () => {
 
     renderPage()
 
-    fireEvent.click(screen.getByTestId('rbac-tab-dbms-users'))
+    const tabLabel = screen.getByTestId('rbac-tab-dbms-users')
+    const tab = tabLabel.closest('[role="tab"]') ?? tabLabel
+    fireEvent.click(tab)
     expect(await screen.findByTestId('rbac-dbms-users-toolbar-database')).toBeInTheDocument()
   })
 

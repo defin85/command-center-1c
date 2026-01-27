@@ -1,0 +1,63 @@
+import { Button, Form, Input, Modal } from 'antd'
+import type { FormInstance } from 'antd'
+
+import type { Database } from '../../../api/generated/model/database'
+
+export type DatabaseCredentialsModalProps = {
+  open: boolean
+  database: Database | null
+  form: FormInstance
+  saving: boolean
+  onCancel: () => void
+  onSave: () => void
+  onReset: () => void
+}
+
+export function DatabaseCredentialsModal({
+  open,
+  database,
+  form,
+  saving,
+  onCancel,
+  onSave,
+  onReset,
+}: DatabaseCredentialsModalProps) {
+  const disableReset = !database?.password_configured && !database?.username
+
+  return (
+    <Modal
+      title={database ? `Credentials: ${database.name}` : 'Credentials'}
+      open={open}
+      onCancel={onCancel}
+      footer={[
+        <Button
+          key="reset"
+          danger
+          onClick={onReset}
+          disabled={disableReset}
+        >
+          Reset
+        </Button>,
+        <Button key="cancel" onClick={onCancel}>
+          Cancel
+        </Button>,
+        <Button key="save" type="primary" onClick={onSave} loading={saving}>
+          Save
+        </Button>,
+      ]}
+    >
+      <Form form={form} layout="vertical">
+        <Form.Item label="OData Username" name="username" htmlFor="database-credentials-username">
+          <Input id="database-credentials-username" placeholder="Optional OData username" />
+        </Form.Item>
+        <Form.Item label="OData Password" name="password" htmlFor="database-credentials-password">
+          <Input.Password
+            id="database-credentials-password"
+            placeholder={database?.password_configured ? 'Configured' : 'Enter password'}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
+  )
+}
+

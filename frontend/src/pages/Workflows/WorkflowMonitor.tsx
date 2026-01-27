@@ -25,7 +25,6 @@ import {
   Spin,
   Alert,
   Collapse,
-  Drawer,
   Result,
   Badge,
   Tooltip,
@@ -37,7 +36,6 @@ import {
   ArrowLeftOutlined,
   ReloadOutlined,
   StopOutlined,
-  LinkOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
@@ -48,12 +46,13 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { WorkflowCanvas } from '../../components/workflow'
 import { TraceViewerModal } from '../../components/workflow/TraceViewerModal'
-import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
+import { useWorkflowExecution, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
 // Generated API + transforms (migrated from adapter)
 import { getV2 } from '../../api/generated'
 import { convertExecutionToLegacy, convertDAGToLegacy } from '../../utils/workflowTransforms'
 import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
 import { useAuthz } from '../../authz/useAuthz'
+import { NodeDetailsDrawer, type NodeDetails } from './components/NodeDetailsDrawer'
 import './WorkflowMonitor.css'
 
 // v2 migration: использовать env variable для Jaeger UI
@@ -64,12 +63,6 @@ const api = getV2()
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
-
-interface NodeDetails {
-  nodeId: string
-  nodeName: string
-  status: NodeStatus
-}
 
 const statusColors: Record<WorkflowStatusType, string> = {
   pending: 'default',
@@ -593,101 +586,17 @@ const WorkflowMonitor = () => {
         </Sider>
       </Layout>
 
-      {/* Node Details Drawer */}
-      <Drawer
-        title={selectedNode?.nodeName || 'Node Details'}
+      <NodeDetailsDrawer
         open={drawerVisible}
+        selectedNode={selectedNode}
+        traceId={traceId || null}
+        jaegerUiUrl={JAEGER_UI_URL}
         onClose={() => setDrawerVisible(false)}
-        width={400}
-      >
-        {selectedNode && (
-          <div className="node-details">
-            <Descriptions column={1} size="small" bordered>
-              <Descriptions.Item label="Node ID">
-                <Text copyable className="mono-text">
-                  {selectedNode.nodeId}
-                </Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Status">
-                <Tag color={
-                  selectedNode.status.status === 'completed' ? 'success' :
-                  selectedNode.status.status === 'failed' ? 'error' :
-                  selectedNode.status.status === 'running' ? 'processing' :
-                  selectedNode.status.status === 'skipped' ? 'warning' :
-                  'default'
-                }>
-                  {selectedNode.status.status}
-                </Tag>
-              </Descriptions.Item>
-              {selectedNode.status.startedAt && (
-                <Descriptions.Item label="Started">
-                  {new Date(selectedNode.status.startedAt).toLocaleString()}
-                </Descriptions.Item>
-              )}
-              {selectedNode.status.completedAt && (
-                <Descriptions.Item label="Completed">
-                  {new Date(selectedNode.status.completedAt).toLocaleString()}
-                </Descriptions.Item>
-              )}
-              {selectedNode.status.durationMs !== undefined && (
-                <Descriptions.Item label="Duration">
-                  {(selectedNode.status.durationMs / 1000).toFixed(3)}s
-                </Descriptions.Item>
-              )}
-              {selectedNode.status.spanId && (
-                <Descriptions.Item label="Span ID">
-                  <Text copyable className="mono-text">
-                    {selectedNode.status.spanId}
-                  </Text>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            {selectedNode.status.output && (
-              <Card title="Output" size="small" className="detail-card">
-                <pre className="json-output">
-                  {JSON.stringify(selectedNode.status.output, null, 2)}
-                </pre>
-              </Card>
-            )}
-
-            {selectedNode.status.error && (
-              <Alert
-                type="error"
-                message="Error"
-                description={selectedNode.status.error}
-                showIcon
-                className="error-detail"
-              />
-            )}
-
-            {selectedNode.status.spanId && traceId && (
-              <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
-                <Button
-                  type="primary"
-                  icon={<LinkOutlined />}
-                  onClick={() => {
-                    setTraceNodeId(selectedNode.nodeId)
-                    setTraceModalVisible(true)
-                  }}
-                  block
-                >
-                  View Trace Details
-                </Button>
-                <Button
-                  type="link"
-                  icon={<ExportOutlined />}
-                  href={`${JAEGER_UI_URL}/trace/${traceId}?uiFind=${selectedNode.status.spanId}`}
-                  target="_blank"
-                  className="trace-link"
-                >
-                  Open in Jaeger
-                </Button>
-              </Space>
-            )}
-          </div>
-        )}
-      </Drawer>
+        onOpenTraceDetails={(nodeId) => {
+          setTraceNodeId(nodeId)
+          setTraceModalVisible(true)
+        }}
+      />
 
       {/* Trace Viewer Modal */}
       <TraceViewerModal
