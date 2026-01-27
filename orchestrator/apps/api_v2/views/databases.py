@@ -1539,7 +1539,7 @@ def create_dbms_user(request):
                 database=db,
                 user=user,
                 db_username=data['db_username'].strip(),
-                db_password='',
+                db_password=data.get('db_password', ''),
                 auth_type=data.get('auth_type', DbmsUserMapping._meta.get_field('auth_type').default),
                 is_service=is_service,
                 notes=data.get('notes', '').strip(),

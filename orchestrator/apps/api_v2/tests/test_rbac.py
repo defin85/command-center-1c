@@ -65,7 +65,7 @@ def test_rbac_requires_staff(normal_client):
 def test_grant_and_list_cluster_permission(authenticated_client, staff_user, normal_user, cluster):
     resp = authenticated_client.post(
         "/api/v2/rbac/grant-cluster-permission/",
-        {"user_id": normal_user.id, "cluster_id": str(cluster.id), "level": "OPERATE", "notes": "n"},
+        {"user_id": normal_user.id, "cluster_id": str(cluster.id), "level": "OPERATE", "notes": "n", "reason": "test"},
         format="json",
     )
     assert resp.status_code == 200
@@ -86,7 +86,7 @@ def test_grant_and_list_cluster_permission(authenticated_client, staff_user, nor
 def test_grant_and_revoke_database_permission(authenticated_client, normal_user, database):
     resp = authenticated_client.post(
         "/api/v2/rbac/grant-database-permission/",
-        {"user_id": normal_user.id, "database_id": database.id, "level": "VIEW"},
+        {"user_id": normal_user.id, "database_id": database.id, "level": "VIEW", "reason": "test"},
         format="json",
     )
     assert resp.status_code == 200
@@ -94,7 +94,7 @@ def test_grant_and_revoke_database_permission(authenticated_client, normal_user,
 
     revoke = authenticated_client.post(
         "/api/v2/rbac/revoke-database-permission/",
-        {"user_id": normal_user.id, "database_id": database.id},
+        {"user_id": normal_user.id, "database_id": database.id, "reason": "test"},
         format="json",
     )
     assert revoke.status_code == 200
@@ -106,7 +106,7 @@ def test_effective_access_self_only_for_non_staff(normal_client, normal_user, cl
     # As staff, grant cluster permission to normal_user.
     authenticated_client.post(
         "/api/v2/rbac/grant-cluster-permission/",
-        {"user_id": normal_user.id, "cluster_id": str(cluster.id), "level": "VIEW"},
+        {"user_id": normal_user.id, "cluster_id": str(cluster.id), "level": "VIEW", "reason": "test"},
         format="json",
     )
 
@@ -119,4 +119,3 @@ def test_effective_access_self_only_for_non_staff(normal_client, normal_user, cl
     other = User.objects.create_user(username="other", password="pass")
     resp_forbidden = normal_client.get("/api/v2/rbac/get-effective-access/", {"user_id": other.id})
     assert resp_forbidden.status_code == 403
-
