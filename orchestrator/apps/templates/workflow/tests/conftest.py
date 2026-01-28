@@ -98,13 +98,32 @@ def complex_workflow_template(db, admin_user):
                     "id": "check",
                     "name": "Check Condition",
                     "type": "condition",
-                    "config": {"timeout": 10}
+                    "config": {"timeout": 10, "expression": "{{ true }}"}
                 },
                 {
                     "id": "parallel",
                     "name": "Parallel Processing",
                     "type": "parallel",
-                    "config": {"timeout": 120, "parallel_limit": 5}
+                    "config": {"timeout": 120, "parallel_limit": 5},
+                    "parallel_config": {
+                        "parallel_nodes": ["branch_1", "branch_2"],
+                        "wait_for": "all",
+                        "timeout_seconds": 120,
+                    },
+                },
+                {
+                    "id": "branch_1",
+                    "name": "Branch 1",
+                    "type": "operation",
+                    "template_id": "branch_op_1",
+                    "config": {"timeout": 60},
+                },
+                {
+                    "id": "branch_2",
+                    "name": "Branch 2",
+                    "type": "operation",
+                    "template_id": "branch_op_2",
+                    "config": {"timeout": 60},
                 },
                 {
                     "id": "end",
@@ -116,8 +135,10 @@ def complex_workflow_template(db, admin_user):
             ],
             "edges": [
                 {"from": "start", "to": "check"},
-                {"from": "check", "to": "parallel", "condition": "true"},
-                {"from": "parallel", "to": "end"}
+                {"from": "check", "to": "parallel", "condition": "{{ true }}"},
+                {"from": "parallel", "to": "end"},
+                {"from": "parallel", "to": "branch_1", "condition": "{{ false }}"},
+                {"from": "parallel", "to": "branch_2", "condition": "{{ false }}"},
             ]
         },
         created_by=admin_user,

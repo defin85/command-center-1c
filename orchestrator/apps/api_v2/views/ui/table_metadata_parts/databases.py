@@ -1,0 +1,136 @@
+"""UI table metadata part."""
+
+from __future__ import annotations
+
+TABLE_METADATA_PART = {
+    "databases": {
+        "table_id": "databases",
+        "version": "2025-12-24",
+        "columns": [
+            {
+                "key": "name",
+                "label": "Name",
+                "group_key": "core",
+                "group_label": "Core",
+                "sortable": True,
+                "data_type": "text",
+                "filter": {"type": "text", "operators": ["contains", "eq"], "placeholder": "Name"},
+                "server_field": "name",
+            },
+            {
+                "key": "host",
+                "label": "Host",
+                "group_key": "core",
+                "group_label": "Core",
+                "sortable": True,
+                "data_type": "text",
+                "filter": {"type": "text", "operators": ["contains", "eq"], "placeholder": "Host"},
+                "server_field": "host",
+            },
+            {
+                "key": "port",
+                "label": "Port",
+                "group_key": "core",
+                "group_label": "Core",
+                "sortable": True,
+                "data_type": "number",
+                "filter": {"type": "number", "operators": ["eq", "gt", "lt"], "placeholder": "Port"},
+                "server_field": "port",
+            },
+            {
+                "key": "status",
+                "label": "Status",
+                "group_key": "status",
+                "group_label": "Status",
+                "sortable": False,
+                "data_type": "enum",
+                "filter": {
+                    "type": "select",
+                    "operators": ["eq", "in"],
+                    "options": [
+                        {"value": "active", "label": "Active"},
+                        {"value": "inactive", "label": "Inactive"},
+                        {"value": "maintenance", "label": "Maintenance"},
+                        {"value": "error", "label": "Error"},
+                    ],
+                },
+                "server_field": "status",
+            },
+            {
+                "key": "last_check_status",
+                "label": "Health",
+                "group_key": "status",
+                "group_label": "Status",
+                "sortable": False,
+                "data_type": "enum",
+                "filter": {
+                    "type": "select",
+                    "operators": ["eq", "in"],
+                    "options": [
+                        {"value": "ok", "label": "OK"},
+                        {"value": "degraded", "label": "Degraded"},
+                        {"value": "down", "label": "Down"},
+                        {"value": "unknown", "label": "Unknown"},
+                    ],
+                },
+                "server_field": "last_check_status",
+            },
+            {
+                "key": "last_check",
+                "label": "Last Check",
+                "group_key": "status",
+                "group_label": "Status",
+                "sortable": True,
+                "data_type": "datetime",
+                "filter": {"type": "date", "operators": ["eq", "before", "after"], "placeholder": "Last check"},
+                "server_field": "last_check",
+            },
+            {
+                "key": "credentials",
+                "label": "Credentials",
+                "group_key": "access",
+                "group_label": "Access",
+                "sortable": False,
+                "data_type": "enum",
+                "filter": {
+                    "type": "select",
+                    "operators": ["eq"],
+                    "options": [
+                        {"value": "configured", "label": "Configured"},
+                        {"value": "missing", "label": "Missing"},
+                    ],
+                },
+                "server_field": "credentials",
+            },
+            {
+                "key": "restrictions",
+                "label": "Restrictions",
+                "group_key": "access",
+                "group_label": "Access",
+                "sortable": False,
+                "data_type": "enum",
+                "filter": {
+                    "type": "select",
+                    "operators": ["eq"],
+                    "options": [
+                        {"value": "jobs_locked", "label": "Jobs: Locked"},
+                        {"value": "jobs_allowed", "label": "Jobs: Allowed"},
+                        {"value": "jobs_unknown", "label": "Jobs: Unknown"},
+                        {"value": "sessions_blocked", "label": "Sessions: Blocked"},
+                        {"value": "sessions_allowed", "label": "Sessions: Allowed"},
+                        {"value": "sessions_unknown", "label": "Sessions: Unknown"},
+                    ],
+                },
+                "server_field": "restrictions",
+            },
+            {
+                "key": "actions",
+                "label": "Actions",
+                "group_key": "actions",
+                "group_label": "Actions",
+                "sortable": False,
+                "data_type": "action",
+            },
+        ],
+    }
+}

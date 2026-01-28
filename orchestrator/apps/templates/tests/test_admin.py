@@ -20,64 +20,6 @@ from apps.templates.admin import WorkflowTemplateAdmin
 from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowTemplate
 
-
-@pytest.fixture
-def admin_site():
-    """Create a bare AdminSite for testing."""
-    return AdminSite()
-
-
-@pytest.fixture
-def workflow_admin(admin_site):
-    """Create WorkflowTemplateAdmin instance."""
-    return WorkflowTemplateAdmin(WorkflowTemplate, admin_site)
-
-
-@pytest.fixture
-def request_factory():
-    """Create RequestFactory for building requests."""
-    return RequestFactory()
-
-
-@pytest.fixture
-def admin_user(db):
-    """Create staff user for testing."""
-    # Cleanup: delete existing user if present
-    User.objects.filter(username='testadmin_admin').delete()
-
-    return User.objects.create_user(
-        username='testadmin_admin',
-        email='testadmin@test.com',
-        password='testpass123',
-        is_staff=True
-    )
-
-
-@pytest.fixture
-def sample_workflow(db, admin_user):
-    """Create a sample workflow template for testing."""
-    return WorkflowTemplate.objects.create(
-        name="Test Workflow",
-        workflow_type="sequential",
-        dag_structure={
-            "nodes": [
-                {
-                    "id": "step1",
-                    "name": "Step 1",
-                    "type": "operation",
-                    "template_id": "test_op1",
-                    "config": {"timeout_seconds": 30}
-                }
-            ],
-            "edges": []
-        },
-        config={"timeout_seconds": 300},
-        created_by=admin_user,
-        is_valid=True,
-        is_active=True
-    )
-
-
 @pytest.mark.django_db
 class TestWorkflowTemplateAdminOperationTemplatesContext(TestCase):
     """Test operation templates context injection in WorkflowTemplateAdmin."""

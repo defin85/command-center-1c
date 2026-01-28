@@ -1,22 +1,11 @@
-## 0. Подготовка
-- [ ] 0.1 Зафиксировать список orchestrator файлов >700 строк (по правилам из `add-file-size-guideline-700`).
-- [ ] 0.2 Определить целевую структуру пакетов для `api_v2/views` (подпакеты по доменам).
+## 1. Реализация
+- [x] Устранить все offenders >700 под `orchestrator/` (включая тесты), проверяя `python3 scripts/dev/file-size-report.py --scope orchestrator --all`.
+- [x] `apps.api_internal`: разнести крупные тесты (`orchestrator/apps/api_internal/tests/test_views.py`) на несколько файлов по доменам.
+- [x] `apps.operations`: разнести `orchestrator/apps/operations/event_subscriber.py` на подпакет и разбить крупные тесты.
+- [x] `apps.databases`: разнести `models.py` и `admin.py` на подмодули с сохранением публичных импортов.
+- [x] `apps.templates`: разнести `workflow/models.py`, `tracing.py` и крупные тесты (`test_registry.py`, `test_validator.py`, `test_tracing.py`, `test_benchmarks.py`) на несколько файлов.
 
-## 1. Разнос views (api_v2)
-- [ ] 1.1 `views/rbac.py`: разнести на `views/rbac/*` (permissions/roles/refs/audit/compat) с сохранением публичных импортов.
-- [ ] 1.2 `views/operations.py`: разнести на `views/operations/*` (execute/query/audit/helpers).
-- [ ] 1.3 `views/driver_catalogs.py`: разнести на подмодули (read/write/validate/audit).
-- [ ] 1.4 `views/workflows.py`, `views/databases.py`, `views/ui.py`, `views/clusters.py`, `views/artifacts.py`: аналогично (по ответственности).
-
-## 2. Разнос сервисов
-- [ ] 2.1 Крупные сервисы (`operations_service.py`, `databases/services.py`, `ibcmd_catalog_v2.py`): выделить подмодули по операциям/подсистемам.
-
-## 3. Тесты
-- [ ] 3.1 Разнести крупные тестовые модули на несколько файлов по сценариям (например, editor/execute/permissions).
-- [ ] 3.2 Убедиться, что имена и фикстуры остаются понятными и переиспользуемыми.
-
-## 4. Валидация
-- [ ] 4.1 `./scripts/dev/lint.sh` (ruff + др.)
-- [ ] 4.2 `pytest` (релевантные пакеты/полный прогон по договорённости)
-- [ ] 4.3 `openspec validate refactor-orchestrator-files-under-700 --strict --no-interactive`
-
+## 2. Валидация
+- [x] 2.1 `./scripts/dev/lint.sh` (ruff + др.)
+- [x] 2.2 `pytest` (релевантные пакеты/полный прогон по договорённости)
+- [x] 2.3 `openspec validate refactor-orchestrator-files-under-700 --strict --no-interactive`
