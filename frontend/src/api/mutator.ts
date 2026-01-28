@@ -4,21 +4,26 @@
 import { AxiosError, AxiosRequestConfig } from 'axios'
 import { apiClient } from './client'
 
+export type CancellablePromise<T> = Promise<T> & {
+  cancel: () => void
+}
+
 export const customInstance = <T>(
   config: AxiosRequestConfig,
   options?: AxiosRequestConfig,
-): Promise<T> => {
+): CancellablePromise<T> => {
   const externalSignal = options?.signal
   const controller = externalSignal ? undefined : new AbortController()
   const signal = externalSignal ?? controller?.signal
 
-  const promise = apiClient({
-    ...config,
-    ...options,
-    signal,
-  }).then(({ data }) => data as T)
+  const promise = apiClient
+    .request<T>({
+      ...config,
+      ...options,
+      signal,
+    })
+    .then(({ data }) => data) as CancellablePromise<T>
 
-  // @ts-expect-error - adding cancel property for React Query
   promise.cancel = () => {
     controller?.abort()
   }
