@@ -5,20 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// Простой mock для Redis (для тестов которым нужен Redis client, но без реального соединения)
-type mockRedisClient struct {
-	data map[string]string
-}
-
-func newMockRedisClient() *redis.Client {
-	// Для unit тестов можем использовать nil - методы работают без реального Redis
-	return nil
-}
 
 func TestStateMachine_Creation(t *testing.T) {
 	ctx := context.Background()
@@ -30,7 +19,7 @@ func TestStateMachine_Creation(t *testing.T) {
 		"db-456",
 		"corr-789",
 		publisher,
-		newMockRedisClient(),
+		nil,
 		nil, // Use default config
 	)
 

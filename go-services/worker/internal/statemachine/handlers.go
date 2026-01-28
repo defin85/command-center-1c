@@ -69,9 +69,11 @@ func (sm *ExtensionInstallStateMachine) publishManualActionRequired(ctx context.
 		"state":          sm.State.String(),
 	}
 
-	sm.publishCommand(ctx,
+	if err := sm.publishCommand(ctx,
 		"events:orchestrator:manual-action",
 		"orchestrator.manual-action.required",
 		payload,
-	)
+	); err != nil {
+		fmt.Printf("[StateMachine] Failed to publish manual action required: %v\n", err)
+	}
 }

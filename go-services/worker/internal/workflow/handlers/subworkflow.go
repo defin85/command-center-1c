@@ -122,10 +122,10 @@ func (h *SubworkflowHandler) HandleNode(
 			NodeID: node.ID,
 			Status: executor.NodeStatusCompleted,
 			Output: map[string]interface{}{
-				"subworkflow_id":     config.WorkflowID,
-				"execution_skipped":  true,
-				"reason":             "No workflow store configured",
-				"recursion_depth":    currentDepth,
+				"subworkflow_id":    config.WorkflowID,
+				"execution_skipped": true,
+				"reason":            "No workflow store configured",
+				"recursion_depth":   currentDepth,
 			},
 			StartedAt:   startTime,
 			CompletedAt: time.Now(),
@@ -182,10 +182,10 @@ func (h *SubworkflowHandler) HandleNode(
 			NodeID: node.ID,
 			Status: executor.NodeStatusCompleted,
 			Output: map[string]interface{}{
-				"subworkflow_id":     config.WorkflowID,
-				"execution_skipped":  true,
-				"reason":             "No executor factory configured",
-				"recursion_depth":    currentDepth + 1,
+				"subworkflow_id":    config.WorkflowID,
+				"execution_skipped": true,
+				"reason":            "No executor factory configured",
+				"recursion_depth":   currentDepth + 1,
 			},
 			StartedAt:   startTime,
 			CompletedAt: time.Now(),
@@ -286,51 +286,6 @@ func (h *SubworkflowHandler) resolveValue(ctx *wfcontext.ExecutionContext, path 
 
 	// Path not found
 	return nil, fmt.Errorf("path '%s' not found in context", path)
-}
-
-// mapContext maps context variables using a mapping dictionary.
-// This creates a new context with mapped values.
-func mapContext(
-	sourceCtx *wfcontext.ExecutionContext,
-	mapping map[string]string,
-	targetExecutionID string,
-	targetWorkflowID string,
-) *wfcontext.ExecutionContext {
-	result := wfcontext.NewExecutionContext(targetExecutionID, targetWorkflowID)
-
-	for targetPath, sourcePath := range mapping {
-		val, ok := sourceCtx.Get(sourcePath)
-		if !ok {
-			continue
-		}
-
-		// Handle nested paths in target
-		if strings.Contains(targetPath, ".") {
-			result = setNestedPath(result, targetPath, val)
-		} else {
-			result = result.Set(targetPath, val)
-		}
-	}
-
-	return result
-}
-
-// setNestedPath sets a value at a nested path in the context.
-func setNestedPath(ctx *wfcontext.ExecutionContext, path string, value interface{}) *wfcontext.ExecutionContext {
-	parts := strings.Split(path, ".")
-
-	// Build nested map
-	current := make(map[string]interface{})
-	current[parts[len(parts)-1]] = value
-
-	for i := len(parts) - 2; i >= 0; i-- {
-		parent := make(map[string]interface{})
-		parent[parts[i]] = current
-		current = parent
-	}
-
-	// Set the root key
-	return ctx.Set(parts[0], current[parts[0]])
 }
 
 // SubworkflowBuilder helps construct subworkflow configurations.

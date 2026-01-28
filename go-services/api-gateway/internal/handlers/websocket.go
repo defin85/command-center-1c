@@ -85,8 +85,12 @@ func proxyWebSocket(c *gin.Context, upstreamPath string) {
 			"upstream":    upstreamURL,
 			"status_code": statusCode,
 		}).Error("Failed to connect to upstream")
-		clientConn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "upstream unavailable"))
+		if writeErr := clientConn.WriteMessage(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "upstream unavailable"),
+		); writeErr != nil {
+			log.WithError(writeErr).Debug("Failed to write WebSocket close message to client")
+		}
 		return
 	}
 	defer upstreamConn.Close()
@@ -119,16 +123,20 @@ func runBidirectionalProxy(clientConn, upstreamConn *websocket.Conn, log *logrus
 	clientConn.SetReadLimit(maxMessageSize)
 	upstreamConn.SetReadLimit(maxMessageSize)
 
-	clientConn.SetReadDeadline(time.Now().Add(pongWait))
+	if err := clientConn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.WithError(err).Debug("Failed to set client WebSocket read deadline")
+		return
+	}
 	clientConn.SetPongHandler(func(string) error {
-		clientConn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
+		return clientConn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
-	upstreamConn.SetReadDeadline(time.Now().Add(pongWait))
+	if err := upstreamConn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.WithError(err).Debug("Failed to set upstream WebSocket read deadline")
+		return
+	}
 	upstreamConn.SetPongHandler(func(string) error {
-		upstreamConn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
+		return upstreamConn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
 	// Client -> Upstream
@@ -177,7 +185,13 @@ func pumpMessages(src, dst *websocket.Conn, direction string, done chan struct{}
 				return
 			}
 
-			dst.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := dst.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.WithFields(logrus.Fields{
+					"error":     err.Error(),
+					"direction": direction,
+				}).Debug("WebSocket set write deadline error")
+				return
+			}
 			if err := dst.WriteMessage(messageType, message); err != nil {
 				log.WithFields(logrus.Fields{
 					"error":     err.Error(),
@@ -198,7 +212,10 @@ func pingTicker(conn *websocket.Conn, done chan struct{}, closeDone func()) {
 		case <-done:
 			return
 		case <-ticker.C:
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				closeDone() // Signal other goroutines to stop
+				return
+			}
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				closeDone() // Signal other goroutines to stop
 				return

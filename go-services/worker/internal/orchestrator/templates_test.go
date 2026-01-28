@@ -27,7 +27,7 @@ func TestGetTemplate(t *testing.T) {
 				OperationType: "create",
 				TargetEntity:  "Document.ЗаказКлиента",
 				TemplateData: map[string]interface{}{
-					"Номер":           "{{ order_number }}",
+					"Номер":          "{{ order_number }}",
 					"Контрагент_Key": "{{ counterparty_guid }}",
 				},
 				Version:  1,
@@ -61,7 +61,7 @@ func TestGetTemplate(t *testing.T) {
 
 				if tt.serverStatus == http.StatusOK {
 					// Return v2 format: {success: true, template: {...}}
-					json.NewEncoder(w).Encode(TemplateGetResponse{
+					if err := json.NewEncoder(w).Encode(TemplateGetResponse{
 						Success: true,
 						Template: OperationTemplateData{
 							ID:            tt.serverResponse.ID,
@@ -72,12 +72,16 @@ func TestGetTemplate(t *testing.T) {
 							Version:       tt.serverResponse.Version,
 							IsActive:      tt.serverResponse.IsActive,
 						},
-					})
+					}); err != nil {
+						t.Errorf("Encode response failed: %v", err)
+					}
 				} else {
-					json.NewEncoder(w).Encode(map[string]string{
+					if err := json.NewEncoder(w).Encode(map[string]string{
 						"error": "Template not found",
 						"code":  "NOT_FOUND",
-					})
+					}); err != nil {
+						t.Errorf("Encode response failed: %v", err)
+					}
 				}
 			}))
 			defer server.Close()
@@ -135,12 +139,12 @@ func TestRenderTemplate(t *testing.T) {
 			name:       "successful render",
 			templateID: "create_order",
 			context: map[string]interface{}{
-				"order_number":     "12345",
+				"order_number":      "12345",
 				"counterparty_guid": "550e8400-e29b-41d4-a716-446655440000",
 			},
 			serverResponse: TemplateRenderResponse{
 				Rendered: map[string]interface{}{
-					"Номер":           "12345",
+					"Номер":          "12345",
 					"Контрагент_Key": "550e8400-e29b-41d4-a716-446655440000",
 				},
 				Success: true,
@@ -196,12 +200,16 @@ func TestRenderTemplate(t *testing.T) {
 				w.WriteHeader(tt.serverStatus)
 
 				if tt.serverStatus == http.StatusOK {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					if err := json.NewEncoder(w).Encode(tt.serverResponse); err != nil {
+						t.Errorf("Encode response failed: %v", err)
+					}
 				} else {
-					json.NewEncoder(w).Encode(map[string]string{
+					if err := json.NewEncoder(w).Encode(map[string]string{
 						"error": "Template not found",
 						"code":  "NOT_FOUND",
-					})
+					}); err != nil {
+						t.Errorf("Encode response failed: %v", err)
+					}
 				}
 			}))
 			defer server.Close()
@@ -247,11 +255,13 @@ func TestRenderTemplateRaw(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(TemplateRenderResponse{
+		if err := json.NewEncoder(w).Encode(TemplateRenderResponse{
 			Rendered: map[string]interface{}{},
 			Success:  false,
 			Error:    "some error",
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -288,10 +298,12 @@ func TestFallbackRenderer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(TemplateRenderResponse{
+		if err := json.NewEncoder(w).Encode(TemplateRenderResponse{
 			Rendered: expectedRendered,
 			Success:  true,
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

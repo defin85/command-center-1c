@@ -369,8 +369,12 @@ func compensateBatchStep(deps *WorkflowDependencies) saga.StepFunc {
 		compData, ok := compDataRaw.(BatchCompensationData)
 		if !ok {
 			// Try to parse from JSON
-			if jsonBytes, err := json.Marshal(compDataRaw); err == nil {
-				json.Unmarshal(jsonBytes, &compData)
+			jsonBytes, err := json.Marshal(compDataRaw)
+			if err != nil {
+				return fmt.Errorf("marshal compensation_data: %w", err)
+			}
+			if err := json.Unmarshal(jsonBytes, &compData); err != nil {
+				return fmt.Errorf("unmarshal compensation_data: %w", err)
 			}
 		}
 
@@ -426,7 +430,10 @@ func getODataCredentials(sagaCtx *saga.SagaContext) odata.ODataCredentials {
 		}
 	case string:
 		// Try to parse as JSON
-		json.Unmarshal([]byte(v), &creds)
+		if err := json.Unmarshal([]byte(v), &creds); err != nil {
+			// Best-effort: leave creds empty on invalid JSON.
+			_ = err
+		}
 	}
 
 	return creds
@@ -468,7 +475,10 @@ func getODataOperations(sagaCtx *saga.SagaContext) []ODataOperation {
 		}
 	case string:
 		// Try to parse as JSON
-		json.Unmarshal([]byte(v), &operations)
+		if err := json.Unmarshal([]byte(v), &operations); err != nil {
+			// Best-effort: leave operations empty on invalid JSON.
+			_ = err
+		}
 	}
 
 	return operations

@@ -156,7 +156,7 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 
 	// Load state if exists (for recovery)
 	if err := sm.loadState(ctx); err != nil {
-		// Ignore error, start from Init
+		fmt.Printf("[StateMachine] Failed to load persisted state: %v (starting from Init)\n", err)
 	}
 
 	if err := sm.ensureClusterInfo(ctx); err != nil {
@@ -170,7 +170,9 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			fmt.Printf("[StateMachine] Context cancelled, saving state...\n")
-			sm.saveState(ctx)
+			if err := sm.saveState(ctx); err != nil {
+				fmt.Printf("[StateMachine] Failed to save state on cancellation: %v\n", err)
+			}
 			return ctx.Err()
 		default:
 		}
@@ -201,7 +203,9 @@ func (sm *ExtensionInstallStateMachine) Run(ctx context.Context) error {
 			}
 
 			fmt.Printf("[StateMachine] Transitioning to %s\n", nextState)
-			sm.transitionTo(nextState)
+			if trErr := sm.transitionTo(nextState); trErr != nil {
+				return fmt.Errorf("failed to transition to %s: %w", nextState, trErr)
+			}
 		} else {
 			fmt.Printf("[StateMachine] Handler completed successfully\n")
 		}

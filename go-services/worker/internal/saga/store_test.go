@@ -30,7 +30,7 @@ func TestInMemorySagaStore(t *testing.T) {
 	// Test ListByStatus
 	state2 := NewSagaState("exec-2", "saga-1", "corr-2")
 	state2.Status = SagaStatusRunning
-	store.SaveState(ctx, state2)
+	require.NoError(t, store.SaveState(ctx, state2))
 
 	running, err := store.ListByStatus(ctx, SagaStatusRunning, 10)
 	require.NoError(t, err)

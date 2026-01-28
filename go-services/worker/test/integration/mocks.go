@@ -123,7 +123,12 @@ func (m *MockEventResponder) getResponseChannel(eventType string) string {
 
 // Run starts mock responder (processes commands)
 func (m *MockEventResponder) Run() {
-	go m.subscriber.Run(m.ctx)
+	go func() {
+		if err := m.subscriber.Run(m.ctx); err != nil {
+			// Best-effort background runner; ignore error.
+			_ = err
+		}
+	}()
 }
 
 // Stop stops mock responder
@@ -209,10 +214,10 @@ func MockTerminateSuccessResponse() ResponseHandler {
 		}
 
 		payload, _ := json.Marshal(map[string]interface{}{
-			"cluster_id":       "test-cluster",
-			"infobase_id":      "test-infobase",
-			"sessions_closed":  5,
-			"status":           "success",
+			"cluster_id":      "test-cluster",
+			"infobase_id":     "test-infobase",
+			"sessions_closed": 5,
+			"status":          "success",
 		})
 		response.Payload = payload
 

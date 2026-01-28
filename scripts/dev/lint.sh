@@ -314,7 +314,7 @@ validate_prometheus_rules() {
 # Go Check (go vet)
 ##############################################################################
 check_go() {
-    print_header "Go Check (go vet)"
+    print_header "Go Check (go vet + golangci-lint)"
 
     if ! command -v go &> /dev/null; then
         print_result "Go" "SKIPPED" "(go not found)"
@@ -343,6 +343,35 @@ check_go() {
         print_result "Go (vet)" "OK"
     else
         print_result "Go (vet)" "ERRORS"
+    fi
+
+    # golangci-lint (optional, but preferred when available)
+    echo ""
+    local lint_ok=true
+    local lint_runner="$PROJECT_ROOT/scripts/dev/golangci-lint.sh"
+    if [[ -x "$lint_runner" ]]; then
+        for service in "${go_services[@]}"; do
+            local service_dir="$PROJECT_ROOT/go-services/$service"
+            if [[ -d "$service_dir" ]]; then
+                cd "$service_dir"
+                echo "Linting: $service"
+                if output=$("$lint_runner" run 2>&1); then
+                    echo -e "  ${GREEN}✓${NC} $service: OK"
+                else
+                    echo "$output"
+                    echo -e "  ${RED}✗${NC} $service: ERRORS"
+                    lint_ok=false
+                fi
+            fi
+        done
+
+        if [[ "$lint_ok" == true ]]; then
+            print_result "Go (golangci-lint)" "OK"
+        else
+            print_result "Go (golangci-lint)" "ERRORS"
+        fi
+    else
+        print_result "Go (golangci-lint)" "SKIPPED" "(runner script not found)"
     fi
 
     cd "$PROJECT_ROOT"

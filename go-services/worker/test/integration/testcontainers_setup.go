@@ -52,13 +52,17 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Get Redis connection info
 	redisHost, err := redisContainer.Host(ctx)
 	if err != nil {
-		redisContainer.Terminate(ctx)
+		if termErr := redisContainer.Terminate(ctx); termErr != nil {
+			t.Logf("Failed to terminate Redis container: %v", termErr)
+		}
 		t.Fatalf("Failed to get Redis host: %v", err)
 	}
 
 	redisPort, err := redisContainer.MappedPort(ctx, "6379")
 	if err != nil {
-		redisContainer.Terminate(ctx)
+		if termErr := redisContainer.Terminate(ctx); termErr != nil {
+			t.Logf("Failed to terminate Redis container: %v", termErr)
+		}
 		t.Fatalf("Failed to get Redis port: %v", err)
 	}
 
@@ -74,7 +78,9 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 
 	// Test Redis connection
 	if err := redisClient.Ping(ctx).Err(); err != nil {
-		redisContainer.Terminate(ctx)
+		if termErr := redisContainer.Terminate(ctx); termErr != nil {
+			t.Logf("Failed to terminate Redis container: %v", termErr)
+		}
 		t.Fatalf("Failed to ping Redis: %v", err)
 	}
 
@@ -94,7 +100,9 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 		t.Log("🧹 Cleaning up test environment...")
 
 		if redisClient != nil {
-			redisClient.Close()
+			if err := redisClient.Close(); err != nil {
+				t.Logf("Failed to close Redis client: %v", err)
+			}
 		}
 
 		if redisContainer != nil {

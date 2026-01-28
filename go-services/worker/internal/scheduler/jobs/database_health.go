@@ -426,11 +426,7 @@ func (a *OrchestratorDatabaseHealthAdapter) GetDatabasesForHealthCheck(ctx conte
 
 	result := make([]DatabaseInfo, len(orchDBs))
 	for i, db := range orchDBs {
-		result[i] = DatabaseInfo{
-			ID:       db.ID,
-			ODataURL: db.ODataURL,
-			Name:     db.Name,
-		}
+		result[i] = DatabaseInfo(db)
 	}
 	return result, nil
 }

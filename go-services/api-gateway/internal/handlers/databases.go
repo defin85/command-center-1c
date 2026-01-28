@@ -33,12 +33,6 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 	// Remove /api/v2 prefix and map to Orchestrator's /api/v2
 	path = strings.TrimPrefix(path, "/api/v2")
 
-	// Handle wildcard paths (e.g., /operations/*path becomes /operations/...)
-	// Gin uses *path param, we need to include it
-	if wildcardPath := c.Param("path"); wildcardPath != "" {
-		// Path already includes the wildcard portion from Gin
-	}
-
 	// Django always requires trailing slash
 	if !strings.HasSuffix(path, "/") {
 		path += "/"
@@ -107,7 +101,9 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 
 	// Copy response body
 	c.Status(resp.StatusCode)
-	io.Copy(c.Writer, resp.Body)
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		logger.GetLogger().WithError(err).Warn("Failed to copy response body from Orchestrator")
+	}
 }
 
 // ProxyToOrchestratorAuth proxies auth requests to Django Orchestrator
@@ -178,5 +174,7 @@ func ProxyToOrchestratorAuth(c *gin.Context) {
 
 	// Copy response body
 	c.Status(resp.StatusCode)
-	io.Copy(c.Writer, resp.Body)
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		logger.GetLogger().WithError(err).Warn("Failed to copy response body from Orchestrator auth endpoint")
+	}
 }

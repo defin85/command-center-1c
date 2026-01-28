@@ -52,8 +52,8 @@ lint: lint-go lint-python lint-frontend
 ## lint-go: Запустить Go линтер
 lint-go:
 	@echo "$(BLUE)Linting Go code...$(NC)"
-	cd go-services/api-gateway && golangci-lint run
-	cd go-services/worker && golangci-lint run
+	cd go-services/api-gateway && ../../scripts/dev/golangci-lint.sh run
+	cd go-services/worker && ../../scripts/dev/golangci-lint.sh run
 
 ## lint-python: Запустить Python линтеры
 lint-python:

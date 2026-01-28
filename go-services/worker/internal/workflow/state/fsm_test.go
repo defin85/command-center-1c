@@ -113,7 +113,9 @@ func TestWorkflowFSM_MultipleHooks(t *testing.T) {
 	fsm.AddHook(hook)
 	fsm.AddHook(hook)
 
-	fsm.Transition(WorkflowStatusRunning)
+	if err := fsm.Transition(WorkflowStatusRunning); err != nil {
+		t.Fatalf("Transition error: %v", err)
+	}
 
 	if callCount != 3 {
 		t.Errorf("Hook call count = %v, want 3", callCount)

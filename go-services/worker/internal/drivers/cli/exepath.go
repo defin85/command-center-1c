@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +14,7 @@ const err1cv8NotConfigured = "PLATFORM_1C_BIN_PATH is not configured"
 func Resolve1cv8PathFromEnv() (string, error) {
 	binPath := strings.TrimSpace(os.Getenv("PLATFORM_1C_BIN_PATH"))
 	if binPath == "" {
-		return "", fmt.Errorf(err1cv8NotConfigured)
+		return "", errors.New(err1cv8NotConfigured)
 	}
 
 	candidates := []string{

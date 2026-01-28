@@ -299,7 +299,10 @@ func TestClusterInfoWaiter_PendingCount(t *testing.T) {
 
 	// Start a request in background (will timeout)
 	go func() {
-		waiter.RequestClusterInfo(ctx, "pending-db", 500*time.Millisecond)
+		if _, err := waiter.RequestClusterInfo(ctx, "pending-db", 500*time.Millisecond); err != nil {
+			// Expected to timeout; ignore error.
+			_ = err
+		}
 	}()
 
 	// Wait a bit for request to register

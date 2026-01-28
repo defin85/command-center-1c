@@ -161,13 +161,11 @@ func defaultBaseDirName(driver Driver) string {
 }
 
 func detectWindowsDrive(driver Driver) (string, bool) {
-	envKeys := []string{}
+	envKeys := []string{"PLATFORM_1C_BIN_PATH"}
 	switch driver {
 	case DriverIBCMD:
 		envKeys = []string{"IBCMD_PATH", "PLATFORM_1C_BIN_PATH"}
 	case DriverCLI:
-		envKeys = []string{"PLATFORM_1C_BIN_PATH"}
-	default:
 		envKeys = []string{"PLATFORM_1C_BIN_PATH"}
 	}
 

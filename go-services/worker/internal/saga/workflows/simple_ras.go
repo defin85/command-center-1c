@@ -1,8 +1,6 @@
 package workflows
 
 import (
-	"context"
-	"fmt"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/worker/internal/resourcemanager"
@@ -396,43 +394,5 @@ func NewFullRestoreWorkflow(
 				Idempotent: true,
 			},
 		},
-	}
-}
-
-// Helper step for single database RAS operations
-func singleDatabaseRASStep(
-	deps *WorkflowDependencies,
-	operation string,
-) saga.StepFunc {
-	return func(ctx context.Context, sagaCtx *saga.SagaContext) error {
-		databaseID := sagaCtx.GetString("database_id")
-		clusterID := sagaCtx.GetString("cluster_id")
-		infobaseID := sagaCtx.GetString("infobase_id")
-
-		if clusterID == "" || infobaseID == "" {
-			return fmt.Errorf("cluster_id and infobase_id are required")
-		}
-
-		var err error
-		switch operation {
-		case "lock_jobs":
-			err = deps.RASClient.LockScheduledJobs(ctx, clusterID, infobaseID)
-		case "unlock_jobs":
-			err = deps.RASClient.UnlockScheduledJobs(ctx, clusterID, infobaseID)
-		case "block_connections":
-			err = deps.RASClient.BlockConnections(ctx, clusterID, infobaseID)
-		case "unblock_connections":
-			err = deps.RASClient.UnblockConnections(ctx, clusterID, infobaseID)
-		case "terminate_sessions":
-			err = deps.RASClient.TerminateSessions(ctx, clusterID, infobaseID)
-		default:
-			return fmt.Errorf("unknown operation: %s", operation)
-		}
-
-		if err != nil {
-			return fmt.Errorf("%s failed for database %s: %w", operation, databaseID, err)
-		}
-
-		return nil
 	}
 }

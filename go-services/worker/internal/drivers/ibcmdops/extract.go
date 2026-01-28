@@ -3,7 +3,6 @@ package ibcmdops
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 func extractString(data map[string]interface{}, key string) string {
@@ -92,65 +91,4 @@ func extractStringSlice(data map[string]interface{}, key string) []string {
 	default:
 		return nil
 	}
-}
-
-func extractYesNoOption(data map[string]interface{}, key string) (string, bool, error) {
-	if data == nil {
-		return "", false, nil
-	}
-	raw, ok := data[key]
-	if !ok || raw == nil {
-		return "", false, nil
-	}
-
-	switch value := raw.(type) {
-	case bool:
-		if value {
-			return "yes", true, nil
-		}
-		return "no", true, nil
-	case string:
-		v := strings.TrimSpace(strings.ToLower(value))
-		if v == "" {
-			return "", false, nil
-		}
-		switch v {
-		case "yes", "true", "1":
-			return "yes", true, nil
-		case "no", "false", "0":
-			return "no", true, nil
-		default:
-			return "", false, fmt.Errorf("invalid %s: %q (expected yes/no)", key, value)
-		}
-	case int:
-		if value != 0 {
-			return "yes", true, nil
-		}
-		return "no", true, nil
-	case int64:
-		if value != 0 {
-			return "yes", true, nil
-		}
-		return "no", true, nil
-	case float64:
-		if value != 0 {
-			return "yes", true, nil
-		}
-		return "no", true, nil
-	default:
-		return "", false, fmt.Errorf("invalid %s type: %T", key, raw)
-	}
-}
-
-func extractEnumOption(data map[string]interface{}, key string, allowed []string) (string, bool, error) {
-	raw := strings.TrimSpace(extractString(data, key))
-	if raw == "" {
-		return "", false, nil
-	}
-	for _, a := range allowed {
-		if raw == a {
-			return raw, true, nil
-		}
-	}
-	return "", false, fmt.Errorf("invalid %s: %q (allowed: %s)", key, raw, strings.Join(allowed, ", "))
 }

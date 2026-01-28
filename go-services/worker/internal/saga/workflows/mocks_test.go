@@ -102,7 +102,6 @@ type mockRASClient struct {
 	terminateSessionsCalled   bool
 	blockConnectionsCalled    bool
 	unblockConnectionsCalled  bool
-	updateDBCfgCalled         bool
 }
 
 func (m *mockRASClient) LockScheduledJobs(ctx context.Context, clusterID, databaseID string) error {

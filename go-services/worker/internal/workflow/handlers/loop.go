@@ -346,33 +346,7 @@ func (h *LoopHandler) executeIteration(
 	totalCount int,
 	item interface{},
 ) (interface{}, error) {
-	// Create iteration context with loop variables
-	iterCtx := execCtx.PushScope()
-
-	// Set loop variables
-	loopVars := map[string]interface{}{
-		"index": index,
-		"first": index == 0,
-	}
-	if totalCount >= 0 {
-		loopVars["last"] = index == totalCount-1
-	}
-	iterCtx = iterCtx.SetScoped("loop", loopVars)
-	iterCtx = iterCtx.SetScoped("loop_index", index)
-	iterCtx = iterCtx.SetScoped("loop_first", index == 0)
-	if totalCount >= 0 {
-		iterCtx = iterCtx.SetScoped("loop_last", index == totalCount-1)
-	}
-
-	// Set item for foreach mode
-	if item != nil {
-		loopVar := config.LoopVar
-		if loopVar == "" {
-			loopVar = "item"
-		}
-		iterCtx = iterCtx.SetScoped(loopVar, item)
-		iterCtx = iterCtx.SetScoped("item", item)
-	}
+	// Placeholder implementation: iteration context is only used in ExecuteIterationWithDAG.
 
 	// In production, we would execute the body node here.
 	// For now, return a placeholder result.

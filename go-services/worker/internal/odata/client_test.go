@@ -52,7 +52,9 @@ func TestClient_Create(t *testing.T) {
 			"Name":    "Test Entity",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -85,7 +87,7 @@ func TestClient_Create_AuthError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ODataErrorResponse{
+		if err := json.NewEncoder(w).Encode(ODataErrorResponse{
 			Error: ODataErrorDetail{
 				Code: "AUTH_FAILED",
 				Message: ODataErrorMessage{
@@ -93,7 +95,9 @@ func TestClient_Create_AuthError(t *testing.T) {
 					Value: "Неправильное имя пользователя или пароль",
 				},
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -139,7 +143,9 @@ func TestClient_Create_Retry(t *testing.T) {
 
 		// Success on 3rd attempt
 		response := map[string]interface{}{"Ref_Key": "guid'...'"}
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -243,7 +249,9 @@ func TestClient_Query(t *testing.T) {
 				{"Ref_Key": "guid'2'", "Name": "Entity 2"},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -285,7 +293,9 @@ func TestClient_Query_WithSelect(t *testing.T) {
 				{"Ref_Key": "guid'1'", "Name": "Test", "Code": "001"},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -312,7 +322,9 @@ func TestClient_Query_WithSelect(t *testing.T) {
 func TestClient_HealthCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"@odata.context": "..."}`))
+		if _, err := w.Write([]byte(`{"@odata.context": "..."}`)); err != nil {
+			t.Errorf("Write response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

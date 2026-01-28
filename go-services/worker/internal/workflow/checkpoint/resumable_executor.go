@@ -215,11 +215,6 @@ func (re *ResumableExecutor) executeFromCheckpoint(
 		nodeStates = make(map[string]*state.NodeState)
 	}
 
-	completedNodes := make([]string, 0, len(resumeData.CompletedNodes))
-	for nodeID := range resumeData.CompletedNodes {
-		completedNodes = append(completedNodes, nodeID)
-	}
-
 	re.executor.SetCallback(func(event executor.ExecutionEvent) {
 		re.handleExecutionEvent(ctx, event, nodeStates)
 	})
@@ -293,12 +288,6 @@ func (re *ResumableExecutor) executeWithSkipList(
 		nodeStates[nodeID] = ns
 
 		// Auto-checkpoint
-		completedNodes := make([]string, 0, len(skipNodes)+1)
-		for id := range skipNodes {
-			completedNodes = append(completedNodes, id)
-		}
-		completedNodes = append(completedNodes, nodeID)
-
 		if err := re.autoCheckpointer.NodeCompleted(ctx, nodeID, currentCtx, nodeStates); err != nil {
 			re.logger.Warn("checkpoint failed", "node_id", nodeID, "error", err)
 		}

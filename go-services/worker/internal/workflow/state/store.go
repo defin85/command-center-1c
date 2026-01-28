@@ -52,9 +52,9 @@ type Checkpoint struct {
 
 // RedisStateStore implements StateStore using Redis.
 type RedisStateStore struct {
-	client       *redis.Client
-	keyPrefix    string
-	stateTTL     time.Duration
+	client        *redis.Client
+	keyPrefix     string
+	stateTTL      time.Duration
 	checkpointTTL time.Duration
 }
 
@@ -93,11 +93,6 @@ func NewRedisStateStore(client *redis.Client, config *RedisStateStoreConfig) *Re
 // stateKey returns the Redis key for workflow state.
 func (s *RedisStateStore) stateKey(executionID string) string {
 	return fmt.Sprintf("%sstate:%s", s.keyPrefix, executionID)
-}
-
-// nodeStateKey returns the Redis key for node state.
-func (s *RedisStateStore) nodeStateKey(executionID, nodeID string) string {
-	return fmt.Sprintf("%snode:%s:%s", s.keyPrefix, executionID, nodeID)
 }
 
 // checkpointKey returns the Redis key for checkpoint.

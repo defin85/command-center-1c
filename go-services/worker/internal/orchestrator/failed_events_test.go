@@ -68,7 +68,9 @@ func TestClient_GetPendingFailedEvents_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -107,7 +109,9 @@ func TestClient_GetPendingFailedEvents_DefaultBatchSize(t *testing.T) {
 
 		resp := FailedEventsPendingResponse{Events: []FailedEvent{}, Count: 0}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -129,7 +133,9 @@ func TestClient_GetPendingFailedEvents_MaxBatchSize(t *testing.T) {
 
 		resp := FailedEventsPendingResponse{Events: []FailedEvent{}, Count: 0}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -160,7 +166,9 @@ func TestClient_MarkEventReplayed_Success(t *testing.T) {
 		resp := FailedEventReplayedResponse{Success: true, EventID: 123, Status: "replayed"}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -204,7 +212,9 @@ func TestClient_MarkEventReplayed_NotFound(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -245,7 +255,9 @@ func TestClient_MarkEventFailed_Success(t *testing.T) {
 		}
 
 		var req FailedEventFailedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Decode request failed: %v", err)
+		}
 
 		if req.ErrorMessage != "Connection refused" {
 			t.Errorf("expected error message 'Connection refused', got %s", req.ErrorMessage)
@@ -262,7 +274,9 @@ func TestClient_MarkEventFailed_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -294,7 +308,9 @@ func TestClient_MarkEventFailed_MaxRetriesReached(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -335,7 +351,9 @@ func TestClient_MarkEventFailed_InvalidInputs(t *testing.T) {
 func TestClient_MarkEventFailedWithOptions_NoIncrement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req FailedEventFailedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Decode request failed: %v", err)
+		}
 
 		if req.IncrementRetry == nil || *req.IncrementRetry {
 			t.Error("expected increment_retry to be false")
@@ -347,7 +365,9 @@ func TestClient_MarkEventFailedWithOptions_NoIncrement(t *testing.T) {
 			RetryCount: 2, // Not incremented
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -377,7 +397,9 @@ func TestClient_CleanupOldEvents_Success(t *testing.T) {
 		}
 
 		var req FailedEventsCleanupRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Decode request failed: %v", err)
+		}
 
 		if req.RetentionDays != 14 {
 			t.Errorf("expected retention_days 14, got %d", req.RetentionDays)
@@ -386,7 +408,9 @@ func TestClient_CleanupOldEvents_Success(t *testing.T) {
 		resp := FailedEventsCleanupResponse{Success: true, DeletedCount: 150}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -408,7 +432,9 @@ func TestClient_CleanupOldEvents_Success(t *testing.T) {
 func TestClient_CleanupOldEvents_DefaultRetention(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req FailedEventsCleanupRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Decode request failed: %v", err)
+		}
 
 		if req.RetentionDays != 7 {
 			t.Errorf("expected default retention_days 7, got %d", req.RetentionDays)
@@ -416,7 +442,9 @@ func TestClient_CleanupOldEvents_DefaultRetention(t *testing.T) {
 
 		resp := FailedEventsCleanupResponse{DeletedCount: 0}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -432,7 +460,9 @@ func TestClient_CleanupOldEvents_DefaultRetention(t *testing.T) {
 func TestClient_CleanupOldEvents_MaxRetention(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req FailedEventsCleanupRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Decode request failed: %v", err)
+		}
 
 		if req.RetentionDays != 365 {
 			t.Errorf("expected capped retention_days 365, got %d", req.RetentionDays)
@@ -440,7 +470,9 @@ func TestClient_CleanupOldEvents_MaxRetention(t *testing.T) {
 
 		resp := FailedEventsCleanupResponse{DeletedCount: 0}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -461,7 +493,9 @@ func TestClient_FailedEvents_Unauthorized(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -486,7 +520,9 @@ func TestClient_FailedEvents_ServerError(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

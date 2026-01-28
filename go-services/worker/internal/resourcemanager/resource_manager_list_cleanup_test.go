@@ -34,7 +34,7 @@ func TestResourceManager_GetAllLocks(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		dbID := "db-all-" + string(rune('0'+i))
 		ownerID := "workflow-all-" + string(rune('0'+i))
-		rm.ReleaseLock(ctx, dbID, ownerID)
+		require.NoError(t, rm.ReleaseLock(ctx, dbID, ownerID))
 	}
 }
 

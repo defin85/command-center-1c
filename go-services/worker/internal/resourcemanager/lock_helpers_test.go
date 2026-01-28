@@ -122,6 +122,6 @@ func TestWithLock(t *testing.T) {
 		assert.ErrorIs(t, err, ErrLockNotAcquired)
 
 		// Cleanup
-		rm.ReleaseLock(ctx, "db-with-2", "workflow-with-2a")
+		require.NoError(t, rm.ReleaseLock(ctx, "db-with-2", "workflow-with-2a"))
 	})
 }

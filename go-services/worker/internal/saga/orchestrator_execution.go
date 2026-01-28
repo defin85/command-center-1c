@@ -24,7 +24,12 @@ func (o *orchestrator) executeSaga(
 	// Update status to running
 	state.Status = SagaStatusRunning
 	sagaCtx.Status = SagaStatusRunning
-	o.store.SaveState(ctx, state)
+	if err := o.store.SaveState(ctx, state); err != nil {
+		o.logger.Warn("failed to save saga state",
+			zap.String("execution_id", state.ExecutionID),
+			zap.Error(err),
+		)
+	}
 
 	// Execute steps
 	for i, step := range saga.Steps {
@@ -47,7 +52,12 @@ func (o *orchestrator) executeSaga(
 		state.CurrentStepID = step.ID
 		sagaCtx.CurrentStep = i
 		sagaCtx.CurrentStepID = step.ID
-		o.store.SaveState(ctx, state)
+		if err := o.store.SaveState(ctx, state); err != nil {
+			o.logger.Warn("failed to save saga state",
+				zap.String("execution_id", state.ExecutionID),
+				zap.Error(err),
+			)
+		}
 
 		// Publish step started event
 		o.publishEvent(ctx, SagaEventStepStarted, state.ExecutionID, state.SagaID,
@@ -83,7 +93,12 @@ func (o *orchestrator) executeSaga(
 				}
 			}
 
-			o.store.SaveState(ctx, state)
+			if err := o.store.SaveState(ctx, state); err != nil {
+				o.logger.Warn("failed to save saga state",
+					zap.String("execution_id", state.ExecutionID),
+					zap.Error(err),
+				)
+			}
 		} else {
 			// Step failed
 			o.logger.Error("step execution failed",
@@ -108,7 +123,12 @@ func (o *orchestrator) executeSaga(
 	// All steps completed successfully
 	state.SetCompleted()
 	sagaCtx.Status = SagaStatusCompleted
-	o.store.SaveState(ctx, state)
+	if err := o.store.SaveState(ctx, state); err != nil {
+		o.logger.Warn("failed to save saga state",
+			zap.String("execution_id", state.ExecutionID),
+			zap.Error(err),
+		)
+	}
 
 	// Call OnComplete callback if defined
 	if saga.OnComplete != nil {
@@ -228,7 +248,12 @@ func (o *orchestrator) handleFailure(
 	state.SetFailed(originalErr)
 	sagaCtx.Status = SagaStatusFailed
 	sagaCtx.SetError(originalErr)
-	o.store.SaveState(ctx, state)
+	if err := o.store.SaveState(ctx, state); err != nil {
+		o.logger.Warn("failed to save saga state",
+			zap.String("execution_id", state.ExecutionID),
+			zap.Error(err),
+		)
+	}
 
 	// Publish failed event
 	errMsg := ""

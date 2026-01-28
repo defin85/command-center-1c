@@ -294,7 +294,9 @@ func TestInMemoryStateStore_DeleteState_CleansUpAll(t *testing.T) {
 
 	// Setup state, checkpoint, and lock
 	state := NewWorkflowState(executionID, "wf-1", "dag-1", 1)
-	store.SaveState(ctx, state)
+	if err := store.SaveState(ctx, state); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
+	}
 
 	checkpoint := &Checkpoint{
 		ExecutionID:    executionID,
@@ -302,9 +304,13 @@ func TestInMemoryStateStore_DeleteState_CleansUpAll(t *testing.T) {
 		Timestamp:      time.Now(),
 		CompletedNodes: []string{"node-1"},
 	}
-	store.SaveCheckpoint(ctx, executionID, checkpoint)
+	if err := store.SaveCheckpoint(ctx, executionID, checkpoint); err != nil {
+		t.Fatalf("SaveCheckpoint() error = %v", err)
+	}
 
-	store.SetLock(ctx, executionID, 5*time.Second)
+	if _, err := store.SetLock(ctx, executionID, 5*time.Second); err != nil {
+		t.Fatalf("SetLock() error = %v", err)
+	}
 
 	// Delete
 	err := store.DeleteState(ctx, executionID)
@@ -321,7 +327,10 @@ func TestInMemoryStateStore_DeleteState_CleansUpAll(t *testing.T) {
 	}
 
 	// Lock should be released
-	acquired, _ := store.SetLock(ctx, executionID, 5*time.Second)
+	acquired, err := store.SetLock(ctx, executionID, 5*time.Second)
+	if err != nil {
+		t.Fatalf("SetLock() error = %v", err)
+	}
 	if !acquired {
 		t.Error("Lock should be released after DeleteState")
 	}
@@ -400,7 +409,9 @@ func TestInMemoryStateStore_ConcurrentAccess(t *testing.T) {
 
 	// Create initial state
 	state := NewWorkflowState("exec-1", "wf-1", "dag-1", 1)
-	store.SaveState(ctx, state)
+	if err := store.SaveState(ctx, state); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
+	}
 
 	// Concurrent updates
 	done := make(chan bool)
@@ -409,8 +420,14 @@ func TestInMemoryStateStore_ConcurrentAccess(t *testing.T) {
 			defer func() { done <- true }()
 
 			nodeState := NewNodeState("node-1", "action", "Test")
-			store.UpdateNodeState(ctx, "exec-1", nodeState)
-			store.LoadState(ctx, "exec-1")
+			if err := store.UpdateNodeState(ctx, "exec-1", nodeState); err != nil {
+				// Ignore errors in concurrent test.
+				_ = err
+			}
+			if _, err := store.LoadState(ctx, "exec-1"); err != nil {
+				// Ignore errors in concurrent test.
+				_ = err
+			}
 		}(i)
 	}
 
@@ -441,7 +458,9 @@ func TestInMemoryStateStore_OverwriteCheckpoint(t *testing.T) {
 		Timestamp:      time.Now(),
 		CompletedNodes: []string{"node-1"},
 	}
-	store.SaveCheckpoint(ctx, executionID, checkpoint1)
+	if err := store.SaveCheckpoint(ctx, executionID, checkpoint1); err != nil {
+		t.Fatalf("SaveCheckpoint() error = %v", err)
+	}
 
 	// Save second checkpoint (should overwrite)
 	time.Sleep(10 * time.Millisecond)
@@ -451,7 +470,9 @@ func TestInMemoryStateStore_OverwriteCheckpoint(t *testing.T) {
 		Timestamp:      time.Now(),
 		CompletedNodes: []string{"node-1", "node-2", "node-3", "node-4", "node-5"},
 	}
-	store.SaveCheckpoint(ctx, executionID, checkpoint2)
+	if err := store.SaveCheckpoint(ctx, executionID, checkpoint2); err != nil {
+		t.Fatalf("SaveCheckpoint() error = %v", err)
+	}
 
 	// Load and verify it's the second checkpoint
 	loaded, err := store.LoadCheckpoint(ctx, executionID)

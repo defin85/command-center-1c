@@ -84,7 +84,9 @@ func SSEOperationStreamProxy(c *gin.Context) {
 				zap.Error(err),
 			)
 			w.WriteHeader(http.StatusBadGateway)
-			io.WriteString(w, `{"error": "SSE upstream unavailable"}`)
+			if _, writeErr := io.WriteString(w, `{"error": "SSE upstream unavailable"}`); writeErr != nil {
+				log.WithError(writeErr).Warn("Failed to write SSE proxy error body")
+			}
 		},
 	}
 

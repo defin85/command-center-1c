@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"time"
 
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 )
@@ -24,7 +26,9 @@ const maxBatchResponseSize = 50 * 1024 * 1024 // 50 MB
 // generateBoundary creates a unique boundary string for multipart requests.
 func generateBoundary(prefix string) string {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		binary.LittleEndian.PutUint64(b, uint64(time.Now().UnixNano()))
+	}
 	return fmt.Sprintf("%s_%x", prefix, b)
 }
 
@@ -50,7 +54,9 @@ func buildBatchBody(baseURL string, items []sharedodata.BatchItem) ([]byte, stri
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	writer.SetBoundary(batchBoundary)
+	if err := writer.SetBoundary(batchBoundary); err != nil {
+		return nil, "", fmt.Errorf("set batch boundary: %w", err)
+	}
 
 	changesetHeader := textproto.MIMEHeader{}
 	changesetHeader.Set("Content-Type", fmt.Sprintf("multipart/mixed; boundary=%s", changesetBoundary))
@@ -61,7 +67,9 @@ func buildBatchBody(baseURL string, items []sharedodata.BatchItem) ([]byte, stri
 	}
 
 	changesetWriter := multipart.NewWriter(changesetPart)
-	changesetWriter.SetBoundary(changesetBoundary)
+	if err := changesetWriter.SetBoundary(changesetBoundary); err != nil {
+		return nil, "", fmt.Errorf("set changeset boundary: %w", err)
+	}
 
 	for i, item := range items {
 		if err := writeChangesetItem(changesetWriter, baseURL, item, i); err != nil {

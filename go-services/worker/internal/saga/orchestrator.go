@@ -189,7 +189,12 @@ func (o *orchestrator) ExecuteWithCorrelation(
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		o.store.ReleaseLock(releaseCtx, executionID)
+		if err := o.store.ReleaseLock(releaseCtx, executionID); err != nil {
+			o.logger.Warn("failed to release saga lock",
+				zap.String("execution_id", executionID),
+				zap.Error(err),
+			)
+		}
 	}()
 
 	// Create saga context

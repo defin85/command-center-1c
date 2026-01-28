@@ -88,7 +88,9 @@ func (sm *ExtensionInstallStateMachine) executeCompensations(ctx context.Context
 
 	// All compensations executed
 	// Transition to Failed (will be done by main loop automatically)
-	sm.transitionTo(StateFailed)
+	if err := sm.transitionTo(StateFailed); err != nil {
+		return fmt.Errorf("failed to transition to %s: %w", StateFailed, err)
+	}
 	return nil
 }
 

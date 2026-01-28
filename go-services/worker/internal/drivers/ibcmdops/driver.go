@@ -86,7 +86,11 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		if err != nil {
 			return d.failResult(msg, databaseID, start, err.Error(), "IBSRV_START_ERROR"), nil
 		}
-		defer agent.Stop(ctx, agentCfg.ShutdownTimeout)
+		defer func() {
+			if err := agent.Stop(ctx, agentCfg.ShutdownTimeout); err != nil {
+				log.Warn("failed to stop ibsrv agent", zap.Error(err))
+			}
+		}()
 	}
 
 	store, err := newStorageFromEnv()

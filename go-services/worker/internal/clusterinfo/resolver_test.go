@@ -51,7 +51,7 @@ func TestOrchestratorResolver_SuccessfulResolve(t *testing.T) {
 
 		// Return success response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"cluster_info": map[string]string{
 				"database_id":  "test-db-123",
@@ -61,7 +61,9 @@ func TestOrchestratorResolver_SuccessfulResolve(t *testing.T) {
 				"cluster_user": "",
 				"cluster_pwd":  "",
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -89,7 +91,7 @@ func TestOrchestratorResolver_CachingWorks(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"cluster_info": map[string]string{
 				"database_id": "cached-db",
@@ -97,7 +99,9 @@ func TestOrchestratorResolver_CachingWorks(t *testing.T) {
 				"infobase_id": "cached-infobase",
 				"ras_server":  "localhost:1545",
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -124,7 +128,7 @@ func TestOrchestratorResolver_InvalidateCache(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"cluster_info": map[string]string{
 				"database_id": "invalidate-db",
@@ -132,7 +136,9 @@ func TestOrchestratorResolver_InvalidateCache(t *testing.T) {
 				"infobase_id": "infobase-" + string(rune('0'+callCount)),
 				"ras_server":  "localhost:1545",
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -181,7 +187,7 @@ func TestOrchestratorResolver_FailsAfterMaxRetries(t *testing.T) {
 
 func TestOrchestratorResolver_MissingClusterID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"cluster_info": map[string]string{
 				"database_id": "missing-cluster-db",
@@ -189,7 +195,9 @@ func TestOrchestratorResolver_MissingClusterID(t *testing.T) {
 				"infobase_id": "some-infobase",
 				"ras_server":  "localhost:1545",
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -218,7 +226,7 @@ func TestOrchestratorResolver_RedisCacheRoundtrip(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"cluster_info": map[string]string{
 				"database_id": "redis-cached-db",
@@ -226,7 +234,9 @@ func TestOrchestratorResolver_RedisCacheRoundtrip(t *testing.T) {
 				"infobase_id": "redis-infobase",
 				"ras_server":  "localhost:1545",
 			},
-		})
+		}); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

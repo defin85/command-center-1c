@@ -127,7 +127,10 @@ func acquireLocksStep(rm resourcemanager.ResourceManager, deps *WorkflowDependen
 			if err != nil {
 				// Release already acquired locks on failure
 				for _, lockID := range acquiredLocks {
-					rm.ReleaseLock(ctx, lockID, sagaCtx.ExecutionID)
+					if relErr := rm.ReleaseLock(ctx, lockID, sagaCtx.ExecutionID); relErr != nil {
+						// Best-effort cleanup; ignore error because original error is more important.
+						_ = relErr
+					}
 				}
 				return fmt.Errorf("failed to acquire lock for database %s: %w", dbID, err)
 			}
@@ -135,7 +138,10 @@ func acquireLocksStep(rm resourcemanager.ResourceManager, deps *WorkflowDependen
 			if !result.Acquired {
 				// Release already acquired locks on failure
 				for _, lockID := range acquiredLocks {
-					rm.ReleaseLock(ctx, lockID, sagaCtx.ExecutionID)
+					if relErr := rm.ReleaseLock(ctx, lockID, sagaCtx.ExecutionID); relErr != nil {
+						// Best-effort cleanup; ignore error because lock may have already been released.
+						_ = relErr
+					}
 				}
 				return fmt.Errorf("could not acquire lock for database %s: lock held by %s",
 					dbID, result.LockInfo.OwnerID)
@@ -220,7 +226,10 @@ func lockScheduledJobsStep(deps *WorkflowDependencies) saga.StepFunc {
 				// Unlock already locked DBs on failure
 				for _, lockedDB := range lockedDBs {
 					if iid, ok := infobaseIDs[lockedDB]; ok {
-						deps.RASClient.UnlockScheduledJobs(ctx, clusterID, iid)
+						if unlockErr := deps.RASClient.UnlockScheduledJobs(ctx, clusterID, iid); unlockErr != nil {
+							// Best-effort cleanup; ignore error because original error is more important.
+							_ = unlockErr
+						}
 					}
 				}
 				return fmt.Errorf("failed to lock scheduled jobs for %s: %w", dbID, err)
@@ -294,7 +303,10 @@ func blockConnectionsStep(deps *WorkflowDependencies) saga.StepFunc {
 				// Unblock already blocked DBs on failure
 				for _, blockedDB := range blockedDBs {
 					if iid, ok := infobaseIDs[blockedDB]; ok {
-						deps.RASClient.UnblockConnections(ctx, clusterID, iid)
+						if unblockErr := deps.RASClient.UnblockConnections(ctx, clusterID, iid); unblockErr != nil {
+							// Best-effort cleanup; ignore error because original error is more important.
+							_ = unblockErr
+						}
 					}
 				}
 				return fmt.Errorf("failed to block connections for %s: %w", dbID, err)

@@ -52,10 +52,18 @@ func (m *MockEventResponder) SetVerbose(verbose bool) {
 // Run starts the mock responder (blocking, run in goroutine)
 func (m *MockEventResponder) Run(ctx context.Context) error {
 	// Subscribe to all command channels that we want to mock
-	m.subscriber.Subscribe("commands:worker:infobase:lock", m.handleEvent)
-	m.subscriber.Subscribe("commands:worker:sessions:terminate", m.handleEvent)
-	m.subscriber.Subscribe("commands:worker:infobase:unlock", m.handleEvent)
-	m.subscriber.Subscribe("commands:worker:extension:install", m.handleEvent)
+	if err := m.subscriber.Subscribe("commands:worker:infobase:lock", m.handleEvent); err != nil {
+		return err
+	}
+	if err := m.subscriber.Subscribe("commands:worker:sessions:terminate", m.handleEvent); err != nil {
+		return err
+	}
+	if err := m.subscriber.Subscribe("commands:worker:infobase:unlock", m.handleEvent); err != nil {
+		return err
+	}
+	if err := m.subscriber.Subscribe("commands:worker:extension:install", m.handleEvent); err != nil {
+		return err
+	}
 
 	if m.verbose {
 		fmt.Println("[MockResponder] Started, listening for commands...")
@@ -148,8 +156,8 @@ func (m *MockEventResponder) publishFailure(ctx context.Context, original *event
 
 		// Special case: "installed" → "install"
 		if strings.HasSuffix(failedEvent, "lled") {
-			base := strings.TrimSuffix(failedEvent, "led")  // "installed" → "instal"
-			failedEvent = base + "l.failed"                   // "instal" → "install.failed"
+			base := strings.TrimSuffix(failedEvent, "led") // "installed" → "instal"
+			failedEvent = base + "l.failed"                // "instal" → "install.failed"
 		} else {
 			// General case: remove "ed"
 			base := strings.TrimSuffix(failedEvent, "ed")
@@ -205,8 +213,8 @@ func (m *MockEventResponder) eventTypeToChannel(eventType string) string {
 		return "events:unknown"
 	}
 
-	service := parts[0]      // "cluster", "batch"
-	rest := parts[1:]        // ["infobase", "locked"] or ["extension", "installed"]
+	service := parts[0] // "cluster", "batch"
+	rest := parts[1:]   // ["infobase", "locked"] or ["extension", "installed"]
 
 	// Map service short names to full service names
 	var serviceName string

@@ -68,7 +68,9 @@ func NewRASProxyHandler(rasAdapterURL string) (*RASProxyHandler, error) {
 			zap.String("path", r.URL.Path),
 		)
 		w.WriteHeader(http.StatusBadGateway)
-		io.WriteString(w, `{"error": "RAS Adapter unavailable"}`)
+		if _, writeErr := io.WriteString(w, `{"error": "RAS Adapter unavailable"}`); writeErr != nil {
+			logger.GetLogger().WithError(writeErr).Warn("Failed to write RAS proxy error body")
+		}
 	}
 
 	// Modify response to add tracing headers if needed

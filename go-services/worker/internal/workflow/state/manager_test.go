@@ -77,8 +77,12 @@ func TestStateManager_CompleteExecution(t *testing.T) {
 	ctx := context.Background()
 
 	// Initialize and start
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartExecution(ctx, "exec-1")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 
 	// Complete
 	err := mgr.CompleteExecution(ctx, "exec-1")
@@ -103,8 +107,12 @@ func TestStateManager_FailExecution(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartExecution(ctx, "exec-1")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 
 	testErr := errors.New("execution failed")
 	err := mgr.FailExecution(ctx, "exec-1", testErr)
@@ -128,8 +136,12 @@ func TestStateManager_PauseAndResumeExecution(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartExecution(ctx, "exec-1")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 
 	// Pause
 	err := mgr.PauseExecution(ctx, "exec-1")
@@ -158,8 +170,12 @@ func TestStateManager_CancelExecution(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartExecution(ctx, "exec-1")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 
 	err := mgr.CancelExecution(ctx, "exec-1")
 	if err != nil {
@@ -180,7 +196,9 @@ func TestStateManager_InvalidStateTransition(t *testing.T) {
 	ctx := context.Background()
 
 	// Initialize but don't start
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	// Try to complete without starting
 	err := mgr.CompleteExecution(ctx, "exec-1")
@@ -198,7 +216,9 @@ func TestStateManager_StartNode(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	err := mgr.StartNode(ctx, "exec-1", "node-1", "action", "Test Node")
 	if err != nil {
@@ -226,8 +246,12 @@ func TestStateManager_CompleteNode(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartNode(ctx, "exec-1", "node-1", "action", "Test Node")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartNode(ctx, "exec-1", "node-1", "action", "Test Node"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -263,8 +287,12 @@ func TestStateManager_FailNode(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartNode(ctx, "exec-1", "node-1", "action", "Test Node")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartNode(ctx, "exec-1", "node-1", "action", "Test Node"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 
 	testErr := errors.New("node execution failed")
 	err := mgr.FailNode(ctx, "exec-1", "node-1", testErr)
@@ -287,7 +315,9 @@ func TestStateManager_SkipNode(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	err := mgr.SkipNode(ctx, "exec-1", "node-1", "action", "Test Node")
 	if err != nil {
@@ -306,8 +336,12 @@ func TestStateManager_UpdateNodeProgress_Loop(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartNode(ctx, "exec-1", "loop-1", "loop", "Loop Node")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartNode(ctx, "exec-1", "loop-1", "loop", "Loop Node"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 
 	err := mgr.UpdateNodeProgress(ctx, "exec-1", "loop-1", 3, 10, true)
 	if err != nil {
@@ -329,8 +363,12 @@ func TestStateManager_UpdateNodeProgress_Parallel(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartNode(ctx, "exec-1", "parallel-1", "parallel", "Parallel Node")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartNode(ctx, "exec-1", "parallel-1", "parallel", "Parallel Node"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 
 	err := mgr.UpdateNodeProgress(ctx, "exec-1", "parallel-1", 5, 8, false)
 	if err != nil {
@@ -352,8 +390,12 @@ func TestStateManager_SaveAndLoadCheckpoint(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
-	mgr.StartExecution(ctx, "exec-1")
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 
 	contextSnapshot := map[string]interface{}{
 		"var1": "value1",
@@ -389,7 +431,9 @@ func TestStateManager_AcquireAndReleaseLock(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	// Acquire lock
 	acquired, err := mgr.AcquireLock(ctx, "exec-1")
@@ -429,7 +473,9 @@ func TestStateManager_Cleanup(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	err := mgr.Cleanup(ctx, "exec-1")
 	if err != nil {
@@ -447,7 +493,9 @@ func TestStateManager_UpdateCurrentNode(t *testing.T) {
 	mgr := setupTestManager(t)
 	ctx := context.Background()
 
-	mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil)
+	if _, err := mgr.InitializeExecution(ctx, "exec-1", "wf-1", "dag-1", 1, nil); err != nil {
+		t.Fatalf("InitializeExecution() error = %v", err)
+	}
 
 	err := mgr.UpdateCurrentNode(ctx, "exec-1", "node-3")
 	if err != nil {
@@ -487,26 +535,40 @@ func TestStateManager_FullWorkflowLifecycle(t *testing.T) {
 	}
 
 	// Start
-	mgr.StartExecution(ctx, "exec-1")
+	if err := mgr.StartExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("StartExecution() error = %v", err)
+	}
 	state, _ = mgr.GetState(ctx, "exec-1")
 	if state.Status != WorkflowStatusRunning {
 		t.Errorf("Status after start = %v, want Running", state.Status)
 	}
 
 	// Execute nodes
-	mgr.StartNode(ctx, "exec-1", "node-1", "action", "Node 1")
+	if err := mgr.StartNode(ctx, "exec-1", "node-1", "action", "Node 1"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 	time.Sleep(5 * time.Millisecond)
-	mgr.CompleteNode(ctx, "exec-1", "node-1", map[string]string{"result": "ok"})
+	if err := mgr.CompleteNode(ctx, "exec-1", "node-1", map[string]string{"result": "ok"}); err != nil {
+		t.Fatalf("CompleteNode() error = %v", err)
+	}
 
-	mgr.StartNode(ctx, "exec-1", "node-2", "action", "Node 2")
+	if err := mgr.StartNode(ctx, "exec-1", "node-2", "action", "Node 2"); err != nil {
+		t.Fatalf("StartNode() error = %v", err)
+	}
 	time.Sleep(5 * time.Millisecond)
-	mgr.CompleteNode(ctx, "exec-1", "node-2", map[string]string{"result": "ok"})
+	if err := mgr.CompleteNode(ctx, "exec-1", "node-2", map[string]string{"result": "ok"}); err != nil {
+		t.Fatalf("CompleteNode() error = %v", err)
+	}
 
 	// Save checkpoint
-	mgr.SaveCheckpoint(ctx, "exec-1", "node-2", map[string]interface{}{"progress": "50%"})
+	if err := mgr.SaveCheckpoint(ctx, "exec-1", "node-2", map[string]interface{}{"progress": "50%"}); err != nil {
+		t.Fatalf("SaveCheckpoint() error = %v", err)
+	}
 
 	// Complete
-	mgr.CompleteExecution(ctx, "exec-1")
+	if err := mgr.CompleteExecution(ctx, "exec-1"); err != nil {
+		t.Fatalf("CompleteExecution() error = %v", err)
+	}
 	state, _ = mgr.GetState(ctx, "exec-1")
 
 	if state.Status != WorkflowStatusCompleted {

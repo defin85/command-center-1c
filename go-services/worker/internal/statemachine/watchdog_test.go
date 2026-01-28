@@ -284,7 +284,7 @@ func TestRecoverWorkflow(t *testing.T) {
 	stateBytes, err := json.Marshal(state)
 	require.NoError(t, err)
 
-	mr.Set(key, string(stateBytes))
+	require.NoError(t, mr.Set(key, string(stateBytes)))
 
 	// Recover workflow
 	err = watchdog.recoverWorkflow(ctx, state, key)
@@ -348,13 +348,16 @@ func TestCheckStuckWorkflows(t *testing.T) {
 	}
 
 	// Store states in Redis
-	stuckBytes, _ := json.Marshal(stuckState)
-	activeBytes, _ := json.Marshal(activeState)
-	completedBytes, _ := json.Marshal(completedState)
+	stuckBytes, err := json.Marshal(stuckState)
+	require.NoError(t, err)
+	activeBytes, err := json.Marshal(activeState)
+	require.NoError(t, err)
+	completedBytes, err := json.Marshal(completedState)
+	require.NoError(t, err)
 
-	mr.Set("workflow:corr-stuck:state", string(stuckBytes))
-	mr.Set("workflow:corr-active:state", string(activeBytes))
-	mr.Set("workflow:corr-completed:state", string(completedBytes))
+	require.NoError(t, mr.Set("workflow:corr-stuck:state", string(stuckBytes)))
+	require.NoError(t, mr.Set("workflow:corr-active:state", string(activeBytes)))
+	require.NoError(t, mr.Set("workflow:corr-completed:state", string(completedBytes)))
 
 	// Run check
 	watchdog.checkStuckWorkflows(ctx)
@@ -390,9 +393,10 @@ func TestCheckStuckWorkflows_MaxBatch(t *testing.T) {
 			LastActivity:  time.Now().Add(-1 * time.Hour),
 		}
 
-		stateBytes, _ := json.Marshal(state)
+		stateBytes, err := json.Marshal(state)
+		require.NoError(t, err)
 		key := "workflow:corr-" + string(rune('A'+i)) + ":state"
-		mr.Set(key, string(stateBytes))
+		require.NoError(t, mr.Set(key, string(stateBytes)))
 	}
 
 	// Run check

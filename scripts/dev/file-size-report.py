@@ -148,6 +148,7 @@ def main(argv: list[str]) -> int:
   print("file-size-report")
   print(f"scope: {args.scope}")
   print(f"limit: {limit}")
+  print("tracked: git ls-files")
   print(f"included: {len(included)} files")
   print(f"offenders: {len(offenders)} files (> {limit})")
   if shown:

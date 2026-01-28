@@ -11,17 +11,23 @@ import (
 
 func init() {
 	// Register all custom filters for 1C OData
-	pongo2.RegisterFilter("guid1c", filterGuid1c)
-	pongo2.RegisterFilter("datetime1c", filterDatetime1c)
-	pongo2.RegisterFilter("date1c", filterDate1c)
-	pongo2.RegisterFilter("bool1c", filterBool1c)
+	mustRegisterFilter("guid1c", filterGuid1c)
+	mustRegisterFilter("datetime1c", filterDatetime1c)
+	mustRegisterFilter("date1c", filterDate1c)
+	mustRegisterFilter("bool1c", filterBool1c)
 
 	// Custom tests as filters (is_X pattern)
-	pongo2.RegisterFilter("is_production_database", filterIsProductionDatabase)
-	pongo2.RegisterFilter("is_test_database", filterIsTestDatabase)
-	pongo2.RegisterFilter("is_development_database", filterIsDevelopmentDatabase)
-	pongo2.RegisterFilter("is_empty", filterIsEmpty)
-	pongo2.RegisterFilter("is_nonempty", filterIsNonempty)
+	mustRegisterFilter("is_production_database", filterIsProductionDatabase)
+	mustRegisterFilter("is_test_database", filterIsTestDatabase)
+	mustRegisterFilter("is_development_database", filterIsDevelopmentDatabase)
+	mustRegisterFilter("is_empty", filterIsEmpty)
+	mustRegisterFilter("is_nonempty", filterIsNonempty)
+}
+
+func mustRegisterFilter(name string, fn pongo2.FilterFunction) {
+	if err := pongo2.RegisterFilter(name, fn); err != nil {
+		panic(fmt.Sprintf("failed to register pongo2 filter %q: %v", name, err))
+	}
 }
 
 // filterGuid1c formats GUID for 1C OData: uuid -> guid'uuid'

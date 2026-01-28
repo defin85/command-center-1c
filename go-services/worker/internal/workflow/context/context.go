@@ -241,7 +241,7 @@ func (c *ExecutionContext) Set(key string, value interface{}) *ExecutionContext 
 // Merge creates a new ExecutionContext with values from other merged in.
 // Returns a NEW ExecutionContext (immutable operation).
 func (c *ExecutionContext) Merge(other map[string]interface{}) *ExecutionContext {
-	if other == nil || len(other) == 0 {
+	if len(other) == 0 {
 		return c.Clone()
 	}
 

@@ -39,7 +39,12 @@ func (o *orchestrator) Resume(ctx context.Context, executionID string) (*SagaRes
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		o.store.ReleaseLock(releaseCtx, executionID)
+		if err := o.store.ReleaseLock(releaseCtx, executionID); err != nil {
+			o.logger.Warn("failed to release saga lock",
+				zap.String("execution_id", executionID),
+				zap.Error(err),
+			)
+		}
 	}()
 
 	// Create saga context from state
@@ -91,7 +96,12 @@ func (o *orchestrator) resumeSaga(
 	// Update status to running
 	state.Status = SagaStatusRunning
 	sagaCtx.Status = SagaStatusRunning
-	o.store.SaveState(ctx, state)
+	if err := o.store.SaveState(ctx, state); err != nil {
+		o.logger.Warn("failed to save saga state",
+			zap.String("execution_id", state.ExecutionID),
+			zap.Error(err),
+		)
+	}
 
 	// Find starting step
 	startIdx := state.CurrentStep
@@ -130,7 +140,12 @@ func (o *orchestrator) resumeSaga(
 		state.CurrentStepID = step.ID
 		sagaCtx.CurrentStep = i
 		sagaCtx.CurrentStepID = step.ID
-		o.store.SaveState(ctx, state)
+		if err := o.store.SaveState(ctx, state); err != nil {
+			o.logger.Warn("failed to save saga state",
+				zap.String("execution_id", state.ExecutionID),
+				zap.Error(err),
+			)
+		}
 
 		// Execute step
 		stepResult := o.executeStep(ctx, step, sagaCtx)
@@ -153,7 +168,12 @@ func (o *orchestrator) resumeSaga(
 				}
 			}
 
-			o.store.SaveState(ctx, state)
+			if err := o.store.SaveState(ctx, state); err != nil {
+				o.logger.Warn("failed to save saga state",
+					zap.String("execution_id", state.ExecutionID),
+					zap.Error(err),
+				)
+			}
 		} else {
 			result.Status = SagaStatusFailed
 			result.Error = fmt.Errorf("step %s failed: %s", step.ID, stepResult.Error)
@@ -166,10 +186,20 @@ func (o *orchestrator) resumeSaga(
 	// All steps completed
 	state.SetCompleted()
 	sagaCtx.Status = SagaStatusCompleted
-	o.store.SaveState(ctx, state)
+	if err := o.store.SaveState(ctx, state); err != nil {
+		o.logger.Warn("failed to save saga state",
+			zap.String("execution_id", state.ExecutionID),
+			zap.Error(err),
+		)
+	}
 
 	if saga.OnComplete != nil {
-		saga.OnComplete(ctx, sagaCtx)
+		if err := saga.OnComplete(ctx, sagaCtx); err != nil {
+			o.logger.Warn("OnComplete callback failed",
+				zap.String("execution_id", state.ExecutionID),
+				zap.Error(err),
+			)
+		}
 	}
 
 	result.Status = SagaStatusCompleted
@@ -214,7 +244,12 @@ func (o *orchestrator) Cancel(ctx context.Context, executionID string) error {
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		o.store.ReleaseLock(releaseCtx, executionID)
+		if err := o.store.ReleaseLock(releaseCtx, executionID); err != nil {
+			o.logger.Warn("failed to release saga lock",
+				zap.String("execution_id", executionID),
+				zap.Error(err),
+			)
+		}
 	}()
 
 	o.logger.Info("cancelling saga execution",
@@ -240,7 +275,12 @@ func (o *orchestrator) Cancel(ctx context.Context, executionID string) error {
 		}
 	} else {
 		state.SetFailed(fmt.Errorf("cancelled"))
-		o.store.SaveState(ctx, state)
+		if err := o.store.SaveState(ctx, state); err != nil {
+			o.logger.Warn("failed to save saga state",
+				zap.String("execution_id", state.ExecutionID),
+				zap.Error(err),
+			)
+		}
 	}
 
 	return nil

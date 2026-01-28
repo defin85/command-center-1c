@@ -106,11 +106,11 @@ func (h *OperationHandler) HandleNode(
 			NodeID: node.ID,
 			Status: executor.NodeStatusCompleted,
 			Output: map[string]interface{}{
-				"rendered_payload":   renderedPayload,
-				"execution_skipped":  true,
-				"reason":             "No operation executor configured",
-				"operation_type":     config.OperationType,
-				"target_entity":      config.TargetEntity,
+				"rendered_payload":  renderedPayload,
+				"execution_skipped": true,
+				"reason":            "No operation executor configured",
+				"operation_type":    config.OperationType,
+				"target_entity":     config.TargetEntity,
 			},
 			StartedAt:   startTime,
 			CompletedAt: time.Now(),
@@ -171,12 +171,6 @@ func (h *OperationHandler) HandleNode(
 func parseOperationConfig(node *models.Node) (*models.OperationNodeConfig, error) {
 	config := &models.OperationNodeConfig{
 		TemplateID: node.TemplateID,
-	}
-
-	// If node has explicit config, try to parse it
-	if node.Config != nil {
-		// Try to extract operation-specific fields from NodeConfig
-		// NodeConfig doesn't have these fields directly, so we'll use TemplateID
 	}
 
 	// For operation nodes, TemplateID is typically required

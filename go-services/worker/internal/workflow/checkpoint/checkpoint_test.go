@@ -94,6 +94,9 @@ func TestCheckpointManager_CreateCheckpoint_Disabled(t *testing.T) {
 
 	// Verify no checkpoint was created
 	checkpoint, err := cm.LoadCheckpoint(ctx, "exec-1")
+	if err != nil {
+		t.Fatalf("LoadCheckpoint() error = %v", err)
+	}
 	if checkpoint != nil {
 		t.Error("Checkpoint should not be created when disabled")
 	}
@@ -107,7 +110,9 @@ func TestCheckpointManager_LoadCheckpoint(t *testing.T) {
 	execCtx := wfcontext.NewExecutionContext("exec-1", "wf-1")
 	execCtx = execCtx.Set("key", "value")
 
-	cm.CreateCheckpoint(ctx, "exec-1", "node-5", execCtx, []string{"node-1"}, nil)
+	if err := cm.CreateCheckpoint(ctx, "exec-1", "node-5", execCtx, []string{"node-1"}, nil); err != nil {
+		t.Fatalf("CreateCheckpoint() error = %v", err)
+	}
 
 	// Load it
 	checkpoint, err := cm.LoadCheckpoint(ctx, "exec-1")
@@ -147,7 +152,9 @@ func TestCheckpointManager_HasCheckpoint(t *testing.T) {
 
 	// Create checkpoint
 	execCtx := wfcontext.NewExecutionContext("exec-1", "wf-1")
-	cm.CreateCheckpoint(ctx, "exec-1", "node-1", execCtx, nil, nil)
+	if err := cm.CreateCheckpoint(ctx, "exec-1", "node-1", execCtx, nil, nil); err != nil {
+		t.Fatalf("CreateCheckpoint() error = %v", err)
+	}
 
 	// Should have checkpoint now
 	if !cm.HasCheckpoint(ctx, "exec-1") {
@@ -227,7 +234,9 @@ func TestCheckpointManager_PrepareResume_NoCheckpoint(t *testing.T) {
 	// Create workflow state
 	store := cm.stateStore.(*state.InMemoryStateStore)
 	workflowState := state.NewWorkflowState("exec-1", "wf-1", "dag-1", 1)
-	store.SaveState(ctx, workflowState)
+	if err := store.SaveState(ctx, workflowState); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
+	}
 
 	// Prepare resume without checkpoint
 	resumable, err := cm.PrepareResume(ctx, "exec-1")
@@ -254,7 +263,9 @@ func TestCheckpointManager_PrepareResume_WithCheckpoint(t *testing.T) {
 	store := cm.stateStore.(*state.InMemoryStateStore)
 	workflowState := state.NewWorkflowState("exec-1", "wf-1", "dag-1", 1)
 	workflowState.Status = state.WorkflowStatusPaused
-	store.SaveState(ctx, workflowState)
+	if err := store.SaveState(ctx, workflowState); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
+	}
 
 	// Create checkpoint
 	checkpoint := &state.Checkpoint{
@@ -267,7 +278,9 @@ func TestCheckpointManager_PrepareResume_WithCheckpoint(t *testing.T) {
 			"node-1": state.NewNodeState("node-1", "action", "Node 1"),
 		},
 	}
-	store.SaveCheckpoint(ctx, "exec-1", checkpoint)
+	if err := store.SaveCheckpoint(ctx, "exec-1", checkpoint); err != nil {
+		t.Fatalf("SaveCheckpoint() error = %v", err)
+	}
 
 	// Prepare resume
 	resumable, err := cm.PrepareResume(ctx, "exec-1")
@@ -298,7 +311,9 @@ func TestCheckpointManager_PrepareResume_FinalState(t *testing.T) {
 	store := cm.stateStore.(*state.InMemoryStateStore)
 	workflowState := state.NewWorkflowState("exec-1", "wf-1", "dag-1", 1)
 	workflowState.Status = state.WorkflowStatusCompleted
-	store.SaveState(ctx, workflowState)
+	if err := store.SaveState(ctx, workflowState); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
+	}
 
 	// Should error for final state
 	_, err := cm.PrepareResume(ctx, "exec-1")
@@ -330,7 +345,9 @@ func TestCheckpointManager_ValidateResume(t *testing.T) {
 			executionID := "exec-" + tt.name
 			workflowState := state.NewWorkflowState(executionID, "wf-1", "dag-1", 1)
 			workflowState.Status = tt.status
-			store.SaveState(ctx, workflowState)
+			if err := store.SaveState(ctx, workflowState); err != nil {
+				t.Fatalf("SaveState() error = %v", err)
+			}
 
 			err := cm.ValidateResume(ctx, executionID)
 			if tt.expectError && err == nil {
@@ -399,7 +416,9 @@ func TestAutoCheckpointer_NodeCompleted_IntervalBased(t *testing.T) {
 	nodeStates := make(map[string]*state.NodeState)
 
 	// Complete first node - should not checkpoint (within interval)
-	ac.NodeCompleted(ctx, "node-1", execCtx, nodeStates)
+	if err := ac.NodeCompleted(ctx, "node-1", execCtx, nodeStates); err != nil {
+		t.Fatalf("NodeCompleted() error = %v", err)
+	}
 	if cm.HasCheckpoint(ctx, "exec-1") {
 		t.Error("Checkpoint should not be created within interval")
 	}
@@ -408,7 +427,9 @@ func TestAutoCheckpointer_NodeCompleted_IntervalBased(t *testing.T) {
 	time.Sleep(110 * time.Millisecond)
 
 	// Complete second node - should checkpoint
-	ac.NodeCompleted(ctx, "node-2", execCtx, nodeStates)
+	if err := ac.NodeCompleted(ctx, "node-2", execCtx, nodeStates); err != nil {
+		t.Fatalf("NodeCompleted() error = %v", err)
+	}
 	if !cm.HasCheckpoint(ctx, "exec-1") {
 		t.Error("Checkpoint should be created after interval")
 	}

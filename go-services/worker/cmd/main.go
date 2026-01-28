@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -137,12 +138,20 @@ func main() {
 
 	// Create zap logger for components
 	var zapLog *zap.Logger
+	var err error
 	if cfg.LogLevel == "debug" {
-		zapLog, _ = zap.NewDevelopment()
+		zapLog, err = zap.NewDevelopment()
 	} else {
-		zapLog, _ = zap.NewProduction()
+		zapLog, err = zap.NewProduction()
 	}
-	defer zapLog.Sync()
+	if err != nil {
+		log.Fatal("failed to initialize zap logger", zap.Error(err))
+	}
+	defer func() {
+		if err := zapLog.Sync(); err != nil {
+			log.Debug("zap logger sync failed", zap.Error(err))
+		}
+	}()
 
 	// Validate and decode transport encryption key (hex-encoded)
 	transportKey, err := credentials.ValidateTransportKey(cfg.CredentialsTransportKey)
@@ -461,16 +470,28 @@ func main() {
 			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			defer cancel()
 
+			w.Header().Set("Content-Type", "application/json")
+
 			// Check Redis connectivity
 			if err := redisClient.Ping(ctx).Err(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte(`{"status":"unhealthy","redis":"disconnected","error":"` + err.Error() + `"}`))
+				if encErr := json.NewEncoder(w).Encode(map[string]string{
+					"status": "unhealthy",
+					"redis":  "disconnected",
+					"error":  err.Error(),
+				}); encErr != nil {
+					log.Warn("failed to encode health response", zap.Error(encErr))
+				}
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"healthy","redis":"connected","service":"cc1c-worker"}`))
+			if encErr := json.NewEncoder(w).Encode(map[string]string{
+				"status":  "healthy",
+				"redis":   "connected",
+				"service": "cc1c-worker",
+			}); encErr != nil {
+				log.Warn("failed to encode health response", zap.Error(encErr))
+			}
 		})
 
 		// Rollout stats endpoint for Event-Driven rollout monitoring

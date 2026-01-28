@@ -257,7 +257,10 @@ func TestResourceManager_FairQueueing(t *testing.T) {
 				mu.Unlock()
 				// Hold lock briefly then release
 				time.Sleep(10 * time.Millisecond)
-				rm.ReleaseLock(ctx, "db-fifo-1", owner)
+				if err := rm.ReleaseLock(ctx, "db-fifo-1", owner); err != nil {
+					// Best-effort cleanup in test.
+					_ = err
+				}
 			}
 		}(ownerID, i)
 	}
@@ -301,7 +304,10 @@ func TestConcurrentLockAcquisition(t *testing.T) {
 				atomic.AddInt64(&acquiredCount, 1)
 				// Hold briefly
 				time.Sleep(10 * time.Millisecond)
-				rm.ReleaseLock(ctx, "db-concurrent-1", req.OwnerID)
+				if err := rm.ReleaseLock(ctx, "db-concurrent-1", req.OwnerID); err != nil {
+					// Best-effort cleanup in test.
+					_ = err
+				}
 			}
 		}(i)
 	}

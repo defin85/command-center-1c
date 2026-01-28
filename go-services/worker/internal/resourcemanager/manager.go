@@ -195,8 +195,13 @@ func (rm *resourceManager) waitForLock(ctx context.Context, req *LockRequest, in
 	for {
 		select {
 		case <-ctx.Done():
-			// Context cancelled - remove from queue
-			rm.store.RemoveFromQueue(ctx, req.DatabaseID, req.OwnerID)
+			// Context cancelled - remove from queue (best-effort, use fresh context)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := rm.store.RemoveFromQueue(cleanupCtx, req.DatabaseID, req.OwnerID); err != nil {
+				// Best-effort cleanup; ignore error because caller already sees cancellation.
+				_ = err
+			}
+			cancel()
 			return &LockResult{
 				Acquired:      false,
 				QueuePosition: 0,
@@ -218,7 +223,12 @@ func (rm *resourceManager) waitForLock(ctx context.Context, req *LockRequest, in
 			}
 			// Still not first in queue, continue waiting
 			if time.Now().After(deadline) {
-				rm.store.RemoveFromQueue(ctx, req.DatabaseID, req.OwnerID)
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := rm.store.RemoveFromQueue(cleanupCtx, req.DatabaseID, req.OwnerID); err != nil {
+					// Best-effort cleanup; ignore error because caller already sees timeout.
+					_ = err
+				}
+				cancel()
 				info, _ := rm.store.GetLockInfo(ctx, req.DatabaseID)
 				return &LockResult{
 					Acquired:      false,
@@ -243,7 +253,12 @@ func (rm *resourceManager) waitForLock(ctx context.Context, req *LockRequest, in
 			}
 			// Check timeout
 			if time.Now().After(deadline) {
-				rm.store.RemoveFromQueue(ctx, req.DatabaseID, req.OwnerID)
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := rm.store.RemoveFromQueue(cleanupCtx, req.DatabaseID, req.OwnerID); err != nil {
+					// Best-effort cleanup; ignore error because caller already sees timeout.
+					_ = err
+				}
+				cancel()
 				info, _ := rm.store.GetLockInfo(ctx, req.DatabaseID)
 				return &LockResult{
 					Acquired:      false,
@@ -270,7 +285,10 @@ func (rm *resourceManager) ReleaseLock(ctx context.Context, databaseID, ownerID 
 
 	// Notify next owner if any
 	if nextOwner != "" {
-		rm.store.NotifyLockRelease(ctx, databaseID, nextOwner)
+		if err := rm.store.NotifyLockRelease(ctx, databaseID, nextOwner); err != nil {
+			// Lock is already released; notification is best-effort.
+			_ = err
+		}
 	}
 
 	return nil
@@ -363,7 +381,10 @@ func (rm *resourceManager) StartCleanupWorker(ctx context.Context, interval time
 					for _, dbID := range cleanedUp {
 						nextOwner, _ := rm.store.GetNextInQueue(cleanupCtx, dbID)
 						if nextOwner != "" {
-							rm.store.NotifyLockRelease(cleanupCtx, dbID, nextOwner)
+							if err := rm.store.NotifyLockRelease(cleanupCtx, dbID, nextOwner); err != nil {
+								// Cleanup notifications are best-effort.
+								_ = err
+							}
 						}
 					}
 				}
@@ -572,7 +593,10 @@ func WithLock(ctx context.Context, rm ResourceManager, req *LockRequest, fn func
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		rm.ReleaseLock(releaseCtx, req.DatabaseID, req.OwnerID)
+		if err := rm.ReleaseLock(releaseCtx, req.DatabaseID, req.OwnerID); err != nil {
+			// Lock is already acquired and should be released; ignore best-effort cleanup error.
+			_ = err
+		}
 	}()
 
 	return fn(ctx)

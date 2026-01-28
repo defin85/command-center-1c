@@ -385,9 +385,14 @@ func (s *InMemorySagaStore) SaveState(_ context.Context, state *SagaState) error
 	defer s.mu.Unlock()
 
 	// Deep copy to prevent external modifications
-	data, _ := json.Marshal(state)
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
 	var copy SagaState
-	json.Unmarshal(data, &copy)
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return fmt.Errorf("failed to unmarshal state: %w", err)
+	}
 	s.states[state.ExecutionID] = &copy
 
 	return nil
@@ -404,9 +409,14 @@ func (s *InMemorySagaStore) LoadState(_ context.Context, executionID string) (*S
 	}
 
 	// Deep copy to prevent external modifications
-	data, _ := json.Marshal(state)
+	data, err := json.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal state: %w", err)
+	}
 	var copy SagaState
-	json.Unmarshal(data, &copy)
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+	}
 
 	return &copy, nil
 }
@@ -433,9 +443,14 @@ func (s *InMemorySagaStore) ListByStatus(_ context.Context, status SagaStatus, l
 	for _, state := range s.states {
 		if state.Status == status {
 			// Deep copy
-			data, _ := json.Marshal(state)
+			data, err := json.Marshal(state)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal state: %w", err)
+			}
 			var copy SagaState
-			json.Unmarshal(data, &copy)
+			if err := json.Unmarshal(data, &copy); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+			}
 			results = append(results, &copy)
 
 			if len(results) >= limit {
