@@ -4,17 +4,17 @@ Complete test coverage for the OperationType Registry system and sync management
 
 ## Quick Stats
 
-- **Total Tests:** 74
-- **Test Files:** 2
-- **Test Classes:** 13
-- **Lines of Test Code:** 1,551
+- **Total Tests:** (run `pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py --collect-only -q`)
+- **Test Files:** `test_registry_*.py` + `test_sync_command.py` (+ `test_operation_type_validation.py`)
+- **Test Classes:** (see `pytest --collect-only`)
+- **Lines of Test Code:** (see `cloc`/`wc -l` if needed)
 - **Code Coverage:** 95%
 - **Pass Rate:** 100%
-- **Execution Time:** ~1.4 seconds
+- **Execution Time:** (depends on environment)
 
 ## Files Overview
 
-### 1. test_registry.py (50 tests, 993 lines)
+### 1. test_registry_*.py (Registry core tests)
 
 Comprehensive tests for registry core functionality:
 
@@ -55,12 +55,12 @@ Tests for the `sync_operation_templates` management command:
 ```bash
 cd orchestrator
 source venv/bin/activate
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py -v
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py -v
 ```
 
 ### Run with Coverage
 ```bash
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py \
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py \
   --cov=apps.templates.registry \
   --cov=apps.templates.management.commands.sync_operation_templates \
   --cov-report=term-missing
@@ -68,12 +68,12 @@ pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_comm
 
 ### Run Individual Test Class
 ```bash
-pytest apps/templates/tests/test_registry.py::TestOperationType -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestOperationType -v
 ```
 
 ### Run Single Test
 ```bash
-pytest apps/templates/tests/test_registry.py::TestOperationType::test_minimal_operation_type -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestOperationType::test_minimal_operation_type -v
 ```
 
 ## Test Coverage Summary
@@ -257,42 +257,42 @@ for t in threads:
 ### Development
 ```bash
 # Run tests during development
-pytest apps/templates/tests/test_registry.py -v -s
+pytest apps/templates/tests/test_registry_*.py -v -s
 
 # Run specific test
-pytest apps/templates/tests/test_registry.py::TestClass::test_name -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestClass::test_name -v
 
 # Run with auto-rerun on changes
-ptw apps/templates/tests/test_registry.py
+ptw apps/templates/tests/test_registry_*.py
 ```
 
 ### Quality Checks
 ```bash
 # Full test suite
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py -v
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py -v
 
 # With coverage
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py \
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py \
   --cov=apps.templates --cov-report=html
 
 # Generate XML for CI
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py \
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py \
   --cov=apps.templates --cov-report=xml
 ```
 
 ### Debugging
 ```bash
 # Verbose output
-pytest apps/templates/tests/test_registry.py -vv
+pytest apps/templates/tests/test_registry_*.py -vv
 
 # Print statements
-pytest apps/templates/tests/test_registry.py -s
+pytest apps/templates/tests/test_registry_*.py -s
 
 # Full traceback
-pytest apps/templates/tests/test_registry.py --tb=long
+pytest apps/templates/tests/test_registry_*.py --tb=long
 
 # Stop on first failure
-pytest apps/templates/tests/test_registry.py -x
+pytest apps/templates/tests/test_registry_*.py -x
 ```
 
 ## What's Tested

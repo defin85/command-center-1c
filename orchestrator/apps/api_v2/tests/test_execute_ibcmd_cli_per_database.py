@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 import pytest
 
 from apps.databases.models import DbmsUserMapping

@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 import pytest
 
 from apps.api_v2.views import driver_catalogs as driver_catalogs_view

@@ -6,7 +6,7 @@ Run all registry tests:
 ```bash
 cd orchestrator
 source venv/bin/activate
-pytest apps/templates/tests/test_registry.py -v
+pytest apps/templates/tests/test_registry_*.py -v
 ```
 
 Run all management command tests:
@@ -16,7 +16,7 @@ pytest apps/templates/tests/test_sync_command.py -v
 
 Run both with coverage:
 ```bash
-pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py \
+pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py \
   --cov=apps.templates.registry \
   --cov=apps.templates.management.commands.sync_operation_templates \
   --cov-report=html
@@ -28,7 +28,7 @@ pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_comm
 
 ```
 apps/templates/tests/
-├── test_registry.py              # 50 tests for registry core
+├── test_registry_*.py            # Registry core tests (split by responsibility)
 ├── test_sync_command.py          # 24 tests for management command
 ├── test_operation_type_validation.py  # Existing validation tests
 ├── conftest.py                   # Shared fixtures
@@ -38,7 +38,7 @@ apps/templates/tests/
 
 ## Test Categories
 
-### Registry Tests (test_registry.py)
+### Registry Tests (test_registry_*.py)
 
 #### 1. ParameterSchema Tests (6 tests)
 Tests for operation parameter definitions:
@@ -397,34 +397,34 @@ class TestCommand:
 
 ### Run Single Test
 ```bash
-pytest apps/templates/tests/test_registry.py::TestOperationType::test_minimal_operation_type -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestOperationType::test_minimal_operation_type -v
 ```
 
 ### Run Test Class
 ```bash
-pytest apps/templates/tests/test_registry.py::TestOperationType -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestOperationType -v
 ```
 
 ### Run with Print Output
 ```bash
-pytest apps/templates/tests/test_registry.py -v -s
+pytest apps/templates/tests/test_registry_*.py -v -s
 ```
 
 ### Run with Extra Verbosity
 ```bash
-pytest apps/templates/tests/test_registry.py -vv
+pytest apps/templates/tests/test_registry_*.py -vv
 ```
 
 ### Run with Traceback
 ```bash
-pytest apps/templates/tests/test_registry.py --tb=long
+pytest apps/templates/tests/test_registry_*.py --tb=long
 ```
 
 ## Coverage Analysis
 
 ### Generate HTML Coverage Report
 ```bash
-pytest apps/templates/tests/test_registry.py \
+pytest apps/templates/tests/test_registry_*.py \
   --cov=apps.templates.registry \
   --cov-report=html
 # Open htmlcov/index.html in browser
@@ -472,7 +472,7 @@ pytest apps/templates/tests/test_sync_command.py \
 These tests should be run in CI/CD pipeline:
 ```bash
 # Full test suite
-pytest apps/templates/tests/test_registry.py \
+pytest apps/templates/tests/test_registry_*.py \
         apps/templates/tests/test_sync_command.py \
         --cov=apps.templates \
         --cov-report=xml
@@ -505,6 +505,6 @@ A: Check test output, use `-v` and `-s` flags, verify registry state.
 
 ---
 
-**Total Tests:** 74
+**Total Tests:** (run `pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py --collect-only -q`)
 **Coverage:** 95%
 **Status:** Production Ready

@@ -6,44 +6,45 @@ This package replaces the previous monolithic `views/operations.py` module.
 
 from __future__ import annotations
 
-from .catalog import get_operation_catalog
-from .cli_catalog import get_cli_command_catalog, get_driver_commands
-from .execute import execute_operation
-from .execute_ibcmd_cli import execute_ibcmd_cli_operation
-from .listing import cancel_operation, get_operation, list_operations
-from .shortcuts import (
-    create_driver_command_shortcut,
-    delete_driver_command_shortcut,
-    list_driver_command_shortcuts,
-)
-from .streams_live import get_stream_status, get_stream_ticket
-from .streams_mux import (
-    get_mux_stream_ticket,
-    get_stream_mux_status,
-    operation_stream_mux,
-    subscribe_operation_streams,
-    unsubscribe_operation_streams,
-)
-from .streams_sse import operation_stream
+import importlib
+from typing import Any
 
-__all__ = [
-    "cancel_operation",
-    "create_driver_command_shortcut",
-    "delete_driver_command_shortcut",
-    "execute_ibcmd_cli_operation",
-    "execute_operation",
-    "get_cli_command_catalog",
-    "get_driver_commands",
-    "get_mux_stream_ticket",
-    "get_operation",
-    "get_operation_catalog",
-    "get_stream_mux_status",
-    "get_stream_status",
-    "get_stream_ticket",
-    "list_driver_command_shortcuts",
-    "list_operations",
-    "operation_stream",
-    "operation_stream_mux",
-    "subscribe_operation_streams",
-    "unsubscribe_operation_streams",
-]
+_BASE = __name__
+_EXPORTS: dict[str, tuple[str, str]] = {
+    "get_operation_catalog": (f"{_BASE}.catalog", "get_operation_catalog"),
+    "get_cli_command_catalog": (f"{_BASE}.cli_catalog", "get_cli_command_catalog"),
+    "get_driver_commands": (f"{_BASE}.cli_catalog", "get_driver_commands"),
+    "execute_operation": (f"{_BASE}.execute", "execute_operation"),
+    "execute_ibcmd_cli_operation": (f"{_BASE}.execute_ibcmd_cli", "execute_ibcmd_cli_operation"),
+    "cancel_operation": (f"{_BASE}.listing", "cancel_operation"),
+    "get_operation": (f"{_BASE}.listing", "get_operation"),
+    "list_operations": (f"{_BASE}.listing", "list_operations"),
+    "create_driver_command_shortcut": (f"{_BASE}.shortcuts", "create_driver_command_shortcut"),
+    "delete_driver_command_shortcut": (f"{_BASE}.shortcuts", "delete_driver_command_shortcut"),
+    "list_driver_command_shortcuts": (f"{_BASE}.shortcuts", "list_driver_command_shortcuts"),
+    "get_stream_status": (f"{_BASE}.streams_live", "get_stream_status"),
+    "get_stream_ticket": (f"{_BASE}.streams_live", "get_stream_ticket"),
+    "get_mux_stream_ticket": (f"{_BASE}.streams_mux", "get_mux_stream_ticket"),
+    "get_stream_mux_status": (f"{_BASE}.streams_mux", "get_stream_mux_status"),
+    "operation_stream_mux": (f"{_BASE}.streams_mux", "operation_stream_mux"),
+    "subscribe_operation_streams": (f"{_BASE}.streams_mux", "subscribe_operation_streams"),
+    "unsubscribe_operation_streams": (f"{_BASE}.streams_mux", "unsubscribe_operation_streams"),
+    "operation_stream": (f"{_BASE}.streams_sse", "operation_stream"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    mapping = _EXPORTS.get(name)
+    if mapping is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_path, attr_name = mapping
+    value = getattr(importlib.import_module(module_path), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(list(globals().keys()) + list(_EXPORTS.keys())))
+
+__all__ = list(_EXPORTS.keys())

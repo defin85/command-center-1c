@@ -117,9 +117,9 @@
 ## Test Execution
 
 ### Before Commit Checklist
-- [ ] Run: `pytest apps/templates/tests/test_registry.py -v`
+- [ ] Run: `pytest apps/templates/tests/test_registry_*.py -v`
 - [ ] Run: `pytest apps/templates/tests/test_sync_command.py -v`
-- [ ] All 74 tests pass
+- [ ] All registry tests pass
 - [ ] No warnings or errors
 - [ ] Coverage > 90%
 
@@ -127,18 +127,18 @@
 
 ```bash
 # Full test suite
-pytest apps/templates/tests/test_registry.py \
+pytest apps/templates/tests/test_registry_*.py \
         apps/templates/tests/test_sync_command.py -v
 
 # With coverage
-pytest apps/templates/tests/test_registry.py \
+pytest apps/templates/tests/test_registry_*.py \
         apps/templates/tests/test_sync_command.py \
         --cov=apps.templates.registry \
         --cov=apps.templates.management.commands.sync_operation_templates \
         --cov-report=term-missing
 
 # Specific test
-pytest apps/templates/tests/test_registry.py::TestOperationType::test_minimal_operation_type -v
+pytest apps/templates/tests/test_registry_operation_type.py::TestOperationType::test_minimal_operation_type -v
 ```
 
 ## Test Structure Quality Checks
@@ -266,7 +266,7 @@ pytest apps/templates/tests/test_registry.py::TestOperationType::test_minimal_op
 ## Final Verification
 
 ### Test Files Created
-- [x] `/home/egor/code/command-center-1c/orchestrator/apps/templates/tests/test_registry.py` (50 tests)
+- [x] `orchestrator/apps/templates/tests/test_registry_*.py` (registry core tests, split by responsibility)
 - [x] `/home/egor/code/command-center-1c/orchestrator/apps/templates/tests/test_sync_command.py` (24 tests)
 - [x] `/home/egor/code/command-center-1c/orchestrator/apps/templates/tests/REGISTRY_TESTS_REPORT.md`
 - [x] `/home/egor/code/command-center-1c/orchestrator/apps/templates/tests/TESTING_GUIDE.md`

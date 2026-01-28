@@ -2,11 +2,11 @@
 
 ## Overview
 
-Comprehensive test suite for OperationType Registry functionality with 74 tests covering all aspects of the registry system and sync management command.
+Comprehensive test suite for OperationType Registry functionality covering all aspects of the registry system and sync management command.
 
 ## Test Files
 
-### 1. `test_registry.py` - Registry Core Tests (50 tests)
+### 1. `test_registry_*.py` - Registry Core Tests
 
 Tests for the registry system, operation types, and dataclasses.
 
@@ -169,7 +169,7 @@ Run all registry tests:
 ```bash
 cd orchestrator
 source venv/bin/activate
-python -m pytest apps/templates/tests/test_registry.py -v
+python -m pytest apps/templates/tests/test_registry_*.py -v
 ```
 
 Run all sync command tests:
@@ -179,12 +179,12 @@ python -m pytest apps/templates/tests/test_sync_command.py -v
 
 Run both test suites:
 ```bash
-python -m pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py -v
+python -m pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py -v
 ```
 
 Run with coverage report:
 ```bash
-python -m pytest apps/templates/tests/test_registry.py apps/templates/tests/test_sync_command.py \
+python -m pytest apps/templates/tests/test_registry_*.py apps/templates/tests/test_sync_command.py \
   --cov=apps.templates.registry \
   --cov=apps.templates.management.commands.sync_operation_templates \
   --cov-report=term-missing
