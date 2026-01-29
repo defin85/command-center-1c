@@ -11,6 +11,11 @@
 - `frontend/src/pages/**` (основные страницы);
 - ключевые shared компоненты, влияющие на страницы: `frontend/src/components/**`, `frontend/src/hooks/**`, `frontend/src/stores/**`.
 
+## Dependencies / Coordination
+Этот change пересекается по фронтенд-файлам с `update-frontend-performance` (в частности `frontend/src/stores/serviceMeshManager.ts`, хуки и layout/root). Чтобы снизить merge-conflicts и риск регрессий:
+- сначала выполнить `update-frontend-performance` (перенос invalidation в listener без re-render `App`);
+- затем выполнить этот change, пересверив Findings по файлам через поиск (line numbers могут сдвигаться).
+
 ## Findings (terse, file:line)
 Ниже — список нарушений/ожидаемых правок в формате `file:line`.
 Полный список синхронизирован с требованиями в `specs/ui-web-interface-guidelines/spec.md`.
@@ -26,4 +31,3 @@
 ## Impact
 - Затронуты UI страницы и shared компоненты фронта.
 - Риски: минимальные (правки в разметке/атрибутах), но нужно проверить keyboard flow и regression в тултипах/поповерах.
-

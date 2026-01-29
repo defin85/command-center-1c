@@ -17,6 +17,9 @@ MVP ограничиваем **только** на сущности `extensions`
 - Добавить универсальное хранение “command result snapshots” (append-only) + быстрые latest-проекции (как сейчас для `DatabaseExtensionsSnapshot`).
 - Реализовать **plan/apply + drift check** для extensions, используя snapshot и action catalog.
 
+## Dependencies / Coordination
+- Подзадача “snapshot ingestion через event-subscriber” должна опираться на надёжную at-least-once обработку (claim pending + idempotency receipts) из `update-orchestrator-eventsubscriber-reliability`, чтобы избежать повторных сайд-эффектов и дубликатов.
+
 ## Non-Goals
 - Не делаем сразу поддержку множества сущностей кроме `extensions`.
 - Не делаем полноценный reconcile-операторный цикл для всех ресурсов (можно позже).

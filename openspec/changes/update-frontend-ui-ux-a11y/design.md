@@ -8,6 +8,9 @@ Vercel Web Interface Guidelines (актуальная версия):
 - Минимальные правки: добавление `aria-label`, замена кликабельных не-кнопок на `<Button>`, добавление keyboard handlers там, где остаётся `role="button"`.
 - Избегаем внедрения новых UI библиотек или больших рефакторингов.
 
+## Примечание о пересечениях
+Если параллельно выполняется `update-frontend-performance`, line numbers в Findings могут сдвигаться (особенно в `frontend/src/stores/serviceMeshManager.ts` и хуках). В этом случае Findings нужно пересверять по файлам через поиск/контекст, а не по абсолютным строкам.
+
 ## Findings (file:line)
 
 ## frontend/src/pages/Dashboard/Dashboard.tsx
@@ -59,4 +62,3 @@ frontend/src/components/WorkflowTracker/index.tsx:160 - "..." → "…" (empty s
 frontend/src/components/workflow/nodes/OperationNode.tsx:54 - "..." → "…" (truncation)
 frontend/src/components/workflow/nodes/OperationNode.tsx:107 - "Executing..." → "Executing…" (loading copy)
 frontend/src/components/workflow/nodes/OperationNode.tsx:131 - copy "click to view details" без явного onClick/Link → либо добавить действие, либо исправить copy
-
