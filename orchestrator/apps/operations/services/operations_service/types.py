@@ -39,5 +39,4 @@ class EnqueueResult:
     operation_id: str
     status: str  # queued|duplicate|error
     error: Optional[str] = None
-    error_code: Optional[str] = None
     metadata: dict = field(default_factory=dict)

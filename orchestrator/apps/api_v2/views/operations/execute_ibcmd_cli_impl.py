@@ -673,7 +673,6 @@ def _execute_ibcmd_cli_validated(
         ])
     enqueue_res = OperationsService.enqueue_operation(operation_id)
     if not enqueue_res.success:
-        enqueue_error_code = getattr(enqueue_res, "error_code", None) or "ENQUEUE_FAILED"
         if enqueue_res.status == "duplicate":
             batch_operation.status = BatchOperation.STATUS_CANCELLED
             batch_operation.metadata["error"] = enqueue_res.error or "duplicate"
@@ -682,14 +681,6 @@ def _execute_ibcmd_cli_validated(
                 "success": False,
                 "error": {"code": "DUPLICATE", "message": enqueue_res.error or "duplicate"},
             }, status=409)
-        if enqueue_error_code == "REDIS_ERROR":
-            batch_operation.status = BatchOperation.STATUS_FAILED
-            batch_operation.metadata["error"] = "REDIS_ERROR"
-            batch_operation.save(update_fields=["status", "metadata", "updated_at"])
-            return Response(
-                {"success": False, "error": {"code": "REDIS_ERROR", "message": "Redis is unavailable"}},
-                status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
         batch_operation.status = BatchOperation.STATUS_FAILED
         batch_operation.metadata["error"] = enqueue_res.error or "enqueue_failed"
         batch_operation.save(update_fields=["status", "metadata", "updated_at"])
