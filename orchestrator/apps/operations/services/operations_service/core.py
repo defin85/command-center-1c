@@ -8,7 +8,7 @@ from django.conf import settings
 from ...models import BatchOperation
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
-from .types import EnqueueResult, _record_batch_metric, logger
+from .types import EnqueueResult, _record_batch_metric, classify_enqueue_error_code, logger
 
 
 class OperationsServiceCore:
@@ -279,7 +279,11 @@ class OperationsServiceCore:
             )
 
         except Exception as exc:
-            logger.error(f"Error enqueueing operation {operation_id}: {exc}", exc_info=True)
+            error_code = classify_enqueue_error_code(exc)
+            logger.error(
+                f"Error enqueueing operation {operation_id} (error_code={error_code}): {exc}",
+                exc_info=True,
+            )
 
             # Release enqueue lock on error
             try:
@@ -306,5 +310,5 @@ class OperationsServiceCore:
                 operation_id=operation_id,
                 status="error",
                 error=str(exc),
-                error_code="ENQUEUE_FAILED",
+                error_code=error_code,
             )
