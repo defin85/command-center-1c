@@ -36,6 +36,7 @@ export interface ServiceMeshState {
 }
 
 type StateListener = (state: ServiceMeshState) => void
+type InvalidationListener = (event: InvalidationEvent) => void
 
 function transformServiceMetrics(data: Record<string, unknown>): ServiceMetrics {
   return {
@@ -108,6 +109,7 @@ class ServiceMeshManager {
     lastInvalidation: null,
   }
   private listeners = new Set<StateListener>()
+  private invalidationListeners = new Set<InvalidationListener>()
   private refCount = 0
   private stopTimer: ReturnType<typeof setTimeout> | null = null
   private ws: WebSocket | null = null
@@ -127,6 +129,13 @@ class ServiceMeshManager {
     listener(this.state)
     return () => {
       this.listeners.delete(listener)
+    }
+  }
+
+  subscribeInvalidation(listener: InvalidationListener) {
+    this.invalidationListeners.add(listener)
+    return () => {
+      this.invalidationListeners.delete(listener)
     }
   }
 
@@ -186,6 +195,12 @@ class ServiceMeshManager {
     this.state = { ...this.state, ...partial }
     for (const listener of this.listeners) {
       listener(this.state)
+    }
+  }
+
+  private emitInvalidation(event: InvalidationEvent) {
+    for (const listener of this.invalidationListeners) {
+      listener(event)
     }
   }
 
@@ -381,13 +396,15 @@ class ServiceMeshManager {
         break
 
       case 'dashboard_invalidate':
-        this.setState({
-          lastInvalidation: {
+        {
+          const event: InvalidationEvent = {
             scope: message.scope || 'all',
             timestamp: message.timestamp || new Date().toISOString(),
             entityId: message.entity_id,
-          },
-        })
+          }
+          this.emitInvalidation(event)
+          this.setState({ lastInvalidation: event })
+        }
         break
 
       case 'error':

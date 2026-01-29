@@ -1,6 +1,6 @@
 import { buildDatabaseStreamUrl, getDatabaseStreamTicket } from '../api/databasesStream'
 import { openSseStream } from '../api/sse'
-import { queryKeys } from '../api/queries'
+import { queryKeys } from '../api/queries/queryKeys'
 import type { QueryClient } from '@tanstack/react-query'
 
 export interface DatabaseStreamState {

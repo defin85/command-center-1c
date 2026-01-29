@@ -6,7 +6,7 @@ import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
 import { useCanManageRbac } from '../../api/queries/rbac'
-import { useCanManageDriverCatalogs } from '../../api/queries'
+import { useCanManageDriverCatalogs } from '../../api/queries/commandSchemas'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'

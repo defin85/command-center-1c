@@ -6,6 +6,8 @@ import type { OperationTemplateRef, WorkflowTemplateRef } from './refs'
 import type { RbacGroupRef } from './roles'
 import type { UserRef } from './users'
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export type OperationTemplatePermission = {
   user: UserRef
   template: OperationTemplateRef
@@ -35,6 +37,8 @@ export function useOperationTemplatePermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -81,6 +85,8 @@ export function useOperationTemplateGroupPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -145,6 +151,8 @@ export function useWorkflowTemplatePermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -191,6 +199,8 @@ export function useWorkflowTemplateGroupPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -225,4 +235,3 @@ export function useRevokeWorkflowTemplateGroupPermission() {
     },
   })
 }
-

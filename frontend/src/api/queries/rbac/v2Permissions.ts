@@ -12,6 +12,7 @@ import type { RevokeDatabasePermissionRequest } from '../../generated/model/revo
 import { queryKeys } from '../queryKeys'
 
 const api = getV2()
+const RBAC_STALE_TIME_MS = 5 * 60_000
 
 export interface ClusterPermissionFilters {
   user_id?: number
@@ -40,6 +41,8 @@ export function useClusterPermissions(
     queryKey: queryKeys.rbac.clusterPermissions(filters),
     queryFn: (): Promise<ClusterPermissionListResponse> => api.getRbacListClusterPermissions(filters),
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -51,6 +54,8 @@ export function useDatabasePermissions(
     queryKey: queryKeys.rbac.databasePermissions(filters),
     queryFn: (): Promise<DatabasePermissionListResponse> => api.getRbacListDatabasePermissions(filters),
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -97,6 +102,8 @@ export function useEffectiveAccess(
         offset,
       }),
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -139,4 +146,3 @@ export function useRevokeDatabasePermission() {
     },
   })
 }
-

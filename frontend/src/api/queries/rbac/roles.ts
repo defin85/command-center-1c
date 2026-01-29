@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import { apiClient } from '../../client'
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export function useCanManageRbac(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.rbac.canManage(),
@@ -18,7 +20,8 @@ export function useCanManageRbac(options?: { enabled?: boolean }) {
         throw error
       }
     },
-    staleTime: 60_000,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
     retry: false,
     enabled: options?.enabled ?? true,
   })
@@ -54,6 +57,8 @@ export function useRoles(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -116,7 +121,8 @@ export function useCapabilities(options?: { enabled?: boolean }) {
       const response = await apiClient.get('/api/v2/rbac/list-capabilities/')
       return response.data
     },
-    staleTime: 60_000,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
     enabled: options?.enabled ?? true,
   })
 }
@@ -138,4 +144,3 @@ export function useSetRoleCapabilities() {
     },
   })
 }
-

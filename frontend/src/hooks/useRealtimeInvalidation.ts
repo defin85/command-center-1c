@@ -1,8 +1,9 @@
 /**
  * Hook for real-time React Query cache invalidation via WebSocket.
  *
- * Listens to dashboard_invalidate events from useServiceMesh and
- * invalidates the corresponding React Query caches.
+ * Listens to dashboard_invalidate events from serviceMeshManager and
+ * invalidates the corresponding React Query caches (without subscribing
+ * to the full ServiceMeshState in React).
  *
  * Usage:
  * ```tsx
@@ -15,38 +16,42 @@
  */
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useServiceMesh } from './useServiceMesh'
-import { queryKeys } from '../api/queries'
+import { serviceMeshManager } from '../stores/serviceMeshManager'
+import { queryKeys } from '../api/queries/queryKeys'
 
 export function useRealtimeInvalidation(enabled = true) {
   const queryClient = useQueryClient()
-  const { lastInvalidation } = useServiceMesh({ enabled })
 
   useEffect(() => {
     if (!enabled) return
-    if (!lastInvalidation) return
 
-    const { scope } = lastInvalidation
+    serviceMeshManager.start()
+    const unsubscribe = serviceMeshManager.subscribeInvalidation(({ scope }) => {
+      switch (scope) {
+        case 'operations':
+          queryClient.invalidateQueries({ queryKey: queryKeys.operations.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          break
+        case 'databases':
+          queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          break
+        case 'clusters':
+          queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          break
+        case 'all':
+        default:
+          queryClient.invalidateQueries()
+          break
+      }
+    })
 
-    switch (scope) {
-      case 'operations':
-        queryClient.invalidateQueries({ queryKey: queryKeys.operations.all })
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
-        break
-      case 'databases':
-        queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
-        break
-      case 'clusters':
-        queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
-        break
-      case 'all':
-      default:
-        queryClient.invalidateQueries()
-        break
+    return () => {
+      unsubscribe()
+      serviceMeshManager.stop()
     }
-  }, [enabled, lastInvalidation, queryClient])
+  }, [enabled, queryClient])
 }
 
 export default useRealtimeInvalidation

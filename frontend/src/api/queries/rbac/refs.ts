@@ -9,6 +9,8 @@ export type OperationTemplateRef = { id: string; name: string }
 export type WorkflowTemplateRef = { id: string; name: string }
 export type ArtifactRef = { id: string; name: string }
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export function useRbacRefClusters(
   filters?: { search?: string; limit?: number; offset?: number },
   options?: { enabled?: boolean }
@@ -20,6 +22,8 @@ export function useRbacRefClusters(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -34,6 +38,8 @@ export function useRbacRefDatabases(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -48,6 +54,8 @@ export function useRbacRefOperationTemplates(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -62,6 +70,8 @@ export function useRbacRefWorkflowTemplates(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -76,6 +86,7 @@ export function useRbacRefArtifacts(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
-

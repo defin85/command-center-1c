@@ -15,6 +15,8 @@ export type UserListResponse = {
   total: number
 }
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export function useRbacUsers(
   filters?: { search?: string; limit?: number; offset?: number },
   options?: { enabled?: boolean }
@@ -26,6 +28,8 @@ export function useRbacUsers(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -52,6 +56,8 @@ export function useRbacUsersWithRoles(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -68,6 +74,8 @@ export function useUserRoles(userId?: number, options?: { enabled?: boolean }) {
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -88,4 +96,3 @@ export function useSetUserRoles() {
     },
   })
 }
-

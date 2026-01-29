@@ -4,6 +4,8 @@ import { listCommandSchemasAudit } from '../commandSchemas'
 
 import { queryKeys } from './queryKeys'
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.commandSchemas.canManage(),
@@ -19,7 +21,8 @@ export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
         throw error
       }
     },
-    staleTime: 60_000,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
     retry: false,
     enabled: options?.enabled ?? true,
   })

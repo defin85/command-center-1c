@@ -1,10 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: process.env.ANALYZE_BUNDLE === '1'
+    ? [
+      react(),
+      visualizer({
+        filename: 'dist/bundle-report.html',
+        gzipSize: true,
+        brotliSize: true,
+      }),
+    ]
+    : [react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -7,6 +7,8 @@ import { queryKeys } from './queryKeys'
 
 const api = getV2()
 
+const ME_STALE_TIME_MS = 5 * 60_000
+
 async function fetchMe(): Promise<CurrentUser> {
   return api.getSystemMe()
 }
@@ -15,7 +17,8 @@ export function useMe(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.me.current(),
     queryFn: fetchMe,
-    staleTime: 60_000,
+    staleTime: ME_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
     retry: false,
     enabled: options?.enabled ?? true,
   })

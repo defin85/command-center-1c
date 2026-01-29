@@ -6,6 +6,8 @@ import type { ClusterRef, DatabaseRef } from './refs'
 import type { RbacGroupRef } from './roles'
 import type { UserRef } from './users'
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export type ClusterGroupPermission = {
   group: RbacGroupRef
   cluster: ClusterRef
@@ -48,6 +50,8 @@ export function useClusterGroupPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -134,6 +138,8 @@ export function useDatabaseGroupPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -200,4 +206,3 @@ export function useBulkRevokeDatabaseGroupPermission() {
     },
   })
 }
-

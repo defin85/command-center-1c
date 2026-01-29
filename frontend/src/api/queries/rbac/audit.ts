@@ -16,6 +16,8 @@ export type AdminAuditLogItem = {
   error_message: string
 }
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export function useAdminAuditLog(
   filters?: {
     action?: string
@@ -38,6 +40,7 @@ export function useAdminAuditLog(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
-

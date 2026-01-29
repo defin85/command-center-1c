@@ -6,6 +6,8 @@ import type { ArtifactRef } from './refs'
 import type { RbacGroupRef } from './roles'
 import type { UserRef } from './users'
 
+const RBAC_STALE_TIME_MS = 5 * 60_000
+
 export type ArtifactPermission = {
   user: UserRef
   artifact: ArtifactRef
@@ -35,6 +37,8 @@ export function useArtifactPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -81,6 +85,8 @@ export function useArtifactGroupPermissions(
       return response.data
     },
     enabled: options?.enabled ?? true,
+    staleTime: RBAC_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -115,4 +121,3 @@ export function useRevokeArtifactGroupPermission() {
     },
   })
 }
-
