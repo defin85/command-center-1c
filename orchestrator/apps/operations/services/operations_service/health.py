@@ -7,7 +7,7 @@ from django.utils import timezone
 from ...models import BatchOperation
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
-from .types import EnqueueResult, _record_batch_metric, logger
+from .types import EnqueueResult, _record_batch_metric, classify_enqueue_error_code, logger
 
 
 class OperationsServiceHealthMixin:
@@ -37,6 +37,7 @@ class OperationsServiceHealthMixin:
                 operation_id="",
                 status="error",
                 error="No valid databases found for the provided IDs",
+                error_code="VALIDATION_ERROR",
             )
 
         operation_id = str(uuid.uuid4())
@@ -183,4 +184,5 @@ class OperationsServiceHealthMixin:
                 operation_id=operation_id,
                 status="error",
                 error=str(exc),
+                error_code=classify_enqueue_error_code(exc),
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import redis as redis_pkg
 from typing import Any
 
 from django.conf import settings
@@ -7,7 +8,7 @@ from django.conf import settings
 from ...models import BatchOperation
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
-from .types import EnqueueResult, _record_batch_metric, logger
+from .types import EnqueueResult, _record_batch_metric, classify_enqueue_error_code, logger
 
 
 class OperationsServiceCore:
@@ -132,6 +133,7 @@ class OperationsServiceCore:
                             operation_id=operation_id,
                             status="duplicate",
                             error="Global target already in progress",
+                            error_code="DUPLICATE",
                         )
 
                     metadata = operation.metadata or {}
@@ -169,6 +171,7 @@ class OperationsServiceCore:
                     operation_id=operation_id,
                     status="duplicate",
                     error="Operation already in progress",
+                    error_code="DUPLICATE",
                 )
 
             workflow_metadata = cls._get_workflow_metadata(operation)
@@ -241,13 +244,52 @@ class OperationsServiceCore:
                 operation_id=operation_id,
                 status="error",
                 error=f"Operation {operation_id} not found",
+                error_code="NOT_FOUND",
+            )
+
+        except redis_pkg.exceptions.RedisError as exc:
+            logger.error(f"Redis error while enqueueing operation {operation_id}: {exc}", exc_info=True)
+
+            # Release enqueue lock on error (best-effort)
+            try:
+                redis_client.release_enqueue_lock(operation_id)
+            except Exception:
+                pass
+
+            # Release global lock (if acquired) on error before queue (best-effort)
+            try:
+                if "global_target_ref" in locals() and global_target_ref:
+                    redis_client.release_global_target_lock(global_target_ref)
+            except Exception:
+                pass
+
+            # Record error metric (use operation type if available from local scope)
+            try:
+                op_type = operation.operation_type if "operation" in locals() else "unknown"
+                _record_batch_metric(op_type, "error")
+            except Exception:
+                _record_batch_metric("unknown", "error")
+
+            return EnqueueResult(
+                success=False,
+                operation_id=operation_id,
+                status="error",
+                error=str(exc),
+                error_code="REDIS_ERROR",
             )
 
         except Exception as exc:
-            logger.error(f"Error enqueueing operation {operation_id}: {exc}", exc_info=True)
+            error_code = classify_enqueue_error_code(exc)
+            logger.error(
+                f"Error enqueueing operation {operation_id} (error_code={error_code}): {exc}",
+                exc_info=True,
+            )
 
             # Release enqueue lock on error
-            redis_client.release_enqueue_lock(operation_id)
+            try:
+                redis_client.release_enqueue_lock(operation_id)
+            except Exception:
+                pass
 
             # Release global lock (if acquired) on error before queue
             try:
@@ -268,4 +310,5 @@ class OperationsServiceCore:
                 operation_id=operation_id,
                 status="error",
                 error=str(exc),
+                error_code=error_code,
             )
