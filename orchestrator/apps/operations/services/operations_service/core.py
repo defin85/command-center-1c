@@ -177,7 +177,7 @@ class OperationsServiceCore:
             message = cls._build_message(operation)
 
             # 4. Enqueue to Redis
-            redis_client.enqueue_operation(message)
+            msg_id = redis_client.enqueue_operation_stream(message)
 
             # 5. Publish QUEUED event for real-time tracking
             event_publisher.publish(
@@ -228,6 +228,7 @@ class OperationsServiceCore:
                 metadata={
                     "queue": cls.QUEUE_KEY,
                     "target_databases_count": len(message["target_databases"]),
+                    "stream_message_id": msg_id,
                 },
             )
 

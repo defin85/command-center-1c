@@ -4,6 +4,7 @@
 Порядок реализации (чтобы минимизировать пересечения и учесть зависимости):
 
       1. update-orchestrator-enqueue-consistency (база для корректных ошибок enqueue)
+      1.1. update-api-enqueue-503-errors  
       2. update-worker-stream-routing (зависит от стабильного enqueue; пересечение по orchestrator/apps/operations/services/operations_service/workflow.py)
       3. update-orchestrator-eventsubscriber-reliability (после разделения потоков проще сразу учесть полный набор stream’ов/групп)
       4. update-frontend-performance (сначала “поведенческие”/архитектурные правки подписок и imports)

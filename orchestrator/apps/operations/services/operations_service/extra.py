@@ -135,7 +135,7 @@ class OperationsServiceExtraMixin:
             redis_client.acquire_enqueue_lock(task_id=operation_id, ttl_seconds=3600)  # 1 hour
 
             # Enqueue to Redis
-            redis_client.enqueue_operation(message)
+            redis_client.enqueue_operation_stream(message)
 
             # Timeline: operation queued (best-effort)
             try:
@@ -194,6 +194,10 @@ class OperationsServiceExtraMixin:
 
         except Exception as exc:
             logger.error(f"Error enqueueing RAS operation: {exc}", exc_info=True)
+            try:
+                redis_client.release_enqueue_lock(task_id=operation_id)
+            except Exception:
+                pass
             # Mark operation as failed
             batch_operation.status = BatchOperation.STATUS_FAILED
             batch_operation.save(update_fields=["status", "updated_at"])

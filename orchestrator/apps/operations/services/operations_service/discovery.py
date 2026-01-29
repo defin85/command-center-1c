@@ -85,7 +85,7 @@ class OperationsServiceDiscoveryMixin:
             # Acquire enqueue lock (separate from Worker's task lock)
             redis_client.acquire_enqueue_lock(task_id=op_id, ttl_seconds=3600)  # 1 hour
 
-            redis_client.enqueue_operation(message)
+            msg_id = redis_client.enqueue_operation_stream(message)
 
             event_publisher.publish(
                 operation_id=op_id,
@@ -117,11 +117,15 @@ class OperationsServiceDiscoveryMixin:
                 success=True,
                 operation_id=op_id,
                 status="queued",
-                metadata={"ras_server": ras_server},
+                metadata={"ras_server": ras_server, "stream_message_id": msg_id},
             )
 
         except Exception as exc:
             logger.error(f"Error enqueueing discover clusters: {exc}", exc_info=True)
+            try:
+                redis_client.release_enqueue_lock(task_id=op_id)
+            except Exception:
+                pass
             return EnqueueResult(
                 success=False,
                 operation_id=op_id,

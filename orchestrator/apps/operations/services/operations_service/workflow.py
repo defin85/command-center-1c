@@ -73,7 +73,7 @@ class OperationsServiceWorkflowMixin:
         }
 
         try:
-            redis_client.enqueue_operation(message)
+            msg_id = redis_client.enqueue_operation_stream(message)
 
             event_publisher.publish(
                 operation_id=execution_id,
@@ -88,6 +88,7 @@ class OperationsServiceWorkflowMixin:
                 success=True,
                 operation_id=execution_id,
                 status="queued",
+                metadata={"stream_message_id": msg_id},
             )
 
         except Exception as exc:
@@ -198,7 +199,7 @@ class OperationsServiceWorkflowMixin:
             # This prevents duplicate enqueue, Worker handles processing idempotency
             redis_client.acquire_enqueue_lock(task_id=op_id, ttl_seconds=3600)  # 1 hour
 
-            redis_client.enqueue_operation(message)
+            msg_id = redis_client.enqueue_operation_stream(message)
 
             event_publisher.publish(
                 operation_id=op_id,
@@ -241,6 +242,7 @@ class OperationsServiceWorkflowMixin:
                 metadata={
                     "cluster_id": cluster_id,
                     "cluster_name": cluster.name,
+                    "stream_message_id": msg_id,
                 },
             )
 

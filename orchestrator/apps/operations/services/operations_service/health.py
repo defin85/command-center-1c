@@ -111,7 +111,7 @@ class OperationsServiceHealthMixin:
 
         try:
             redis_client.acquire_enqueue_lock(task_id=operation_id, ttl_seconds=3600)
-            redis_client.enqueue_operation(message)
+            msg_id = redis_client.enqueue_operation_stream(message)
 
             try:
                 redis_client.add_timeline_event(
@@ -166,11 +166,15 @@ class OperationsServiceHealthMixin:
                 success=True,
                 operation_id=operation_id,
                 status="queued",
-                metadata={"database_count": database_count},
+                metadata={"database_count": database_count, "stream_message_id": msg_id},
             )
 
         except Exception as exc:
             logger.error(f"Error enqueueing health check: {exc}", exc_info=True)
+            try:
+                redis_client.release_enqueue_lock(task_id=operation_id)
+            except Exception:
+                pass
             batch_operation.status = BatchOperation.STATUS_FAILED
             batch_operation.save(update_fields=["status", "updated_at"])
             _record_batch_metric("health_check", "error")
