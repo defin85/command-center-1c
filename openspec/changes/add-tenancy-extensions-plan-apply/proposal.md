@@ -10,7 +10,7 @@
 
 MVP ограничиваем **только** на сущности `extensions` (инвентаризация расширений ИБ), но закладываем платформенную основу для дальнейших сущностей.
 
-## Scope (MVP)
+## What Changes
 - Ввести сущность `Tenant` и membership для пользователей; UI-переключатель tenant.
 - Сделать `Cluster`/`Database` принадлежащими ровно одному tenant (все существующие данные мигрируются в `default` tenant).
 - Runtime settings остаются **глобальными**, но добавляются **overrides per-tenant** (включая `ui.action_catalog`).
@@ -30,4 +30,3 @@ MVP ограничиваем **только** на сущности `extensions`
 2) Desired state для MVP extensions:
    - MVP: apply исполняет настроенный action `extensions.sync` (идемпотентный sync), а plan фиксирует preconditions и preview.
    - Позже: явный desired state (набор расширений) и diff-план.
-
