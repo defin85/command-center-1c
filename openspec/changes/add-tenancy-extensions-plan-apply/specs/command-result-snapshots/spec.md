@@ -1,0 +1,26 @@
+## ADDED Requirements
+
+### Requirement: Система хранит append-only command result snapshots
+Система ДОЛЖНА (SHALL) сохранять результаты выполнения “snapshot-producing” команд в append-only хранилище snapshot’ов.
+
+#### Scenario: Snapshot сохраняется при завершении операции
+- **GIVEN** операция выполнила команду, помеченную как snapshot-producing
+- **WHEN** приходит событие worker completed
+- **THEN** система сохраняет snapshot с `tenant_id`, `operation_id`, `command_id`, `target_ref`, `raw` и `normalized`
+
+### Requirement: Snapshot имеет детерминированный hash для drift check
+Система ДОЛЖНА (SHALL) вычислять hash нормализованного snapshot (canonical hash), пригодный для drift check.
+
+#### Scenario: Два одинаковых результата дают одинаковый hash
+- **GIVEN** два snapshot’а с одинаковым нормализованным содержимым
+- **WHEN** вычисляется canonical hash
+- **THEN** hash совпадает
+
+### Requirement: Snapshot доступен для preview в UI (RBAC+tenant)
+Система ДОЛЖНА (SHALL) предоставлять API для выборки snapshot’ов и preview, ограниченный tenant context и RBAC.
+
+#### Scenario: Пользователь не видит чужие snapshot’ы
+- **GIVEN** пользователь работает в tenant A
+- **WHEN** он запрашивает snapshot’ы
+- **THEN** в ответе отсутствуют snapshot’ы tenant B
+
