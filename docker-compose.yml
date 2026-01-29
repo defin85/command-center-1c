@@ -116,24 +116,47 @@ services:
     networks:
       - commandcenter-network
 
-  # Go Worker
-  worker:
+  # Go Worker (ops stream)
+  worker-ops:
     build:
       context: ./go-services
       dockerfile: worker/Dockerfile
-    # container_name removed - incompatible with replicas
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - WORKER_ID=worker-ops-1
       - WORKER_POOL_SIZE=50
+      - WORKER_STREAM_NAME=commands:worker:operations
+      - WORKER_CONSUMER_GROUP=worker-ops
       - LOG_LEVEL=debug
       - LOG_FORMAT=text
     depends_on:
       - redis
+      - orchestrator
     networks:
       - commandcenter-network
-    deploy:
-      replicas: 2
+
+  # Go Worker (workflows stream)
+  worker-workflows:
+    build:
+      context: ./go-services
+      dockerfile: worker/Dockerfile
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - WORKER_ID=worker-workflows-1
+      - WORKER_POOL_SIZE=50
+      - WORKER_STREAM_NAME=commands:worker:workflows
+      - WORKER_CONSUMER_GROUP=worker-workflows
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+    depends_on:
+      - redis
+      - orchestrator
+    networks:
+      - commandcenter-network
 
   # Frontend (React)
   frontend:
