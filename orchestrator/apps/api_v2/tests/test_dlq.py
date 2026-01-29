@@ -107,39 +107,3 @@ def test_dlq_retry_enqueues_operation(client, monkeypatch, fake_items):
     assert resp.status_code == 200
     assert resp.json()["enqueued"] is True
 
-
-@pytest.mark.django_db
-def test_dlq_retry_returns_503_on_redis_read_failure(client, monkeypatch):
-    from apps.api_v2.views import dlq as dlq_view
-
-    class RedisBroken:
-        def xrevrange(self, *_args, **_kwargs):
-            raise Exception("redis down")
-
-    monkeypatch.setattr(dlq_view, "_get_redis_client", lambda: RedisBroken())
-
-    resp = client.post("/api/v2/dlq/retry/", {"original_message_id": "orig-1"}, format="json")
-    assert resp.status_code == 503
-    data = resp.json()
-    assert data["success"] is False
-    assert data["error"]["code"] == "REDIS_ERROR"
-
-
-@pytest.mark.django_db
-def test_dlq_retry_returns_503_on_redis_enqueue_failure(client, monkeypatch, fake_items):
-    from apps.api_v2.views import dlq as dlq_view
-
-    monkeypatch.setattr(dlq_view, "_get_redis_client", lambda: FakeRedis(fake_items))
-
-    class FakeResult:
-        success = False
-        error = "redis down"
-        error_code = "REDIS_ERROR"
-
-    monkeypatch.setattr(dlq_view.OperationsService, "enqueue_operation", lambda _op_id: FakeResult())
-
-    resp = client.post("/api/v2/dlq/retry/", {"operation_id": "op-1"}, format="json")
-    assert resp.status_code == 503
-    data = resp.json()
-    assert data["success"] is False
-    assert data["error"]["code"] == "REDIS_ERROR"

@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
-from .types import EnqueueResult, classify_enqueue_error_code, logger
+from .types import EnqueueResult, logger
 
 
 class OperationsServiceWorkflowMixin:
@@ -28,7 +28,6 @@ class OperationsServiceWorkflowMixin:
             operation_id="",
             status="error",
             error="install_extension is deprecated; use designer_cli workflow",
-            error_code="NOT_SUPPORTED",
         )
 
     @classmethod
@@ -99,7 +98,6 @@ class OperationsServiceWorkflowMixin:
                 operation_id=execution_id,
                 status="error",
                 error=str(exc),
-                error_code=classify_enqueue_error_code(exc),
             )
 
     @classmethod
@@ -141,7 +139,6 @@ class OperationsServiceWorkflowMixin:
                 operation_id=op_id,
                 status="error",
                 error=f"Cluster {cluster_id} not found",
-                error_code="NOT_FOUND",
             )
 
         # Idempotency check - prevent concurrent sync for same cluster
@@ -155,7 +152,6 @@ class OperationsServiceWorkflowMixin:
                 operation_id=op_id,
                 status="duplicate",
                 error=f"Cluster {cluster.name} sync already in progress",
-                error_code="DUPLICATE",
             )
 
         # Build payload with full cluster data for Worker
@@ -268,5 +264,4 @@ class OperationsServiceWorkflowMixin:
                 operation_id=op_id,
                 status="error",
                 error=str(exc),
-                error_code=classify_enqueue_error_code(exc),
             )

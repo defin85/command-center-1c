@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
-from .types import EnqueueResult, classify_enqueue_error_code, logger
+from .types import EnqueueResult, logger
 
 
 class OperationsServiceDiscoveryMixin:
@@ -48,7 +48,6 @@ class OperationsServiceDiscoveryMixin:
                 operation_id=op_id,
                 status="duplicate",
                 error=f"Cluster discovery for {ras_server} already in progress",
-                error_code="DUPLICATE",
             )
 
         # Build payload for Worker
@@ -132,7 +131,6 @@ class OperationsServiceDiscoveryMixin:
                 operation_id=op_id,
                 status="error",
                 error=str(exc),
-                error_code=classify_enqueue_error_code(exc),
             )
         finally:
             # Release idempotency lock on error (Worker will release on success)
