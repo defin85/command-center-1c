@@ -11915,9 +11915,12 @@ components:
           type: integer
         failed_count:
           type: integer
+        poison_count:
+          type: integer
       required:
       - failed_count
       - pending_count
+      - poison_count
     PrometheusMetric:
       type: object
       description: Prometheus metrics for a service.

@@ -67,6 +67,7 @@ class FailedEvent(models.Model):
         db_table = 'failed_events'
         ordering = ['created_at']
         indexes = [
+            models.Index(fields=['kind', 'status', 'created_at']),
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['correlation_id']),
             models.Index(fields=['channel', 'status']),
