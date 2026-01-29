@@ -74,7 +74,7 @@ class OperationsServiceWorkflowMixin:
         }
 
         try:
-            msg_id = redis_client.enqueue_operation_stream(message)
+            msg_id = redis_client.enqueue_operation_stream(message, stream_name=redis_client.STREAM_WORKFLOWS)
 
             event_publisher.publish(
                 operation_id=execution_id,

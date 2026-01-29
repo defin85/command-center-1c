@@ -52,6 +52,7 @@ type Config struct {
 	WorkerPoolSize      int
 	WorkerMaxRetries    int
 	WorkerTimeout       time.Duration
+	WorkerStreamName    string
 	WorkerConsumerGroup string
 
 	// Logging configuration
@@ -133,6 +134,7 @@ func LoadFromEnv() *Config {
 		WorkerPoolSize:      getIntEnv("WORKER_POOL_SIZE", 50),
 		WorkerMaxRetries:    getIntEnv("WORKER_MAX_RETRIES", 3),
 		WorkerTimeout:       getDurationEnv("WORKER_TIMEOUT", 5*time.Minute),
+		WorkerStreamName:    getEnv("WORKER_STREAM_NAME", "commands:worker:operations"),
 		WorkerConsumerGroup: getEnv("WORKER_CONSUMER_GROUP", "worker-state-machine"),
 
 		// Logging

@@ -48,5 +48,9 @@ def test_enqueue_workflow_execution_returns_error_on_redis_failure():
         result = OperationsService.enqueue_workflow_execution(execution_id=execution_id)
         assert result.success is False
         assert result.status == "error"
+        mock_redis_client.enqueue_operation_stream.assert_called_once()
+        assert mock_redis_client.enqueue_operation_stream.call_args.kwargs == {
+            "stream_name": mock_redis_client.STREAM_WORKFLOWS,
+        }
 
         mock_event_publisher.publish.assert_not_called()

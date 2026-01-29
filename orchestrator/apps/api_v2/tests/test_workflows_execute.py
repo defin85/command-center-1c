@@ -124,3 +124,38 @@ def test_execute_workflow_async_uses_go_worker_when_flag_enabled(
 
     enqueue.assert_called_once()
     start_bg.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_execute_workflow_async_go_engine_enqueues_to_workflows_stream(
+    client,
+    settings,
+    workflow_template,
+):
+    settings.CELERY_ENABLED = False
+    settings.ENABLE_GO_WORKFLOW_ENGINE = True
+
+    with (
+        patch("apps.api_v2.views.workflows._start_async_workflow_execution") as start_bg,
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.enqueue_operation_stream.return_value = "1702389123456-0"
+
+        resp = client.post(
+            "/api/v2/workflows/execute-workflow/",
+            {"workflow_id": str(workflow_template.id), "input_context": {}, "mode": "async"},
+            format="json",
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["mode"] == "async"
+    assert payload["status"] == "pending"
+
+    mock_redis_client.enqueue_operation_stream.assert_called_once()
+    assert mock_redis_client.enqueue_operation_stream.call_args.kwargs == {
+        "stream_name": mock_redis_client.STREAM_WORKFLOWS,
+    }
+    mock_event_publisher.publish.assert_called_once()
+    start_bg.assert_not_called()

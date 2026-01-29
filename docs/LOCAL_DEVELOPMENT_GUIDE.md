@@ -500,6 +500,14 @@ SERVER_HOST=0.0.0.0
 SERVER_PORT=8080
 ORCHESTRATOR_URL=http://localhost:8000  # ⚠️ localhost
 
+# Go Worker (Redis Streams routing)
+# По умолчанию worker читает `commands:worker:operations`.
+# Для разделения deployments (ops vs workflows) задавайте разные stream/group.
+WORKER_ID=worker-1
+WORKER_POOL_SIZE=50
+WORKER_STREAM_NAME=commands:worker:operations
+WORKER_CONSUMER_GROUP=worker-state-machine
+
 # JWT
 JWT_SECRET=...
 JWT_EXPIRE_TIME=24h
@@ -723,16 +731,28 @@ air  # Will auto-restart on code changes
 Запустить несколько инстансов Go Worker:
 
 ```bash
-# Start 5 workers
+# Start 5 ops-workers (commands:worker:operations)
 for i in {1..5}; do
     cd go-services/worker
-    nohup go run cmd/main.go > ../../logs/worker-$i.log 2>&1 &
-    echo $! > ../../pids/worker-$i.pid
+    WORKER_ID="worker-ops-$i" \
+    WORKER_STREAM_NAME="commands:worker:operations" \
+    WORKER_CONSUMER_GROUP="worker-ops" \
+    nohup go run cmd/main.go > ../../logs/worker-ops-$i.log 2>&1 &
+    echo $! > ../../pids/worker-ops-$i.pid
     cd ../..
 done
 
+# Start 1 workflow-worker (commands:worker:workflows)
+cd go-services/worker
+WORKER_ID="worker-workflows-1" \
+WORKER_STREAM_NAME="commands:worker:workflows" \
+WORKER_CONSUMER_GROUP="worker-workflows" \
+nohup go run cmd/main.go > ../../logs/worker-workflows-1.log 2>&1 &
+echo $! > ../../pids/worker-workflows-1.pid
+cd ../..
+
 # Stop all workers
-for pid_file in pids/worker-*.pid; do
+for pid_file in pids/worker-*.pid pids/worker-ops-*.pid pids/worker-workflows-*.pid; do
     if [ -f "$pid_file" ]; then
         pid=$(cat "$pid_file")
         kill -TERM "$pid" 2>/dev/null || true

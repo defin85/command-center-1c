@@ -23,6 +23,7 @@ class RedisClient:
 
     # Stream constants (Phase 0 migration)
     STREAM_COMMANDS = "commands:worker:operations"
+    STREAM_WORKFLOWS = "commands:worker:workflows"
     STREAM_MAX_LEN = 10000  # Limit stream size
 
     def __init__(self):
@@ -51,12 +52,13 @@ class RedisClient:
             "metadata": {}       # object, not string - Go expects map[string]interface{}
         }
 
-    def enqueue_operation_stream(self, message: Dict[str, Any]) -> Optional[str]:
+    def enqueue_operation_stream(self, message: Dict[str, Any], stream_name: Optional[str] = None) -> Optional[str]:
         """
         Push message to operations stream (Redis Streams).
 
         Args:
             message: Operation message (v2.0 schema)
+            stream_name: Redis Stream name override (default: STREAM_COMMANDS)
 
         Returns:
             Stream message ID
@@ -79,9 +81,11 @@ class RedisClient:
             "event_type": envelope.get("event_type", ""),
         }
 
+        target_stream = str(stream_name or self.STREAM_COMMANDS)
+
         try:
             msg_id = self.client.xadd(
-                self.STREAM_COMMANDS,
+                target_stream,
                 stream_fields,
                 maxlen=self.STREAM_MAX_LEN
             )
@@ -93,7 +97,7 @@ class RedisClient:
                     if not event_type:
                         logger.warning(f"Missing event_type in envelope: {envelope.get('correlation_id')}")
                         event_type = "unknown"
-                    record_redis_event_published(event_type, self.STREAM_COMMANDS)
+                    record_redis_event_published(event_type, target_stream)
                 except Exception as metric_err:
                     logger.warning(f"Failed to record redis event metric: {metric_err}")
 

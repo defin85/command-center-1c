@@ -28,8 +28,9 @@ const (
 	// StreamDLQ is the Dead Letter Queue for unprocessable messages
 	StreamDLQ = "commands:worker:dlq"
 
-	// ConsumerGroupName is the default consumer group name
-	ConsumerGroupName = "worker-group"
+	// DefaultConsumerGroupName is the default consumer group name
+	// (kept in sync with shared/config default for WORKER_CONSUMER_GROUP)
+	DefaultConsumerGroupName = "worker-state-machine"
 
 	// ClaimIdleThreshold is the time after which a pending message can be claimed
 	ClaimIdleThreshold = 5 * time.Minute
@@ -70,14 +71,24 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 		timeline = tracing.NewNoopTimeline()
 	}
 
+	streamName := cfg.WorkerStreamName
+	if streamName == "" {
+		streamName = StreamCommands
+	}
+
+	consumerGroup := cfg.WorkerConsumerGroup
+	if consumerGroup == "" {
+		consumerGroup = DefaultConsumerGroupName
+	}
+
 	consumerName := fmt.Sprintf("worker-%s", cfg.WorkerID)
 
 	return &Consumer{
 		redis:         redisClient,
 		processor:     proc,
 		workerID:      cfg.WorkerID,
-		streamName:    StreamCommands,
-		consumerGroup: ConsumerGroupName,
+		streamName:    streamName,
+		consumerGroup: consumerGroup,
 		consumerName:  consumerName,
 		resultsStream: StreamResultsCompleted,
 		timeline:      timeline,
