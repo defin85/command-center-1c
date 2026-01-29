@@ -448,6 +448,8 @@ def retry_dlq(request):
 
     result = OperationsService.enqueue_operation(operation_id)
     if not result.success:
+        enqueue_error_code = getattr(result, "error_code", None) or "ENQUEUE_FAILED"
+        is_redis_error = enqueue_error_code == "REDIS_ERROR"
         log_admin_action(
             request,
             action="dlq.retry",
@@ -455,11 +457,17 @@ def retry_dlq(request):
             target_type="batch_operation",
             target_id=operation_id,
             metadata={"original_message_id": original_message_id or None, "reason": reason or None},
-            error_message="ENQUEUE_FAILED",
+            error_message=enqueue_error_code,
         )
         return Response(
-            {"success": False, "error": {"code": "ENQUEUE_FAILED", "message": result.error or "Failed to enqueue operation"}},
-            status=status.HTTP_400_BAD_REQUEST,
+            {
+                "success": False,
+                "error": {
+                    "code": "REDIS_ERROR" if is_redis_error else "ENQUEUE_FAILED",
+                    "message": result.error or ("Redis is unavailable" if is_redis_error else "Failed to enqueue operation"),
+                },
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE if is_redis_error else status.HTTP_400_BAD_REQUEST,
         )
 
     # Minimal audit trail: store retry metadata on BatchOperation.metadata (best-effort).
