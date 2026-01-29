@@ -36,6 +36,7 @@ class StoreFailedEventResponseSerializer(serializers.Serializer):
 class PendingEventsResponseSerializer(serializers.Serializer):
     pending_count = serializers.IntegerField()
     failed_count = serializers.IntegerField()
+    poison_count = serializers.IntegerField()
 
 
 @extend_schema(
@@ -127,10 +128,16 @@ def get_pending_events(request):
 
     Returns count and list of pending events (for monitoring).
     """
-    pending_count = FailedEvent.objects.filter(status=FailedEvent.STATUS_PENDING).count()
-    failed_count = FailedEvent.objects.filter(status=FailedEvent.STATUS_FAILED).count()
+    pending_count = FailedEvent.objects.filter(
+        kind=FailedEvent.KIND_PUBLISH_FAILURE, status=FailedEvent.STATUS_PENDING
+    ).count()
+    failed_count = FailedEvent.objects.filter(
+        kind=FailedEvent.KIND_PUBLISH_FAILURE, status=FailedEvent.STATUS_FAILED
+    ).count()
+    poison_count = FailedEvent.objects.filter(kind=FailedEvent.KIND_POISON_MESSAGE).count()
 
     return Response({
         'pending_count': pending_count,
         'failed_count': failed_count,
+        'poison_count': poison_count,
     })

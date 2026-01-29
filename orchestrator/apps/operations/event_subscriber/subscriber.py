@@ -431,6 +431,7 @@ class EventSubscriber(
                     "data": data,
                     "error": error,
                 },
+                kind=FailedEvent.KIND_POISON_MESSAGE,
                 source_service="event_subscriber",
                 original_timestamp=original_timestamp,
                 status=FailedEvent.STATUS_FAILED,

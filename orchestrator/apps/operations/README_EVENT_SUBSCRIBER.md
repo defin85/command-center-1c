@@ -200,13 +200,13 @@ Prometheus (Django `/metrics`):
 ```bash
 cd orchestrator
 source venv/Scripts/activate
-pytest apps/operations/tests/test_event_subscriber.py -v
+pytest apps/operations/tests/test_event_subscriber_reliability.py -v
 ```
 
 ### Coverage
 
 ```bash
-pytest apps/operations/tests/test_event_subscriber.py --cov=apps.operations.event_subscriber --cov-report=html
+pytest apps/operations/tests/test_event_subscriber_reliability.py --cov=apps.operations.event_subscriber --cov-report=html
 ```
 
 ### Интеграционные тесты
@@ -241,6 +241,26 @@ redis-cli XINFO GROUPS events:worker:completed
 
 # Проверить pending messages
 redis-cli XPENDING events:worker:completed orchestrator-group
+```
+
+### Настройки reclaim pending (PEL)
+
+Параметры (секунды), по умолчанию:
+
+- `EVENT_SUBSCRIBER_CLAIM_IDLE_THRESHOLD_SECONDS` = 300 (5 минут)
+- `EVENT_SUBSCRIBER_CLAIM_CHECK_INTERVAL_SECONDS` = 30
+- `EVENT_SUBSCRIBER_MAX_PENDING_TO_CHECK` = 100
+
+См. `orchestrator/apps/operations/event_subscriber/subscriber.py`.
+
+### Очистка receipts (StreamMessageReceipt)
+
+Receipts (`stream_message_receipts`) растут со временем. Для обслуживания:
+
+```bash
+cd orchestrator
+python manage.py cleanup_stream_message_receipts --retention-days 90
+python manage.py cleanup_stream_message_receipts --retention-days 90 --apply
 ```
 
 ### Task не обновляется

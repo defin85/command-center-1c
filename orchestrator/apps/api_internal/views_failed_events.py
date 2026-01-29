@@ -47,7 +47,10 @@ def list_pending_failed_events(request):
 
     # Get pending events that haven't exceeded max retries
     events = (
-        FailedEvent.objects.filter(status=FailedEvent.STATUS_PENDING)
+        FailedEvent.objects.filter(
+            kind=FailedEvent.KIND_PUBLISH_FAILURE,
+            status=FailedEvent.STATUS_PENDING,
+        )
         .filter(retry_count__lt=models.F("max_retries"))
         .order_by("created_at")[:batch_size]
     )
@@ -109,6 +112,12 @@ def mark_event_replayed(request):
         event = FailedEvent.objects.get(id=event_id)
     except FailedEvent.DoesNotExist:
         return Response({"success": False, "error": f"FailedEvent {event_id} not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if event.kind != FailedEvent.KIND_PUBLISH_FAILURE:
+        return Response(
+            {"success": False, "error": f"FailedEvent {event_id} is not replayable"},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     # Mark as replayed
     replayed_at = serializer.validated_data.get("replayed_at") or timezone.now()
@@ -178,6 +187,12 @@ def mark_event_failed(request):
         except FailedEvent.DoesNotExist:
             return Response({"success": False, "error": f"FailedEvent {event_id} not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        if event.kind != FailedEvent.KIND_PUBLISH_FAILURE:
+            return Response(
+                {"success": False, "error": f"FailedEvent {event_id} is not replayable"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         # Update error message
         event.last_error = data["error_message"]
 
@@ -244,4 +259,3 @@ def cleanup_failed_events(request):
     logger.info(f"Failed events cleanup: deleted {total_deleted} events " f"(replayed: {deleted_count}, failed: {failed_deleted})")
 
     return Response({"success": True, "deleted_count": total_deleted}, status=status.HTTP_200_OK)
-

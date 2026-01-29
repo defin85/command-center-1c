@@ -87,7 +87,11 @@ class EventSubscriberReliabilityTest(EventSubscriberBaseTestCase):
         subscriber._handle_message(stream, message_id, data)
 
         mock_redis.xack.assert_called_once_with(stream, subscriber.consumer_group, message_id)
-        assert FailedEvent.objects.filter(channel=stream, correlation_id="corr-poison").exists()
+        assert FailedEvent.objects.filter(
+            channel=stream,
+            correlation_id="corr-poison",
+            kind=FailedEvent.KIND_POISON_MESSAGE,
+        ).exists()
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_poison_exception_is_acked_and_receipted(self, mock_redis_class):
@@ -108,10 +112,13 @@ class EventSubscriberReliabilityTest(EventSubscriberBaseTestCase):
         subscriber._handle_message(stream, message_id, data)
 
         mock_redis.xack.assert_called_once_with(stream, subscriber.consumer_group, message_id)
-        assert FailedEvent.objects.filter(channel=stream, correlation_id="corr-exc").exists()
+        assert FailedEvent.objects.filter(
+            channel=stream,
+            correlation_id="corr-exc",
+            kind=FailedEvent.KIND_POISON_MESSAGE,
+        ).exists()
         assert StreamMessageReceipt.objects.filter(
             stream=stream,
             group=subscriber.consumer_group,
             message_id=message_id,
         ).exists()
-

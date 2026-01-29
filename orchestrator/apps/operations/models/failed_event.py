@@ -1,15 +1,33 @@
-"""FailedEvent model - stores events that failed to publish to Redis."""
+"""FailedEvent model - stores events/messages requiring operator attention.
+
+Originally introduced as a PostgreSQL fallback for events that failed to publish to Redis.
+It is also used to persist poison / permanently unprocessable stream messages so they
+can be inspected in the admin UI without creating infinite Redis pending growth.
+"""
 
 from django.db import models
 
 
 class FailedEvent(models.Model):
     """
-    Stores events that failed to publish to Redis.
-    Used for graceful degradation when Redis is unavailable.
+    Stores events that require manual inspection or replay.
+
+    Primary use-case: events that failed to publish to Redis (publish_failure),
+    stored with retry logic and replayed by Go services.
+
+    Secondary use-case: poison stream messages acknowledged by EventSubscriber
+    (poison_message), stored for manual inspection and excluded from replay loop.
 
     Events are stored with retry logic and can be replayed later.
     """
+
+    KIND_PUBLISH_FAILURE = "publish_failure"
+    KIND_POISON_MESSAGE = "poison_message"
+
+    KIND_CHOICES = [
+        (KIND_PUBLISH_FAILURE, "Publish failure"),
+        (KIND_POISON_MESSAGE, "Poison message"),
+    ]
 
     STATUS_PENDING = 'pending'
     STATUS_REPLAYED = 'replayed'
@@ -30,6 +48,7 @@ class FailedEvent(models.Model):
     payload = models.JSONField()
 
     # Metadata
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default=KIND_PUBLISH_FAILURE)
     source_service = models.CharField(max_length=50)
     original_timestamp = models.DateTimeField()
 
