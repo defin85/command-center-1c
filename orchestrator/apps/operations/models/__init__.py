@@ -7,6 +7,7 @@ from .admin_action_audit_log import AdminActionAuditLog
 from .driver_command_shortcut import DriverCommandShortcut
 from .failed_event import FailedEvent
 from .scheduler_job_run import SchedulerJobRun
+from .stream_message_receipt import StreamMessageReceipt
 from .task_execution_log import TaskExecutionLog
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'DriverCommandShortcut',
     'FailedEvent',
     'SchedulerJobRun',
+    'StreamMessageReceipt',
     'TaskExecutionLog',
 ]

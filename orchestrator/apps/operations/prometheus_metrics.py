@@ -254,6 +254,24 @@ EVENT_SUBSCRIBER_STREAMS = [
     'commands:orchestrator:get-database-credentials',
 ]
 
+event_subscriber_claimed_total = Counter(
+    'cc1c_orchestrator_event_subscriber_claimed_total',
+    'Total pending messages claimed (reclaimed) by event subscriber',
+    ['stream', 'group']
+)
+
+event_subscriber_duplicate_receipts_total = Counter(
+    'cc1c_orchestrator_event_subscriber_duplicate_receipts_total',
+    'Total duplicate receipt detections (message already processed)',
+    ['stream', 'group']
+)
+
+event_subscriber_poison_total = Counter(
+    'cc1c_orchestrator_event_subscriber_poison_total',
+    'Total poison messages acknowledged by event subscriber',
+    ['stream', 'group', 'reason']
+)
+
 
 class EventSubscriberCollector:
     """Collect Redis Streams consumer group stats for Prometheus."""
@@ -391,6 +409,18 @@ def record_redis_event_received(event_type: str, channel: str) -> None:
         channel: Redis channel name
     """
     redis_events_received.labels(event_type=event_type, channel=channel).inc()
+
+
+def record_event_subscriber_claimed(stream: str, group: str, count: int = 1) -> None:
+    event_subscriber_claimed_total.labels(stream=stream, group=group).inc(count)
+
+
+def record_event_subscriber_duplicate_receipt(stream: str, group: str, count: int = 1) -> None:
+    event_subscriber_duplicate_receipts_total.labels(stream=stream, group=group).inc(count)
+
+
+def record_event_subscriber_poison(stream: str, group: str, reason: str, count: int = 1) -> None:
+    event_subscriber_poison_total.labels(stream=stream, group=group, reason=reason).inc(count)
 
 
 def set_websocket_connections(count: int) -> None:
