@@ -23,14 +23,28 @@ const WorkflowDesigner = lazy(() => import('./pages/Workflows/WorkflowDesigner')
 const WorkflowMonitor = lazy(() => import('./pages/Workflows/WorkflowMonitor'))
 const WorkflowExecutions = lazy(() => import('./pages/Workflows/WorkflowExecutions'))
 const ServiceMeshPage = lazy(() => import('./pages/ServiceMesh/ServiceMeshPage'))
-const RBACPage = lazy(() => import('./pages/RBAC/RBACPage').then((m) => ({ default: m.RBACPage })))
-const UsersPage = lazy(() => import('./pages/Users/UsersPage').then((m) => ({ default: m.UsersPage })))
+const loadRBACPage = () => import('./pages/RBAC/RBACPage').then((m) => ({ default: m.RBACPage }))
+const RBACPage = lazy(loadRBACPage)
+
+const loadUsersPage = () => import('./pages/Users/UsersPage').then((m) => ({ default: m.UsersPage }))
+const UsersPage = lazy(loadUsersPage)
 const TemplatesPage = lazy(() => import('./pages/Templates/TemplatesPage').then((m) => ({ default: m.TemplatesPage })))
-const CommandSchemasPage = lazy(() => import('./pages/CommandSchemas/CommandSchemasPage'))
-const DLQPage = lazy(() => import('./pages/DLQ/DLQPage').then((m) => ({ default: m.DLQPage })))
-const ActionCatalogPage = lazy(() => import('./pages/Settings/ActionCatalogPage').then((m) => ({ default: m.ActionCatalogPage })))
-const RuntimeSettingsPage = lazy(() => import('./pages/Settings/RuntimeSettingsPage').then((m) => ({ default: m.RuntimeSettingsPage })))
-const TimelineSettingsPage = lazy(() => import('./pages/Settings/TimelineSettingsPage').then((m) => ({ default: m.TimelineSettingsPage })))
+
+const loadCommandSchemasPage = () => import('./pages/CommandSchemas/CommandSchemasPage')
+const CommandSchemasPage = lazy(loadCommandSchemasPage)
+
+const loadDLQPage = () => import('./pages/DLQ/DLQPage').then((m) => ({ default: m.DLQPage }))
+const DLQPage = lazy(loadDLQPage)
+
+const loadActionCatalogPage = () => import('./pages/Settings/ActionCatalogPage').then((m) => ({ default: m.ActionCatalogPage }))
+const ActionCatalogPage = lazy(loadActionCatalogPage)
+
+const loadRuntimeSettingsPage = () => import('./pages/Settings/RuntimeSettingsPage').then((m) => ({ default: m.RuntimeSettingsPage }))
+const RuntimeSettingsPage = lazy(loadRuntimeSettingsPage)
+
+const loadTimelineSettingsPage = () => import('./pages/Settings/TimelineSettingsPage').then((m) => ({ default: m.TimelineSettingsPage }))
+const TimelineSettingsPage = lazy(loadTimelineSettingsPage)
+
 const Login = lazy(() => import('./pages/Login/Login').then((m) => ({ default: m.Login })))
 const ArtifactsPage = lazy(() => import('./pages/Artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })))
 const ForbiddenPage = lazy(() => import('./pages/Forbidden/ForbiddenPage').then((m) => ({ default: m.ForbiddenPage })))
@@ -60,8 +74,12 @@ const ProtectedRoute = ({ children, authToken }: { children: React.ReactNode, au
   return <>{children}</>
 }
 
-const StaffRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+const StaffRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
   const meQuery = useMe({ enabled: Boolean(authToken) })
+  useEffect(() => {
+    if (!authToken) return
+    void preload?.()
+  }, [authToken, preload])
 
   if (!authToken) {
     return <Navigate to="/login" replace />
@@ -78,8 +96,12 @@ const StaffRoute = ({ children, authToken }: { children: React.ReactNode, authTo
   return <>{children}</>
 }
 
-const RbacRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+const RbacRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
   const canManageRbacQuery = useCanManageRbac({ enabled: Boolean(authToken) })
+  useEffect(() => {
+    if (!authToken) return
+    void preload?.()
+  }, [authToken, preload])
 
   if (!authToken) {
     return <Navigate to="/login" replace />
@@ -96,8 +118,12 @@ const RbacRoute = ({ children, authToken }: { children: React.ReactNode, authTok
   return <>{children}</>
 }
 
-const DriverCatalogsRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
   const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: Boolean(authToken) })
+  useEffect(() => {
+    if (!authToken) return
+    void preload?.()
+  }, [authToken, preload])
 
   if (!authToken) {
     return <Navigate to="/login" replace />
@@ -288,54 +314,54 @@ function App() {
                     </ProtectedRoute>
                   } />
                   <Route path="/rbac" element={
-                    <RbacRoute authToken={authToken}>
+                    <RbacRoute authToken={authToken} preload={loadRBACPage}>
                       <MainLayout>
                         <LazyBoundary><RBACPage /></LazyBoundary>
                       </MainLayout>
                     </RbacRoute>
                   } />
                   <Route path="/users" element={
-                    <StaffRoute authToken={authToken}>
+                    <StaffRoute authToken={authToken} preload={loadUsersPage}>
                       <MainLayout>
                         <LazyBoundary><UsersPage /></LazyBoundary>
                       </MainLayout>
                     </StaffRoute>
                   } />
                   <Route path="/dlq" element={
-                    <StaffRoute authToken={authToken}>
+                    <StaffRoute authToken={authToken} preload={loadDLQPage}>
                       <MainLayout>
                         <LazyBoundary><DLQPage /></LazyBoundary>
                       </MainLayout>
                     </StaffRoute>
                   } />
                   <Route path="/settings/runtime" element={
-                    <StaffRoute authToken={authToken}>
+                    <StaffRoute authToken={authToken} preload={loadRuntimeSettingsPage}>
                       <MainLayout>
                         <LazyBoundary><RuntimeSettingsPage /></LazyBoundary>
                       </MainLayout>
                     </StaffRoute>
                   } />
                   <Route path="/settings/action-catalog" element={
-                    <StaffRoute authToken={authToken}>
+                    <StaffRoute authToken={authToken} preload={loadActionCatalogPage}>
                       <MainLayout>
                         <LazyBoundary><ActionCatalogPage /></LazyBoundary>
                       </MainLayout>
                     </StaffRoute>
                   } />
                   <Route path="/settings/driver-catalogs" element={
-                    <DriverCatalogsRoute authToken={authToken}>
+                    <DriverCatalogsRoute authToken={authToken} preload={loadCommandSchemasPage}>
                       <Navigate to="/settings/command-schemas?mode=raw" replace />
                     </DriverCatalogsRoute>
                   } />
                   <Route path="/settings/command-schemas" element={
-                    <DriverCatalogsRoute authToken={authToken}>
+                    <DriverCatalogsRoute authToken={authToken} preload={loadCommandSchemasPage}>
                       <MainLayout>
                         <LazyBoundary><CommandSchemasPage /></LazyBoundary>
                       </MainLayout>
                     </DriverCatalogsRoute>
                   } />
                   <Route path="/settings/timeline" element={
-                    <StaffRoute authToken={authToken}>
+                    <StaffRoute authToken={authToken} preload={loadTimelineSettingsPage}>
                       <MainLayout>
                         <LazyBoundary><TimelineSettingsPage /></LazyBoundary>
                       </MainLayout>
