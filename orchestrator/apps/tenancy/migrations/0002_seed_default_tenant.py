@@ -16,7 +16,9 @@ def _seed_default_tenant(apps, schema_editor):
 
     User = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
     for user in User.objects.all().iterator():
-        role = TenantMember.ROLE_ADMIN if getattr(user, "is_staff", False) else TenantMember.ROLE_MEMBER
+        # NOTE: Historical models returned by apps.get_model() do not include Python-level
+        # constants from models.py (e.g. TenantMember.ROLE_MEMBER). Use raw values instead.
+        role = "admin" if getattr(user, "is_staff", False) else "member"
         TenantMember.objects.get_or_create(
             tenant=default_tenant,
             user=user,
@@ -36,4 +38,3 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(_seed_default_tenant, reverse_code=migrations.RunPython.noop),
     ]
-
