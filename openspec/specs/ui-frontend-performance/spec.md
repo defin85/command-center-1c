@@ -1,0 +1,47 @@
+# ui-frontend-performance Specification
+
+## Purpose
+TBD - created by archiving change update-frontend-performance. Update Purpose after archive.
+## Requirements
+### Requirement: Invalidation по service mesh не вызывает ререндер корня приложения
+Система ДОЛЖНА (SHALL) выполнять React Query cache invalidation по событию `dashboard_invalidate` без подписки корневого компонента приложения на поток `metrics_update`.
+
+#### Scenario: Метрики обновляются без ререндеров `App`
+- **GIVEN** пользователь авторизован и WebSocket service mesh присылает регулярные `metrics_update`
+- **WHEN** `dashboard_invalidate` не приходит
+- **THEN** корневой компонент (роутер/`App`) НЕ ДОЛЖЕН перерендериваться только из-за `metrics_update`
+
+#### Scenario: Invalidation выполняется по событию `dashboard_invalidate`
+- **GIVEN** пользователь авторизован
+- **WHEN** приходит событие `dashboard_invalidate` со `scope=operations`
+- **THEN** кэш React Query ДОЛЖЕН быть инвалидирован для операций и статистики dashboard
+
+### Requirement: Barrel imports не ломают code-splitting
+Система ДОЛЖНА (SHALL) избегать импорта из `frontend/src/api/queries/index.ts` в модулях, которые участвуют в initial graph (root/layout/hooks/stores), чтобы lazy‑функциональность не попадала в общий бандл.
+
+#### Scenario: Публичный маршрут не тянет код lazy‑страниц через barrel
+- **GIVEN** пользователь открывает `/login` без токена
+- **WHEN** приложение загружается
+- **THEN** в initial загрузку НЕ ДОЛЖНЫ попадать модули, относящиеся к staff‑only/lazy‑страницам (например метрики service mesh UI, редакторы на Monaco, диаграммы/flow UI)
+
+### Requirement: RBAC и справочники не рефетчатся на window focus по умолчанию
+Система ДОЛЖНА (SHALL) снижать фоновые обновления для редко меняющихся данных (RBAC/справочники), чтобы уменьшить сетевую активность и ререндеры.
+
+#### Scenario: Window focus не вызывает refetch RBAC/справочников
+- **GIVEN** пользователь авторизован и RBAC/справочники уже загружены
+- **WHEN** окно браузера теряет и возвращает фокус
+- **THEN** запросы RBAC/справочников НЕ ДОЛЖНЫ автоматически рефетчиться только из-за window focus
+
+#### Scenario: Есть определённое окно консистентности прав
+- **GIVEN** права пользователя изменились на сервере
+- **WHEN** пользователь обновляет страницу или выполняет явный refresh (либо проходит заданный `refetchInterval`, если он включён)
+- **THEN** UI ДОЛЖЕН отразить актуальные права в пределах оговоренного окна консистентности
+
+### Requirement: В проекте есть воспроизводимый анализ состава бандла
+Система ДОЛЖНА (SHALL) предоставлять команду/скрипт, который генерирует отчёт по составу и размерам чанков фронтенда для сравнения “до/после”.
+
+#### Scenario: Разработчик может получить отчёт по бандлу
+- **GIVEN** разработчик находится в репозитории
+- **WHEN** он запускает команду анализа бандла
+- **THEN** генерируется отчёт (артефакт), позволяющий увидеть топ‑зависимости и размеры чанков
+
