@@ -14,7 +14,6 @@ from apps.mappings.extensions_inventory import build_canonical_extensions_invent
 from apps.mappings.models import TenantMappingSpec
 from apps.operations.models import CommandResultSnapshot
 from apps.tenancy.models import TenantMember
-from apps.tenancy.permissions import TenantContextPermission
 
 
 def _tenant_admin_required(request):
@@ -49,7 +48,7 @@ class MappingSpecSerializer(serializers.Serializer):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def get_mapping_spec(request):
     tenant_id, err = _tenant_admin_required(request)
     if err:
@@ -96,7 +95,7 @@ class UpsertMappingSpecRequestSerializer(serializers.Serializer):
     },
 )
 @api_view(["PATCH"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def upsert_mapping_spec(request):
     tenant_id, err = _tenant_admin_required(request)
     if err:
@@ -148,7 +147,7 @@ class PreviewMappingResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def preview_mapping(request):
     tenant_id, err = _tenant_admin_required(request)
     if err:

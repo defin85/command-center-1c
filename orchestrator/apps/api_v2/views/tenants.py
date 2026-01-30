@@ -11,7 +11,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.tenancy.models import TenantMember, UserTenantPreference
-from apps.tenancy.permissions import TenantContextPermission
 
 
 class TenantItemSerializer(serializers.Serializer):
@@ -36,7 +35,7 @@ class ListMyTenantsResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_my_tenants(request):
     memberships = (
         TenantMember.objects.filter(user_id=request.user.id)
@@ -85,7 +84,7 @@ class SetActiveTenantResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def set_active_tenant(request):
     serializer = SetActiveTenantRequestSerializer(data=request.data)
     if not serializer.is_valid():

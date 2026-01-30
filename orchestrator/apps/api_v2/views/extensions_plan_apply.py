@@ -24,7 +24,6 @@ from apps.operations.waiter import OperationTimeoutError, ResultWaiter
 from apps.operations.snapshot_hash import canonical_json_hash
 from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
 from apps.runtime_settings.effective import get_effective_runtime_setting
-from apps.tenancy.permissions import TenantContextPermission
 
 from .ui.preview import _preview_ibcmd_cli
 from .operations.execute_ibcmd_cli_impl import _execute_ibcmd_cli_validated
@@ -115,7 +114,7 @@ class ExtensionsPlanResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def extensions_plan(request):
     if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE):
         return _permission_denied("You do not have permission to view databases.")
@@ -217,7 +216,7 @@ class ExtensionsApplyConflictSerializer(serializers.Serializer):
     },
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def extensions_apply(request):
     if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE):
         return _permission_denied("You do not have permission to view databases.")

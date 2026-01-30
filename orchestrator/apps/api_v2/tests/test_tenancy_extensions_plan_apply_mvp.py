@@ -9,6 +9,13 @@ from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOve
 from apps.tenancy.models import Tenant, TenantMember
 
 
+def _jwt_login(client: APIClient, *, username: str, password: str) -> None:
+    resp = client.post("/api/token/", {"username": username, "password": password}, format="json")
+    assert resp.status_code == 200
+    access = resp.json()["access"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+
+
 @pytest.fixture
 def client():
     return APIClient()
@@ -16,17 +23,31 @@ def client():
 
 @pytest.fixture
 def staff_user():
-    return User.objects.create_user(username="staff", password="pass", is_staff=True)
+    user = User.objects.create_user(username="staff", password="pass", is_staff=True)
+    default, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
+    TenantMember.objects.get_or_create(
+        tenant=default,
+        user=user,
+        defaults={"role": TenantMember.ROLE_ADMIN},
+    )
+    return user
 
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user", password="pass")
+    user = User.objects.create_user(username="user", password="pass")
+    default, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
+    TenantMember.objects.get_or_create(
+        tenant=default,
+        user=user,
+        defaults={"role": TenantMember.ROLE_MEMBER},
+    )
+    return user
 
 
 @pytest.mark.django_db
 def test_list_my_tenants_returns_default(client, user):
-    client.force_authenticate(user=user)
+    _jwt_login(client, username=user.username, password="pass")
     resp = client.get("/api/v2/tenants/list-my-tenants/")
     assert resp.status_code == 200
     data = resp.json()
@@ -38,7 +59,7 @@ def test_list_my_tenants_returns_default(client, user):
 @pytest.mark.django_db
 def test_tenant_header_requires_membership(client, user):
     other = Tenant.objects.create(slug="t2", name="Tenant 2")
-    client.force_authenticate(user=user)
+    _jwt_login(client, username=user.username, password="pass")
     resp = client.get("/api/v2/system/me/", HTTP_X_CC1C_TENANT_ID=str(other.id))
     assert resp.status_code == 403
 
@@ -70,7 +91,7 @@ def test_list_databases_is_tenant_scoped(client, staff_user):
         password="p",
     )
 
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
     resp = client.get("/api/v2/databases/list-databases/")
     assert resp.status_code == 200
     ids = {item["id"] for item in resp.json()["databases"]}
@@ -81,7 +102,7 @@ def test_list_databases_is_tenant_scoped(client, staff_user):
 @pytest.mark.django_db
 def test_runtime_effective_uses_tenant_override(client, staff_user):
     default = Tenant.objects.get(slug="default")
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
 
     TenantRuntimeSettingOverride.objects.update_or_create(
         tenant=default,
@@ -100,7 +121,7 @@ def test_runtime_effective_uses_tenant_override(client, staff_user):
 @pytest.mark.django_db
 def test_snapshots_list_and_get_are_tenant_scoped(client, staff_user):
     default = Tenant.objects.get(slug="default")
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
 
     db = Database.objects.create(
         tenant=default,
@@ -144,7 +165,7 @@ def test_snapshots_list_and_get_are_tenant_scoped(client, staff_user):
 @pytest.mark.django_db
 def test_mapping_preview_ok(client, staff_user):
     default = Tenant.objects.get(slug="default")
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
 
     db = Database.objects.create(
         tenant=default,
@@ -196,7 +217,7 @@ def test_mapping_preview_ok(client, staff_user):
 @pytest.mark.django_db
 def test_extensions_apply_detects_drift(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
 
     RuntimeSetting.objects.update_or_create(
         key="ui.action_catalog",
@@ -267,7 +288,7 @@ def test_extensions_apply_detects_drift(client, staff_user, monkeypatch):
 @pytest.mark.django_db
 def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
-    client.force_authenticate(user=staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
 
     RuntimeSetting.objects.update_or_create(
         key="ui.action_catalog",
@@ -335,3 +356,46 @@ def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch)
     apply_resp = client.post("/api/v2/extensions/apply/", {"plan_id": plan_id}, format="json")
     assert apply_resp.status_code == 202
     assert apply_resp.json()["operation_id"] == "op-sync"
+
+
+@pytest.mark.django_db
+def test_tenant_preference_is_used_when_header_missing(client):
+    default, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
+    other = Tenant.objects.create(slug="t2", name="Tenant 2")
+
+    u = User.objects.create_user(username="pref_user", password="pass", is_staff=True)
+    TenantMember.objects.get_or_create(tenant=default, user=u, defaults={"role": TenantMember.ROLE_MEMBER})
+    TenantMember.objects.get_or_create(tenant=other, user=u, defaults={"role": TenantMember.ROLE_MEMBER})
+
+    TenantRuntimeSettingOverride.objects.update_or_create(
+        tenant=other,
+        key="ui.action_catalog",
+        defaults={"status": TenantRuntimeSettingOverride.STATUS_PUBLISHED, "value": {"catalog_version": 99, "extensions": {"actions": []}}},
+    )
+
+    _jwt_login(client, username=u.username, password="pass")
+    resp = client.post("/api/v2/tenants/set-active/", {"tenant_id": str(other.id)}, format="json")
+    assert resp.status_code == 200
+
+    resp2 = client.get("/api/v2/system/me/")
+    assert resp2.status_code == 200
+
+    resp3 = client.get("/api/v2/settings/runtime-effective/")
+    assert resp3.status_code == 200
+    settings = resp3.json()["settings"]
+    entry = next((s for s in settings if s["key"] == "ui.action_catalog"), None)
+    assert entry is not None
+    assert entry["source"] == "tenant_override"
+
+
+@pytest.mark.django_db
+def test_service_user_without_membership_can_use_default_tenant(client):
+    # Service JWT auth is covered by v1 archive tests, but we still want to ensure
+    # tenant resolver permits service users without membership and selects default tenant.
+    from apps.core.authentication import ServiceUser
+    from apps.tenancy.authentication import _resolve_tenant_for_user
+
+    default, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
+    svc = ServiceUser("svc")
+    resolved = _resolve_tenant_for_user(svc, header_tenant_id=None)
+    assert str(resolved.id) == str(default.id)

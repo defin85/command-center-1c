@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .common import *  # noqa: F403
 from .common import _apply_filters, _is_staff, _parse_filters, _parse_sort, _permission_denied
-from apps.tenancy.permissions import TenantContextPermission
 
 @extend_schema(
     tags=['v2'],
@@ -26,7 +25,7 @@ from apps.tenancy.permissions import TenantContextPermission
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_databases(request):
     """
     GET /api/v2/databases/list-databases/
@@ -71,7 +70,11 @@ def list_databases(request):
     except (ValueError, TypeError):
         offset = 0
 
-    qs = Database.objects.all()
+    tenant_id = getattr(request, "tenant_id", None)
+    if not tenant_id:
+        return _permission_denied("Tenant context is missing.")
+
+    qs = Database.objects.filter(tenant_id=str(tenant_id))
 
     # Apply filters
     if cluster_id:
@@ -161,7 +164,7 @@ def list_databases(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def get_database(request):
     """
     GET /api/v2/databases/get-database/?database_id=X
@@ -231,7 +234,7 @@ def get_database(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def get_extensions_snapshot(request):
     """
     GET /api/v2/databases/get-extensions-snapshot/?database_id=X
@@ -321,7 +324,7 @@ def get_extensions_snapshot(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def update_database_credentials(request):
     """
     POST /api/v2/databases/update-credentials/
@@ -448,7 +451,7 @@ def update_database_credentials(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def health_check(request):
     """
     POST /api/v2/databases/health-check/

@@ -15,7 +15,6 @@ from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, validate
 from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import TenantMember
-from apps.tenancy.permissions import TenantContextPermission
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ def _validate_value(definition, value):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_runtime_settings(request):
     if not request.user.is_staff:
         return Response(
@@ -122,7 +121,7 @@ def list_runtime_settings(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_effective_runtime_settings(request):
     if not request.user.is_staff:
         return Response(
@@ -175,7 +174,7 @@ class RuntimeSettingOverrideUpdateSerializer(serializers.Serializer):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_runtime_setting_overrides(request):
     tenant_id = str(request.tenant_id)
 
@@ -204,7 +203,7 @@ def list_runtime_setting_overrides(request):
     }
 )
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def update_runtime_setting_override(request, key: str):
     tenant_id = str(request.tenant_id)
 

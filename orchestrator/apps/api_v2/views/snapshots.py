@@ -16,7 +16,6 @@ from apps.core import permission_codes as perms
 from apps.databases.models import Database, PermissionLevel
 from apps.databases.services import PermissionService
 from apps.operations.models import CommandResultSnapshot
-from apps.tenancy.permissions import TenantContextPermission
 
 
 def _permission_denied(message: str):
@@ -77,7 +76,7 @@ class SnapshotListResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def list_snapshots(request):
     if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE):
         return _permission_denied("You do not have permission to view databases.")
@@ -135,7 +134,7 @@ class SnapshotGetResponseSerializer(serializers.Serializer):
     },
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, TenantContextPermission])
+@permission_classes([IsAuthenticated])
 def get_snapshot(request):
     if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE):
         return _permission_denied("You do not have permission to view databases.")
