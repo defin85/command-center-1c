@@ -230,6 +230,7 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'POSTPROCESSING_HOOKS': [
         'config.spectacular_hooks.remove_nullable_oneof_nullenum',
+        'config.spectacular_hooks.add_tenant_header_parameter',
     ],
     'ENUM_NAME_OVERRIDES': {
         'DatabaseStatusEnum': ['active', 'inactive', 'error', 'maintenance'],

@@ -11,3 +11,4 @@
       5. update-frontend-ui-ux-a11y (после performance, т.к. есть пересечение по frontend/src/stores/serviceMeshManager.ts) +
       6. add-tenancy-extensions-plan-apply (самый широкий change; лучше после стабилизации фронта/оркестратора, чтобы уменьшить количество конфликтов) +
       6.1. refactor-tenant-context-single-entrypoint (tenant context как единая точка ответственности; убрать дублирующие guards) +
+      6.2. tenancy-openapi-and-list-databases (документировать X-CC1C-Tenant-ID в OpenAPI; list-databases: staff cross-tenant без header) +

@@ -65,7 +65,7 @@ def test_tenant_header_requires_membership(client, user):
 
 
 @pytest.mark.django_db
-def test_list_databases_is_tenant_scoped(client, staff_user):
+def test_list_databases_staff_can_see_cross_tenant_without_header(client, staff_user):
     default = Tenant.objects.get(slug="default")
     other = Tenant.objects.create(slug="t2", name="Tenant 2")
     TenantMember.objects.get_or_create(tenant=default, user=staff_user, defaults={"role": TenantMember.ROLE_ADMIN})
@@ -96,7 +96,43 @@ def test_list_databases_is_tenant_scoped(client, staff_user):
     assert resp.status_code == 200
     ids = {item["id"] for item in resp.json()["databases"]}
     assert str(db1.id) in ids
-    assert str(db2.id) not in ids
+    assert str(db2.id) in ids
+
+
+@pytest.mark.django_db
+def test_list_databases_staff_with_tenant_header_is_filtered(client, staff_user):
+    default = Tenant.objects.get(slug="default")
+    other = Tenant.objects.create(slug="t2", name="Tenant 2")
+    TenantMember.objects.get_or_create(tenant=default, user=staff_user, defaults={"role": TenantMember.ROLE_ADMIN})
+    TenantMember.objects.get_or_create(tenant=other, user=staff_user, defaults={"role": TenantMember.ROLE_ADMIN})
+
+    db1 = Database.objects.create(
+        tenant=default,
+        name="db1",
+        host="localhost",
+        port=80,
+        base_name="db1",
+        odata_url="http://localhost/odata",
+        username="u",
+        password="p",
+    )
+    db2 = Database.objects.create(
+        tenant=other,
+        name="db2",
+        host="localhost",
+        port=80,
+        base_name="db2",
+        odata_url="http://localhost/odata",
+        username="u",
+        password="p",
+    )
+
+    _jwt_login(client, username=staff_user.username, password="pass")
+    resp = client.get("/api/v2/databases/list-databases/", HTTP_X_CC1C_TENANT_ID=str(other.id))
+    assert resp.status_code == 200
+    ids = {item["id"] for item in resp.json()["databases"]}
+    assert str(db1.id) not in ids
+    assert str(db2.id) in ids
 
 
 @pytest.mark.django_db

@@ -70,11 +70,16 @@ def list_databases(request):
     except (ValueError, TypeError):
         offset = 0
 
-    tenant_id = getattr(request, "tenant_id", None)
-    if not tenant_id:
-        return _permission_denied("Tenant context is missing.")
+    raw_tenant_header = request.META.get("HTTP_X_CC1C_TENANT_ID")
+    has_tenant_header = raw_tenant_header is not None and str(raw_tenant_header).strip() != ""
 
-    qs = Database.objects.filter(tenant_id=str(tenant_id))
+    if _is_staff(request.user) and not has_tenant_header:
+        qs = Database.all_objects.all()
+    else:
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return _permission_denied("Tenant context is missing.")
+        qs = Database.all_objects.filter(tenant_id=str(tenant_id))
 
     # Apply filters
     if cluster_id:

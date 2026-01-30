@@ -104,6 +104,15 @@ paths:
         name: tag
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -130,6 +139,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -158,6 +176,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -184,6 +211,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -228,6 +264,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -283,6 +328,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -315,6 +369,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -346,6 +409,15 @@ paths:
         schema:
           type: string
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -368,6 +440,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -438,6 +519,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/artifacts/purge-jobs/{job_id}/:
     get:
       operationId: v2_artifacts_purge_jobs_retrieve
@@ -449,6 +540,15 @@ paths:
           type: string
           format: uuid
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -524,6 +624,16 @@ paths:
           description: Forbidden
         '500':
           description: Internal server error
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/clusters/create-cluster/:
     post:
       operationId: v2_clusters_create_cluster_create
@@ -567,6 +677,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/clusters/delete-cluster/:
     post:
       operationId: v2_clusters_delete_cluster_create
@@ -579,6 +699,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (can also be in request body)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -621,6 +750,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (can also be in request body)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -701,6 +839,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/clusters/get-cluster/:
     get:
       operationId: v2_clusters_get_cluster_retrieve
@@ -714,6 +862,15 @@ paths:
           type: string
         description: Cluster UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -762,6 +919,15 @@ paths:
         schema:
           type: string
         description: Filter by database status
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -829,6 +995,15 @@ paths:
         schema:
           type: string
         description: Filter by status (active, inactive, error, maintenance)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -854,6 +1029,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (optional, resets specific cluster)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -898,6 +1082,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (can also be in request body)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -940,6 +1133,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (can also be in request body)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -993,6 +1195,15 @@ paths:
         schema:
           type: string
         description: Cluster UUID (can also be in request body)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -1078,6 +1289,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClusterErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/bulk-health-check/:
     post:
       operationId: v2_databases_bulk_health_check_create
@@ -1114,6 +1335,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/create-dbms-user/:
     post:
       operationId: v2_databases_create_dbms_user_create
@@ -1153,6 +1384,16 @@ paths:
           description: Database not found
         '409':
           description: Duplicate entry
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/create-ib-user/:
     post:
       operationId: v2_databases_create_ib_user_create
@@ -1191,6 +1432,16 @@ paths:
           description: Database not found
         '409':
           description: Duplicate entry
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/delete-dbms-user/:
     post:
       operationId: v2_databases_delete_dbms_user_create
@@ -1223,6 +1474,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/delete-ib-user/:
     post:
       operationId: v2_databases_delete_ib_user_create
@@ -1255,6 +1516,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/get-database/:
     get:
       operationId: v2_databases_get_database_retrieve
@@ -1268,6 +1539,15 @@ paths:
           type: string
         description: Database UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1305,6 +1585,15 @@ paths:
           type: string
         description: Database UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1374,6 +1663,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/list-databases/:
     get:
       operationId: v2_databases_list_databases_retrieve
@@ -1421,6 +1720,15 @@ paths:
         schema:
           type: string
         description: Filter by status (active, inactive, error, maintenance)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1477,6 +1785,15 @@ paths:
         schema:
           type: string
         description: Search by DB username or linked CC user
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1538,6 +1855,15 @@ paths:
         schema:
           type: string
         description: Search by username or display name
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1589,6 +1915,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/reset-ib-user-password/:
     post:
       operationId: v2_databases_reset_ib_user_password_create
@@ -1621,6 +1957,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/set-dbms-user-password/:
     post:
       operationId: v2_databases_set_dbms_user_password_create
@@ -1657,6 +2003,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/set-ib-user-password/:
     post:
       operationId: v2_databases_set_ib_user_password_create
@@ -1693,6 +2049,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/set-status/:
     post:
       operationId: v2_databases_set_status_create
@@ -1732,6 +2098,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/stream-ticket/:
     post:
       operationId: v2_databases_stream_ticket_create
@@ -1775,6 +2151,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/update-credentials/:
     post:
       operationId: v2_databases_update_credentials_create
@@ -1817,6 +2203,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/update-dbms-user/:
     post:
       operationId: v2_databases_update_dbms_user_create
@@ -1855,6 +2251,16 @@ paths:
           description: Not found
         '409':
           description: Duplicate entry
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/update-ib-user/:
     post:
       operationId: v2_databases_update_ib_user_create
@@ -1893,6 +2299,16 @@ paths:
           description: Not found
         '409':
           description: Duplicate entry
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/dlq/get/:
     get:
       operationId: v2_dlq_get_retrieve
@@ -1910,6 +2326,15 @@ paths:
         schema:
           type: string
         description: Original stream message ID
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -1982,6 +2407,15 @@ paths:
         schema:
           type: string
         description: JSON object with sort configuration
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2041,6 +2475,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/events/pending/:
     get:
       operationId: v2_events_pending_retrieve
@@ -2058,6 +2502,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/PendingEventsResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/events/store-failed/:
     post:
       operationId: v2_events_store_failed_create
@@ -2092,6 +2546,16 @@ paths:
           description: Forbidden
         '500':
           description: Internal server error
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/extensions/apply/:
     post:
       operationId: v2_extensions_apply_create
@@ -2137,6 +2601,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExtensionsApplyConflict'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/extensions/overview/:
     get:
       operationId: v2_extensions_overview_retrieve
@@ -2173,6 +2647,15 @@ paths:
         schema:
           type: string
         description: Filter rows where this version exists
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2225,6 +2708,15 @@ paths:
         schema:
           type: string
         description: Filter by exact version
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2277,6 +2769,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/files/delete/{file_id}/:
     delete:
       operationId: v2_files_delete_destroy
@@ -2289,6 +2791,15 @@ paths:
           type: string
         description: File UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2326,6 +2837,15 @@ paths:
           type: string
         description: File UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2390,6 +2910,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/mappings/get/:
     get:
       operationId: v2_mappings_get_retrieve
@@ -2405,6 +2935,15 @@ paths:
         schema:
           type: string
         description: draft|published (default published)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2458,6 +2997,16 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/mappings/upsert/:
     patch:
       operationId: v2_mappings_upsert_partial_update
@@ -2490,6 +3039,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/cancel-operation/:
     post:
       operationId: v2_operations_cancel_operation_create
@@ -2533,6 +3092,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/catalog/:
     get:
       operationId: v2_operations_catalog_retrieve
@@ -2552,6 +3121,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/cli-commands/:
     get:
       operationId: v2_operations_cli_commands_retrieve
@@ -2570,6 +3149,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/create-command-shortcut/:
     post:
       operationId: v2_operations_create_command_shortcut_create
@@ -2606,6 +3195,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/delete-command-shortcut/:
     post:
       operationId: v2_operations_delete_command_shortcut_create
@@ -2644,6 +3243,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/driver-commands/:
     get:
       operationId: v2_operations_driver_commands_retrieve
@@ -2659,6 +3268,15 @@ paths:
           type: string
         description: Driver name (cli/ibcmd)
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2723,6 +3341,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/execute-ibcmd-cli/:
     post:
       operationId: v2_operations_execute_ibcmd_cli_create
@@ -2768,6 +3396,16 @@ paths:
           description: Forbidden
         '409':
           description: Conflict
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/get-operation/:
     get:
       operationId: v2_operations_get_operation_retrieve
@@ -2806,6 +3444,15 @@ paths:
         schema:
           type: string
         description: JSON object with task sort configuration
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2886,6 +3533,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/TimelineErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/list-command-shortcuts/:
     get:
       operationId: v2_operations_list_command_shortcuts_retrieve
@@ -2897,6 +3554,15 @@ paths:
         schema:
           type: string
         description: 'Driver name (currently: ibcmd).'
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -2973,6 +3639,15 @@ paths:
         schema:
           type: string
         description: Filter by workflow execution ID
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -3010,6 +3685,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/stream-mux-ticket/:
     post:
       operationId: v2_operations_stream_mux_ticket_create
@@ -3044,6 +3729,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/stream-status/:
     get:
       operationId: v2_operations_stream_status_retrieve
@@ -3062,6 +3757,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/stream-subscribe/:
     post:
       operationId: v2_operations_stream_subscribe_create
@@ -3093,6 +3798,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/stream-ticket/:
     post:
       operationId: v2_operations_stream_ticket_create
@@ -3137,6 +3852,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/operations/stream-unsubscribe/:
     post:
       operationId: v2_operations_stream_unsubscribe_create
@@ -3162,6 +3887,16 @@ paths:
           description: Subscription updated
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-grant-artifact-group-permission/:
     post:
       operationId: v2_rbac_bulk_grant_artifact_group_permission_create
@@ -3189,6 +3924,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-grant-cluster-group-permission/:
     post:
       operationId: v2_rbac_bulk_grant_cluster_group_permission_create
@@ -3216,6 +3961,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-grant-database-group-permission/:
     post:
       operationId: v2_rbac_bulk_grant_database_group_permission_create
@@ -3243,6 +3998,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-grant-operation-template-group-permission/:
     post:
       operationId: v2_rbac_bulk_grant_operation_template_group_permission_create
@@ -3270,6 +4035,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-grant-workflow-template-group-permission/:
     post:
       operationId: v2_rbac_bulk_grant_workflow_template_group_permission_create
@@ -3297,6 +4072,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-revoke-artifact-group-permission/:
     post:
       operationId: v2_rbac_bulk_revoke_artifact_group_permission_create
@@ -3324,6 +4109,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-revoke-cluster-group-permission/:
     post:
       operationId: v2_rbac_bulk_revoke_cluster_group_permission_create
@@ -3351,6 +4146,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-revoke-database-group-permission/:
     post:
       operationId: v2_rbac_bulk_revoke_database_group_permission_create
@@ -3378,6 +4183,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-revoke-operation-template-group-permission/:
     post:
       operationId: v2_rbac_bulk_revoke_operation_template_group_permission_create
@@ -3405,6 +4220,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/bulk-revoke-workflow-template-group-permission/:
     post:
       operationId: v2_rbac_bulk_revoke_workflow_template_group_permission_create
@@ -3432,6 +4257,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/create-role/:
     post:
       operationId: v2_rbac_create_role_create
@@ -3475,6 +4310,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/delete-role/:
     post:
       operationId: v2_rbac_delete_role_create
@@ -3524,6 +4369,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/get-effective-access/:
     get:
       operationId: v2_rbac_get_effective_access_retrieve
@@ -3570,6 +4425,15 @@ paths:
           type: integer
         description: 'Optional (default: current user). Requires databases.manage_rbac
           for other users.'
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -3594,6 +4458,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -3642,6 +4515,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArtifactGroupPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-artifact-permission/:
     post:
       operationId: v2_rbac_grant_artifact_permission_create
@@ -3669,6 +4552,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArtifactPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-cluster-group-permission/:
     post:
       operationId: v2_rbac_grant_cluster_group_permission_create
@@ -3696,6 +4589,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClusterGroupPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-cluster-permission/:
     post:
       operationId: v2_rbac_grant_cluster_permission_create
@@ -3739,6 +4642,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-database-group-permission/:
     post:
       operationId: v2_rbac_grant_database_group_permission_create
@@ -3766,6 +4679,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseGroupPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-database-permission/:
     post:
       operationId: v2_rbac_grant_database_permission_create
@@ -3809,6 +4732,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-operation-template-group-permission/:
     post:
       operationId: v2_rbac_grant_operation_template_group_permission_create
@@ -3836,6 +4769,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationTemplateGroupPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-operation-template-permission/:
     post:
       operationId: v2_rbac_grant_operation_template_permission_create
@@ -3863,6 +4806,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationTemplatePermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-workflow-template-group-permission/:
     post:
       operationId: v2_rbac_grant_workflow_template_group_permission_create
@@ -3890,6 +4843,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/WorkflowTemplateGroupPermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/grant-workflow-template-permission/:
     post:
       operationId: v2_rbac_grant_workflow_template_permission_create
@@ -3917,6 +4880,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/WorkflowTemplatePermissionUpsertResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/list-admin-audit/:
     get:
       operationId: v2_rbac_list_admin_audit_retrieve
@@ -3963,6 +4936,15 @@ paths:
         name: until
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4003,6 +4985,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4043,6 +5034,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4073,6 +5073,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/list-cluster-group-permissions/:
     get:
       operationId: v2_rbac_list_cluster_group_permissions_retrieve
@@ -4102,6 +5112,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4142,6 +5161,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4190,6 +5218,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4234,6 +5271,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4278,6 +5324,15 @@ paths:
         name: template_id
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4318,6 +5373,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4346,6 +5410,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4382,6 +5455,15 @@ paths:
         schema:
           type: string
         description: Search by username or name
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4423,6 +5505,15 @@ paths:
         schema:
           type: string
         description: Search by username or name
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4467,6 +5558,15 @@ paths:
         name: template_id
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4507,6 +5607,15 @@ paths:
         name: user_id
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4535,6 +5644,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4563,6 +5681,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4595,6 +5722,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4623,6 +5759,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4651,6 +5796,15 @@ paths:
         name: search
         schema:
           type: string
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -4689,6 +5843,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-artifact-permission/:
     post:
       operationId: v2_rbac_revoke_artifact_permission_create
@@ -4716,6 +5880,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-cluster-group-permission/:
     post:
       operationId: v2_rbac_revoke_cluster_group_permission_create
@@ -4743,6 +5917,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-cluster-permission/:
     post:
       operationId: v2_rbac_revoke_cluster_permission_create
@@ -4780,6 +5964,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-database-group-permission/:
     post:
       operationId: v2_rbac_revoke_database_group_permission_create
@@ -4807,6 +6001,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-database-permission/:
     post:
       operationId: v2_rbac_revoke_database_permission_create
@@ -4844,6 +6048,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-operation-template-group-permission/:
     post:
       operationId: v2_rbac_revoke_operation_template_group_permission_create
@@ -4871,6 +6085,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-operation-template-permission/:
     post:
       operationId: v2_rbac_revoke_operation_template_permission_create
@@ -4898,6 +6122,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-workflow-template-group-permission/:
     post:
       operationId: v2_rbac_revoke_workflow_template_group_permission_create
@@ -4925,6 +6159,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/revoke-workflow-template-permission/:
     post:
       operationId: v2_rbac_revoke_workflow_template_permission_create
@@ -4952,6 +6196,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokePermissionResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/set-role-capabilities/:
     post:
       operationId: v2_rbac_set_role_capabilities_create
@@ -5001,6 +6255,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/set-user-roles/:
     post:
       operationId: v2_rbac_set_user_roles_create
@@ -5050,6 +6314,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/rbac/update-role/:
     post:
       operationId: v2_rbac_update_role_create
@@ -5099,6 +6373,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/RbacErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/service-mesh/get-history/:
     get:
       operationId: v2_service_mesh_get_history_retrieve
@@ -5117,6 +6401,15 @@ paths:
           type: string
         description: Service name (e.g., api-gateway, worker)
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5153,6 +6446,15 @@ paths:
         schema:
           type: string
         description: Filter by service name (e.g., api-gateway, worker)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5190,6 +6492,15 @@ paths:
         name: offset
         schema:
           type: integer
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5242,6 +6553,16 @@ paths:
           description: Unauthorized
         '409':
           description: Conflict
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/diff/:
     post:
       operationId: v2_settings_command_schemas_diff_create
@@ -5281,6 +6602,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/editor/:
     get:
       operationId: v2_settings_command_schemas_editor_retrieve
@@ -5302,6 +6633,15 @@ paths:
           type: string
         description: Editor mode (guided/raw). In raw mode, base catalog is loaded
           from base alias latest.
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5364,6 +6704,16 @@ paths:
           description: Unauthorized
         '409':
           description: Conflict
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/import-its/:
     post:
       operationId: v2_settings_command_schemas_import_its_create
@@ -5404,6 +6754,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/overrides/rollback/:
     post:
       operationId: v2_settings_command_schemas_overrides_rollback_create
@@ -5443,6 +6803,16 @@ paths:
           description: Unauthorized
         '409':
           description: Conflict
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/overrides/update/:
     post:
       operationId: v2_settings_command_schemas_overrides_update_create
@@ -5484,6 +6854,16 @@ paths:
           description: Unauthorized
         '409':
           description: Conflict
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/preview/:
     post:
       operationId: v2_settings_command_schemas_preview_create
@@ -5523,6 +6903,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/promote/:
     post:
       operationId: v2_settings_command_schemas_promote_create
@@ -5560,6 +6950,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/validate/:
     post:
       operationId: v2_settings_command_schemas_validate_create
@@ -5599,6 +6999,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/command-schemas/versions/:
     get:
       operationId: v2_settings_command_schemas_versions_retrieve
@@ -5627,6 +7037,15 @@ paths:
         schema:
           type: integer
         description: Offset (default 0)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5666,6 +7085,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/runtime-effective/:
     get:
       operationId: v2_settings_runtime_effective_retrieve
@@ -5687,6 +7116,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/runtime-overrides/:
     get:
       operationId: v2_settings_runtime_overrides_list
@@ -5710,6 +7149,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/settings/runtime-overrides/{key}/:
     patch:
       operationId: v2_settings_runtime_overrides_partial_update
@@ -5722,6 +7171,15 @@ paths:
         schema:
           type: string
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -5769,6 +7227,15 @@ paths:
           type: string
         description: Setting key
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       requestBody:
@@ -5809,6 +7276,15 @@ paths:
         schema:
           type: integer
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5850,6 +7326,15 @@ paths:
         schema:
           type: integer
         description: Offset (default 0)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -5883,6 +7368,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/system/health/:
     get:
       operationId: v2_system_health_retrieve
@@ -5902,6 +7397,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/system/me/:
     get:
       operationId: v2_system_me_retrieve
@@ -5921,6 +7426,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/templates/create-template/:
     post:
       operationId: v2_templates_create_template_create
@@ -5959,6 +7474,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/templates/delete-template/:
     post:
       operationId: v2_templates_delete_template_create
@@ -5997,6 +7522,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
@@ -6044,6 +7579,15 @@ paths:
         schema:
           type: string
         description: Filter by target entity
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6101,6 +7645,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/templates/update-template/:
     post:
       operationId: v2_templates_update_template_create
@@ -6139,6 +7693,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/tenants/list-my-tenants/:
     get:
       operationId: v2_tenants_list_my_tenants_retrieve
@@ -6157,6 +7721,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/tenants/set-active/:
     post:
       operationId: v2_tenants_set_active_create
@@ -6191,6 +7765,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/ui/action-catalog/:
     get:
       operationId: v2_ui_action_catalog_retrieve
@@ -6210,6 +7794,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/ui/execution-plan/preview/:
     post:
       operationId: v2_ui_execution_plan_preview_create
@@ -6248,6 +7842,16 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/ui/table-metadata/:
     get:
       operationId: v2_ui_table_metadata_retrieve
@@ -6260,6 +7864,15 @@ paths:
           type: string
         description: Table identifier
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6324,6 +7937,16 @@ paths:
           description: Forbidden
         '409':
           description: Duplicate username
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/users/list/:
     get:
       operationId: v2_users_list_retrieve
@@ -6365,6 +7988,15 @@ paths:
         schema:
           type: string
         description: Filter by username
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6423,6 +8055,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/users/update/:
     post:
       operationId: v2_users_update_create
@@ -6468,6 +8110,16 @@ paths:
           description: ''
         '409':
           description: Duplicate username
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/cancel-execution/:
     post:
       operationId: v2_workflows_cancel_execution_create
@@ -6523,6 +8175,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/clone-workflow/:
     post:
       operationId: v2_workflows_clone_workflow_create
@@ -6566,6 +8228,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/create-workflow/:
     post:
       operationId: v2_workflows_create_workflow_create
@@ -6602,6 +8274,16 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/delete-workflow/:
     post:
       operationId: v2_workflows_delete_workflow_create
@@ -6657,6 +8339,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/execute-workflow/:
     post:
       operationId: v2_workflows_execute_workflow_create
@@ -6706,6 +8398,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/get-execution/:
     get:
       operationId: v2_workflows_get_execution_retrieve
@@ -6719,6 +8421,15 @@ paths:
           type: string
         description: Execution UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6762,6 +8473,15 @@ paths:
         schema:
           type: string
         description: Filter by step status (pending, running, completed, failed, skipped)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6800,6 +8520,15 @@ paths:
           type: string
         description: Workflow template UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6843,6 +8572,15 @@ paths:
           type: string
         description: Workflow template UUID
         required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6895,6 +8633,15 @@ paths:
         schema:
           type: string
         description: Filter by workflow template UUID
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6931,6 +8678,15 @@ paths:
         schema:
           type: string
         description: Search by name or description
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -6992,6 +8748,15 @@ paths:
           type: string
         description: Filter by workflow type (general, user_management, database_ops,
           etc.)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       tags:
       - v2
       security:
@@ -7060,6 +8825,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/workflows/validate-workflow/:
     post:
       operationId: v2_workflows_validate_workflow_create
@@ -7102,6 +8877,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/stream/:
     get:
       operationId: v2_databases_stream_retrieve
@@ -7116,6 +8901,15 @@ paths:
         schema:
           type: string
         description: Short-lived SSE ticket from /databases/stream-ticket/.
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       responses:
         '200':
           description: SSE stream (text/event-stream)
@@ -7152,6 +8946,15 @@ paths:
         schema:
           type: string
         description: Legacy token auth (deprecated).
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       responses:
         '200':
           description: SSE stream (text/event-stream)
@@ -7171,6 +8974,15 @@ paths:
         schema:
           type: string
         description: Short-lived SSE ticket from /operations/stream-mux-ticket/.
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
       responses:
         '200':
           description: SSE stream (text/event-stream)

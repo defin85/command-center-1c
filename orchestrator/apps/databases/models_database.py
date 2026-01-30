@@ -132,6 +132,7 @@ class Database(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     objects = TenantScopedManager()
+    all_objects = models.Manager()
 
     class Meta:
         db_table = "databases"

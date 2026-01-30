@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -36,3 +37,47 @@ def remove_nullable_oneof_nullenum(result: dict[str, Any], generator: Any, reque
     _walk(schemas)
     return result
 
+
+def add_tenant_header_parameter(result: dict[str, Any], generator: Any, request: Any, public: bool):
+    """
+    Document optional tenant context selection via X-CC1C-Tenant-ID header for API v2.
+
+    Runtime behavior is implemented in apps.tenancy.authentication.TenantContextAuthentication.
+    """
+
+    tenant_param = {
+        "name": "X-CC1C-Tenant-ID",
+        "in": "header",
+        "required": False,
+        "schema": {"type": "string", "format": "uuid"},
+        "description": (
+            "Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. "
+            "For staff users, omission may return cross-tenant results on some endpoints."
+        ),
+    }
+
+    paths = result.get("paths")
+    if not isinstance(paths, dict):
+        return result
+
+    for path, path_item in paths.items():
+        if not isinstance(path, str) or not path.startswith("/api/v2/"):
+            continue
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            params = operation.setdefault("parameters", [])
+            if not isinstance(params, list):
+                continue
+            if any(
+                isinstance(p, dict) and p.get("in") == "header" and p.get("name") == tenant_param["name"]
+                for p in params
+            ):
+                continue
+            params.append(deepcopy(tenant_param))
+
+    return result
