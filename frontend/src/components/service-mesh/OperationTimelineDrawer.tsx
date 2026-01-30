@@ -231,9 +231,9 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
             </Row>
             {(timelineMeta.traceId || timelineMeta.workflowExecutionId || timelineMeta.nodeId) && (
               <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {timelineMeta.traceId && <Tag>Trace: {timelineMeta.traceId.slice(0, 8)}...</Tag>}
+                {timelineMeta.traceId && <Tag>Trace: {timelineMeta.traceId.slice(0, 8)}{'\u2026'}</Tag>}
                 {timelineMeta.workflowExecutionId && (
-                  <Tag>Workflow: {timelineMeta.workflowExecutionId.slice(0, 8)}...</Tag>
+                  <Tag>Workflow: {timelineMeta.workflowExecutionId.slice(0, 8)}{'\u2026'}</Tag>
                 )}
                 {timelineMeta.nodeId && <Tag>Node: {timelineMeta.nodeId}</Tag>}
               </div>

@@ -458,7 +458,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
             description={(
               <Space direction="vertical" size={4}>
                 <Text>Выберите пользователя и тип ресурса. Опционально укажите конкретный ресурс для фильтра.</Text>
-                <Text type="secondary">Раскрытие строки показывает источники (прямое/группа/через кластер/...)</Text>
+                <Text type="secondary">Раскрытие строки показывает источники (прямое/группа/через кластер/{'\u2026'})</Text>
               </Space>
             )}
           />

@@ -87,7 +87,7 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
                   onClick={handleOpenSubWorkflow}
                   className="subworkflow-link"
                 >
-                  {subworkflowId.slice(0, 8)}...
+                  {subworkflowId.slice(0, 8)}{'\u2026'}
                   <ExportOutlined />
                 </Button>
               </Tooltip>
@@ -115,7 +115,7 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {status === 'running' && subExecutionId && (
             <div className="node-field">
               <span className="field-label">Execution:</span>
-              <span className="field-value mono">{subExecutionId.slice(0, 8)}...</span>
+              <span className="field-value mono">{subExecutionId.slice(0, 8)}{'\u2026'}</span>
             </div>
           )}
 

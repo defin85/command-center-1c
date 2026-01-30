@@ -364,7 +364,7 @@ export function DriverOptionsSection({
           allowClear
           value={driverOptionsQuery}
           onChange={(event) => setDriverOptionsQuery(event.target.value)}
-          placeholder="Search driver options..."
+          placeholder={'Search driver options\u2026'}
         />
 
         {filteredSections.map((section, idx) => (

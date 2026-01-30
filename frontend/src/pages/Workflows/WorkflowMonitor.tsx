@@ -489,7 +489,7 @@ const WorkflowMonitor = () => {
                   copyable={executionId ? { text: executionId } : false}
                   className="mono-text"
                 >
-                  {executionId ? `${executionId.slice(0, 8)}...` : ''}
+                  {executionId ? `${executionId.slice(0, 8)}\u2026` : ''}
                 </Text>
               </Descriptions.Item>
               <Descriptions.Item label="Template">
@@ -513,7 +513,7 @@ const WorkflowMonitor = () => {
                     copyable={{ text: traceId }}
                     className="mono-text"
                   >
-                    {traceId.slice(0, 8)}...
+                    {traceId.slice(0, 8)}{'\u2026'}
                   </Text>
                 </Descriptions.Item>
               )}

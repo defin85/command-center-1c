@@ -90,7 +90,7 @@ export const SystemStatus = () => {
         return (
             <div style={{ textAlign: 'center', padding: '50px' }}>
                 <Spin size="large">
-                    <div style={{ padding: '20px' }}>Загрузка статуса системы...</div>
+                    <div style={{ padding: '20px' }}>Загрузка статуса системы{'\u2026'}</div>
                 </Spin>
             </div>
         );

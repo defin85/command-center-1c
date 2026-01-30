@@ -197,7 +197,7 @@ export const SelectTypeStep = ({
       {loading && (
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
           <Spin />
-          <div style={{ marginTop: 8, color: '#595959' }}>Loading operation catalog...</div>
+          <div style={{ marginTop: 8, color: '#595959' }}>Loading operation catalog{'\u2026'}</div>
         </div>
       )}
 

@@ -74,7 +74,7 @@ export function DLQPage() {
         let success = 0
         let failed = 0
 
-        message.loading({ content: `Retrying ${entries.length}...`, key })
+        message.loading({ content: `Retrying ${entries.length}\u2026`, key })
         for (let i = 0; i < entries.length; i++) {
           const result = await retryEntry(entries[i])
           if (result.ok) {
@@ -82,7 +82,7 @@ export function DLQPage() {
           } else {
             failed++
           }
-          message.loading({ content: `Retrying... (${i + 1}/${entries.length})`, key })
+          message.loading({ content: `Retrying\u2026 (${i + 1}/${entries.length})`, key })
         }
 
         setSelectedRowKeys([])
@@ -122,6 +122,7 @@ export function DLQPage() {
                   icon={<RightCircleOutlined />}
                   onClick={() => navigate(`/operations?tab=monitor&operation=${encodeURIComponent(operationId)}`)}
                   title="Open in Operations Monitor"
+                  aria-label="Open in Operations Monitor"
                 />
               )}
             </Space>

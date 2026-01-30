@@ -57,7 +57,7 @@ const ConditionNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {data.config?.expression && (
             <Tooltip title={data.config.expression}>
               <div className="node-field expression">
-                <code>{data.config.expression.slice(0, 30)}...</code>
+                <code>{`${data.config.expression.slice(0, 30)}\u2026`}</code>
               </div>
             </Tooltip>
           )}

@@ -164,7 +164,7 @@ export const OperationConfirmModal: React.FC<OperationConfirmModalProps> = ({
         size="small"
         dataSource={databases.slice(0, 10)}
         renderItem={(db) => <List.Item>{db.name}</List.Item>}
-        footer={databases.length > 10 ? `...and ${databases.length - 10} more` : null}
+        footer={databases.length > 10 ? `\u2026 and ${databases.length - 10} more` : null}
         style={{ maxHeight: 200, overflow: 'auto' }}
       />
     </Modal>

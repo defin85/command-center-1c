@@ -29,7 +29,7 @@ export interface FailedOperationsAlertProps {
  */
 const truncateText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text
-  return `${text.slice(0, maxLength)}...`
+  return `${text.slice(0, maxLength)}\u2026`
 }
 
 /**
@@ -88,7 +88,7 @@ export const FailedOperationsAlert = ({
             />
             {hasMore && (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                and {operations.length - maxDisplay} more...
+                and {operations.length - maxDisplay} more{'\u2026'}
               </Text>
             )}
           </>

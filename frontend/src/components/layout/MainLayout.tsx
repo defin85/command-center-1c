@@ -42,7 +42,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     event.preventDefault()
     const el = document.getElementById('main-content')
     if (el instanceof HTMLElement) {
-      el.focus()
+      el.scrollIntoView({ block: 'start' })
+      el.focus({ preventScroll: true })
     }
   }
 

@@ -92,7 +92,7 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {loopMode === 'while' && data.config?.loop_condition && (
             <Tooltip title={data.config.loop_condition}>
               <div className="node-field expression">
-                <code>{data.config.loop_condition.slice(0, 25)}...</code>
+                <code>{`${data.config.loop_condition.slice(0, 25)}\u2026`}</code>
               </div>
             </Tooltip>
           )}

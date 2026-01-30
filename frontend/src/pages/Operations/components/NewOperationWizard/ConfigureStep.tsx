@@ -334,7 +334,7 @@ const CustomTemplateForm = ({
       <div style={{ textAlign: 'center', padding: '60px 20px' }}>
         <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />} />
         <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
-          Loading template configuration...
+          Loading template configuration{'\u2026'}
         </Text>
       </div>
     )
