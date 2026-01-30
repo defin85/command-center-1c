@@ -272,6 +272,7 @@ const WorkflowExecutions = () => {
                 size="small"
                 icon={<EyeOutlined />}
                 onClick={() => navigate(`/workflows/executions/${record.id}`)}
+                aria-label="Open execution"
               />
             </Tooltip>
             <Tooltip title="Open workflow">
@@ -279,6 +280,7 @@ const WorkflowExecutions = () => {
                 size="small"
                 icon={<ApartmentOutlined />}
                 onClick={() => navigate(`/workflows/${record.workflow_template}`)}
+                aria-label="Open workflow"
               />
             </Tooltip>
             <Tooltip title={canCancel ? 'Cancel execution' : 'Only pending or running executions can be cancelled'}>
@@ -288,6 +290,7 @@ const WorkflowExecutions = () => {
                 icon={<StopOutlined />}
                 disabled={!canCancel}
                 onClick={() => handleCancel(record.id)}
+                aria-label="Cancel execution"
               />
             </Tooltip>
           </Space>
@@ -337,6 +340,7 @@ const WorkflowExecutions = () => {
                 value={workflowIdInput}
                 onChange={handleWorkflowInputChange}
                 onPressEnter={() => applyWorkflowFilter(workflowIdInput)}
+                aria-label="Workflow ID filter"
               />
               <Button type="primary" onClick={() => applyWorkflowFilter(workflowIdInput)}>
                 Apply

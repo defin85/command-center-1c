@@ -244,6 +244,7 @@ export const useDatabasesColumns = ({
               icon={<KeyOutlined />}
               onClick={() => openCredentialsModal(record)}
               title="Credentials"
+              aria-label="Credentials"
               disabled={!canManage}
             />
             <Tooltip title="Extensions">
@@ -251,6 +252,7 @@ export const useDatabasesColumns = ({
                 size="small"
                 icon={<AppstoreOutlined />}
                 onClick={() => openExtensionsDrawer(record)}
+                aria-label="Extensions"
                 disabled={!canOperate}
               />
             </Tooltip>
@@ -279,4 +281,3 @@ export const useDatabasesColumns = ({
     runSetStatus,
   ])
 }
-

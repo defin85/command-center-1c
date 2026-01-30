@@ -157,7 +157,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
         <div className="timeline">
           {events.length === 0 ? (
             <div style={{ color: '#999', fontStyle: 'italic' }}>
-              События еще не поступили...
+              События еще не поступили…
             </div>
           ) : (
             events.map((event, i) => (

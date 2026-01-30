@@ -51,7 +51,7 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
     // Truncate very long errors
     const maxLength = 500
     const truncated = error.length > maxLength
-      ? `${error.slice(0, maxLength)}...`
+      ? `${error.slice(0, maxLength)}…`
       : error
     return (
       <div className="node-error-tooltip">
@@ -104,7 +104,7 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
 
           {status === 'running' && (
             <div className="node-running">
-              <Spin size="small" /> Executing...
+              <Spin size="small" /> Executing…
             </div>
           )}
 
@@ -128,7 +128,7 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
           )}
 
           {data.spanId && (
-            <Tooltip title="Trace available - click to view details">
+            <Tooltip title="Trace available">
               <div className="trace-link-indicator">
                 <LinkOutlined />
                 <span>Trace</span>

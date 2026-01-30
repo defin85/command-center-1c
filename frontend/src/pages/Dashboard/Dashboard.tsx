@@ -10,7 +10,7 @@
  * - Clusters overview
  */
 import React, { useState, useCallback } from 'react'
-import { Row, Col, Alert, Typography, Space, Divider } from 'antd'
+import { Row, Col, Alert, Typography, Space, Divider, Button, Tooltip } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 
@@ -92,7 +92,14 @@ export const Dashboard: React.FC = () => {
           showIcon
           action={
             <Space>
-              <ReloadOutlined onClick={refresh} style={{ cursor: 'pointer' }} />
+              <Tooltip title="Refresh dashboard">
+                <Button
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={refresh}
+                  aria-label="Refresh dashboard"
+                />
+              </Tooltip>
             </Space>
           }
         />
@@ -114,18 +121,15 @@ export const Dashboard: React.FC = () => {
         </Col>
         <Col>
           <Space>
-            <ReloadOutlined
-              onClick={loading ? undefined : refresh}
-              spin={loading}
-              style={{
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: 18,
-                opacity: loading ? 0.5 : 1,
-              }}
-              aria-label="Refresh dashboard"
-              role="button"
-              tabIndex={loading ? -1 : 0}
-            />
+            <Tooltip title="Refresh dashboard">
+              <Button
+                type="text"
+                icon={<ReloadOutlined spin={loading} />}
+                onClick={refresh}
+                aria-label="Refresh dashboard"
+                disabled={loading}
+              />
+            </Tooltip>
           </Space>
         </Col>
       </Row>

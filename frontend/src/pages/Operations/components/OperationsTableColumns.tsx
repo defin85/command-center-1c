@@ -55,6 +55,7 @@ export const buildOperationsColumns = ({
                 type="text"
                 icon={<LinkOutlined />}
                 onClick={() => onFilterWorkflow(record.workflow_execution_id as string)}
+                aria-label="Filter by workflow"
               />
             </Tooltip>
           )}
@@ -65,6 +66,7 @@ export const buildOperationsColumns = ({
                 type="text"
                 icon={<LinkOutlined rotate={90} />}
                 onClick={() => onFilterNode(record.node_id as string)}
+                aria-label="Filter by node"
               />
             </Tooltip>
           )}
@@ -153,4 +155,3 @@ export const buildOperationsColumns = ({
     ),
   },
 ])
-

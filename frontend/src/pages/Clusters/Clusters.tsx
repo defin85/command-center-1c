@@ -191,7 +191,7 @@ export const Clusters = () => {
     }
 
     const handleSync = (id: string, name: string) => {
-        message.loading({ content: `Syncing ${name}...`, key: 'sync' })
+        message.loading({ content: `Syncing ${name}…`, key: 'sync' })
 
         syncCluster.mutate(id, {
             onSuccess: (result) => {
@@ -242,7 +242,7 @@ export const Clusters = () => {
                 let success = 0
                 let failed = 0
 
-                message.loading({ content: `Resetting ${ids.length} cluster(s)...`, key })
+                message.loading({ content: `Resetting ${ids.length} cluster(s)…`, key })
                 for (let i = 0; i < ids.length; i++) {
                     const id = ids[i]
                     try {
@@ -252,7 +252,7 @@ export const Clusters = () => {
                     } catch {
                         failed++
                     }
-                    message.loading({ content: `Resetting... (${i + 1}/${ids.length})`, key })
+                    message.loading({ content: `Resetting… (${i + 1}/${ids.length})`, key })
                 }
 
                 if (failed === 0) {

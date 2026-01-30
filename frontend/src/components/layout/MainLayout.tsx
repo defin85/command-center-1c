@@ -1,7 +1,7 @@
 import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
 import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
-import { useNavigate, useLocation } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
+import type { ReactNode, MouseEvent } from 'react'
 import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
@@ -37,6 +37,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canManageAdmin = Boolean(meQuery.data?.is_staff)
   const canManageRbac = Boolean(canManageRbacQuery.data)
   const canManageDriverCatalogs = Boolean(canManageDriverCatalogsQuery.data)
+
+  const handleSkipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+    const el = document.getElementById('main-content')
+    if (el instanceof HTMLElement) {
+      el.focus()
+    }
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -160,11 +168,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      <a href="#main-content" className="cc-skip-link" onClick={handleSkipToContent}>
+        Skip to content
+      </a>
       <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Space size="middle">
-          <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
+          <Link to="/" style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', textDecoration: 'none' }}>
             CommandCenter1C
-          </div>
+          </Link>
           <Popover
             trigger="click"
             placement="bottomLeft"
@@ -194,10 +205,12 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             )}
           >
             <Tooltip title={isDatabaseStreamConnected ? 'Live updates enabled' : (databaseStreamError || 'Live stream unavailable')}>
-              <Tag color={isDatabaseStreamConnected ? 'green' : 'default'} style={{ cursor: 'pointer' }}>
-                {isDatabaseStreamConnecting && <LoadingOutlined style={{ marginRight: 6 }} spin />}
-                Stream: {isDatabaseStreamConnected ? 'Connected' : 'Fallback'}
-              </Tag>
+              <Button type="text" aria-label="Database stream status" style={{ padding: 0, height: 'auto' }}>
+                <Tag color={isDatabaseStreamConnected ? 'green' : 'default'} style={{ cursor: 'pointer' }}>
+                  {isDatabaseStreamConnecting && <LoadingOutlined style={{ marginRight: 6 }} spin />}
+                  Stream: {isDatabaseStreamConnected ? 'Connected' : 'Fallback'}
+                </Tag>
+              </Button>
             </Tooltip>
           </Popover>
         </Space>
@@ -224,6 +237,9 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         </Sider>
         <Layout style={{ padding: '24px' }}>
           <Content
+            id="main-content"
+            role="main"
+            tabIndex={-1}
             style={{
               padding: 24,
               margin: 0,

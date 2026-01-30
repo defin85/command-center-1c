@@ -131,7 +131,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       width: 100,
       render: (id: string) => (
         <Tooltip title={id}>
-          <span className="operation-id">{id.slice(0, 8)}...</span>
+          <span className="operation-id">{id.slice(0, 8)}…</span>
         </Tooltip>
       ),
     },

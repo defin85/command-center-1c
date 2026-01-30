@@ -25,3 +25,20 @@ body {
   width: 100%;
   min-height: 100vh;
 }
+
+.cc-skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: 6px;
+  z-index: 10000;
+  transform: translateY(-200%);
+}
+
+.cc-skip-link:focus {
+  transform: translateY(0);
+}

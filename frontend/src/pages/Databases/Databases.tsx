@@ -462,6 +462,7 @@ export const Databases = () => {
             value={selectedClusterId}
             onChange={handleClusterChange}
             loading={clustersLoading}
+            aria-label="Cluster filter"
           >
             {clusters.map((cluster) => (
               <Select.Option key={cluster.id} value={cluster.id}>

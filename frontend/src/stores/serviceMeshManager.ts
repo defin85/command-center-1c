@@ -315,7 +315,7 @@ class ServiceMeshManager {
     )
 
     this.setState({
-      connectionError: `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s...`,
+      connectionError: `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s…`,
     })
 
     this.reconnectTimer = setTimeout(() => {
