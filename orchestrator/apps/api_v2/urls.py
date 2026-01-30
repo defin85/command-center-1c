@@ -11,6 +11,7 @@ from .views import (
     databases,
     clusters,
     extensions,
+    extensions_plan_apply,
     operations,
     workflows,
     system,
@@ -25,6 +26,9 @@ from .views import (
     timeline,
     dlq,
     runtime_settings,
+    tenants,
+    snapshots,
+    mappings,
     ui,
     driver_catalogs,
 )
@@ -76,6 +80,21 @@ urlpatterns = [
     # ========================================================================
     path('extensions/overview/', extensions.get_extensions_overview, name='extensions-overview'),
     path('extensions/overview/databases/', extensions.get_extensions_overview_databases, name='extensions-overview-databases'),
+    path('extensions/plan/', extensions_plan_apply.extensions_plan, name='extensions-plan'),
+    path('extensions/apply/', extensions_plan_apply.extensions_apply, name='extensions-apply'),
+
+    # ========================================================================
+    # Snapshots
+    # ========================================================================
+    path('snapshots/list/', snapshots.list_snapshots, name='snapshots-list'),
+    path('snapshots/get/', snapshots.get_snapshot, name='snapshots-get'),
+
+    # ========================================================================
+    # Tenant mappings (MVP)
+    # ========================================================================
+    path('mappings/get/', mappings.get_mapping_spec, name='mappings-get'),
+    path('mappings/upsert/', mappings.upsert_mapping_spec, name='mappings-upsert'),
+    path('mappings/preview/', mappings.preview_mapping, name='mappings-preview'),
 
     # ========================================================================
     # Clusters
@@ -266,6 +285,15 @@ urlpatterns = [
     # ========================================================================
     path('settings/runtime/', runtime_settings.list_runtime_settings, name='runtime-settings'),
     path('settings/runtime/<str:key>/', runtime_settings.update_runtime_setting, name='runtime-settings-update'),
+    path('settings/runtime-effective/', runtime_settings.list_effective_runtime_settings, name='runtime-settings-effective'),
+    path('settings/runtime-overrides/', runtime_settings.list_runtime_setting_overrides, name='runtime-settings-overrides'),
+    path('settings/runtime-overrides/<str:key>/', runtime_settings.update_runtime_setting_override, name='runtime-settings-overrides-update'),
+
+    # ========================================================================
+    # Tenancy
+    # ========================================================================
+    path('tenants/list-my-tenants/', tenants.list_my_tenants, name='tenants-list-my-tenants'),
+    path('tenants/set-active/', tenants.set_active_tenant, name='tenants-set-active'),
 
     # ========================================================================
     # Command Schemas Editor (SPA-primary administration)

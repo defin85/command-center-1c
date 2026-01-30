@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
+from apps.tenancy.permissions import TenantContextPermission
 from apps.operations.services.prometheus_client import (
     get_prometheus_client,
     SERVICE_CONFIG,
@@ -94,7 +95,7 @@ class CurrentUserSerializer(serializers.Serializer):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def system_me(request):
     """
     GET /api/v2/system/me/

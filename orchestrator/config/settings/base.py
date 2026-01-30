@@ -62,11 +62,13 @@ INSTALLED_APPS = [
 
     # Local apps
     'apps.operations',
+    'apps.tenancy',
     'apps.databases',
     'apps.templates',
     'apps.monitoring',
     'apps.files',  # File storage (Phase 5.1)
     'apps.artifacts',  # Artifact storage (v2)
+    'apps.mappings',
     'apps.runtime_settings',
     'apps.api_v2',  # API v2 with action-based routing
     'apps.api_internal',  # Internal API for Go Worker
@@ -84,6 +86,7 @@ MIDDLEWARE = [
     'apps.operations.middleware.PrometheusMetricsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.tenancy.middleware.TenantContextCleanupMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -194,8 +197,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'apps.core.authentication.ServiceJWTAuthentication',  # Supports service tokens
-        'rest_framework.authentication.SessionAuthentication',
+        'apps.tenancy.authentication.TenantContextAuthentication',  # JWT/service + session + tenant context
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',

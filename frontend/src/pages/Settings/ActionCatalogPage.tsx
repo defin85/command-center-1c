@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Form, Space, Spin, Tag, Typography } from 'antd'
 
 import { useMe } from '../../api/queries/me'
-import { getRuntimeSettings, updateRuntimeSetting } from '../../api/runtimeSettings'
+import { getEffectiveRuntimeSettings, updateRuntimeSettingOverride } from '../../api/runtimeSettings'
 import type { ActionCatalogMode, ActionFormValues, PlainObject } from './actionCatalogTypes'
 import {
   buildActionFromForm,
@@ -43,6 +43,7 @@ export function ActionCatalogPage() {
   const [serverRaw, setServerRaw] = useState<string | null>(null)
   const [draftRaw, setDraftRaw] = useState<string>('{}')
   const [settingDescription, setSettingDescription] = useState<string | null>(null)
+  const [settingSource, setSettingSource] = useState<string | null>(null)
   const [disabledActions, setDisabledActions] = useState<PlainObject[]>([])
   const [saveErrors, setSaveErrors] = useState<string[]>([])
   const [saveErrorsDraftActionIds, setSaveErrorsDraftActionIds] = useState<Array<string | null> | null>(null)
@@ -90,19 +91,21 @@ export function ActionCatalogPage() {
     setSaveErrorsDraftActionIds(null)
     setSaveSuccess(false)
     try {
-      const settings = await getRuntimeSettings()
+      const settings = await getEffectiveRuntimeSettings()
       const entry = settings.find((item) => item.key === ACTION_CATALOG_KEY)
       if (!entry) {
         setError(`RuntimeSetting ${ACTION_CATALOG_KEY} не найден`)
         setServerRaw(null)
         setDraftRaw('{}')
         setSettingDescription(null)
+        setSettingSource(null)
         return
       }
       const raw = safeJsonStringify(entry.value)
       setServerRaw(raw)
       setDraftRaw(raw)
       setSettingDescription(entry.description || null)
+      setSettingSource(entry.source || null)
     } catch (_err) {
       setError('Не удалось загрузить ui.action_catalog')
     } finally {
@@ -192,7 +195,7 @@ export function ActionCatalogPage() {
     setSaveErrorsDraftActionIds(actionIdsByPos)
     setSaving(true)
     try {
-      const updated = await updateRuntimeSetting(ACTION_CATALOG_KEY, parsed)
+      const updated = await updateRuntimeSettingOverride(ACTION_CATALOG_KEY, parsed, 'published')
       const nextServerRaw = safeJsonStringify(updated.value)
       setServerRaw(nextServerRaw)
       setDraftRaw(nextServerRaw)
@@ -387,6 +390,9 @@ export function ActionCatalogPage() {
             RuntimeSetting <Text code>{ACTION_CATALOG_KEY}</Text>
           </Text>
           {dirty && <Tag color="orange">Draft</Tag>}
+          {settingSource === 'tenant_override' && <Tag color="blue">Tenant override</Tag>}
+          {settingSource === 'global' && <Tag>Global</Tag>}
+          {settingSource === 'default' && <Tag>Default</Tag>}
         </Space>
         {settingDescription && (
           <Text type="secondary" style={{ display: 'block' }}>{settingDescription}</Text>
@@ -483,4 +489,3 @@ export function ActionCatalogPage() {
     </Space>
   )
 }
-

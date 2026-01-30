@@ -102,6 +102,10 @@ export const queryKeys = {
     overview: (filters?: unknown) => [...queryKeys.extensions.all, 'overview', filters] as const,
     overviewDatabases: (filters?: unknown) => [...queryKeys.extensions.all, 'overview-databases', filters] as const,
   },
+  tenants: {
+    all: ['tenants'] as const,
+    my: () => [...queryKeys.tenants.all, 'my'] as const,
+  },
 } as const
 
 export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'

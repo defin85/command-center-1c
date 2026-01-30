@@ -18,7 +18,7 @@ from apps.operations.driver_catalog_effective import (
     resolve_driver_catalog_versions,
 )
 from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
-from apps.runtime_settings.models import RuntimeSetting
+from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.templates.workflow.models import WorkflowTemplate
 
 logger = logging.getLogger(__name__)
@@ -126,7 +126,8 @@ def _filter_extensions_actions_for_user(user, actions: list[dict]) -> list[dict]
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_action_catalog(request):
-    raw = RuntimeSetting.objects.filter(key=UI_ACTION_CATALOG_KEY).values_list("value", flat=True).first()
+    tenant_id = getattr(request, "tenant_id", None)
+    raw = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
     catalog, errors = ensure_valid_action_catalog(raw)
     if errors:
         logger.warning(
@@ -152,5 +153,4 @@ def get_action_catalog(request):
             "extensions": {"actions": filtered_actions},
         }
     )
-
 

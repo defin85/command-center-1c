@@ -1,12 +1,13 @@
-import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography } from 'antd'
+import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select } from 'antd'
 import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import type { ReactNode, MouseEvent } from 'react'
+import { useEffect, type ReactNode, type MouseEvent } from 'react'
 import type { MenuProps } from 'antd'
 
 import { useMe } from '../../api/queries/me'
 import { useCanManageRbac } from '../../api/queries/rbac'
 import { useCanManageDriverCatalogs } from '../../api/queries/commandSchemas'
+import { useMyTenants, useSetActiveTenant } from '../../api/queries/tenants'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
@@ -23,6 +24,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const location = useLocation()
   const meQuery = useMe()
   const hasToken = Boolean(localStorage.getItem('auth_token'))
+  const myTenantsQuery = useMyTenants({ enabled: hasToken })
+  const setActiveTenantMutation = useSetActiveTenant()
   const canManageRbacQuery = useCanManageRbac({ enabled: hasToken })
   const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: hasToken })
   const {
@@ -37,6 +40,20 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canManageAdmin = Boolean(meQuery.data?.is_staff)
   const canManageRbac = Boolean(canManageRbacQuery.data)
   const canManageDriverCatalogs = Boolean(canManageDriverCatalogsQuery.data)
+
+  useEffect(() => {
+    const data = myTenantsQuery.data
+    if (!data) return
+
+    const stored = localStorage.getItem('active_tenant_id')
+    const preferred = data.active_tenant_id || data.tenants[0]?.id || null
+    if (!stored && preferred) {
+      localStorage.setItem('active_tenant_id', preferred)
+    }
+    if (stored && data.active_tenant_id && stored !== data.active_tenant_id) {
+      localStorage.setItem('active_tenant_id', data.active_tenant_id)
+    }
+  }, [myTenantsQuery.data])
 
   const handleSkipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -64,6 +81,9 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       onClick: handleLogout,
     },
   ]
+
+  const tenants = myTenantsQuery.data?.tenants ?? []
+  const activeTenantId = localStorage.getItem('active_tenant_id') || myTenantsQuery.data?.active_tenant_id || undefined
 
   const menuItems = [
     {
@@ -216,6 +236,25 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           </Popover>
         </Space>
         <Space size="small">
+          {tenants.length > 1 && (
+            <Select
+              size="small"
+              loading={myTenantsQuery.isFetching}
+              disabled={setActiveTenantMutation.isPending}
+              value={activeTenantId}
+              style={{ width: 220 }}
+              options={tenants.map((t) => ({ value: t.id, label: t.name }))}
+              onChange={(tenantId) => {
+                setActiveTenantMutation.mutate(tenantId, {
+                  onSuccess: () => {
+                    localStorage.setItem('active_tenant_id', tenantId)
+                    resetQueryClient()
+                    window.location.reload()
+                  },
+                })
+              }}
+            />
+          )}
           {meQuery.data?.is_staff && (
             <Tag color="blue">Staff</Tag>
           )}

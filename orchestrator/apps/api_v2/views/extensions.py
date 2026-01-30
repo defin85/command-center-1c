@@ -21,6 +21,8 @@ from apps.core import permission_codes as perms
 from apps.databases.extensions_snapshot import normalize_extensions_snapshot
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, PermissionLevel
 from apps.databases.services import PermissionService
+from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
+from apps.mappings.models import TenantMappingSpec
 
 
 def _permission_denied(message: str):
@@ -74,7 +76,15 @@ def _load_snapshot_state(db: Database) -> _SnapshotState:
     if payload.get("parse_error"):
         return _SnapshotState(ok=False, updated_at=snapshot_obj.updated_at, extensions=[])
 
-    extensions = payload.get("extensions")
+    spec = TenantMappingSpec.objects.filter(
+        tenant_id=db.tenant_id,
+        entity_kind=TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+        status=TenantMappingSpec.STATUS_PUBLISHED,
+    ).values_list("spec", flat=True).first()
+    spec_dict = spec if isinstance(spec, dict) else {}
+    canonical = build_canonical_extensions_inventory(payload, spec_dict)
+
+    extensions = canonical.get("extensions")
     if not isinstance(extensions, list):
         return _SnapshotState(ok=False, updated_at=snapshot_obj.updated_at, extensions=[])
 

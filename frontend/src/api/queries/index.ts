@@ -53,3 +53,4 @@ export {
 export { useDriverCommands } from './driverCommands'
 export { useDriverCommandShortcuts, useCreateDriverCommandShortcut, useDeleteDriverCommandShortcut } from './commandShortcuts'
 export { useCanManageDriverCatalogs } from './commandSchemas'
+export { useMyTenants, useSetActiveTenant } from './tenants'

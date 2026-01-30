@@ -4,6 +4,17 @@ from django.db import models
 from django.utils import timezone
 from encrypted_model_fields.fields import EncryptedCharField
 
+from apps.tenancy.context import get_current_tenant_id
+
+
+class TenantScopedManager(models.Manager):
+    def get_queryset(self):
+        qs = super().get_queryset()
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            return qs.filter(tenant_id=tenant_id)
+        return qs
+
 
 def generate_database_id() -> str:
     return str(uuid.uuid4())
@@ -90,6 +101,13 @@ class Database(models.Model):
         help_text="1C Cluster this infobase belongs to",
     )
 
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.PROTECT,
+        related_name="databases",
+        help_text="Tenant that owns this database",
+    )
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
     version = models.CharField(max_length=50, blank=True)
     metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata")
@@ -113,6 +131,8 @@ class Database(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = TenantScopedManager()
+
     class Meta:
         db_table = "databases"
         ordering = ["name"]
@@ -135,6 +155,22 @@ class Database(models.Model):
         if self.cluster:
             return f"{self.name} ({self.cluster.name})"
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.tenant_id:
+            tenant_id = get_current_tenant_id()
+            if tenant_id:
+                self.tenant_id = tenant_id
+        if not self.tenant_id:
+            try:
+                from apps.tenancy.models import Tenant
+
+                default_tenant_id = Tenant.objects.filter(slug="default").values_list("id", flat=True).first()
+                if default_tenant_id:
+                    self.tenant_id = str(default_tenant_id)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
 
     def get_odata_endpoint(self, entity: str) -> str:
         base_url = self.odata_url.rstrip("/")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .common import *  # noqa: F403
 from .common import _apply_filters, _is_staff, _parse_filters, _parse_sort, _permission_denied
+from apps.tenancy.permissions import TenantContextPermission
 
 @extend_schema(
     tags=['v2'],
@@ -25,7 +26,7 @@ from .common import _apply_filters, _is_staff, _parse_filters, _parse_sort, _per
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def list_databases(request):
     """
     GET /api/v2/databases/list-databases/
@@ -160,7 +161,7 @@ def list_databases(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def get_database(request):
     """
     GET /api/v2/databases/get-database/?database_id=X
@@ -230,7 +231,7 @@ def get_database(request):
     }
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def get_extensions_snapshot(request):
     """
     GET /api/v2/databases/get-extensions-snapshot/?database_id=X
@@ -278,6 +279,20 @@ def get_extensions_snapshot(request):
         snapshot = snapshot_obj.snapshot or {}
         if snapshot:
             snapshot = normalize_extensions_snapshot(snapshot)
+            try:
+                from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
+                from apps.mappings.models import TenantMappingSpec
+
+                spec = TenantMappingSpec.objects.filter(
+                    tenant_id=db.tenant_id,
+                    entity_kind=TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+                    status=TenantMappingSpec.STATUS_PUBLISHED,
+                ).values_list("spec", flat=True).first()
+                spec_dict = spec if isinstance(spec, dict) else {}
+                canonical = build_canonical_extensions_inventory(snapshot, spec_dict)
+                snapshot["extensions"] = canonical.get("extensions", [])
+            except Exception:
+                pass
         updated_at = snapshot_obj.updated_at
         source_operation_id = snapshot_obj.source_operation_id or ""
     except DatabaseExtensionsSnapshot.DoesNotExist:
@@ -306,7 +321,7 @@ def get_extensions_snapshot(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def update_database_credentials(request):
     """
     POST /api/v2/databases/update-credentials/
@@ -433,7 +448,7 @@ def update_database_credentials(request):
     }
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TenantContextPermission])
 def health_check(request):
     """
     POST /api/v2/databases/health-check/
@@ -497,5 +512,3 @@ def health_check(request):
         'total_tasks': enqueue_result.metadata.get('database_count', 1),
         'message': 'health_check queued for 1 database(s)',
     }, status=http_status.HTTP_202_ACCEPTED)
-
-

@@ -105,6 +105,12 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
 
+    // Tenant context (optional)
+    const tenantId = localStorage.getItem('active_tenant_id')
+    if (tenantId) {
+      config.headers['X-CC1C-Tenant-ID'] = tenantId
+    }
+
     // Remove Content-Type for FormData (axios will set it with boundary)
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type']

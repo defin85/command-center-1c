@@ -119,17 +119,37 @@ class WorkerEventHandlersMixin:
                                 from apps.databases.extensions_snapshot import (
                                     build_extensions_snapshot_from_worker_result,
                                 )
+                                from apps.databases.models import Database
+                                from apps.operations.models import CommandResultSnapshot
+                                from apps.operations.snapshot_hash import canonical_json_hash
 
                                 snapshot_data = result.get("data")
+                                normalized = build_extensions_snapshot_from_worker_result(snapshot_data)
+                                canonical = normalized
+                                canonical_hash = canonical_json_hash(canonical)
+
                                 DatabaseExtensionsSnapshot.objects.update_or_create(
                                     database_id=database_id,
                                     defaults={
-                                        "snapshot": build_extensions_snapshot_from_worker_result(
-                                            snapshot_data
-                                        ),
+                                        "snapshot": normalized,
                                         "source_operation_id": str(operation_id),
                                     },
                                 )
+
+                                db = Database.objects.filter(id=database_id).only("id", "tenant_id").first()
+                                if db and db.tenant_id:
+                                    CommandResultSnapshot.objects.create(
+                                        tenant_id=db.tenant_id,
+                                        operation_id=str(operation_id),
+                                        database_id=str(database_id),
+                                        driver="ibcmd",
+                                        command_id=op_command_id,
+                                        raw_payload=snapshot_data or {},
+                                        normalized_payload=normalized,
+                                        canonical_payload=canonical,
+                                        canonical_hash=canonical_hash,
+                                        captured_at=now,
+                                    )
                             except Exception:
                                 pass
                     else:

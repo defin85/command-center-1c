@@ -5,6 +5,17 @@ from django.db import models
 from django.utils import timezone
 from encrypted_model_fields.fields import EncryptedCharField
 
+from apps.tenancy.context import get_current_tenant_id
+
+
+class TenantScopedManager(models.Manager):
+    def get_queryset(self):
+        qs = super().get_queryset()
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            return qs.filter(tenant_id=tenant_id)
+        return qs
+
 
 class Cluster(models.Model):
     """
@@ -39,6 +50,13 @@ class Cluster(models.Model):
         null=True,
         blank=True,
         help_text="UUID кластера в RAS (заполняется при первой успешной синхронизации)",
+    )
+
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.PROTECT,
+        related_name="clusters",
+        help_text="Tenant that owns this cluster",
     )
 
     cluster_service_url = models.URLField(
@@ -122,6 +140,8 @@ class Cluster(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = TenantScopedManager()
+
     class Meta:
         db_table = "clusters"
         ordering = ["name"]
@@ -196,6 +216,19 @@ class Cluster(models.Model):
     def save(self, *args, **kwargs):
         if isinstance(self.id, str):
             self.id = uuid.UUID(self.id)
+        if not self.tenant_id:
+            tenant_id = get_current_tenant_id()
+            if tenant_id:
+                self.tenant_id = tenant_id
+        if not self.tenant_id:
+            try:
+                from apps.tenancy.models import Tenant
+
+                default_tenant_id = Tenant.objects.filter(slug="default").values_list("id", flat=True).first()
+                if default_tenant_id:
+                    self.tenant_id = str(default_tenant_id)
+            except Exception:
+                pass
         self._normalize_hosts()
         self._normalize_ports()
         if self.ras_host and self.ras_port:
@@ -263,4 +296,3 @@ class Cluster(models.Model):
                 "updated_at",
             ]
         )
-

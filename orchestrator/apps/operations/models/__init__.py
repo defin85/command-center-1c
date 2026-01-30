@@ -9,6 +9,8 @@ from .failed_event import FailedEvent
 from .scheduler_job_run import SchedulerJobRun
 from .stream_message_receipt import StreamMessageReceipt
 from .task_execution_log import TaskExecutionLog
+from .command_result_snapshot import CommandResultSnapshot
+from .extensions_plan import ExtensionsPlan
 
 __all__ = [
     'BatchOperation',
@@ -20,4 +22,6 @@ __all__ = [
     'SchedulerJobRun',
     'StreamMessageReceipt',
     'TaskExecutionLog',
+    'CommandResultSnapshot',
+    'ExtensionsPlan',
 ]
