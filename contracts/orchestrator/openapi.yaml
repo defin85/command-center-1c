@@ -108,7 +108,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -135,7 +134,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '204':
           description: Deleted
@@ -164,7 +162,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -203,7 +200,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -247,7 +243,6 @@ paths:
               $ref: '#/components/schemas/ArtifactPurgeRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -292,7 +287,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -325,7 +319,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -357,7 +350,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: File download
@@ -386,7 +378,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -430,7 +421,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -463,7 +453,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -520,7 +509,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -558,7 +546,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -596,7 +583,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -639,7 +625,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -689,7 +674,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -734,7 +718,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -783,7 +766,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -851,7 +833,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -888,7 +869,6 @@ paths:
               $ref: '#/components/schemas/ResetSyncStatusRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -922,7 +902,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -977,7 +956,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1031,7 +1009,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1080,7 +1057,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1123,7 +1099,6 @@ paths:
               $ref: '#/components/schemas/BulkHealthCheckRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '202':
           content:
@@ -1161,7 +1136,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -1200,7 +1174,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -1239,7 +1212,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Deleted
@@ -1272,7 +1244,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Deleted
@@ -1301,7 +1272,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1339,7 +1309,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1384,7 +1353,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '202':
           content:
@@ -1457,7 +1425,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1514,7 +1481,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1576,7 +1542,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1613,7 +1578,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Password reset
@@ -1646,7 +1610,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Password reset
@@ -1679,7 +1642,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1716,7 +1678,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1754,7 +1715,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1794,7 +1754,6 @@ paths:
               $ref: '#/components/schemas/DatabaseStreamTicketRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1837,7 +1796,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1880,7 +1838,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1919,7 +1876,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -1958,7 +1914,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2031,7 +1986,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2070,7 +2024,6 @@ paths:
               $ref: '#/components/schemas/DLQRetryRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2084,12 +2037,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
-        '503':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
         '401':
           description: Unauthorized
         '403':
@@ -2103,7 +2050,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       - {}
       responses:
         '200':
@@ -2133,7 +2079,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -2147,6 +2092,51 @@ paths:
           description: Forbidden
         '500':
           description: Internal server error
+  /api/v2/extensions/apply/:
+    post:
+      operationId: v2_extensions_apply_create
+      description: Apply extensions sync for planned databases with drift check (observed
+        vs base snapshot hash).
+      summary: Extensions apply
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsApplyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsApplyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsApplyRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsApplyConflict'
+          description: ''
   /api/v2/extensions/overview/:
     get:
       operationId: v2_extensions_overview_retrieve
@@ -2187,7 +2177,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2240,7 +2229,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2250,6 +2238,41 @@ paths:
           description: ''
         '400':
           description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/extensions/plan/:
+    post:
+      operationId: v2_extensions_plan_create
+      description: Build plan for extensions apply (captures base snapshot hashes
+        per database).
+      summary: Extensions plan
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsPlanRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsPlanRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsPlanRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsPlanResponse'
+          description: ''
+        '400':
+          description: Validation error
         '401':
           description: Unauthorized
         '403':
@@ -2270,7 +2293,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2308,7 +2330,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: File content
@@ -2348,7 +2369,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -2370,6 +2390,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/mappings/get/:
+    get:
+      operationId: v2_mappings_get_retrieve
+      summary: Get mapping spec
+      parameters:
+      - in: query
+        name: entity_kind
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: draft|published (default published)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingSpec'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/mappings/preview/:
+    post:
+      operationId: v2_mappings_preview_create
+      description: Apply mapping to saved snapshot and validate canonical schema.
+      summary: Preview mapping against snapshot
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewMappingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PreviewMappingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PreviewMappingRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewMappingResponse'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/mappings/upsert/:
+    patch:
+      operationId: v2_mappings_upsert_partial_update
+      summary: Upsert mapping spec
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpsertMappingSpecRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpsertMappingSpecRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpsertMappingSpecRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingSpec'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/operations/cancel-operation/:
     post:
       operationId: v2_operations_cancel_operation_create
@@ -2392,7 +2512,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2424,7 +2543,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2443,7 +2561,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2474,7 +2591,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -2511,7 +2627,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: OK
@@ -2548,7 +2663,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2594,7 +2708,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '202':
           content:
@@ -2636,7 +2749,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '202':
           content:
@@ -2650,18 +2762,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationErrorResponse'
           description: ''
-        '500':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationErrorResponse'
-          description: Internal Server Error
-        '503':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationErrorResponse'
-          description: Service Unavailable
         '401':
           description: Unauthorized
         '403':
@@ -2710,7 +2810,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2760,7 +2859,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2803,7 +2901,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2880,7 +2977,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2905,7 +3001,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2934,7 +3029,6 @@ paths:
               $ref: '#/components/schemas/OperationMuxTicketRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2959,7 +3053,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -2989,7 +3082,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Subscription updated
@@ -3024,7 +3116,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3066,7 +3157,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           description: Subscription updated
@@ -3092,7 +3182,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3120,7 +3209,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3148,7 +3236,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3176,7 +3263,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3204,7 +3290,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3232,7 +3317,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3260,7 +3344,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3288,7 +3371,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3316,7 +3398,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3344,7 +3425,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3372,7 +3452,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3416,7 +3495,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3496,7 +3574,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3521,7 +3598,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3559,7 +3635,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3587,7 +3662,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3615,7 +3689,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3643,7 +3716,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3687,7 +3759,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3715,7 +3786,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3759,7 +3829,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3787,7 +3856,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3815,7 +3883,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3843,7 +3910,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3901,7 +3967,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3942,7 +4007,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3983,7 +4047,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -3999,7 +4062,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4044,7 +4106,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4085,7 +4146,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4134,7 +4194,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4179,7 +4238,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4224,7 +4282,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4265,7 +4322,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4294,7 +4350,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4331,7 +4386,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4373,7 +4427,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4418,7 +4471,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4459,7 +4511,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4488,7 +4539,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4517,7 +4567,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4550,7 +4599,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4579,7 +4627,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4608,7 +4655,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4636,7 +4682,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4664,7 +4709,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4692,7 +4736,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4720,7 +4763,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4758,7 +4800,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4786,7 +4827,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4824,7 +4864,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4852,7 +4891,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4880,7 +4918,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4908,7 +4945,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4936,7 +4972,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -4986,7 +5021,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5036,7 +5070,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5088,7 +5121,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5125,7 +5157,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5163,7 +5194,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5195,7 +5225,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5237,7 +5266,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5278,7 +5306,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5320,7 +5347,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5363,7 +5389,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5401,7 +5426,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5443,7 +5467,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5485,7 +5508,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5523,7 +5545,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5563,7 +5584,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5611,7 +5631,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5636,7 +5655,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5648,6 +5666,92 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/settings/runtime-effective/:
+    get:
+      operationId: v2_settings_runtime_effective_retrieve
+      description: List effective runtime settings for current tenant (published override
+        → global → default). Staff only.
+      summary: List effective runtime settings (tenant-aware)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSettingsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/settings/runtime-overrides/:
+    get:
+      operationId: v2_settings_runtime_overrides_list
+      description: List runtime setting overrides for current tenant. Staff or tenant-admin
+        only.
+      summary: List runtime setting overrides for tenant
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RuntimeSettingOverride'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/settings/runtime-overrides/{key}/:
+    patch:
+      operationId: v2_settings_runtime_overrides_partial_update
+      description: Create/update runtime setting override for current tenant. Staff
+        or tenant-admin only.
+      summary: Update runtime setting override for tenant
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingOverrideUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingOverrideUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRuntimeSettingOverrideUpdate'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSettingOverride'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/settings/runtime/{key}/:
     patch:
       operationId: v2_settings_runtime_partial_update
@@ -5680,7 +5784,6 @@ paths:
               $ref: '#/components/schemas/PatchedRuntimeSettingUpdate'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5696,6 +5799,72 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+  /api/v2/snapshots/get/:
+    get:
+      operationId: v2_snapshots_get_retrieve
+      summary: Get snapshot details
+      parameters:
+      - in: query
+        name: snapshot_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotGetResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/snapshots/list/:
+    get:
+      operationId: v2_snapshots_list_retrieve
+      description: List snapshots for current tenant (RBAC-scoped to accessible databases).
+      summary: List command result snapshots
+      parameters:
+      - in: query
+        name: command_id
+        schema:
+          type: string
+      - in: query
+        name: database_id
+        schema:
+          type: string
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Max items (default 50, max 500)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Offset (default 0)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/system/config/:
     get:
       operationId: v2_system_config_retrieve
@@ -5705,7 +5874,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5725,7 +5893,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5745,7 +5912,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5776,7 +5942,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5815,7 +5980,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5884,7 +6048,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5921,7 +6084,6 @@ paths:
               $ref: '#/components/schemas/OperationTemplateSyncRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5960,7 +6122,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -5978,6 +6139,58 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/tenants/list-my-tenants/:
+    get:
+      operationId: v2_tenants_list_my_tenants_retrieve
+      description: List tenants available for the current user (membership scoped).
+      summary: List my tenants
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListMyTenantsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/tenants/set-active/:
+    post:
+      operationId: v2_tenants_set_active_create
+      description: Persist active tenant for the current user.
+      summary: Set active tenant
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetActiveTenantRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SetActiveTenantRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SetActiveTenantRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetActiveTenantResponse'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/ui/action-catalog/:
     get:
       operationId: v2_ui_action_catalog_retrieve
@@ -5988,7 +6201,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6019,7 +6231,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6053,7 +6264,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6095,7 +6305,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -6160,7 +6369,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6192,7 +6400,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6236,7 +6443,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6284,7 +6490,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6340,7 +6545,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -6383,7 +6587,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '201':
           content:
@@ -6421,7 +6624,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6477,7 +6679,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6522,7 +6723,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6566,7 +6766,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6605,7 +6804,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6649,7 +6847,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6702,7 +6899,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6739,7 +6935,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6801,7 +6996,6 @@ paths:
       - v2
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6839,7 +7033,6 @@ paths:
         required: true
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6888,7 +7081,6 @@ paths:
               $ref: '#/components/schemas/ValidateWorkflowRequest'
       security:
       - bearerAuth: []
-      - cookieAuth: []
       responses:
         '200':
           content:
@@ -6988,64 +7180,14 @@ paths:
           description: Stream already active
 components:
   schemas:
-    ActionCatalogAction:
-      type: object
-      properties:
-        id:
-          type: string
-        label:
-          type: string
-        contexts:
-          type: array
-          items:
-            type: string
-        executor:
-          $ref: '#/components/schemas/ActionCatalogExecutor'
-      required:
-      - contexts
-      - executor
-      - id
-      - label
-    ActionCatalogExecutor:
-      type: object
-      properties:
-        kind:
-          type: string
-        driver:
-          type: string
-        command_id:
-          type: string
-        workflow_id:
-          type: string
-        mode:
-          type: string
-        params:
-          type: object
-          additionalProperties: {}
-        additional_args:
-          type: array
-          items:
-            type: string
-        stdin:
-          type: string
-        fixed:
-          $ref: '#/components/schemas/ActionCatalogExecutorFixed'
-      required:
-      - kind
-    ActionCatalogExecutorFixed:
-      type: object
-      properties:
-        confirm_dangerous:
-          type: boolean
-        timeout_seconds:
-          type: integer
     ActionCatalogResponse:
       type: object
       properties:
         catalog_version:
           type: integer
         extensions:
-          $ref: '#/components/schemas/ExtensionsActionCatalog'
+          type: object
+          additionalProperties: {}
       required:
       - catalog_version
       - extensions
@@ -9697,6 +9839,9 @@ components:
           nullable: true
         db_username:
           type: string
+        db_password:
+          type: string
+          writeOnly: true
         auth_type:
           enum:
           - local
@@ -10615,20 +10760,15 @@ components:
       type: object
       properties:
         executor:
-          $ref: '#/components/schemas/ActionCatalogExecutor'
+          type: object
+          additionalProperties: {}
+        connection:
+          type: object
+          additionalProperties: {}
         database_ids:
           type: array
           items:
             type: string
-            format: uuid
-          maxItems: 500
-        auth_database_id:
-          type: string
-          format: uuid
-        connection:
-          type: object
-          additionalProperties: {}
-          nullable: true
       required:
       - executor
     ExecutionPlanWithBindings:
@@ -10656,15 +10796,33 @@ components:
       required:
       - count
       - steps
-    ExtensionsActionCatalog:
+    ExtensionsApplyConflict:
       type: object
       properties:
-        actions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ActionCatalogAction'
+        success:
+          type: boolean
+          default: false
+        error: {}
+        drift: {}
       required:
-      - actions
+      - drift
+      - error
+    ExtensionsApplyRequest:
+      type: object
+      properties:
+        plan_id:
+          type: string
+          format: uuid
+        strict:
+          type: boolean
+          default: true
+        preflight_timeout_seconds:
+          type: integer
+          maximum: 600
+          minimum: 1
+          default: 120
+      required:
+      - plan_id
     ExtensionsOverviewDatabaseRow:
       type: object
       properties:
@@ -10757,6 +10915,30 @@ components:
       - name
       - unknown_count
       - versions
+    ExtensionsPlanRequest:
+      type: object
+      properties:
+        database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 500
+          minItems: 1
+      required:
+      - database_ids
+    ExtensionsPlanResponse:
+      type: object
+      properties:
+        plan_id:
+          type: string
+          format: uuid
+        preconditions: {}
+        execution_plan: {}
+        bindings: {}
+      required:
+      - plan_id
+      - preconditions
     FileDeleteResponse:
       type: object
       description: Response for file delete endpoint.
@@ -11349,6 +11531,20 @@ components:
       required:
       - count
       - items
+    ListMyTenantsResponse:
+      type: object
+      properties:
+        active_tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantItem'
+      required:
+      - active_tenant_id
+      - tenants
     LoopConfig:
       type: object
       description: Serializer for LoopConfig Pydantic model.
@@ -11388,6 +11584,25 @@ components:
       required:
       - loop_node_id
       - mode
+    MappingSpec:
+      type: object
+      properties:
+        entity_kind:
+          type: string
+        status:
+          enum:
+          - draft
+          - published
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+          x-spec-enum-id: e49ce86be5712ba2
+        spec: {}
+      required:
+      - entity_kind
+      - spec
+      - status
     NodeConfig:
       type: object
       description: Serializer for NodeConfig Pydantic model.
@@ -11904,10 +12119,38 @@ components:
           default: 300
       required:
       - parallel_nodes
+    PatchedRuntimeSettingOverrideUpdate:
+      type: object
+      properties:
+        value: {}
+        status:
+          enum:
+          - draft
+          - published
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+          x-spec-enum-id: e49ce86be5712ba2
     PatchedRuntimeSettingUpdate:
       type: object
       properties:
         value: {}
+    PatchedUpsertMappingSpecRequest:
+      type: object
+      properties:
+        entity_kind:
+          type: string
+        status:
+          enum:
+          - draft
+          - published
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+          x-spec-enum-id: e49ce86be5712ba2
+        spec: {}
     PendingEventsResponse:
       type: object
       properties:
@@ -11921,6 +12164,39 @@ components:
       - failed_count
       - pending_count
       - poison_count
+    PreviewMappingRequest:
+      type: object
+      properties:
+        entity_kind:
+          type: string
+        snapshot_id:
+          type: integer
+        status:
+          enum:
+          - draft
+          - published
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+          x-spec-enum-id: e49ce86be5712ba2
+      required:
+      - entity_kind
+      - snapshot_id
+    PreviewMappingResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+        canonical: {}
+      required:
+      - canonical
+      - errors
+      - ok
     PrometheusMetric:
       type: object
       description: Prometheus metrics for a service.
@@ -12391,6 +12667,8 @@ components:
         key:
           type: string
         value: {}
+        source:
+          type: string
         value_type:
           type: string
         description:
@@ -12408,6 +12686,18 @@ components:
       - key
       - value
       - value_type
+    RuntimeSettingOverride:
+      type: object
+      properties:
+        key:
+          type: string
+        value: {}
+        status:
+          type: string
+      required:
+      - key
+      - status
+      - value
     RuntimeSettingsResponse:
       type: object
       properties:
@@ -12654,6 +12944,22 @@ components:
       - status
       - summary
       - timestamp
+    SetActiveTenantRequest:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+      required:
+      - tenant_id
+    SetActiveTenantResponse:
+      type: object
+      properties:
+        active_tenant_id:
+          type: string
+          format: uuid
+      required:
+      - active_tenant_id
     SetDatabaseStatusRequest:
       type: object
       description: Request body for set_status endpoint.
@@ -12699,6 +13005,75 @@ components:
       - not_found
       - status
       - updated
+    SnapshotGetResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        captured_at:
+          type: string
+          format: date-time
+        command_id:
+          type: string
+        driver:
+          type: string
+        database_id:
+          type: string
+          nullable: true
+        canonical_hash:
+          type: string
+        raw_payload: {}
+        normalized_payload: {}
+        canonical_payload: {}
+      required:
+      - canonical_hash
+      - canonical_payload
+      - captured_at
+      - command_id
+      - database_id
+      - driver
+      - id
+      - normalized_payload
+      - raw_payload
+    SnapshotListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        captured_at:
+          type: string
+          format: date-time
+        command_id:
+          type: string
+        driver:
+          type: string
+        database_id:
+          type: string
+          nullable: true
+        canonical_hash:
+          type: string
+      required:
+      - canonical_hash
+      - captured_at
+      - command_id
+      - database_id
+      - driver
+      - id
+    SnapshotListResponse:
+      type: object
+      properties:
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotListItem'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - snapshots
+      - total
     StoreFailedEventRequest:
       type: object
       properties:
@@ -12979,7 +13354,6 @@ components:
       - worker_id
     TemplateListItem:
       type: object
-      description: Serializer for template list items.
       properties:
         id:
           type: string
@@ -13002,15 +13376,12 @@ components:
       required:
       - category
       - created_at
-      - description
-      - icon
       - id
       - name
       - version_number
       - workflow_type
     TemplateListResponse:
       type: object
-      description: Response for list_templates endpoint.
       properties:
         templates:
           type: array
@@ -13023,7 +13394,6 @@ components:
       - templates
     TemplateSchemaResponse:
       type: object
-      description: Response for get_template_schema endpoint.
       properties:
         workflow_id:
           type: string
@@ -13037,16 +13407,28 @@ components:
         icon:
           type: string
         input_schema:
-          type: object
-          additionalProperties: {}
           nullable: true
       required:
       - category
-      - description
-      - icon
-      - input_schema
       - name
       - workflow_id
+    TenantItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+      required:
+      - id
+      - name
+      - role
+      - slug
     TimelineErrorDetail:
       type: object
       description: Error detail structure.
@@ -14212,7 +14594,3 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: sessionid
