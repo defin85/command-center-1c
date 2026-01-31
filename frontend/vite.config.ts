@@ -28,6 +28,13 @@ export default defineConfig({
         // Port 8180 - outside Windows reserved range (8013-8112)
         target: 'http://localhost:8180',
         changeOrigin: true,
+        ws: false,
+      },
+      '/ws': {
+        // WebSocket proxy to API Gateway
+        target: 'ws://localhost:8180',
+        changeOrigin: true,
+        ws: true,
       }
     },
     // Disable caching in development

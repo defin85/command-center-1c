@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict
 
 from django.db import transaction
+from django.db.utils import OperationalError
 from django.utils import timezone
 
 from .flow import get_workflow_metadata, publish_completion_flow, release_idempotency_lock_for_operation
@@ -252,6 +253,10 @@ class WorkerEventHandlersMixin:
 
         except BatchOperation.DoesNotExist:
             runtime.logger.warning("BatchOperation not found: %s", operation_id)
+        except OperationalError as e:
+            # Transient DB issues MUST bubble up so EventSubscriber does not ACK the message.
+            runtime.logger.error("Error handling worker:completed: %s", e, exc_info=True)
+            raise
         except Exception as e:
             runtime.logger.error("Error handling worker:completed: %s", e, exc_info=True)
 
@@ -357,6 +362,10 @@ class WorkerEventHandlersMixin:
 
         except BatchOperation.DoesNotExist:
             runtime.logger.warning("BatchOperation not found: %s", operation_id)
+        except OperationalError as e:
+            # Transient DB issues MUST bubble up so EventSubscriber does not ACK the message.
+            runtime.logger.error("Error handling worker:failed: %s", e, exc_info=True)
+            raise
         except Exception as e:
             runtime.logger.error("Error handling worker:failed: %s", e, exc_info=True)
 

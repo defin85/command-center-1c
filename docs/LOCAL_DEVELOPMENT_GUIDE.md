@@ -513,8 +513,13 @@ JWT_SECRET=...
 JWT_EXPIRE_TIME=24h
 
 # Frontend
-VITE_API_URL=http://localhost:8080/api/v1
-VITE_WS_URL=ws://localhost:8080/ws
+# По умолчанию frontend использует same-origin:
+# - REST: /api/* (dev proxy -> API Gateway)
+# - WS:   /ws/*  (dev proxy -> API Gateway)
+#
+# Прод-лайк режим (прямые запросы в API Gateway):
+# VITE_API_URL=http://localhost:8180/api/v2
+# VITE_WS_HOST=localhost:8180
 
 # Cluster Service
 CLUSTER_SERVICE_URL=http://localhost:8088

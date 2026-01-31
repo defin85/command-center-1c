@@ -166,17 +166,13 @@ if [[ -z "${ENABLE_GO_SCHEDULER:-}" ]]; then
     export ENABLE_GO_SCHEDULER=true
 fi
 
-# Прокинуть VITE_* из CC1C_BASE_HOST если они не заданы
+# Прокинуть VITE_BASE_HOST из CC1C_BASE_HOST если он не задан
 if [[ -n "${CC1C_BASE_HOST:-}" ]]; then
     if [[ -z "${VITE_BASE_HOST:-}" ]]; then
         export VITE_BASE_HOST="$CC1C_BASE_HOST"
     fi
-    if [[ -z "${VITE_API_URL:-}" ]]; then
-        export VITE_API_URL="http://${VITE_BASE_HOST}:8180/api/v2"
-    fi
-    if [[ -z "${VITE_WS_HOST:-}" ]]; then
-        export VITE_WS_HOST="${VITE_BASE_HOST}:8200"
-    fi
+    # Default: same-origin (dev via Vite proxy, prod via reverse proxy).
+    # Keep VITE_API_URL / VITE_WS_HOST unset unless explicitly provided to enable prod-like mode.
 fi
 
 # Sync frontend/.env.local for standalone runs (keeps VITE_* consistent)

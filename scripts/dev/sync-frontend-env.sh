@@ -22,7 +22,8 @@ BASE_HOST="${CC1C_BASE_HOST:-localhost}"
 
 extra_lines=""
 if [[ -f "$FRONTEND_ENV" ]]; then
-    extra_lines=$(grep -v -E '^(VITE_BASE_HOST|VITE_API_URL|VITE_WS_HOST)=' "$FRONTEND_ENV" || true)
+    # Keep any user-provided overrides (e.g., VITE_API_URL) intact.
+    extra_lines=$(grep -v -E '^(VITE_BASE_HOST)=' "$FRONTEND_ENV" || true)
 fi
 
 cat > "$FRONTEND_ENV" <<EOF
@@ -30,8 +31,14 @@ cat > "$FRONTEND_ENV" <<EOF
 # Auto-synced from root .env.local (CC1C_BASE_HOST)
 
 VITE_BASE_HOST=${BASE_HOST}
-VITE_API_URL=http://${BASE_HOST}:8180/api/v2
-VITE_WS_HOST=${BASE_HOST}:8200
+
+# По умолчанию Frontend использует same-origin:
+# - REST: /api/* (Vite proxy -> API Gateway)
+# - WS:   /ws/*  (Vite proxy -> API Gateway)
+#
+# Для prod-like режима (прямые запросы в API Gateway) можно раскомментировать:
+# VITE_API_URL=http://${BASE_HOST}:8180/api/v2
+# VITE_WS_HOST=${BASE_HOST}:8180
 EOF
 
 if [[ -n "$extra_lines" ]]; then

@@ -58,11 +58,25 @@ export const getBaseHost = (): string => {
 export const getApiBaseUrl = (): string => {
   const envUrl = getEnvValue('VITE_API_URL')
   if (envUrl) {
+    // Allow specifying a full URL (prod-like) or a relative API prefix (dev/proxy).
+    // Relative prefixes map to the current origin (browser will resolve against window.location).
+    if (envUrl.startsWith('/')) {
+      if (typeof window === 'undefined') {
+        return ''
+      }
+      return window.location.origin
+    }
     return envUrl
       .replace(/\/api\/v\d+\/?$/, '')
       .replace(/\/api\/?$/, '')
   }
 
+  // Default: same-origin (dev via Vite proxy, prod via reverse proxy).
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+
+  // Fallback for non-browser usage (tests, tooling).
   const baseHost = resolveBaseHost()
   return `http://${baseHost}:${DEFAULT_API_PORT}`
 }
@@ -71,6 +85,11 @@ export const getWsHost = (): string => {
   const envHost = getEnvValue('VITE_WS_HOST')
   if (envHost) {
     return normalizeHost(envHost)
+  }
+
+  // Default: same-origin WebSocket endpoint (proxied to API Gateway).
+  if (typeof window !== 'undefined') {
+    return window.location.host
   }
 
   try {

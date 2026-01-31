@@ -337,16 +337,13 @@ def generate_frontend_env(config: dict, mode: str, timestamp: str) -> str:
     lines.append(f"VITE_BASE_HOST={api_host}")
     lines.append("")
 
-    lines.append("# API Gateway URL (for REST API calls)")
-    lines.append("VITE_API_URL=http://${VITE_BASE_HOST}:" + f"{api_port}/api/v2")
-    lines.append("")
-
-    # WebSocket host (Orchestrator for real-time updates)
-    orchestrator = config["services"]["orchestrator"]
-    ws_port = orchestrator["port"]
-
-    lines.append("# WebSocket host (for real-time updates)")
-    lines.append("VITE_WS_HOST=${VITE_BASE_HOST}:" + f"{ws_port}")
+    lines.append("# Default: same-origin (dev via Vite proxy, prod via reverse proxy)")
+    lines.append("# REST: /api/* -> API Gateway")
+    lines.append("# WS:   /ws/*  -> API Gateway")
+    lines.append("#")
+    lines.append("# Prod-like mode (direct calls to API Gateway):")
+    lines.append("# VITE_API_URL=http://${VITE_BASE_HOST}:" + f"{api_port}/api/v2")
+    lines.append("# VITE_WS_HOST=${VITE_BASE_HOST}:" + f"{api_port}")
     lines.append("")
 
     # All service URLs (for debugging/admin panels)
