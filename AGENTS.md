@@ -131,3 +131,17 @@ Run `bd prime` for workflow context.
 - `bd sync` - Sync with git (run at session end)
 
 For full workflow details: `bd prime`
+
+### Beads sync-branch: “постоянно меняется .beads/issues.jsonl”
+
+В этом репозитории Beads работает в режиме sync-branch (по умолчанию `sync-branch: beads-sync` в `.beads/config.yaml`).
+В таком режиме `.beads/*.jsonl` часто меняются из-за daemon/auto-flush и **не должны** постоянно “грязнить” рабочее дерево
+на ветках с кодом.
+
+Если после коммита у вас регулярно появляется `M .beads/issues.jsonl`:
+
+- Рекомендовано: `bd doctor --fix` (исправляет git index flags для Beads файлов).
+- Быстрый ручной фикс (локально):
+  - `git update-index --skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
+- Откатить (если нужно снова видеть изменения):
+  - `git update-index --no-skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`

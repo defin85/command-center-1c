@@ -18,6 +18,18 @@ export type ExecutorKind = 'ibcmd_cli' | 'designer_cli' | 'workflow'
 
 export type PlainObject = Record<string, unknown>
 
+export type IbcmdCliConnectionForm = {
+  remote?: string
+  pid?: number | null
+  offline?: {
+    config?: string
+    data?: string
+    dbms?: string
+    db_server?: string
+    db_name?: string
+  }
+}
+
 export type DiffKind = 'added' | 'removed' | 'changed'
 
 export type DiffItem = {
@@ -42,6 +54,7 @@ export type ActionFormValues = {
     driver?: DriverName
     command_id?: string
     workflow_id?: string
+    connection?: IbcmdCliConnectionForm
     mode?: 'guided' | 'manual'
     params_json?: string
     additional_args?: string[]
@@ -52,4 +65,3 @@ export type ActionFormValues = {
     }
   }
 }
-

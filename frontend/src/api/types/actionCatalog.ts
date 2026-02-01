@@ -4,6 +4,9 @@ export type ActionCatalogExecutor = {
   command_id?: string
   workflow_id?: string
   mode?: 'guided' | 'manual' | string
+  // Optional executor-level connection override (used by some ibcmd_cli executors).
+  // Kept generic because Action Catalog is a UI-provided contract.
+  connection?: Record<string, unknown>
   params?: Record<string, unknown>
   additional_args?: string[]
   stdin?: string
@@ -19,4 +22,3 @@ export type ActionCatalogAction = {
   contexts: string[]
   executor: ActionCatalogExecutor
 }
-

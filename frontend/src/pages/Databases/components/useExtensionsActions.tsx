@@ -6,8 +6,22 @@ import type { ActionCatalogAction } from '../../../api/types/actionCatalog'
 import type { ExecuteIbcmdCliOperationRequest } from '../../../api/generated/model/executeIbcmdCliOperationRequest'
 import { getV2 } from '../../../api/generated'
 import { apiClient } from '../../../api/client'
+import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
 
 const api = getV2()
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const ensureIbcmdConnection = (raw: unknown): Record<string, unknown> => {
+  const conn = isRecord(raw) ? raw : null
+  const hasRemote = typeof conn?.remote === 'string' && conn.remote.trim().length > 0
+  const hasPid = typeof conn?.pid === 'number'
+  const hasOffline = isRecord(conn?.offline)
+  if (conn && (hasRemote || hasPid || hasOffline)) return conn
+  return { offline: {} }
+}
 
 type MessageApi = {
   success: (content: string) => void
@@ -17,6 +31,7 @@ type MessageApi = {
 
 type ModalApi = {
   confirm: (config: Record<string, unknown>) => void
+  error: (config: Record<string, unknown>) => void
 }
 
 export type UseExtensionsActionsParams = {
@@ -44,10 +59,12 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
       }
 
       const timeoutSeconds = executor.fixed?.timeout_seconds
+      const connectionOverride = ensureIbcmdConnection(executor.connection)
       const payload: ExecuteIbcmdCliOperationRequest = {
         command_id: commandId,
         mode: executor.mode === 'manual' ? 'manual' : 'guided',
         database_ids: databaseIds,
+        connection: connectionOverride as unknown as ExecuteIbcmdCliOperationRequest['connection'],
         params: executor.params ?? {},
         additional_args: executor.additional_args ?? [],
         stdin: executor.stdin ?? '',
@@ -111,8 +128,11 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
     if (extensionsActionPendingId) return
 
     const loadPreview = async () => {
+      const previewExecutor: ActionCatalogAction['executor'] = action.executor.kind === 'ibcmd_cli'
+        ? { ...action.executor, connection: ensureIbcmdConnection(action.executor.connection) }
+        : action.executor
       const response = await apiClient.post('/api/v2/ui/execution-plan/preview/', {
-        executor: action.executor,
+        executor: previewExecutor,
         database_ids: databaseIds,
       })
       return response.data as unknown
@@ -173,8 +193,10 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
       try {
         await executeExtensionsAction(action, databaseIds)
       } catch (e: unknown) {
-        const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Не удалось выполнить действие: ${errorMessage}`)
+        if (!tryShowIbcmdCliUiError(e, modal, message)) {
+          const errorMessage = e instanceof Error ? e.message : 'unknown error'
+          message.error(`Не удалось выполнить действие: ${errorMessage}`)
+        }
       } finally {
         setExtensionsActionPendingId(null)
       }

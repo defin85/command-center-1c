@@ -108,6 +108,7 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
         && key !== 'command_id'
         && key !== 'workflow_id'
         && key !== 'mode'
+        && key !== 'connection'
         && key !== 'params'
         && key !== 'additional_args'
         && key !== 'stdin'
@@ -121,6 +122,20 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
     if (kind !== 'ibcmd_cli' && kind !== 'designer_cli' && kind !== 'workflow') {
       errors.push(`extensions.actions[${idx}].executor.kind: must be one of ibcmd_cli, designer_cli, workflow`)
       continue
+    }
+
+    if (executor.connection !== undefined) {
+      const conn = isPlainObject(executor.connection) ? executor.connection as PlainObject : null
+      if (!conn) {
+        errors.push(`extensions.actions[${idx}].executor.connection: must be an object`)
+      } else if (kind !== 'ibcmd_cli') {
+        errors.push(`extensions.actions[${idx}].executor.connection: supported only for ibcmd_cli`)
+      } else {
+        const offline = isPlainObject(conn.offline) ? conn.offline as PlainObject : null
+        if (offline && ('db_user' in offline || 'db_pwd' in offline)) {
+          errors.push(`extensions.actions[${idx}].executor.connection.offline: db_user/db_pwd are not allowed in ui.action_catalog`)
+        }
+      }
     }
 
     if (kind === 'workflow') {
@@ -157,4 +172,3 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
 
   return { ok: errors.length === 0, errors, warnings, actionsCount: actions.length }
 }
-

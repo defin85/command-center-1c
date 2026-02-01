@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Alert, Card, Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
+import { Alert, Card, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
@@ -7,6 +7,8 @@ import type { DriverName } from '../../../api/driverCommands'
 import { useWorkflowTemplates } from '../../../api/queries/workflowTemplates'
 import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCatalogTypes'
 import { isPlainObject, parseJson } from '../actionCatalogUtils'
+
+const { Text } = Typography
 
 const ACTION_CONTEXT_OPTIONS: { value: ActionContext; label: string }[] = [
   { value: 'database_card', label: 'database_card' },
@@ -160,6 +162,7 @@ export function ActionCatalogEditorModal({
               if (next === 'workflow') {
                 form.setFieldValue(['executor', 'driver'], undefined)
                 form.setFieldValue(['executor', 'command_id'], undefined)
+                form.setFieldValue(['executor', 'connection'], undefined)
                 form.setFieldValue(['executor', 'workflow_id'], form.getFieldValue(['executor', 'workflow_id']) ?? '')
                 return
               }
@@ -169,6 +172,9 @@ export function ActionCatalogEditorModal({
                 form.setFieldValue(['executor', 'driver'], next === 'designer_cli' ? 'cli' : 'ibcmd')
               }
               form.setFieldValue(['executor', 'command_id'], undefined)
+              if (next !== 'ibcmd_cli') {
+                form.setFieldValue(['executor', 'connection'], undefined)
+              }
             }}
           />
         </Form.Item>
@@ -240,6 +246,54 @@ export function ActionCatalogEditorModal({
               )}
             </Form.Item>
           </Space>
+        )}
+
+        {editorKind === 'ibcmd_cli' && (
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+              <Text type="secondary">
+                Настройки соединения применяются как override для execute-ibcmd-cli. Секреты DBMS (например{' '}
+                <Text code>connection.offline.db_user/db_pwd</Text>) здесь не задаются.
+              </Text>
+
+              <Space size="middle" style={{ width: '100%' }} align="start">
+                <Form.Item label="connection.remote" name={['executor', 'connection', 'remote']} style={{ flex: 2 }}>
+                  <Input placeholder="http://host:port" data-testid="action-catalog-editor-connection-remote" />
+                </Form.Item>
+                <Form.Item label="connection.pid" name={['executor', 'connection', 'pid']} style={{ flex: 1 }}>
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={0}
+                    placeholder="PID"
+                    data-testid="action-catalog-editor-connection-pid"
+                  />
+                </Form.Item>
+              </Space>
+
+              <Divider style={{ margin: '4px 0 12px' }} />
+              <Text strong>connection.offline.*</Text>
+
+              <Space size="middle" style={{ width: '100%' }} align="start">
+                <Form.Item label="config" name={['executor', 'connection', 'offline', 'config']} style={{ flex: 1 }}>
+                  <Input placeholder="/path/to/config" data-testid="action-catalog-editor-offline-config" />
+                </Form.Item>
+                <Form.Item label="data" name={['executor', 'connection', 'offline', 'data']} style={{ flex: 1 }}>
+                  <Input placeholder="/path/to/data" data-testid="action-catalog-editor-offline-data" />
+                </Form.Item>
+              </Space>
+              <Space size="middle" style={{ width: '100%' }} align="start">
+                <Form.Item label="dbms" name={['executor', 'connection', 'offline', 'dbms']} style={{ flex: 1 }}>
+                  <Input placeholder="PostgreSQL" data-testid="action-catalog-editor-offline-dbms" />
+                </Form.Item>
+                <Form.Item label="db_server" name={['executor', 'connection', 'offline', 'db_server']} style={{ flex: 1 }}>
+                  <Input placeholder="db-host:5432" data-testid="action-catalog-editor-offline-db-server" />
+                </Form.Item>
+                <Form.Item label="db_name" name={['executor', 'connection', 'offline', 'db_name']} style={{ flex: 1 }}>
+                  <Input placeholder="infobase_db" data-testid="action-catalog-editor-offline-db-name" />
+                </Form.Item>
+              </Space>
+            </Space>
+          </Card>
         )}
 
         <Card size="small" style={{ marginBottom: 12 }}>
@@ -333,4 +387,3 @@ export function ActionCatalogEditorModal({
     </Modal>
   )
 }
-
