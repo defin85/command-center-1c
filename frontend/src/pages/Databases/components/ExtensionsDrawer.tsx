@@ -1,6 +1,6 @@
 import { Button, Drawer, List, Space, Spin, Typography } from 'antd'
 import dayjs from 'dayjs'
-import type { ActionCatalogAction } from '../../../api/generated/model/actionCatalogAction'
+import type { ActionCatalogAction } from '../../../api/types/actionCatalog'
 import type { DatabaseExtensionsSnapshotResponse } from '../../../api/generated/model/databaseExtensionsSnapshotResponse'
 
 export interface ExtensionsDrawerProps {
@@ -112,4 +112,3 @@ export const ExtensionsDrawer = ({
     </Drawer>
   )
 }
-

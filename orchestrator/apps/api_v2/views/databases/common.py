@@ -341,6 +341,20 @@ class DatabaseCredentialsUpdateResponseSerializer(serializers.Serializer):
     database = DatabaseSerializer()
     message = serializers.CharField()
 
+class DatabaseDbmsMetadataUpdateRequestSerializer(serializers.Serializer):
+    """Request body for update_dbms_metadata endpoint."""
+    database_id = serializers.CharField(help_text="Database ID to update")
+    dbms = serializers.CharField(required=False, allow_blank=True)
+    db_server = serializers.CharField(required=False, allow_blank=True)
+    db_name = serializers.CharField(required=False, allow_blank=True)
+    reset = serializers.BooleanField(required=False, default=False)
+
+
+class DatabaseDbmsMetadataUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_dbms_metadata endpoint."""
+    database = DatabaseSerializer()
+    message = serializers.CharField()
+
 
 class InfobaseUserListResponseSerializer(serializers.Serializer):
     """Response for list_infobase_users endpoint."""
@@ -424,6 +438,5 @@ class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
     expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
     stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
     message = serializers.CharField()
-
 
 

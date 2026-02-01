@@ -15,6 +15,9 @@ class DatabaseSerializer(serializers.ModelSerializer):
     is_healthy = serializers.BooleanField(read_only=True)
     sessions_deny = serializers.SerializerMethodField()
     scheduled_jobs_deny = serializers.SerializerMethodField()
+    dbms = serializers.SerializerMethodField()
+    db_server = serializers.SerializerMethodField()
+    db_name = serializers.SerializerMethodField()
     denied_from = serializers.SerializerMethodField()
     denied_to = serializers.SerializerMethodField()
     denied_message = serializers.SerializerMethodField()
@@ -34,6 +37,18 @@ class DatabaseSerializer(serializers.ModelSerializer):
 
     def get_scheduled_jobs_deny(self, obj: Database) -> Optional[bool]:
         return self._get_metadata_value(obj, 'scheduled_jobs_deny')
+
+    def get_dbms(self, obj: Database) -> Optional[str]:
+        value = self._get_metadata_value(obj, "dbms")
+        return str(value) if value not in (None, "") else None
+
+    def get_db_server(self, obj: Database) -> Optional[str]:
+        value = self._get_metadata_value(obj, "db_server")
+        return str(value) if value not in (None, "") else None
+
+    def get_db_name(self, obj: Database) -> Optional[str]:
+        value = self._get_metadata_value(obj, "db_name")
+        return str(value) if value not in (None, "") else None
 
     def get_denied_from(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'denied_from')
@@ -89,6 +104,9 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'is_healthy',
             'sessions_deny',
             'scheduled_jobs_deny',
+            'dbms',
+            'db_server',
+            'db_name',
             'denied_from',
             'denied_to',
             'denied_message',

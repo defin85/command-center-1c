@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ExtensionsDrawer } from '../ExtensionsDrawer'
-import type { ActionCatalogAction } from '../../../../api/generated/model/actionCatalogAction'
+import type { ActionCatalogAction } from '../../../../api/types/actionCatalog'
 
 describe('ExtensionsDrawer', () => {
   it('renders actions and runs selected action', async () => {

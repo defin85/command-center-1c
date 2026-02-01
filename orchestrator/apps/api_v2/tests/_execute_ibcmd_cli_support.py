@@ -9,8 +9,7 @@ from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
 from apps.artifacts.storage import ArtifactStorageClient
-from apps.databases.models import Database, DatabasePermission, PermissionLevel, DbmsUserMapping
-from apps.operations.models import BatchOperation, Task
+from apps.databases.models import Database, DatabasePermission, PermissionLevel
 from apps.operations.redis_client import redis_client
 from apps.operations.services import EnqueueResult, OperationsService
 
@@ -137,4 +136,3 @@ def target_dbs():
 
 def _allow_operate(user, database: Database, *, level: int = PermissionLevel.OPERATE):
     DatabasePermission.objects.create(user=user, database=database, level=level)
-

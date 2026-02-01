@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Button, Dropdown, Space, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { AppstoreOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, DatabaseOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import type { Database } from '../../../api/generated/model/database'
@@ -21,6 +21,7 @@ export type UseDatabasesColumnsParams = {
   canOperateDatabase: (databaseId: string) => boolean
   canManageDatabase: (databaseId: string) => boolean
   openCredentialsModal: (database: Database) => void
+  openDbmsMetadataModal: (database: Database) => void
   openExtensionsDrawer: (database: Database) => void
   handleSingleAction: (action: DatabaseActionKey, database: Database) => void
   healthCheckPendingIds: Set<string>
@@ -36,6 +37,7 @@ export const useDatabasesColumns = ({
   canOperateDatabase,
   canManageDatabase,
   openCredentialsModal,
+  openDbmsMetadataModal,
   openExtensionsDrawer,
   handleSingleAction,
   healthCheckPendingIds,
@@ -247,6 +249,15 @@ export const useDatabasesColumns = ({
               aria-label="Credentials"
               disabled={!canManage}
             />
+            <Tooltip title="DBMS metadata">
+              <Button
+                size="small"
+                icon={<DatabaseOutlined />}
+                onClick={() => openDbmsMetadataModal(record)}
+                aria-label="DBMS metadata"
+                disabled={!canManage}
+              />
+            </Tooltip>
             <Tooltip title="Extensions">
               <Button
                 size="small"
@@ -277,6 +288,7 @@ export const useDatabasesColumns = ({
     markHealthCheckPending,
     message,
     openCredentialsModal,
+    openDbmsMetadataModal,
     openExtensionsDrawer,
     runSetStatus,
   ])

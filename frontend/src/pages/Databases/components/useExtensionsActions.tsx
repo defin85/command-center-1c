@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import type { ActionCatalogAction } from '../../../api/generated/model/actionCatalogAction'
+import type { ActionCatalogAction } from '../../../api/types/actionCatalog'
 import type { ExecuteIbcmdCliOperationRequest } from '../../../api/generated/model/executeIbcmdCliOperationRequest'
 import { getV2 } from '../../../api/generated'
 import { apiClient } from '../../../api/client'
@@ -251,4 +251,3 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
 
   return { runExtensionsAction, extensionsActionPendingId, resetExtensionsActionPendingId }
 }
-

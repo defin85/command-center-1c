@@ -7,7 +7,7 @@ import type { Database } from '../../api/generated/model/database'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
-import type { ActionCatalogAction } from '../../api/generated/model/actionCatalogAction'
+import type { ActionCatalogAction } from '../../api/types/actionCatalog'
 import { BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
@@ -18,6 +18,7 @@ import {
   useBulkHealthCheckDatabases,
   useSetDatabaseStatus,
   useUpdateDatabaseCredentials,
+  useUpdateDatabaseDbmsMetadata,
   useDatabaseExtensionsSnapshot,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
@@ -27,6 +28,7 @@ import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DatabaseCredentialsModal } from './components/DatabaseCredentialsModal'
+import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModal'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
 import { useExtensionsActions } from './components/useExtensionsActions'
@@ -49,6 +51,9 @@ export const Databases = () => {
   const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
   const [credentialsDatabase, setCredentialsDatabase] = useState<Database | null>(null)
   const [credentialsForm] = Form.useForm()
+  const [dbmsMetadataModalVisible, setDbmsMetadataModalVisible] = useState(false)
+  const [dbmsMetadataDatabase, setDbmsMetadataDatabase] = useState<Database | null>(null)
+  const [dbmsMetadataForm] = Form.useForm()
   const [extensionsDrawerVisible, setExtensionsDrawerVisible] = useState(false)
   const [extensionsDatabase, setExtensionsDatabase] = useState<Database | null>(null)
 
@@ -102,6 +107,7 @@ export const Databases = () => {
   const bulkHealthCheck = useBulkHealthCheckDatabases()
   const setDatabaseStatus = useSetDatabaseStatus()
   const updateDatabaseCredentials = useUpdateDatabaseCredentials()
+  const updateDatabaseDbmsMetadata = useUpdateDatabaseDbmsMetadata()
   const { runExtensionsAction, extensionsActionPendingId, resetExtensionsActionPendingId } = useExtensionsActions({ isStaff, message, modal, navigate })
 
   // Derived state: selected cluster object
@@ -130,7 +136,10 @@ export const Databases = () => {
     [selectedDatabases, canManageDatabase]
   )
 
-  const extensionsActions: ActionCatalogAction[] = actionCatalogQuery.data?.extensions?.actions ?? EMPTY_ACTIONS
+  const extensionsActionsRaw = (actionCatalogQuery.data as unknown as { extensions?: { actions?: unknown } } | null)?.extensions?.actions
+  const extensionsActions: ActionCatalogAction[] = Array.isArray(extensionsActionsRaw)
+    ? (extensionsActionsRaw as ActionCatalogAction[])
+    : EMPTY_ACTIONS
   const extensionsDatabaseCardActions = useMemo(
     () => extensionsActions.filter((action) => action.contexts.includes('database_card')),
     [extensionsActions]
@@ -181,6 +190,27 @@ export const Databases = () => {
     setCredentialsDatabase(null)
     credentialsForm.resetFields()
   }, [credentialsForm])
+
+  const openDbmsMetadataModal = (database: Database) => {
+    if (!canManageDatabase(database.id)) {
+      message.error('Недостаточно прав для управления DBMS metadata базы')
+      return
+    }
+    const dbAny = database as Database & { dbms?: string | null; db_server?: string | null; db_name?: string | null }
+    setDbmsMetadataDatabase(database)
+    dbmsMetadataForm.setFieldsValue({
+      dbms: typeof dbAny.dbms === 'string' ? dbAny.dbms : '',
+      db_server: typeof dbAny.db_server === 'string' ? dbAny.db_server : '',
+      db_name: typeof dbAny.db_name === 'string' ? dbAny.db_name : '',
+    })
+    setDbmsMetadataModalVisible(true)
+  }
+
+  const closeDbmsMetadataModal = useCallback(() => {
+    setDbmsMetadataModalVisible(false)
+    setDbmsMetadataDatabase(null)
+    dbmsMetadataForm.resetFields()
+  }, [dbmsMetadataForm])
 
   const handleCredentialsSave = async () => {
     if (!credentialsDatabase) return
@@ -239,6 +269,71 @@ export const Databases = () => {
             },
             onError: (error: Error) => {
               message.error('Не удалось сбросить креды: ' + error.message)
+            },
+          }
+        )
+      },
+    })
+  }
+
+  const handleDbmsMetadataSave = async () => {
+    if (!dbmsMetadataDatabase) return
+    if (!canManageDatabase(dbmsMetadataDatabase.id)) {
+      message.error('Недостаточно прав для управления DBMS metadata базы')
+      return
+    }
+
+    const values = await dbmsMetadataForm.validateFields()
+    const dbms = (values.dbms ?? '').trim()
+    const dbServer = (values.db_server ?? '').trim()
+    const dbName = (values.db_name ?? '').trim()
+
+    const payload: { database_id: string; dbms?: string; db_server?: string; db_name?: string } = {
+      database_id: dbmsMetadataDatabase.id,
+    }
+    if (dbms) payload.dbms = dbms
+    if (dbServer) payload.db_server = dbServer
+    if (dbName) payload.db_name = dbName
+
+    if (!payload.dbms && !payload.db_server && !payload.db_name) {
+      message.info('Нет изменений для сохранения')
+      return
+    }
+
+    updateDatabaseDbmsMetadata.mutate(payload, {
+      onSuccess: (response) => {
+        message.success(response.message || 'DBMS metadata обновлены')
+        closeDbmsMetadataModal()
+      },
+      onError: (error: Error) => {
+        message.error('Не удалось обновить DBMS metadata: ' + error.message)
+      },
+    })
+  }
+
+  const handleDbmsMetadataReset = () => {
+    if (!dbmsMetadataDatabase) return
+    if (!canManageDatabase(dbmsMetadataDatabase.id)) {
+      message.error('Недостаточно прав для управления DBMS metadata базы')
+      return
+    }
+
+    modal.confirm({
+      title: 'Сбросить DBMS metadata базы?',
+      content: 'Поля DBMS/DB server/DB name будут очищены.',
+      okText: 'Сбросить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        updateDatabaseDbmsMetadata.mutate(
+          { database_id: dbmsMetadataDatabase.id, reset: true },
+          {
+            onSuccess: (response) => {
+              message.success(response.message || 'DBMS metadata сброшены')
+              closeDbmsMetadataModal()
+            },
+            onError: (error: Error) => {
+              message.error('Не удалось сбросить DBMS metadata: ' + error.message)
             },
           }
         )
@@ -397,6 +492,7 @@ export const Databases = () => {
     canOperateDatabase,
     canManageDatabase,
     openCredentialsModal,
+    openDbmsMetadataModal,
     openExtensionsDrawer,
     handleSingleAction,
     healthCheckPendingIds,
@@ -587,6 +683,15 @@ export const Databases = () => {
         onCancel={closeCredentialsModal}
         onSave={() => void handleCredentialsSave()}
         onReset={handleCredentialsReset}
+      />
+      <DatabaseDbmsMetadataModal
+        open={dbmsMetadataModalVisible}
+        database={dbmsMetadataDatabase}
+        form={dbmsMetadataForm}
+        saving={updateDatabaseDbmsMetadata.isPending}
+        onCancel={closeDbmsMetadataModal}
+        onSave={() => void handleDbmsMetadataSave()}
+        onReset={handleDbmsMetadataReset}
       />
 
       <ExtensionsDrawer

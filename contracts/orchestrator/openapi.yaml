@@ -2213,6 +2213,61 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/databases/update-dbms-metadata/:
+    post:
+      operationId: v2_databases_update_dbms_metadata_create
+      description: Set or reset database DBMS metadata (dbms, db_server, db_name)
+        stored in Database.metadata.
+      summary: Update database DBMS metadata
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseDbmsMetadataUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseDbmsMetadataUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseDbmsMetadataUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseDbmsMetadataUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/update-dbms-user/:
     post:
       operationId: v2_databases_update_dbms_user_create
@@ -11261,6 +11316,18 @@ components:
           type: boolean
           nullable: true
           readOnly: true
+        dbms:
+          type: string
+          nullable: true
+          readOnly: true
+        db_server:
+          type: string
+          nullable: true
+          readOnly: true
+        db_name:
+          type: string
+          nullable: true
+          readOnly: true
         denied_from:
           type: string
           nullable: true
@@ -11302,6 +11369,9 @@ components:
       - cluster_id
       - consecutive_failures
       - created_at
+      - db_name
+      - db_server
+      - dbms
       - denied_from
       - denied_message
       - denied_parameter
@@ -11346,6 +11416,35 @@ components:
     DatabaseCredentialsUpdateResponse:
       type: object
       description: Response for update_database_credentials endpoint.
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        message:
+          type: string
+      required:
+      - database
+      - message
+    DatabaseDbmsMetadataUpdateRequest:
+      type: object
+      description: Request body for update_dbms_metadata endpoint.
+      properties:
+        database_id:
+          type: string
+          description: Database ID to update
+        dbms:
+          type: string
+        db_server:
+          type: string
+        db_name:
+          type: string
+        reset:
+          type: boolean
+          default: false
+      required:
+      - database_id
+    DatabaseDbmsMetadataUpdateResponse:
+      type: object
+      description: Response for update_dbms_metadata endpoint.
       properties:
         database:
           $ref: '#/components/schemas/Database'

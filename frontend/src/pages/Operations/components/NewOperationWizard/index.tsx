@@ -60,7 +60,7 @@ export const NewOperationWizard = ({
   onSubmit,
   preselectedDatabases,
 }: NewOperationWizardProps) => {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   // Wizard state
   const [state, setState] = useState<WizardState>(() =>
     getInitialState(preselectedDatabases)
@@ -413,6 +413,72 @@ export const NewOperationWizard = ({
       onClose()
     } catch (error) {
       console.error('Failed to create operation:', error)
+      type ApiErrorShape = {
+        success?: boolean
+        error?: {
+          code?: string
+          message?: string
+          details?: {
+            missing?: Array<{
+              database_id?: string
+              database_name?: string
+              missing_keys?: string[]
+            }>
+            missing_total?: number
+            omitted?: number
+          }
+        }
+      }
+
+      const apiError = (error as { response?: { data?: ApiErrorShape } } | null)?.response?.data?.error
+      const errorCode = typeof apiError?.code === 'string' ? apiError.code : ''
+      const errorMessage = typeof apiError?.message === 'string' ? apiError.message : ''
+
+      if (errorCode === 'OFFLINE_DB_METADATA_NOT_CONFIGURED') {
+        const details = apiError?.details
+        const missing = Array.isArray(details?.missing) ? details?.missing : []
+        const missingTotal = typeof details?.missing_total === 'number' ? details.missing_total : missing.length
+        const omitted = typeof details?.omitted === 'number' ? details.omitted : 0
+
+        modal.error({
+          title: 'Offline DBMS metadata не настроены',
+          content: (
+            <Space direction="vertical" size="small">
+              <Text>
+                Для offline-подключения нужны <Text code>dbms</Text>, <Text code>db_server</Text>, <Text code>db_name</Text>.
+              </Text>
+              <Text type="secondary">
+                Исправьте DBMS metadata на странице <Text code>/databases</Text> (или задайте общий override в Configure через{' '}
+                <Text code>connection.offline.*</Text>).
+              </Text>
+              {missing.length > 0 && (
+                <div>
+                  {missing.slice(0, 10).map((item) => {
+                    const label = item.database_name || item.database_id || 'unknown'
+                    const keys = Array.isArray(item.missing_keys) ? item.missing_keys.join(', ') : ''
+                    return (
+                      <div key={item.database_id || label}>
+                        <Tag>{label}</Tag>
+                        {keys ? <Text type="secondary">missing: {keys}</Text> : null}
+                      </div>
+                    )
+                  })}
+                  {(missingTotal > 10 || omitted > 0) ? (
+                    <Text type="secondary">... and more (total: {missingTotal})</Text>
+                  ) : null}
+                </div>
+              )}
+            </Space>
+          ),
+        })
+        return
+      }
+
+      if (errorMessage) {
+        message.error(errorMessage)
+        return
+      }
+
       message.error('Failed to create operation')
     } finally {
       setSubmitting(false)
@@ -426,6 +492,7 @@ export const NewOperationWizard = ({
     onSubmit,
     onClose,
     message,
+    modal,
   ])
 
   const handleClose = useCallback(() => {

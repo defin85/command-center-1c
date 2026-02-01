@@ -12,6 +12,8 @@ import { App } from 'antd'
 import { getV2 } from '../generated'
 import type { Database } from '../generated/model/database'
 import type { DatabaseDetailResponse } from '../generated/model/databaseDetailResponse'
+import type { DatabaseDbmsMetadataUpdateRequest } from '../generated/model/databaseDbmsMetadataUpdateRequest'
+import type { DatabaseDbmsMetadataUpdateResponse } from '../generated/model/databaseDbmsMetadataUpdateResponse'
 import type { DatabaseExtensionsSnapshotResponse } from '../generated/model/databaseExtensionsSnapshotResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
 import type { DbmsUserListResponse } from '../generated/model/dbmsUserListResponse'
@@ -311,6 +313,23 @@ export function useUpdateDatabaseCredentials() {
   return useMutation({
     mutationFn: async (data: DatabaseCredentialsUpdateRequest): Promise<DatabaseCredentialsUpdateResponse> => {
       const response = await apiClient.post('/api/v2/databases/update-credentials/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+/**
+ * Update or reset DBMS metadata (Database.metadata.{dbms,db_server,db_name}).
+ */
+export function useUpdateDatabaseDbmsMetadata() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: DatabaseDbmsMetadataUpdateRequest): Promise<DatabaseDbmsMetadataUpdateResponse> => {
+      const response = await apiClient.post('/api/v2/databases/update-dbms-metadata/', data)
       return response.data
     },
     onSuccess: () => {

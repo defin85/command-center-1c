@@ -37,6 +37,18 @@ from .utils import _is_sensitive_key
 
 logger = logging.getLogger(__name__)
 
+def _op_error(
+    code: str,
+    message: str,
+    *,
+    status: int = 400,
+    details: dict[str, Any] | None = None,
+) -> Response:
+    payload: dict[str, Any] = {"success": False, "error": {"code": code, "message": message}}
+    if details is not None:
+        payload["error"]["details"] = details
+    return Response(payload, status=status)
+
 def _execute_ibcmd_cli_validated(
     request,
     validated_data: dict[str, Any],
@@ -59,16 +71,10 @@ def _execute_ibcmd_cli_validated(
     confirm_dangerous = bool(validated_data.get('confirm_dangerous') or False)
     timeout_seconds = int(validated_data.get('timeout_seconds') or 900)
     if not command_id:
-        return Response({
-            "success": False,
-            "error": {"code": "MISSING_COMMAND_ID", "message": "command_id is required"},
-        }, status=400)
+        return _op_error("MISSING_COMMAND_ID", "command_id is required")
     resolved = resolve_driver_catalog_versions("ibcmd")
     if resolved.base_version is None:
-        return Response({
-            "success": False,
-            "error": {"code": "CATALOG_NOT_AVAILABLE", "message": "ibcmd catalog is not imported yet"},
-        }, status=400)
+        return _op_error("CATALOG_NOT_AVAILABLE", "ibcmd catalog is not imported yet")
     effective = get_effective_driver_catalog(
         driver="ibcmd",
         base_version=resolved.base_version,
@@ -80,10 +86,7 @@ def _execute_ibcmd_cli_validated(
         raw_commands_by_id = None
     commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
     if not isinstance(commands_by_id, dict):
-        return Response({
-            "success": False,
-            "error": {"code": "CATALOG_INVALID", "message": "ibcmd catalog is invalid"},
-        }, status=500)
+        return _op_error("CATALOG_INVALID", "ibcmd catalog is invalid", status=500)
     command = commands_by_id.get(command_id)
     if not isinstance(command, dict):
         raw_command = raw_commands_by_id.get(command_id) if raw_commands_by_id else None
@@ -422,7 +425,7 @@ def _execute_ibcmd_cli_validated(
                     "code": "UNKNOWN_DATABASE",
                     "message": f"Unknown database_ids: {', '.join(missing[:5])}",
                 },
-            }, status=400)
+                }, status=400)
         # Fail closed early if DBMS mapping is not configured for selected targets.
         # Skip this check for non-offline modes (remote/pid) and for file DB connections (db_path).
         connection_remote = str((connection_dict or {}).get("remote") or "").strip()
@@ -449,6 +452,43 @@ def _execute_ibcmd_cli_validated(
                     "success": False,
                     "error": {"code": "DBMS_MAPPING_NOT_CONFIGURED", "message": msg},
                 }, status=400)
+
+            # Preflight: offline DBMS metadata must be resolvable per target (without worker).
+            # Resolution order:
+            # 1) request-level connection.offline.{dbms,db_server,db_name} if set (non-empty)
+            # 2) per-target Database.metadata.{dbms,db_server,db_name}
+            offline_defaults = dict(offline) if isinstance(offline, dict) else {}
+            missing_meta: list[dict[str, Any]] = []
+            for db in databases:
+                db_meta = getattr(db, "metadata", None)
+                db_meta_dict = db_meta if isinstance(db_meta, dict) else {}
+                missing_keys: list[str] = []
+                for key in ("dbms", "db_server", "db_name"):
+                    if str(offline_defaults.get(key) or "").strip():
+                        continue
+                    if not str(db_meta_dict.get(key) or "").strip():
+                        missing_keys.append(key)
+                if missing_keys:
+                    missing_meta.append(
+                        {
+                            "database_id": str(db.id),
+                            "database_name": db.name,
+                            "missing_keys": missing_keys,
+                        }
+                    )
+            if missing_meta:
+                limit = 25
+                details: dict[str, Any] = {
+                    "missing": missing_meta[:limit],
+                    "missing_total": len(missing_meta),
+                }
+                if len(missing_meta) > limit:
+                    details["omitted"] = len(missing_meta) - limit
+                return _op_error(
+                    "OFFLINE_DB_METADATA_NOT_CONFIGURED",
+                    "Offline DBMS metadata is not configured for some databases",
+                    details=details,
+                )
     operation_id = str(uuid.uuid4())
     operation_name = f"ibcmd_cli {command_id}"
     if scope == "per_database":
