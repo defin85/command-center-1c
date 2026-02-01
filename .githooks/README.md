@@ -16,6 +16,10 @@ git config core.hooksPath .githooks
 то pre-commit hook для flush/stage `.beads/issues.jsonl` должен жить в `.githooks/pre-commit`
 (в этом репозитории он уже включён).
 
+Если вы коммитите из IDE/GUI и `bd` установлен “в user-local bin” (например `~/.npm-global/bin/bd`),
+учтите что хуки могут запускаться с “урезанным” `PATH`. В `.githooks/pre-commit` добавлен `PATH`
+с типовыми путями, чтобы `bd` находился и из GUI.
+
 ## Проверка установки
 
 Убедитесь, что hooks активированы:

@@ -17,9 +17,21 @@ NC='\033[0m' # No Color
 # If core.hooksPath is set to .githooks, the default .git/hooks pre-commit hook
 # is NOT executed. We still want bd to flush/stage .beads/issues.jsonl to avoid
 # post-commit daemon flush leaving the working tree dirty.
-if command -v bd >/dev/null 2>&1; then
-    if [[ -d "$PROJECT_ROOT/.beads" ]]; then
-        if ! bd sync --flush-only >/dev/null 2>&1; then
+if [[ -d "$PROJECT_ROOT/.beads" ]]; then
+    # Hooks are often executed with a minimal PATH (especially from GUI/IDE git clients).
+    # Make sure common user-local bin dirs are visible.
+    export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+
+    BD_BIN="$(command -v bd 2>/dev/null || true)"
+    if [[ -z "$BD_BIN" && -x "$HOME/.npm-global/bin/bd" ]]; then
+        BD_BIN="$HOME/.npm-global/bin/bd"
+    fi
+    if [[ -z "$BD_BIN" && -x "$HOME/.local/bin/bd" ]]; then
+        BD_BIN="$HOME/.local/bin/bd"
+    fi
+
+    if [[ -n "$BD_BIN" ]]; then
+        if ! "$BD_BIN" sync --flush-only >/dev/null 2>&1; then
             echo ""
             echo -e "${RED}✗ Ошибка: не удалось сбросить изменения Beads в .beads/issues.jsonl${NC}"
             echo -e "${YELLOW}Запустите вручную: bd sync --flush-only${NC}"
