@@ -12,6 +12,10 @@ git config core.hooksPath .githooks
 
 Эта команда настраивает Git использовать директорию `.githooks` вместо стандартной `.git/hooks`.
 
+Важно: при этом **НЕ запускаются** хуки из `.git/hooks`. В частности, если вы используете Beads (`bd`),
+то pre-commit hook для flush/stage `.beads/issues.jsonl` должен жить в `.githooks/pre-commit`
+(в этом репозитории он уже включён).
+
 ## Проверка установки
 
 Убедитесь, что hooks активированы:
@@ -26,6 +30,10 @@ git config core.hooksPath
 ### pre-commit
 
 Запускается **перед каждым коммитом** и выполняет:
+
+0. **Beads (`bd`) flush** (если установлен `bd` и есть `.beads/`)
+   - Делает `bd sync --flush-only`
+   - Добавляет `.beads/issues.jsonl` и `.beads/interactions.jsonl` в индекс (чтобы после коммита не оставались “грязные” изменения)
 
 1. **Валидацию OpenAPI спецификаций** (если изменились `contracts/**/*.yaml`)
    - Проверяет синтаксис YAML

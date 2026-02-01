@@ -11,6 +11,26 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # =============================================================================
+# Check 0: Beads (bd) - flush pending changes to JSONL
+# =============================================================================
+# NOTE:
+# If core.hooksPath is set to .githooks, the default .git/hooks pre-commit hook
+# is NOT executed. We still want bd to flush/stage .beads/issues.jsonl to avoid
+# post-commit daemon flush leaving the working tree dirty.
+if command -v bd >/dev/null 2>&1; then
+    if [[ -d "$PROJECT_ROOT/.beads" ]]; then
+        if ! bd sync --flush-only >/dev/null 2>&1; then
+            echo ""
+            echo -e "${RED}✗ Ошибка: не удалось сбросить изменения Beads в .beads/issues.jsonl${NC}"
+            echo -e "${YELLOW}Запустите вручную: bd sync --flush-only${NC}"
+            exit 1
+        fi
+        git add "$PROJECT_ROOT/.beads/issues.jsonl" 2>/dev/null || true
+        git add "$PROJECT_ROOT/.beads/interactions.jsonl" 2>/dev/null || true
+    fi
+fi
+
+# =============================================================================
 # Check 1: Service Configuration (config/services.json)
 # =============================================================================
 CHANGED_CONFIG=$(git diff --cached --name-only --diff-filter=ACM | grep 'config/services\.json$')
