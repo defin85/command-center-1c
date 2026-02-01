@@ -5,6 +5,8 @@ from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 
 from apps.databases.models import Database, PermissionLevel
+from apps.tenancy.context import tenant_context
+from apps.tenancy.models import Tenant
 
 from ._execute_ibcmd_cli_support import client, target_dbs, user  # noqa: F401
 from . import _execute_ibcmd_cli_support as support
@@ -97,3 +99,29 @@ def test_update_dbms_metadata_requires_some_fields_unless_reset(client, user, ta
     payload = resp.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "MISSING_PARAMETER"
+
+
+@pytest.mark.django_db
+def test_update_dbms_metadata_is_tenant_scoped(client, user):
+    _grant_manage_database_permission(client, user)
+
+    other = Tenant.objects.create(slug="other", name="Other")
+    with tenant_context(str(other.id)):
+        db_other = Database.objects.create(
+            name="tenant_other_db",
+            host="localhost",
+            port=80,
+            odata_url="http://localhost/odata",
+            username="odata",
+            password="secret",
+        )
+
+    resp = client.post(
+        "/api/v2/databases/update-dbms-metadata/",
+        {"database_id": db_other.id, "dbms": "PostgreSQL"},
+        format="json",
+    )
+    assert resp.status_code == 404
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "DATABASE_NOT_FOUND"

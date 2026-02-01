@@ -43,8 +43,11 @@ def update_dbms_metadata(request):
 
     data = serializer.validated_data
     database_id = data["database_id"]
+    tenant_id = getattr(request, "tenant_id", None)
+    if not tenant_id:
+        return _permission_denied("Tenant context is missing.")
     try:
-        db = Database.objects.get(id=database_id)
+        db = Database.all_objects.get(id=database_id, tenant_id=str(tenant_id))
     except Database.DoesNotExist:
         return Response(
             {

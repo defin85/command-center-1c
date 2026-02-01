@@ -426,13 +426,19 @@ def _execute_ibcmd_cli_validated(
                     "message": f"Unknown database_ids: {', '.join(missing[:5])}",
                 },
                 }, status=400)
-        # Fail closed early if DBMS mapping is not configured for selected targets.
-        # Skip this check for non-offline modes (remote/pid) and for file DB connections (db_path).
+        # Fail closed early if offline connection cannot be resolved for selected targets.
+        # Trigger only for explicit connection.offline (not remote, not pid, not offline.db_path).
         connection_remote = str((connection_dict or {}).get("remote") or "").strip()
         connection_pid = (connection_dict or {}).get("pid")
         offline = (connection_dict or {}).get("offline") if isinstance(connection_dict, dict) else None
-        offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
-        if not connection_remote and not connection_pid and not offline_db_path:
+        offline_present = isinstance(offline, dict)
+        offline_db_path = str((offline or {}).get("db_path") or "").strip() if offline_present else ""
+        if not connection_remote and not connection_pid and not offline_present:
+            return _op_error(
+                "MISSING_CONNECTION",
+                "One of connection.remote, connection.pid, connection.offline is required for per_database scope",
+            )
+        if offline_present and not connection_remote and not connection_pid and not offline_db_path:
             if dbms_auth_strategy == "service":
                 qs = DbmsUserMapping.objects.filter(
                     database__in=databases,

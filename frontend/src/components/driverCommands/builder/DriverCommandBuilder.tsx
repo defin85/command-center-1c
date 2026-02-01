@@ -73,6 +73,22 @@ export function DriverCommandBuilder({
 
   useEffect(() => {
     if (driver !== 'ibcmd') return
+    if (readOnly) return
+    if (scope !== 'per_database') return
+
+    const connection = config.connection
+    const hasRemote = typeof connection?.remote === 'string' && connection.remote.trim().length > 0
+    const hasPid = typeof connection?.pid === 'number'
+    if (hasRemote || hasPid) return
+
+    const offline = connection?.offline
+    if (offline && typeof offline === 'object') return
+
+    onChange({ connection: { ...(connection ?? {}), offline: {} } })
+  }, [config.connection, driver, onChange, readOnly, scope])
+
+  useEffect(() => {
+    if (driver !== 'ibcmd') return
     const connection = config.connection
     const offline = connection?.offline
     if (!offline) return

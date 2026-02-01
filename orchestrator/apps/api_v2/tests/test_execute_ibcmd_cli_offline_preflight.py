@@ -54,7 +54,7 @@ def test_execute_ibcmd_cli_offline_preflight_fails_when_dbms_metadata_missing(cl
         {
             "command_id": "test.offline.preflight",
             "database_ids": [db.id for db in target_dbs],
-            "connection": {},
+            "connection": {"offline": {}},
             "dbms_auth": {"strategy": "actor"},
         },
         format="json",
@@ -68,6 +68,30 @@ def test_execute_ibcmd_cli_offline_preflight_fails_when_dbms_metadata_missing(cl
     assert details.get("missing_total") == len(target_dbs)
     for item in details["missing"]:
         assert set(item["missing_keys"]) == {"dbms", "db_server", "db_name"}
+
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_requires_explicit_connection_mode_for_per_database_scope(client, user, target_dbs, monkeypatch):
+    _seed_simple_per_db_catalog(monkeypatch)
+    support._grant_operation_permission(client, user, "execute_safe_operation")
+    for db in target_dbs:
+        support._allow_operate(user, db)
+    _configure_dbms_mapping(user, target_dbs)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "test.offline.preflight",
+            "database_ids": [db.id for db in target_dbs],
+            "connection": {},
+            "dbms_auth": {"strategy": "actor"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "MISSING_CONNECTION"
 
 
 @pytest.mark.django_db
@@ -127,3 +151,28 @@ def test_execute_ibcmd_cli_offline_preflight_allows_request_level_db_name_overri
     )
     assert resp.status_code == 202
 
+
+@pytest.mark.django_db
+def test_execute_ibcmd_cli_offline_preflight_skipped_when_remote_connection_present(client, user, target_dbs, monkeypatch):
+    _seed_simple_per_db_catalog(monkeypatch)
+    support._grant_operation_permission(client, user, "execute_safe_operation")
+    for db in target_dbs:
+        support._allow_operate(user, db)
+
+    def fake_enqueue(_operation_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=_operation_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=_operation_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", fake_enqueue)
+
+    resp = client.post(
+        "/api/v2/operations/execute-ibcmd-cli/",
+        {
+            "command_id": "test.offline.preflight",
+            "database_ids": [db.id for db in target_dbs],
+            "connection": {"remote": "http://example.local"},
+            "dbms_auth": {"strategy": "actor"},
+        },
+        format="json",
+    )
+    assert resp.status_code == 202
