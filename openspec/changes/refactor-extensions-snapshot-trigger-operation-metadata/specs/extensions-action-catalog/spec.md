@@ -7,7 +7,8 @@
 
 #### Scenario: Произвольный action.id с capability работает
 - **GIVEN** в `ui.action_catalog` есть действие с произвольным `id` (например `ListExtension`)
-- **AND** у него `capability="extensions.list"` и `executor.command_id` указывает на валидную команду драйвера
+- **AND** у него `capability` задан в формате namespaced string (например `extensions.list`)
+- **AND** `executor.command_id` указывает на валидную команду драйвера
 - **WHEN** пользователь запускает это действие
 - **THEN** система трактует его как `extensions.list` (для plan/apply и snapshot-marking), независимо от `id`
 
@@ -19,4 +20,3 @@
 #### Scenario: Snapshot обновляется после успешного list/sync (capability-based)
 - **WHEN** завершается успешная операция list/sync расширений, помеченная как snapshot-producing
 - **THEN** запись snapshot расширений для этой базы upsert'ится с актуальными данными
-

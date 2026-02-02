@@ -40,9 +40,20 @@
 - Поэтому на enqueue мы определяем “это extensions snapshot-producing” по конфигурации tenant’а (effective catalog) и `command_id`.
 - Даже если `ui.action_catalog` изменится после enqueue, completion уже использует маркер и корректно обновит snapshot.
 
-### 3) `capability` в action catalog (extensions)
+### 3) `capability` в action catalog (универсальный формат)
 Добавить в `extensions.actions[]` необязательное поле:
-- `capability: "extensions.list" | "extensions.sync"`
+- `capability: string`
+
+Формат строки (универсальный, namespaced):
+- `"<namespace>.<name>"`
+- где `namespace` и `name`:
+  - ASCII
+  - lowercase
+  - разделители: `.` между сегментами; внутри сегмента допустимы `a-z0-9_-`
+  - рекомендуется 2-3 сегмента для читаемости (например `extensions.list`, `extensions.sync`, `db.health.check`)
+
+Важно:
+- система не пытается “понимать” capability как схему флагов; это именно маркер семантики для backend (plan/apply, snapshot-marking, guardrails).
 
 Семантика:
 - `id` — идентификатор/ключ UI и редактора (произвольный).
@@ -58,4 +69,3 @@
 ## Открытые вопросы
 - Нужен ли отдельный маркер для append-only `CommandResultSnapshot` vs `DatabaseExtensionsSnapshot` (или это всегда вместе для `extensions`)?
 - Нужно ли включать в metadata источник (например, `snapshot_source="ui.action_catalog"`), чтобы проще дебажить?
-

@@ -12,7 +12,7 @@
 ## Что меняется
 - При enqueue `BatchOperation` система будет ставить **маркер snapshot-поведения в `BatchOperation.metadata`** (операция становится self-contained для snapshot-триггера).
 - Event-subscriber будет принимать решение об обновлении snapshot’ов и append-only `CommandResultSnapshot` **только по маркеру в `BatchOperation.metadata`**.
-- Для extensions семантика “это list/sync для snapshot” будет задаваться через **явное поле `capability` в action catalog**, а не через `action.id`.
+- Для extensions семантика “это list/sync для snapshot” будет задаваться через **явное поле `capability` в action catalog** (универсальный namespaced string), а не через `action.id`.
 
 ## Область изменений
 - Orchestrator: enqueue `ibcmd_cli`, extensions plan/apply, event-subscriber snapshot logic.
@@ -25,4 +25,3 @@
 ## Риски и миграция
 - Нужна совместимость со старыми конфигами `ui.action_catalog`, где `capability` отсутствует.
 - Маркер в `metadata` должен быть стабильным, расширяемым и безопасным (без секретов).
-
