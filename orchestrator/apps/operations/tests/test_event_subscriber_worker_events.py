@@ -3,9 +3,12 @@
 import uuid
 from unittest.mock import patch
 
-from apps.databases.models import Database
+from apps.databases.models import Database, DatabaseExtensionsSnapshot
 from apps.operations.event_subscriber import EventSubscriber
 from apps.operations.models import BatchOperation, Task
+from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY
+from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
+from apps.tenancy.models import Tenant
 
 from ._event_subscriber_test_base import EventSubscriberBaseTestCase
 
@@ -289,3 +292,109 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
 
         mock_ops_redis.release_lock.assert_any_call(f"discover_clusters:{ras_server}")
 
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_updates_extensions_snapshot_using_tenant_catalog(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        """
+        Regression: extensions snapshot updating is tenant-scoped.
+
+        We keep a global action catalog (runtime_settings) and a tenant override.
+        Worker completion MUST use the effective (tenant) catalog when deciding
+        whether an ibcmd operation should update extensions snapshots.
+        """
+
+        subscriber = EventSubscriber()
+
+        tenant = Tenant.objects.filter(slug="default").first()
+        self.assertIsNotNone(tenant, "default tenant must exist for tests")
+
+        RuntimeSetting.objects.update_or_create(
+            key=UI_ACTION_CATALOG_KEY,
+            defaults={
+                "value": {
+                    "catalog_version": 1,
+                    "extensions": {
+                        "actions": [
+                            {
+                                "id": "ListExtension",
+                                "label": "List extension",
+                                "contexts": ["database_card"],
+                                "executor": {
+                                    "kind": "ibcmd_cli",
+                                    "driver": "ibcmd",
+                                    "command_id": "infobase.extension.list",
+                                    "mode": "guided",
+                                    "params": {},
+                                },
+                            }
+                        ]
+                    },
+                }
+            },
+        )
+
+        TenantRuntimeSettingOverride.objects.update_or_create(
+            tenant=tenant,
+            key=UI_ACTION_CATALOG_KEY,
+            defaults={
+                "status": TenantRuntimeSettingOverride.STATUS_PUBLISHED,
+                "value": {
+                    "catalog_version": 1,
+                    "extensions": {
+                        "actions": [
+                            {
+                                "id": "extensions.list",
+                                "label": "extensions.list",
+                                "contexts": ["database_card"],
+                                "executor": {
+                                    "kind": "ibcmd_cli",
+                                    "driver": "ibcmd",
+                                    "command_id": "infobase.extension.list",
+                                    "mode": "guided",
+                                    "params": {},
+                                },
+                            }
+                        ]
+                    },
+                },
+            },
+        )
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD extensions.list",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={"command_id": "infobase.extension.list"},
+        )
+        Task.objects.create(
+            id="task-extensions-1",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        self.assertFalse(DatabaseExtensionsSnapshot.objects.filter(database_id=self.database.id).exists())
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": {"data": {"extensions": [{"name": "Ext1", "version": "1.0", "is_active": True}]}},
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-ext-1",
+        )
+
+        snap = DatabaseExtensionsSnapshot.objects.filter(database_id=self.database.id).first()
+        self.assertIsNotNone(snap, "extensions snapshot must be created")
+        self.assertEqual((snap.snapshot or {}).get("extensions"), [{"name": "Ext1", "version": "1.0", "is_active": True}])

@@ -41,22 +41,25 @@ class WorkerEventHandlersMixin:
             runtime.close_old_connections()
             batch_op = BatchOperation.objects.get(id=operation_id)
 
-            should_update_extensions_snapshot = False
             op_command_id = str((batch_op.metadata or {}).get("command_id") or "").strip()
-            if batch_op.operation_type == BatchOperation.TYPE_IBCMD_CLI and op_command_id:
+            snapshot_command_ids_by_tenant: dict[str, set[str]] = {}
+
+            def _get_snapshot_command_ids_for_tenant(tenant_id: str) -> set[str]:
+                tenant_id = str(tenant_id or "").strip()
+                if not tenant_id:
+                    return set()
+                cached = snapshot_command_ids_by_tenant.get(tenant_id)
+                if cached is not None:
+                    return cached
+
                 try:
-                    from apps.databases.models import DatabaseExtensionsSnapshot
                     from apps.runtime_settings.action_catalog import (
                         UI_ACTION_CATALOG_KEY,
                         ensure_valid_action_catalog,
                     )
-                    from apps.runtime_settings.models import RuntimeSetting
+                    from apps.runtime_settings.effective import get_effective_runtime_setting
 
-                    raw_catalog = (
-                        RuntimeSetting.objects.filter(key=UI_ACTION_CATALOG_KEY)
-                        .values_list("value", flat=True)
-                        .first()
-                    )
+                    raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
                     catalog, _errors = ensure_valid_action_catalog(raw_catalog)
 
                     extensions = catalog.get("extensions") if isinstance(catalog, dict) else None
@@ -79,9 +82,11 @@ class WorkerEventHandlersMixin:
                             if isinstance(command_id, str) and command_id.strip():
                                 snapshot_command_ids.add(command_id.strip())
 
-                    should_update_extensions_snapshot = op_command_id in snapshot_command_ids
+                    snapshot_command_ids_by_tenant[tenant_id] = snapshot_command_ids
+                    return snapshot_command_ids
                 except Exception:
-                    should_update_extensions_snapshot = False
+                    snapshot_command_ids_by_tenant[tenant_id] = set()
+                    return set()
 
             summary = payload.get("summary", {})
             results = payload.get("results", [])
@@ -115,14 +120,37 @@ class WorkerEventHandlersMixin:
                         update_fields["result"] = result.get("data")
                         update_fields["error_message"] = ""
                         update_fields["error_code"] = ""
+
+                        should_update_extensions_snapshot = False
+                        db_for_snapshot = None
+                        if (
+                            database_id
+                            and op_command_id
+                            and batch_op.operation_type == BatchOperation.TYPE_IBCMD_CLI
+                        ):
+                            try:
+                                from apps.databases.models import Database
+
+                                db_for_snapshot = (
+                                    Database.objects.filter(id=database_id)
+                                    .only("id", "tenant_id")
+                                    .first()
+                                )
+                                tenant_id = str(getattr(db_for_snapshot, "tenant_id", "") or "").strip()
+                                if tenant_id:
+                                    snapshot_command_ids = _get_snapshot_command_ids_for_tenant(tenant_id)
+                                    should_update_extensions_snapshot = op_command_id in snapshot_command_ids
+                            except Exception:
+                                should_update_extensions_snapshot = False
+
                         if should_update_extensions_snapshot and database_id:
                             try:
                                 from apps.databases.extensions_snapshot import (
                                     build_extensions_snapshot_from_worker_result,
                                 )
-                                from apps.databases.models import Database
                                 from apps.operations.models import CommandResultSnapshot
                                 from apps.operations.snapshot_hash import canonical_json_hash
+                                from apps.databases.models import DatabaseExtensionsSnapshot
 
                                 snapshot_data = result.get("data")
                                 normalized = build_extensions_snapshot_from_worker_result(snapshot_data)
@@ -137,8 +165,13 @@ class WorkerEventHandlersMixin:
                                     },
                                 )
 
-                                db = Database.objects.filter(id=database_id).only("id", "tenant_id").first()
-                                if db and db.tenant_id:
+                                db = db_for_snapshot
+                                if db is None:
+                                    from apps.databases.models import Database as DatabaseModel
+
+                                    db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()
+
+                                if db and getattr(db, "tenant_id", None):
                                     CommandResultSnapshot.objects.create(
                                         tenant_id=db.tenant_id,
                                         operation_id=str(operation_id),

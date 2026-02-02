@@ -175,9 +175,6 @@ export function DatabaseIbcmdConnectionProfileModal({
                   </Button>
                 </Space>
               ))}
-              <Button type="dashed" onClick={() => add({ key: '', value: '' })}>
-                Add offline flag
-              </Button>
             </Space>
           )}
         </Form.List>
