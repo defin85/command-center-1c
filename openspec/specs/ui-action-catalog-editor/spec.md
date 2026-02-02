@@ -24,11 +24,10 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 ### Requirement: Поддержка executor kinds
 Система ДОЛЖНА (SHALL) поддерживать в редакторе executor kinds `ibcmd_cli`, `designer_cli` и `workflow`.
 
-#### Scenario: ibcmd_cli выбирается из driver catalog и поддерживает connection override
+#### Scenario: ibcmd_cli выбирается из driver catalog и не содержит connection на уровне action
 - **WHEN** staff создаёт/редактирует действие с executor `ibcmd_cli`
 - **THEN** UI позволяет выбрать `driver` и `command_id` из доступного driver catalog и сохранить конфигурацию
-- **AND** UI позволяет настроить `executor.connection` (минимум `connection.remote`, `connection.pid`, `connection.offline.*`)
-- **AND** UI не позволяет вводить/сохранять DBMS секреты (например `connection.offline.db_user/db_pwd`)
+- **AND** UI НЕ позволяет задавать `executor.connection` в action (connection резолвится из профиля базы при запуске)
 
 #### Scenario: workflow выбирается из списка workflow templates
 - **WHEN** staff создаёт/редактирует действие с executor `workflow`
@@ -71,4 +70,13 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **AND** backend возвращает `HTTP 400` с `error.code=OFFLINE_DB_METADATA_NOT_CONFIGURED`
 - **WHEN** UI отображает ошибку
 - **THEN** UI показывает actionable подсказку, где исправить проблему (минимум: `/databases` и `connection.offline.*`)
+
+### Requirement: Preview для `ibcmd_cli` требует выбранные таргеты (или базу-пример)
+Система ДОЛЖНА (SHALL) делать preview execution plan для `ibcmd_cli` с учётом effective connection, который зависит от профиля выбранных баз.
+
+#### Scenario: Preview без таргетов не считается достоверным
+- **GIVEN** staff открывает редактор action catalog
+- **AND** выбран action `executor.kind=ibcmd_cli`
+- **WHEN** staff пытается сделать Preview без указания базы/таргетов
+- **THEN** UI сообщает, что для Preview нужно выбрать базу (или набор баз), так как connection резолвится per database
 
