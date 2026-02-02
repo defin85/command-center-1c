@@ -1,0 +1,122 @@
+import { useEffect } from 'react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { App as AntApp, Form } from 'antd'
+import type { FormInstance } from 'antd'
+
+import type { Database } from '../../../../api/generated/model/database'
+import { DatabaseIbcmdConnectionProfileModal } from '../DatabaseIbcmdConnectionProfileModal'
+
+const makeDb = (overrides: Partial<Database> = {}): Database =>
+  ({
+    id: 'db1',
+    name: 'db1',
+    host: 'localhost',
+    port: 80,
+    odata_url: 'http://localhost/odata',
+    username: 'u',
+    password: 'p',
+    password_configured: true,
+    server_address: 'localhost',
+    server_port: 1540,
+    infobase_name: 'db1',
+    status_display: 'Active',
+    last_check: null,
+    last_check_status: 'ok',
+    consecutive_failures: 0,
+    avg_response_time: null,
+    cluster_id: null,
+    is_healthy: true,
+    sessions_deny: null,
+    scheduled_jobs_deny: null,
+    dbms: null,
+    db_server: null,
+    db_name: null,
+    ibcmd_connection: null,
+    denied_from: null,
+    denied_to: null,
+    denied_message: null,
+    permission_code: null,
+    denied_parameter: null,
+    last_health_error: null,
+    last_health_error_code: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }) as Database
+
+function renderModal(database: Database) {
+  const user = userEvent.setup()
+  let formRef: FormInstance | null = null
+  const onCancel = vi.fn()
+  const onReset = vi.fn()
+  const onSave = vi.fn(() => formRef?.validateFields().catch(() => undefined))
+
+  const Wrapper = () => {
+    const [form] = Form.useForm()
+    useEffect(() => {
+      formRef = form
+      form.setFieldsValue({ mode: 'auto', remote_url: '', offline: {} })
+    }, [form])
+
+    return (
+      <AntApp>
+        <DatabaseIbcmdConnectionProfileModal
+          open
+          database={database}
+          form={form}
+          saving={false}
+          onCancel={onCancel}
+          onSave={onSave}
+          onReset={onReset}
+        />
+      </AntApp>
+    )
+  }
+
+  render(<Wrapper />)
+  return { user, onSave, onReset }
+}
+
+describe('DatabaseIbcmdConnectionProfileModal', () => {
+  it('disables Reset when no profile is configured', () => {
+    renderModal(makeDb({ ibcmd_connection: null }))
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
+  })
+
+  it('shows validation error for missing remote_url when mode=remote', async () => {
+    const { user, onSave } = renderModal(makeDb({ ibcmd_connection: null }))
+
+    // Switch mode to remote via form interaction
+    await user.click(screen.getByLabelText('Mode'))
+    await user.click(screen.getByText('Remote (--remote=<url>)'))
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onSave).toHaveBeenCalled()
+
+    await waitFor(() => {
+      expect(screen.getByText('remote_url обязателен для mode=remote')).toBeInTheDocument()
+    })
+  })
+
+  it('shows validation error for missing offline.config/offline.data when mode=offline', async () => {
+    const { user } = renderModal(makeDb({ ibcmd_connection: null }))
+
+    await user.click(screen.getByLabelText('Mode'))
+    await user.click(screen.getByText('Offline (paths + DBMS metadata)'))
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('offline.config обязателен для mode=offline')).toBeInTheDocument()
+      expect(screen.getByText('offline.data обязателен для mode=offline')).toBeInTheDocument()
+    })
+  })
+
+  it('enables Reset when profile exists', () => {
+    renderModal(makeDb({ ibcmd_connection: { mode: 'auto', remote_url: null, offline: null } }))
+    expect(screen.getByRole('button', { name: 'Reset' })).not.toBeDisabled()
+  })
+})
+

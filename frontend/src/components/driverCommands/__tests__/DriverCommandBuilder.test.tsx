@@ -9,6 +9,16 @@ import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../Driv
 
 vi.mock('../../../lib/monacoEnv', () => ({}))
 
+vi.mock('../../../api/generated', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/generated')>()
+  return {
+    ...actual,
+    getV2: () => ({
+      getDatabasesListDatabases: async () => ({ databases: [], count: 0, total: 0 }),
+    }),
+  }
+})
+
 vi.mock('@monaco-editor/react', () => ({
   default: (props: { value?: string; onChange?: (next?: string) => void }) => (
     <textarea

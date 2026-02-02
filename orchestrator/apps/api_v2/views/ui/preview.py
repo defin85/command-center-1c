@@ -390,7 +390,7 @@ def _preview_ibcmd_cli(
                 "source_ref": "target_db.metadata.ibcmd_connection",
                 "resolve_at": "worker",
                 "sensitive": False,
-                "status": "pending",
+                "status": "unresolved",
             }
         )
         bindings.append(
@@ -399,7 +399,7 @@ def _preview_ibcmd_cli(
                 "source_ref": "target_db.metadata.ibcmd_connection.remote_url",
                 "resolve_at": "worker",
                 "sensitive": False,
-                "status": "pending",
+                "status": "unresolved",
             }
         )
         for key in (
@@ -426,16 +426,29 @@ def _preview_ibcmd_cli(
                     "source_ref": f"target_db.metadata.ibcmd_connection.offline.{key}",
                     "resolve_at": "worker",
                     "sensitive": False,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
+            if key in {"dbms", "db_server", "db_name"}:
+                # Offline DBMS metadata can fall back to per-target Database.metadata.* if the profile
+                # doesn't specify the value.
+                bindings.append(
+                    {
+                        "target_ref": f"connection.offline.{key}",
+                        "source_ref": f"target_db.metadata.{key}",
+                        "resolve_at": "worker",
+                        "sensitive": False,
+                        "status": "unresolved",
+                        "reason": "fallback_if_missing_in_profile",
+                    }
+                )
         bindings.append(
             {
                 "target_ref": "connection.offline.db_user",
                 "source_ref": "credentials.db_user_mapping",
                 "resolve_at": "worker",
                 "sensitive": True,
-                "status": "pending",
+                "status": "unresolved",
             }
         )
         bindings.append(
@@ -444,7 +457,7 @@ def _preview_ibcmd_cli(
                 "source_ref": "credentials.db_user_mapping",
                 "resolve_at": "worker",
                 "sensitive": True,
-                "status": "pending",
+                "status": "unresolved",
             }
         )
     else:
@@ -463,7 +476,7 @@ def _preview_ibcmd_cli(
                         "source_ref": f"target_db.metadata.{source_key}",
                         "resolve_at": "worker",
                         "sensitive": False,
-                        "status": "pending",
+                        "status": "unresolved",
                     }
                 )
             bindings.append(
@@ -472,7 +485,7 @@ def _preview_ibcmd_cli(
                     "source_ref": "credentials.db_user_mapping",
                     "resolve_at": "worker",
                     "sensitive": True,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
             bindings.append(
@@ -481,7 +494,7 @@ def _preview_ibcmd_cli(
                     "source_ref": "credentials.db_user_mapping",
                     "resolve_at": "worker",
                     "sensitive": True,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
     if stdin:
@@ -697,4 +710,3 @@ def preview_execution_plan(request):
         {"success": False, "error": {"code": "UNSUPPORTED_KIND", "message": f"Unsupported executor kind: {kind}"}},
         status=http_status.HTTP_400_BAD_REQUEST,
     )
-

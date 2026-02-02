@@ -784,7 +784,7 @@ def _execute_ibcmd_cli_validated(
                 ),
                 "resolve_at": "worker",
                 "sensitive": True,
-                "status": "pending",
+                "status": "unresolved",
             }
         )
     if scope == "per_database":
@@ -795,7 +795,7 @@ def _execute_ibcmd_cli_validated(
                     "source_ref": "target_db.metadata.ibcmd_connection",
                     "resolve_at": "worker",
                     "sensitive": False,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
             bindings.append(
@@ -804,7 +804,7 @@ def _execute_ibcmd_cli_validated(
                     "source_ref": "target_db.metadata.ibcmd_connection.remote_url",
                     "resolve_at": "worker",
                     "sensitive": False,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
             for key in (
@@ -831,9 +831,20 @@ def _execute_ibcmd_cli_validated(
                         "source_ref": f"target_db.metadata.ibcmd_connection.offline.{key}",
                         "resolve_at": "worker",
                         "sensitive": False,
-                        "status": "pending",
+                        "status": "unresolved",
                     }
                 )
+                if key in {"dbms", "db_server", "db_name"}:
+                    bindings.append(
+                        {
+                            "target_ref": f"connection.offline.{key}",
+                            "source_ref": f"target_db.metadata.{key}",
+                            "resolve_at": "worker",
+                            "sensitive": False,
+                            "status": "unresolved",
+                            "reason": "fallback_if_missing_in_profile",
+                        }
+                    )
             dbms_source = "credentials.db_user_mapping" if dbms_auth_strategy == "actor" else "credentials.db_service_mapping"
             bindings.append(
                 {
@@ -841,7 +852,7 @@ def _execute_ibcmd_cli_validated(
                     "source_ref": dbms_source,
                     "resolve_at": "worker",
                     "sensitive": True,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
             bindings.append(
@@ -850,7 +861,7 @@ def _execute_ibcmd_cli_validated(
                     "source_ref": dbms_source,
                     "resolve_at": "worker",
                     "sensitive": True,
-                    "status": "pending",
+                    "status": "unresolved",
                 }
             )
         else:
@@ -873,7 +884,7 @@ def _execute_ibcmd_cli_validated(
                             "source_ref": f"target_db.metadata.{source_key}",
                             "resolve_at": "worker",
                             "sensitive": False,
-                            "status": "pending",
+                            "status": "unresolved",
                         }
                     )
                 dbms_source = "credentials.db_user_mapping" if dbms_auth_strategy == "actor" else "credentials.db_service_mapping"
@@ -883,7 +894,7 @@ def _execute_ibcmd_cli_validated(
                         "source_ref": dbms_source,
                         "resolve_at": "worker",
                         "sensitive": True,
-                        "status": "pending",
+                        "status": "unresolved",
                     }
                 )
                 bindings.append(
@@ -892,7 +903,7 @@ def _execute_ibcmd_cli_validated(
                         "source_ref": dbms_source,
                         "resolve_at": "worker",
                         "sensitive": True,
-                        "status": "pending",
+                        "status": "unresolved",
                     }
                 )
     for key in sorted((merged_params or {}).keys()):

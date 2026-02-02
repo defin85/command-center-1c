@@ -409,6 +409,16 @@ class DatabaseIbcmdConnectionOfflineProfileSerializer(serializers.Serializer):
     temp = serializers.CharField(required=False, allow_blank=True)
     users_data = serializers.CharField(required=False, allow_blank=True)
 
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            # Reject secret-like fields explicitly to avoid silently dropping them.
+            forbidden = [k for k in ("db_user", "db_pwd", "db_password") if k in data]
+            if forbidden:
+                raise serializers.ValidationError(
+                    {k: "not allowed (secrets must not be stored in database metadata)" for k in forbidden}
+                )
+        return super().to_internal_value(data)
+
 
 class DatabaseIbcmdConnectionProfileUpdateRequestSerializer(serializers.Serializer):
     """Request body for update_ibcmd_connection_profile endpoint."""

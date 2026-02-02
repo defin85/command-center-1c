@@ -21,7 +21,6 @@ import {
   useUpdateDatabaseDbmsMetadata,
   useUpdateDatabaseIbcmdConnectionProfile,
   useDatabaseExtensionsSnapshot,
-  type DatabaseIbcmdConnectionProfileUpdateRequest,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 import { useActionCatalog } from '../../api/queries/ui'
@@ -35,6 +34,7 @@ import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdC
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
 import { useExtensionsActions } from './components/useExtensionsActions'
+import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
 
 const EMPTY_CLUSTERS: Cluster[] = []
 const EMPTY_ACTIONS: ActionCatalogAction[] = []
@@ -264,23 +264,7 @@ export const Databases = () => {
     }
 
     const values = await ibcmdProfileForm.validateFields()
-    const mode = String(values.mode || 'auto').trim()
-    const remoteUrl = String(values.remote_url || '').trim()
-    const offlineIn = values.offline && typeof values.offline === 'object' ? (values.offline as Record<string, unknown>) : {}
-
-    const offline: Record<string, string> = {}
-    for (const key of ['config', 'data', 'db_path', 'dbms', 'db_server', 'db_name']) {
-      const raw = offlineIn[key]
-      const v = typeof raw === 'string' ? raw.trim() : ''
-      if (v) offline[key] = v
-    }
-
-    const payload: DatabaseIbcmdConnectionProfileUpdateRequest = {
-      database_id: ibcmdProfileDatabase.id,
-      mode: mode as DatabaseIbcmdConnectionProfileUpdateRequest['mode'],
-    }
-    if (remoteUrl) payload.remote_url = remoteUrl
-    if (Object.keys(offline).length > 0) payload.offline = offline
+    const payload = buildIbcmdConnectionProfileUpdatePayload(ibcmdProfileDatabase.id, values)
 
     updateDatabaseIbcmdConnectionProfile.mutate(payload, {
       onSuccess: (response) => {

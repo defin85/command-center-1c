@@ -5,6 +5,7 @@ import type { DriverCommandV2, DriverName } from '../../../api/driverCommands'
 import type { CliExtraOptions, DriverCommandOperationConfig } from './types'
 import { createDriverOptionFieldRenderer } from './createDriverOptionFieldRenderer'
 import { IbcmdConnectionForm } from './IbcmdConnectionForm'
+import { IbcmdDerivedConnectionSummary } from './IbcmdDerivedConnectionSummary'
 import { getSchemaAtPath, hasIbcmdConnection, isRecord } from './utils'
 
 const { Text } = Typography
@@ -110,12 +111,7 @@ export function DriverOptionsSection({
             />
           </>
         ) : (
-          <Alert
-            type="info"
-            showIcon
-            message="Connection will be derived from database profiles"
-            description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
-          />
+          <IbcmdDerivedConnectionSummary selectedDatabaseIds={stableAvailableDbIds} />
         )}
 
         {scope === 'global' && !hasIbcmdConnection(connection) && (
@@ -338,12 +334,7 @@ export function DriverOptionsSection({
             </Space>
 
             {hideConnectionFields && (
-              <Alert
-                type="info"
-                showIcon
-                message="Connection will be derived from database profiles"
-                description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
-              />
+              <IbcmdDerivedConnectionSummary selectedDatabaseIds={stableAvailableDbIds} />
             )}
 
             <Alert
@@ -448,14 +439,7 @@ export function DriverOptionsSection({
           </Space>
         )}
 
-        {hideConnectionFields && (
-          <Alert
-            type="info"
-            showIcon
-            message="Connection will be derived from database profiles"
-            description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
-          />
-        )}
+        {hideConnectionFields && <IbcmdDerivedConnectionSummary selectedDatabaseIds={stableAvailableDbIds} />}
 
         <Input
           allowClear
