@@ -37,7 +37,7 @@ export const parseIbcmdCliUiError = (error: unknown): IbcmdCliUiError | null => 
   const apiError = data?.error
   const errorCode = typeof apiError?.code === 'string' ? apiError.code : ''
 
-  if (errorCode === 'OFFLINE_DB_METADATA_NOT_CONFIGURED') {
+  if (errorCode === 'IBCMD_CONNECTION_PROFILE_INVALID') {
     const details = apiError?.details
     const missing = Array.isArray(details?.missing) ? details?.missing : []
     const missingTotal = typeof details?.missing_total === 'number' ? details.missing_total : missing.length
@@ -45,15 +45,14 @@ export const parseIbcmdCliUiError = (error: unknown): IbcmdCliUiError | null => 
 
     return {
       code: errorCode,
-      title: 'Offline DBMS metadata не настроены',
+      title: 'IBCMD connection profile не настроен',
       content: (
         <Space direction="vertical" size="small">
           <Text>
-            Для offline-подключения нужны <Text code>dbms</Text>, <Text code>db_server</Text>, <Text code>db_name</Text>.
+            Для <Text code>scope=per_database</Text> без override требуется непустой профиль подключения для каждой базы.
           </Text>
           <Text type="secondary">
-            Исправьте DBMS metadata на странице <Text code>/databases</Text> (или задайте общий override через{' '}
-            <Text code>connection.offline.*</Text>).
+            Настройте IBCMD connection profile на странице <Text code>/databases</Text> или включите per-run override connection.
           </Text>
           {missing.length > 0 && (
             <div>
@@ -80,12 +79,12 @@ export const parseIbcmdCliUiError = (error: unknown): IbcmdCliUiError | null => 
   if (errorCode === 'MISSING_CONNECTION') {
     return {
       code: errorCode,
-      title: 'Не указан режим подключения',
+      title: 'Не задан connection',
       content: (
         <Space direction="vertical" size="small">
           <Text>
-            Для <Text code>scope=per_database</Text> нужно указать одно из: <Text code>connection.remote</Text>,{' '}
-            <Text code>connection.pid</Text> или <Text code>connection.offline</Text>.
+            Вы передали пустой <Text code>connection</Text>. Либо удалите поле connection, чтобы использовать профили баз, либо задайте
+            хотя бы один параметр (<Text code>remote</Text>/<Text code>pid</Text>/<Text code>offline.*</Text>).
           </Text>
           <Text type="secondary">
             Задайте параметры в настройках соединения (например в editor `ui.action_catalog`) или в Configure при создании операции.

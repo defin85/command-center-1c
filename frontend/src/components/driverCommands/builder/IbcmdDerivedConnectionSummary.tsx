@@ -116,7 +116,7 @@ export function IbcmdDerivedConnectionSummary({ selectedDatabaseIds }: { selecte
         type="info"
         showIcon
         message="Connection will be derived from database profiles"
-        description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
+        description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode is supported."
       />
 
       {loading && (
@@ -160,7 +160,7 @@ export function IbcmdDerivedConnectionSummary({ selectedDatabaseIds }: { selecte
               type="warning"
               showIcon
               message="Some databases have missing or incomplete IBCMD connection profile"
-              description="This operation will fail validation unless every selected database has a resolvable ibcmd connection profile (remote_url or offline)."
+              description="This operation will fail validation unless every selected database has a non-empty ibcmd connection profile (remote and/or pid and/or offline.*)."
             />
           )}
 
@@ -175,7 +175,7 @@ export function IbcmdDerivedConnectionSummary({ selectedDatabaseIds }: { selecte
                 }] : []),
                 ...(report.diff.offline.length > 0 ? [{
                   key: 'diff-offline',
-                  label: `Diff: offline targets (${report.counts.offline})`,
+                  label: `Diff: non-remote targets (${report.counts.offline})`,
                   children: renderDiff(report.diff.offline),
                 }] : []),
               ]}

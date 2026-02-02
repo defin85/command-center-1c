@@ -1,8 +1,4 @@
 import type { Database } from '../../../api/generated/model/database'
-import type { DatabaseIbcmdConnectionProfile } from '../../../api/generated/model/databaseIbcmdConnectionProfile'
-import type { DatabaseIbcmdConnectionProfileOffline } from '../../../api/generated/model/databaseIbcmdConnectionProfileOffline'
-
-export type DerivedIbcmdEffectiveMode = 'remote' | 'offline' | 'unconfigured'
 
 export type DerivedIbcmdValue = string | null
 
@@ -33,15 +29,25 @@ const normalizeString = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null
 }
 
-const normalizeOffline = (offline: DatabaseIbcmdConnectionProfileOffline | null | undefined): Record<string, string | null> => {
+const normalizePid = (value: unknown): string | null => {
+  if (typeof value !== 'number') return null
+  if (!Number.isFinite(value) || value <= 0) return null
+  return String(Math.trunc(value))
+}
+
+const normalizeOffline = (offline: unknown): Record<string, string | null> => {
   const out: Record<string, string | null> = {}
-  if (!offline || typeof offline !== 'object') return out
+  if (!offline || typeof offline !== 'object' || Array.isArray(offline)) return out
   const record = offline as Record<string, unknown>
   for (const [key, raw] of Object.entries(record)) {
+    if (key === 'db_user' || key === 'db_pwd' || key === 'db_password') continue
     out[key] = normalizeString(raw)
   }
   return out
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
 export const computeDerivedIbcmdConnectionReport = (
   databases: Database[],
@@ -60,62 +66,33 @@ export const computeDerivedIbcmdConnectionReport = (
   let unconfiguredCount = 0
 
   for (const db of selectedDatabases) {
-    const profile: DatabaseIbcmdConnectionProfile | null | undefined = db.ibcmd_connection ?? null
-    if (!profile || typeof profile !== 'object') {
+    const profileRaw = (db as unknown as { ibcmd_connection?: unknown }).ibcmd_connection ?? null
+    if (!isRecord(profileRaw)) {
       unconfiguredCount += 1
       continue
     }
 
-    const modeRaw = normalizeString(profile.mode) ?? 'auto'
-    const remoteUrl = normalizeString(profile.remote_url)
-    const offlineRaw = normalizeOffline(profile.offline)
+    const remoteCandidate = normalizeString(profileRaw.remote ?? profileRaw.remote_url)
+    const remote = remoteCandidate && remoteCandidate.toLowerCase().startsWith('ssh://') ? remoteCandidate : null
+    const pid = normalizePid(profileRaw.pid)
+    const offlineRaw = normalizeOffline(profileRaw.offline)
 
-    const offlineHasCorePaths = Boolean(offlineRaw.config) && Boolean(offlineRaw.data)
-
-    const resolveOffline = (): Record<string, DerivedIbcmdValue> => {
-      const resolved: Record<string, DerivedIbcmdValue> = {}
-      for (const [key, value] of Object.entries(offlineRaw)) {
-        resolved[`offline.${key}`] = value
-      }
-      if (!('offline.dbms' in resolved)) resolved['offline.dbms'] = null
-      if (!('offline.db_server' in resolved)) resolved['offline.db_server'] = null
-      if (!('offline.db_name' in resolved)) resolved['offline.db_name'] = null
-
-      if (!resolved['offline.dbms']) resolved['offline.dbms'] = normalizeString(db.dbms)
-      if (!resolved['offline.db_server']) resolved['offline.db_server'] = normalizeString(db.db_server)
-      if (!resolved['offline.db_name']) resolved['offline.db_name'] = normalizeString(db.db_name)
-      return resolved
+    const offlineSnapshot: Record<string, DerivedIbcmdValue> = {}
+    offlineSnapshot.pid = pid
+    for (const [key, value] of Object.entries(offlineRaw)) {
+      if (value === null) continue
+      offlineSnapshot[`offline.${key}`] = value
     }
 
-    if (modeRaw === 'remote') {
-      if (!remoteUrl) {
-        unconfiguredCount += 1
-        continue
-      }
+    if (remote) {
       remoteCount += 1
-      remoteSnapshots.push({ remote_url: remoteUrl })
+      remoteSnapshots.push({ remote, pid })
       continue
     }
 
-    if (modeRaw === 'offline') {
-      if (!offlineHasCorePaths) {
-        unconfiguredCount += 1
-        continue
-      }
+    if (pid || Object.keys(offlineSnapshot).length > 1) {
       offlineCount += 1
-      offlineSnapshots.push(resolveOffline())
-      continue
-    }
-
-    if (remoteUrl) {
-      remoteCount += 1
-      remoteSnapshots.push({ remote_url: remoteUrl })
-      continue
-    }
-
-    if (offlineHasCorePaths) {
-      offlineCount += 1
-      offlineSnapshots.push(resolveOffline())
+      offlineSnapshots.push(offlineSnapshot)
       continue
     }
 
@@ -169,3 +146,4 @@ export const computeDerivedIbcmdConnectionReport = (
     },
   }
 }
+

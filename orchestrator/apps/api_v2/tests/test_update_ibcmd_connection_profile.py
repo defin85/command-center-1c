@@ -27,7 +27,7 @@ def test_update_ibcmd_connection_profile_requires_manage_permission(client, user
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db.id, "mode": "remote", "remote_url": "http://host:1545"},
+        {"database_id": db.id, "remote": "ssh://host:1545"},
         format="json",
     )
     assert resp.status_code == 403
@@ -44,7 +44,7 @@ def test_update_ibcmd_connection_profile_remote_set_and_reset(client, user, targ
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db.id, "mode": "remote", "remote_url": "http://host:1545"},
+        {"database_id": db.id, "remote": "ssh://host:1545"},
         format="json",
     )
     assert resp.status_code == 200
@@ -52,8 +52,7 @@ def test_update_ibcmd_connection_profile_remote_set_and_reset(client, user, targ
     refreshed = Database.objects.get(id=db.id)
     profile = refreshed.metadata.get("ibcmd_connection")
     assert isinstance(profile, dict)
-    assert profile.get("mode") == "remote"
-    assert profile.get("remote_url") == "http://host:1545"
+    assert profile.get("remote") == "ssh://host:1545"
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
@@ -66,37 +65,40 @@ def test_update_ibcmd_connection_profile_remote_set_and_reset(client, user, targ
     assert "ibcmd_connection" not in (refreshed.metadata or {})
 
 @pytest.mark.django_db
-def test_update_ibcmd_connection_profile_remote_requires_remote_url(client, user, target_dbs):
+def test_update_ibcmd_connection_profile_remote_rejects_non_ssh(client, user, target_dbs):
     db = target_dbs[0]
     _grant_manage_database_permission(client, user)
     support._allow_operate(user, db, level=PermissionLevel.MANAGE)
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db.id, "mode": "remote"},
+        {"database_id": db.id, "remote": "http://host:1545"},
         format="json",
     )
     assert resp.status_code == 400
     payload = resp.json()
     assert payload["success"] is False
-    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.django_db
-def test_update_ibcmd_connection_profile_offline_requires_paths(client, user, target_dbs):
+def test_update_ibcmd_connection_profile_allows_offline_raw_keys(client, user, target_dbs):
     db = target_dbs[0]
     _grant_manage_database_permission(client, user)
     support._allow_operate(user, db, level=PermissionLevel.MANAGE)
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db.id, "mode": "offline", "offline": {"config": "/tmp/config"}},
+        {"database_id": db.id, "offline": {"config": "/tmp/config", "data": "/tmp/data", "extra_key": "value"}},
         format="json",
     )
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert resp.status_code == 200
+    refreshed = Database.objects.get(id=db.id)
+    profile = refreshed.metadata.get("ibcmd_connection")
+    assert isinstance(profile, dict)
+    assert profile.get("offline", {}).get("config") == "/tmp/config"
+    assert profile.get("offline", {}).get("data") == "/tmp/data"
+    assert profile.get("offline", {}).get("extra_key") == "value"
 
 
 @pytest.mark.django_db
@@ -109,8 +111,7 @@ def test_update_ibcmd_connection_profile_rejects_secrets(client, user, target_db
         "/api/v2/databases/update-ibcmd-connection-profile/",
         {
             "database_id": db.id,
-            "mode": "offline",
-            "offline": {"config": "/tmp/config", "data": "/tmp/data", "db_user": "u", "db_pwd": "p"},
+            "offline": {"config": "/tmp/config", "data": "/tmp/data", "db_user": "u"},
         },
         format="json",
     )
@@ -121,7 +122,7 @@ def test_update_ibcmd_connection_profile_rejects_secrets(client, user, target_db
 
 
 @pytest.mark.django_db
-def test_update_ibcmd_connection_profile_requires_some_fields_unless_reset(client, user, target_dbs):
+def test_update_ibcmd_connection_profile_allows_empty_profile(client, user, target_dbs):
     db = target_dbs[0]
     _grant_manage_database_permission(client, user)
     support._allow_operate(user, db, level=PermissionLevel.MANAGE)
@@ -131,26 +132,11 @@ def test_update_ibcmd_connection_profile_requires_some_fields_unless_reset(clien
         {"database_id": db.id},
         format="json",
     )
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "MISSING_PARAMETER"
-
-@pytest.mark.django_db
-def test_update_ibcmd_connection_profile_auto_requires_remote_or_offline(client, user, target_dbs):
-    db = target_dbs[0]
-    _grant_manage_database_permission(client, user)
-    support._allow_operate(user, db, level=PermissionLevel.MANAGE)
-
-    resp = client.post(
-        "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db.id, "mode": "auto"},
-        format="json",
-    )
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert resp.status_code == 200
+    refreshed = Database.objects.get(id=db.id)
+    profile = refreshed.metadata.get("ibcmd_connection")
+    assert isinstance(profile, dict)
+    assert profile == {}
 
 
 @pytest.mark.django_db
@@ -170,7 +156,7 @@ def test_update_ibcmd_connection_profile_is_tenant_scoped(client, user):
 
     resp = client.post(
         "/api/v2/databases/update-ibcmd-connection-profile/",
-        {"database_id": db_other.id, "mode": "remote", "remote_url": "http://host:1545"},
+        {"database_id": db_other.id, "remote": "ssh://host:1545"},
         format="json",
     )
     assert resp.status_code == 404

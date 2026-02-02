@@ -72,98 +72,33 @@ def update_ibcmd_connection_profile(request):
             meta.pop(_PROFILE_KEY, None)
             updated_fields.append(_PROFILE_KEY)
     else:
-        provided_any = any(k in data for k in ("mode", "remote_url", "offline"))
-        if not provided_any:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "MISSING_PARAMETER",
-                        "message": "At least one of mode, remote_url, offline is required unless reset=true",
-                    },
-                },
-                status=400,
-            )
-
-        mode = str(data.get("mode") or "").strip()
-        if mode not in {"auto", "remote", "offline"}:
-            mode = "auto"
-
-        remote_url = data.get("remote_url")
-        remote_url = str(remote_url).strip() if remote_url not in (None, "") else ""
+        remote = str(data.get("remote") or "").strip()
+        pid = data.get("pid")
 
         offline_in = data.get("offline")
         offline: dict[str, str] | None = None
         if isinstance(offline_in, dict):
-            # Serializer already normalizes to python dict.
-            offline = {k: str(v).strip() for k, v in offline_in.items() if v not in (None, "")}
-            # Never allow secrets in DB metadata.
-            if "db_user" in offline or "db_pwd" in offline:
-                return Response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "INVALID_PARAMETER",
-                            "message": "offline.db_user/db_pwd are not allowed",
-                        },
-                    },
-                    status=400,
-                )
-
-        if mode == "remote":
-            if not remote_url:
-                return Response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "MISSING_PARAMETER",
-                            "message": "remote_url is required for mode=remote",
-                        },
-                    },
-                    status=400,
-                )
-        if mode == "offline":
+            # Serializer already validates values as strings, but normalize consistently.
+            offline = {
+                str(k).strip(): str(v).strip()
+                for k, v in offline_in.items()
+                if v not in (None, "") and str(v).strip() != ""
+            }
+            # Defensive: never keep secrets even if stored accidentally.
+            for key in ("db_user", "db_pwd", "db_password"):
+                offline.pop(key, None)
             if not offline:
-                return Response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "MISSING_PARAMETER",
-                            "message": "offline is required for mode=offline",
-                        },
-                    },
-                    status=400,
-                )
-            if not offline.get("config") or not offline.get("data"):
-                return Response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "MISSING_PARAMETER",
-                            "message": "offline.config and offline.data are required for mode=offline",
-                        },
-                    },
-                    status=400,
-                )
+                offline = None
 
-        if mode == "auto":
-            if not remote_url and not offline:
-                return Response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "MISSING_PARAMETER",
-                            "message": "mode=auto requires remote_url and/or offline profile to be set",
-                        },
-                    },
-                    status=400,
-                )
-
-        profile: dict[str, object] = {"mode": mode}
-        if remote_url:
-            profile["remote_url"] = remote_url
+        profile: dict[str, object] = {}
+        if remote:
+            profile["remote"] = remote
+        if isinstance(pid, int) and pid > 0:
+            profile["pid"] = pid
         if offline:
             profile["offline"] = offline
+
+        # Empty profile is allowed (stored explicitly as {}).
         meta[_PROFILE_KEY] = profile
         updated_fields.append(_PROFILE_KEY)
 

@@ -9,9 +9,9 @@ vi.mock('../../../../api/generated', () => ({
       response: {
         data: {
           error: {
-            code: 'OFFLINE_DB_METADATA_NOT_CONFIGURED',
-            message: 'offline dbms metadata missing',
-            details: { missing: [{ database_id: 'db-1', missing_keys: ['dbms'] }] },
+            code: 'IBCMD_CONNECTION_PROFILE_INVALID',
+            message: 'profile missing',
+            details: { missing: [{ database_id: 'db-1', missing_keys: ['ibcmd_connection'] }] },
           },
         },
       },
@@ -26,7 +26,7 @@ vi.mock('../../../../api/client', () => ({
 }))
 
 describe('useExtensionsActions: ibcmd_cli error handling', () => {
-  it('shows actionable modal for OFFLINE_DB_METADATA_NOT_CONFIGURED', async () => {
+  it('shows actionable modal for IBCMD_CONNECTION_PROFILE_INVALID', async () => {
     const message = { success: vi.fn(), error: vi.fn(), info: vi.fn() }
     const modal = { confirm: vi.fn(), error: vi.fn() }
     const navigate = vi.fn()

@@ -3,15 +3,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { parseIbcmdCliUiError, tryShowIbcmdCliUiError } from '../ibcmdCliUiErrors'
 
 describe('ibcmdCliUiErrors', () => {
-  it('parses OFFLINE_DB_METADATA_NOT_CONFIGURED and shows modal', () => {
+  it('parses IBCMD_CONNECTION_PROFILE_INVALID and shows modal', () => {
     const error: any = {
       response: {
         data: {
           error: {
-            code: 'OFFLINE_DB_METADATA_NOT_CONFIGURED',
-            message: 'offline dbms metadata missing',
+            code: 'IBCMD_CONNECTION_PROFILE_INVALID',
+            message: 'profile missing',
             details: {
-              missing: [{ database_id: 'db-1', missing_keys: ['dbms'] }],
+              missing: [{ database_id: 'db-1', missing_keys: ['ibcmd_connection'] }],
               missing_total: 1,
               omitted: 0,
             },
@@ -21,8 +21,8 @@ describe('ibcmdCliUiErrors', () => {
     }
 
     const parsed = parseIbcmdCliUiError(error)
-    expect(parsed?.code).toBe('OFFLINE_DB_METADATA_NOT_CONFIGURED')
-    expect(parsed?.title).toMatch(/Offline DBMS metadata/i)
+    expect(parsed?.code).toBe('IBCMD_CONNECTION_PROFILE_INVALID')
+    expect(parsed?.title).toMatch(/IBCMD connection profile/i)
 
     const modal = { error: vi.fn() }
     const message = { error: vi.fn() }
@@ -30,4 +30,3 @@ describe('ibcmdCliUiErrors', () => {
     expect(modal.error).toHaveBeenCalledTimes(1)
   })
 })
-

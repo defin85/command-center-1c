@@ -226,26 +226,39 @@ export const Databases = () => {
     }
     const dbAny = database as Database & {
       ibcmd_connection?: {
-        mode?: string | null
-        remote_url?: string | null
+        remote?: string | null
+        pid?: number | null
         offline?: Record<string, unknown> | null
       } | null
     }
     const profile = dbAny.ibcmd_connection ?? null
     const offlineRaw = profile?.offline && typeof profile.offline === 'object' ? profile.offline : null
     const offline = offlineRaw ? (offlineRaw as Record<string, unknown>) : {}
+
+    const offlineEntries: Array<{ key: string; value: string }> = []
+    for (const [k, v] of Object.entries(offline)) {
+      if (typeof k !== 'string') continue
+      const key = k.trim()
+      if (!key) continue
+      if (typeof v !== 'string') continue
+      const value = v.trim()
+      if (!value) continue
+      if (key === 'db_user' || key === 'db_pwd' || key === 'db_password') continue
+      offlineEntries.push({ key, value })
+    }
+    offlineEntries.sort((a, b) => a.key.localeCompare(b.key))
+
+    const ensureRow = (key: string) => {
+      if (offlineEntries.some((row) => row.key === key)) return
+      offlineEntries.unshift({ key, value: '' })
+    }
+    ensureRow('data')
+    ensureRow('config')
     setIbcmdProfileDatabase(database)
     ibcmdProfileForm.setFieldsValue({
-      mode: typeof profile?.mode === 'string' ? profile.mode : 'auto',
-      remote_url: typeof profile?.remote_url === 'string' ? profile.remote_url : '',
-      offline: {
-        config: typeof offline.config === 'string' ? offline.config : '',
-        data: typeof offline.data === 'string' ? offline.data : '',
-        db_path: typeof offline.db_path === 'string' ? offline.db_path : '',
-        dbms: typeof offline.dbms === 'string' ? offline.dbms : '',
-        db_server: typeof offline.db_server === 'string' ? offline.db_server : '',
-        db_name: typeof offline.db_name === 'string' ? offline.db_name : '',
-      },
+      remote: typeof profile?.remote === 'string' ? profile.remote : '',
+      pid: typeof profile?.pid === 'number' ? profile.pid : null,
+      offline_entries: offlineEntries,
     })
     setIbcmdProfileModalVisible(true)
   }

@@ -390,47 +390,64 @@ class DatabaseDbmsMetadataUpdateResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
-class DatabaseIbcmdConnectionOfflineProfileSerializer(serializers.Serializer):
-    """Offline connection profile for a database (no secrets)."""
-    config = serializers.CharField(required=False, allow_blank=True)
-    data = serializers.CharField(required=False, allow_blank=True)
-    dbms = serializers.CharField(required=False, allow_blank=True)
-    db_server = serializers.CharField(required=False, allow_blank=True)
-    db_name = serializers.CharField(required=False, allow_blank=True)
-    db_path = serializers.CharField(required=False, allow_blank=True)
-    ftext2_data = serializers.CharField(required=False, allow_blank=True)
-    ftext_data = serializers.CharField(required=False, allow_blank=True)
-    lock = serializers.CharField(required=False, allow_blank=True)
-    log_data = serializers.CharField(required=False, allow_blank=True)
-    openid_data = serializers.CharField(required=False, allow_blank=True)
-    session_data = serializers.CharField(required=False, allow_blank=True)
-    stt_data = serializers.CharField(required=False, allow_blank=True)
-    system = serializers.CharField(required=False, allow_blank=True)
-    temp = serializers.CharField(required=False, allow_blank=True)
-    users_data = serializers.CharField(required=False, allow_blank=True)
-
-    def to_internal_value(self, data):
-        if isinstance(data, dict):
-            # Reject secret-like fields explicitly to avoid silently dropping them.
-            forbidden = [k for k in ("db_user", "db_pwd", "db_password") if k in data]
-            if forbidden:
-                raise serializers.ValidationError(
-                    {k: "not allowed (secrets must not be stored in database metadata)" for k in forbidden}
-                )
-        return super().to_internal_value(data)
+_IBCMD_OFFLINE_FORBIDDEN_KEYS = {
+    "db_user",
+    "db_pwd",
+    "db_password",
+}
 
 
 class DatabaseIbcmdConnectionProfileUpdateRequestSerializer(serializers.Serializer):
     """Request body for update_ibcmd_connection_profile endpoint."""
     database_id = serializers.CharField(help_text="Database ID to update")
     reset = serializers.BooleanField(required=False, default=False)
-    mode = serializers.ChoiceField(
-        choices=["auto", "remote", "offline"],
+    remote = serializers.CharField(
         required=False,
-        help_text="IBCMD connection mode for the database profile",
+        allow_blank=True,
+        help_text="IBCMD --remote=<url> (SSH URL, must start with ssh://)",
     )
-    remote_url = serializers.CharField(required=False, allow_blank=True)
-    offline = DatabaseIbcmdConnectionOfflineProfileSerializer(required=False)
+    pid = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="IBCMD --pid=<pid> (optional)",
+    )
+    offline = serializers.DictField(
+        required=False,
+        child=serializers.CharField(allow_blank=True),
+        help_text="IBCMD offline flags (raw dict, no secrets)",
+    )
+
+    def validate_remote(self, value: str) -> str:
+        v = str(value or "").strip()
+        if not v:
+            return ""
+        if not v.lower().startswith("ssh://"):
+            raise serializers.ValidationError("remote must be an ssh:// URL")
+        return v
+
+    def validate_pid(self, value: int | None) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            pid = int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("pid must be an integer") from None
+        if pid <= 0:
+            raise serializers.ValidationError("pid must be a positive integer")
+        return pid
+
+    def validate_offline(self, value):
+        if value in (None, ""):
+            return None
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("offline must be an object")
+        forbidden = [k for k in value.keys() if str(k).strip().lower() in _IBCMD_OFFLINE_FORBIDDEN_KEYS]
+        if forbidden:
+            raise serializers.ValidationError(
+                {k: "not allowed (secrets must not be stored in database metadata)" for k in forbidden}
+            )
+        # Keep raw dict as-is (values are already validated as strings).
+        return value
 
 
 class DatabaseIbcmdConnectionProfileUpdateResponseSerializer(serializers.Serializer):

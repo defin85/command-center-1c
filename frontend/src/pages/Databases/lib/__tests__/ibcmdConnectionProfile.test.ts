@@ -5,40 +5,37 @@ import { buildIbcmdConnectionProfileUpdatePayload } from '../ibcmdConnectionProf
 describe('buildIbcmdConnectionProfileUpdatePayload', () => {
   it('trims values and omits empty fields', () => {
     const payload = buildIbcmdConnectionProfileUpdatePayload('db1', {
-      mode: 'remote',
-      remote_url: '  http://127.0.0.1:1548  ',
-      offline: {
-        config: '',
-        data: '   ',
-        dbms: ' PostgreSQL ',
-      },
+      remote: '  ssh://127.0.0.1:1548  ',
+      pid: ' 123 ',
+      offline_entries: [
+        { key: 'config', value: ' ' },
+        { key: 'dbms', value: ' PostgreSQL ' },
+      ],
     })
 
     expect(payload).toEqual({
       database_id: 'db1',
-      mode: 'remote',
-      remote_url: 'http://127.0.0.1:1548',
+      remote: 'ssh://127.0.0.1:1548',
+      pid: 123,
       offline: { dbms: 'PostgreSQL' },
     })
   })
 
-  it('omits remote_url and offline when empty', () => {
-    const payload = buildIbcmdConnectionProfileUpdatePayload('db1', { mode: 'auto', remote_url: ' ', offline: {} })
-    expect(payload).toEqual({ database_id: 'db1', mode: 'auto' })
+  it('omits remote/pid/offline when empty', () => {
+    const payload = buildIbcmdConnectionProfileUpdatePayload('db1', { remote: ' ', pid: null, offline_entries: [] })
+    expect(payload).toEqual({ database_id: 'db1' })
   })
 
-  it('includes offline core paths when provided', () => {
+  it('includes offline entries when provided', () => {
     const payload = buildIbcmdConnectionProfileUpdatePayload('db1', {
-      mode: 'offline',
-      offline: {
-        config: '/opt/1c/offline/config',
-        data: '/opt/1c/offline/data',
-        db_path: '/opt/1c/offline/db',
-      },
+      offline_entries: [
+        { key: 'config', value: '/opt/1c/offline/config' },
+        { key: 'data', value: '/opt/1c/offline/data' },
+        { key: 'db_path', value: '/opt/1c/offline/db' },
+      ],
     })
     expect(payload).toEqual({
       database_id: 'db1',
-      mode: 'offline',
       offline: {
         config: '/opt/1c/offline/config',
         data: '/opt/1c/offline/data',
@@ -47,4 +44,3 @@ describe('buildIbcmdConnectionProfileUpdatePayload', () => {
     })
   })
 })
-

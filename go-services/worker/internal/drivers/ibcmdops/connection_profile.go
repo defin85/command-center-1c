@@ -2,6 +2,7 @@ package ibcmdops
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/commandcenter1c/commandcenter/shared/credentials"
@@ -52,7 +53,17 @@ func injectConnectionProfileArgs(args []string, creds *credentials.DatabaseCrede
 		return args, nil, nil
 	}
 	// If connection flags are already present, keep argv as-is.
-	if hasAnyFlag(args, "--remote", "--pid", "--config", "--data") {
+	if hasAnyFlag(
+		args,
+		"--remote",
+		"--pid",
+		"--config",
+		"--data",
+		"--db-path",
+		"--dbms",
+		"--db-server",
+		"--db-name",
+	) {
 		return args, []map[string]interface{}{
 			{
 				"target_ref": "ibcmd_connection_profile",
@@ -69,147 +80,106 @@ func injectConnectionProfileArgs(args []string, creds *credentials.DatabaseCrede
 	}
 
 	profile := creds.IbcmdConnection
-	mode := strings.ToLower(strings.TrimSpace(profile.Mode))
-	if mode == "" {
-		mode = "auto"
+	remote := strings.TrimSpace(profile.Remote)
+	pid := profile.PID
+	offline := profile.Offline
+
+	hasRemote := remote != ""
+	hasPid := pid != nil && *pid > 0
+	hasOffline := false
+	if len(offline) > 0 {
+		for _, v := range offline {
+			if strings.TrimSpace(v) != "" {
+				hasOffline = true
+				break
+			}
+		}
 	}
-	if mode != "auto" && mode != "remote" && mode != "offline" {
-		mode = "auto"
+	if !hasRemote && !hasPid && !hasOffline {
+		return args, nil, fmt.Errorf("ibcmd_connection profile is empty for derived connection")
 	}
 
-	effective := mode
-	if mode == "auto" {
-		if strings.TrimSpace(profile.RemoteURL) != "" {
-			effective = "remote"
-		} else {
-			effective = "offline"
+	isSafeOfflineKey := func(key string) bool {
+		k := strings.TrimSpace(key)
+		if k == "" {
+			return false
 		}
+		if strings.HasPrefix(k, "-") {
+			return false
+		}
+		for _, ch := range k {
+			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+				continue
+			}
+			return false
+		}
+		return true
+	}
+	offlineFlagForKey := func(key string) string {
+		k := strings.ToLower(strings.TrimSpace(key))
+		k = strings.ReplaceAll(k, "_", "-")
+		return "--" + k
 	}
 
 	insertAt := connectionInsertAt(args)
 	out := append([]string(nil), args...)
 	bindings := make([]map[string]interface{}, 0)
 
-	if effective == "remote" {
-		remoteURL := strings.TrimSpace(profile.RemoteURL)
-		if remoteURL == "" {
-			return args, nil, fmt.Errorf("ibcmd_connection.mode=remote requires remote_url")
-		}
-		token := fmt.Sprintf("--remote=%s", remoteURL)
-		out = append(out[:insertAt], append([]string{token}, out[insertAt:]...)...)
+	injected := make([]string, 0)
+
+	if hasRemote {
+		token := fmt.Sprintf("--remote=%s", remote)
+		injected = append(injected, token)
 		bindings = append(bindings, map[string]interface{}{
 			"target_ref": "flag:--remote",
-			"source_ref": "database.ibcmd_connection_profile",
+			"source_ref": "database.ibcmd_connection_profile.remote",
 			"resolve_at": "worker",
 			"sensitive":  false,
 			"status":     "applied",
 		})
-		return out, bindings, nil
 	}
 
-	offline := profile.Offline
-	if offline == nil {
-		return args, nil, fmt.Errorf("ibcmd_connection.mode=offline requires offline profile")
-	}
-	config := strings.TrimSpace(offline.Config)
-	data := strings.TrimSpace(offline.Data)
-	if config == "" || data == "" {
-		return args, nil, fmt.Errorf("offline profile requires config and data")
-	}
-
-	injected := make([]string, 0)
-	injected = append(injected, fmt.Sprintf("--config=%s", config))
-	injected = append(injected, fmt.Sprintf("--data=%s", data))
-	bindings = append(bindings,
-		map[string]interface{}{
-			"target_ref": "flag:--config",
-			"source_ref": "database.ibcmd_connection_profile",
-			"resolve_at": "worker",
-			"sensitive":  false,
-			"status":     "applied",
-		},
-		map[string]interface{}{
-			"target_ref": "flag:--data",
-			"source_ref": "database.ibcmd_connection_profile",
-			"resolve_at": "worker",
-			"sensitive":  false,
-			"status":     "applied",
-		},
-	)
-
-	dbPath := strings.TrimSpace(offline.DBPath)
-	if dbPath != "" {
-		injected = append(injected, fmt.Sprintf("--db-path=%s", dbPath))
+	if hasPid {
+		token := fmt.Sprintf("--pid=%d", *pid)
+		injected = append(injected, token)
 		bindings = append(bindings, map[string]interface{}{
-			"target_ref": "flag:--db-path",
-			"source_ref": "database.ibcmd_connection_profile",
+			"target_ref": "flag:--pid",
+			"source_ref": "database.ibcmd_connection_profile.pid",
 			"resolve_at": "worker",
 			"sensitive":  false,
 			"status":     "applied",
 		})
-	} else {
-		// If profile provides DBMS triplet, it should override database metadata from credentials.
-		if v := strings.TrimSpace(offline.DBMS); v != "" {
-			injected = append(injected, fmt.Sprintf("--dbms=%s", v))
-			bindings = append(bindings, map[string]interface{}{
-				"target_ref": "flag:--dbms",
-				"source_ref": "database.ibcmd_connection_profile",
-				"resolve_at": "worker",
-				"sensitive":  false,
-				"status":     "applied",
-			})
-		}
-		if v := strings.TrimSpace(offline.DBServer); v != "" {
-			injected = append(injected, fmt.Sprintf("--db-server=%s", v))
-			bindings = append(bindings, map[string]interface{}{
-				"target_ref": "flag:--db-server",
-				"source_ref": "database.ibcmd_connection_profile",
-				"resolve_at": "worker",
-				"sensitive":  false,
-				"status":     "applied",
-			})
-		}
-		if v := strings.TrimSpace(offline.DBName); v != "" {
-			injected = append(injected, fmt.Sprintf("--db-name=%s", v))
-			bindings = append(bindings, map[string]interface{}{
-				"target_ref": "flag:--db-name",
-				"source_ref": "database.ibcmd_connection_profile",
-				"resolve_at": "worker",
-				"sensitive":  false,
-				"status":     "applied",
-			})
-		}
 	}
 
-	if v := strings.TrimSpace(offline.Ftext2Data); v != "" {
-		injected = append(injected, fmt.Sprintf("--ftext2-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.FtextData); v != "" {
-		injected = append(injected, fmt.Sprintf("--ftext-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.Lock); v != "" {
-		injected = append(injected, fmt.Sprintf("--lock=%s", v))
-	}
-	if v := strings.TrimSpace(offline.LogData); v != "" {
-		injected = append(injected, fmt.Sprintf("--log-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.OpenidData); v != "" {
-		injected = append(injected, fmt.Sprintf("--openid-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.SessionData); v != "" {
-		injected = append(injected, fmt.Sprintf("--session-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.SttData); v != "" {
-		injected = append(injected, fmt.Sprintf("--stt-data=%s", v))
-	}
-	if v := strings.TrimSpace(offline.System); v != "" {
-		injected = append(injected, fmt.Sprintf("--system=%s", v))
-	}
-	if v := strings.TrimSpace(offline.Temp); v != "" {
-		injected = append(injected, fmt.Sprintf("--temp=%s", v))
-	}
-	if v := strings.TrimSpace(offline.UsersData); v != "" {
-		injected = append(injected, fmt.Sprintf("--users-data=%s", v))
+	if len(offline) > 0 {
+		keys := make([]string, 0, len(offline))
+		for k := range offline {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			lowered := strings.ToLower(strings.TrimSpace(key))
+			if lowered == "db_user" || lowered == "db_pwd" || lowered == "db_password" {
+				continue
+			}
+			if !isSafeOfflineKey(key) {
+				continue
+			}
+			value := strings.TrimSpace(offline[key])
+			if value == "" {
+				continue
+			}
+			flag := offlineFlagForKey(key)
+			token := fmt.Sprintf("%s=%s", flag, value)
+			injected = append(injected, token)
+			bindings = append(bindings, map[string]interface{}{
+				"target_ref": fmt.Sprintf("flag:%s", flag),
+				"source_ref": fmt.Sprintf("database.ibcmd_connection_profile.offline.%s", key),
+				"resolve_at": "worker",
+				"sensitive":  false,
+				"status":     "applied",
+			})
+		}
 	}
 
 	if len(injected) > 0 {

@@ -1,7 +1,6 @@
 # ruff: noqa: F811
 import pytest
 
-from apps.databases.models import DbmsUserMapping
 from apps.operations.models import BatchOperation, Task
 from apps.operations.services import EnqueueResult, OperationsService
 
@@ -41,7 +40,7 @@ def test_execute_ibcmd_cli_per_database_derived_rejects_missing_profile(client, 
 
     good = target_dbs[0]
     bad = target_dbs[1]
-    good.metadata = {"ibcmd_connection": {"mode": "remote", "remote_url": "http://host:1545"}}
+    good.metadata = {"ibcmd_connection": {"remote": "ssh://host:1545"}}
     good.save(update_fields=["metadata"])
     bad.metadata = {}
     bad.save(update_fields=["metadata"])
@@ -73,20 +72,15 @@ def test_execute_ibcmd_cli_per_database_derived_allows_mixed_remote_and_offline(
     remote_db = target_dbs[0]
     offline_db = target_dbs[1]
 
-    remote_db.metadata = {"ibcmd_connection": {"mode": "remote", "remote_url": "http://host:1545"}}
+    remote_db.metadata = {"ibcmd_connection": {"remote": "ssh://host:1545"}}
     remote_db.save(update_fields=["metadata"])
 
     offline_db.metadata = {
         "ibcmd_connection": {
-            "mode": "offline",
             "offline": {"config": "/opt/1c/offline/config", "data": "/opt/1c/offline/data"},
         },
-        "dbms": "PostgreSQL",
-        "db_server": "localhost",
-        "db_name": "testdb",
     }
     offline_db.save(update_fields=["metadata"])
-    DbmsUserMapping.objects.create(database=offline_db, user=user, db_username="postgres", db_password="secret")
 
     def fake_enqueue(_operation_id: str) -> EnqueueResult:
         BatchOperation.objects.filter(id=_operation_id).update(status=BatchOperation.STATUS_QUEUED)

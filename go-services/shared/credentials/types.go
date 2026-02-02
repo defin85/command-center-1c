@@ -1,29 +1,10 @@
 // go-services/shared/credentials/types.go
 package credentials
 
-type IbcmdConnectionOfflineProfile struct {
-	Config      string `json:"config,omitempty"`
-	Data        string `json:"data,omitempty"`
-	DBMS        string `json:"dbms,omitempty"`
-	DBServer    string `json:"db_server,omitempty"`
-	DBName      string `json:"db_name,omitempty"`
-	DBPath      string `json:"db_path,omitempty"`
-	Ftext2Data  string `json:"ftext2_data,omitempty"`
-	FtextData   string `json:"ftext_data,omitempty"`
-	Lock        string `json:"lock,omitempty"`
-	LogData     string `json:"log_data,omitempty"`
-	OpenidData  string `json:"openid_data,omitempty"`
-	SessionData string `json:"session_data,omitempty"`
-	SttData     string `json:"stt_data,omitempty"`
-	System      string `json:"system,omitempty"`
-	Temp        string `json:"temp,omitempty"`
-	UsersData   string `json:"users_data,omitempty"`
-}
-
 type IbcmdConnectionProfile struct {
-	Mode      string                         `json:"mode,omitempty"`
-	RemoteURL string                         `json:"remote_url,omitempty"`
-	Offline   *IbcmdConnectionOfflineProfile `json:"offline,omitempty"`
+	Remote  string            `json:"remote,omitempty"`
+	PID     *int              `json:"pid,omitempty"`
+	Offline map[string]string `json:"offline,omitempty"`
 }
 
 // DatabaseCredentials represents credentials for a 1C database

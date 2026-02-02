@@ -42,50 +42,64 @@ class ExecutionPlanPreviewRequestSerializer(serializers.Serializer):
 def _normalize_ibcmd_connection_profile(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
-    mode = str(raw.get("mode") or "").strip().lower() or "auto"
-    if mode not in {"auto", "remote", "offline"}:
-        mode = "auto"
-    remote_url = str(raw.get("remote_url") or "").strip()
+    remote_raw = raw.get("remote")
+    if remote_raw in (None, ""):
+        remote_raw = raw.get("remote_url")
+    remote = str(remote_raw).strip() if remote_raw not in (None, "") else ""
+    if remote and not remote.lower().startswith("ssh://"):
+        remote = ""
+
+    pid_raw = raw.get("pid")
+    pid = pid_raw if isinstance(pid_raw, int) and pid_raw > 0 else None
+
     offline_in = raw.get("offline")
     offline: dict[str, str] | None = None
     if isinstance(offline_in, dict):
-        offline = {str(k): str(v).strip() for k, v in offline_in.items() if v not in (None, "")}
-        offline.pop("db_user", None)
-        offline.pop("db_pwd", None)
-        offline.pop("db_password", None)
-        if not offline:
-            offline = None
-    out: dict[str, Any] = {"mode": mode}
-    if remote_url:
-        out["remote_url"] = remote_url
+        offline_safe: dict[str, str] = {}
+        for k, v in offline_in.items():
+            key = str(k).strip()
+            if not key:
+                continue
+            lowered = key.lower()
+            if lowered in {"db_user", "db_pwd", "db_password"}:
+                continue
+            if v in (None, ""):
+                continue
+            rendered = str(v).strip()
+            if not rendered:
+                continue
+            offline_safe[key] = rendered
+        offline = offline_safe or None
+
+    out: dict[str, Any] = {}
+    if remote:
+        out["remote"] = remote
+    if pid is not None:
+        out["pid"] = pid
     if offline:
         out["offline"] = offline
     return out
 
-def _resolve_effective_ibcmd_connection_profile(profile: dict[str, Any] | None) -> tuple[str | None, dict[str, Any]]:
-    if not isinstance(profile, dict):
-        return None, {}
-    mode = str(profile.get("mode") or "").strip().lower() or "auto"
-    if mode not in {"auto", "remote", "offline"}:
-        mode = "auto"
-    remote_url = str(profile.get("remote_url") or "").strip()
+def _is_empty_ibcmd_profile(profile: dict[str, Any] | None) -> bool:
+    if not isinstance(profile, dict) or not profile:
+        return True
+    remote = str(profile.get("remote") or "").strip()
+    pid = profile.get("pid")
     offline = profile.get("offline") if isinstance(profile.get("offline"), dict) else None
-    if mode == "remote":
-        return ("remote", {"remote_url": remote_url}) if remote_url else (None, {})
-    if mode == "offline":
-        return ("offline", {"offline": dict(offline)}) if offline else (None, {})
-    if remote_url:
-        return "remote", {"remote_url": remote_url}
-    if offline:
-        return "offline", {"offline": dict(offline)}
-    return None, {}
+    if remote:
+        return False
+    if isinstance(pid, int) and pid > 0:
+        return False
+    if isinstance(offline, dict) and len(offline) > 0:
+        return False
+    return True
 
 def _validate_derived_ibcmd_profiles_preview(
     *,
     user,
     database_ids: list[str],
 ) -> tuple[list[Any] | None, dict[str, Any] | None, int | None]:
-    from apps.databases.models import Database, DbmsUserMapping
+    from apps.databases.models import Database
 
     databases = list(Database.objects.filter(id__in=database_ids))
     found = {str(db.id) for db in databases}
@@ -97,102 +111,42 @@ def _validate_derived_ibcmd_profiles_preview(
         }, 400
 
     missing_profiles: list[dict[str, Any]] = []
-    offline_missing_meta: list[dict[str, Any]] = []
-    offline_needs_dbms: list[Any] = []
     remote_count = 0
     offline_count = 0
+    pid_count = 0
 
     for db in databases:
         db_meta = getattr(db, "metadata", None)
         db_meta_dict = db_meta if isinstance(db_meta, dict) else {}
         raw_profile = db_meta_dict.get("ibcmd_connection")
         profile = _normalize_ibcmd_connection_profile(raw_profile)
-        if profile is None:
+        if profile is None or _is_empty_ibcmd_profile(profile):
             missing_profiles.append(
                 {
                     "database_id": str(getattr(db, "id", "")),
                     "database_name": getattr(db, "name", None),
-                    "reason": "missing_profile",
+                    "reason": "missing_or_empty_profile",
                     "missing_keys": ["ibcmd_connection"],
                 }
             )
             continue
 
-        effective_mode, details = _resolve_effective_ibcmd_connection_profile(profile)
-        if effective_mode is None:
-            missing_profiles.append(
-                {
-                    "database_id": str(getattr(db, "id", "")),
-                    "database_name": getattr(db, "name", None),
-                    "reason": "unresolvable_profile",
-                    "missing_keys": ["remote_url or offline"],
-                    "mode": str(profile.get("mode") or "auto"),
-                }
-            )
-            continue
+        remote = str(profile.get("remote") or "").strip()
+        pid = profile.get("pid")
+        offline = profile.get("offline") if isinstance(profile.get("offline"), dict) else None
 
-        if effective_mode == "remote":
+        if remote:
             remote_count += 1
-            remote_url = str(details.get("remote_url") or "").strip()
-            if not remote_url:
-                missing_profiles.append(
-                    {
-                        "database_id": str(getattr(db, "id", "")),
-                        "database_name": getattr(db, "name", None),
-                        "reason": "remote_missing_remote_url",
-                        "missing_keys": ["remote_url"],
-                        "mode": str(profile.get("mode") or "remote"),
-                    }
-                )
             continue
 
-        offline_count += 1
-        offline = details.get("offline") if isinstance(details.get("offline"), dict) else None
-        if not isinstance(offline, dict):
-            missing_profiles.append(
-                {
-                    "database_id": str(getattr(db, "id", "")),
-                    "database_name": getattr(db, "name", None),
-                    "reason": "offline_missing_profile",
-                    "missing_keys": ["offline"],
-                    "mode": str(profile.get("mode") or "offline"),
-                }
-            )
+        if isinstance(pid, int) and pid > 0:
+            pid_count += 1
+            offline_count += 1
             continue
 
-        if not str(offline.get("config") or "").strip() or not str(offline.get("data") or "").strip():
-            missing_profiles.append(
-                {
-                    "database_id": str(getattr(db, "id", "")),
-                    "database_name": getattr(db, "name", None),
-                    "reason": "offline_missing_paths",
-                    "missing_keys": ["offline.config", "offline.data"],
-                    "mode": str(profile.get("mode") or "offline"),
-                }
-            )
+        if isinstance(offline, dict) and len(offline) > 0:
+            offline_count += 1
             continue
-
-        offline_db_path = str(offline.get("db_path") or "").strip()
-        if offline_db_path:
-            continue
-
-        missing_keys: list[str] = []
-        for key in ("dbms", "db_server", "db_name"):
-            if str(offline.get(key) or "").strip():
-                continue
-            if not str(db_meta_dict.get(key) or "").strip():
-                missing_keys.append(key)
-        if missing_keys:
-            offline_missing_meta.append(
-                {
-                    "database_id": str(getattr(db, "id", "")),
-                    "database_name": getattr(db, "name", None),
-                    "missing_keys": missing_keys,
-                }
-            )
-            continue
-
-        offline_needs_dbms.append(db)
 
     if missing_profiles:
         limit = 25
@@ -203,38 +157,14 @@ def _validate_derived_ibcmd_profiles_preview(
             "success": False,
             "error": {
                 "code": "IBCMD_CONNECTION_PROFILE_INVALID",
-                "message": "IBCMD connection profile is missing or incomplete for some databases",
+                "message": "IBCMD connection profile is missing or empty for some databases",
                 "details": details,
             },
         }, 400
-
-    if offline_missing_meta:
-        limit = 25
-        details: dict[str, Any] = {"missing": offline_missing_meta[:limit], "missing_total": len(offline_missing_meta)}
-        if len(offline_missing_meta) > limit:
-            details["omitted"] = len(offline_missing_meta) - limit
-        return None, {
-            "success": False,
-            "error": {
-                "code": "OFFLINE_DB_METADATA_NOT_CONFIGURED",
-                "message": "Offline DBMS metadata is not configured for some databases",
-                "details": details,
-            },
-        }, 400
-
-    if offline_needs_dbms:
-        qs = DbmsUserMapping.objects.filter(database__in=offline_needs_dbms, user=user)
-        configured = {str(row.database_id) for row in qs}
-        missing_dbs = [db for db in offline_needs_dbms if str(db.id) not in configured]
-        if missing_dbs:
-            preview = ", ".join((db.name or str(db.id)) for db in missing_dbs[:5])
-            msg = f"DBMS user mapping is not configured for {len(missing_dbs)} database(s): {preview}"
-            if len(missing_dbs) > 5:
-                msg += f" and {len(missing_dbs) - 5} more"
-            return None, {"success": False, "error": {"code": "DBMS_MAPPING_NOT_CONFIGURED", "message": msg}}, 400
 
     meta = {
         "remote_count": remote_count,
+        "pid_count": pid_count,
         "offline_count": offline_count,
         "mixed_mode": bool(remote_count and offline_count),
     }
@@ -396,7 +326,16 @@ def _preview_ibcmd_cli(
         bindings.append(
             {
                 "target_ref": "connection.remote",
-                "source_ref": "target_db.metadata.ibcmd_connection.remote_url",
+                "source_ref": "target_db.metadata.ibcmd_connection.remote",
+                "resolve_at": "worker",
+                "sensitive": False,
+                "status": "unresolved",
+            }
+        )
+        bindings.append(
+            {
+                "target_ref": "connection.pid",
+                "source_ref": "target_db.metadata.ibcmd_connection.pid",
                 "resolve_at": "worker",
                 "sensitive": False,
                 "status": "unresolved",
@@ -429,19 +368,6 @@ def _preview_ibcmd_cli(
                     "status": "unresolved",
                 }
             )
-            if key in {"dbms", "db_server", "db_name"}:
-                # Offline DBMS metadata can fall back to per-target Database.metadata.* if the profile
-                # doesn't specify the value.
-                bindings.append(
-                    {
-                        "target_ref": f"connection.offline.{key}",
-                        "source_ref": f"target_db.metadata.{key}",
-                        "resolve_at": "worker",
-                        "sensitive": False,
-                        "status": "unresolved",
-                        "reason": "fallback_if_missing_in_profile",
-                    }
-                )
         bindings.append(
             {
                 "target_ref": "connection.offline.db_user",
@@ -460,43 +386,6 @@ def _preview_ibcmd_cli(
                 "status": "unresolved",
             }
         )
-    else:
-        connection_remote = str(connection_dict.get("remote") or "").strip()
-        connection_pid = connection_dict.get("pid")
-        offline = connection_dict.get("offline") if isinstance(connection_dict.get("offline"), dict) else None
-        offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
-        if command_scope == "per_database" and database_ids and not connection_remote and not connection_pid and not offline_db_path:
-            offline_defaults = dict(offline) if isinstance(offline, dict) else {}
-            for key, source_key in (("dbms", "dbms"), ("db_server", "db_server"), ("db_name", "db_name")):
-                if str(offline_defaults.get(key) or "").strip():
-                    continue
-                bindings.append(
-                    {
-                        "target_ref": f"connection.offline.{key}",
-                        "source_ref": f"target_db.metadata.{source_key}",
-                        "resolve_at": "worker",
-                        "sensitive": False,
-                        "status": "unresolved",
-                    }
-                )
-            bindings.append(
-                {
-                    "target_ref": "connection.offline.db_user",
-                    "source_ref": "credentials.db_user_mapping",
-                    "resolve_at": "worker",
-                    "sensitive": True,
-                    "status": "unresolved",
-                }
-            )
-            bindings.append(
-                {
-                    "target_ref": "connection.offline.db_pwd",
-                    "source_ref": "credentials.db_user_mapping",
-                    "resolve_at": "worker",
-                    "sensitive": True,
-                    "status": "unresolved",
-                }
-            )
     if stdin:
         bindings.append(
             {

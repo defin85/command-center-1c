@@ -57,7 +57,7 @@ function renderModal(database: Database) {
     const [form] = Form.useForm()
     useEffect(() => {
       formRef = form
-      form.setFieldsValue({ mode: 'auto', remote_url: '', offline: {} })
+      form.setFieldsValue({ remote: '', pid: null, offline_entries: [] })
     }, [form])
 
     return (
@@ -76,7 +76,7 @@ function renderModal(database: Database) {
   }
 
   render(<Wrapper />)
-  return { user, onSave, onReset }
+  return { user, onSave, onReset, getForm: () => formRef }
 }
 
 describe('DatabaseIbcmdConnectionProfileModal', () => {
@@ -85,38 +85,24 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
   })
 
-  it('shows validation error for missing remote_url when mode=remote', async () => {
-    const { user, onSave } = renderModal(makeDb({ ibcmd_connection: null }))
-
-    // Switch mode to remote via form interaction
-    await user.click(screen.getByLabelText('Mode'))
-    await user.click(screen.getByText('Remote (--remote=<url>)'))
-
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onSave).toHaveBeenCalled()
+  it('shows validation error for non-ssh remote', async () => {
+    const { getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
 
     await waitFor(() => {
-      expect(screen.getByText('remote_url обязателен для mode=remote')).toBeInTheDocument()
+      expect(getForm()).not.toBeNull()
     })
-  })
 
-  it('shows validation error for missing offline.config/offline.data when mode=offline', async () => {
-    const { user } = renderModal(makeDb({ ibcmd_connection: null }))
-
-    await user.click(screen.getByLabelText('Mode'))
-    await user.click(screen.getByText('Offline (paths + DBMS metadata)'))
-
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const form = getForm()!
+    form.setFieldValue('remote', 'http://host:1545')
+    await expect(form.validateFields()).rejects.toBeDefined()
 
     await waitFor(() => {
-      expect(screen.getByText('offline.config обязателен для mode=offline')).toBeInTheDocument()
-      expect(screen.getByText('offline.data обязателен для mode=offline')).toBeInTheDocument()
+      expect(screen.getByText(/ssh:\/\//i)).toBeInTheDocument()
     })
   })
 
   it('enables Reset when profile exists', () => {
-    renderModal(makeDb({ ibcmd_connection: { mode: 'auto', remote_url: null, offline: null } }))
+    renderModal(makeDb({ ibcmd_connection: {} }))
     expect(screen.getByRole('button', { name: 'Reset' })).not.toBeDisabled()
   })
 })
-

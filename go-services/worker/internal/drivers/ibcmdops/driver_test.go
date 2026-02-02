@@ -104,8 +104,7 @@ func TestBuildRequestIbcmdCliDerivesRemoteConnectionFromProfile(t *testing.T) {
 			IBUsername: "ibuser",
 			IBPassword: "ibpass",
 			IbcmdConnection: &credentials.IbcmdConnectionProfile{
-				Mode:      "remote",
-				RemoteURL: "http://agent:1234",
+				Remote: "ssh://agent:1234",
 			},
 		},
 		nil,
@@ -117,7 +116,7 @@ func TestBuildRequestIbcmdCliDerivesRemoteConnectionFromProfile(t *testing.T) {
 	expected := []string{
 		"infobase",
 		"dump",
-		"--remote=http://agent:1234",
+		"--remote=ssh://agent:1234",
 		"--user=ibuser",
 		"--password=ibpass",
 	}
@@ -161,11 +160,10 @@ func TestBuildRequestIbcmdCliDerivesOfflineConnectionFromProfileWithDbPath(t *te
 			IBUsername: "ibuser",
 			IBPassword: "ibpass",
 			IbcmdConnection: &credentials.IbcmdConnectionProfile{
-				Mode: "offline",
-				Offline: &credentials.IbcmdConnectionOfflineProfile{
-					Config: "C:\\config",
-					Data:   "C:\\data",
-					DBPath: "C:\\bases\\filebase",
+				Offline: map[string]string{
+					"config":  "C:\\config",
+					"data":    "C:\\data",
+					"db_path": "C:\\bases\\filebase",
 				},
 			},
 		},

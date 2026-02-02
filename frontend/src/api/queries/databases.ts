@@ -136,23 +136,12 @@ export type DatabaseCredentialsUpdateResponse = {
   message: string
 }
 
-export type DatabaseIbcmdConnectionMode = 'auto' | 'remote' | 'offline'
-
-export type DatabaseIbcmdConnectionOfflineProfile = {
-  config?: string
-  data?: string
-  db_path?: string
-  dbms?: string
-  db_server?: string
-  db_name?: string
-}
-
 export type DatabaseIbcmdConnectionProfileUpdateRequest = {
   database_id: string
   reset?: boolean
-  mode?: DatabaseIbcmdConnectionMode
-  remote_url?: string
-  offline?: DatabaseIbcmdConnectionOfflineProfile
+  remote?: string
+  pid?: number | null
+  offline?: Record<string, string>
 }
 
 export type DatabaseIbcmdConnectionProfileUpdateResponse = {

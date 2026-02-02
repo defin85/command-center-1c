@@ -1,8 +1,7 @@
-import { Button, Divider, Form, Input, Modal, Select, Typography } from 'antd'
+import { Button, Divider, Form, Input, InputNumber, Modal, Space, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import type { Database } from '../../../api/generated/model/database'
-import type { DatabaseIbcmdConnectionMode } from '../../../api/queries/databases'
 
 export type DatabaseIbcmdConnectionProfileModalProps = {
   open: boolean
@@ -45,116 +44,73 @@ export function DatabaseIbcmdConnectionProfileModal({
       ]}
     >
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        Профиль хранится на уровне базы и используется по умолчанию для запусков ibcmd. Пароли здесь не задаются.
+        Профиль хранится на уровне базы и используется по умолчанию для запусков ibcmd. Это raw flags: система не
+        пытается интерпретировать режимы, а пользователь отвечает за корректные комбинации. Секреты здесь не задаются.
       </Typography.Paragraph>
 
       <Form form={form} layout="vertical">
         <Form.Item
-          label="Mode"
-          name="mode"
-          htmlFor="database-ibcmd-profile-mode"
-          rules={[{ required: true, message: 'Выберите режим' }]}
+          label="remote (SSH URL)"
+          name="remote"
+          htmlFor="database-ibcmd-profile-remote"
+          rules={[
+            {
+              validator: async (_, value) => {
+                const v = typeof value === 'string' ? value.trim() : ''
+                if (!v) return
+                if (!v.toLowerCase().startsWith('ssh://')) {
+                  throw new Error('remote должен начинаться с ssh://')
+                }
+              },
+            },
+          ]}
         >
-          <Select
-            id="database-ibcmd-profile-mode"
-            options={[
-              { label: 'Auto (prefer remote, fallback offline)', value: 'auto' satisfies DatabaseIbcmdConnectionMode },
-              { label: 'Remote (--remote=<url>)', value: 'remote' satisfies DatabaseIbcmdConnectionMode },
-              { label: 'Offline (paths + DBMS metadata)', value: 'offline' satisfies DatabaseIbcmdConnectionMode },
-            ]}
-          />
+          <Input id="database-ibcmd-profile-remote" placeholder="ssh://host:port" />
         </Form.Item>
 
-        <Form.Item noStyle shouldUpdate={(prev, cur) => prev.mode !== cur.mode}>
-          {({ getFieldValue }) => {
-            const mode = String(getFieldValue('mode') || 'auto').toLowerCase()
-            return (
-              <Form.Item
-                label="Remote URL"
-                name="remote_url"
-                htmlFor="database-ibcmd-profile-remote-url"
-                rules={[
-                  {
-                    required: mode === 'remote',
-                    message: 'remote_url обязателен для mode=remote',
-                  },
-                ]}
-              >
-                <Input
-                  id="database-ibcmd-profile-remote-url"
-                  placeholder="e.g. http://127.0.0.1:1548"
-                />
-              </Form.Item>
-            )
-          }}
+        <Form.Item label="pid" name="pid" htmlFor="database-ibcmd-profile-pid">
+          <InputNumber id="database-ibcmd-profile-pid" min={1} style={{ width: '100%' }} placeholder="12345" />
         </Form.Item>
 
         <Divider />
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          Offline
-        </Typography.Title>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>offline</Typography.Title>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Для offline режима обязательны <Typography.Text code>config</Typography.Text> и{' '}
-          <Typography.Text code>data</Typography.Text>. DBMS metadata можно задать здесь или оставить пустым и использовать
-          DBMS metadata базы как fallback.
+          Любые offline.* ключи из driver schema. Они будут прокинуты как флаги вида <Typography.Text code>--key=value</Typography.Text>
+          (snake_case преобразуется в kebab-case). Ключи <Typography.Text code>db_user</Typography.Text>,{' '}
+          <Typography.Text code>db_pwd</Typography.Text>, <Typography.Text code>db_password</Typography.Text> запрещены.
         </Typography.Paragraph>
 
-        <Form.Item noStyle shouldUpdate={(prev, cur) => prev.mode !== cur.mode}>
-          {({ getFieldValue }) => {
-            const mode = String(getFieldValue('mode') || 'auto').toLowerCase()
-            const requiredOffline = mode === 'offline'
-            return (
-              <>
-                <Form.Item
-                  label="offline.config"
-                  name={['offline', 'config']}
-                  htmlFor="database-ibcmd-profile-offline-config"
-                  rules={[
-                    {
-                      required: requiredOffline,
-                      message: 'offline.config обязателен для mode=offline',
-                    },
-                  ]}
-                >
-                  <Input id="database-ibcmd-profile-offline-config" placeholder="Path to config directory" />
-                </Form.Item>
-                <Form.Item
-                  label="offline.data"
-                  name={['offline', 'data']}
-                  htmlFor="database-ibcmd-profile-offline-data"
-                  rules={[
-                    {
-                      required: requiredOffline,
-                      message: 'offline.data обязателен для mode=offline',
-                    },
-                  ]}
-                >
-                  <Input id="database-ibcmd-profile-offline-data" placeholder="Path to data directory" />
-                </Form.Item>
-              </>
-            )
-          }}
-        </Form.Item>
-
-        <Form.Item label="offline.db_path" name={['offline', 'db_path']} htmlFor="database-ibcmd-profile-offline-db-path">
-          <Input id="database-ibcmd-profile-offline-db-path" placeholder="Path to file database (optional)" />
-        </Form.Item>
-
-        <Divider />
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          Offline DBMS metadata (optional)
-        </Typography.Title>
-        <Form.Item label="offline.dbms" name={['offline', 'dbms']} htmlFor="database-ibcmd-profile-offline-dbms">
-          <Input id="database-ibcmd-profile-offline-dbms" placeholder="e.g. PostgreSQL" />
-        </Form.Item>
-        <Form.Item label="offline.db_server" name={['offline', 'db_server']} htmlFor="database-ibcmd-profile-offline-db-server">
-          <Input id="database-ibcmd-profile-offline-db-server" placeholder="e.g. db.example.local" />
-        </Form.Item>
-        <Form.Item label="offline.db_name" name={['offline', 'db_name']} htmlFor="database-ibcmd-profile-offline-db-name">
-          <Input id="database-ibcmd-profile-offline-db-name" placeholder="e.g. my_infobase" />
-        </Form.Item>
+        <Form.List name="offline_entries">
+          {(fields, { add, remove }) => (
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              {fields.map((field) => (
+                <Space key={field.key} align="baseline" style={{ width: '100%' }}>
+                  <Form.Item
+                    name={[field.name, 'key']}
+                    rules={[{ required: true, message: 'key обязателен' }]}
+                    style={{ marginBottom: 0, flex: 1 }}
+                  >
+                    <Input placeholder="config" />
+                  </Form.Item>
+                  <Form.Item
+                    name={[field.name, 'value']}
+                    rules={[{ required: true, message: 'value обязателен' }]}
+                    style={{ marginBottom: 0, flex: 2 }}
+                  >
+                    <Input placeholder="/path/to/value" />
+                  </Form.Item>
+                  <Button danger onClick={() => remove(field.name)}>
+                    Remove
+                  </Button>
+                </Space>
+              ))}
+              <Button type="dashed" onClick={() => add({ key: '', value: '' })}>
+                Add offline flag
+              </Button>
+            </Space>
+          )}
+        </Form.List>
       </Form>
     </Modal>
   )
 }
-

@@ -77,25 +77,47 @@ class DatabaseSerializer(serializers.ModelSerializer):
         if not isinstance(value, dict):
             return None
 
-        mode = str(value.get("mode") or "").strip()
-        if mode not in {"auto", "remote", "offline"}:
-            mode = "auto"
+        # v2 raw flags (preferred):
+        # - remote (ssh://...)
+        # - pid
+        # - offline (dict)
+        #
+        # Backward-compatible normalization:
+        # - v1 remote_url -> v2 remote (only if ssh://)
+        remote_raw = value.get("remote")
+        if remote_raw in (None, ""):
+            remote_raw = value.get("remote_url")
+        remote = str(remote_raw).strip() if remote_raw not in (None, "") else None
+        if remote and not remote.lower().startswith("ssh://"):
+            remote = None
 
-        remote_url = value.get("remote_url")
-        remote_url = str(remote_url).strip() if remote_url not in (None, "") else None
+        pid_raw = value.get("pid")
+        pid = pid_raw if isinstance(pid_raw, int) and pid_raw > 0 else None
 
         offline = value.get("offline")
-        offline_dict = offline if isinstance(offline, dict) else None
+        offline_dict: Optional[dict] = None
+        if isinstance(offline, dict):
+            offline_safe: dict[str, str] = {}
+            for k, v in offline.items():
+                key = str(k).strip()
+                if not key:
+                    continue
+                lowered = key.lower()
+                if lowered in {"db_user", "db_pwd", "db_password"}:
+                    continue
+                if v in (None, ""):
+                    continue
+                rendered = str(v).strip()
+                if not rendered:
+                    continue
+                offline_safe[key] = rendered
+            offline_dict = offline_safe or None
 
-        # Never return secrets even if they were accidentally stored.
-        if offline_dict:
-            offline_dict = dict(offline_dict)
-            offline_dict.pop("db_user", None)
-            offline_dict.pop("db_pwd", None)
-
+        # Always return object if metadata contains a dict profile (even if empty),
+        # so the UI can display/reset it explicitly.
         return {
-            "mode": mode,
-            "remote_url": remote_url,
+            "remote": remote,
+            "pid": pid,
             "offline": offline_dict,
         }
 

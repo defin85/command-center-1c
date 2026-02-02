@@ -42,26 +42,22 @@ const makeDb = (overrides: Partial<Database> = {}): Database =>
   }) as Database
 
 describe('computeDerivedIbcmdConnectionReport', () => {
-  it('detects mixed mode and produces diffs for remote_url and offline.config', () => {
+  it('detects mixed mode and produces diffs for remote and offline.config', () => {
     const db1 = makeDb({
       id: 'db1',
-      dbms: 'PostgreSQL',
-      ibcmd_connection: { mode: 'remote', remote_url: 'http://a', offline: null },
+      ibcmd_connection: { remote: 'ssh://a:1545' },
     })
     const db2 = makeDb({
       id: 'db2',
-      dbms: 'PostgreSQL',
-      ibcmd_connection: { mode: 'remote', remote_url: 'http://b', offline: null },
+      ibcmd_connection: { remote: 'ssh://b:1545' },
     })
     const db3 = makeDb({
       id: 'db3',
-      dbms: 'PostgreSQL',
-      ibcmd_connection: { mode: 'offline', remote_url: null, offline: { config: '/c1', data: '/d1' } },
+      ibcmd_connection: { offline: { config: '/c1', data: '/d1' } },
     })
     const db4 = makeDb({
       id: 'db4',
-      dbms: 'MSSQL',
-      ibcmd_connection: { mode: 'offline', remote_url: null, offline: { config: '/c2', data: '/d1' } },
+      ibcmd_connection: { offline: { config: '/c2', data: '/d1' } },
     })
 
     const report = computeDerivedIbcmdConnectionReport([db1, db2, db3, db4], ['db1', 'db2', 'db3', 'db4'])
@@ -69,27 +65,25 @@ describe('computeDerivedIbcmdConnectionReport', () => {
     expect(report.mixed_mode).toBe(true)
 
     const remoteKeys = report.diff.remote.map((d) => d.key)
-    expect(remoteKeys).toContain('remote_url')
-    const remoteUrlDiff = report.diff.remote.find((d) => d.key === 'remote_url')
-    expect(remoteUrlDiff?.unique_values).toEqual(
+    expect(remoteKeys).toContain('remote')
+    const remoteDiff = report.diff.remote.find((d) => d.key === 'remote')
+    expect(remoteDiff?.unique_values).toEqual(
       expect.arrayContaining([
-        { value: 'http://a', count: 1 },
-        { value: 'http://b', count: 1 },
+        { value: 'ssh://a:1545', count: 1 },
+        { value: 'ssh://b:1545', count: 1 },
       ])
     )
 
     const offlineKeys = report.diff.offline.map((d) => d.key)
     expect(offlineKeys).toContain('offline.config')
-    expect(offlineKeys).toContain('offline.dbms') // derived from Database.dbms fallback
   })
 
-  it('treats offline profile without config/data as unconfigured', () => {
+  it('treats any non-empty offline dict as configured', () => {
     const db = makeDb({
       id: 'db1',
-      ibcmd_connection: { mode: 'offline', remote_url: null, offline: { config: '/c1' } },
+      ibcmd_connection: { offline: { config: '/c1' } },
     })
     const report = computeDerivedIbcmdConnectionReport([db], ['db1'])
-    expect(report.counts).toEqual({ remote: 0, offline: 0, unconfigured: 1 })
+    expect(report.counts).toEqual({ remote: 0, offline: 1, unconfigured: 0 })
   })
 })
-

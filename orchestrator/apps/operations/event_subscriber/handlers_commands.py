@@ -231,13 +231,45 @@ class CommandHandlersMixin:
             }
             ibcmd_connection = (database.metadata or {}).get("ibcmd_connection")
             if isinstance(ibcmd_connection, dict):
-                safe_profile = dict(ibcmd_connection)
-                offline = safe_profile.get("offline")
-                if isinstance(offline, dict):
-                    offline_safe = dict(offline)
-                    for key in ("db_user", "db_pwd", "db_password"):
-                        offline_safe.pop(key, None)
-                    safe_profile["offline"] = offline_safe
+                raw = dict(ibcmd_connection)
+
+                remote_raw = raw.get("remote")
+                if remote_raw in (None, ""):
+                    remote_raw = raw.get("remote_url")
+                remote = str(remote_raw).strip() if remote_raw not in (None, "") else ""
+                if remote and not remote.lower().startswith("ssh://"):
+                    remote = ""
+
+                pid_raw = raw.get("pid")
+                pid = pid_raw if isinstance(pid_raw, int) and pid_raw > 0 else None
+
+                offline_in = raw.get("offline")
+                offline: dict[str, str] | None = None
+                if isinstance(offline_in, dict):
+                    offline_safe: dict[str, str] = {}
+                    for k, v in offline_in.items():
+                        key = str(k).strip()
+                        if not key:
+                            continue
+                        lowered = key.lower()
+                        if lowered in ("db_user", "db_pwd", "db_password"):
+                            continue
+                        if v in (None, ""):
+                            continue
+                        rendered = str(v).strip()
+                        if not rendered:
+                            continue
+                        offline_safe[key] = rendered
+                    offline = offline_safe or None
+
+                safe_profile: dict[str, object] = {}
+                if remote:
+                    safe_profile["remote"] = remote
+                if pid is not None:
+                    safe_profile["pid"] = pid
+                if offline:
+                    safe_profile["offline"] = offline
+
                 credentials_dict["ibcmd_connection"] = safe_profile
 
             encrypted_payload = encrypt_credentials_for_transport(credentials_dict)
