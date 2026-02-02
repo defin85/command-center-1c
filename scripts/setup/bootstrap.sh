@@ -697,7 +697,7 @@ print_next_steps() {
         echo ""
 
         echo "  3. Open in browser:"
-        echo "     http://localhost:5173"
+        echo "     http://localhost:15173"
         echo ""
     fi
 

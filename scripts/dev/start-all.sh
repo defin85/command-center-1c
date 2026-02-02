@@ -638,7 +638,7 @@ echo ""
 ##############################################################################
 # Шаг 8: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[8/8] Запуск Frontend (port 5173)...${NC}"
+echo -e "${BLUE}[8/8] Запуск Frontend (port ${FRONTEND_PORT:-15173})...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -695,7 +695,7 @@ echo -e "${GREEN}  ✓ Все сервисы успешно запущены!${N
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Доступные endpoints:${NC}"
-echo -e "  Frontend:         ${GREEN}http://localhost:${FRONTEND_PORT:-5173}${NC} (admin / p-123456)"
+echo -e "  Frontend:         ${GREEN}http://localhost:${FRONTEND_PORT:-15173}${NC} (admin / p-123456)"
 echo -e "  API Gateway:      ${GREEN}http://localhost:${SERVER_PORT:-8180}/health${NC}"
 echo -e "  Orchestrator:"
 echo -e "    Admin Panel:    ${GREEN}http://localhost:${ORCHESTRATOR_PORT:-8200}/admin${NC} (admin / p-123456)"

@@ -20,6 +20,7 @@ PIDS_DIR="$PROJECT_ROOT/pids"
 
 # Загрузить переменные окружения (нужно для VITE_BASE_HOST и режимов)
 load_env_file
+FRONTEND_PORT="${FRONTEND_PORT:-15173}"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Health Check${NC}"
@@ -92,9 +93,9 @@ check_http() {
     fi
 }
 
-FRONTEND_URL="http://localhost:5173"
+FRONTEND_URL="http://localhost:${FRONTEND_PORT}"
 if [ -n "${VITE_BASE_HOST:-}" ]; then
-    FRONTEND_URL="http://${VITE_BASE_HOST}:5173"
+    FRONTEND_URL="http://${VITE_BASE_HOST}:${FRONTEND_PORT}"
 fi
 if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
     frontend_dev_url=$(awk -F= '/^VITE_DEV_SERVER_URL=/{print $2}' "$PROJECT_ROOT/frontend/.env.local" | tail -n 1)
@@ -106,16 +107,16 @@ if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
     if [ -n "$frontend_dev_url" ]; then
         FRONTEND_URL="$frontend_dev_url"
     elif [ -n "$frontend_dev_host" ]; then
-        FRONTEND_URL="http://${frontend_dev_host}:5173"
+        FRONTEND_URL="http://${frontend_dev_host}:${FRONTEND_PORT}"
     elif [ -n "$frontend_base_host" ]; then
-        FRONTEND_URL="http://${frontend_base_host}:5173"
+        FRONTEND_URL="http://${frontend_base_host}:${FRONTEND_PORT}"
     elif [ -n "$frontend_ws_host" ]; then
         ws_host=${frontend_ws_host%%:*}
-        FRONTEND_URL="http://${ws_host}:5173"
+        FRONTEND_URL="http://${ws_host}:${FRONTEND_PORT}"
     elif [ -n "$frontend_api_url" ]; then
         api_host=$(echo "$frontend_api_url" | sed -E 's#^[^/]*//##; s#/.*##; s#:.*##')
         if [ -n "$api_host" ]; then
-            FRONTEND_URL="http://${api_host}:5173"
+            FRONTEND_URL="http://${api_host}:${FRONTEND_PORT}"
         fi
     fi
 fi
@@ -218,7 +219,7 @@ check_port() {
     fi
 }
 
-check_port 5173 "Frontend"
+check_port "$FRONTEND_PORT" "Frontend"
 check_port 8180 "API Gateway"
 check_port 8200 "Orchestrator"
 check_port 8188 "RAS Adapter"
@@ -345,7 +346,7 @@ if command -v curl &>/dev/null; then
         echo -e "  Frontend probe: ${GREEN}✓ online${NC}"
     else
         echo -e "  Frontend probe: ${YELLOW}⚠️  offline${NC}"
-        echo -e "    check: http://localhost:9115/probe?module=http_2xx&target=http://localhost:5173/"
+        echo -e "    check: http://localhost:9115/probe?module=http_2xx&target=http://localhost:${FRONTEND_PORT}/"
     fi
     if curl -sS "http://localhost:9090/api/v1/query?query=max(probe_success%7Bcc1c_service%3D%22ras-server%22%7D)" \
         | grep -q '"value":[^]]*"1"'; then

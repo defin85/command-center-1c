@@ -27,7 +27,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   {
     name: 'frontend',
     title: 'Frontend',
-    url: envUrl('VITE_FRONTEND_URL') ?? `http://${baseHost}:5173`,
+    url: envUrl('VITE_FRONTEND_URL') ?? `http://${baseHost}:15173`,
   },
   {
     name: 'api-gateway',

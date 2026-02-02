@@ -316,7 +316,7 @@ mise current
 ./scripts/dev/health-check.sh
 
 # 5. Откройте в браузере
-# Frontend: http://localhost:5173
+# Frontend: http://localhost:15173
 # Admin: http://localhost:8200/admin (admin / p-123456)
 # pgAdmin: http://localhost:5050 (запустите: pgadmin4)
 # Prometheus: http://localhost:9090

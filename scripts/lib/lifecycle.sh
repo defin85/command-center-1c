@@ -83,7 +83,7 @@ declare -ga SERVICE_STOP_ORDER=(
 declare -gA SERVICE_PORTS=(
     ["orchestrator"]="${ORCHESTRATOR_PORT:-8200}"
     ["api-gateway"]="${API_GATEWAY_PORT:-8180}"
-    ["frontend"]="${FRONTEND_PORT:-5173}"
+    ["frontend"]="${FRONTEND_PORT:-15173}"
 )
 
 # Таймаут остановки для сервисов (секунды)

@@ -29,7 +29,7 @@
 
 | Service | Port |
 |---------|------|
-| Frontend | 5173 |
+| Frontend | 15173 |
 | API Gateway | 8180 |
 | Orchestrator (Django) | 8200 |
 | ras-adapter | 8188 |
@@ -40,7 +40,7 @@
 ## Архитектура (high level)
 
 ```
-User → Frontend (5173) → API Gateway (8180) → Orchestrator (8200) → PostgreSQL
+User → Frontend (15173) → API Gateway (8180) → Orchestrator (8200) → PostgreSQL
                                            ↓
                                          Redis (6379)
                                            ↓
@@ -99,7 +99,7 @@ Notes:
 nohup setsid chromium --disable-gpu --disable-dev-shm-usage --no-sandbox \
   --remote-debugging-port=9222 \
   --user-data-dir=/tmp/chromium-debug-profile \
-  http://localhost:5173/ \
+  http://localhost:15173/ \
   > /tmp/chromium.log 2>&1 &
 ```
 

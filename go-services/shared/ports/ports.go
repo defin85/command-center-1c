@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // =============================================================================
 // Source: config/services.json
-// Generated: 2025-12-29 10:18:13
+// Generated: 2026-02-02 10:56:22
 // Mode: local
 // Generator: scripts/config/generate.py
 // =============================================================================
@@ -14,7 +14,7 @@ import "fmt"
 
 // Service ports
 const (
-	Frontend = 5173
+	Frontend = 15173
 	ApiGateway = 8180
 	Orchestrator = 8200
 	Worker = 9091
@@ -34,7 +34,7 @@ const (
 
 // Default service URLs (for config fallbacks)
 const (
-	DefaultFrontendURL = "http://localhost:5173"
+	DefaultFrontendURL = "http://localhost:15173"
 	DefaultApiGatewayURL = "http://localhost:8180"
 	DefaultOrchestratorURL = "http://localhost:8200"
 	DefaultWorkerURL = "http://localhost:9091"
@@ -42,7 +42,7 @@ const (
 
 // ServiceURLs maps service names to their URLs
 var ServiceURLs = map[string]string{
-	"frontend": "http://localhost:5173",
+	"frontend": "http://localhost:15173",
 	"api-gateway": "http://localhost:8180",
 	"orchestrator": "http://localhost:8200",
 	"worker": "http://localhost:9091",

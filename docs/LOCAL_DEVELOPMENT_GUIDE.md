@@ -47,7 +47,7 @@
 │         HOST MACHINE (NATIVE)           │
 ├─────────────────────────────────────────┤
 │                                         │
-│  React Frontend (port 5173)             │
+│  React Frontend (port 15173)            │
 │  Go API Gateway (port 8180)             │
 │  Go Worker                              │
 │  Django Orchestrator (port 8200)        │
@@ -69,7 +69,7 @@
 
 | Service | Port | Protocol | Location |
 |---------|------|----------|----------|
-| Frontend | 5173 | HTTP | Host |
+| Frontend | 15173 | HTTP | Host |
 | API Gateway | 8180 | HTTP | Host |
 | Orchestrator | 8200 | HTTP | Host |
 | PostgreSQL | 5432 | TCP | Docker |
@@ -248,7 +248,7 @@ chmod +x scripts/dev/*.sh
 # Or manually
 curl http://localhost:8180/health  # API Gateway
 curl http://localhost:8200/health  # Orchestrator
-curl http://localhost:5173         # Frontend
+curl http://localhost:15173         # Frontend
 ```
 
 ### Step 8: Create Superuser (Django Admin)

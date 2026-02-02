@@ -150,8 +150,8 @@ func LoadFromEnv() *Config {
 
 		// CORS - default allows localhost frontend
 		CORSAllowedOrigins: getStringSliceEnv("CORS_ALLOWED_ORIGINS", []string{
-			"http://localhost:5173",
-			"http://127.0.0.1:5173",
+			"http://localhost:15173",
+			"http://127.0.0.1:15173",
 		}),
 
 		// Template Engine - defaults to disabled (Python fallback only)

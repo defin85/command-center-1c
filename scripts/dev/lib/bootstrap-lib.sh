@@ -1028,7 +1028,7 @@ print_bootstrap_report() {
         echo "  ./scripts/dev/health-check.sh"
         echo ""
         echo "Доступные endpoints:"
-        echo "  Frontend:      http://localhost:5173"
+        echo "  Frontend:      http://localhost:15173"
         echo "  API Gateway:   http://localhost:8180/health"
         echo "  Orchestrator:  http://localhost:8200/api/docs"
     fi

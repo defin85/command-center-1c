@@ -9,7 +9,8 @@ server:
 
 cors:
   allowed_origins:
-    - "http://localhost:5173"
+    - "http://localhost:15173"
+    - "http://127.0.0.1:15173"
   allowed_methods:
     - GET
     - POST

@@ -76,7 +76,7 @@ CommandCenter1C is a microservices control plane for centralized management and 
 - Prefer OData `$batch` in the 100-500 records range per batch
 - Default rate limiting is enforced at the gateway (see `.claude/rules/critical.md`; typical: 100 req/min per user)
 - Dev ports are chosen to avoid Windows reserved ranges; common ports in hybrid dev:
-  - 5173 (frontend), 8180 (api-gateway), 8200 (orchestrator), 5432 (postgres), 6379 (redis)
+  - 15173 (frontend), 8180 (api-gateway), 8200 (orchestrator), 5432 (postgres), 6379 (redis)
 
 ## External Dependencies
 - 1C:Enterprise environment:

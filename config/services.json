@@ -3,7 +3,7 @@
   "version": "1.0",
   "services": {
     "frontend": {
-      "port": 5173,
+      "port": 15173,
       "host": {
         "docker": "frontend",
         "local": "localhost"

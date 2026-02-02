@@ -31,7 +31,7 @@
 ## Architecture
 
 ```
-Frontend:5173 → API Gateway:8180 → Orchestrator:8200 → Redis:6379
+Frontend:15173 → API Gateway:8180 → Orchestrator:8200 → Redis:6379
                                                         ↓
                                                    Go Worker → OData/RAS → 1C
 ```

@@ -165,7 +165,7 @@ services:
       dockerfile: Dockerfile
     container_name: commandcenter-frontend
     ports:
-      - "5173:80"
+      - "15173:80"
     depends_on:
       - api-gateway
     networks:

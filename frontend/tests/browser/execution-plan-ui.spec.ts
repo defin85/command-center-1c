@@ -20,8 +20,8 @@ async function setupAuth(page: Page, isStaff: boolean) {
   await page.addInitScript((staff) => {
     window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
-      VITE_API_URL: 'http://127.0.0.1:5173',
-      VITE_WS_HOST: '127.0.0.1:5173',
+      VITE_API_URL: 'http://127.0.0.1:15173',
+      VITE_WS_HOST: '127.0.0.1:15173',
     }
     localStorage.setItem('auth_token', 'test-token')
     window.__TEST_IS_STAFF__ = staff

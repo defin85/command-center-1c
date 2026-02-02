@@ -190,7 +190,7 @@ health:
 	@echo "$(BLUE)Checking service health...$(NC)"
 	@curl -f http://localhost:8080/health || echo "API Gateway: $(YELLOW)DOWN$(NC)"
 	@curl -f http://localhost:8000/health || echo "Orchestrator: $(YELLOW)DOWN$(NC)"
-	@curl -f http://localhost:5173 || echo "Frontend: $(YELLOW)DOWN$(NC)"
+	@curl -f http://localhost:15173 || echo "Frontend: $(YELLOW)DOWN$(NC)"
 
 ##############################################################################
 # Go Services Build System

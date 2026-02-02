@@ -38,7 +38,7 @@
 - `api-gateway` - Go API Gateway (port 8180)
 - `worker` - Go Worker
 - `ras` - 1C RAS Server (port 1545)
-- `frontend` - React Frontend (port 5173)
+- `frontend` - React Frontend (port 15173)
 
 **Мониторинг и Tracing (Docker, автозапуск):**
 - `prometheus` - Metrics collection (port 9090)
@@ -111,9 +111,9 @@
 
 **Ключевые URL после запуска:**
 ```text
-Frontend:      http://localhost:5173
-System Status: http://localhost:5173/system-status
-Service Mesh:  http://localhost:5173/service-mesh
+Frontend:      http://localhost:15173
+System Status: http://localhost:15173/system-status
+Service Mesh:  http://localhost:15173/service-mesh
 API Gateway:   http://localhost:8180/health
 Orchestrator:  http://localhost:8200/admin
 MinIO:         http://localhost:9000
@@ -339,7 +339,7 @@ Docker Services:
    - Показывает статус каждого сервиса
 
 2. **Проверка HTTP endpoints:**
-   - Frontend: `http://localhost:5173`
+   - Frontend: `http://localhost:15173`
    - API Gateway: `http://localhost:8180/health`
    - Orchestrator: `http://localhost:8200/health`
 

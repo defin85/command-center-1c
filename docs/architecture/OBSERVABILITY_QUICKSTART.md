@@ -207,7 +207,7 @@ open http://localhost:16686
 
 ```bash
 # Open real-time UI
-open http://localhost:5173/monitoring
+open http://localhost:15173/monitoring
 
 # See:
 # - Service mesh visualization

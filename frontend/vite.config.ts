@@ -21,7 +21,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // Default Vite dev port often falls into Windows excluded port ranges, which breaks WSL localhost forwarding.
+    // Keep a stable, Windows-friendly default, but allow overriding via env.
+    port: Number(process.env.FRONTEND_PORT ?? process.env.VITE_DEV_PORT ?? process.env.PORT ?? 15173),
     host: '0.0.0.0',  // Allow access from Windows host via WSL IP
     proxy: {
       '/api': {

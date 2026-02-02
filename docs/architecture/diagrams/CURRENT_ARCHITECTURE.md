@@ -12,7 +12,7 @@
 ```mermaid
 flowchart TB
     subgraph Frontend
-        UI[React :5173]
+        UI[React :15173]
     end
 
     subgraph API["API Layer"]

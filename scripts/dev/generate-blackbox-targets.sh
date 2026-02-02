@@ -30,7 +30,7 @@ else
   if [[ "${USE_DOCKER:-false}" == "true" ]]; then
     BASE_HOST="host.docker.internal"
   fi
-  FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+  FRONTEND_PORT="${FRONTEND_PORT:-15173}"
   FRONTEND_TARGET="http://${BASE_HOST}:${FRONTEND_PORT}/"
 fi
 

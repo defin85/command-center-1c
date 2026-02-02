@@ -157,7 +157,7 @@ class SystemHealthView(APIView):
         }
 
         api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:15173').rstrip('/')
         worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9091').rstrip('/')
         minio_endpoint = getattr(settings, 'MINIO_ENDPOINT', 'localhost:9000').lstrip('/')
         minio_secure = getattr(settings, 'MINIO_SECURE', False)

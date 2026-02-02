@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 CDP_URL = "http://127.0.0.1:9222"
-DEFAULT_PAGE_URL = "localhost:5173"
+DEFAULT_PAGE_URL = "localhost:15173"
 
 
 def get_pages() -> list[dict]:

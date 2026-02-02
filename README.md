@@ -34,7 +34,7 @@
 ```
 ┌─────────┐
 │ React   │ TypeScript + Ant Design
-│ (5173)  │
+│ (15173) │
 └────┬────┘
      │ HTTP + WebSocket
 ┌────▼────┐
@@ -112,7 +112,7 @@ cd frontend && npm install && npx playwright install && cd ..
 ```
 
 Сервисы будут доступны на:
-- **Frontend**: http://localhost:5173
+- **Frontend**: http://localhost:15173
 - **API Gateway**: http://localhost:8180/health
 - **Orchestrator**:
   - Admin Panel: http://localhost:8200/admin

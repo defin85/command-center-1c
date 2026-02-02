@@ -276,7 +276,7 @@ check_local_services() {
         ["Orchestrator"]="localhost:8200/api/health/"
         ["RAS Adapter"]="localhost:8188/health"
         ["Batch Service"]="localhost:8187/health"
-        ["Frontend"]="localhost:5173"
+        ["Frontend"]="localhost:15173"
     )
 
     for name in "${!services[@]}"; do

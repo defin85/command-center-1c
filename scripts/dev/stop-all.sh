@@ -98,7 +98,8 @@ echo ""
 echo -e "${BLUE}Проверка остаточных процессов...${NC}"
 
 # Очистка по портам (на случай если PID файлы потеряны)
-kill_process_on_port 5173 "Frontend" || true
+FRONTEND_PORT="${FRONTEND_PORT:-15173}"
+kill_process_on_port "$FRONTEND_PORT" "Frontend" || true
 kill_process_on_port 8188 "RAS Adapter" || true
 
 # RAS - пропускаем если работает как Windows служба

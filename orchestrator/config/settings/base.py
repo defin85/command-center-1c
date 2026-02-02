@@ -365,7 +365,7 @@ DLQ_RETENTION_DAYS = 7
 # CORS
 # Port 8180 - API Gateway outside Windows reserved range (8013-8112)
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
+    "http://localhost:15173",
     "http://localhost:8180",
 ]
 CORS_ALLOW_CREDENTIALS = True
@@ -484,7 +484,7 @@ FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='
 # ========== System Monitoring Configuration ==========
 # Ports outside Windows reserved range (8013-8112)
 API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
-FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:15173')
 
 MONITORED_SERVICES = [
     {
