@@ -10,7 +10,6 @@ from rest_framework.test import APIClient
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
 from apps.artifacts.storage import ArtifactStorageClient
 from apps.databases.models import Database, DatabasePermission, PermissionLevel
-from apps.operations.redis_client import redis_client
 from apps.operations.services import EnqueueResult, OperationsService
 
 

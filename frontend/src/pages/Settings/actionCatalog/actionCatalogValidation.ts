@@ -101,22 +101,21 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
       continue
     }
 
-    for (const key of Object.keys(executor)) {
-      if (
-        key !== 'kind'
-        && key !== 'driver'
-        && key !== 'command_id'
-        && key !== 'workflow_id'
-        && key !== 'mode'
-        && key !== 'connection'
-        && key !== 'params'
-        && key !== 'additional_args'
-        && key !== 'stdin'
-        && key !== 'fixed'
-      ) {
-        errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
-      }
-    }
+	    for (const key of Object.keys(executor)) {
+	      if (
+	        key !== 'kind'
+	        && key !== 'driver'
+	        && key !== 'command_id'
+	        && key !== 'workflow_id'
+	        && key !== 'mode'
+	        && key !== 'params'
+	        && key !== 'additional_args'
+	        && key !== 'stdin'
+	        && key !== 'fixed'
+	      ) {
+	        errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
+	      }
+	    }
 
     const kind = normalizeActionId(executor.kind)
     if (kind !== 'ibcmd_cli' && kind !== 'designer_cli' && kind !== 'workflow') {
@@ -124,19 +123,9 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
       continue
     }
 
-    if (executor.connection !== undefined) {
-      const conn = isPlainObject(executor.connection) ? executor.connection as PlainObject : null
-      if (!conn) {
-        errors.push(`extensions.actions[${idx}].executor.connection: must be an object`)
-      } else if (kind !== 'ibcmd_cli') {
-        errors.push(`extensions.actions[${idx}].executor.connection: supported only for ibcmd_cli`)
-      } else {
-        const offline = isPlainObject(conn.offline) ? conn.offline as PlainObject : null
-        if (offline && ('db_user' in offline || 'db_pwd' in offline)) {
-          errors.push(`extensions.actions[${idx}].executor.connection.offline: db_user/db_pwd are not allowed in ui.action_catalog`)
-        }
-      }
-    }
+	    if (executor.connection !== undefined) {
+	      errors.push(`extensions.actions[${idx}].executor.connection: is not supported (configure per-database ibcmd connection profile instead)`)
+	    }
 
     if (kind === 'workflow') {
       const workflowId = normalizeActionId(executor.workflow_id)

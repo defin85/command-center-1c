@@ -467,19 +467,24 @@ export const OperationsPage = () => {
         const timeoutSeconds = typeof dc.timeout_seconds === 'number' ? dc.timeout_seconds : 900
         const boundedTimeout = Math.min(Math.max(timeoutSeconds, 1), 3600)
 
-        await apiClient.post('/api/v2/operations/execute-ibcmd-cli/', {
+        const payload: Record<string, unknown> = {
           command_id: commandId,
           mode: dc.mode || 'guided',
           database_ids: scope === 'global' ? [] : data.databaseIds,
           auth_database_id: scope === 'global' ? authDatabaseId : undefined,
-          connection: dc.connection,
           ib_auth: dc.ib_auth,
           params: dc.params ?? {},
           additional_args: additionalArgs,
           stdin: typeof dc.stdin === 'string' ? dc.stdin : '',
           confirm_dangerous: dc.confirm_dangerous === true,
           timeout_seconds: boundedTimeout,
-        })
+        }
+
+        if (scope === 'global' || dc.connection_override === true) {
+          payload.connection = dc.connection ?? {}
+        }
+
+        await apiClient.post('/api/v2/operations/execute-ibcmd-cli/', payload)
 
         handleRefresh()
         return

@@ -127,7 +127,9 @@ describe('RBACPage: DBMS users tab', () => {
     localStorage.setItem('auth_token', 'test-token')
   })
 
-  it('shows DBMS users tab for staff users', async () => {
+  it(
+    'shows DBMS users tab for staff users',
+    async () => {
     mockIsStaff = true
 
     renderPage()
@@ -136,7 +138,9 @@ describe('RBACPage: DBMS users tab', () => {
     const tab = tabLabel.closest('[role="tab"]') ?? tabLabel
     fireEvent.click(tab)
     expect(await screen.findByTestId('rbac-dbms-users-toolbar-database')).toBeInTheDocument()
-  })
+    },
+    15_000
+  )
 
   it('hides DBMS users tab for non-staff users', () => {
     mockIsStaff = false

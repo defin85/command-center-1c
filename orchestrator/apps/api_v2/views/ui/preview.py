@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
@@ -37,6 +38,207 @@ class ExecutionPlanPreviewRequestSerializer(serializers.Serializer):
     database_ids = serializers.ListField(
         child=serializers.CharField(), required=False, allow_empty=True
     )
+
+def _normalize_ibcmd_connection_profile(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    mode = str(raw.get("mode") or "").strip().lower() or "auto"
+    if mode not in {"auto", "remote", "offline"}:
+        mode = "auto"
+    remote_url = str(raw.get("remote_url") or "").strip()
+    offline_in = raw.get("offline")
+    offline: dict[str, str] | None = None
+    if isinstance(offline_in, dict):
+        offline = {str(k): str(v).strip() for k, v in offline_in.items() if v not in (None, "")}
+        offline.pop("db_user", None)
+        offline.pop("db_pwd", None)
+        offline.pop("db_password", None)
+        if not offline:
+            offline = None
+    out: dict[str, Any] = {"mode": mode}
+    if remote_url:
+        out["remote_url"] = remote_url
+    if offline:
+        out["offline"] = offline
+    return out
+
+def _resolve_effective_ibcmd_connection_profile(profile: dict[str, Any] | None) -> tuple[str | None, dict[str, Any]]:
+    if not isinstance(profile, dict):
+        return None, {}
+    mode = str(profile.get("mode") or "").strip().lower() or "auto"
+    if mode not in {"auto", "remote", "offline"}:
+        mode = "auto"
+    remote_url = str(profile.get("remote_url") or "").strip()
+    offline = profile.get("offline") if isinstance(profile.get("offline"), dict) else None
+    if mode == "remote":
+        return ("remote", {"remote_url": remote_url}) if remote_url else (None, {})
+    if mode == "offline":
+        return ("offline", {"offline": dict(offline)}) if offline else (None, {})
+    if remote_url:
+        return "remote", {"remote_url": remote_url}
+    if offline:
+        return "offline", {"offline": dict(offline)}
+    return None, {}
+
+def _validate_derived_ibcmd_profiles_preview(
+    *,
+    user,
+    database_ids: list[str],
+) -> tuple[list[Any] | None, dict[str, Any] | None, int | None]:
+    from apps.databases.models import Database, DbmsUserMapping
+
+    databases = list(Database.objects.filter(id__in=database_ids))
+    found = {str(db.id) for db in databases}
+    missing_ids = [db_id for db_id in database_ids if db_id not in found]
+    if missing_ids:
+        return None, {
+            "success": False,
+            "error": {"code": "UNKNOWN_DATABASE", "message": f"Unknown database_ids: {', '.join(missing_ids[:5])}"},
+        }, 400
+
+    missing_profiles: list[dict[str, Any]] = []
+    offline_missing_meta: list[dict[str, Any]] = []
+    offline_needs_dbms: list[Any] = []
+    remote_count = 0
+    offline_count = 0
+
+    for db in databases:
+        db_meta = getattr(db, "metadata", None)
+        db_meta_dict = db_meta if isinstance(db_meta, dict) else {}
+        raw_profile = db_meta_dict.get("ibcmd_connection")
+        profile = _normalize_ibcmd_connection_profile(raw_profile)
+        if profile is None:
+            missing_profiles.append(
+                {
+                    "database_id": str(getattr(db, "id", "")),
+                    "database_name": getattr(db, "name", None),
+                    "reason": "missing_profile",
+                    "missing_keys": ["ibcmd_connection"],
+                }
+            )
+            continue
+
+        effective_mode, details = _resolve_effective_ibcmd_connection_profile(profile)
+        if effective_mode is None:
+            missing_profiles.append(
+                {
+                    "database_id": str(getattr(db, "id", "")),
+                    "database_name": getattr(db, "name", None),
+                    "reason": "unresolvable_profile",
+                    "missing_keys": ["remote_url or offline"],
+                    "mode": str(profile.get("mode") or "auto"),
+                }
+            )
+            continue
+
+        if effective_mode == "remote":
+            remote_count += 1
+            remote_url = str(details.get("remote_url") or "").strip()
+            if not remote_url:
+                missing_profiles.append(
+                    {
+                        "database_id": str(getattr(db, "id", "")),
+                        "database_name": getattr(db, "name", None),
+                        "reason": "remote_missing_remote_url",
+                        "missing_keys": ["remote_url"],
+                        "mode": str(profile.get("mode") or "remote"),
+                    }
+                )
+            continue
+
+        offline_count += 1
+        offline = details.get("offline") if isinstance(details.get("offline"), dict) else None
+        if not isinstance(offline, dict):
+            missing_profiles.append(
+                {
+                    "database_id": str(getattr(db, "id", "")),
+                    "database_name": getattr(db, "name", None),
+                    "reason": "offline_missing_profile",
+                    "missing_keys": ["offline"],
+                    "mode": str(profile.get("mode") or "offline"),
+                }
+            )
+            continue
+
+        if not str(offline.get("config") or "").strip() or not str(offline.get("data") or "").strip():
+            missing_profiles.append(
+                {
+                    "database_id": str(getattr(db, "id", "")),
+                    "database_name": getattr(db, "name", None),
+                    "reason": "offline_missing_paths",
+                    "missing_keys": ["offline.config", "offline.data"],
+                    "mode": str(profile.get("mode") or "offline"),
+                }
+            )
+            continue
+
+        offline_db_path = str(offline.get("db_path") or "").strip()
+        if offline_db_path:
+            continue
+
+        missing_keys: list[str] = []
+        for key in ("dbms", "db_server", "db_name"):
+            if str(offline.get(key) or "").strip():
+                continue
+            if not str(db_meta_dict.get(key) or "").strip():
+                missing_keys.append(key)
+        if missing_keys:
+            offline_missing_meta.append(
+                {
+                    "database_id": str(getattr(db, "id", "")),
+                    "database_name": getattr(db, "name", None),
+                    "missing_keys": missing_keys,
+                }
+            )
+            continue
+
+        offline_needs_dbms.append(db)
+
+    if missing_profiles:
+        limit = 25
+        details: dict[str, Any] = {"missing": missing_profiles[:limit], "missing_total": len(missing_profiles)}
+        if len(missing_profiles) > limit:
+            details["omitted"] = len(missing_profiles) - limit
+        return None, {
+            "success": False,
+            "error": {
+                "code": "IBCMD_CONNECTION_PROFILE_INVALID",
+                "message": "IBCMD connection profile is missing or incomplete for some databases",
+                "details": details,
+            },
+        }, 400
+
+    if offline_missing_meta:
+        limit = 25
+        details: dict[str, Any] = {"missing": offline_missing_meta[:limit], "missing_total": len(offline_missing_meta)}
+        if len(offline_missing_meta) > limit:
+            details["omitted"] = len(offline_missing_meta) - limit
+        return None, {
+            "success": False,
+            "error": {
+                "code": "OFFLINE_DB_METADATA_NOT_CONFIGURED",
+                "message": "Offline DBMS metadata is not configured for some databases",
+                "details": details,
+            },
+        }, 400
+
+    if offline_needs_dbms:
+        qs = DbmsUserMapping.objects.filter(database__in=offline_needs_dbms, user=user)
+        configured = {str(row.database_id) for row in qs}
+        missing_dbs = [db for db in offline_needs_dbms if str(db.id) not in configured]
+        if missing_dbs:
+            preview = ", ".join((db.name or str(db.id)) for db in missing_dbs[:5])
+            msg = f"DBMS user mapping is not configured for {len(missing_dbs)} database(s): {preview}"
+            if len(missing_dbs) > 5:
+                msg += f" and {len(missing_dbs) - 5} more"
+            return None, {"success": False, "error": {"code": "DBMS_MAPPING_NOT_CONFIGURED", "message": msg}}, 400
+
+    meta = {
+        "remote_count": remote_count,
+        "offline_count": offline_count,
+        "mixed_mode": bool(remote_count and offline_count),
+    }
+    return databases, meta, None
 
 def _preview_ibcmd_cli(
     *,
@@ -77,6 +279,22 @@ def _preview_ibcmd_cli(
     params = dict(params) if isinstance(params, dict) else {}
 
     flattened_connection = flatten_connection_params(connection_dict) if connection_dict else {}
+    has_explicit_connection = bool(flattened_connection)
+    command_scope = str(command.get("scope") or "").strip()
+    derived_meta: dict[str, Any] | None = None
+    if command_scope == "per_database" and not has_explicit_connection:
+        if not database_ids:
+            return None, {
+                "success": False,
+                "error": {
+                    "code": "MISSING_DATABASE_IDS",
+                    "message": "database_ids are required for per_database preview when connection is derived from database profiles",
+                },
+            }, 400
+        _, derived_meta, err_status = _validate_derived_ibcmd_profiles_preview(user=user, database_ids=database_ids)
+        if err_status is not None:
+            return None, derived_meta, err_status
+
     if flattened_connection:
         conflicts = detect_connection_option_conflicts(
             connection_params=flattened_connection,
@@ -164,20 +382,48 @@ def _preview_ibcmd_cli(
             }
         )
 
-    # For per_database ibcmd_cli, some offline parameters and DBMS creds are resolved at runtime per target database.
-    connection_remote = str(connection_dict.get("remote") or "").strip()
-    connection_pid = connection_dict.get("pid")
-    offline = connection_dict.get("offline") if isinstance(connection_dict.get("offline"), dict) else None
-    offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
-    if str(command.get("scope") or "").strip() == "per_database" and database_ids and not connection_remote and not connection_pid and not offline_db_path:
-        offline_defaults = dict(offline) if isinstance(offline, dict) else {}
-        for key, source_key in (("dbms", "dbms"), ("db_server", "db_server"), ("db_name", "db_name")):
-            if str(offline_defaults.get(key) or "").strip():
-                continue
+    # For per_database ibcmd_cli, connection may be resolved at runtime per target database.
+    if command_scope == "per_database" and database_ids and not has_explicit_connection:
+        bindings.append(
+            {
+                "target_ref": "connection_source",
+                "source_ref": "target_db.metadata.ibcmd_connection",
+                "resolve_at": "worker",
+                "sensitive": False,
+                "status": "pending",
+            }
+        )
+        bindings.append(
+            {
+                "target_ref": "connection.remote",
+                "source_ref": "target_db.metadata.ibcmd_connection.remote_url",
+                "resolve_at": "worker",
+                "sensitive": False,
+                "status": "pending",
+            }
+        )
+        for key in (
+            "config",
+            "data",
+            "db_path",
+            "dbms",
+            "db_server",
+            "db_name",
+            "ftext2_data",
+            "ftext_data",
+            "lock",
+            "log_data",
+            "openid_data",
+            "session_data",
+            "stt_data",
+            "system",
+            "temp",
+            "users_data",
+        ):
             bindings.append(
                 {
                     "target_ref": f"connection.offline.{key}",
-                    "source_ref": f"target_db.metadata.{source_key}",
+                    "source_ref": f"target_db.metadata.ibcmd_connection.offline.{key}",
                     "resolve_at": "worker",
                     "sensitive": False,
                     "status": "pending",
@@ -201,6 +447,43 @@ def _preview_ibcmd_cli(
                 "status": "pending",
             }
         )
+    else:
+        connection_remote = str(connection_dict.get("remote") or "").strip()
+        connection_pid = connection_dict.get("pid")
+        offline = connection_dict.get("offline") if isinstance(connection_dict.get("offline"), dict) else None
+        offline_db_path = str((offline or {}).get("db_path") or "").strip() if isinstance(offline, dict) else ""
+        if command_scope == "per_database" and database_ids and not connection_remote and not connection_pid and not offline_db_path:
+            offline_defaults = dict(offline) if isinstance(offline, dict) else {}
+            for key, source_key in (("dbms", "dbms"), ("db_server", "db_server"), ("db_name", "db_name")):
+                if str(offline_defaults.get(key) or "").strip():
+                    continue
+                bindings.append(
+                    {
+                        "target_ref": f"connection.offline.{key}",
+                        "source_ref": f"target_db.metadata.{source_key}",
+                        "resolve_at": "worker",
+                        "sensitive": False,
+                        "status": "pending",
+                    }
+                )
+            bindings.append(
+                {
+                    "target_ref": "connection.offline.db_user",
+                    "source_ref": "credentials.db_user_mapping",
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "pending",
+                }
+            )
+            bindings.append(
+                {
+                    "target_ref": "connection.offline.db_pwd",
+                    "source_ref": "credentials.db_user_mapping",
+                    "resolve_at": "worker",
+                    "sensitive": True,
+                    "status": "pending",
+                }
+            )
     if stdin:
         bindings.append(
             {
@@ -222,6 +505,9 @@ def _preview_ibcmd_cli(
             "database_ids_count": len(database_ids),
         },
     }
+    if derived_meta is not None:
+        execution_plan["targets"]["connection_source"] = "database_profile"
+        execution_plan["targets"]["mixed_mode"] = bool(derived_meta.get("mixed_mode"))
     return {"execution_plan": execution_plan, "bindings": bindings}, None, None
 
 
@@ -411,5 +697,4 @@ def preview_execution_plan(request):
         {"success": False, "error": {"code": "UNSUPPORTED_KIND", "message": f"Unsupported executor kind: {kind}"}},
         status=http_status.HTTP_400_BAD_REQUEST,
     )
-
 

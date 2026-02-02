@@ -58,6 +58,7 @@ urlpatterns = [
     path('databases/get-extensions-snapshot/', databases.get_extensions_snapshot, name='get-extensions-snapshot'),
     path('databases/update-credentials/', databases.update_database_credentials, name='update-database-credentials'),
     path('databases/update-dbms-metadata/', databases.update_dbms_metadata, name='update-dbms-metadata'),
+    path('databases/update-ibcmd-connection-profile/', databases.update_ibcmd_connection_profile, name='update-ibcmd-connection-profile'),
     path('databases/list-ib-users/', databases.list_infobase_users, name='list-infobase-users'),
     path('databases/create-ib-user/', databases.create_infobase_user, name='create-infobase-user'),
     path('databases/update-ib-user/', databases.update_infobase_user, name='update-infobase-user'),

@@ -165,6 +165,22 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			})
 		}
 
+		connectionSource := strings.TrimSpace(extractString(data, "connection_source"))
+		if connectionSource == "database_profile" {
+			withConnArgs, connBindings, err := injectConnectionProfileArgs(resolvedArgs, creds)
+			if err != nil {
+				combinedInputCleanup()
+				if outputCleanup != nil {
+					outputCleanup()
+				}
+				return nil, err
+			}
+			if len(connBindings) > 0 {
+				runtimeBindings = append(runtimeBindings, connBindings...)
+			}
+			resolvedArgs = withConnArgs
+		}
+
 		dbmsAuthStrategy := extractIbcmdDbmsAuthStrategy(data)
 		if dbmsAuthStrategy == "service" && commandID != "" && !isServiceDbmsAuthAllowed(commandID) {
 			return nil, fmt.Errorf("dbms_auth.strategy=service is not allowed for command_id=%s", commandID)

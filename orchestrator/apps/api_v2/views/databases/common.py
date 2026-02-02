@@ -108,6 +108,40 @@ def _permission_denied(message: str):
     }, status=403)
 
 
+def _resolve_tenant_id(request) -> str | None:
+    """
+    Resolve tenant_id for the current request.
+
+    In production, tenant context is applied by TenantContextAuthentication.
+    In tests, DRF `force_authenticate()` may bypass authentication classes, so
+    request.tenant_id can be missing even though tenant scoping is expected.
+    For forced-auth requests we fall back to the default tenant.
+    """
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id:
+        return str(tenant_id)
+
+    underlying = getattr(request, "_request", None)
+    if underlying is not None:
+        tenant_id = getattr(underlying, "tenant_id", None)
+        if tenant_id:
+            return str(tenant_id)
+
+    forced_user = getattr(request, "_force_auth_user", None)
+    if forced_user is None and underlying is not None:
+        forced_user = getattr(underlying, "_force_auth_user", None)
+    if forced_user is None:
+        return None
+
+    try:
+        from apps.tenancy.models import Tenant
+
+        default_tenant_id = Tenant.objects.filter(slug="default").values_list("id", flat=True).first()
+        return str(default_tenant_id) if default_tenant_id else None
+    except Exception:
+        return None
+
+
 def _parse_filters(raw_filters: str | None) -> tuple[dict, dict | None]:
     if not raw_filters:
         return {}, None
@@ -356,6 +390,45 @@ class DatabaseDbmsMetadataUpdateResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class DatabaseIbcmdConnectionOfflineProfileSerializer(serializers.Serializer):
+    """Offline connection profile for a database (no secrets)."""
+    config = serializers.CharField(required=False, allow_blank=True)
+    data = serializers.CharField(required=False, allow_blank=True)
+    dbms = serializers.CharField(required=False, allow_blank=True)
+    db_server = serializers.CharField(required=False, allow_blank=True)
+    db_name = serializers.CharField(required=False, allow_blank=True)
+    db_path = serializers.CharField(required=False, allow_blank=True)
+    ftext2_data = serializers.CharField(required=False, allow_blank=True)
+    ftext_data = serializers.CharField(required=False, allow_blank=True)
+    lock = serializers.CharField(required=False, allow_blank=True)
+    log_data = serializers.CharField(required=False, allow_blank=True)
+    openid_data = serializers.CharField(required=False, allow_blank=True)
+    session_data = serializers.CharField(required=False, allow_blank=True)
+    stt_data = serializers.CharField(required=False, allow_blank=True)
+    system = serializers.CharField(required=False, allow_blank=True)
+    temp = serializers.CharField(required=False, allow_blank=True)
+    users_data = serializers.CharField(required=False, allow_blank=True)
+
+
+class DatabaseIbcmdConnectionProfileUpdateRequestSerializer(serializers.Serializer):
+    """Request body for update_ibcmd_connection_profile endpoint."""
+    database_id = serializers.CharField(help_text="Database ID to update")
+    reset = serializers.BooleanField(required=False, default=False)
+    mode = serializers.ChoiceField(
+        choices=["auto", "remote", "offline"],
+        required=False,
+        help_text="IBCMD connection mode for the database profile",
+    )
+    remote_url = serializers.CharField(required=False, allow_blank=True)
+    offline = DatabaseIbcmdConnectionOfflineProfileSerializer(required=False)
+
+
+class DatabaseIbcmdConnectionProfileUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_ibcmd_connection_profile endpoint."""
+    database = DatabaseSerializer()
+    message = serializers.CharField()
+
+
 class InfobaseUserListResponseSerializer(serializers.Serializer):
     """Response for list_infobase_users endpoint."""
     users = InfobaseUserMappingSerializer(many=True)
@@ -438,5 +511,3 @@ class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
     expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
     stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
     message = serializers.CharField()
-
-

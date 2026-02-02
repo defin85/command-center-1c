@@ -11,6 +11,9 @@ export type ActionCatalogPreviewState = {
   loading: boolean
   error: ReactNode | null
   payload: unknown | null
+  actionPos: number | null
+  executorKind: string | null
+  databaseIds: string[]
 }
 
 export const useActionCatalogPreview = (
@@ -23,13 +26,26 @@ export const useActionCatalogPreview = (
     loading: false,
     error: null,
     payload: null,
+    actionPos: null,
+    executorKind: null,
+    databaseIds: [],
   })
 
   const closePreview = useCallback(() => {
-    setPreviewModal({ open: false, title: 'Preview', loading: false, error: null, payload: null })
+    setPreviewModal((current) => ({
+      ...current,
+      open: false,
+      title: 'Preview',
+      loading: false,
+      error: null,
+      payload: null,
+      actionPos: null,
+      executorKind: null,
+      databaseIds: [],
+    }))
   }, [])
 
-  const openPreview = useCallback(async (pos: number) => {
+  const openPreview = useCallback((pos: number) => {
     if (!actionsEditable) return
     const parsed = draftParsed
     if (!parsed || typeof parsed !== 'object') return
@@ -43,25 +59,57 @@ export const useActionCatalogPreview = (
     const executor = action.executor
     if (!isPlainObject(executor)) return
 
-    const hasIbcmdConnection = (conn: unknown): boolean => {
-      if (!isPlainObject(conn)) return false
-      const c = conn as PlainObject
-      const hasRemote = typeof c.remote === 'string' && c.remote.trim().length > 0
-      const hasPid = typeof c.pid === 'number'
-      const hasOffline = isPlainObject(c.offline)
-      return hasRemote || hasPid || hasOffline
+    const executorKind = typeof executor.kind === 'string' ? executor.kind : null
+    setPreviewModal((current) => ({
+      ...current,
+      open: true,
+      title: `Preview: ${String(action.id ?? 'action')}`,
+      loading: false,
+      error: null,
+      payload: null,
+      actionPos: pos,
+      executorKind,
+      databaseIds: [],
+    }))
+  }, [actionsEditable, draftParsed])
+
+  const setPreviewDatabaseIds = useCallback((databaseIds: string[]) => {
+    setPreviewModal((current) => ({ ...current, databaseIds }))
+  }, [])
+
+  const runPreview = useCallback(async () => {
+    if (!actionsEditable) return
+    const pos = previewModal.actionPos
+    if (pos === null || pos === undefined) return
+    const parsed = draftParsed
+    if (!parsed || typeof parsed !== 'object') return
+    const root = parsed as PlainObject
+    const extensions = root.extensions
+    if (!isPlainObject(extensions)) return
+    const actions = (extensions as PlainObject).actions
+    if (!Array.isArray(actions)) return
+    const action = actions[pos]
+    if (!isPlainObject(action)) return
+    const executor = action.executor
+    if (!isPlainObject(executor)) return
+
+    const kind = typeof executor.kind === 'string' ? executor.kind : ''
+    const databaseIds = Array.isArray(previewModal.databaseIds) ? previewModal.databaseIds : []
+    if (kind === 'ibcmd_cli' && databaseIds.length === 0) {
+      setPreviewModal((current) => ({
+        ...current,
+        error: 'Для Preview ibcmd_cli нужно выбрать базу (или набор баз), так как connection резолвится per database.',
+        payload: null,
+        loading: false,
+      }))
+      return
     }
 
-    setPreviewModal({ open: true, title: `Preview: ${String(action.id ?? 'action')}`, loading: true, error: null, payload: null })
+    setPreviewModal((current) => ({ ...current, loading: true, error: null, payload: null }))
     try {
-      const previewExecutor: PlainObject = (
-        executor.kind === 'ibcmd_cli' && !hasIbcmdConnection((executor as PlainObject).connection)
-          ? { ...executor, connection: { offline: {} } }
-          : executor
-      )
       const response = await apiClient.post('/api/v2/ui/execution-plan/preview/', {
-        executor: previewExecutor,
-        database_ids: [],
+        executor,
+        database_ids: databaseIds,
       })
       setPreviewModal((current) => ({ ...current, loading: false, payload: response.data as unknown }))
     } catch (e: unknown) {
@@ -75,7 +123,7 @@ export const useActionCatalogPreview = (
       ) : fallback
       setPreviewModal((current) => ({ ...current, loading: false, error: errNode }))
     }
-  }, [actionsEditable, draftParsed])
+  }, [actionsEditable, draftParsed, previewModal.actionPos, previewModal.databaseIds])
 
-  return { previewModal, closePreview, openPreview }
+  return { previewModal, closePreview, openPreview, runPreview, setPreviewDatabaseIds }
 }

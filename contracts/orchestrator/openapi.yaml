@@ -2268,6 +2268,60 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/databases/update-ibcmd-connection-profile/:
+    post:
+      operationId: v2_databases_update_ibcmd_connection_profile_create
+      description: Set or reset per-database IBCMD connection profile stored in Database.metadata.
+      summary: Update database IBCMD connection profile
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseIbcmdConnectionProfileUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseIbcmdConnectionProfileUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseIbcmdConnectionProfileUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseIbcmdConnectionProfileUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/databases/update-dbms-user/:
     post:
       operationId: v2_databases_update_dbms_user_create
@@ -11328,6 +11382,11 @@ components:
           type: string
           nullable: true
           readOnly: true
+        ibcmd_connection:
+          allOf:
+          - $ref: '#/components/schemas/DatabaseIbcmdConnectionProfile'
+          nullable: true
+          readOnly: true
         denied_from:
           type: string
           nullable: true
@@ -11445,6 +11504,37 @@ components:
     DatabaseDbmsMetadataUpdateResponse:
       type: object
       description: Response for update_dbms_metadata endpoint.
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        message:
+          type: string
+      required:
+      - database
+      - message
+    DatabaseIbcmdConnectionProfileUpdateRequest:
+      type: object
+      description: Request body for update_ibcmd_connection_profile endpoint.
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: Database ID to update
+        reset:
+          type: boolean
+          default: false
+        mode:
+          $ref: '#/components/schemas/DatabaseIbcmdConnectionMode'
+        remote_url:
+          type: string
+          description: IBCMD remote url used for --remote=<url>
+        offline:
+          $ref: '#/components/schemas/DatabaseIbcmdConnectionOfflineProfile'
+      required:
+      - database_id
+    DatabaseIbcmdConnectionProfileUpdateResponse:
+      type: object
+      description: Response for update_ibcmd_connection_profile endpoint.
       properties:
         database:
           $ref: '#/components/schemas/Database'
@@ -13234,6 +13324,68 @@ components:
           type: string
         users_data:
           type: string
+    DatabaseIbcmdConnectionMode:
+      enum:
+      - auto
+      - remote
+      - offline
+      type: string
+      description: |-
+        IBCMD connection mode for a database profile.
+
+        * `auto` - auto
+        * `remote` - remote
+        * `offline` - offline
+      x-spec-enum-id: 6c5cddc660f6e3f2
+    DatabaseIbcmdConnectionOfflineProfile:
+      type: object
+      description: Offline connection profile for a database (no secrets).
+      properties:
+        config:
+          type: string
+        data:
+          type: string
+        dbms:
+          type: string
+        db_server:
+          type: string
+        db_name:
+          type: string
+        db_path:
+          type: string
+        ftext2_data:
+          type: string
+        ftext_data:
+          type: string
+        lock:
+          type: string
+        log_data:
+          type: string
+        openid_data:
+          type: string
+        session_data:
+          type: string
+        stt_data:
+          type: string
+        system:
+          type: string
+        temp:
+          type: string
+        users_data:
+          type: string
+    DatabaseIbcmdConnectionProfile:
+      type: object
+      description: Per-database IBCMD connection profile (no secrets).
+      properties:
+        mode:
+          $ref: '#/components/schemas/DatabaseIbcmdConnectionMode'
+        remote_url:
+          type: string
+          nullable: true
+        offline:
+          allOf:
+          - $ref: '#/components/schemas/DatabaseIbcmdConnectionOfflineProfile'
+          nullable: true
     IbcmdCliDbmsAuth:
       type: object
       properties:

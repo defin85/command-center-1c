@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Button, Dropdown, Space, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { AppstoreOutlined, DatabaseOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, DatabaseOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined, LinkOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import type { Database } from '../../../api/generated/model/database'
@@ -22,6 +22,7 @@ export type UseDatabasesColumnsParams = {
   canManageDatabase: (databaseId: string) => boolean
   openCredentialsModal: (database: Database) => void
   openDbmsMetadataModal: (database: Database) => void
+  openIbcmdProfileModal: (database: Database) => void
   openExtensionsDrawer: (database: Database) => void
   handleSingleAction: (action: DatabaseActionKey, database: Database) => void
   healthCheckPendingIds: Set<string>
@@ -38,6 +39,7 @@ export const useDatabasesColumns = ({
   canManageDatabase,
   openCredentialsModal,
   openDbmsMetadataModal,
+  openIbcmdProfileModal,
   openExtensionsDrawer,
   handleSingleAction,
   healthCheckPendingIds,
@@ -258,6 +260,15 @@ export const useDatabasesColumns = ({
                 disabled={!canManage}
               />
             </Tooltip>
+            <Tooltip title="IBCMD connection profile">
+              <Button
+                size="small"
+                icon={<LinkOutlined />}
+                onClick={() => openIbcmdProfileModal(record)}
+                aria-label="IBCMD connection profile"
+                disabled={!canManage}
+              />
+            </Tooltip>
             <Tooltip title="Extensions">
               <Button
                 size="small"
@@ -289,6 +300,7 @@ export const useDatabasesColumns = ({
     message,
     openCredentialsModal,
     openDbmsMetadataModal,
+    openIbcmdProfileModal,
     openExtensionsDrawer,
     runSetStatus,
   ])

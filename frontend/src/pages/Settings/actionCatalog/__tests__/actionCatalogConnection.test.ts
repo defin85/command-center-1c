@@ -4,7 +4,7 @@ import { buildActionFromForm, deriveActionFormValues } from '../../actionCatalog
 import { validateActionCatalogDraft } from '../actionCatalogValidation'
 
 describe('Action Catalog: executor.connection', () => {
-  it('round-trips connection and strips db_user/db_pwd', () => {
+  it('drops executor.connection on form round-trip', () => {
     const base: any = {
       id: 'ListExtension',
       label: 'List extension',
@@ -29,39 +29,13 @@ describe('Action Catalog: executor.connection', () => {
     }
 
     const values = deriveActionFormValues(base)
-    expect(values.executor.connection?.remote).toBe('http://host:1545')
-    expect(values.executor.connection?.pid).toBe(123)
-    expect(values.executor.connection?.offline?.config).toBe('/path/to/config')
-    expect(values.executor.connection?.offline?.dbms).toBe('PostgreSQL')
+    expect((values as any).executor.connection).toBeUndefined()
 
     const rebuilt = buildActionFromForm(base, values) as any
-    expect(rebuilt.executor.connection.extra_key).toBe('keep-me')
-    expect(rebuilt.executor.connection.offline.extra_offline).toBe('keep-offline')
-    expect(rebuilt.executor.connection.offline.db_user).toBeUndefined()
-    expect(rebuilt.executor.connection.offline.db_pwd).toBeUndefined()
+    expect(rebuilt.executor.connection).toBeUndefined()
   })
 
-  it('validation allows executor.connection for ibcmd_cli and rejects secrets', () => {
-    const okDraft: any = {
-      catalog_version: 1,
-      extensions: {
-        actions: [
-          {
-            id: 'a',
-            label: 'a',
-            contexts: ['database_card'],
-            executor: {
-              kind: 'ibcmd_cli',
-              driver: 'ibcmd',
-              command_id: 'infobase.extension.list',
-              connection: { remote: 'http://host:1545' },
-            },
-          },
-        ],
-      },
-    }
-    expect(validateActionCatalogDraft(okDraft).ok).toBe(true)
-
+  it('validation rejects executor.connection', () => {
     const badDraft: any = {
       catalog_version: 1,
       extensions: {
@@ -82,7 +56,6 @@ describe('Action Catalog: executor.connection', () => {
     }
     const res = validateActionCatalogDraft(badDraft)
     expect(res.ok).toBe(false)
-    expect(res.errors.join('\n')).toMatch(/db_user\/db_pwd/i)
+    expect(res.errors.join('\n')).toMatch(/executor\.connection/i)
   })
 })
-

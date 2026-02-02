@@ -1,4 +1,4 @@
-import type { ActionFormValues, ActionRow, DiffItem, IbcmdCliConnectionForm, PlainObject, SaveErrorHint } from './actionCatalogTypes'
+import type { ActionFormValues, ActionRow, DiffItem, PlainObject, SaveErrorHint } from './actionCatalogTypes'
 
 export const isPlainObject = (value: unknown): value is PlainObject => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -119,69 +119,6 @@ export const buildDefaultAction = (): PlainObject => ({
   },
 })
 
-const isRecord = (value: unknown): value is Record<string, unknown> => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-)
-
-const normalizeConnectionFromExecutor = (executor: PlainObject): { raw: Record<string, unknown> | null; form: IbcmdCliConnectionForm | undefined } => {
-  const raw = isRecord(executor.connection) ? (executor.connection as Record<string, unknown>) : null
-  if (!raw) return { raw: null, form: undefined }
-
-  const remote = typeof raw.remote === 'string' ? raw.remote : undefined
-  const pid = typeof raw.pid === 'number' ? raw.pid : undefined
-
-  const offlineRaw = isRecord(raw.offline) ? (raw.offline as Record<string, unknown>) : null
-  const offline: IbcmdCliConnectionForm['offline'] | undefined = offlineRaw ? {
-    config: typeof offlineRaw.config === 'string' ? offlineRaw.config : undefined,
-    data: typeof offlineRaw.data === 'string' ? offlineRaw.data : undefined,
-    dbms: typeof offlineRaw.dbms === 'string' ? offlineRaw.dbms : undefined,
-    db_server: typeof offlineRaw.db_server === 'string' ? offlineRaw.db_server : undefined,
-    db_name: typeof offlineRaw.db_name === 'string' ? offlineRaw.db_name : undefined,
-  } : undefined
-
-  const form: IbcmdCliConnectionForm = {}
-  if (remote !== undefined) form.remote = remote
-  if (pid !== undefined) form.pid = pid
-  if (offline !== undefined) form.offline = offline
-
-  return { raw, form: Object.keys(form).length ? form : {} }
-}
-
-const applyConnectionFormToBase = (base: Record<string, unknown> | null, form: IbcmdCliConnectionForm | undefined): Record<string, unknown> | null => {
-  const next: Record<string, unknown> = base ? deepCopy(base) : {}
-
-  const remote = typeof form?.remote === 'string' ? form.remote.trim() : ''
-  if (remote) next.remote = remote
-  else delete next.remote
-
-  if (typeof form?.pid === 'number') next.pid = form.pid
-  else delete next.pid
-
-  const offlineBase = isRecord(next.offline) ? (next.offline as Record<string, unknown>) : {}
-  const offline: Record<string, unknown> = { ...offlineBase }
-  delete offline.db_user
-  delete offline.db_pwd
-
-  const offlineForm = form?.offline
-  const setOrDelete = (key: keyof NonNullable<IbcmdCliConnectionForm['offline']>) => {
-    const raw = typeof offlineForm?.[key] === 'string' ? offlineForm[key].trim() : ''
-    if (raw) offline[key] = raw
-    else delete offline[key]
-  }
-
-  setOrDelete('config')
-  setOrDelete('data')
-  setOrDelete('dbms')
-  setOrDelete('db_server')
-  setOrDelete('db_name')
-
-  if (Object.keys(offline).length > 0) next.offline = offline
-  else delete next.offline
-
-  if (Object.keys(next).length === 0) return null
-  return next
-}
-
 export const deriveActionFormValues = (action: PlainObject | null): ActionFormValues => {
   const source = action ?? buildDefaultAction()
 
@@ -212,8 +149,6 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
   const confirmDangerous = fixed.confirm_dangerous === true
   const timeoutSeconds = typeof fixed.timeout_seconds === 'number' ? fixed.timeout_seconds : undefined
 
-  const { form: connectionForm } = normalizeConnectionFromExecutor(executorRaw)
-
   return {
     id,
     label,
@@ -223,7 +158,6 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
       driver,
       command_id: commandId,
       workflow_id: workflowId,
-      connection: connectionForm,
       mode,
       params_json: paramsJson,
       additional_args: additionalArgs,
@@ -305,15 +239,7 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
   } else {
     delete executor.fixed
   }
-
-  const { raw: existingConnection } = normalizeConnectionFromExecutor(executorBase)
-  const nextConnection = applyConnectionFormToBase(existingConnection, values.executor.connection)
-  if (values.executor.kind === 'ibcmd_cli') {
-    if (nextConnection) executor.connection = nextConnection
-    else delete executor.connection
-  } else {
-    delete executor.connection
-  }
+  delete executor.connection
 
   next.executor = executor
   return next

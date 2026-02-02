@@ -369,7 +369,13 @@ export function ActionCatalogPage() {
 
   const actionsEditable = isStaff && draftIsValidJson && isPlainObject(draftParsed)
 
-  const { previewModal, closePreview, openPreview } = useActionCatalogPreview(actionsEditable, draftParsed)
+  const {
+    previewModal,
+    closePreview,
+    openPreview,
+    runPreview,
+    setPreviewDatabaseIds,
+  } = useActionCatalogPreview(actionsEditable, draftParsed)
 
   const columns = useActionCatalogColumns({
     actionRowsLength: actionRows.length,
@@ -485,7 +491,12 @@ export function ActionCatalogPage() {
         onApply={() => void submitEditor()}
       />
 
-      <ActionCatalogPreviewModal previewModal={previewModal} onClose={closePreview} />
+      <ActionCatalogPreviewModal
+        previewModal={previewModal}
+        onClose={closePreview}
+        onRun={() => void runPreview()}
+        onDatabaseIdsChange={setPreviewDatabaseIds}
+      />
     </Space>
   )
 }

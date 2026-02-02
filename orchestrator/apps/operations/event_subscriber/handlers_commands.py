@@ -229,6 +229,16 @@ class CommandHandlersMixin:
                 "server_port": rmngr_port,
                 "infobase_name": database.infobase_name or database.name,
             }
+            ibcmd_connection = (database.metadata or {}).get("ibcmd_connection")
+            if isinstance(ibcmd_connection, dict):
+                safe_profile = dict(ibcmd_connection)
+                offline = safe_profile.get("offline")
+                if isinstance(offline, dict):
+                    offline_safe = dict(offline)
+                    for key in ("db_user", "db_pwd", "db_password"):
+                        offline_safe.pop(key, None)
+                    safe_profile["offline"] = offline_safe
+                credentials_dict["ibcmd_connection"] = safe_profile
 
             encrypted_payload = encrypt_credentials_for_transport(credentials_dict)
 
@@ -260,4 +270,3 @@ class CommandHandlersMixin:
                 e,
                 exc_info=True,
             )
-

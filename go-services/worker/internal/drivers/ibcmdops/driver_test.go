@@ -84,6 +84,132 @@ func TestBuildRequestIbcmdCliInjectsInfobaseAuthArgs(t *testing.T) {
 	}
 }
 
+func TestBuildRequestIbcmdCliDerivesRemoteConnectionFromProfile(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"argv":              []string{"infobase", "dump"},
+				"connection_source": "database_profile",
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+			IbcmdConnection: &credentials.IbcmdConnectionProfile{
+				Mode:      "remote",
+				RemoteURL: "http://agent:1234",
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := []string{
+		"infobase",
+		"dump",
+		"--remote=http://agent:1234",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+	if len(req.RuntimeBindings) != 4 {
+		t.Fatalf("expected 4 runtime bindings, got %#v", req.RuntimeBindings)
+	}
+	if req.RuntimeBindings[0]["target_ref"] != "flag:--remote" || req.RuntimeBindings[0]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
+	}
+	if req.RuntimeBindings[1]["target_ref"] != "dbms_offline" || req.RuntimeBindings[1]["status"] != "skipped" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	}
+	if req.RuntimeBindings[2]["target_ref"] != "flag:--user" || req.RuntimeBindings[2]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[2])
+	}
+	if req.RuntimeBindings[3]["target_ref"] != "flag:--password" || req.RuntimeBindings[3]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[3])
+	}
+}
+
+func TestBuildRequestIbcmdCliDerivesOfflineConnectionFromProfileWithDbPath(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"argv":              []string{"infobase", "dump"},
+				"connection_source": "database_profile",
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+			IbcmdConnection: &credentials.IbcmdConnectionProfile{
+				Mode: "offline",
+				Offline: &credentials.IbcmdConnectionOfflineProfile{
+					Config: "C:\\config",
+					Data:   "C:\\data",
+					DBPath: "C:\\bases\\filebase",
+				},
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := []string{
+		"infobase",
+		"dump",
+		"--config=C:\\config",
+		"--data=C:\\data",
+		"--db-path=C:\\bases\\filebase",
+		"--user=ibuser",
+		"--password=ibpass",
+	}
+	if !reflect.DeepEqual(req.Args, expected) {
+		t.Fatalf("unexpected args: %#v", req.Args)
+	}
+	if len(req.RuntimeBindings) != 6 {
+		t.Fatalf("expected 6 runtime bindings, got %#v", req.RuntimeBindings)
+	}
+	if req.RuntimeBindings[0]["target_ref"] != "flag:--config" || req.RuntimeBindings[0]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[0])
+	}
+	if req.RuntimeBindings[1]["target_ref"] != "flag:--data" || req.RuntimeBindings[1]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[1])
+	}
+	if req.RuntimeBindings[2]["target_ref"] != "flag:--db-path" || req.RuntimeBindings[2]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[2])
+	}
+	if req.RuntimeBindings[3]["target_ref"] != "dbms_offline" || req.RuntimeBindings[3]["status"] != "skipped" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[3])
+	}
+	if req.RuntimeBindings[4]["target_ref"] != "flag:--user" || req.RuntimeBindings[4]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[4])
+	}
+	if req.RuntimeBindings[5]["target_ref"] != "flag:--password" || req.RuntimeBindings[5]["status"] != "applied" {
+		t.Fatalf("unexpected runtime binding: %#v", req.RuntimeBindings[5])
+	}
+}
+
 func TestBuildRequestIbcmdCliReplacesExistingInfobaseAuthArgs(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",

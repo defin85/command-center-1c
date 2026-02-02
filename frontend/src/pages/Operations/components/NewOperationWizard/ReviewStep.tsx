@@ -186,21 +186,26 @@ const formatConfigForDisplay = (
         if (typeof dc.timeout_seconds === 'number') {
           items.push({ label: 'Driver options: Timeout (seconds)', value: String(dc.timeout_seconds) })
         }
-        const connection = dc.connection
-        if (connection?.remote) {
-          items.push({ label: 'Driver options: Connection / Remote', value: connection.remote })
-        }
-        if (typeof connection?.pid === 'number') {
-          items.push({ label: 'Driver options: Connection / PID', value: String(connection.pid) })
-        }
-        const offline = connection?.offline
-        if (offline && typeof offline === 'object') {
-          const offlineParts = Object.entries(offline)
-            .filter(([key, value]) => key !== 'db_pwd' && typeof value === 'string' && value.trim().length > 0)
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([key, value]) => `${key}=${value.trim()}`)
-          if (offlineParts.length > 0) {
-            items.push({ label: 'Driver options: Connection / Offline', value: offlineParts.join('\n') })
+        const connectionOverride = dc.connection_override === true
+        if (dc.command_scope === 'per_database' && !connectionOverride) {
+          items.push({ label: 'Driver options: Connection', value: 'Derived from per-database IBCMD connection profiles (per target).' })
+        } else {
+          const connection = dc.connection
+          if (connection?.remote) {
+            items.push({ label: 'Driver options: Connection / Remote', value: connection.remote })
+          }
+          if (typeof connection?.pid === 'number') {
+            items.push({ label: 'Driver options: Connection / PID', value: String(connection.pid) })
+          }
+          const offline = connection?.offline
+          if (offline && typeof offline === 'object') {
+            const offlineParts = Object.entries(offline)
+              .filter(([key, value]) => key !== 'db_pwd' && typeof value === 'string' && value.trim().length > 0)
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([key, value]) => `${key}=${value.trim()}`)
+            if (offlineParts.length > 0) {
+              items.push({ label: 'Driver options: Connection / Offline', value: offlineParts.join('\n') })
+            }
           }
         }
         if (dc.args_text) {

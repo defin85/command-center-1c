@@ -19,7 +19,9 @@ import {
   useSetDatabaseStatus,
   useUpdateDatabaseCredentials,
   useUpdateDatabaseDbmsMetadata,
+  useUpdateDatabaseIbcmdConnectionProfile,
   useDatabaseExtensionsSnapshot,
+  type DatabaseIbcmdConnectionProfileUpdateRequest,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
 import { useActionCatalog } from '../../api/queries/ui'
@@ -29,6 +31,7 @@ import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DatabaseCredentialsModal } from './components/DatabaseCredentialsModal'
 import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModal'
+import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdConnectionProfileModal'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
 import { useExtensionsActions } from './components/useExtensionsActions'
@@ -54,6 +57,9 @@ export const Databases = () => {
   const [dbmsMetadataModalVisible, setDbmsMetadataModalVisible] = useState(false)
   const [dbmsMetadataDatabase, setDbmsMetadataDatabase] = useState<Database | null>(null)
   const [dbmsMetadataForm] = Form.useForm()
+  const [ibcmdProfileModalVisible, setIbcmdProfileModalVisible] = useState(false)
+  const [ibcmdProfileDatabase, setIbcmdProfileDatabase] = useState<Database | null>(null)
+  const [ibcmdProfileForm] = Form.useForm()
   const [extensionsDrawerVisible, setExtensionsDrawerVisible] = useState(false)
   const [extensionsDatabase, setExtensionsDatabase] = useState<Database | null>(null)
 
@@ -108,6 +114,7 @@ export const Databases = () => {
   const setDatabaseStatus = useSetDatabaseStatus()
   const updateDatabaseCredentials = useUpdateDatabaseCredentials()
   const updateDatabaseDbmsMetadata = useUpdateDatabaseDbmsMetadata()
+  const updateDatabaseIbcmdConnectionProfile = useUpdateDatabaseIbcmdConnectionProfile()
   const { runExtensionsAction, extensionsActionPendingId, resetExtensionsActionPendingId } = useExtensionsActions({ isStaff, message, modal, navigate })
 
   // Derived state: selected cluster object
@@ -211,6 +218,110 @@ export const Databases = () => {
     setDbmsMetadataDatabase(null)
     dbmsMetadataForm.resetFields()
   }, [dbmsMetadataForm])
+
+  const openIbcmdProfileModal = (database: Database) => {
+    if (!canManageDatabase(database.id)) {
+      message.error('Недостаточно прав для управления IBCMD profile базы')
+      return
+    }
+    const dbAny = database as Database & {
+      ibcmd_connection?: {
+        mode?: string | null
+        remote_url?: string | null
+        offline?: Record<string, unknown> | null
+      } | null
+    }
+    const profile = dbAny.ibcmd_connection ?? null
+    const offlineRaw = profile?.offline && typeof profile.offline === 'object' ? profile.offline : null
+    const offline = offlineRaw ? (offlineRaw as Record<string, unknown>) : {}
+    setIbcmdProfileDatabase(database)
+    ibcmdProfileForm.setFieldsValue({
+      mode: typeof profile?.mode === 'string' ? profile.mode : 'auto',
+      remote_url: typeof profile?.remote_url === 'string' ? profile.remote_url : '',
+      offline: {
+        config: typeof offline.config === 'string' ? offline.config : '',
+        data: typeof offline.data === 'string' ? offline.data : '',
+        db_path: typeof offline.db_path === 'string' ? offline.db_path : '',
+        dbms: typeof offline.dbms === 'string' ? offline.dbms : '',
+        db_server: typeof offline.db_server === 'string' ? offline.db_server : '',
+        db_name: typeof offline.db_name === 'string' ? offline.db_name : '',
+      },
+    })
+    setIbcmdProfileModalVisible(true)
+  }
+
+  const closeIbcmdProfileModal = useCallback(() => {
+    setIbcmdProfileModalVisible(false)
+    setIbcmdProfileDatabase(null)
+    ibcmdProfileForm.resetFields()
+  }, [ibcmdProfileForm])
+
+  const handleIbcmdProfileSave = async () => {
+    if (!ibcmdProfileDatabase) return
+    if (!canManageDatabase(ibcmdProfileDatabase.id)) {
+      message.error('Недостаточно прав для управления IBCMD profile базы')
+      return
+    }
+
+    const values = await ibcmdProfileForm.validateFields()
+    const mode = String(values.mode || 'auto').trim()
+    const remoteUrl = String(values.remote_url || '').trim()
+    const offlineIn = values.offline && typeof values.offline === 'object' ? (values.offline as Record<string, unknown>) : {}
+
+    const offline: Record<string, string> = {}
+    for (const key of ['config', 'data', 'db_path', 'dbms', 'db_server', 'db_name']) {
+      const raw = offlineIn[key]
+      const v = typeof raw === 'string' ? raw.trim() : ''
+      if (v) offline[key] = v
+    }
+
+    const payload: DatabaseIbcmdConnectionProfileUpdateRequest = {
+      database_id: ibcmdProfileDatabase.id,
+      mode: mode as DatabaseIbcmdConnectionProfileUpdateRequest['mode'],
+    }
+    if (remoteUrl) payload.remote_url = remoteUrl
+    if (Object.keys(offline).length > 0) payload.offline = offline
+
+    updateDatabaseIbcmdConnectionProfile.mutate(payload, {
+      onSuccess: (response) => {
+        message.success(response.message || 'IBCMD profile обновлён')
+        closeIbcmdProfileModal()
+      },
+      onError: (error: Error) => {
+        message.error('Не удалось обновить IBCMD profile: ' + error.message)
+      },
+    })
+  }
+
+  const handleIbcmdProfileReset = () => {
+    if (!ibcmdProfileDatabase) return
+    if (!canManageDatabase(ibcmdProfileDatabase.id)) {
+      message.error('Недостаточно прав для управления IBCMD profile базы')
+      return
+    }
+
+    modal.confirm({
+      title: 'Сбросить IBCMD profile базы?',
+      content: 'Профиль подключения ibcmd будет удалён из metadata базы.',
+      okText: 'Сбросить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        updateDatabaseIbcmdConnectionProfile.mutate(
+          { database_id: ibcmdProfileDatabase.id, reset: true },
+          {
+            onSuccess: (response) => {
+              message.success(response.message || 'IBCMD profile сброшен')
+              closeIbcmdProfileModal()
+            },
+            onError: (error: Error) => {
+              message.error('Не удалось сбросить IBCMD profile: ' + error.message)
+            },
+          }
+        )
+      },
+    })
+  }
 
   const handleCredentialsSave = async () => {
     if (!credentialsDatabase) return
@@ -493,6 +604,7 @@ export const Databases = () => {
     canManageDatabase,
     openCredentialsModal,
     openDbmsMetadataModal,
+    openIbcmdProfileModal,
     openExtensionsDrawer,
     handleSingleAction,
     healthCheckPendingIds,
@@ -692,6 +804,15 @@ export const Databases = () => {
         onCancel={closeDbmsMetadataModal}
         onSave={() => void handleDbmsMetadataSave()}
         onReset={handleDbmsMetadataReset}
+      />
+      <DatabaseIbcmdConnectionProfileModal
+        open={ibcmdProfileModalVisible}
+        database={ibcmdProfileDatabase}
+        form={ibcmdProfileForm}
+        saving={updateDatabaseIbcmdConnectionProfile.isPending}
+        onCancel={closeIbcmdProfileModal}
+        onSave={() => void handleIbcmdProfileSave()}
+        onReset={handleIbcmdProfileReset}
       />
 
       <ExtensionsDrawer

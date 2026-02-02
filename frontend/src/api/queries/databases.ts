@@ -136,6 +136,30 @@ export type DatabaseCredentialsUpdateResponse = {
   message: string
 }
 
+export type DatabaseIbcmdConnectionMode = 'auto' | 'remote' | 'offline'
+
+export type DatabaseIbcmdConnectionOfflineProfile = {
+  config?: string
+  data?: string
+  db_path?: string
+  dbms?: string
+  db_server?: string
+  db_name?: string
+}
+
+export type DatabaseIbcmdConnectionProfileUpdateRequest = {
+  database_id: string
+  reset?: boolean
+  mode?: DatabaseIbcmdConnectionMode
+  remote_url?: string
+  offline?: DatabaseIbcmdConnectionOfflineProfile
+}
+
+export type DatabaseIbcmdConnectionProfileUpdateResponse = {
+  database: Database
+  message: string
+}
+
 export type InfobaseUserRef = {
   id: number
   username: string
@@ -330,6 +354,23 @@ export function useUpdateDatabaseDbmsMetadata() {
   return useMutation({
     mutationFn: async (data: DatabaseDbmsMetadataUpdateRequest): Promise<DatabaseDbmsMetadataUpdateResponse> => {
       const response = await apiClient.post('/api/v2/databases/update-dbms-metadata/', data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+/**
+ * Update or reset IBCMD connection profile (Database.metadata.ibcmd_connection).
+ */
+export function useUpdateDatabaseIbcmdConnectionProfile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: DatabaseIbcmdConnectionProfileUpdateRequest): Promise<DatabaseIbcmdConnectionProfileUpdateResponse> => {
+      const response = await apiClient.post('/api/v2/databases/update-ibcmd-connection-profile/', data)
       return response.data
     },
     onSuccess: () => {

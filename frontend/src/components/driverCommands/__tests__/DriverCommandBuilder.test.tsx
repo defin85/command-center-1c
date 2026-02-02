@@ -291,7 +291,9 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     expect(screen.getByText(/--remote=http:\/\/host:1545/)).toBeInTheDocument()
   })
 
-  it('hides ibcmd credential fields in driver options and uses Offline advanced collapse', () => {
+  it('hides ibcmd credential fields in driver options and uses Offline advanced collapse', async () => {
+    const user = userEvent.setup()
+
     const ibcmdCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'ibcmd',
@@ -364,6 +366,10 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
       initialConfig: { driver: 'ibcmd', mode: 'guided', command_id: 'infobase.extension.list', params: {} },
       availableDatabaseIds: ['db1'],
     })
+
+    // For per_database scope, connection is derived from database profiles by default.
+    const overrideSwitch = within(screen.getByTestId('ibcmd-connection-override')).getByRole('switch')
+    await user.click(overrideSwitch)
 
     expect(screen.getByText('Connection')).toBeInTheDocument()
     expect(screen.getByText('DBMS')).toBeInTheDocument()

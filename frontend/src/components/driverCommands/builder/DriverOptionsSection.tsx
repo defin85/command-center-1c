@@ -35,6 +35,9 @@ export function DriverOptionsSection({
   readOnly?: boolean
 }) {
   const [driverOptionsQuery, setDriverOptionsQuery] = useState('')
+  const connectionOverride = config.connection_override === true
+  const canOverrideConnection = driver === 'ibcmd' && scope === 'per_database'
+  const hideConnectionFields = canOverrideConnection && !connectionOverride
 
   const { renderDriverOptionField } = createDriverOptionFieldRenderer({
     driver,
@@ -79,12 +82,41 @@ export function DriverOptionsSection({
           </Form>
         )}
 
-        <Text strong>Connection</Text>
-        <IbcmdConnectionForm
-          connection={connection}
-          readOnly={readOnly}
-          onChange={(next) => onChange({ connection: next })}
-        />
+        {canOverrideConnection && (
+          <Space align="center" wrap>
+            <span data-testid="ibcmd-connection-override">
+              <Switch
+                checked={connectionOverride}
+                disabled={readOnly}
+                onChange={(checked) => {
+                  onChange({
+                    connection_override: checked,
+                    connection: checked ? (config.connection ?? {}) : undefined,
+                  })
+                }}
+              />
+            </span>
+            <Text>Override connection for this run</Text>
+          </Space>
+        )}
+
+        {!hideConnectionFields ? (
+          <>
+            <Text strong>Connection</Text>
+            <IbcmdConnectionForm
+              connection={connection}
+              readOnly={readOnly}
+              onChange={(next) => onChange({ connection: next })}
+            />
+          </>
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            message="Connection will be derived from database profiles"
+            description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
+          />
+        )}
 
         {scope === 'global' && !hasIbcmdConnection(connection) && (
           <Alert
@@ -279,12 +311,50 @@ export function DriverOptionsSection({
 
     const filteredSections: UiSection[] = []
     for (const section of visibleSections) {
-      const nextPaths = query ? section.paths.filter(matchesQuery) : section.paths
+      const basePaths = query ? section.paths.filter(matchesQuery) : section.paths
+      const nextPaths = hideConnectionFields ? basePaths.filter((p) => !p.startsWith('connection.')) : basePaths
       if (nextPaths.length === 0) continue
       filteredSections.push({ ...section, paths: nextPaths })
     }
 
     if (filteredSections.length === 0) {
+      if (canOverrideConnection) {
+        return (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Space align="center" wrap>
+              <span data-testid="ibcmd-connection-override">
+                <Switch
+                  checked={connectionOverride}
+                  disabled={readOnly}
+                  onChange={(checked) => {
+                    onChange({
+                      connection_override: checked,
+                      connection: checked ? (config.connection ?? {}) : undefined,
+                    })
+                  }}
+                />
+              </span>
+              <Text>Override connection for this run</Text>
+            </Space>
+
+            {hideConnectionFields && (
+              <Alert
+                type="info"
+                showIcon
+                message="Connection will be derived from database profiles"
+                description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
+              />
+            )}
+
+            <Alert
+              type="info"
+              showIcon
+              message="No driver options matched"
+              description="Clear the search query to show all available driver options."
+            />
+          </Space>
+        )
+      }
       return (
         <Alert
           type="info"
@@ -360,6 +430,33 @@ export function DriverOptionsSection({
           />
         )}
 
+        {canOverrideConnection && (
+          <Space align="center" wrap>
+            <span data-testid="ibcmd-connection-override">
+              <Switch
+                checked={connectionOverride}
+                disabled={readOnly}
+                onChange={(checked) => {
+                  onChange({
+                    connection_override: checked,
+                    connection: checked ? (config.connection ?? {}) : undefined,
+                  })
+                }}
+              />
+            </span>
+            <Text>Override connection for this run</Text>
+          </Space>
+        )}
+
+        {hideConnectionFields && (
+          <Alert
+            type="info"
+            showIcon
+            message="Connection will be derived from database profiles"
+            description="For per_database scope, ibcmd connection is resolved per target database from its IBCMD connection profile. Mixed mode (remote/offline) is supported."
+          />
+        )}
+
         <Input
           allowClear
           value={driverOptionsQuery}
@@ -383,6 +480,15 @@ export function DriverOptionsSection({
             showIcon
             message="Connection required for global scope"
             description="Set remote, pid, or offline connection parameters."
+          />
+        )}
+
+        {driver === 'ibcmd' && scope === 'per_database' && connectionOverride && !hasIbcmdConnection(config.connection) && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Connection override is enabled but empty"
+            description="Either set remote/pid/offline connection parameters, or disable override to use per-database connection profiles."
           />
         )}
       </Space>

@@ -25,6 +25,7 @@ class DatabaseSerializer(serializers.ModelSerializer):
     denied_parameter = serializers.SerializerMethodField()
     last_health_error = serializers.SerializerMethodField()
     last_health_error_code = serializers.SerializerMethodField()
+    ibcmd_connection = serializers.SerializerMethodField()
 
     def _get_metadata_value(self, obj: Database, key: str) -> Optional[object]:
         metadata = obj.metadata or {}
@@ -71,6 +72,33 @@ class DatabaseSerializer(serializers.ModelSerializer):
     def get_last_health_error_code(self, obj: Database) -> Optional[str]:
         return self._get_metadata_value(obj, 'last_health_error_code')
 
+    def get_ibcmd_connection(self, obj: Database) -> Optional[dict]:
+        value = self._get_metadata_value(obj, "ibcmd_connection")
+        if not isinstance(value, dict):
+            return None
+
+        mode = str(value.get("mode") or "").strip()
+        if mode not in {"auto", "remote", "offline"}:
+            mode = "auto"
+
+        remote_url = value.get("remote_url")
+        remote_url = str(remote_url).strip() if remote_url not in (None, "") else None
+
+        offline = value.get("offline")
+        offline_dict = offline if isinstance(offline, dict) else None
+
+        # Never return secrets even if they were accidentally stored.
+        if offline_dict:
+            offline_dict = dict(offline_dict)
+            offline_dict.pop("db_user", None)
+            offline_dict.pop("db_pwd", None)
+
+        return {
+            "mode": mode,
+            "remote_url": remote_url,
+            "offline": offline_dict,
+        }
+
     def get_password_configured(self, obj: Database) -> bool:
         return bool(obj.password)
 
@@ -107,6 +135,7 @@ class DatabaseSerializer(serializers.ModelSerializer):
             'dbms',
             'db_server',
             'db_name',
+            'ibcmd_connection',
             'denied_from',
             'denied_to',
             'denied_message',

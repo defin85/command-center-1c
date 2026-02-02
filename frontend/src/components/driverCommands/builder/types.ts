@@ -59,6 +59,8 @@ export interface DriverCommandOperationConfig {
   confirm_dangerous?: boolean
 
   // IBCMD-only execution context
+  /** For per_database: when false/undefined, connection is derived from database profiles. */
+  connection_override?: boolean
   connection?: IbcmdCliConnection
   ib_auth?: IbcmdIbAuth
   dbms_auth?: IbcmdDbmsAuth
@@ -69,4 +71,3 @@ export interface DriverCommandOperationConfig {
   // CLI-only options
   cli_options?: CliExtraOptions
 }
-

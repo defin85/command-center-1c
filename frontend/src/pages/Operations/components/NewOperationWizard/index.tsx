@@ -237,6 +237,21 @@ export const NewOperationWizard = ({
           }
         }
 
+        if (operationType === 'ibcmd_cli' && dc.command_scope !== 'global' && dc.connection_override === true) {
+          const connection = dc.connection
+          const hasRemote = typeof connection?.remote === 'string' && connection.remote.trim().length > 0
+          const hasPid = typeof connection?.pid === 'number'
+          const offline = connection?.offline
+          const hasOffline = Boolean(
+            offline
+            && typeof offline === 'object'
+            && Object.values(offline).some((value) => typeof value === 'string' && value.trim().length > 0)
+          )
+          if (!hasRemote && !hasPid && !hasOffline) {
+            return false
+          }
+        }
+
         // Guard: forbid --pid in raw args (must be provided via connection.pid)
         if (operationType === 'ibcmd_cli' && typeof dc.args_text === 'string') {
           const lines = dc.args_text

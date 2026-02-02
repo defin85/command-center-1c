@@ -19,6 +19,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "list_databases": (f"{_BASE}.core", "list_databases"),
     "update_database_credentials": (f"{_BASE}.core", "update_database_credentials"),
     "update_dbms_metadata": (f"{_BASE}.dbms_metadata", "update_dbms_metadata"),
+    "update_ibcmd_connection_profile": (f"{_BASE}.ibcmd_connection_profile", "update_ibcmd_connection_profile"),
     "create_dbms_user": (f"{_BASE}.dbms_users", "create_dbms_user"),
     "delete_dbms_user": (f"{_BASE}.dbms_users", "delete_dbms_user"),
     "list_dbms_users": (f"{_BASE}.dbms_users", "list_dbms_users"),

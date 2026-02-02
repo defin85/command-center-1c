@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .common import *  # noqa: F403
-from .common import _permission_denied
+from .common import _permission_denied, _resolve_tenant_id
 
 
 @extend_schema(
@@ -43,7 +43,7 @@ def update_dbms_metadata(request):
 
     data = serializer.validated_data
     database_id = data["database_id"]
-    tenant_id = getattr(request, "tenant_id", None)
+    tenant_id = _resolve_tenant_id(request)  # noqa: F405
     if not tenant_id:
         return _permission_denied("Tenant context is missing.")
     try:
