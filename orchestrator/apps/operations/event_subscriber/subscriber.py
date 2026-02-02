@@ -227,17 +227,36 @@ class EventSubscriber(
         correlation_id = data.get("correlation_id", "unknown")
         handler = self._handler_name_for_stream(stream)
 
+        processed_ok = False
         try:
-            with transaction.atomic():
-                StreamMessageReceipt.objects.create(
-                    stream=stream,
-                    group=self.consumer_group,
-                    message_id=message_id,
-                    event_type=event_type,
-                    correlation_id=correlation_id,
-                    handler=handler,
-                )
-                self._dispatch_message(stream, message_id, data)
+            # Long-lived consumer processes sometimes retain a closed psycopg connection
+            # wrapper, causing OperationalError("the connection is closed") mid-flight.
+            # Retry once after forcing a connection refresh.
+            for attempt in range(2):
+                try:
+                    with transaction.atomic():
+                        StreamMessageReceipt.objects.create(
+                            stream=stream,
+                            group=self.consumer_group,
+                            message_id=message_id,
+                            event_type=event_type,
+                            correlation_id=correlation_id,
+                            handler=handler,
+                        )
+                        self._dispatch_message(stream, message_id, data)
+                    processed_ok = True
+                    break
+                except Exception as e:
+                    if attempt == 0 and "the connection is closed" in str(e).lower():
+                        runtime.logger.warning(
+                            "DB connection closed while handling message, retrying once: stream=%s, group=%s, message_id=%s",
+                            stream,
+                            self.consumer_group,
+                            message_id,
+                        )
+                        runtime.close_old_connections()
+                        continue
+                    raise
 
         except IntegrityError:
             runtime.logger.debug(
@@ -292,6 +311,9 @@ class EventSubscriber(
                 exc_info=True,
             )
             # Don't ACK - message will be retried later (pending/claim)
+            return
+
+        if not processed_ok:
             return
 
         # ACK only after DB transaction is committed successfully.

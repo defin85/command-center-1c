@@ -122,3 +122,42 @@ class EventSubscriberReliabilityTest(EventSubscriberBaseTestCase):
             group=subscriber.consumer_group,
             message_id=message_id,
         ).exists()
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_connection_closed_retries_once_and_acks(self, mock_redis_class):
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        # Fail first attempt after receipt creation (transaction will rollback),
+        # then succeed on retry.
+        subscriber._dispatch_message = Mock(
+            side_effect=[
+                Exception("the connection is closed"),
+                None,
+            ]
+        )
+
+        stream = "events:worker:cluster-synced"
+        message_id = "1702389123460-0"
+        data = {
+            "event_type": "cluster.synced",
+            "correlation_id": "corr-closed",
+            "payload": json.dumps({"ok": True}),
+        }
+
+        with patch("apps.operations.event_subscriber.runtime.close_old_connections") as mock_close:
+            subscriber._handle_message(stream, message_id, data)
+
+            # 1) initial call at start of _handle_message
+            # 2) retry call after detecting "the connection is closed"
+            assert mock_close.call_count == 2
+
+        assert subscriber._dispatch_message.call_count == 2
+        mock_redis.xack.assert_called_once_with(stream, subscriber.consumer_group, message_id)
+        assert StreamMessageReceipt.objects.filter(
+            stream=stream,
+            group=subscriber.consumer_group,
+            message_id=message_id,
+        ).exists()

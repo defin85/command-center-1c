@@ -21,6 +21,18 @@ def close_old_connections() -> None:
     whose underlying DB connection is already closed.
     """
 
+    # IMPORTANT: Never attempt to close/refresh connections while inside an
+    # active transaction (atomic block). Event handlers can be invoked within
+    # `transaction.atomic()` in EventSubscriber._handle_message; closing there
+    # can turn a healthy connection into "the connection is closed" mid-flight.
+    try:
+        for conn in connections.all():
+            if getattr(conn, "in_atomic_block", False):
+                return
+    except Exception:
+        # Best-effort: if we can't detect atomic state, fall back to default behavior.
+        pass
+
     django_close_old_connections()
 
     # Best-effort: close wrappers that still hold a closed underlying connection.
@@ -32,6 +44,17 @@ def close_old_connections() -> None:
                 continue
             closed = getattr(raw, "closed", None)
             if closed:
+                conn.close()
+                continue
+
+            # Some cases (esp. long-lived psycopg3 connections) can still blow up with
+            # "the connection is closed" even when `raw.closed` is falsy.
+            # `is_usable()` does a tiny round-trip and reliably detects unusable sockets.
+            try:
+                usable = conn.is_usable()
+            except Exception:
+                usable = False
+            if not usable:
                 conn.close()
     except Exception:
         try:
