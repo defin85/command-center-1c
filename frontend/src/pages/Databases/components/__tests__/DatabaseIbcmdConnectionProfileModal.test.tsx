@@ -1,12 +1,29 @@
 import { useEffect } from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, Form } from 'antd'
 import type { FormInstance } from 'antd'
 
 import type { Database } from '../../../../api/generated/model/database'
 import { DatabaseIbcmdConnectionProfileModal } from '../DatabaseIbcmdConnectionProfileModal'
+
+let mockOfflineKeys: Record<string, unknown> = {}
+
+vi.mock('../../../../api/queries/driverCommands', () => ({
+  useDriverCommands: () => ({
+    data: {
+      catalog: {
+        driver_schema: {
+          connection: {
+            offline: mockOfflineKeys,
+          },
+        },
+      },
+    },
+    isLoading: false,
+  }),
+}))
 
 const makeDb = (overrides: Partial<Database> = {}): Database =>
   ({
@@ -80,9 +97,58 @@ function renderModal(database: Database) {
 }
 
 describe('DatabaseIbcmdConnectionProfileModal', () => {
+  beforeEach(() => {
+    mockOfflineKeys = {}
+  })
+
+  it('does not render default offline rows for empty profile', () => {
+    renderModal(makeDb({ ibcmd_connection: {} }))
+    expect(screen.queryByPlaceholderText('/path/to/value')).toBeNull()
+  })
+
   it('disables Reset when no profile is configured', () => {
     renderModal(makeDb({ ibcmd_connection: null }))
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
+  })
+
+  it('adds offline key from driver schema', async () => {
+    mockOfflineKeys = { db_name: {}, config: {} }
+    const { user, getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
+
+    await waitFor(() => {
+      expect(getForm()).not.toBeNull()
+    })
+
+    await user.type(screen.getByTestId('ibcmd-profile-offline-schema-input'), 'db_name')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      const form = getForm()!
+      const entries = form.getFieldValue('offline_entries')
+      expect(Array.isArray(entries) ? entries.length : 0).toBe(1)
+      expect(entries?.[0]?.key).toBe('db_name')
+    })
+  })
+
+  it('rejects offline key with -- prefix', async () => {
+    const { getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
+
+    await waitFor(() => {
+      expect(getForm()).not.toBeNull()
+    })
+
+    const form = getForm()!
+    await act(async () => {
+      form.setFieldsValue({ offline_entries: [{ key: '--db-name', value: 'x' }] })
+    })
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('/path/to/value')).toBeInTheDocument()
+    })
+    await expect(form.validateFields()).rejects.toBeDefined()
+
+    await waitFor(() => {
+      expect(screen.getByText(/без префикса/i)).toBeInTheDocument()
+    })
   })
 
   it('shows validation error for non-ssh remote', async () => {

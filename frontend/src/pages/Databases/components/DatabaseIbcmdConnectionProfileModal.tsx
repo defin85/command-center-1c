@@ -1,7 +1,9 @@
 import { Button, Divider, Form, Input, InputNumber, Modal, Space, Typography } from 'antd'
 import type { FormInstance } from 'antd'
+import { useMemo, useState } from 'react'
 
 import type { Database } from '../../../api/generated/model/database'
+import { useDriverCommands } from '../../../api/queries/driverCommands'
 
 export type DatabaseIbcmdConnectionProfileModalProps = {
   open: boolean
@@ -24,6 +26,26 @@ export function DatabaseIbcmdConnectionProfileModal({
 }: DatabaseIbcmdConnectionProfileModalProps) {
   const dbAny = (database ?? null) as (Database & { ibcmd_connection?: unknown }) | null
   const disableReset = !dbAny?.ibcmd_connection
+
+  const driverCommandsQuery = useDriverCommands('ibcmd', open)
+  const [schemaKeyDraft, setSchemaKeyDraft] = useState('')
+
+  const offlineSchemaKeys = useMemo(() => {
+    const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+    const schema = driverCommandsQuery.data?.catalog?.driver_schema
+    if (!isRecord(schema)) return []
+    const connection = schema.connection
+    if (!isRecord(connection)) return []
+    const offline = connection.offline
+    if (!isRecord(offline)) return []
+
+    const forbidden = new Set(['db_user', 'db_pwd', 'db_password'])
+    return Object.keys(offline)
+      .map((k) => String(k).trim())
+      .filter((k) => !!k)
+      .filter((k) => !forbidden.has(k.toLowerCase()))
+      .sort((a, b) => a.localeCompare(b))
+  }, [driverCommandsQuery.data])
 
   return (
     <Modal
@@ -83,11 +105,60 @@ export function DatabaseIbcmdConnectionProfileModal({
         <Form.List name="offline_entries">
           {(fields, { add, remove }) => (
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Form.Item label="Добавить offline флаг (из схемы)" style={{ marginBottom: 0 }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    data-testid="ibcmd-profile-offline-schema-input"
+                    placeholder={offlineSchemaKeys.length > 0 ? 'например db_name' : 'Схема не загружена'}
+                    disabled={offlineSchemaKeys.length === 0}
+                    value={schemaKeyDraft}
+                    list="ibcmd-offline-schema-keys"
+                    onChange={(e) => setSchemaKeyDraft(e.target.value)}
+                  />
+                  <datalist id="ibcmd-offline-schema-keys">
+                    {offlineSchemaKeys.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                  <Button
+                    disabled={!schemaKeyDraft.trim()}
+                    onClick={() => {
+                      const key = schemaKeyDraft.trim()
+                      if (!key) return
+                      const entries = form.getFieldValue('offline_entries')
+                      const rows = Array.isArray(entries) ? (entries as unknown[]) : []
+                      const has = rows.some(
+                        (r) => !!r && typeof r === 'object' && String((r as Record<string, unknown>).key || '').trim() === key
+                      )
+                      if (!has) add({ key, value: '' })
+                      setSchemaKeyDraft('')
+                    }}
+                  >
+                    Add
+                  </Button>
+                </Space.Compact>
+              </Form.Item>
+
               {fields.map((field) => (
                 <Space key={field.key} align="baseline" style={{ width: '100%' }}>
                   <Form.Item
                     name={[field.name, 'key']}
-                    rules={[{ required: true, message: 'key обязателен' }]}
+                    rules={[
+                      { required: true, message: 'key обязателен' },
+                      {
+                        validator: async (_, value) => {
+                          const v = typeof value === 'string' ? value.trim() : ''
+                          if (!v) return
+                          if (v.startsWith('-')) {
+                            throw new Error('key задаётся без префикса -- (например db_name, а не --db-name)')
+                          }
+                          const lowered = v.toLowerCase()
+                          if (lowered === 'db_user' || lowered === 'db_pwd' || lowered === 'db_password') {
+                            throw new Error('секретные ключи запрещены (db_user/db_pwd/db_password)')
+                          }
+                        },
+                      },
+                    ]}
                     style={{ marginBottom: 0, flex: 1 }}
                   >
                     <Input placeholder="config" />

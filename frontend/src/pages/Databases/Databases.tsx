@@ -247,13 +247,6 @@ export const Databases = () => {
       offlineEntries.push({ key, value })
     }
     offlineEntries.sort((a, b) => a.key.localeCompare(b.key))
-
-    const ensureRow = (key: string) => {
-      if (offlineEntries.some((row) => row.key === key)) return
-      offlineEntries.unshift({ key, value: '' })
-    }
-    ensureRow('data')
-    ensureRow('config')
     setIbcmdProfileDatabase(database)
     ibcmdProfileForm.setFieldsValue({
       remote: typeof profile?.remote === 'string' ? profile.remote : '',

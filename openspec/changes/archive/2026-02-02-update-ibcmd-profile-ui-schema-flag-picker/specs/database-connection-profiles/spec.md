@@ -1,8 +1,6 @@
-# database-connection-profiles Specification
+# Delta: database-connection-profiles
 
-## Purpose
-TBD - created by archiving change move-ibcmd-connection-to-database-profile. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
 ### Requirement: Профиль подключения `ibcmd` хранится на уровне базы
 Система ДОЛЖНА (SHALL) хранить для каждой базы (Database) профиль подключения `ibcmd`, который определяет “какие driver-level connection параметры применять” без привязки к конкретной операции.
 
@@ -25,20 +23,4 @@ TBD - created by archiving change move-ibcmd-connection-to-database-profile. Upd
 - **GIVEN** UI имеет доступ к effective `driver_schema` для `driver=ibcmd`
 - **WHEN** пользователь выбирает offline‑ключ из списка, построенного из `driver_schema.connection.offline`
 - **THEN** UI добавляет выбранный ключ в редактируемый профиль и позволяет задать значение
-
-### Requirement: Запуск `ibcmd_cli` резолвит connection per target из профиля базы
-Система ДОЛЖНА (SHALL) поддерживать для `scope=per_database` резолв effective connection per target database:
-- per-run override имеет приоритет,
-- иначе используется профиль базы,
-- mixed mode допустим (разные базы могут иметь разные заполненные параметры профиля).
-
-Если для части баз effective connection не может быть получен (включая случаи отсутствия профиля или пустого профиля), система ДОЛЖНА (SHALL) fail closed и вернуть 400 с машиночитаемой ошибкой и деталями проблемных таргетов (без секретов).
-
-#### Scenario: Отсутствует/пустой профиль у части баз → отказ до enqueue
-- **GIVEN** выбраны N баз
-- **AND** для части из них отсутствует профиль подключения `ibcmd` или профиль пустой
-- **WHEN** пользователь запускает `ibcmd_cli` bulk без per-run override
-- **THEN** API возвращает 400 с `error.code=IBCMD_CONNECTION_PROFILE_INVALID`
-- **AND** `error.details` содержит список проблемных баз и причину (без секретов)
-- **AND** операция НЕ становится `queued`
 
