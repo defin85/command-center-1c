@@ -48,6 +48,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/databases/stream-ticket/", OperationID: "v2_databases_stream_ticket_create"},
 	{Method: "POST", Path: "/databases/update-credentials/", OperationID: "v2_databases_update_credentials_create"},
 	{Method: "POST", Path: "/databases/update-dbms-metadata/", OperationID: "v2_databases_update_dbms_metadata_create"},
+	{Method: "POST", Path: "/databases/update-ibcmd-connection-profile/", OperationID: "v2_databases_update_ibcmd_connection_profile_create"},
 	{Method: "POST", Path: "/databases/update-dbms-user/", OperationID: "v2_databases_update_dbms_user_create"},
 	{Method: "POST", Path: "/databases/update-ib-user/", OperationID: "v2_databases_update_ib_user_create"},
 	{Method: "GET", Path: "/dlq/get/", OperationID: "v2_dlq_get_retrieve"},
