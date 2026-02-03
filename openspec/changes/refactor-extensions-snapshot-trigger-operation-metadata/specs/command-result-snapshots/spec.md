@@ -15,4 +15,3 @@
 - **AND** `ui.action_catalog` изменился после enqueue операции
 - **WHEN** приходит событие `worker completed`
 - **THEN** snapshot сохраняется (решение не зависит от runtime settings на стадии completion)
-

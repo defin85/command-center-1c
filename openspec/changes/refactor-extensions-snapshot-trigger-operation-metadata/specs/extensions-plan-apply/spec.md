@@ -16,3 +16,7 @@
 - **WHEN** операция завершилась
 - **THEN** extensions snapshot обновляется (решение не зависит от action catalog на стадии completion)
 
+#### Scenario: Apply выбирает executor по capability, а не по action.id
+- **GIVEN** в effective `ui.action_catalog` настроено действие с `capability="extensions.sync"` и произвольным `id`
+- **WHEN** пользователь запускает apply
+- **THEN** backend выбирает executor по `capability`, а `id` не участвует в определении семантики
