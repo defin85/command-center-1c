@@ -64,10 +64,11 @@ class EventSubscriberTest(EventSubscriberBaseTestCase):
         self.assertEqual(mock_redis.xgroup_create.call_count, len(subscriber.streams))
 
         first_stream = list(subscriber.streams.keys())[0]
+        expected_first_id = "0" if first_stream.startswith("events:") else "$"
         mock_redis.xgroup_create.assert_any_call(
             first_stream,
             "orchestrator-group",
-            id="$",
+            id=expected_first_id,
             mkstream=True,
         )
 
@@ -241,4 +242,3 @@ class EventSubscriberTest(EventSubscriberBaseTestCase):
             subscriber.process_message("events:worker:cluster-synced", "1234567890-0", data)
         except Exception as e:
             self.fail(f"process_message raised exception: {e}")
-

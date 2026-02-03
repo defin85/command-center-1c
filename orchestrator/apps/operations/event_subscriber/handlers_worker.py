@@ -112,10 +112,12 @@ class WorkerEventHandlersMixin:
                                 # parsed `extensions[]` with the normalized (best-effort) content.
                                 try:
                                     if isinstance(snapshot_data, dict):
+                                        raw_wrapper = snapshot_data.get("raw") if "raw" in snapshot_data else dict(snapshot_data)
+
                                         snapshot_data["extensions"] = normalized.get("extensions") or []
                                         snapshot_data["parse_error"] = normalized.get("parse_error")
-                                        if "raw" not in snapshot_data and isinstance(normalized.get("raw"), dict):
-                                            snapshot_data["raw"] = normalized.get("raw")
+                                        if isinstance(raw_wrapper, dict):
+                                            snapshot_data["raw"] = raw_wrapper
                                         update_fields["result"] = snapshot_data
                                     else:
                                         update_fields["result"] = normalized

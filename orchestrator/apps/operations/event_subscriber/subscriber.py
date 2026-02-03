@@ -96,10 +96,11 @@ class EventSubscriber(
     def setup_consumer_groups(self):
         for stream in self.streams.keys():
             try:
+                start_id = "0" if str(stream).startswith("events:") else "$"
                 self.redis_client.xgroup_create(
                     stream,
                     self.consumer_group,
-                    id="$",
+                    id=start_id,
                     mkstream=True,
                 )
                 runtime.logger.info(
@@ -120,11 +121,82 @@ class EventSubscriber(
                     )
                     raise
 
+    def backfill_worker_results(self, *, max_messages: int = 200) -> int:
+        """
+        Best-effort healing for local/dev: process worker completed/failed events that were
+        emitted while the subscriber was down.
+
+        Why needed:
+          - Redis consumer groups created with id="$" start from the end of the stream,
+            so previously emitted events may never be delivered via XREADGROUP ">".
+
+        Safety:
+          - Idempotency is enforced by StreamMessageReceipt(stream, group, message_id).
+          - We additionally filter only operations that still look "in flight"
+            (pending/queued/processing), to avoid replaying old noise.
+        """
+        try:
+            from apps.operations.models import BatchOperation, StreamMessageReceipt
+        except Exception:
+            return 0
+
+        processed = 0
+        streams = ["events:worker:completed", "events:worker:failed"]
+        for stream in streams:
+            try:
+                items = self.redis_client.xrevrange(stream, "+", "-", count=int(max_messages))
+            except Exception:
+                continue
+
+            # Oldest-first for more intuitive ordering.
+            for message_id, data in reversed(items or []):
+                if StreamMessageReceipt.objects.filter(
+                    stream=stream,
+                    group=self.consumer_group,
+                    message_id=message_id,
+                ).exists():
+                    continue
+
+                envelope_str = data.get("data", "")
+                if not envelope_str:
+                    continue
+                try:
+                    envelope = json.loads(envelope_str)
+                except Exception:
+                    continue
+                payload = envelope.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                operation_id = str(payload.get("operation_id") or "").strip()
+                if not operation_id:
+                    continue
+
+                op = BatchOperation.objects.filter(id=operation_id).only("id", "status").first()
+                if op is None:
+                    continue
+                if op.status not in {
+                    BatchOperation.STATUS_PENDING,
+                    BatchOperation.STATUS_QUEUED,
+                    BatchOperation.STATUS_PROCESSING,
+                }:
+                    continue
+
+                self._handle_message(stream, message_id, data)
+                processed += 1
+
+        return processed
+
     def run_forever(self):
         runtime.logger.info("Event subscriber starting: %s", self.consumer_name)
         runtime.logger.info("Subscribed to %s streams", len(self.streams))
 
         self.setup_consumer_groups()
+        try:
+            healed = self.backfill_worker_results()
+            if healed:
+                runtime.logger.info("Backfilled worker result events: %s", healed)
+        except Exception:
+            pass
 
         while self.running:
             try:

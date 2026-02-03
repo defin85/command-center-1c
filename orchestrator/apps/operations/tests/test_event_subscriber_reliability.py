@@ -11,6 +11,70 @@ from ._event_subscriber_test_base import EventSubscriberBaseTestCase
 
 class EventSubscriberReliabilityTest(EventSubscriberBaseTestCase):
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_backfill_worker_results_processes_only_inflight_operations(self, mock_redis_class):
+        from apps.operations.models import BatchOperation, StreamMessageReceipt, Task
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        # Operation still stuck in QUEUED - should be considered for backfill.
+        op = BatchOperation.objects.create(
+            id="op-backfill-1",
+            name="op",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_QUEUED,
+            metadata={"command_id": "infobase.extension.list", "snapshot_kinds": ["extensions"]},
+        )
+        Task.objects.create(
+            id="task-backfill-1",
+            batch_operation=op,
+            database=None,
+            status=Task.STATUS_QUEUED,
+        )
+
+        # Completed operation - must be skipped.
+        BatchOperation.objects.create(
+            id="op-done-1",
+            name="done",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_COMPLETED,
+        )
+
+        msg_ok = "100-0"
+        data_ok = {"data": json.dumps({"payload": {"operation_id": "op-backfill-1"}})}
+        msg_done = "101-0"
+        data_done = {"data": json.dumps({"payload": {"operation_id": "op-done-1"}})}
+
+        def xrevrange_side_effect(stream, *_args, **_kwargs):
+            if stream == "events:worker:completed":
+                return [(msg_done, data_done), (msg_ok, data_ok)]
+            if stream == "events:worker:failed":
+                return []
+            return []
+
+        mock_redis.xrevrange.side_effect = xrevrange_side_effect
+
+        subscriber = EventSubscriber()
+        subscriber._handle_message = Mock()
+
+        processed = subscriber.backfill_worker_results(max_messages=10)
+        assert processed == 1
+        subscriber._handle_message.assert_called_once()
+        args = subscriber._handle_message.call_args.args
+        assert args[0] == "events:worker:completed"
+        assert args[1] == msg_ok
+        assert args[2] == data_ok
+
+        # Receipt must still be absent because _handle_message is mocked.
+        assert not StreamMessageReceipt.objects.filter(
+            stream="events:worker:completed",
+            group=subscriber.consumer_group,
+            message_id=msg_ok,
+        ).exists()
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_duplicate_delivery_does_not_duplicate_side_effects(self, mock_redis_class):
         mock_redis = MagicMock()
         mock_redis_class.return_value = mock_redis
