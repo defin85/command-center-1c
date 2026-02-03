@@ -15,4 +15,4 @@
 
 ## 4. Validation
 - [x] 4.1 `./scripts/dev/pytest.sh` (релевантные тесты)
-- [x] 4.2 `./scripts/dev/lint.sh --python --ts`
+- [x] 4.2 `./scripts/dev/lint.sh --python` + `./scripts/dev/lint.sh --ts`
