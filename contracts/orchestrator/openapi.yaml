@@ -2797,6 +2797,11 @@ paths:
           type: string
         description: Restrict to a cluster
       - in: query
+        name: database_id
+        schema:
+          type: string
+        description: Restrict to a single database (requires permission)
+      - in: query
         name: limit
         schema:
           type: integer

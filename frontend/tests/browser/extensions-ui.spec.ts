@@ -109,9 +109,13 @@ async function setupApiMocks(page: Page, state: {
     if (method === 'GET' && path === '/api/v2/extensions/overview/databases/') {
       const name = String(url.searchParams.get('name') || '')
       const status = (url.searchParams.get('status') || '').trim().toLowerCase()
+      const databaseId = (url.searchParams.get('database_id') || '').trim()
       let rows = [...(state.drilldownByName[name] || [])]
       if (status) {
         rows = rows.filter((r) => String(r.status || '') === status)
+      }
+      if (databaseId) {
+        rows = rows.filter((r) => String((r as Record<string, unknown>).database_id || '') === databaseId)
       }
       return fulfillJson(route, { databases: rows, count: rows.length, total: rows.length })
     }
@@ -203,9 +207,16 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
   await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'db2', exact: true })).toBeVisible()
 
+  const drawerDbRequestPromise = page.waitForRequest((r) => (
+    r.method() === 'GET' &&
+    r.url().includes('/api/v2/extensions/overview/databases/') &&
+    r.url().includes('database_id=')
+  ))
   await page.getByTestId('extensions-drawer-database').click()
   await page.keyboard.type('db1')
   await page.keyboard.press('Enter')
+  const drawerDbFilteredReq = await drawerDbRequestPromise
+  expect(new URL(drawerDbFilteredReq.url()).searchParams.get('database_id')).toBe('11111111-1111-1111-1111-111111111111')
   await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'db2', exact: true })).toHaveCount(0)
 })

@@ -183,6 +183,17 @@ def get_extensions_overview(request):
             )
         if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, db_for_names):
             return _permission_denied("You do not have permission to access this database.")
+        if cluster_id is not None and str(db_for_names.cluster_id or "") != cluster_id:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_PARAMETER",
+                        "message": "database_id does not belong to the selected cluster",
+                    },
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
 
         state = _load_snapshot_state(db_for_names)
         if state.ok:
@@ -311,6 +322,7 @@ class ExtensionsOverviewDatabasesResponseSerializer(serializers.Serializer):
     description="List databases for a given extension name/version/status (snapshot-driven).",
     parameters=[
         OpenApiParameter(name="name", type=str, required=True, description="Extension name (exact match)"),
+        OpenApiParameter(name="database_id", type=str, required=False, description="Restrict to a single database (requires permission)"),
         OpenApiParameter(name="version", type=str, required=False, description="Filter by exact version"),
         OpenApiParameter(name="status", type=str, required=False, description="Filter by status: active|inactive|missing|unknown"),
         OpenApiParameter(name="cluster_id", type=str, required=False, description="Restrict to a cluster"),
@@ -339,12 +351,36 @@ def get_extensions_overview_databases(request):
 
     version_filter = str(request.query_params.get("version") or "").strip() or None
     status_filter = str(request.query_params.get("status") or "").strip().lower() or None
+    database_id = str(request.query_params.get("database_id") or "").strip() or None
     cluster_id = str(request.query_params.get("cluster_id") or "").strip() or None
 
     limit = _parse_int(request.query_params.get("limit"), default=100, min_value=1, max_value=1000)
     offset = _parse_int(request.query_params.get("offset"), default=0, min_value=0, max_value=1_000_000)
 
-    databases = list(_accessible_databases_qs(request, cluster_id=cluster_id))
+    if database_id is not None:
+        try:
+            db = Database.objects.select_related("cluster").get(id=database_id)
+        except (Database.DoesNotExist, ValueError, TypeError):
+            return Response(
+                {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": "Database not found"}},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+        if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, db):
+            return _permission_denied("You do not have permission to access this database.")
+        if cluster_id is not None and str(db.cluster_id or "") != cluster_id:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_PARAMETER",
+                        "message": "database_id does not belong to the selected cluster",
+                    },
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        databases = [db]
+    else:
+        databases = list(_accessible_databases_qs(request, cluster_id=cluster_id))
 
     rows: list[dict[str, Any]] = []
     for db in databases:

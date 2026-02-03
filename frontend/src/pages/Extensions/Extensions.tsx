@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Drawer, Input, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import dayjs from 'dayjs'
@@ -70,13 +70,21 @@ export const Extensions = () => {
   const [drawerPage, setDrawerPage] = useState(1)
   const [drawerPageSize, setDrawerPageSize] = useState(50)
 
+  useEffect(() => {
+    setDatabaseId(undefined)
+    setDrawerDatabaseId(undefined)
+    setPage(1)
+    setDrawerPage(1)
+  }, [clusterId])
+
   const drilldownEnabled = drawerOpen && Boolean(selectedExtension)
   const drilldownQuery = useExtensionsOverviewDatabases({
     name: selectedExtension || '',
+    database_id: drawerDatabaseId,
     status: drawerStatus,
     version: drawerVersion.trim() || undefined,
     cluster_id: clusterId,
-    limit: drawerDatabaseId ? 1000 : drawerPageSize,
+    limit: drawerDatabaseId ? 100 : drawerPageSize,
     offset: drawerDatabaseId ? 0 : (drawerPage - 1) * drawerPageSize,
   }, drilldownEnabled)
 
@@ -230,12 +238,6 @@ export const Extensions = () => {
     },
   ]
 
-  const drillData = useMemo(() => {
-    const rows = drilldownQuery.data?.databases ?? []
-    if (!drawerDatabaseId) return rows
-    return rows.filter((r) => r.database_id === drawerDatabaseId)
-  }, [drilldownQuery.data?.databases, drawerDatabaseId])
-
   const drillPagination: TablePaginationConfig | false = drawerDatabaseId ? false : {
     current: drawerPage,
     pageSize: drawerPageSize,
@@ -306,7 +308,13 @@ export const Extensions = () => {
         />
         <Select
           value={clusterId}
-          onChange={(v) => { setClusterId(v); setPage(1) }}
+          onChange={(v) => {
+            setClusterId(v)
+            setDatabaseId(undefined)
+            setDrawerDatabaseId(undefined)
+            setPage(1)
+            setDrawerPage(1)
+          }}
           allowClear
           placeholder="Cluster"
           style={{ width: 260 }}
@@ -386,7 +394,7 @@ export const Extensions = () => {
           <Table
             rowKey="database_id"
             columns={drillColumns}
-            dataSource={drillData}
+            dataSource={drilldownQuery.data?.databases ?? []}
             loading={drilldownQuery.isLoading}
             pagination={drillPagination}
             size="small"

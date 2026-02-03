@@ -71,6 +71,7 @@ export type ExtensionsOverviewDatabasesResponse = {
 
 export type ExtensionsOverviewDatabasesQuery = {
   name: string
+  database_id?: string
   version?: string
   status?: 'active' | 'inactive' | 'missing' | 'unknown'
   cluster_id?: string
