@@ -108,6 +108,20 @@ class WorkerEventHandlersMixin:
                                     },
                                 )
 
+                                # Enrich task result for UI/clients: keep raw payload but replace/attach
+                                # parsed `extensions[]` with the normalized (best-effort) content.
+                                try:
+                                    if isinstance(snapshot_data, dict):
+                                        snapshot_data["extensions"] = normalized.get("extensions") or []
+                                        snapshot_data["parse_error"] = normalized.get("parse_error")
+                                        if "raw" not in snapshot_data and isinstance(normalized.get("raw"), dict):
+                                            snapshot_data["raw"] = normalized.get("raw")
+                                        update_fields["result"] = snapshot_data
+                                    else:
+                                        update_fields["result"] = normalized
+                                except Exception:
+                                    pass
+
                                 from apps.databases.models import Database as DatabaseModel
 
                                 db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()

@@ -399,3 +399,78 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
         snap = DatabaseExtensionsSnapshot.objects.filter(database_id=self.database.id).first()
         self.assertIsNotNone(snap, "extensions snapshot must be created")
         self.assertEqual((snap.snapshot or {}).get("extensions"), [{"name": "Ext1", "version": "1.0", "is_active": True}])
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_enriches_task_result_extensions_from_stdout(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD extensions.list",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={"command_id": "infobase.extension.list", "snapshot_kinds": ["extensions"]},
+        )
+        Task.objects.create(
+            id="task-extensions-stdout-1",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        stdout = "\n".join([
+            'name                         : "EF_10236744_4"',
+            "version                      :",
+            "active                       : yes",
+            "purpose                      : patch",
+            "safe-mode                    : no",
+            "security-profile-name        :",
+            "unsafe-action-protection     : no",
+            "used-in-distributed-infobase : yes",
+            "scope                        : infobase",
+            'hash-sum                     : "56pD01LTf43r4q+f7HKWxkeqJwE="',
+            "",
+        ])
+        payload_data = {
+            "raw": {"stderr": "", "stdout": stdout, "exit_code": 0},
+            "extensions": [{"name": "EF_10236744_4", "is_active": True}],
+        }
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": payload_data,
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-ext-stdout-1",
+        )
+
+        task = Task.objects.get(id="task-extensions-stdout-1")
+        self.assertIsInstance(task.result, dict)
+        self.assertEqual((task.result or {}).get("raw", {}).get("stdout"), stdout)
+        self.assertEqual(
+            (task.result or {}).get("extensions"),
+            [
+                {
+                    "name": "EF_10236744_4",
+                    "is_active": True,
+                    "purpose": "patch",
+                    "safe_mode": False,
+                    "unsafe_action_protection": False,
+                    "used_in_distributed_infobase": True,
+                    "scope": "infobase",
+                    "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
+                }
+            ],
+        )
