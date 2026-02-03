@@ -263,13 +263,15 @@ def test_extensions_apply_detects_drift(client, staff_user, monkeypatch):
                 "extensions": {
                     "actions": [
                         {
-                            "id": "extensions.list",
+                            "id": "ListAction",
+                            "capability": "extensions.list",
                             "label": "List",
                             "contexts": ["bulk_page"],
                             "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
                         },
                         {
-                            "id": "extensions.sync",
+                            "id": "SyncAction",
+                            "capability": "extensions.sync",
                             "label": "Sync",
                             "contexts": ["bulk_page"],
                             "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy"},
@@ -286,7 +288,7 @@ def test_extensions_apply_detects_drift(client, staff_user, monkeypatch):
     )
     monkeypatch.setattr(
         "apps.api_v2.views.extensions_plan_apply._execute_ibcmd_cli_validated",
-        lambda _request, _validated_data: Response({"operation_id": "op-preflight", "status": "queued"}, status=202),
+        lambda _request, _validated_data, **_kwargs: Response({"operation_id": "op-preflight", "status": "queued"}, status=202),
     )
     monkeypatch.setattr(
         "apps.api_v2.views.extensions_plan_apply.ResultWaiter.wait",
@@ -334,13 +336,15 @@ def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch)
                 "extensions": {
                     "actions": [
                         {
-                            "id": "extensions.list",
+                            "id": "ListAction",
+                            "capability": "extensions.list",
                             "label": "List",
                             "contexts": ["bulk_page"],
                             "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
                         },
                         {
-                            "id": "extensions.sync",
+                            "id": "SyncAction",
+                            "capability": "extensions.sync",
                             "label": "Sync",
                             "contexts": ["bulk_page"],
                             "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_sync"},
@@ -356,11 +360,17 @@ def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch)
         lambda **_kwargs: ({"execution_plan": {"plan_version": 1}, "bindings": []}, None, None),
     )
 
-    def _fake_execute(_request, validated_data):
+    def _fake_execute(_request, validated_data, *, metadata_overrides=None, **_kwargs):
         cmd = str(validated_data.get("command_id") or "")
         if cmd == "dummy_list":
+            assert metadata_overrides is not None
+            assert metadata_overrides.get("snapshot_kinds") == ["extensions"]
+            assert metadata_overrides.get("action_capability") == "extensions.list"
             return Response({"operation_id": "op-preflight", "status": "queued"}, status=202)
         if cmd == "dummy_sync":
+            assert metadata_overrides is not None
+            assert metadata_overrides.get("snapshot_kinds") == ["extensions"]
+            assert metadata_overrides.get("action_capability") == "extensions.sync"
             return Response({"operation_id": "op-sync", "status": "queued"}, status=202)
         return Response({"success": False, "error": {"code": "UNKNOWN_COMMAND", "message": cmd}}, status=400)
 

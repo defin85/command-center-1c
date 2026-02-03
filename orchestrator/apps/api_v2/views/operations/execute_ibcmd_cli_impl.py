@@ -150,6 +150,7 @@ def _execute_ibcmd_cli_validated(
     validated_data: dict[str, Any],
     *,
     legacy_operation_type: str | None = None,
+    metadata_overrides: dict[str, Any] | None = None,
 ):
     from apps.databases.models import Database, PermissionLevel, DbmsUserMapping
     from apps.databases.services import PermissionService
@@ -741,6 +742,58 @@ def _execute_ibcmd_cli_validated(
                 "status": "applied",
             }
         )
+    metadata = {
+        "tags": (
+            ["ibcmd", "ibcmd_cli", command_id]
+            if not legacy_operation_type
+            else ["ibcmd", "ibcmd_cli", command_id, f"legacy:{legacy_operation_type}"]
+        ),
+        "command_id": command_id,
+        "risk_level": risk_level,
+        "scope": scope,
+        "mode": mode,
+        "actor_roles": get_actor_roles(request.user),
+        "catalog_base_version": str(effective.base_version),
+        "catalog_base_version_id": str(effective.base_version_id),
+        "catalog_overrides_version": str(effective.overrides_version) if effective.overrides_version else None,
+        "catalog_overrides_version_id": (
+            str(effective.overrides_version_id) if effective.overrides_version_id else None
+        ),
+        "legacy_operation_type": legacy_operation_type,
+        "execution_plan": execution_plan,
+        "bindings": bindings,
+    }
+
+    try:
+        tenant_id = str(getattr(request, "tenant_id", "") or "").strip()
+        if tenant_id:
+            from apps.runtime_settings.action_catalog import (
+                UI_ACTION_CATALOG_KEY,
+                compute_ibcmd_cli_snapshot_marker_from_action_catalog,
+                ensure_valid_action_catalog,
+            )
+            from apps.runtime_settings.effective import get_effective_runtime_setting
+
+            raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
+            catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+            metadata.update(compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog, command_id))
+    except Exception:
+        pass
+
+    if isinstance(metadata_overrides, dict) and metadata_overrides:
+        try:
+            if isinstance(metadata.get("snapshot_kinds"), list) and isinstance(metadata_overrides.get("snapshot_kinds"), list):
+                base_kinds = [str(x) for x in metadata.get("snapshot_kinds") if str(x)]
+                override_kinds = [str(x) for x in metadata_overrides.get("snapshot_kinds") if str(x)]
+                merged = list(dict.fromkeys(base_kinds + override_kinds))
+                merged_overrides = dict(metadata_overrides)
+                merged_overrides["snapshot_kinds"] = merged
+                metadata.update(merged_overrides)
+            else:
+                metadata.update(metadata_overrides)
+        except Exception:
+            metadata.update(metadata_overrides)
+
     batch_operation = BatchOperation.objects.create(
         id=operation_id,
         name=operation_name,
@@ -756,27 +809,7 @@ def _execute_ibcmd_cli_validated(
         },
         total_tasks=1 if scope == "global" else len(databases),
         created_by=request.user.username if request.user else "system",
-        metadata={
-            "tags": (
-                ["ibcmd", "ibcmd_cli", command_id]
-                if not legacy_operation_type
-                else ["ibcmd", "ibcmd_cli", command_id, f"legacy:{legacy_operation_type}"]
-            ),
-            "command_id": command_id,
-            "risk_level": risk_level,
-            "scope": scope,
-            "mode": mode,
-            "actor_roles": get_actor_roles(request.user),
-            "catalog_base_version": str(effective.base_version),
-            "catalog_base_version_id": str(effective.base_version_id),
-            "catalog_overrides_version": str(effective.overrides_version) if effective.overrides_version else None,
-            "catalog_overrides_version_id": (
-                str(effective.overrides_version_id) if effective.overrides_version_id else None
-            ),
-            "legacy_operation_type": legacy_operation_type,
-            "execution_plan": execution_plan,
-            "bindings": bindings,
-        },
+        metadata=metadata,
     )
     if scope == "global":
         Task.objects.create(

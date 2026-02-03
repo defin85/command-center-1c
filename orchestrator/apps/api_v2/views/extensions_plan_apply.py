@@ -73,7 +73,7 @@ def _compute_extensions_snapshot_precondition(db: Database) -> dict[str, Any]:
     return {"hash": h, "at": at}
 
 
-def _get_action_executor_from_catalog(catalog: dict[str, Any], action_id: str) -> dict[str, Any] | None:
+def _get_extensions_action_from_catalog(catalog: dict[str, Any], capability: str) -> dict[str, Any] | None:
     extensions = catalog.get("extensions")
     if not isinstance(extensions, dict):
         return None
@@ -83,10 +83,15 @@ def _get_action_executor_from_catalog(catalog: dict[str, Any], action_id: str) -
     for action in actions:
         if not isinstance(action, dict):
             continue
-        if str(action.get("id") or "").strip() != action_id:
-            continue
-        executor = action.get("executor")
-        return executor if isinstance(executor, dict) else None
+        action_capability = action.get("capability")
+        if isinstance(action_capability, str) and action_capability.strip():
+            if action_capability.strip() != capability:
+                continue
+        else:
+            # Legacy fallback: reserved capabilities were stored in `action.id`.
+            if str(action.get("id") or "").strip() != capability:
+                continue
+        return action
     return None
 
 
@@ -140,8 +145,14 @@ def extensions_plan(request):
 
     raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
     catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-    executor = _get_action_executor_from_catalog(catalog, "extensions.sync")
-    if executor is None:
+    action = _get_extensions_action_from_catalog(catalog, "extensions.sync")
+    if action is None:
+        return Response(
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    executor = action.get("executor") if isinstance(action.get("executor"), dict) else None
+    if not isinstance(executor, dict):
         return Response(
             {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
             status=http_status.HTTP_400_BAD_REQUEST,
@@ -176,7 +187,11 @@ def extensions_plan(request):
         created_by=request.user if getattr(request.user, "id", None) else None,
         database_ids=database_ids,
         preconditions=preconditions,
-        executor={"action_id": "extensions.sync", "executor": executor},
+        executor={
+            "capability": "extensions.sync",
+            "action_id": str(action.get("id") or "").strip(),
+            "executor": executor,
+        },
     )
 
     return Response(
@@ -249,13 +264,14 @@ def extensions_apply(request):
     if strict:
         raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
         catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-        list_executor = _get_action_executor_from_catalog(catalog, "extensions.list")
-        if list_executor is None:
+        list_action = _get_extensions_action_from_catalog(catalog, "extensions.list")
+        if list_action is None:
             return Response(
                 {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.list is not configured"}},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
-        if list_executor.get("kind") != "ibcmd_cli":
+        list_executor = list_action.get("executor") if isinstance(list_action.get("executor"), dict) else None
+        if not isinstance(list_executor, dict) or list_executor.get("kind") != "ibcmd_cli":
             return Response(
                 {"success": False, "error": {"code": "NOT_SUPPORTED", "message": "Only ibcmd_cli executor is supported"}},
                 status=http_status.HTTP_400_BAD_REQUEST,
@@ -273,7 +289,15 @@ def extensions_apply(request):
             "timeout_seconds": int(fixed.get("timeout_seconds") or 300),
         }
 
-        preflight_resp = _execute_ibcmd_cli_validated(request, preflight)
+        preflight_resp = _execute_ibcmd_cli_validated(
+            request,
+            preflight,
+            metadata_overrides={
+                "snapshot_kinds": ["extensions"],
+                "action_capability": "extensions.list",
+                "snapshot_source": "extensions_plan_apply",
+            },
+        )
         if getattr(preflight_resp, "status_code", None) != http_status.HTTP_202_ACCEPTED:
             return preflight_resp
 
@@ -360,4 +384,12 @@ def extensions_apply(request):
         "timeout_seconds": int(fixed.get("timeout_seconds") or 900),
     }
 
-    return _execute_ibcmd_cli_validated(request, validated_data)
+    return _execute_ibcmd_cli_validated(
+        request,
+        validated_data,
+        metadata_overrides={
+            "snapshot_kinds": ["extensions"],
+            "action_capability": "extensions.sync",
+            "snapshot_source": "extensions_plan_apply",
+        },
+    )

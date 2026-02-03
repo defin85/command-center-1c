@@ -18,6 +18,7 @@ export type ActionCatalogExecutor = {
 
 export type ActionCatalogAction = {
   id: string
+  capability?: string
   label: string
   contexts: string[]
   executor: ActionCatalogExecutor

@@ -204,6 +204,27 @@ class BatchOperationFactory:
                 ),
             })
 
+            try:
+                if target_databases:
+                    tenant_ids = {
+                        str(tid) for tid in Database.objects.filter(id__in=target_databases).values_list("tenant_id", flat=True)
+                        if tid
+                    }
+                    if len(tenant_ids) == 1:
+                        tenant_id = next(iter(tenant_ids))
+                        from apps.runtime_settings.action_catalog import (
+                            UI_ACTION_CATALOG_KEY,
+                            compute_ibcmd_cli_snapshot_marker_from_action_catalog,
+                            ensure_valid_action_catalog,
+                        )
+                        from apps.runtime_settings.effective import get_effective_runtime_setting
+
+                        raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
+                        catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+                        metadata.update(compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog, command_id))
+            except Exception:
+                pass
+
         logger.info(
             f"Creating BatchOperation: id={operation_id}, "
             f"template={template.name}, databases={len(target_databases)}"

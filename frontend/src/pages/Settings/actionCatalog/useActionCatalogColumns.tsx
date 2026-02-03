@@ -53,6 +53,13 @@ export const useActionCatalogColumns = ({
       },
     },
     {
+      title: 'Capability',
+      dataIndex: 'capability',
+      key: 'capability',
+      width: 200,
+      render: (value?: string) => (value ? <Text code>{value}</Text> : '-'),
+    },
+    {
       title: 'Label',
       dataIndex: 'label',
       key: 'label',
@@ -150,4 +157,3 @@ export const useActionCatalogColumns = ({
     },
   ]), [actionRowsLength, actionsEditable, disableAction, moveAction, openEditor, openPreview, saveErrorsByActionPos])
 }
-

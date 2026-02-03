@@ -268,6 +268,113 @@ def test_update_runtime_setting_ui_action_catalog_accepts_valid_references(staff
 
 
 @pytest.mark.django_db
+def test_update_runtime_setting_ui_action_catalog_rejects_duplicate_reserved_capability(staff_client, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    _seed_ibcmd_catalog(
+        monkeypatch,
+        base_catalog=base_catalog,
+        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
+    )
+
+    resp = staff_client.patch(
+        "/api/v2/settings/runtime/ui.action_catalog/",
+        data={
+            "value": {
+                "catalog_version": 1,
+                "extensions": {
+                    "actions": [
+                        {
+                            "id": "ListExtension1",
+                            "capability": "extensions.list",
+                            "label": "List extensions 1",
+                            "contexts": ["database_card"],
+                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
+                        },
+                        {
+                            "id": "ListExtension2",
+                            "capability": "extensions.list",
+                            "label": "List extensions 2",
+                            "contexts": ["database_card"],
+                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
+                        },
+                    ]
+                },
+            }
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert any("duplicate reserved capability" in msg for msg in payload["error"]["message"])
+    assert any("extensions.list" in msg for msg in payload["error"]["message"])
+
+
+@pytest.mark.django_db
+def test_update_runtime_setting_ui_action_catalog_accepts_unknown_capability(staff_client, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "List extensions",
+                "argv": ["infobase", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    _seed_ibcmd_catalog(
+        monkeypatch,
+        base_catalog=base_catalog,
+        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
+    )
+
+    resp2 = staff_client.patch(
+        "/api/v2/settings/runtime/ui.action_catalog/",
+        data={
+            "value": {
+                "catalog_version": 1,
+                "extensions": {
+                    "actions": [
+                        {
+                            "id": "CustomList",
+                            "capability": "custom.extensions.list",
+                            "label": "Custom list",
+                            "contexts": ["database_card"],
+                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
+                        },
+                    ]
+                },
+            }
+        },
+        format="json",
+    )
+    assert resp2.status_code == 200
+
+@pytest.mark.django_db
 def test_ui_action_catalog_filters_unknown_and_dangerous_for_non_staff(client, monkeypatch):
     base_catalog = {
         "catalog_version": 2,

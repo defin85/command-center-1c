@@ -123,6 +123,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
   const source = action ?? buildDefaultAction()
 
   const id = typeof source.id === 'string' ? source.id : ''
+  const capability = typeof source.capability === 'string' ? source.capability : ''
   const label = typeof source.label === 'string' ? source.label : ''
   const contextsRaw = Array.isArray(source.contexts) ? source.contexts : []
   const contexts = contextsRaw.filter((c) => c === 'database_card' || c === 'bulk_page') as Array<'database_card' | 'bulk_page'>
@@ -151,6 +152,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
 
   return {
     id,
+    capability,
     label,
     contexts: contexts.length ? contexts : ['database_card'],
     executor: {
@@ -174,6 +176,12 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
   const next = base ? deepCopy(base) : buildDefaultAction()
 
   next.id = values.id.trim()
+  const nextCapability = typeof values.capability === 'string' ? values.capability.trim() : ''
+  if (nextCapability) {
+    next.capability = nextCapability
+  } else {
+    delete next.capability
+  }
   next.label = values.label.trim()
   next.contexts = [...new Set(values.contexts)]
 
@@ -362,6 +370,7 @@ export const buildActionRows = (value: unknown): ActionRow[] => {
   const rows: ActionRow[] = []
   for (const [pos, action] of actions.entries()) {
     const id = typeof action.id === 'string' ? action.id : ''
+    const capability = typeof action.capability === 'string' ? action.capability : undefined
     const label = typeof action.label === 'string' ? action.label : ''
     const contexts = Array.isArray(action.contexts)
       ? action.contexts.filter((c) => typeof c === 'string') as string[]
@@ -378,6 +387,7 @@ export const buildActionRows = (value: unknown): ActionRow[] => {
     rows.push({
       pos,
       id,
+      capability,
       label,
       contexts,
       executor_kind: kind,

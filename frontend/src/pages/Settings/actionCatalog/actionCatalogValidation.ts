@@ -1,6 +1,9 @@
 import type { PlainObject } from '../actionCatalogTypes'
 import { isPlainObject, isValidUuid, normalizeActionId } from '../actionCatalogUtils'
 
+const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
+const RESERVED_CAPABILITIES = new Set(['extensions.list', 'extensions.sync'])
+
 export type ActionCatalogValidationResult = {
   ok: boolean
   errors: string[]
@@ -53,6 +56,7 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
   }
 
   const seenIds = new Set<string>()
+  const seenReserved = new Map<string, number>()
 
   for (let idx = 0; idx < actions.length; idx += 1) {
     const action = actions[idx]
@@ -62,7 +66,7 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
     }
 
     for (const key of Object.keys(action)) {
-      if (key !== 'id' && key !== 'label' && key !== 'contexts' && key !== 'executor') {
+      if (key !== 'id' && key !== 'capability' && key !== 'label' && key !== 'contexts' && key !== 'executor') {
         errors.push(`extensions.actions[${idx}]: unknown key: ${key}`)
       }
     }
@@ -79,6 +83,11 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
     const label = normalizeActionId(action.label)
     if (!label) {
       errors.push(`extensions.actions[${idx}].label: must be a non-empty string`)
+    }
+
+    const capability = normalizeActionId(action.capability)
+    if (capability && !CAPABILITY_RE.test(capability)) {
+      errors.push(`extensions.actions[${idx}].capability: must be a namespaced string (e.g. extensions.list)`)
     }
 
     const contexts = action.contexts
@@ -155,6 +164,20 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
             errors.push(`extensions.actions[${idx}].executor.fixed: unknown key: ${key}`)
           }
         }
+      }
+    }
+
+    const effectiveReserved = (() => {
+      if (capability && RESERVED_CAPABILITIES.has(capability)) return { field: 'capability', value: capability }
+      if (!capability && id && RESERVED_CAPABILITIES.has(id)) return { field: 'id', value: id }
+      return null
+    })()
+    if (effectiveReserved) {
+      const prev = seenReserved.get(effectiveReserved.value)
+      if (prev === undefined) {
+        seenReserved.set(effectiveReserved.value, idx)
+      } else {
+        errors.push(`extensions.actions[${idx}].${effectiveReserved.field}: duplicate reserved capability (${effectiveReserved.value})`)
       }
     }
   }

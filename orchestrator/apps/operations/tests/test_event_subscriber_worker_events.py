@@ -294,15 +294,14 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
 
     @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
-    def test_handle_worker_completed_updates_extensions_snapshot_using_tenant_catalog(
+    def test_handle_worker_completed_updates_extensions_snapshot_using_operation_metadata_marker(
         self, mock_redis_class, mock_ops_redis
     ):
         """
-        Regression: extensions snapshot updating is tenant-scoped.
+        Regression: snapshot persistence must not depend on runtime settings at completion time.
 
-        We keep a global action catalog (runtime_settings) and a tenant override.
-        Worker completion MUST use the effective (tenant) catalog when deciding
-        whether an ibcmd operation should update extensions snapshots.
+        We store snapshot marker in `BatchOperation.metadata` during enqueue.
+        Completion must only look at this marker.
         """
 
         subscriber = EventSubscriber()
@@ -319,6 +318,7 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
                         "actions": [
                             {
                                 "id": "ListExtension",
+                                "capability": "extensions.list",
                                 "label": "List extension",
                                 "contexts": ["database_card"],
                                 "executor": {
@@ -345,13 +345,14 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
                     "extensions": {
                         "actions": [
                             {
-                                "id": "extensions.list",
-                                "label": "extensions.list",
+                                "id": "RenamedListAction",
+                                "capability": "extensions.list",
+                                "label": "Renamed list action",
                                 "contexts": ["database_card"],
                                 "executor": {
                                     "kind": "ibcmd_cli",
                                     "driver": "ibcmd",
-                                    "command_id": "infobase.extension.list",
+                                    "command_id": "some.other.command",
                                     "mode": "guided",
                                     "params": {},
                                 },
@@ -368,7 +369,7 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
             operation_type=BatchOperation.TYPE_IBCMD_CLI,
             target_entity="Infobase",
             status=BatchOperation.STATUS_PROCESSING,
-            metadata={"command_id": "infobase.extension.list"},
+            metadata={"command_id": "infobase.extension.list", "snapshot_kinds": ["extensions"]},
         )
         Task.objects.create(
             id="task-extensions-1",

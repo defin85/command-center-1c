@@ -42,51 +42,10 @@ class WorkerEventHandlersMixin:
             batch_op = BatchOperation.objects.get(id=operation_id)
 
             op_command_id = str((batch_op.metadata or {}).get("command_id") or "").strip()
-            snapshot_command_ids_by_tenant: dict[str, set[str]] = {}
-
-            def _get_snapshot_command_ids_for_tenant(tenant_id: str) -> set[str]:
-                tenant_id = str(tenant_id or "").strip()
-                if not tenant_id:
-                    return set()
-                cached = snapshot_command_ids_by_tenant.get(tenant_id)
-                if cached is not None:
-                    return cached
-
-                try:
-                    from apps.runtime_settings.action_catalog import (
-                        UI_ACTION_CATALOG_KEY,
-                        ensure_valid_action_catalog,
-                    )
-                    from apps.runtime_settings.effective import get_effective_runtime_setting
-
-                    raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-                    catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-
-                    extensions = catalog.get("extensions") if isinstance(catalog, dict) else None
-                    actions = extensions.get("actions") if isinstance(extensions, dict) else None
-
-                    snapshot_command_ids: set[str] = set()
-                    if isinstance(actions, list):
-                        for action in actions:
-                            if not isinstance(action, dict):
-                                continue
-                            action_id = str(action.get("id") or "").strip()
-                            if action_id not in {"extensions.list", "extensions.sync"}:
-                                continue
-                            executor = action.get("executor")
-                            if not isinstance(executor, dict):
-                                continue
-                            if executor.get("kind") != "ibcmd_cli":
-                                continue
-                            command_id = executor.get("command_id")
-                            if isinstance(command_id, str) and command_id.strip():
-                                snapshot_command_ids.add(command_id.strip())
-
-                    snapshot_command_ids_by_tenant[tenant_id] = snapshot_command_ids
-                    return snapshot_command_ids
-                except Exception:
-                    snapshot_command_ids_by_tenant[tenant_id] = set()
-                    return set()
+            snapshot_kinds = (batch_op.metadata or {}).get("snapshot_kinds")
+            snapshot_kinds_list = snapshot_kinds if isinstance(snapshot_kinds, list) else []
+            has_extensions_snapshot_marker = "extensions" in snapshot_kinds_list
+            snapshot_errors: list[dict[str, Any]] = []
 
             summary = payload.get("summary", {})
             results = payload.get("results", [])
@@ -121,28 +80,12 @@ class WorkerEventHandlersMixin:
                         update_fields["error_message"] = ""
                         update_fields["error_code"] = ""
 
-                        should_update_extensions_snapshot = False
-                        db_for_snapshot = None
-                        if (
-                            database_id
-                            and op_command_id
+                        should_update_extensions_snapshot = (
+                            bool(database_id)
+                            and bool(op_command_id)
                             and batch_op.operation_type == BatchOperation.TYPE_IBCMD_CLI
-                        ):
-                            try:
-                                from apps.databases.models import Database
-
-                                db_for_snapshot = (
-                                    Database.objects.filter(id=database_id)
-                                    .only("id", "tenant_id")
-                                    .first()
-                                )
-                                tenant_id = str(getattr(db_for_snapshot, "tenant_id", "") or "").strip()
-                                if tenant_id:
-                                    snapshot_command_ids = _get_snapshot_command_ids_for_tenant(tenant_id)
-                                    should_update_extensions_snapshot = op_command_id in snapshot_command_ids
-                            except Exception:
-                                should_update_extensions_snapshot = False
-
+                            and has_extensions_snapshot_marker
+                        )
                         if should_update_extensions_snapshot and database_id:
                             try:
                                 from apps.databases.extensions_snapshot import (
@@ -165,11 +108,9 @@ class WorkerEventHandlersMixin:
                                     },
                                 )
 
-                                db = db_for_snapshot
-                                if db is None:
-                                    from apps.databases.models import Database as DatabaseModel
+                                from apps.databases.models import Database as DatabaseModel
 
-                                    db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()
+                                db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()
 
                                 if db and getattr(db, "tenant_id", None):
                                     CommandResultSnapshot.objects.create(
@@ -184,8 +125,25 @@ class WorkerEventHandlersMixin:
                                         canonical_hash=canonical_hash,
                                         captured_at=now,
                                     )
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                runtime.logger.warning(
+                                    "Extensions snapshot persistence failed",
+                                    extra={
+                                        "operation_id": str(operation_id),
+                                        "database_id": str(database_id),
+                                        "command_id": op_command_id,
+                                    },
+                                    exc_info=True,
+                                )
+                                snapshot_errors.append(
+                                    {
+                                        "kind": "extensions",
+                                        "operation_id": str(operation_id),
+                                        "database_id": str(database_id),
+                                        "command_id": op_command_id,
+                                        "error": str(exc),
+                                    }
+                                )
                     else:
                         update_fields["error_message"] = result.get("error") or "Unknown error"
                         update_fields["error_code"] = (
@@ -217,6 +175,18 @@ class WorkerEventHandlersMixin:
             batch_op.progress = 100
             if not batch_op.completed_at:
                 batch_op.completed_at = now
+
+            if not isinstance(batch_op.metadata, dict):
+                batch_op.metadata = {}
+            if snapshot_errors:
+                existing = batch_op.metadata.get("snapshot_errors")
+                if isinstance(existing, list):
+                    batch_op.metadata["snapshot_errors"] = existing + snapshot_errors[:10]
+                else:
+                    batch_op.metadata["snapshot_errors"] = snapshot_errors[:10]
+                batch_op.metadata["snapshot_errors_count"] = int(batch_op.metadata.get("snapshot_errors_count") or 0) + len(
+                    snapshot_errors
+                )
 
             batch_op.metadata["worker_result"] = {
                 "summary": summary,

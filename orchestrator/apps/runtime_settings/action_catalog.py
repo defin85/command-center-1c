@@ -9,6 +9,20 @@ from jsonschema import Draft202012Validator
 UI_ACTION_CATALOG_KEY = "ui.action_catalog"
 ACTION_CATALOG_VERSION_V1 = 1
 
+# Backend-understood reserved capabilities (MVP).
+RESERVED_ACTION_CAPABILITIES: set[str] = {
+    "extensions.list",
+    "extensions.sync",
+}
+
+# Legacy mapping while `capability` is optional.
+LEGACY_RESERVED_ACTION_IDS: dict[str, str] = {
+    "extensions.list": "extensions.list",
+    "extensions.sync": "extensions.sync",
+}
+
+SNAPSHOT_KIND_EXTENSIONS = "extensions"
+
 
 DEFAULT_UI_ACTION_CATALOG: dict[str, Any] = {
     "catalog_version": ACTION_CATALOG_VERSION_V1,
@@ -49,6 +63,13 @@ ACTION_CATALOG_SCHEMA_V1: dict[str, Any] = {
                         "additionalProperties": False,
                         "properties": {
                             "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                            "capability": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 128,
+                                # "<namespace>.<name>[.<more>]" (ASCII, lowercase, with - and _ allowed).
+                                "pattern": r"^[a-z0-9_-]+(\.[a-z0-9_-]+)+$",
+                            },
                             "label": {"type": "string", "minLength": 1, "maxLength": 256},
                             "contexts": {
                                 "type": "array",
@@ -297,3 +318,118 @@ def validate_action_catalog_references(payload: Any) -> list[ActionCatalogValida
                 continue
 
     return errors
+
+
+def _normalize_str(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _get_action_capability(action: dict[str, Any]) -> str | None:
+    cap = action.get("capability")
+    if isinstance(cap, str) and cap.strip():
+        return cap.strip()
+    return None
+
+
+def get_reserved_action_capability(action: dict[str, Any]) -> str | None:
+    """
+    Return reserved backend-understood capability for the action.
+
+    Legacy fallback:
+      - if `capability` is missing, `id=="extensions.list|extensions.sync"` is treated as the corresponding capability.
+    """
+    cap = _get_action_capability(action)
+    if cap:
+        return cap if cap in RESERVED_ACTION_CAPABILITIES else None
+    action_id = _normalize_str(action.get("id"))
+    return LEGACY_RESERVED_ACTION_IDS.get(action_id)
+
+
+def validate_action_catalog_reserved_capabilities(payload: Any) -> list[ActionCatalogValidationError]:
+    """
+    Fail-closed validation for backend-understood reserved capabilities.
+
+    Ensures at most one action per reserved capability (including legacy id fallback).
+    Intended for update-time validation in staff-only runtime setting update flow.
+    """
+    if not isinstance(payload, dict):
+        return []
+    extensions = payload.get("extensions")
+    if not isinstance(extensions, dict):
+        return []
+    actions = extensions.get("actions")
+    if not isinstance(actions, list):
+        return []
+
+    errors: list[ActionCatalogValidationError] = []
+    seen: dict[str, int] = {}
+
+    for idx, action in enumerate(actions):
+        if not isinstance(action, dict):
+            continue
+        reserved_capability = get_reserved_action_capability(action)
+        if not reserved_capability:
+            continue
+        prev_idx = seen.get(reserved_capability)
+        if prev_idx is None:
+            seen[reserved_capability] = idx
+            continue
+
+        if _get_action_capability(action):
+            path = f"extensions.actions[{idx}].capability"
+        else:
+            path = f"extensions.actions[{idx}].id"
+        errors.append(
+            ActionCatalogValidationError(
+                path=path,
+                message=f"duplicate reserved capability: {reserved_capability} (already defined at extensions.actions[{prev_idx}])",
+            )
+        )
+
+    return errors
+
+
+def compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog: Any, command_id: str) -> dict[str, Any]:
+    """
+    Compute snapshot marker for an ibcmd_cli operation based on effective `ui.action_catalog`.
+
+    MVP: mark extensions snapshots when command_id is bound to reserved extensions capabilities.
+    """
+    normalized_command_id = _normalize_str(command_id)
+    if not normalized_command_id:
+        return {}
+    if not isinstance(catalog, dict):
+        return {}
+
+    extensions = catalog.get("extensions")
+    actions = extensions.get("actions") if isinstance(extensions, dict) else None
+    if not isinstance(actions, list):
+        return {}
+
+    matched_caps: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        cap = get_reserved_action_capability(action)
+        if cap not in RESERVED_ACTION_CAPABILITIES:
+            continue
+        executor = action.get("executor")
+        if not isinstance(executor, dict):
+            continue
+        if executor.get("kind") != "ibcmd_cli":
+            continue
+        exec_command_id = _normalize_str(executor.get("command_id"))
+        if exec_command_id != normalized_command_id:
+            continue
+        matched_caps.add(cap)
+
+    if not matched_caps:
+        return {}
+
+    marker: dict[str, Any] = {
+        "snapshot_kinds": [SNAPSHOT_KIND_EXTENSIONS],
+        "snapshot_source": "ui.action_catalog",
+    }
+    if len(matched_caps) == 1:
+        marker["action_capability"] = next(iter(matched_caps))
+    return marker

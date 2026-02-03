@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Alert, Card, Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
+import { Alert, AutoComplete, Card, Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
@@ -28,6 +28,13 @@ const MODE_OPTIONS: { value: 'guided' | 'manual'; label: string }[] = [
   { value: 'guided', label: 'guided' },
   { value: 'manual', label: 'manual' },
 ]
+
+const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'extensions.list', label: 'extensions.list' },
+  { value: 'extensions.sync', label: 'extensions.sync' },
+]
+
+const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
 
 export type ActionCatalogEditorModalProps = {
   open: boolean
@@ -121,6 +128,29 @@ export function ActionCatalogEditorModal({
           ]}
         >
           <Input data-testid="action-catalog-editor-id" />
+        </Form.Item>
+
+        <Form.Item
+          label="Capability (optional)"
+          name="capability"
+          rules={[
+            {
+              validator: (_rule, value) => {
+                const raw = typeof value === 'string' ? value.trim() : ''
+                if (!raw) return Promise.resolve()
+                if (CAPABILITY_RE.test(raw)) return Promise.resolve()
+                return Promise.reject(new Error('Capability must be a namespaced string (e.g. extensions.list)'))
+              },
+            },
+          ]}
+        >
+          <AutoComplete
+            options={CAPABILITY_OPTIONS}
+            placeholder="e.g. extensions.list"
+            allowClear
+            filterOption={(inputValue, option) => (option?.value ?? '').includes(inputValue)}
+            data-testid="action-catalog-editor-capability"
+          />
         </Form.Item>
 
         <Form.Item

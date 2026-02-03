@@ -5,6 +5,7 @@ export type ActionCatalogMode = 'guided' | 'raw'
 export type ActionRow = {
   pos: number
   id: string
+  capability?: string
   label: string
   contexts: string[]
   executor_kind: string
@@ -35,6 +36,7 @@ export type SaveErrorHint = {
 
 export type ActionFormValues = {
   id: string
+  capability?: string
   label: string
   contexts: ActionContext[]
   executor: {

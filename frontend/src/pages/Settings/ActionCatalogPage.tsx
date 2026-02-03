@@ -31,6 +31,7 @@ const { Title, Text } = Typography
 
 const ACTION_CATALOG_KEY = 'ui.action_catalog'
 const DISABLED_ACTIONS_STORAGE_KEY = 'action-catalog.disabled-actions.v1'
+const RESERVED_EXTENSIONS_CAPABILITIES = new Set(['extensions.list', 'extensions.sync'])
 
 export function ActionCatalogPage() {
   const meQuery = useMe()
@@ -309,15 +310,38 @@ export function ActionCatalogPage() {
       usedIds.delete(currentId)
     }
 
-    if (!trimmedId || usedIds.has(trimmedId)) {
-      form.setFields([{ name: 'id', errors: ['ID уже используется'] }])
-      return
-    }
+	    if (!trimmedId || usedIds.has(trimmedId)) {
+	      form.setFields([{ name: 'id', errors: ['ID уже используется'] }])
+	      return
+	    }
 
-    const nextActions = [...actions]
-    if (editingPos !== null) {
-      nextActions[editingPos] = next
-    } else {
+	    const reserved = (() => {
+	      const cap = typeof next.capability === 'string' ? next.capability.trim() : ''
+	      if (cap && RESERVED_EXTENSIONS_CAPABILITIES.has(cap)) return { field: 'capability' as const, value: cap }
+	      if (!cap && RESERVED_EXTENSIONS_CAPABILITIES.has(trimmedId)) return { field: 'id' as const, value: trimmedId }
+	      return null
+	    })()
+	    if (reserved) {
+	      const conflictPos = actions.findIndex((a, idx) => {
+	        if (editingPos !== null && idx === editingPos) return false
+	        const aCap = normalizeActionId(a.capability)
+	        if (aCap && RESERVED_EXTENSIONS_CAPABILITIES.has(aCap)) return aCap === reserved.value
+	        const aId = normalizeActionId(a.id)
+	        if (!aCap && aId && RESERVED_EXTENSIONS_CAPABILITIES.has(aId)) return aId === reserved.value
+	        return false
+	      })
+	      if (conflictPos >= 0) {
+	        const conflictId = normalizeActionId(actions[conflictPos]?.id) ?? `#${conflictPos + 1}`
+	        const message = `Зарезервированная capability уже используется: ${reserved.value} (action.id=${conflictId})`
+	        form.setFields([{ name: reserved.field, errors: [message] }])
+	        return
+	      }
+	    }
+
+	    const nextActions = [...actions]
+	    if (editingPos !== null) {
+	      nextActions[editingPos] = next
+	    } else {
       nextActions.push(next)
     }
     upsertCatalogActions(parsed, nextActions)

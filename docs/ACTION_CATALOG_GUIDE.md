@@ -18,6 +18,9 @@
 Один элемент каталога (запись в `extensions.actions[]`), который описывает:
 
 - `id` — уникальный идентификатор действия (строка).
+- `capability` (опционально) — семантический маркер, который понимает backend (например `extensions.list`, `extensions.sync`).
+  - `id` — UI-ключ (можно переименовывать без изменения семантики).
+  - `capability` — стабильный контракт для backend (plan/apply, snapshot-marking и т.п.).
 - `label` — отображаемое имя.
 - `contexts` — где показывать действие:
   - `database_card` — карточка одной базы (UI `/databases`).
@@ -101,6 +104,11 @@
 ### Дубликаты `id`
 - `extensions.actions[].id` должны быть уникальны.
 - Исправь дубликат (guided покажет ошибку на поле ID; raw — через ошибку в Save).
+
+### Дубликаты `capability` (для зарезервированных значений)
+- Для `capability`, которые backend использует для особой семантики (MVP: `extensions.list`, `extensions.sync`), допускается **не более одного** action на каждый такой `capability`.
+- Если в каталоге окажется две записи с одним и тем же зарезервированным `capability`, сохранение будет отвергнуто (fail-closed).
+- Legacy режим: если `capability` отсутствует, backend временно трактует `id=="extensions.list"`/`"extensions.sync"` как соответствующие `capability`.
 
 ### Ошибки формата JSON
 - В raw-режиме используй **Format**.
