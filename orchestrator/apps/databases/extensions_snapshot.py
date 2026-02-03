@@ -160,6 +160,46 @@ def _normalize_extension_item(item: Any) -> dict[str, Any] | None:
         out["version"] = version
     if is_active is not None:
         out["is_active"] = is_active
+
+    purpose = item.get("purpose")
+    if purpose is not None:
+        purpose = str(purpose).strip() or None
+        if purpose is not None:
+            out["purpose"] = purpose
+
+    safe_mode = _coerce_bool(item.get("safe_mode") if "safe_mode" in item else item.get("safe-mode"))
+    if safe_mode is not None:
+        out["safe_mode"] = safe_mode
+
+    security_profile_name = item.get("security_profile_name") if "security_profile_name" in item else item.get("security-profile-name")
+    if security_profile_name is not None:
+        security_profile_name = str(security_profile_name).strip() or None
+        if security_profile_name is not None:
+            out["security_profile_name"] = security_profile_name
+
+    unsafe_action_protection = _coerce_bool(
+        item.get("unsafe_action_protection") if "unsafe_action_protection" in item else item.get("unsafe-action-protection")
+    )
+    if unsafe_action_protection is not None:
+        out["unsafe_action_protection"] = unsafe_action_protection
+
+    used_in_distributed_infobase = _coerce_bool(
+        item.get("used_in_distributed_infobase") if "used_in_distributed_infobase" in item else item.get("used-in-distributed-infobase")
+    )
+    if used_in_distributed_infobase is not None:
+        out["used_in_distributed_infobase"] = used_in_distributed_infobase
+
+    scope = item.get("scope")
+    if scope is not None:
+        scope = str(scope).strip() or None
+        if scope is not None:
+            out["scope"] = scope
+
+    hash_sum = item.get("hash_sum") if "hash_sum" in item else item.get("hash-sum")
+    if hash_sum is not None:
+        hash_sum = str(hash_sum).strip() or None
+        if hash_sum is not None:
+            out["hash_sum"] = hash_sum
     return out
 
 
@@ -233,6 +273,42 @@ def _normalize_kv_record(record: dict[str, str]) -> dict[str, Any] | None:
     is_active = _coerce_bool(active)
     if is_active is not None:
         out["is_active"] = is_active
+
+    purpose = record.get("purpose")
+    if purpose is not None:
+        purpose = _strip_quotes(purpose).strip() or None
+        if purpose is not None:
+            out["purpose"] = purpose
+
+    safe_mode = _coerce_bool(record.get("safe-mode"))
+    if safe_mode is not None:
+        out["safe_mode"] = safe_mode
+
+    security_profile_name = record.get("security-profile-name")
+    if security_profile_name is not None:
+        security_profile_name = _strip_quotes(security_profile_name).strip() or None
+        if security_profile_name is not None:
+            out["security_profile_name"] = security_profile_name
+
+    unsafe_action_protection = _coerce_bool(record.get("unsafe-action-protection"))
+    if unsafe_action_protection is not None:
+        out["unsafe_action_protection"] = unsafe_action_protection
+
+    used_in_distributed_infobase = _coerce_bool(record.get("used-in-distributed-infobase"))
+    if used_in_distributed_infobase is not None:
+        out["used_in_distributed_infobase"] = used_in_distributed_infobase
+
+    scope = record.get("scope")
+    if scope is not None:
+        scope = _strip_quotes(scope).strip() or None
+        if scope is not None:
+            out["scope"] = scope
+
+    hash_sum = record.get("hash-sum")
+    if hash_sum is not None:
+        hash_sum = _strip_quotes(hash_sum).strip() or None
+        if hash_sum is not None:
+            out["hash_sum"] = hash_sum
 
     return out
 
