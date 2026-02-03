@@ -230,3 +230,145 @@ def test_extensions_overview_treats_legacy_snapshot_as_unknown_not_missing():
     assert resp_missing.status_code == 200
     missing = resp_missing.json()
     assert missing["count"] == 0
+
+
+@pytest.mark.django_db
+def test_extensions_overview_database_id_filters_names_but_not_aggregates():
+    user = User.objects.create_user(username="u4", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    _grant_view_database(client, user)
+
+    db1 = Database.objects.create(
+        name="db1",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+    db2 = Database.objects.create(
+        name="db2",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+
+    DatabasePermission.objects.create(user=user, database=db1, level=PermissionLevel.VIEW)
+    DatabasePermission.objects.create(user=user, database=db2, level=PermissionLevel.VIEW)
+
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db1.id,
+        defaults={
+            "snapshot": {
+                "extensions": [
+                    {"name": "ExtA", "version": "1.0", "is_active": True},
+                    {"name": "ExtB", "version": "2.0", "is_active": False},
+                ],
+                "raw": {"stdout": "ok"},
+                "parse_error": None,
+            },
+            "source_operation_id": "op-1",
+        },
+    )
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db2.id,
+        defaults={
+            "snapshot": {
+                "extensions": [
+                    {"name": "ExtA", "version": "1.0", "is_active": False},
+                    {"name": "ExtC", "version": "3.0", "is_active": True},
+                ],
+                "raw": {"stdout": "ok"},
+                "parse_error": None,
+            },
+            "source_operation_id": "op-2",
+        },
+    )
+
+    resp = client.get("/api/v2/extensions/overview/", {"database_id": str(db1.id)})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total_databases"] == 2
+
+    names = {row["name"] for row in payload["extensions"]}
+    assert names == {"ExtA", "ExtB"}
+
+    by_name = {row["name"]: row for row in payload["extensions"]}
+    assert by_name["ExtA"]["installed_count"] == 2
+    assert by_name["ExtA"]["active_count"] == 1
+    assert by_name["ExtA"]["inactive_count"] == 1
+
+    assert by_name["ExtB"]["installed_count"] == 1
+    assert by_name["ExtB"]["inactive_count"] == 1
+    assert by_name["ExtB"]["missing_count"] == 1
+
+
+@pytest.mark.django_db
+def test_extensions_overview_database_id_requires_object_permission():
+    user = User.objects.create_user(username="u5", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    _grant_view_database(client, user)
+
+    db = Database.objects.create(
+        name="db-no-access",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+
+    denied = client.get("/api/v2/extensions/overview/", {"database_id": str(db.id)})
+    assert denied.status_code == 403
+
+
+@pytest.mark.django_db
+def test_extensions_overview_database_id_empty_snapshot_returns_empty_list():
+    user = User.objects.create_user(username="u6", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    _grant_view_database(client, user)
+
+    db_ok = Database.objects.create(
+        name="db-ok",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+    db_empty = Database.objects.create(
+        name="db-empty",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+
+    DatabasePermission.objects.create(user=user, database=db_ok, level=PermissionLevel.VIEW)
+    DatabasePermission.objects.create(user=user, database=db_empty, level=PermissionLevel.VIEW)
+
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db_ok.id,
+        defaults={
+            "snapshot": {
+                "extensions": [{"name": "ExtA", "version": "1.0", "is_active": True}],
+                "raw": {"stdout": "ok"},
+                "parse_error": None,
+            },
+            "source_operation_id": "op-1",
+        },
+    )
+
+    resp = client.get("/api/v2/extensions/overview/", {"database_id": str(db_empty.id)})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 0
+    assert payload["total"] == 0
+    assert payload["extensions"] == []
+    assert payload["total_databases"] == 2

@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 
 import { useClusters } from '../../api/queries/clusters'
+import { useDatabases } from '../../api/queries/databases'
 import {
   useExtensionsOverview,
   useExtensionsOverviewDatabases,
@@ -29,6 +30,7 @@ export const Extensions = () => {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<Status | undefined>(undefined)
   const [version, setVersion] = useState('')
+  const [databaseId, setDatabaseId] = useState<string | undefined>(undefined)
   const [clusterId, setClusterId] = useState<string | undefined>(undefined)
 
   const [page, setPage] = useState(1)
@@ -42,10 +44,19 @@ export const Extensions = () => {
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [clustersQuery.data?.clusters])
 
+  const databasesQuery = useDatabases({ filters: { cluster_id: clusterId, limit: 500, offset: 0 } })
+  const databaseOptions = useMemo(() => {
+    const databases = databasesQuery.data?.databases ?? []
+    return databases
+      .map((db) => ({ label: db.name || db.id, value: db.id }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [databasesQuery.data?.databases])
+
   const overviewQuery = useExtensionsOverview({
     search: search.trim() || undefined,
     status,
     version: version.trim() || undefined,
+    database_id: databaseId,
     cluster_id: clusterId,
     limit: pageSize,
     offset: (page - 1) * pageSize,
@@ -55,6 +66,7 @@ export const Extensions = () => {
   const [selectedExtension, setSelectedExtension] = useState<string | null>(null)
   const [drawerStatus, setDrawerStatus] = useState<Status | undefined>(undefined)
   const [drawerVersion, setDrawerVersion] = useState<string>('')
+  const [drawerDatabaseId, setDrawerDatabaseId] = useState<string | undefined>(undefined)
   const [drawerPage, setDrawerPage] = useState(1)
   const [drawerPageSize, setDrawerPageSize] = useState(50)
 
@@ -64,8 +76,8 @@ export const Extensions = () => {
     status: drawerStatus,
     version: drawerVersion.trim() || undefined,
     cluster_id: clusterId,
-    limit: drawerPageSize,
-    offset: (drawerPage - 1) * drawerPageSize,
+    limit: drawerDatabaseId ? 1000 : drawerPageSize,
+    offset: drawerDatabaseId ? 0 : (drawerPage - 1) * drawerPageSize,
   }, drilldownEnabled)
 
   const openDrawer = (name: string) => {
@@ -73,6 +85,7 @@ export const Extensions = () => {
     setDrawerOpen(true)
     setDrawerStatus(undefined)
     setDrawerVersion('')
+    setDrawerDatabaseId(undefined)
     setDrawerPage(1)
     setDrawerPageSize(50)
   }
@@ -217,7 +230,13 @@ export const Extensions = () => {
     },
   ]
 
-  const drillPagination: TablePaginationConfig = {
+  const drillData = useMemo(() => {
+    const rows = drilldownQuery.data?.databases ?? []
+    if (!drawerDatabaseId) return rows
+    return rows.filter((r) => r.database_id === drawerDatabaseId)
+  }, [drilldownQuery.data?.databases, drawerDatabaseId])
+
+  const drillPagination: TablePaginationConfig | false = drawerDatabaseId ? false : {
     current: drawerPage,
     pageSize: drawerPageSize,
     total: drilldownQuery.data?.total ?? 0,
@@ -274,6 +293,18 @@ export const Extensions = () => {
           allowClear
         />
         <Select
+          data-testid="extensions-overview-database"
+          value={databaseId}
+          onChange={(v) => { setDatabaseId(v); setPage(1) }}
+          allowClear
+          placeholder="Database"
+          style={{ width: 320 }}
+          options={databaseOptions}
+          loading={databasesQuery.isLoading}
+          showSearch
+          optionFilterProp="label"
+        />
+        <Select
           value={clusterId}
           onChange={(v) => { setClusterId(v); setPage(1) }}
           allowClear
@@ -312,6 +343,18 @@ export const Extensions = () => {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Space wrap>
             <Select
+              data-testid="extensions-drawer-database"
+              value={drawerDatabaseId}
+              onChange={(v) => { setDrawerDatabaseId(v); setDrawerPage(1) }}
+              allowClear
+              placeholder="Database"
+              style={{ width: 320 }}
+              options={databaseOptions}
+              loading={databasesQuery.isLoading}
+              showSearch
+              optionFilterProp="label"
+            />
+            <Select
               value={drawerStatus}
               onChange={(v) => { setDrawerStatus(v); setDrawerPage(1) }}
               allowClear
@@ -343,7 +386,7 @@ export const Extensions = () => {
           <Table
             rowKey="database_id"
             columns={drillColumns}
-            dataSource={drilldownQuery.data?.databases ?? []}
+            dataSource={drillData}
             loading={drilldownQuery.isLoading}
             pagination={drillPagination}
             size="small"

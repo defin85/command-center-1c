@@ -30,6 +30,7 @@ async function setupAuth(page: Page) {
 
 async function setupApiMocks(page: Page, state: {
   overview: AnyRecord[]
+  overviewByDatabaseId?: Record<string, AnyRecord[]>
   drilldownByName: Record<string, AnyRecord[]>
 }) {
   await page.route('**/api/v2/**', async (route) => {
@@ -54,15 +55,31 @@ async function setupApiMocks(page: Page, state: {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      return fulfillJson(route, { active_tenant_id: null, tenants: [] })
+    }
+
     if (method === 'GET' && path === '/api/v2/clusters/list-clusters/') {
       return fulfillJson(route, { clusters: [], count: 0, total: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/databases/list-databases/') {
+      return fulfillJson(route, {
+        databases: [
+          { id: '11111111-1111-1111-1111-111111111111', name: 'db1' },
+          { id: '22222222-2222-2222-2222-222222222222', name: 'db2' },
+        ],
+        count: 2,
+        total: 2,
+      })
     }
 
     if (method === 'GET' && path === '/api/v2/extensions/overview/') {
       const status = (url.searchParams.get('status') || '').trim().toLowerCase()
       const search = (url.searchParams.get('search') || '').trim().toLowerCase()
       const version = (url.searchParams.get('version') || '').trim()
-      let rows = [...state.overview]
+      const databaseId = (url.searchParams.get('database_id') || '').trim()
+      let rows = databaseId && state.overviewByDatabaseId ? [...(state.overviewByDatabaseId[databaseId] || [])] : [...state.overview]
       if (search) {
         rows = rows.filter((r) => String(r.name || '').toLowerCase().includes(search))
       }
@@ -105,29 +122,44 @@ async function setupApiMocks(page: Page, state: {
 
 test('Extensions: overview renders + drill-down opens (smoke)', async ({ page }) => {
   await setupAuth(page)
+  const overview: AnyRecord[] = [
+    {
+      name: 'ExtA',
+      installed_count: 1,
+      active_count: 1,
+      inactive_count: 0,
+      missing_count: 1,
+      unknown_count: 0,
+      versions: [{ version: '1.0', count: 1 }],
+      latest_snapshot_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      name: 'ExtB',
+      installed_count: 2,
+      active_count: 0,
+      inactive_count: 2,
+      missing_count: 0,
+      unknown_count: 0,
+      versions: [{ version: '2.0', count: 2 }],
+      latest_snapshot_at: '2026-01-01T00:00:00Z',
+    },
+    ...Array.from({ length: 53 }).map((_, idx) => ({
+      name: `Ext${String(idx).padStart(2, '0')}`,
+      installed_count: 0,
+      active_count: 0,
+      inactive_count: 0,
+      missing_count: 2,
+      unknown_count: 0,
+      versions: [],
+      latest_snapshot_at: null,
+    })),
+  ]
   await setupApiMocks(page, {
-    overview: [
-      {
-        name: 'ExtA',
-        installed_count: 1,
-        active_count: 1,
-        inactive_count: 0,
-        missing_count: 1,
-        unknown_count: 0,
-        versions: [{ version: '1.0', count: 1 }],
-        latest_snapshot_at: '2026-01-01T00:00:00Z',
-      },
-      {
-        name: 'ExtB',
-        installed_count: 2,
-        active_count: 0,
-        inactive_count: 2,
-        missing_count: 0,
-        unknown_count: 0,
-        versions: [{ version: '2.0', count: 2 }],
-        latest_snapshot_at: '2026-01-01T00:00:00Z',
-      },
-    ],
+    overview,
+    overviewByDatabaseId: {
+      '11111111-1111-1111-1111-111111111111': [overview[0]],
+      '22222222-2222-2222-2222-222222222222': [overview[1]],
+    },
     drilldownByName: {
       ExtA: [
         { database_id: '11111111-1111-1111-1111-111111111111', database_name: 'db1', cluster_id: null, cluster_name: '', status: 'active', version: '1.0', snapshot_updated_at: '2026-01-01T00:00:00Z' },
@@ -148,9 +180,32 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
   await page.getByTestId('extensions-overview-version').fill('')
   await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toBeVisible()
 
+  await page.getByRole('listitem', { name: '2' }).click()
+  await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toHaveCount(0)
+
+  const requestPromise = page.waitForRequest((r) => (
+    r.method() === 'GET' &&
+    r.url().includes('/api/v2/extensions/overview/') &&
+    r.url().includes('database_id=')
+  ))
+  await page.getByTestId('extensions-overview-database').click()
+  await page.keyboard.type('db1')
+  await page.keyboard.press('Enter')
+  const dbFilteredReq = await requestPromise
+  expect(new URL(dbFilteredReq.url()).searchParams.get('database_id')).toBe('11111111-1111-1111-1111-111111111111')
+
+  await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ExtB', exact: true })).toHaveCount(0)
+
   await page.getByRole('button', { name: 'ExtA', exact: true }).click()
   await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
 
-  await expect(page.getByText('db1', { exact: true })).toBeVisible()
-  await expect(page.getByText('db2', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'db2', exact: true })).toBeVisible()
+
+  await page.getByTestId('extensions-drawer-database').click()
+  await page.keyboard.type('db1')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'db2', exact: true })).toHaveCount(0)
 })

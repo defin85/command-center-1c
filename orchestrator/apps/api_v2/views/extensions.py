@@ -146,6 +146,7 @@ class ExtensionsOverviewResponseSerializer(serializers.Serializer):
         OpenApiParameter(name="search", type=str, required=False, description="Search by extension name (substring)"),
         OpenApiParameter(name="status", type=str, required=False, description="Filter by status: active|inactive|missing|unknown"),
         OpenApiParameter(name="version", type=str, required=False, description="Filter rows where this version exists"),
+        OpenApiParameter(name="database_id", type=str, required=False, description="Restrict names to extensions present in this database snapshot"),
         OpenApiParameter(name="cluster_id", type=str, required=False, description="Restrict to a cluster"),
         OpenApiParameter(name="limit", type=int, required=False, description="Max items (default 100, max 1000)"),
         OpenApiParameter(name="offset", type=int, required=False, description="Offset (default 0)"),
@@ -165,10 +166,29 @@ def get_extensions_overview(request):
     search = str(request.query_params.get("search") or "").strip().lower()
     status_filter = str(request.query_params.get("status") or "").strip().lower()
     version_filter = str(request.query_params.get("version") or "").strip()
+    database_id = str(request.query_params.get("database_id") or "").strip() or None
     cluster_id = str(request.query_params.get("cluster_id") or "").strip() or None
 
     limit = _parse_int(request.query_params.get("limit"), default=100, min_value=1, max_value=1000)
     offset = _parse_int(request.query_params.get("offset"), default=0, min_value=0, max_value=1_000_000)
+
+    allowed_names: set[str] | None = None
+    if database_id is not None:
+        try:
+            db_for_names = Database.objects.get(id=database_id)
+        except (Database.DoesNotExist, ValueError, TypeError):
+            return Response(
+                {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": "Database not found"}},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+        if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, db_for_names):
+            return _permission_denied("You do not have permission to access this database.")
+
+        state = _load_snapshot_state(db_for_names)
+        if state.ok:
+            allowed_names = {str(item.get("name") or "").strip() for item in state.extensions if str(item.get("name") or "").strip()}
+        else:
+            allowed_names = set()
 
     databases = list(_accessible_databases_qs(request, cluster_id=cluster_id))
     total_databases = len(databases)
@@ -244,6 +264,9 @@ def get_extensions_overview(request):
         rows.append(row)
 
     # Apply filters.
+    if allowed_names is not None:
+        rows = [r for r in rows if str(r.get("name") or "").strip() in allowed_names]
+
     if search:
         rows = [r for r in rows if search in str(r.get("name") or "").lower()]
 

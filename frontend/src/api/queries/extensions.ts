@@ -29,6 +29,7 @@ export type ExtensionsOverviewQuery = {
   search?: string
   status?: 'active' | 'inactive' | 'missing' | 'unknown'
   version?: string
+  database_id?: string
   cluster_id?: string
   limit?: number
   offset?: number
@@ -95,4 +96,3 @@ export function useExtensionsOverviewDatabases(query: ExtensionsOverviewDatabase
     enabled: enabled && Boolean(query.name),
   })
 }
-

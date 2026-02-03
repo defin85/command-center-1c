@@ -8,7 +8,19 @@ def build_canonical_extensions_inventory(normalized_snapshot: Any, spec: dict | 
     MVP mapping: normalized extensions snapshot -> canonical extensions_inventory.
 
     Today, the canonical shape is intentionally close to normalized snapshot output:
-      {"extensions": [{"name": "...", "version"?: "...", "is_active"?: bool}, ...]}
+      {
+        "extensions": [
+          {
+            "name": "...",
+            "purpose"?: "...",
+            "version"?: "...",
+            "is_active"?: bool,
+            "safe_mode"?: bool,
+            "unsafe_action_protection"?: bool,
+          },
+          ...
+        ]
+      }
 
     `spec` is reserved for future deterministic mapping rules. For now, it can be used
     as an identity placeholder without changing output.
@@ -29,6 +41,11 @@ def build_canonical_extensions_inventory(normalized_snapshot: Any, spec: dict | 
         if not name:
             continue
         row: dict[str, Any] = {"name": name}
+        purpose = item.get("purpose")
+        if purpose is not None:
+            purpose = str(purpose).strip() or None
+            if purpose is not None:
+                row["purpose"] = purpose
         version = item.get("version")
         if version is not None:
             version = str(version).strip() or None
@@ -37,6 +54,12 @@ def build_canonical_extensions_inventory(normalized_snapshot: Any, spec: dict | 
         is_active = item.get("is_active")
         if isinstance(is_active, bool):
             row["is_active"] = is_active
+        safe_mode = item.get("safe_mode")
+        if isinstance(safe_mode, bool):
+            row["safe_mode"] = safe_mode
+        unsafe_action_protection = item.get("unsafe_action_protection")
+        if isinstance(unsafe_action_protection, bool):
+            row["unsafe_action_protection"] = unsafe_action_protection
         out_items.append(row)
 
     return {"extensions": out_items}
@@ -59,4 +82,3 @@ def validate_extensions_inventory(payload: Any) -> list[str]:
         if not name:
             errors.append(f"extensions[{idx}].name is required")
     return errors
-

@@ -598,4 +598,12 @@ def test_get_extensions_snapshot_preserves_full_extensions_fields(client, user):
             "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
         }
     ]
-    assert snapshot["extensions_canonical"] == [{"name": "EF_10236744_4", "is_active": True}]
+    assert snapshot["extensions_canonical"] == [
+        {
+            "name": "EF_10236744_4",
+            "purpose": "patch",
+            "is_active": True,
+            "safe_mode": False,
+            "unsafe_action_protection": False,
+        }
+    ]
