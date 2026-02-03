@@ -537,3 +537,65 @@ def test_get_extensions_snapshot_requires_permission_and_returns_empty(client, u
     assert snapshot["extensions"] == []
     assert snapshot["raw"] == {"stdout": "ok", "exit_code": 0}
     assert snapshot["parse_error"] is None
+
+
+@pytest.mark.django_db
+def test_get_extensions_snapshot_preserves_full_extensions_fields(client, user):
+    db = Database.objects.create(
+        name="db",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+    )
+
+    ct = ContentType.objects.get(app_label="databases", model="database")
+    perm = Permission.objects.get(content_type=ct, codename="view_database")
+    user.user_permissions.add(perm)
+    DatabasePermission.objects.create(user=user, database=db, level=PermissionLevel.VIEW)
+    client.force_authenticate(user=User.objects.get(pk=user.pk))
+
+    DatabaseExtensionsSnapshot.objects.update_or_create(
+        database_id=db.id,
+        defaults={
+            "snapshot": {
+                "raw": {"stdout": "ok", "exit_code": 0},
+                "parse_error": None,
+                "extensions": [
+                    {
+                        "name": "EF_10236744_4",
+                        "is_active": True,
+                        "purpose": "patch",
+                        "safe_mode": False,
+                        "security_profile_name": None,
+                        "unsafe_action_protection": False,
+                        "used_in_distributed_infobase": True,
+                        "scope": "infobase",
+                        "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
+                    }
+                ],
+            },
+            "source_operation_id": "op-1",
+        },
+    )
+
+    resp = client.get("/api/v2/databases/get-extensions-snapshot/", {"database_id": str(db.id)})
+    assert resp.status_code == 200
+    snapshot = resp.json()["snapshot"]
+
+    assert snapshot["parse_error"] is None
+    assert snapshot["extensions"] == [
+        {
+            "name": "EF_10236744_4",
+            "is_active": True,
+            "purpose": "patch",
+            "safe_mode": False,
+            "security_profile_name": None,
+            "unsafe_action_protection": False,
+            "used_in_distributed_infobase": True,
+            "scope": "infobase",
+            "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
+        }
+    ]
+    assert snapshot["extensions_canonical"] == [{"name": "EF_10236744_4", "is_active": True}]

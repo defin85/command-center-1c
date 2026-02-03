@@ -298,7 +298,9 @@ def get_extensions_snapshot(request):
                 ).values_list("spec", flat=True).first()
                 spec_dict = spec if isinstance(spec, dict) else {}
                 canonical = build_canonical_extensions_inventory(snapshot, spec_dict)
-                snapshot["extensions"] = canonical.get("extensions", [])
+                # Keep full normalized `extensions[]` for UI drill-down.
+                # Provide minimal stable canonical list separately (used for mapping/drift logic).
+                snapshot["extensions_canonical"] = canonical.get("extensions", [])
             except Exception:
                 pass
         updated_at = snapshot_obj.updated_at
