@@ -78,6 +78,12 @@ const normalizePolicyBool = (value: unknown): boolean | null => {
   return null
 }
 
+type ExtensionsFlagsPolicyState = {
+  active: boolean | null
+  safe_mode: boolean | null
+  unsafe_action_protection: boolean | null
+}
+
 type UIBinding = {
   target_ref?: string
   source_ref?: string
@@ -162,6 +168,12 @@ export const Extensions = () => {
   const [planPending, setPlanPending] = useState(false)
   const [applyPending, setApplyPending] = useState(false)
 
+  const [drawerPolicy, setDrawerPolicy] = useState<ExtensionsFlagsPolicyState>({
+    active: null,
+    safe_mode: null,
+    unsafe_action_protection: null,
+  })
+
   const [applyReason, setApplyReason] = useState('')
   const [applyActiveEnabled, setApplyActiveEnabled] = useState(false)
   const [applyActiveValue, setApplyActiveValue] = useState(false)
@@ -198,6 +210,11 @@ export const Extensions = () => {
     const active = normalizePolicyBool(policy?.active)
     const safeMode = normalizePolicyBool(policy?.safe_mode)
     const unsafeActionProtection = normalizePolicyBool(policy?.unsafe_action_protection)
+    setDrawerPolicy({
+      active,
+      safe_mode: safeMode,
+      unsafe_action_protection: unsafeActionProtection,
+    })
     setApplyReason('')
     setApplyActiveEnabled(active !== null)
     setApplyActiveValue(Boolean(active))
@@ -318,17 +335,24 @@ export const Extensions = () => {
         return
       }
 
-      const currentPolicy = selectedRow?.flags ? {
-        active: normalizePolicyBool(selectedRow.flags.active?.policy),
-        safe_mode: normalizePolicyBool(selectedRow.flags.safe_mode?.policy),
-        unsafe_action_protection: normalizePolicyBool(selectedRow.flags.unsafe_action_protection?.policy),
-      } : { active: null, safe_mode: null, unsafe_action_protection: null }
+      // IMPORTANT: do not rely on selectedRow which can disappear after pagination/filter changes.
+      // Keep the latest known policy in drawer state to avoid accidental null overwrites.
+      const currentPolicy = drawerPolicy
 
-      await api.putExtensionsFlagsPolicy(selectedExtension, {
+      const nextPolicy = {
         active: applyActiveEnabled ? applyActiveValue : currentPolicy.active,
         safe_mode: applySafeModeEnabled ? applySafeModeValue : currentPolicy.safe_mode,
         unsafe_action_protection: applyUnsafeActionProtectionEnabled ? applyUnsafeActionProtectionValue : currentPolicy.unsafe_action_protection,
+      }
+
+      const updatedPolicy = await api.putExtensionsFlagsPolicy(selectedExtension, {
+        ...nextPolicy,
         reason: applyReason.trim() || undefined,
+      })
+      setDrawerPolicy({
+        active: normalizePolicyBool(updatedPolicy.active),
+        safe_mode: normalizePolicyBool(updatedPolicy.safe_mode),
+        unsafe_action_protection: normalizePolicyBool(updatedPolicy.unsafe_action_protection),
       })
       await overviewQuery.refetch()
       if (drilldownEnabled) await drilldownQuery.refetch()
