@@ -168,6 +168,34 @@ class ExtensionsPlanRequestSerializer(serializers.Serializer):
     database_ids = serializers.ListField(child=serializers.UUIDField(format="hex_verbose"), min_length=1, max_length=500)
     capability = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     extension_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # NOTE: apply_mask is only supported for capability `extensions.set_flags`.
+    apply_mask = serializers.DictField(required=False)
+
+
+_SET_FLAGS_KEYS: tuple[str, str, str] = ("active", "safe_mode", "unsafe_action_protection")
+
+
+def _default_set_flags_apply_mask() -> dict[str, bool]:
+    return {k: True for k in _SET_FLAGS_KEYS}
+
+
+def _normalize_set_flags_apply_mask(raw: Any) -> tuple[dict[str, bool] | None, str | None]:
+    if raw is None:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, "apply_mask must be an object"
+    unknown = sorted([str(k) for k in raw.keys() if str(k) not in _SET_FLAGS_KEYS])
+    if unknown:
+        return None, f"apply_mask has unknown keys: {unknown}"
+    mask: dict[str, bool] = {}
+    for k in _SET_FLAGS_KEYS:
+        v = raw.get(k)
+        if not isinstance(v, bool):
+            return None, f"apply_mask.{k} must be a boolean"
+        mask[k] = v
+    if not any(mask.values()):
+        return None, "apply_mask must select at least one flag"
+    return mask, None
 
 
 class ExtensionsPlanResponseSerializer(serializers.Serializer):
@@ -202,6 +230,7 @@ def extensions_plan(request):
     database_ids = [str(x) for x in serializer.validated_data["database_ids"]]
     capability = str(serializer.validated_data.get("capability") or "extensions.sync").strip()
     extension_name = str(serializer.validated_data.get("extension_name") or "").strip()
+    apply_mask_raw = serializer.validated_data.get("apply_mask")
 
     if capability not in {"extensions.sync", "extensions.set_flags"}:
         return Response(
@@ -259,6 +288,15 @@ def extensions_plan(request):
     executor_for_plan = dict(executor)
 
     if capability == "extensions.set_flags":
+        apply_mask, mask_err = _normalize_set_flags_apply_mask(apply_mask_raw)
+        if mask_err:
+            return Response(
+                {"success": False, "error": {"code": "VALIDATION_ERROR", "message": mask_err}},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if apply_mask is None:
+            apply_mask = _default_set_flags_apply_mask()
+
         if not extension_name:
             return Response(
                 {"success": False, "error": {"code": "MISSING_PARAMETER", "message": "extension_name is required"}},
@@ -271,6 +309,48 @@ def extensions_plan(request):
                 {"success": False, "error": {"code": "POLICY_NOT_FOUND", "message": "Flags policy is not configured"}},
                 status=http_status.HTTP_404_NOT_FOUND,
             )
+
+        selective_apply = not all(bool(apply_mask.get(k)) for k in _SET_FLAGS_KEYS)
+
+        # Fail-closed for selective apply unless executor passes flags via params.
+        if selective_apply:
+            if not isinstance(params, dict):
+                params = {}
+            missing = [k for k in _SET_FLAGS_KEYS if bool(apply_mask.get(k)) and str(k) not in params]
+            if missing:
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "CONFIGURATION_ERROR",
+                            "message": f"Selective apply requires params-based executor for set_flags (missing params: {missing})",
+                        },
+                    },
+                    status=http_status.HTTP_400_BAD_REQUEST,
+                )
+
+            forbidden_tokens = {"$policy.active", "$policy.safe_mode", "$policy.unsafe_action_protection"}
+            forbidden_args = {"--active", "--safe-mode", "--unsafe-action-protection"}
+            for token in additional_args or []:
+                t = str(token)
+                if t in forbidden_tokens or "$policy." in t or t in forbidden_args:
+                    return Response(
+                        {
+                            "success": False,
+                            "error": {
+                                "code": "CONFIGURATION_ERROR",
+                                "message": "Selective apply is not supported when set_flags uses $policy.* or flag switches in additional_args",
+                            },
+                        },
+                        status=http_status.HTTP_400_BAD_REQUEST,
+                    )
+
+        # Remove unselected flags from params so executor cannot modify them.
+        if isinstance(params, dict):
+            params = dict(params)
+            for k in _SET_FLAGS_KEYS:
+                if not bool(apply_mask.get(k)):
+                    params.pop(k, None)
 
         def _sub(value):
             if not isinstance(value, str):
@@ -293,6 +373,25 @@ def extensions_plan(request):
             else:
                 resolved_params[str(k)] = _sub(v)
         params = resolved_params
+
+        if selective_apply:
+            bad: list[str] = []
+            for k in _SET_FLAGS_KEYS:
+                if not bool(apply_mask.get(k)):
+                    continue
+                if params.get(k) is None:
+                    bad.append(k)
+            if bad:
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "VALIDATION_ERROR",
+                            "message": f"Selected flags must have non-null policy values: {bad}",
+                        },
+                    },
+                    status=http_status.HTTP_400_BAD_REQUEST,
+                )
 
         resolved_args: list[str] = []
         for token in additional_args or []:
@@ -326,6 +425,7 @@ def extensions_plan(request):
             "capability": capability,
             "action_id": str(action.get("id") or "").strip(),
             "extension_name": extension_name if capability == "extensions.set_flags" else None,
+            "apply_mask": apply_mask if capability == "extensions.set_flags" else None,
             "executor": executor_for_plan,
         },
     )
@@ -400,6 +500,13 @@ def extensions_apply(request):
     plan_executor = plan.executor if isinstance(plan.executor, dict) else {}
     action_capability = str(plan_executor.get("capability") or "extensions.sync").strip() or "extensions.sync"
     extension_name = str(plan_executor.get("extension_name") or "").strip()
+    plan_apply_mask_raw = plan_executor.get("apply_mask")
+    plan_apply_mask, plan_mask_err = _normalize_set_flags_apply_mask(plan_apply_mask_raw)
+    if plan_mask_err:
+        return Response(
+            {"success": False, "error": {"code": "PLAN_INVALID", "message": plan_mask_err}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
 
     if action_capability == "extensions.set_flags":
         denied = _require_manage_permission(request)
@@ -551,6 +658,42 @@ def extensions_apply(request):
         metadata_overrides["post_completion_extensions_sync_database_ids"] = database_ids
         if extension_name:
             metadata_overrides["extension_name"] = extension_name
+
+        apply_mask = plan_apply_mask or _default_set_flags_apply_mask()
+        selective_apply = not all(bool(apply_mask.get(k)) for k in _SET_FLAGS_KEYS)
+        if selective_apply:
+            forbidden_tokens = {"$policy.active", "$policy.safe_mode", "$policy.unsafe_action_protection"}
+            forbidden_args = {"--active", "--safe-mode", "--unsafe-action-protection"}
+            for token in (validated_data.get("additional_args") or []):
+                t = str(token)
+                if t in forbidden_tokens or "$policy." in t or t in forbidden_args:
+                    return Response(
+                        {
+                            "success": False,
+                            "error": {
+                                "code": "PLAN_INVALID",
+                                "message": "Selective apply plan is not supported when set_flags uses $policy.* or flag switches in additional_args",
+                            },
+                        },
+                        status=http_status.HTTP_400_BAD_REQUEST,
+                    )
+            params_obj = validated_data.get("params")
+            if not isinstance(params_obj, dict):
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "PLAN_INVALID",
+                            "message": "Selective apply plan requires params-based executor for set_flags",
+                        },
+                    },
+                    status=http_status.HTTP_400_BAD_REQUEST,
+                )
+            params_obj = dict(params_obj)
+            for k in _SET_FLAGS_KEYS:
+                if not bool(apply_mask.get(k)):
+                    params_obj.pop(k, None)
+            validated_data["params"] = params_obj
 
     return _execute_ibcmd_cli_validated(
         request,

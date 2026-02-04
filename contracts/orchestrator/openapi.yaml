@@ -13137,6 +13137,9 @@ components:
         extension_name:
           type: string
           description: Extension name (exact match). Required for capability `extensions.set_flags`.
+        apply_mask:
+          $ref: '#/components/schemas/ExtensionsFlagsApplyMask'
+        # NOTE: apply_mask is only supported for capability `extensions.set_flags`.
         database_ids:
           type: array
           items:
@@ -13146,6 +13149,20 @@ components:
           minItems: 1
       required:
       - database_ids
+    ExtensionsFlagsApplyMask:
+      type: object
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        safe_mode:
+          type: boolean
+        unsafe_action_protection:
+          type: boolean
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
     ExtensionsFlagObserved:
       type: object
       properties:

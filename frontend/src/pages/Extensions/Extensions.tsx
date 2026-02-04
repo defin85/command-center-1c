@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, Button, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Drawer, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
@@ -70,6 +70,12 @@ const flagCell = (flag: ExtensionsFlagAggregate | undefined | null) => {
       </Space>
     </Tooltip>
   )
+}
+
+const normalizePolicyBool = (value: unknown): boolean | null => {
+  if (value === true) return true
+  if (value === false) return false
+  return null
 }
 
 type UIBinding = {
@@ -156,6 +162,14 @@ export const Extensions = () => {
   const [planPending, setPlanPending] = useState(false)
   const [applyPending, setApplyPending] = useState(false)
 
+  const [applyReason, setApplyReason] = useState('')
+  const [applyActiveEnabled, setApplyActiveEnabled] = useState(false)
+  const [applyActiveValue, setApplyActiveValue] = useState(false)
+  const [applySafeModeEnabled, setApplySafeModeEnabled] = useState(false)
+  const [applySafeModeValue, setApplySafeModeValue] = useState(false)
+  const [applyUnsafeActionProtectionEnabled, setApplyUnsafeActionProtectionEnabled] = useState(false)
+  const [applyUnsafeActionProtectionValue, setApplyUnsafeActionProtectionValue] = useState(false)
+
   useEffect(() => {
     setDatabaseId(undefined)
     setDrawerDatabaseId(undefined)
@@ -180,14 +194,32 @@ export const Extensions = () => {
     offset: drawerDatabaseId ? 0 : (drawerPage - 1) * drawerPageSize,
   }, drilldownEnabled)
 
-  const openDrawer = (name: string) => {
-    setSelectedExtension(name)
+  const resetApplyFormFromPolicy = (policy?: { active?: unknown; safe_mode?: unknown; unsafe_action_protection?: unknown } | null) => {
+    const active = normalizePolicyBool(policy?.active)
+    const safeMode = normalizePolicyBool(policy?.safe_mode)
+    const unsafeActionProtection = normalizePolicyBool(policy?.unsafe_action_protection)
+    setApplyReason('')
+    setApplyActiveEnabled(active !== null)
+    setApplyActiveValue(Boolean(active))
+    setApplySafeModeEnabled(safeMode !== null)
+    setApplySafeModeValue(Boolean(safeMode))
+    setApplyUnsafeActionProtectionEnabled(unsafeActionProtection !== null)
+    setApplyUnsafeActionProtectionValue(Boolean(unsafeActionProtection))
+  }
+
+  const openDrawer = (row: ExtensionsOverviewRow) => {
+    setSelectedExtension(row.name)
     setDrawerOpen(true)
     setDrawerStatus(undefined)
     setDrawerVersion('')
     setDrawerDatabaseId(undefined)
     setDrawerPage(1)
     setDrawerPageSize(50)
+    resetApplyFormFromPolicy(row.flags ? {
+      active: row.flags.active?.policy,
+      safe_mode: row.flags.safe_mode?.policy,
+      unsafe_action_protection: row.flags.unsafe_action_protection?.policy,
+    } : null)
   }
 
   const runAdoptPolicy = () => {
@@ -216,12 +248,13 @@ export const Extensions = () => {
       onOk: async () => {
         setAdoptPending(true)
         try {
-          await api.postExtensionsFlagsPolicyAdopt({
+          const policy = await api.postExtensionsFlagsPolicyAdopt({
             database_id: drawerDatabaseId,
             extension_name: selectedExtension,
             reason: reason.trim() || undefined,
           })
           message.success('Policy updated from database snapshot')
+          resetApplyFormFromPolicy(policy)
           await overviewQuery.refetch()
           if (drilldownEnabled) await drilldownQuery.refetch()
         } catch (e: unknown) {
@@ -240,6 +273,16 @@ export const Extensions = () => {
     if (!selectedExtension) return
     if (mutatingDisabled) return
     if (planPending || applyPending) return
+
+    const applyMask = {
+      active: applyActiveEnabled,
+      safe_mode: applySafeModeEnabled,
+      unsafe_action_protection: applyUnsafeActionProtectionEnabled,
+    }
+    if (!applyMask.active && !applyMask.safe_mode && !applyMask.unsafe_action_protection) {
+      message.error('Select at least one flag to apply')
+      return
+    }
 
     setPlanPending(true)
     try {
@@ -275,10 +318,26 @@ export const Extensions = () => {
         return
       }
 
+      const currentPolicy = selectedRow?.flags ? {
+        active: normalizePolicyBool(selectedRow.flags.active?.policy),
+        safe_mode: normalizePolicyBool(selectedRow.flags.safe_mode?.policy),
+        unsafe_action_protection: normalizePolicyBool(selectedRow.flags.unsafe_action_protection?.policy),
+      } : { active: null, safe_mode: null, unsafe_action_protection: null }
+
+      await api.putExtensionsFlagsPolicy(selectedExtension, {
+        active: applyActiveEnabled ? applyActiveValue : currentPolicy.active,
+        safe_mode: applySafeModeEnabled ? applySafeModeValue : currentPolicy.safe_mode,
+        unsafe_action_protection: applyUnsafeActionProtectionEnabled ? applyUnsafeActionProtectionValue : currentPolicy.unsafe_action_protection,
+        reason: applyReason.trim() || undefined,
+      })
+      await overviewQuery.refetch()
+      if (drilldownEnabled) await drilldownQuery.refetch()
+
       const plan = await api.postExtensionsPlan({
         database_ids: databaseIds,
         capability: 'extensions.set_flags',
         extension_name: selectedExtension,
+        apply_mask: applyMask,
       })
 
       const previewText = formatExecutionPlan(plan.execution_plan)
@@ -299,12 +358,17 @@ export const Extensions = () => {
       ]
 
       modal.confirm({
-        title: 'Apply flags policy?',
+        title: 'Apply selected flags?',
         content: (
           <div>
             <div style={{ marginBottom: 8 }}>
               Extension <Text code>{selectedExtension}</Text> will be applied to {databaseIds.length} database(s).
             </div>
+            <Space size={8} wrap style={{ marginBottom: 8 }}>
+              <div>Active: {applyMask.active ? boolTag(applyActiveValue) : <Text type="secondary">skipped</Text>}</div>
+              <div>Safe mode: {applyMask.safe_mode ? boolTag(applySafeModeValue) : <Text type="secondary">skipped</Text>}</div>
+              <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(applyUnsafeActionProtectionValue) : <Text type="secondary">skipped</Text>}</div>
+            </Space>
             {selectedRow?.flags ? (
               <Space size={8} wrap style={{ marginBottom: 8 }}>
                 <div>Active: {boolTag(selectedRow.flags.active.policy)}</div>
@@ -369,6 +433,10 @@ export const Extensions = () => {
     } catch (e: unknown) {
       const maybe = e as { response?: { data?: any } } | null
       const code = maybe?.response?.data?.error?.code
+      if (code === 'CONFIGURATION_ERROR') {
+        message.error('Selective apply is not supported by current action catalog configuration')
+        return
+      }
       if (code === 'POLICY_NOT_FOUND') {
         message.error('Flags policy is not configured for this extension')
         return
@@ -388,7 +456,7 @@ export const Extensions = () => {
       dataIndex: 'name',
       key: 'name',
       render: (value: string, row) => (
-        <Button type="link" style={{ padding: 0 }} onClick={() => openDrawer(row.name)}>
+        <Button type="link" style={{ padding: 0 }} onClick={() => openDrawer(row)}>
           {value}
         </Button>
       ),
@@ -660,26 +728,84 @@ export const Extensions = () => {
             />
           )}
 
-          <Space wrap>
-            <Tooltip title={mutatingDisabled ? 'Select a tenant to enable this action' : undefined}>
-              <Button
-                type="primary"
-                onClick={runApplyPolicy}
-                loading={planPending || applyPending}
-                disabled={!selectedExtension || mutatingDisabled}
-              >
-                Apply flags policy
-              </Button>
-            </Tooltip>
-            <Tooltip title={!drawerDatabaseId ? 'Select a database to adopt from' : (mutatingDisabled ? 'Select a tenant to enable this action' : undefined)}>
-              <Button
-                onClick={runAdoptPolicy}
-                loading={adoptPending}
-                disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled}
-              >
-                Adopt from database
-              </Button>
-            </Tooltip>
+          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+            <Text strong>Apply flags policy</Text>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space align="center" wrap>
+                <Checkbox
+                  data-testid="extensions-apply-flag-active-enabled"
+                  checked={applyActiveEnabled}
+                  onChange={(e) => setApplyActiveEnabled(e.target.checked)}
+                >
+                  Active
+                </Checkbox>
+                <Switch
+                  data-testid="extensions-apply-flag-active-value"
+                  checked={applyActiveValue}
+                  onChange={setApplyActiveValue}
+                  disabled={!applyActiveEnabled}
+                />
+              </Space>
+              <Space align="center" wrap>
+                <Checkbox
+                  data-testid="extensions-apply-flag-safe-mode-enabled"
+                  checked={applySafeModeEnabled}
+                  onChange={(e) => setApplySafeModeEnabled(e.target.checked)}
+                >
+                  Safe mode
+                </Checkbox>
+                <Switch
+                  data-testid="extensions-apply-flag-safe-mode-value"
+                  checked={applySafeModeValue}
+                  onChange={setApplySafeModeValue}
+                  disabled={!applySafeModeEnabled}
+                />
+              </Space>
+              <Space align="center" wrap>
+                <Checkbox
+                  data-testid="extensions-apply-flag-unsafe-action-protection-enabled"
+                  checked={applyUnsafeActionProtectionEnabled}
+                  onChange={(e) => setApplyUnsafeActionProtectionEnabled(e.target.checked)}
+                >
+                  Unsafe action protection
+                </Checkbox>
+                <Switch
+                  data-testid="extensions-apply-flag-unsafe-action-protection-value"
+                  checked={applyUnsafeActionProtectionValue}
+                  onChange={setApplyUnsafeActionProtectionValue}
+                  disabled={!applyUnsafeActionProtectionEnabled}
+                />
+              </Space>
+              <Input.TextArea
+                data-testid="extensions-apply-reason"
+                value={applyReason}
+                onChange={(e) => setApplyReason(e.target.value)}
+                placeholder="Reason (optional)"
+                rows={2}
+                style={{ maxWidth: 640 }}
+              />
+              <Space wrap>
+                <Tooltip title={mutatingDisabled ? 'Select a tenant to enable this action' : undefined}>
+                  <Button
+                    type="primary"
+                    onClick={runApplyPolicy}
+                    loading={planPending || applyPending}
+                    disabled={!selectedExtension || mutatingDisabled}
+                  >
+                    Apply
+                  </Button>
+                </Tooltip>
+                <Tooltip title={!drawerDatabaseId ? 'Select a database to adopt from' : (mutatingDisabled ? 'Select a tenant to enable this action' : undefined)}>
+                  <Button
+                    onClick={runAdoptPolicy}
+                    loading={adoptPending}
+                    disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled}
+                  >
+                    Adopt from database
+                  </Button>
+                </Tooltip>
+              </Space>
+            </Space>
           </Space>
 
           <Space wrap>

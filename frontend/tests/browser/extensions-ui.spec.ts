@@ -41,6 +41,7 @@ async function setupApiMocks(page: Page, state: {
   applyResponse?: AnyRecord
   onPlanHeaders?: (headers: Record<string, string>) => void
   onApplyHeaders?: (headers: Record<string, string>) => void
+  onPolicyHeaders?: (headers: Record<string, string>) => void
 }) {
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -140,6 +141,23 @@ async function setupApiMocks(page: Page, state: {
         preconditions: {},
         execution_plan: { kind: 'ibcmd_cli', argv_masked: ['ibcmd', 'infobase', 'extension', 'set'] },
         bindings: [],
+      })
+    }
+
+    if (method === 'PUT' && path.startsWith('/api/v2/extensions/flags-policy/')) {
+      try {
+        state.onPolicyHeaders?.(request.headers() as Record<string, string>)
+      } catch (_err) {
+        // ignore
+      }
+      const body = (() => {
+        try { return request.postDataJSON() as AnyRecord } catch (_err) { return {} as AnyRecord }
+      })()
+      return fulfillJson(route, {
+        extension_name: decodeURIComponent(path.split('/').slice(-2)[0] || ''),
+        active: body.active ?? null,
+        safe_mode: body.safe_mode ?? null,
+        unsafe_action_protection: body.unsafe_action_protection ?? null,
       })
     }
 
@@ -300,11 +318,11 @@ test('Extensions: staff without tenant context disables mutating actions', async
   await page.goto('/extensions', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: 'ExtA', exact: true }).click()
   await expect(page.getByText('Mutating actions are disabled', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Apply flags policy', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Adopt from database', exact: true })).toBeDisabled()
 })
 
-test('Extensions: apply policy triggers plan/apply with tenant header', async ({ page }) => {
+test('Extensions: selective apply triggers policy upsert + plan/apply with tenant header', async ({ page }) => {
   await setupAuth(page, { activeTenantId: 't1' })
 
   const seenTenantHeaders: string[] = []
@@ -343,15 +361,37 @@ test('Extensions: apply policy triggers plan/apply with tenant header', async ({
     onApplyHeaders: (headers) => {
       if (headers['x-cc1c-tenant-id']) seenTenantHeaders.push(headers['x-cc1c-tenant-id'])
     },
+    onPolicyHeaders: (headers) => {
+      if (headers['x-cc1c-tenant-id']) seenTenantHeaders.push(headers['x-cc1c-tenant-id'])
+    },
   })
 
   await page.goto('/extensions', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: 'ExtA', exact: true }).click()
   await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Apply flags policy', exact: true }).click()
-  await expect(page.locator('.ant-modal-confirm-title').filter({ hasText: 'Apply flags policy?' })).toBeVisible()
+  await page.getByTestId('extensions-apply-flag-safe-mode-enabled').click()
+  await page.getByTestId('extensions-apply-flag-unsafe-action-protection-enabled').click()
+
+  const policyReqPromise = page.waitForRequest((r) => r.method() === 'PUT' && r.url().includes('/api/v2/extensions/flags-policy/ExtA/'))
+  const planReqPromise = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/api/v2/extensions/plan/'))
+
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
 
-  expect(seenTenantHeaders).toEqual(['t1', 't1'])
+  const policyReq = await policyReqPromise
+  expect(policyReq.headers()['x-cc1c-tenant-id']).toBe('t1')
+  expect(policyReq.postDataJSON()).toMatchObject({ active: true, safe_mode: true, unsafe_action_protection: false })
+
+  const planReq = await planReqPromise
+  expect(planReq.headers()['x-cc1c-tenant-id']).toBe('t1')
+  expect(planReq.postDataJSON()).toMatchObject({
+    capability: 'extensions.set_flags',
+    extension_name: 'ExtA',
+    apply_mask: { active: true, safe_mode: false, unsafe_action_protection: false },
+  })
+
+  await expect(page.locator('.ant-modal-confirm-title').filter({ hasText: 'Apply selected flags?' })).toBeVisible()
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+
+  expect(seenTenantHeaders).toEqual(['t1', 't1', 't1'])
 })
