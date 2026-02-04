@@ -1,4 +1,5 @@
 import json
+import uuid
 from typing import Any, Dict
 
 from django.db import transaction
@@ -269,6 +270,7 @@ class WorkerEventHandlersMixin:
 
             self._update_database_restrictions(batch_op, results)
             self._update_database_health(batch_op, results)
+            self._enqueue_post_completion_extensions_sync(batch_op, results)
 
         except BatchOperation.DoesNotExist:
             runtime.logger.warning("BatchOperation not found: %s", operation_id)
@@ -278,6 +280,250 @@ class WorkerEventHandlersMixin:
             raise
         except Exception as e:
             runtime.logger.error("Error handling worker:completed: %s", e, exc_info=True)
+
+    def _enqueue_post_completion_extensions_sync(self, batch_op, results: list[dict[str, Any]]) -> None:
+        """
+        Best-effort follow-up extensions.sync after operations that mutate extensions state.
+
+        Triggered by BatchOperation.metadata.post_completion_extensions_sync=true.
+        """
+        metadata = batch_op.metadata or {}
+        if not isinstance(metadata, dict):
+            return
+        if metadata.get("post_completion_extensions_sync") is not True:
+            return
+
+        succeeded: list[str] = []
+        for item in results or []:
+            if not isinstance(item, dict):
+                continue
+            if not item.get("success"):
+                continue
+            db_id = item.get("database_id")
+            if db_id:
+                succeeded.append(str(db_id))
+
+        if not succeeded:
+            fallback = metadata.get("post_completion_extensions_sync_database_ids")
+            if isinstance(fallback, list):
+                succeeded = [str(x) for x in fallback if x]
+
+        succeeded = [x for x in succeeded if x]
+        if not succeeded:
+            return
+
+        # Resolve tenant for loading effective runtime settings.
+        try:
+            from apps.databases.models import Database
+
+            tenant_id = (
+                Database.objects.filter(id=succeeded[0]).values_list("tenant_id", flat=True).first()
+            )
+            tenant_id_str = str(tenant_id) if tenant_id else ""
+        except Exception:
+            tenant_id_str = ""
+
+        if not tenant_id_str:
+            runtime.logger.warning(
+                "post_completion_extensions_sync: cannot resolve tenant_id (op=%s)",
+                str(getattr(batch_op, "id", "")),
+            )
+            return
+
+        try:
+            from apps.operations.driver_catalog_effective import get_effective_driver_catalog, resolve_driver_catalog_versions
+            from apps.operations.ibcmd_cli_builder import (
+                build_ibcmd_cli_argv,
+                build_ibcmd_cli_argv_manual,
+                build_ibcmd_connection_args,
+            )
+            from apps.operations.models import BatchOperation
+            from apps.operations.services.operations_service import OperationsService
+
+            triggered_by = str(getattr(batch_op, "id", "") or "").strip()
+            if triggered_by and BatchOperation.objects.filter(metadata__triggered_by_operation_id=triggered_by).exists():
+                runtime.logger.info(
+                    "post_completion_extensions_sync: follow-up already exists (triggered_by=%s)",
+                    triggered_by,
+                )
+                return
+
+            exec_cfg = metadata.get("post_completion_extensions_sync_executor")
+            if not isinstance(exec_cfg, dict):
+                from apps.runtime_settings.action_catalog import (
+                    UI_ACTION_CATALOG_KEY,
+                    ensure_valid_action_catalog,
+                    get_reserved_action_capability,
+                )
+                from apps.runtime_settings.effective import get_effective_runtime_setting
+
+                raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id_str).value
+                catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+
+                extensions = catalog.get("extensions")
+                actions = extensions.get("actions") if isinstance(extensions, dict) else None
+                if not isinstance(actions, list):
+                    return
+
+                sync_action = None
+                for action in actions:
+                    if not isinstance(action, dict):
+                        continue
+                    if get_reserved_action_capability(action) == "extensions.sync":
+                        sync_action = action
+                        break
+                if not isinstance(sync_action, dict):
+                    runtime.logger.warning(
+                        "post_completion_extensions_sync: extensions.sync is not configured (tenant=%s)",
+                        tenant_id_str,
+                    )
+                    return
+
+                exec_cfg = sync_action.get("executor") if isinstance(sync_action.get("executor"), dict) else None
+
+            if not isinstance(exec_cfg, dict) or exec_cfg.get("kind") != "ibcmd_cli":
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: extensions.sync executor is not ibcmd_cli (tenant=%s)",
+                    tenant_id_str,
+                )
+                return
+
+            driver = str(exec_cfg.get("driver") or "ibcmd").strip().lower() or "ibcmd"
+            if driver != "ibcmd":
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: extensions.sync driver must be ibcmd (got=%s tenant=%s)",
+                    driver,
+                    tenant_id_str,
+                )
+                return
+
+            command_id = str(exec_cfg.get("command_id") or "").strip()
+            if not command_id:
+                return
+
+            mode = str(exec_cfg.get("mode") or "guided").strip().lower()
+            params = exec_cfg.get("params") if isinstance(exec_cfg.get("params"), dict) else {}
+            additional_args = exec_cfg.get("additional_args") if isinstance(exec_cfg.get("additional_args"), list) else []
+            stdin = exec_cfg.get("stdin") if isinstance(exec_cfg.get("stdin"), str) else ""
+
+            versions = resolve_driver_catalog_versions("ibcmd")
+            if versions.base_version is None:
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: ibcmd catalog is not available (tenant=%s)",
+                    tenant_id_str,
+                )
+                return
+
+            effective = get_effective_driver_catalog(
+                driver="ibcmd",
+                base_version=versions.base_version,
+                overrides_version=versions.overrides_version,
+            )
+            commands_by_id = effective.catalog.get("commands_by_id") if isinstance(effective.catalog, dict) else None
+            if not isinstance(commands_by_id, dict):
+                return
+            command = commands_by_id.get(command_id)
+            if not isinstance(command, dict):
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: unknown ibcmd command_id=%s (tenant=%s)",
+                    command_id,
+                    tenant_id_str,
+                )
+                return
+
+            connection: dict[str, Any] = {}
+            pre_args = build_ibcmd_connection_args(
+                driver_schema=effective.catalog.get("driver_schema") if isinstance(effective.catalog, dict) else None,
+                connection=connection,
+            )
+            builder = build_ibcmd_cli_argv_manual if mode == "manual" else build_ibcmd_cli_argv
+            argv, argv_masked = builder(
+                command=command,
+                params=params if isinstance(params, dict) else {},
+                additional_args=[str(x) for x in additional_args if x is not None],
+                pre_args=pre_args,
+            )
+
+            operation_id = str(uuid.uuid4())
+            operation_name = f"extensions.sync (post_completion) - {len(succeeded)} databases"
+
+            payload_data = {
+                "command_id": command_id,
+                "mode": mode,
+                "argv": argv,
+                "argv_masked": argv_masked,
+                "stdin": stdin,
+                "connection": connection,
+                "connection_source": "database_profile",
+                "ib_auth": {"strategy": "local"},
+                "dbms_auth": {"strategy": "local"},
+            }
+            payload = {"data": payload_data, "filters": {}, "options": {}}
+
+            sync_op = BatchOperation.objects.create(
+                id=operation_id,
+                name=operation_name,
+                operation_type=BatchOperation.TYPE_IBCMD_CLI,
+                target_entity="Infobase",
+                status=BatchOperation.STATUS_PENDING,
+                payload=payload,
+                config={
+                    "batch_size": 1,
+                    "timeout_seconds": int((exec_cfg.get("fixed") or {}).get("timeout_seconds") or 900),
+                    "retry_count": 1,
+                    "priority": "normal",
+                },
+                total_tasks=len(succeeded),
+                created_by="system",
+                metadata={
+                    "tags": ["ibcmd", "ibcmd_cli", command_id],
+                    "command_id": command_id,
+                    "mode": mode,
+                    "snapshot_kinds": ["extensions"],
+                    "snapshot_source": "extensions_plan_apply.post_completion",
+                    "action_capability": "extensions.sync",
+                    "triggered_by_operation_id": str(getattr(batch_op, "id", "")),
+                },
+            )
+
+            dbs = list(Database.objects.filter(id__in=succeeded))
+            sync_op.target_databases.set(dbs)
+
+            tasks = []
+            for db in dbs:
+                tasks.append(
+                    runtime.Task(
+                        id=f"{operation_id}-{str(getattr(db, 'id', ''))[:8]}",
+                        batch_operation=sync_op,
+                        database=db,
+                        status=runtime.Task.STATUS_PENDING,
+                    )
+                )
+            runtime.Task.objects.bulk_create(tasks)
+
+            enqueue_res = OperationsService.enqueue_operation(operation_id)
+            if not enqueue_res.success:
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: enqueue failed (op=%s error=%s)",
+                    operation_id,
+                    getattr(enqueue_res, "error", None),
+                )
+                return
+
+            runtime.logger.info(
+                "post_completion_extensions_sync: enqueued extensions.sync (op=%s, triggered_by=%s, databases=%d)",
+                operation_id,
+                str(getattr(batch_op, "id", "")),
+                len(dbs),
+            )
+        except Exception as exc:
+            runtime.logger.warning(
+                "post_completion_extensions_sync failed (tenant=%s op=%s): %s",
+                tenant_id_str,
+                str(getattr(batch_op, "id", "")),
+                str(exc),
+                exc_info=True,
+            )
 
     def handle_worker_failed(self, data: Dict[str, Any], correlation_id: str) -> None:
         from apps.operations.models import BatchOperation

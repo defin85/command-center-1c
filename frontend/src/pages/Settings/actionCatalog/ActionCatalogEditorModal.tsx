@@ -32,6 +32,7 @@ const MODE_OPTIONS: { value: 'guided' | 'manual'; label: string }[] = [
 const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
   { value: 'extensions.list', label: 'extensions.list' },
   { value: 'extensions.sync', label: 'extensions.sync' },
+  { value: 'extensions.set_flags', label: 'extensions.set_flags' },
 ]
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/

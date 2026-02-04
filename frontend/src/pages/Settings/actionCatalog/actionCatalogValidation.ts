@@ -2,7 +2,7 @@ import type { PlainObject } from '../actionCatalogTypes'
 import { isPlainObject, isValidUuid, normalizeActionId } from '../actionCatalogUtils'
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
-const RESERVED_CAPABILITIES = new Set(['extensions.list', 'extensions.sync'])
+const RESERVED_CAPABILITIES = new Set(['extensions.list', 'extensions.sync', 'extensions.set_flags'])
 
 export type ActionCatalogValidationResult = {
   ok: boolean

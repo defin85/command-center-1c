@@ -15,6 +15,7 @@ from .models_user_mappings import (
     InfobaseAuthType,
     InfobaseUserMapping,
 )
+from .models_extensions_flags_policy import ExtensionFlagsPolicy
 
 __all__ = [
     "Cluster",
@@ -30,7 +31,7 @@ __all__ = [
     "InfobaseUserMapping",
     "DbmsAuthType",
     "DbmsUserMapping",
+    "ExtensionFlagsPolicy",
     "StatusHistory",
     "generate_database_id",
 ]
-

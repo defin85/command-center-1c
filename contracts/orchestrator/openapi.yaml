@@ -2853,11 +2853,187 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/extensions/flags-policy/:
+    get:
+      operationId: v2_extensions_flags_policy_list
+      description: List extensions flags policy for current tenant context (staff may see cross-tenant data depending on tenant selection).
+      summary: Extensions flags policy list
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicyListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/extensions/flags-policy/{extension_name}/:
+    put:
+      operationId: v2_extensions_flags_policy_update
+      description: Upsert flags policy for a single extension name. Staff mutating without explicit tenant context MUST fail closed.
+      summary: Extensions flags policy upsert
+      parameters:
+      - in: path
+        name: extension_name
+        schema:
+          type: string
+        description: Extension name (exact match)
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    patch:
+      operationId: v2_extensions_flags_policy_partial_update
+      description: Patch flags policy for a single extension name. Staff mutating without explicit tenant context MUST fail closed.
+      summary: Extensions flags policy patch
+      parameters:
+      - in: path
+        name: extension_name
+        schema:
+          type: string
+        description: Extension name (exact match)
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/extensions/flags-policy/adopt/:
+    post:
+      operationId: v2_extensions_flags_policy_adopt_create
+      description: Adopt flags policy for a single extension name from a database observed snapshot. Staff mutating without explicit tenant context MUST fail closed.
+      summary: Extensions flags policy adopt
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/extensions/plan/:
     post:
       operationId: v2_extensions_plan_create
-      description: Build plan for extensions apply (captures base snapshot hashes
-        per database).
+      description: |
+        Build plan for extensions apply (captures base snapshot hashes per database).
+        Supports reserved capabilities: `extensions.sync` (default) and `extensions.set_flags`.
       summary: Extensions plan
       tags:
       - v2
@@ -12862,6 +13038,8 @@ components:
           type: string
           format: date-time
           nullable: true
+        flags:
+          $ref: '#/components/schemas/ExtensionsObservedFlagValues'
       required:
       - database_id
       - database_name
@@ -12913,6 +13091,8 @@ components:
         unsafe_action_protection:
           type: boolean
           nullable: true
+        flags:
+          $ref: '#/components/schemas/ExtensionsFlagsAggregate'
         installed_count:
           type: integer
         active_count:
@@ -12943,6 +13123,20 @@ components:
     ExtensionsPlanRequest:
       type: object
       properties:
+        capability:
+          enum:
+          - extensions.sync
+          - extensions.set_flags
+          type: string
+          default: extensions.sync
+          description: |-
+            Reserved capability to plan/apply.
+
+            - `extensions.sync` (default) - refresh extensions snapshots (existing behaviour)
+            - `extensions.set_flags` - apply flags policy (requires `extension_name`)
+        extension_name:
+          type: string
+          description: Extension name (exact match). Required for capability `extensions.set_flags`.
         database_ids:
           type: array
           items:
@@ -12952,6 +13146,139 @@ components:
           minItems: 1
       required:
       - database_ids
+    ExtensionsFlagObserved:
+      type: object
+      properties:
+        true_count:
+          type: integer
+        false_count:
+          type: integer
+        unknown_count:
+          type: integer
+        state:
+          enum:
+          - on
+          - off
+          - mixed
+          - unknown
+          type: string
+      required:
+      - false_count
+      - state
+      - true_count
+      - unknown_count
+    ExtensionsFlagAggregate:
+      type: object
+      properties:
+        policy:
+          type: boolean
+          nullable: true
+        observed:
+          $ref: '#/components/schemas/ExtensionsFlagObserved'
+        drift_count:
+          type: integer
+        unknown_drift_count:
+          type: integer
+      required:
+      - drift_count
+      - observed
+      - policy
+      - unknown_drift_count
+    ExtensionsFlagsAggregate:
+      type: object
+      properties:
+        active:
+          $ref: '#/components/schemas/ExtensionsFlagAggregate'
+        safe_mode:
+          $ref: '#/components/schemas/ExtensionsFlagAggregate'
+        unsafe_action_protection:
+          $ref: '#/components/schemas/ExtensionsFlagAggregate'
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
+    ExtensionsObservedFlagValues:
+      type: object
+      properties:
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
+    ExtensionsFlagsPolicy:
+      type: object
+      properties:
+        extension_name:
+          type: string
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - active
+      - extension_name
+      - safe_mode
+      - unsafe_action_protection
+      - updated_at
+    ExtensionsFlagsPolicyUpsertRequest:
+      type: object
+      properties:
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
+    ExtensionsFlagsPolicyListResponse:
+      type: object
+      properties:
+        policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+      required:
+      - policies
+    ExtensionsFlagsPolicyAdoptRequest:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        extension_name:
+          type: string
+        reason:
+          type: string
+          nullable: true
+      required:
+      - database_id
+      - extension_name
     ExtensionsPlanResponse:
       type: object
       properties:

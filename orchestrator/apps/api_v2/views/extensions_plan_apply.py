@@ -19,11 +19,13 @@ from apps.databases.models import Database, DatabaseExtensionsSnapshot, Permissi
 from apps.databases.services import PermissionService
 from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
 from apps.mappings.models import TenantMappingSpec
+from apps.databases.models import ExtensionFlagsPolicy
 from apps.operations.models import ExtensionsPlan
 from apps.operations.waiter import OperationTimeoutError, ResultWaiter
 from apps.operations.snapshot_hash import canonical_json_hash
 from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
 from apps.runtime_settings.effective import get_effective_runtime_setting
+from apps.tenancy.authentication import TENANT_HEADER
 
 from .ui.preview import _preview_ibcmd_cli
 from .operations.execute_ibcmd_cli_impl import _execute_ibcmd_cli_validated
@@ -38,6 +40,39 @@ def _permission_denied(message: str):
 
 def _is_staff(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+
+
+def _has_explicit_tenant_header(request) -> bool:
+    raw = None
+    try:
+        raw = request.META.get(TENANT_HEADER)
+    except Exception:
+        raw = None
+    if raw is None and getattr(request, "_request", None) is not None:
+        try:
+            raw = request._request.META.get(TENANT_HEADER)
+        except Exception:
+            raw = None
+    return bool(str(raw).strip()) if raw is not None else False
+
+
+def _require_tenant_header_for_staff_mutating(request) -> Response | None:
+    if _is_staff(request.user) and not _has_explicit_tenant_header(request):
+        return Response(
+            {"success": False, "error": {"code": "TENANT_CONTEXT_REQUIRED", "message": "X-CC1C-Tenant-ID is required"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    return None
+
+
+def _require_manage_permission(request) -> Response | None:
+    # set_flags is a governance / mutating action: require manage_database permission.
+    if not request.user.has_perm(perms.PERM_DATABASES_MANAGE_DATABASE):
+        return Response(
+            {"success": False, "error": {"code": "FORBIDDEN", "message": "Permission denied"}},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+    return None
 
 
 def _accessible_databases_qs(request):
@@ -95,8 +130,44 @@ def _get_extensions_action_from_catalog(catalog: dict[str, Any], capability: str
     return None
 
 
+def _get_sync_executor_or_error(*, request, tenant_id: str) -> tuple[dict[str, Any] | None, Response | None]:
+    raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
+    catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+    action = _get_extensions_action_from_catalog(catalog, "extensions.sync")
+    if action is None:
+        return None, Response(
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    executor = action.get("executor") if isinstance(action.get("executor"), dict) else None
+    if not isinstance(executor, dict):
+        return None, Response(
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if executor.get("kind") != "ibcmd_cli":
+        return None, Response(
+            {"success": False, "error": {"code": "NOT_SUPPORTED", "message": "extensions.sync must use ibcmd_cli executor"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if str(executor.get("driver") or "ibcmd").strip().lower() != "ibcmd":
+        return None, Response(
+            {"success": False, "error": {"code": "NOT_SUPPORTED", "message": "extensions.sync must use ibcmd driver"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    command_id = str(executor.get("command_id") or "").strip()
+    if not command_id:
+        return None, Response(
+            {"success": False, "error": {"code": "INVALID_PARAMETER", "message": "extensions.sync command_id is required"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    return executor, None
+
+
 class ExtensionsPlanRequestSerializer(serializers.Serializer):
     database_ids = serializers.ListField(child=serializers.UUIDField(format="hex_verbose"), min_length=1, max_length=500)
+    capability = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    extension_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class ExtensionsPlanResponseSerializer(serializers.Serializer):
@@ -129,6 +200,22 @@ def extensions_plan(request):
     serializer = ExtensionsPlanRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     database_ids = [str(x) for x in serializer.validated_data["database_ids"]]
+    capability = str(serializer.validated_data.get("capability") or "extensions.sync").strip()
+    extension_name = str(serializer.validated_data.get("extension_name") or "").strip()
+
+    if capability not in {"extensions.sync", "extensions.set_flags"}:
+        return Response(
+            {"success": False, "error": {"code": "INVALID_PARAMETER", "message": f"Unsupported capability: {capability}"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if capability == "extensions.set_flags":
+        denied = _require_manage_permission(request)
+        if denied:
+            return denied
+        denied = _require_tenant_header_for_staff_mutating(request)
+        if denied:
+            return denied
 
     accessible = _accessible_databases_qs(request).filter(id__in=database_ids)
     db_by_id = {str(db.id): db for db in accessible}
@@ -145,16 +232,16 @@ def extensions_plan(request):
 
     raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
     catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-    action = _get_extensions_action_from_catalog(catalog, "extensions.sync")
+    action = _get_extensions_action_from_catalog(catalog, capability)
     if action is None:
         return Response(
-            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": f"{capability} is not configured"}},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     executor = action.get("executor") if isinstance(action.get("executor"), dict) else None
     if not isinstance(executor, dict):
         return Response(
-            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": f"{capability} is not configured"}},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     if executor.get("kind") != "ibcmd_cli":
@@ -168,6 +255,54 @@ def extensions_plan(request):
     params = executor.get("params") if isinstance(executor.get("params"), dict) else {}
     additional_args = executor.get("additional_args") if isinstance(executor.get("additional_args"), list) else []
     stdin = executor.get("stdin") if isinstance(executor.get("stdin"), str) else None
+
+    executor_for_plan = dict(executor)
+
+    if capability == "extensions.set_flags":
+        if not extension_name:
+            return Response(
+                {"success": False, "error": {"code": "MISSING_PARAMETER", "message": "extension_name is required"}},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        policy = ExtensionFlagsPolicy.objects.filter(tenant_id=tenant_id, extension_name=extension_name).first()
+        if policy is None:
+            return Response(
+                {"success": False, "error": {"code": "POLICY_NOT_FOUND", "message": "Flags policy is not configured"}},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+
+        def _sub(value):
+            if not isinstance(value, str):
+                return value
+            token = value.strip()
+            if token == "$extension_name":
+                return extension_name
+            if token == "$policy.active":
+                return policy.active
+            if token == "$policy.safe_mode":
+                return policy.safe_mode
+            if token == "$policy.unsafe_action_protection":
+                return policy.unsafe_action_protection
+            return value
+
+        resolved_params: dict[str, Any] = {}
+        for k, v in (params or {}).items():
+            if isinstance(v, list):
+                resolved_params[str(k)] = [_sub(x) for x in v]
+            else:
+                resolved_params[str(k)] = _sub(v)
+        params = resolved_params
+
+        resolved_args: list[str] = []
+        for token in additional_args or []:
+            rendered = _sub(str(token))
+            if rendered is None:
+                continue
+            resolved_args.append(str(rendered))
+        additional_args = resolved_args
+        executor_for_plan["params"] = params
+        executor_for_plan["additional_args"] = additional_args
 
     preview, err, err_code = _preview_ibcmd_cli(
         user=request.user,
@@ -188,9 +323,10 @@ def extensions_plan(request):
         database_ids=database_ids,
         preconditions=preconditions,
         executor={
-            "capability": "extensions.sync",
+            "capability": capability,
             "action_id": str(action.get("id") or "").strip(),
-            "executor": executor,
+            "extension_name": extension_name if capability == "extensions.set_flags" else None,
+            "executor": executor_for_plan,
         },
     )
 
@@ -261,9 +397,24 @@ def extensions_apply(request):
             status=http_status.HTTP_404_NOT_FOUND,
         )
 
-    if strict:
+    plan_executor = plan.executor if isinstance(plan.executor, dict) else {}
+    action_capability = str(plan_executor.get("capability") or "extensions.sync").strip() or "extensions.sync"
+    extension_name = str(plan_executor.get("extension_name") or "").strip()
+
+    if action_capability == "extensions.set_flags":
+        denied = _require_manage_permission(request)
+        if denied:
+            return denied
+        denied = _require_tenant_header_for_staff_mutating(request)
+        if denied:
+            return denied
+
+    catalog = None
+    if strict or action_capability == "extensions.set_flags":
         raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
         catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+
+    if strict:
         list_action = _get_extensions_action_from_catalog(catalog, "extensions.list")
         if list_action is None:
             return Response(
@@ -359,7 +510,7 @@ def extensions_apply(request):
             status=http_status.HTTP_409_CONFLICT,
         )
 
-    executor = (plan.executor or {}).get("executor") if isinstance(plan.executor, dict) else None
+    executor = plan_executor.get("executor") if isinstance(plan_executor, dict) else None
     if not isinstance(executor, dict):
         return Response(
             {"success": False, "error": {"code": "PLAN_INVALID", "message": "Invalid plan executor"}},
@@ -384,12 +535,25 @@ def extensions_apply(request):
         "timeout_seconds": int(fixed.get("timeout_seconds") or 900),
     }
 
+    metadata_overrides: dict[str, Any] = {
+        "action_capability": action_capability,
+        "snapshot_source": "extensions_plan_apply",
+    }
+    if action_capability == "extensions.sync":
+        metadata_overrides["snapshot_kinds"] = ["extensions"]
+    elif action_capability == "extensions.set_flags":
+        # For set_flags we rely on post-completion extensions.sync to refresh snapshots; fail closed if not configured.
+        sync_executor, denied = _get_sync_executor_or_error(request=request, tenant_id=tenant_id)
+        if denied:
+            return denied
+        metadata_overrides["post_completion_extensions_sync_executor"] = sync_executor
+        metadata_overrides["post_completion_extensions_sync"] = True
+        metadata_overrides["post_completion_extensions_sync_database_ids"] = database_ids
+        if extension_name:
+            metadata_overrides["extension_name"] = extension_name
+
     return _execute_ibcmd_cli_validated(
         request,
         validated_data,
-        metadata_overrides={
-            "snapshot_kinds": ["extensions"],
-            "action_capability": "extensions.sync",
-            "snapshot_source": "extensions_plan_apply",
-        },
+        metadata_overrides=metadata_overrides,
     )

@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Drawer, Input, Select, Space, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 
+import { getV2 } from '../../api/generated'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
+import { useMe } from '../../api/queries/me'
+import type { ExtensionsFlagAggregate } from '../../api/generated/model/extensionsFlagAggregate'
 import {
   useExtensionsOverview,
   useExtensionsOverviewDatabases,
   type ExtensionsOverviewDatabaseRow,
   type ExtensionsOverviewRow,
 } from '../../api/queries/extensions'
+import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
 
 const { Title, Text } = Typography
+
+const api = getV2()
 
 type Status = 'active' | 'inactive' | 'missing' | 'unknown'
 
@@ -24,8 +30,85 @@ const statusTagColor = (status: Status): string => {
   return 'default'
 }
 
+const boolTag = (value: boolean | null | undefined) => {
+  if (value === true) return <Tag color="green">on</Tag>
+  if (value === false) return <Tag color="red">off</Tag>
+  return <Text type="secondary">—</Text>
+}
+
+type ObservedState = 'on' | 'off' | 'mixed' | 'unknown'
+
+const observedStateTag = (state: ObservedState | undefined) => {
+  if (!state) return <Text type="secondary">—</Text>
+  if (state === 'on') return <Tag color="green">observed: on</Tag>
+  if (state === 'off') return <Tag color="red">observed: off</Tag>
+  if (state === 'mixed') return <Tag color="gold">observed: mixed</Tag>
+  return <Tag>observed: unknown</Tag>
+}
+
+const flagCell = (flag: ExtensionsFlagAggregate | undefined | null) => {
+  if (!flag) return <Text type="secondary">—</Text>
+
+  const state = (flag.observed?.state as ObservedState | undefined) ?? undefined
+  const tooltip = (
+    <div style={{ maxWidth: 360 }}>
+      <div>Observed: true={flag.observed?.true_count ?? 0}, false={flag.observed?.false_count ?? 0}, unknown={flag.observed?.unknown_count ?? 0}</div>
+      <div>Drift: {flag.drift_count ?? 0}, Unknown drift: {flag.unknown_drift_count ?? 0}</div>
+    </div>
+  )
+
+  const showDrift = (flag.drift_count ?? 0) > 0
+  const showUnknownDrift = (flag.unknown_drift_count ?? 0) > 0
+
+  return (
+    <Tooltip title={tooltip}>
+      <Space size={6} wrap>
+        {boolTag(flag.policy)}
+        {observedStateTag(state)}
+        {showDrift && <Tag color="red">drift: {flag.drift_count}</Tag>}
+        {showUnknownDrift && <Tag color="orange">unknown drift: {flag.unknown_drift_count}</Tag>}
+      </Space>
+    </Tooltip>
+  )
+}
+
+type UIBinding = {
+  target_ref?: string
+  source_ref?: string
+  resolve_at?: string
+  sensitive?: boolean
+  status?: string
+  reason?: string | null
+}
+
+const extractBindings = (bindings: unknown): UIBinding[] => {
+  if (!Array.isArray(bindings)) return []
+  return bindings.filter((item) => item && typeof item === 'object') as UIBinding[]
+}
+
+const formatExecutionPlan = (executionPlan: unknown): string => {
+  if (!executionPlan || typeof executionPlan !== 'object') return ''
+  const plan = executionPlan as Record<string, unknown>
+  const kind = typeof plan.kind === 'string' ? plan.kind : ''
+  const argv = Array.isArray(plan.argv_masked) ? plan.argv_masked.filter((x) => typeof x === 'string') : []
+  const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
+  const lines: string[] = []
+  if (kind) lines.push(`kind: ${kind}`)
+  if (workflowId) lines.push(`workflow_id: ${workflowId}`)
+  if (argv.length > 0) {
+    lines.push('argv_masked:')
+    lines.push(...argv.map((x) => `  ${x}`))
+  }
+  return lines.join('\n')
+}
+
 export const Extensions = () => {
   const navigate = useNavigate()
+  const { message, modal } = App.useApp()
+  const meQuery = useMe()
+  const isStaff = Boolean(meQuery.data?.is_staff)
+  const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
+  const mutatingDisabled = isStaff && !hasTenantContext
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<Status | undefined>(undefined)
@@ -69,6 +152,9 @@ export const Extensions = () => {
   const [drawerDatabaseId, setDrawerDatabaseId] = useState<string | undefined>(undefined)
   const [drawerPage, setDrawerPage] = useState(1)
   const [drawerPageSize, setDrawerPageSize] = useState(50)
+  const [adoptPending, setAdoptPending] = useState(false)
+  const [planPending, setPlanPending] = useState(false)
+  const [applyPending, setApplyPending] = useState(false)
 
   useEffect(() => {
     setDatabaseId(undefined)
@@ -76,6 +162,12 @@ export const Extensions = () => {
     setPage(1)
     setDrawerPage(1)
   }, [clusterId])
+
+  const selectedRow = useMemo(() => {
+    const rows = overviewQuery.data?.extensions ?? []
+    if (!selectedExtension) return null
+    return rows.find((r) => r.name === selectedExtension) ?? null
+  }, [overviewQuery.data?.extensions, selectedExtension])
 
   const drilldownEnabled = drawerOpen && Boolean(selectedExtension)
   const drilldownQuery = useExtensionsOverviewDatabases({
@@ -98,6 +190,198 @@ export const Extensions = () => {
     setDrawerPageSize(50)
   }
 
+  const runAdoptPolicy = () => {
+    if (!selectedExtension) return
+    if (!drawerDatabaseId) return
+    if (mutatingDisabled) return
+    if (adoptPending) return
+
+    let reason = ''
+    modal.confirm({
+      title: 'Adopt flags policy from database?',
+      content: (
+        <Space direction="vertical" size="small">
+          <div>
+            This will overwrite policy for <Text code>{selectedExtension}</Text> using the observed snapshot from database <Text code>{drawerDatabaseId}</Text>.
+          </div>
+          <Input.TextArea
+            placeholder="Reason (optional)"
+            rows={3}
+            onChange={(e) => { reason = e.target.value }}
+          />
+        </Space>
+      ),
+      okText: 'Adopt',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setAdoptPending(true)
+        try {
+          await api.postExtensionsFlagsPolicyAdopt({
+            database_id: drawerDatabaseId,
+            extension_name: selectedExtension,
+            reason: reason.trim() || undefined,
+          })
+          message.success('Policy updated from database snapshot')
+          await overviewQuery.refetch()
+          if (drilldownEnabled) await drilldownQuery.refetch()
+        } catch (e: unknown) {
+          if (!tryShowIbcmdCliUiError(e, modal, message)) {
+            const errorMessage = e instanceof Error ? e.message : 'unknown error'
+            message.error(`Failed to adopt policy: ${errorMessage}`)
+          }
+        } finally {
+          setAdoptPending(false)
+        }
+      },
+    })
+  }
+
+  const runApplyPolicy = async () => {
+    if (!selectedExtension) return
+    if (mutatingDisabled) return
+    if (planPending || applyPending) return
+
+    setPlanPending(true)
+    try {
+      const dbIds: string[] = []
+
+      if (drawerDatabaseId) {
+        dbIds.push(drawerDatabaseId)
+      } else {
+        const resp = await api.getExtensionsOverviewDatabases({
+          name: selectedExtension,
+          status: drawerStatus,
+          version: drawerVersion.trim() || undefined,
+          cluster_id: clusterId,
+          limit: 500,
+          offset: 0,
+        })
+        const total = resp.total ?? 0
+        if (total > 500) {
+          modal.error({
+            title: 'Too many databases',
+            content: `This action is limited to 500 databases per run (matched: ${total}). Narrow filters and retry.`,
+          })
+          return
+        }
+        for (const item of resp.databases ?? []) {
+          if (item?.database_id) dbIds.push(String(item.database_id))
+        }
+      }
+
+      const databaseIds = Array.from(new Set(dbIds)).filter(Boolean)
+      if (databaseIds.length === 0) {
+        message.info('No target databases matched current filters')
+        return
+      }
+
+      const plan = await api.postExtensionsPlan({
+        database_ids: databaseIds,
+        capability: 'extensions.set_flags',
+        extension_name: selectedExtension,
+      })
+
+      const previewText = formatExecutionPlan(plan.execution_plan)
+      const bindings = extractBindings(plan.bindings)
+      const bindingColumns: ColumnsType<UIBinding> = [
+        { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
+        { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
+        { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
+        {
+          title: 'Sensitive',
+          dataIndex: 'sensitive',
+          key: 'sensitive',
+          width: 90,
+          render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
+        },
+        { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
+        { title: 'Reason', dataIndex: 'reason', key: 'reason' },
+      ]
+
+      modal.confirm({
+        title: 'Apply flags policy?',
+        content: (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              Extension <Text code>{selectedExtension}</Text> will be applied to {databaseIds.length} database(s).
+            </div>
+            {selectedRow?.flags ? (
+              <Space size={8} wrap style={{ marginBottom: 8 }}>
+                <div>Active: {boolTag(selectedRow.flags.active.policy)}</div>
+                <div>Safe mode: {boolTag(selectedRow.flags.safe_mode.policy)}</div>
+                <div>Unsafe action protection: {boolTag(selectedRow.flags.unsafe_action_protection.policy)}</div>
+              </Space>
+            ) : null}
+            {previewText ? (
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
+            ) : (
+              <div style={{ opacity: 0.7 }}>Preview not available</div>
+            )}
+            {isStaff && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
+                {bindings.length > 0 ? (
+                  <Table
+                    size="small"
+                    rowKey={(_row, idx) => String(idx)}
+                    pagination={false}
+                    dataSource={bindings}
+                    columns={bindingColumns}
+                    scroll={{ x: 900 }}
+                  />
+                ) : (
+                  <div style={{ opacity: 0.7 }}>No bindings</div>
+                )}
+              </div>
+            )}
+          </div>
+        ),
+        okText: 'Apply',
+        cancelText: 'Cancel',
+        onOk: async () => {
+          setApplyPending(true)
+          try {
+            const res = await api.postExtensionsApply({ plan_id: plan.plan_id })
+            message.success('Operation queued: apply flags policy')
+            if (res.operation_id) {
+              navigate(`/operations?operation=${res.operation_id}`)
+            }
+          } catch (e: unknown) {
+            const maybe = e as { response?: { status?: number; data?: unknown } } | null
+            if (maybe?.response?.status === 409) {
+              modal.error({
+                title: 'Drift conflict',
+                content: (
+                  <pre style={{ whiteSpace: 'pre-wrap' }}>
+                    {JSON.stringify(maybe?.response?.data ?? {}, null, 2)}
+                  </pre>
+                ),
+              })
+          } else if (!tryShowIbcmdCliUiError(e, modal, message)) {
+            const errorMessage = e instanceof Error ? e.message : 'unknown error'
+            message.error(`Failed to apply policy: ${errorMessage}`)
+          }
+          } finally {
+            setApplyPending(false)
+          }
+        },
+      })
+    } catch (e: unknown) {
+      const maybe = e as { response?: { data?: any } } | null
+      const code = maybe?.response?.data?.error?.code
+      if (code === 'POLICY_NOT_FOUND') {
+        message.error('Flags policy is not configured for this extension')
+        return
+      }
+      if (!tryShowIbcmdCliUiError(e, modal, message)) {
+        const errorMessage = e instanceof Error ? e.message : 'unknown error'
+        message.error(`Failed to build plan: ${errorMessage}`)
+      }
+    } finally {
+      setPlanPending(false)
+    }
+  }
+
   const overviewColumns: ColumnsType<ExtensionsOverviewRow> = [
     {
       title: 'Extension',
@@ -117,46 +401,25 @@ export const Extensions = () => {
       render: (v: string | null | undefined) => v ? <Text>{v}</Text> : <Text type="secondary">—</Text>,
     },
     {
+      title: 'Active',
+      key: 'active_policy',
+      render: (_: unknown, row) => flagCell(row.flags?.active),
+    },
+    {
       title: 'Safe mode',
-      key: 'safe_mode',
-      render: (_: unknown, row) => {
-        if (row.safe_mode === true) return <Tag color="green">on</Tag>
-        if (row.safe_mode === false) return <Tag color="red">off</Tag>
-        return <Text type="secondary">—</Text>
-      },
+      key: 'safe_mode_policy',
+      render: (_: unknown, row) => flagCell(row.flags?.safe_mode),
     },
     {
       title: 'Unsafe action protection',
-      key: 'unsafe_action_protection',
-      render: (_: unknown, row) => {
-        if (row.unsafe_action_protection === true) return <Tag color="green">on</Tag>
-        if (row.unsafe_action_protection === false) return <Tag color="red">off</Tag>
-        return <Text type="secondary">—</Text>
-      },
+      key: 'unsafe_action_protection_policy',
+      render: (_: unknown, row) => flagCell(row.flags?.unsafe_action_protection),
     },
     {
       title: 'Installed',
       key: 'installed',
       align: 'right',
-      render: (_: unknown, row) => (
-        <Text>
-          {row.installed_count}
-        </Text>
-      ),
-    },
-    {
-      title: 'Active',
-      dataIndex: 'active_count',
-      key: 'active_count',
-      align: 'right',
-      render: (v: number) => <Text>{v}</Text>,
-    },
-    {
-      title: 'Inactive',
-      dataIndex: 'inactive_count',
-      key: 'inactive_count',
-      align: 'right',
-      render: (v: number) => <Text>{v}</Text>,
+      render: (_: unknown, row) => <Text>{row.installed_count}</Text>,
     },
     {
       title: 'Missing',
@@ -243,6 +506,21 @@ export const Extensions = () => {
       render: (value: Status) => (
         <Tag color={statusTagColor(value)}>{value}</Tag>
       ),
+    },
+    {
+      title: 'Active',
+      key: 'active_observed',
+      render: (_: unknown, row) => boolTag(row.flags?.active),
+    },
+    {
+      title: 'Safe mode',
+      key: 'safe_mode_observed',
+      render: (_: unknown, row) => boolTag(row.flags?.safe_mode),
+    },
+    {
+      title: 'Unsafe action protection',
+      key: 'unsafe_action_protection_observed',
+      render: (_: unknown, row) => boolTag(row.flags?.unsafe_action_protection),
     },
     {
       title: 'Version',
@@ -373,6 +651,37 @@ export const Extensions = () => {
         destroyOnHidden
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {mutatingDisabled && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Mutating actions are disabled"
+              description="Staff users must select a tenant (X-CC1C-Tenant-ID) to change policy or apply actions."
+            />
+          )}
+
+          <Space wrap>
+            <Tooltip title={mutatingDisabled ? 'Select a tenant to enable this action' : undefined}>
+              <Button
+                type="primary"
+                onClick={runApplyPolicy}
+                loading={planPending || applyPending}
+                disabled={!selectedExtension || mutatingDisabled}
+              >
+                Apply flags policy
+              </Button>
+            </Tooltip>
+            <Tooltip title={!drawerDatabaseId ? 'Select a database to adopt from' : (mutatingDisabled ? 'Select a tenant to enable this action' : undefined)}>
+              <Button
+                onClick={runAdoptPolicy}
+                loading={adoptPending}
+                disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled}
+              >
+                Adopt from database
+              </Button>
+            </Tooltip>
+          </Space>
+
           <Space wrap>
             <Select
               data-testid="extensions-drawer-database"

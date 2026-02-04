@@ -13,6 +13,7 @@ ACTION_CATALOG_VERSION_V1 = 1
 RESERVED_ACTION_CAPABILITIES: set[str] = {
     "extensions.list",
     "extensions.sync",
+    "extensions.set_flags",
 }
 
 # Legacy mapping while `capability` is optional.
@@ -22,6 +23,12 @@ LEGACY_RESERVED_ACTION_IDS: dict[str, str] = {
 }
 
 SNAPSHOT_KIND_EXTENSIONS = "extensions"
+
+# Subset of reserved capabilities that are known to produce extensions snapshots.
+SNAPSHOT_PRODUCING_ACTION_CAPABILITIES: set[str] = {
+    "extensions.list",
+    "extensions.sync",
+}
 
 
 DEFAULT_UI_ACTION_CATALOG: dict[str, Any] = {
@@ -393,7 +400,7 @@ def compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog: Any, command_
     """
     Compute snapshot marker for an ibcmd_cli operation based on effective `ui.action_catalog`.
 
-    MVP: mark extensions snapshots when command_id is bound to reserved extensions capabilities.
+    Mark extensions snapshots when command_id is bound to snapshot-producing extensions capabilities.
     """
     normalized_command_id = _normalize_str(command_id)
     if not normalized_command_id:
@@ -411,7 +418,7 @@ def compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog: Any, command_
         if not isinstance(action, dict):
             continue
         cap = get_reserved_action_capability(action)
-        if cap not in RESERVED_ACTION_CAPABILITIES:
+        if cap not in SNAPSHOT_PRODUCING_ACTION_CAPABILITIES:
             continue
         executor = action.get("executor")
         if not isinstance(executor, dict):

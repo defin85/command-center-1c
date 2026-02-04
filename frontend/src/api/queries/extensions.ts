@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../client'
 import { queryKeys } from '.'
+import type { ExtensionsFlagsAggregate } from '../generated/model/extensionsFlagsAggregate'
+import type { ExtensionsObservedFlagValues } from '../generated/model/extensionsObservedFlagValues'
 
 export type ExtensionsOverviewVersionCount = {
   version: string | null
@@ -12,6 +14,7 @@ export type ExtensionsOverviewRow = {
   purpose?: string | null
   safe_mode?: boolean | null
   unsafe_action_protection?: boolean | null
+  flags?: ExtensionsFlagsAggregate
   installed_count: number
   active_count: number
   inactive_count: number
@@ -64,6 +67,7 @@ export type ExtensionsOverviewDatabaseRow = {
   status: 'active' | 'inactive' | 'missing' | 'unknown'
   version?: string | null
   snapshot_updated_at?: string | null
+  flags?: ExtensionsObservedFlagValues
 }
 
 export type ExtensionsOverviewDatabasesResponse = {

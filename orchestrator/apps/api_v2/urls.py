@@ -11,6 +11,7 @@ from .views import (
     databases,
     clusters,
     extensions,
+    extensions_flags_policy,
     extensions_plan_apply,
     operations,
     workflows,
@@ -82,6 +83,9 @@ urlpatterns = [
     # ========================================================================
     path('extensions/overview/', extensions.get_extensions_overview, name='extensions-overview'),
     path('extensions/overview/databases/', extensions.get_extensions_overview_databases, name='extensions-overview-databases'),
+    path('extensions/flags-policy/', extensions_flags_policy.list_extensions_flags_policy, name='extensions-flags-policy-list'),
+    path('extensions/flags-policy/adopt/', extensions_flags_policy.adopt_extensions_flags_policy, name='extensions-flags-policy-adopt'),
+    path('extensions/flags-policy/<str:extension_name>/', extensions_flags_policy.upsert_extensions_flags_policy, name='extensions-flags-policy-upsert'),
     path('extensions/plan/', extensions_plan_apply.extensions_plan, name='extensions-plan'),
     path('extensions/apply/', extensions_plan_apply.extensions_apply, name='extensions-apply'),
 

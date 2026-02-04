@@ -19,7 +19,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.core import permission_codes as perms
 from apps.databases.extensions_snapshot import normalize_extensions_snapshot
-from apps.databases.models import Database, DatabaseExtensionsSnapshot, PermissionLevel
+from apps.databases.models import Database, DatabaseExtensionsSnapshot, ExtensionFlagsPolicy, PermissionLevel
 from apps.databases.services import PermissionService
 from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
 from apps.mappings.models import TenantMappingSpec
@@ -185,6 +185,7 @@ class ExtensionsOverviewRowSerializer(serializers.Serializer):
     purpose = serializers.CharField(allow_null=True, required=False)
     safe_mode = serializers.BooleanField(allow_null=True, required=False)
     unsafe_action_protection = serializers.BooleanField(allow_null=True, required=False)
+    flags = serializers.JSONField(required=False)
     installed_count = serializers.IntegerField()
     active_count = serializers.IntegerField()
     inactive_count = serializers.IntegerField()
@@ -299,11 +300,26 @@ def get_extensions_overview(request):
             continue
         ok_snapshots[str(db.id)] = state
 
+    tenant_id_for_policy = _resolve_tenant_id(request)
+    can_show_policy = not (_is_staff(request.user) and not _has_explicit_tenant_header(request))
+    policy_by_name: dict[str, ExtensionFlagsPolicy] = {}
+    if can_show_policy and tenant_id_for_policy:
+        policy_by_name = {
+            p.extension_name: p
+            for p in ExtensionFlagsPolicy.objects.filter(tenant_id=tenant_id_for_policy).all()
+        }
+
     # Aggregate over extension names seen in parsed snapshots.
     counters: dict[str, dict[str, Any]] = defaultdict(lambda: {
         "active": 0,
         "inactive": 0,
         "unknown_active": 0,
+        "safe_mode_true": 0,
+        "safe_mode_false": 0,
+        "safe_mode_unknown": 0,
+        "unsafe_true": 0,
+        "unsafe_false": 0,
+        "unsafe_unknown": 0,
         "versions": Counter(),
         "latest_snapshot_at": None,
         "meta": {},
@@ -324,6 +340,22 @@ def get_extensions_overview(request):
                 bucket["inactive"] += 1
             else:
                 bucket["unknown_active"] += 1
+
+            safe_mode = item.get("safe_mode")
+            if safe_mode is True:
+                bucket["safe_mode_true"] += 1
+            elif safe_mode is False:
+                bucket["safe_mode_false"] += 1
+            else:
+                bucket["safe_mode_unknown"] += 1
+
+            unsafe_action_protection = item.get("unsafe_action_protection")
+            if unsafe_action_protection is True:
+                bucket["unsafe_true"] += 1
+            elif unsafe_action_protection is False:
+                bucket["unsafe_false"] += 1
+            else:
+                bucket["unsafe_unknown"] += 1
 
             ver = item.get("version")
             bucket["versions"][ver] += 1
@@ -351,6 +383,39 @@ def get_extensions_overview(request):
                 if prev is None or state.updated_at > prev:
                     bucket["latest_snapshot_at"] = state.updated_at
 
+    def _flag_state(true_count: int, false_count: int, installed_count: int) -> str:
+        if installed_count <= 0:
+            return "unknown"
+        if true_count > 0 and false_count == 0:
+            return "on"
+        if false_count > 0 and true_count == 0:
+            return "off"
+        if true_count > 0 and false_count > 0:
+            return "mixed"
+        return "unknown"
+
+    def _flag_agg(*, policy: bool | None, true_count: int, false_count: int, unknown_count: int) -> dict[str, Any]:
+        installed = int(true_count) + int(false_count) + int(unknown_count)
+        drift = 0
+        unknown_drift = 0
+        if policy is True:
+            drift = int(false_count)
+            unknown_drift = int(unknown_count)
+        elif policy is False:
+            drift = int(true_count)
+            unknown_drift = int(unknown_count)
+        return {
+            "policy": policy,
+            "observed": {
+                "true_count": int(true_count),
+                "false_count": int(false_count),
+                "unknown_count": int(unknown_count),
+                "state": _flag_state(int(true_count), int(false_count), installed),
+            },
+            "drift_count": int(drift),
+            "unknown_drift_count": int(unknown_drift),
+        }
+
     rows: list[dict[str, Any]] = []
     for name, bucket in counters.items():
         active = int(bucket["active"])
@@ -369,9 +434,31 @@ def get_extensions_overview(request):
         versions.sort(key=lambda item: (item["version"] is None, str(item["version"])))
 
         meta = bucket.get("meta") or {}
+        policy = policy_by_name.get(name)
+        flags = {
+            "active": _flag_agg(
+                policy=(policy.active if policy is not None else None),
+                true_count=active,
+                false_count=inactive,
+                unknown_count=unknown_active,
+            ),
+            "safe_mode": _flag_agg(
+                policy=(policy.safe_mode if policy is not None else None),
+                true_count=int(bucket["safe_mode_true"]),
+                false_count=int(bucket["safe_mode_false"]),
+                unknown_count=int(bucket["safe_mode_unknown"]),
+            ),
+            "unsafe_action_protection": _flag_agg(
+                policy=(policy.unsafe_action_protection if policy is not None else None),
+                true_count=int(bucket["unsafe_true"]),
+                false_count=int(bucket["unsafe_false"]),
+                unknown_count=int(bucket["unsafe_unknown"]),
+            ),
+        }
         row = {
             "name": name,
             **meta,
+            "flags": flags,
             "installed_count": installed,
             "active_count": active,
             "inactive_count": inactive,
@@ -422,6 +509,7 @@ class ExtensionsOverviewDatabaseRowSerializer(serializers.Serializer):
     status = serializers.CharField()
     version = serializers.CharField(allow_null=True, required=False)
     snapshot_updated_at = serializers.DateTimeField(allow_null=True, required=False)
+    flags = serializers.JSONField(required=False)
 
 
 class ExtensionsOverviewDatabasesResponseSerializer(serializers.Serializer):
@@ -506,6 +594,7 @@ def get_extensions_overview_databases(request):
         if not state.ok:
             status = "unknown"
             found_version = None
+            flags = {"active": None, "safe_mode": None, "unsafe_action_protection": None}
         else:
             found = None
             for item in state.extensions:
@@ -519,9 +608,24 @@ def get_extensions_overview_databases(request):
             if found is None:
                 status = "missing"
                 found_version = None
+                flags = {"active": None, "safe_mode": None, "unsafe_action_protection": None}
             else:
                 status = _compute_extension_status(found)
                 found_version = found.get("version")
+                active_flag = found.get("is_active")
+                if not isinstance(active_flag, bool):
+                    active_flag = None
+                safe_mode = found.get("safe_mode")
+                if not isinstance(safe_mode, bool):
+                    safe_mode = None
+                unsafe_action_protection = found.get("unsafe_action_protection")
+                if not isinstance(unsafe_action_protection, bool):
+                    unsafe_action_protection = None
+                flags = {
+                    "active": active_flag,
+                    "safe_mode": safe_mode,
+                    "unsafe_action_protection": unsafe_action_protection,
+                }
 
         if status_filter in {"active", "inactive", "missing", "unknown"} and status != status_filter:
             continue
@@ -534,6 +638,7 @@ def get_extensions_overview_databases(request):
             "status": status,
             "version": found_version,
             "snapshot_updated_at": state.updated_at,
+            "flags": flags,
         })
 
     rows.sort(key=lambda r: str(r.get("database_name") or "").lower())
