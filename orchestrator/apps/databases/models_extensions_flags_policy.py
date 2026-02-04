@@ -46,9 +46,9 @@ class ExtensionFlagsPolicy(models.Model):
             models.UniqueConstraint(fields=["tenant", "extension_name"], name="extensions_flags_policy_unique"),
         ]
         indexes = [
-            models.Index(fields=["tenant", "extension_name"], name="extensions_flags_policy_tenant_name_idx"),
+            # Keep index name <= 30 chars for DBs with strict limits (e.g. Oracle).
+            models.Index(fields=["tenant", "extension_name"], name="ext_flags_policy_tenant_name"),
         ]
 
     def __str__(self) -> str:
         return f"{self.tenant_id}:{self.extension_name}"
-

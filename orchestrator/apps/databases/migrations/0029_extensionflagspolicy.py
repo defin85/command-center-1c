@@ -66,6 +66,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="extensionflagspolicy",
-            index=models.Index(fields=["tenant", "extension_name"], name="extensions_flags_policy_tenant_name_idx"),
+            index=models.Index(fields=["tenant", "extension_name"], name="ext_flags_policy_tenant_name"),
         ),
     ]
