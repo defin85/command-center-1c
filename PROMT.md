@@ -1,14 +1,4 @@
 - vercel-react-best-practices: “Сделай perf-аудит фронта по Vercel React Best Practices (bundle/code-splitting, re-render, data fetching), предложи и внеси правки”.
 - web-design-guidelines: “Проведи UI/UX/a11y аудит страниц фронта по Web Interface Guidelines и дай список нарушений/правок по file:line + исправь критичное”.
 
-Порядок реализации (чтобы минимизировать пересечения и учесть зависимости):
-
-      1. update-orchestrator-enqueue-consistency (база для корректных ошибок enqueue) +
-      1.1. update-api-enqueue-503-errors  +
-      2. update-worker-stream-routing (зависит от стабильного enqueue; пересечение по orchestrator/apps/operations/services/operations_service/workflow.py) +
-      3. update-orchestrator-eventsubscriber-reliability (после разделения потоков проще сразу учесть полный набор stream’ов/групп) +
-      4. update-frontend-performance (сначала “поведенческие”/архитектурные правки подписок и imports) +
-      5. update-frontend-ui-ux-a11y (после performance, т.к. есть пересечение по frontend/src/stores/serviceMeshManager.ts) +
-      6. add-tenancy-extensions-plan-apply (самый широкий change; лучше после стабилизации фронта/оркестратора, чтобы уменьшить количество конфликтов) +
-      6.1. refactor-tenant-context-single-entrypoint (tenant context как единая точка ответственности; убрать дублирующие guards) +
-      6.2. tenancy-openapi-and-list-databases (документировать X-CC1C-Tenant-ID в OpenAPI; list-databases: staff cross-tenant без header) +
+https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_4._Startup_command_lines_of_system_components_and_description_of_additional_utilities/4.7._Running_Designer_in_agent_mode/4.7.6._config_group_commands/?language=en
