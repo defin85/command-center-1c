@@ -101,14 +101,16 @@ TBD - created by archiving change add-extensions-action-catalog-runtime-setting.
 ### Requirement: Зарезервированные capability валидируются fail-closed
 Система ДОЛЖНА (SHALL) обеспечивать детерминизм для capability, которые backend понимает и использует для особой семантики (plan/apply, snapshot-marking).
 
-#### Scenario: Дубликаты зарезервированного capability отвергаются
-- **GIVEN** payload `ui.action_catalog` содержит два actions с одинаковым `capability`, который поддерживается backend (например `extensions.list`)
+#### Scenario: capability для применения флагов детерминирован и уникален
+- **GIVEN** payload `ui.action_catalog` содержит два actions с `capability="extensions.set_flags"`
 - **WHEN** staff пытается сохранить/обновить `ui.action_catalog`
 - **THEN** система возвращает ошибку валидации (fail-closed) и не сохраняет payload
 
-#### Scenario: Unknown capability допускается и не ломает валидацию
-- **GIVEN** payload содержит `capability`, который backend пока не поддерживает (например `custom.extensions.list`)
-- **WHEN** staff сохраняет `ui.action_catalog`
-- **THEN** payload проходит schema-валидацию (при условии корректного формата строки)
-- **AND** backend не приписывает этому capability особую семантику, пока явно не поддержит
+### Requirement: Actions для управления флагами расширений через capability
+Система ДОЛЖНА (SHALL) поддерживать зарезервированный capability `extensions.set_flags` для применения policy флагов расширений к списку баз (bulk).
+
+#### Scenario: Effective action catalog содержит apply-flags action только если executor валиден
+- **GIVEN** в `ui.action_catalog` есть действие с `capability="extensions.set_flags"`
+- **WHEN** executor этого действия невалиден (unknown command / missing workflow / запрещённый dangerous)
+- **THEN** действие исключается из effective action catalog (fail-closed)
 
