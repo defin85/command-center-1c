@@ -12904,6 +12904,15 @@ components:
       properties:
         name:
           type: string
+        purpose:
+          type: string
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
         installed_count:
           type: integer
         active_count:

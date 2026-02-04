@@ -264,7 +264,7 @@ def test_extensions_overview_database_id_filters_names_but_not_aggregates():
         defaults={
             "snapshot": {
                 "extensions": [
-                    {"name": "ExtA", "version": "1.0", "is_active": True},
+                    {"name": "ExtA", "version": "1.0", "is_active": True, "purpose": "patch", "safe_mode": True, "unsafe_action_protection": False},
                     {"name": "ExtB", "version": "2.0", "is_active": False},
                 ],
                 "raw": {"stdout": "ok"},
@@ -278,7 +278,7 @@ def test_extensions_overview_database_id_filters_names_but_not_aggregates():
         defaults={
             "snapshot": {
                 "extensions": [
-                    {"name": "ExtA", "version": "1.0", "is_active": False},
+                    {"name": "ExtA", "version": "1.0", "is_active": False, "purpose": "add-on", "safe_mode": False, "unsafe_action_protection": True},
                     {"name": "ExtC", "version": "3.0", "is_active": True},
                 ],
                 "raw": {"stdout": "ok"},
@@ -300,6 +300,9 @@ def test_extensions_overview_database_id_filters_names_but_not_aggregates():
     assert by_name["ExtA"]["installed_count"] == 2
     assert by_name["ExtA"]["active_count"] == 1
     assert by_name["ExtA"]["inactive_count"] == 1
+    assert by_name["ExtA"]["purpose"] == "patch"
+    assert by_name["ExtA"]["safe_mode"] is True
+    assert by_name["ExtA"]["unsafe_action_protection"] is False
 
     assert by_name["ExtB"]["installed_count"] == 1
     assert by_name["ExtB"]["inactive_count"] == 1

@@ -9,6 +9,9 @@ export type ExtensionsOverviewVersionCount = {
 
 export type ExtensionsOverviewRow = {
   name: string
+  purpose?: string | null
+  safe_mode?: boolean | null
+  unsafe_action_protection?: boolean | null
   installed_count: number
   active_count: number
   inactive_count: number

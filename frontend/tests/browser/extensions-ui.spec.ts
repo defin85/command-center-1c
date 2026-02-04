@@ -129,6 +129,9 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
   const overview: AnyRecord[] = [
     {
       name: 'ExtA',
+      purpose: 'patch',
+      safe_mode: true,
+      unsafe_action_protection: false,
       installed_count: 1,
       active_count: 1,
       inactive_count: 0,
@@ -139,6 +142,9 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
     },
     {
       name: 'ExtB',
+      purpose: 'add-on',
+      safe_mode: false,
+      unsafe_action_protection: true,
       installed_count: 2,
       active_count: 0,
       inactive_count: 2,
@@ -176,6 +182,7 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
 
   await expect(page.getByRole('heading', { name: 'Extensions', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toBeVisible()
+  await expect(page.getByText('patch', { exact: true })).toBeVisible()
 
   await page.getByTestId('extensions-overview-version').fill('2.0')
   await expect(page.getByRole('button', { name: 'ExtA', exact: true })).toHaveCount(0)

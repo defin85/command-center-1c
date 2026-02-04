@@ -23,6 +23,7 @@ from apps.databases.models import Database, DatabaseExtensionsSnapshot, Permissi
 from apps.databases.services import PermissionService
 from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
 from apps.mappings.models import TenantMappingSpec
+from apps.tenancy.models import Tenant
 
 
 def _permission_denied(message: str):
@@ -44,8 +45,56 @@ def _is_staff(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
 
+def _has_explicit_tenant_header(request) -> bool:
+    raw = None
+    try:
+        raw = request.META.get("HTTP_X_CC1C_TENANT_ID")
+    except Exception:
+        raw = None
+    if raw is None:
+        underlying = getattr(request, "_request", None)
+        if underlying is not None:
+            try:
+                raw = underlying.META.get("HTTP_X_CC1C_TENANT_ID")
+            except Exception:
+                raw = None
+    return bool(str(raw).strip()) if raw is not None else False
+
+
+def _resolve_tenant_id(request) -> str | None:
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id:
+        return str(tenant_id)
+
+    underlying = getattr(request, "_request", None)
+    if underlying is not None:
+        tenant_id = getattr(underlying, "tenant_id", None)
+        if tenant_id:
+            return str(tenant_id)
+
+    forced_user = getattr(request, "_force_auth_user", None)
+    if forced_user is None and underlying is not None:
+        forced_user = getattr(underlying, "_force_auth_user", None)
+    if forced_user is None:
+        return None
+
+    default_tenant_id = Tenant.objects.filter(slug="default").values_list("id", flat=True).first()
+    return str(default_tenant_id) if default_tenant_id else None
+
+
+def _database_manager(request):
+    # Database.objects is tenant-scoped via thread-local tenant context.
+    # For staff requests without explicit tenant header we intentionally use cross-tenant access.
+    if _is_staff(request.user) and not _has_explicit_tenant_header(request):
+        return Database.all_objects
+    return Database.objects
+
+
 def _accessible_databases_qs(request, *, cluster_id: str | None = None) -> QuerySet:
-    qs = Database.objects.select_related("cluster").all()
+    qs = _database_manager(request).select_related("cluster").all()
+    tenant_id = _resolve_tenant_id(request)
+    if tenant_id and (not _is_staff(request.user) or _has_explicit_tenant_header(request)):
+        qs = qs.filter(tenant_id=tenant_id)
     if cluster_id:
         qs = qs.filter(cluster_id=cluster_id)
     if not _is_staff(request.user):
@@ -102,6 +151,17 @@ def _load_snapshot_state(db: Database) -> _SnapshotState:
         if is_active is not None and not isinstance(is_active, bool):
             is_active = None
         normalized: dict[str, Any] = {"name": name}
+        purpose = item.get("purpose")
+        if purpose is not None:
+            purpose = str(purpose).strip() or None
+            if purpose is not None:
+                normalized["purpose"] = purpose
+        safe_mode = item.get("safe_mode")
+        if isinstance(safe_mode, bool):
+            normalized["safe_mode"] = safe_mode
+        unsafe_action_protection = item.get("unsafe_action_protection")
+        if isinstance(unsafe_action_protection, bool):
+            normalized["unsafe_action_protection"] = unsafe_action_protection
         if version is not None:
             normalized["version"] = version
         if is_active is not None:
@@ -122,6 +182,9 @@ def _compute_extension_status(item: dict[str, Any]) -> str:
 
 class ExtensionsOverviewRowSerializer(serializers.Serializer):
     name = serializers.CharField()
+    purpose = serializers.CharField(allow_null=True, required=False)
+    safe_mode = serializers.BooleanField(allow_null=True, required=False)
+    unsafe_action_protection = serializers.BooleanField(allow_null=True, required=False)
     installed_count = serializers.IntegerField()
     active_count = serializers.IntegerField()
     inactive_count = serializers.IntegerField()
@@ -173,9 +236,14 @@ def get_extensions_overview(request):
     offset = _parse_int(request.query_params.get("offset"), default=0, min_value=0, max_value=1_000_000)
 
     allowed_names: set[str] | None = None
+    allowed_meta_by_name: dict[str, dict[str, Any]] | None = None
     if database_id is not None:
+        db_qs = _database_manager(request).all()
+        tenant_id = _resolve_tenant_id(request)
+        if tenant_id and (not _is_staff(request.user) or _has_explicit_tenant_header(request)):
+            db_qs = db_qs.filter(tenant_id=tenant_id)
         try:
-            db_for_names = Database.objects.get(id=database_id)
+            db_for_names = db_qs.get(id=database_id)
         except (Database.DoesNotExist, ValueError, TypeError):
             return Response(
                 {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": "Database not found"}},
@@ -198,8 +266,26 @@ def get_extensions_overview(request):
         state = _load_snapshot_state(db_for_names)
         if state.ok:
             allowed_names = {str(item.get("name") or "").strip() for item in state.extensions if str(item.get("name") or "").strip()}
+            allowed_meta_by_name = {}
+            for item in state.extensions:
+                name = str(item.get("name") or "").strip()
+                if not name:
+                    continue
+                meta: dict[str, Any] = {}
+                purpose = item.get("purpose")
+                if isinstance(purpose, str) and purpose.strip():
+                    meta["purpose"] = purpose.strip()
+                safe_mode = item.get("safe_mode")
+                if isinstance(safe_mode, bool):
+                    meta["safe_mode"] = safe_mode
+                unsafe_action_protection = item.get("unsafe_action_protection")
+                if isinstance(unsafe_action_protection, bool):
+                    meta["unsafe_action_protection"] = unsafe_action_protection
+                if meta:
+                    allowed_meta_by_name[name] = meta
         else:
             allowed_names = set()
+            allowed_meta_by_name = {}
 
     databases = list(_accessible_databases_qs(request, cluster_id=cluster_id))
     total_databases = len(databases)
@@ -220,6 +306,8 @@ def get_extensions_overview(request):
         "unknown_active": 0,
         "versions": Counter(),
         "latest_snapshot_at": None,
+        "meta": {},
+        "meta_snapshot_at": None,
     })
 
     for state in ok_snapshots.values():
@@ -239,6 +327,24 @@ def get_extensions_overview(request):
 
             ver = item.get("version")
             bucket["versions"][ver] += 1
+
+            has_any_meta = any(k in item for k in ("purpose", "safe_mode", "unsafe_action_protection"))
+            if has_any_meta and state.updated_at is not None:
+                prev_meta_at = bucket.get("meta_snapshot_at")
+                if prev_meta_at is None or state.updated_at > prev_meta_at:
+                    meta: dict[str, Any] = {}
+                    purpose = item.get("purpose")
+                    if isinstance(purpose, str) and purpose.strip():
+                        meta["purpose"] = purpose.strip()
+                    safe_mode = item.get("safe_mode")
+                    if isinstance(safe_mode, bool):
+                        meta["safe_mode"] = safe_mode
+                    unsafe_action_protection = item.get("unsafe_action_protection")
+                    if isinstance(unsafe_action_protection, bool):
+                        meta["unsafe_action_protection"] = unsafe_action_protection
+                    if meta:
+                        bucket["meta"] = meta
+                        bucket["meta_snapshot_at"] = state.updated_at
 
             if state.updated_at is not None:
                 prev = bucket["latest_snapshot_at"]
@@ -262,8 +368,10 @@ def get_extensions_overview(request):
         ]
         versions.sort(key=lambda item: (item["version"] is None, str(item["version"])))
 
+        meta = bucket.get("meta") or {}
         row = {
             "name": name,
+            **meta,
             "installed_count": installed,
             "active_count": active,
             "inactive_count": inactive,
@@ -277,6 +385,12 @@ def get_extensions_overview(request):
     # Apply filters.
     if allowed_names is not None:
         rows = [r for r in rows if str(r.get("name") or "").strip() in allowed_names]
+        if allowed_meta_by_name is not None:
+            for r in rows:
+                nm = str(r.get("name") or "").strip()
+                meta = allowed_meta_by_name.get(nm)
+                if meta:
+                    r.update(meta)
 
     if search:
         rows = [r for r in rows if search in str(r.get("name") or "").lower()]
@@ -358,8 +472,12 @@ def get_extensions_overview_databases(request):
     offset = _parse_int(request.query_params.get("offset"), default=0, min_value=0, max_value=1_000_000)
 
     if database_id is not None:
+        db_qs = _database_manager(request).select_related("cluster")
+        tenant_id = _resolve_tenant_id(request)
+        if tenant_id and (not _is_staff(request.user) or _has_explicit_tenant_header(request)):
+            db_qs = db_qs.filter(tenant_id=tenant_id)
         try:
-            db = Database.objects.select_related("cluster").get(id=database_id)
+            db = db_qs.get(id=database_id)
         except (Database.DoesNotExist, ValueError, TypeError):
             return Response(
                 {"success": False, "error": {"code": "DATABASE_NOT_FOUND", "message": "Database not found"}},

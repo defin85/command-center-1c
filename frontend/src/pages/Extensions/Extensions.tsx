@@ -111,6 +111,30 @@ export const Extensions = () => {
       sorter: (a, b) => a.name.localeCompare(b.name),
     },
     {
+      title: 'Purpose',
+      dataIndex: 'purpose',
+      key: 'purpose',
+      render: (v: string | null | undefined) => v ? <Text>{v}</Text> : <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Safe mode',
+      key: 'safe_mode',
+      render: (_: unknown, row) => {
+        if (row.safe_mode === true) return <Tag color="green">on</Tag>
+        if (row.safe_mode === false) return <Tag color="red">off</Tag>
+        return <Text type="secondary">—</Text>
+      },
+    },
+    {
+      title: 'Unsafe action protection',
+      key: 'unsafe_action_protection',
+      render: (_: unknown, row) => {
+        if (row.unsafe_action_protection === true) return <Tag color="green">on</Tag>
+        if (row.unsafe_action_protection === false) return <Tag color="red">off</Tag>
+        return <Text type="secondary">—</Text>
+      },
+    },
+    {
       title: 'Installed',
       key: 'installed',
       align: 'right',
