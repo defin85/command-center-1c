@@ -177,6 +177,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/tenants/list-my-tenants/", OperationID: "v2_tenants_list_my_tenants_retrieve"},
 	{Method: "POST", Path: "/tenants/set-active/", OperationID: "v2_tenants_set_active_create"},
 	{Method: "GET", Path: "/ui/action-catalog/", OperationID: "v2_ui_action_catalog_retrieve"},
+	{Method: "GET", Path: "/ui/action-catalog/editor-hints/", OperationID: "v2_ui_action_catalog_editor_hints_retrieve"},
 	{Method: "POST", Path: "/ui/execution-plan/preview/", OperationID: "v2_ui_execution_plan_preview_create"},
 	{Method: "GET", Path: "/ui/table-metadata/", OperationID: "v2_ui_table_metadata_retrieve"},
 	{Method: "POST", Path: "/users/create/", OperationID: "v2_users_create_create"},

@@ -69,6 +69,7 @@ export function ActionCatalogEditorModal({
   const [paramsObject, setParamsObject] = useState<Record<string, unknown>>({})
   const [rawParamsError, setRawParamsError] = useState<string | null>(null)
   const [paramsSearch, setParamsSearch] = useState('')
+  const [guidedParamsGroupsOpen, setGuidedParamsGroupsOpen] = useState<string[]>(['filled', 'required'])
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
@@ -162,6 +163,7 @@ export function ActionCatalogEditorModal({
     if (!open) return
     autoFilledCommandIdsRef.current.clear()
     setParamsTouched(false)
+    setGuidedParamsGroupsOpen(['filled', 'required'])
 
     const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
     const parsed = parseParamsJsonToObject(current)
@@ -293,6 +295,17 @@ export function ActionCatalogEditorModal({
 
   const handleGuidedParamChange = (name: string, nextValue: unknown) => {
     setParamsTouched(true)
+    if (nextValue === undefined) {
+      const schema = commandParams.find((p) => p.name === name)?.schema
+      const targetGroup = schema?.required ? 'required' : 'optional'
+      setGuidedParamsGroupsOpen((current) => (
+        current.includes(targetGroup) ? current : [...current, targetGroup]
+      ))
+    } else {
+      setGuidedParamsGroupsOpen((current) => (
+        current.includes('filled') ? current : [...current, 'filled']
+      ))
+    }
     setParamsObject((current) => {
       const next: Record<string, unknown> = { ...current }
       if (nextValue === undefined) {
@@ -742,7 +755,8 @@ export function ActionCatalogEditorModal({
                           size="small"
                           ghost
                           destroyInactivePanel
-                          defaultActiveKey={['filled', 'required']}
+                          activeKey={guidedParamsGroupsOpen}
+                          onChange={(next) => setGuidedParamsGroupsOpen(Array.isArray(next) ? next.map(String) : [String(next)])}
                           items={[
                             {
                               key: 'filled',
