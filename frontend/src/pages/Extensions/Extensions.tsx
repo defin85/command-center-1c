@@ -473,18 +473,102 @@ export const Extensions = () => {
           } catch (e: unknown) {
             const maybe = e as { response?: { status?: number; data?: unknown } } | null
             if (maybe?.response?.status === 409) {
+              const data = maybe?.response?.data
+              const extractCode = (value: unknown): string | null => {
+                if (!value || typeof value !== 'object') return null
+                const err = (value as Record<string, unknown>).error
+                if (!err || typeof err !== 'object') return null
+                const code = (err as Record<string, unknown>).code
+                return typeof code === 'string' ? code : null
+              }
+              const code = extractCode(data)
+
+              if (code === 'DRIFT_CONFLICT' && data && typeof data === 'object') {
+                const driftRaw = (data as Record<string, unknown>).drift
+                const drift = driftRaw && typeof driftRaw === 'object' ? driftRaw as Record<string, any> : null
+                const driftRows = drift
+                  ? Object.entries(drift).map(([databaseId, entry]) => {
+                    const base = entry?.base
+                    const current = entry?.current
+                    return {
+                      database_id: databaseId,
+                      base_at: typeof base?.at === 'string' ? base.at : '',
+                      current_at: typeof current?.at === 'string' ? current.at : '',
+                      base_hash: typeof base?.hash === 'string' ? base.hash : '',
+                      current_hash: typeof current?.hash === 'string' ? current.hash : '',
+                    }
+                  })
+                  : []
+
+                modal.confirm({
+                  title: 'State changed',
+                  content: (
+                    <div>
+                      <div style={{ marginBottom: 8 }}>
+                        Some target databases changed since the plan was built. Re-plan is required.
+                      </div>
+                      {driftRows.length > 0 ? (
+                        <Table
+                          size="small"
+                          rowKey={(row) => row.database_id}
+                          pagination={false}
+                          dataSource={driftRows.slice(0, 10)}
+                          columns={[
+                            { title: 'Database', dataIndex: 'database_id', key: 'database_id' },
+                            { title: 'Base at', dataIndex: 'base_at', key: 'base_at', width: 220 },
+                            { title: 'Current at', dataIndex: 'current_at', key: 'current_at', width: 220 },
+                          ]}
+                          scroll={{ x: 700 }}
+                        />
+                      ) : (
+                        <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+                          {JSON.stringify(data ?? {}, null, 2)}
+                        </pre>
+                      )}
+                      {driftRows.length > 10 ? (
+                        <div style={{ marginTop: 8, opacity: 0.7 }}>
+                          Showing 10 of {driftRows.length} drifted databases.
+                        </div>
+                      ) : null}
+                    </div>
+                  ),
+                  okText: 'Re-plan and retry',
+                  cancelText: 'Close',
+                  onOk: async () => {
+                    setApplyPending(true)
+                    try {
+                      const nextPlan = await api.postExtensionsPlan({
+                        database_ids: databaseIds,
+                        capability: 'extensions.set_flags',
+                        action_id: setFlagsActionId || undefined,
+                        extension_name: selectedExtension,
+                        apply_mask: applyMask,
+                      })
+                      const res = await api.postExtensionsApply({ plan_id: nextPlan.plan_id })
+                      message.success('Operation queued: apply flags policy')
+                      if (res.operation_id) {
+                        navigate(`/operations?operation=${res.operation_id}`)
+                      }
+                    } finally {
+                      setApplyPending(false)
+                    }
+                  },
+                })
+                return
+              }
+
               modal.error({
-                title: 'Drift conflict',
+                title: 'Conflict',
                 content: (
                   <pre style={{ whiteSpace: 'pre-wrap' }}>
-                    {JSON.stringify(maybe?.response?.data ?? {}, null, 2)}
+                    {JSON.stringify(data ?? {}, null, 2)}
                   </pre>
                 ),
               })
-          } else if (!tryShowIbcmdCliUiError(e, modal, message)) {
-            const errorMessage = e instanceof Error ? e.message : 'unknown error'
-            message.error(`Failed to apply policy: ${errorMessage}`)
-          }
+            } else if (!tryShowIbcmdCliUiError(e, modal, message)) {
+              const errorMessage = e instanceof Error ? e.message : 'unknown error'
+              message.error(`Failed to apply policy: ${errorMessage}`)
+            }
           } finally {
             setApplyPending(false)
           }
