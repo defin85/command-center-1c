@@ -37,6 +37,20 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **WHEN** staff создаёт/редактирует действие с executor `designer_cli`
 - **THEN** UI позволяет задать команду/аргументы и сохранить конфигурацию
 
+#### Scenario: UI предлагает params template из command schema при создании action
+- **GIVEN** staff открывает modal создания нового action в guided editor
+- **AND** выбран `executor.kind` из `{ibcmd_cli, designer_cli}`
+- **WHEN** staff выбирает `driver` и `command_id` из driver catalog
+- **THEN** UI показывает список параметров команды из schema (`params_by_name`) с признаками required/default
+- **AND** UI предлагает “Insert params template” для заполнения `executor.params` объектом-шаблоном (ключи из `params_by_name`)
+- **AND** auto-fill НЕ должен затирать уже введённый JSON в `params` без явного подтверждения пользователя
+
+#### Scenario: params template не включает disabled и ibcmd connection params
+- **GIVEN** выбран `driver=ibcmd` и `command_id`
+- **WHEN** UI строит список параметров и template для `executor.params`
+- **THEN** UI исключает параметры, помеченные как `disabled`
+- **AND** UI исключает параметры, относящиеся к connection (которые должны приходить из профиля базы), чтобы не вводить оператора в заблуждение
+
 ### Requirement: Save с серверной валидацией и отображением ошибок
 Система ДОЛЖНА (SHALL) сохранять изменения через backend и показывать ошибки валидации пользователю.
 
