@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, AutoComplete, Button, Card, Descriptions, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, App, AutoComplete, Button, Card, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
@@ -8,6 +8,7 @@ import { useWorkflowTemplates } from '../../../api/queries/workflowTemplates'
 import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCatalogTypes'
 import { isPlainObject, parseJson, safeText } from '../actionCatalogUtils'
 import { buildParamsTemplate, getCommandParamsFromSchema } from '../../../components/driverCommands/builder/utils'
+import { ParamField } from '../../../components/driverCommands/builder/ParamField'
 
 const ACTION_CONTEXT_OPTIONS: { value: ActionContext; label: string }[] = [
   { value: 'database_card', label: 'database_card' },
@@ -38,6 +39,8 @@ const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
 
+type ParamsEditorMode = 'guided' | 'raw'
+
 export type ActionCatalogEditorModalProps = {
   open: boolean
   title: string
@@ -59,7 +62,10 @@ export function ActionCatalogEditorModal({
   const { modal } = App.useApp()
   const [workflowSearch, setWorkflowSearch] = useState('')
   const [paramsTouched, setParamsTouched] = useState(false)
-  const [lastAutoFilledCommandId, setLastAutoFilledCommandId] = useState<string | null>(null)
+  const autoFilledCommandIdsRef = useRef<Set<string>>(new Set())
+  const [paramsEditorMode, setParamsEditorMode] = useState<ParamsEditorMode>('guided')
+  const [paramsObject, setParamsObject] = useState<Record<string, unknown>>({})
+  const [rawParamsError, setRawParamsError] = useState<string | null>(null)
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorDriver = Form.useWatch(['executor', 'driver'], form) as DriverName | undefined
@@ -119,11 +125,14 @@ export function ActionCatalogEditorModal({
 
   const hasParamsTemplate = commandParams.length > 0
 
-  const paramsTemplateJson = useMemo(() => {
-    if (!selectedCommand) return ''
-    const template = buildParamsTemplate(selectedCommand, commandsDriver)
-    return JSON.stringify(template, null, 2)
+  const paramsTemplateObject = useMemo(() => {
+    if (!selectedCommand) return null
+    return buildParamsTemplate(selectedCommand, commandsDriver)
   }, [commandsDriver, selectedCommand])
+
+  const paramsTemplateJson = useMemo(() => (
+    paramsTemplateObject ? JSON.stringify(paramsTemplateObject, null, 2) : ''
+  ), [paramsTemplateObject])
 
   const isEmptyOrEmptyObjectParamsJson = (value: unknown): boolean => {
     const raw = typeof value === 'string' ? value.trim() : ''
@@ -132,27 +141,61 @@ export function ActionCatalogEditorModal({
     return isPlainObject(parsed) && Object.keys(parsed).length === 0
   }
 
+  const parseParamsJsonToObject = (
+    value: unknown
+  ): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } => {
+    const raw = typeof value === 'string' ? value.trim() : ''
+    if (!raw) return { ok: true, value: {} }
+    const parsed = parseJson(raw)
+    if (parsed === null) return { ok: false, error: 'Invalid JSON' }
+    if (!isPlainObject(parsed)) return { ok: false, error: 'params must be a JSON object' }
+    return { ok: true, value: parsed }
+  }
+
+  useEffect(() => {
+    if (!open) return
+    autoFilledCommandIdsRef.current.clear()
+    setParamsTouched(false)
+    setParamsEditorMode('guided')
+
+    const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
+    const parsed = parseParamsJsonToObject(current)
+    if (parsed.ok) {
+      setParamsObject(parsed.value)
+      setRawParamsError(null)
+    } else {
+      setParamsObject({})
+      setRawParamsError(parsed.error)
+    }
+  }, [form, initialValues?.executor?.params_json, open])
+
   useEffect(() => {
     if (!open) return
     if (!selectedCommand) return
     if (!editorCommandId) return
     if (paramsTouched) return
-    if (lastAutoFilledCommandId === editorCommandId) return
+    if (autoFilledCommandIdsRef.current.has(editorCommandId)) return
     if (!hasParamsTemplate) return
 
     const current = form.getFieldValue(['executor', 'params_json'])
     if (!isEmptyOrEmptyObjectParamsJson(current)) return
 
+    if (!paramsTemplateObject) return
     form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
-    setLastAutoFilledCommandId(editorCommandId)
-  }, [editorCommandId, form, hasParamsTemplate, lastAutoFilledCommandId, open, paramsTemplateJson, paramsTouched, selectedCommand])
+    setParamsObject(paramsTemplateObject)
+    setRawParamsError(null)
+    autoFilledCommandIdsRef.current.add(editorCommandId)
+  }, [editorCommandId, form, hasParamsTemplate, open, paramsTemplateJson, paramsTemplateObject, paramsTouched, selectedCommand])
 
   const handleInsertParamsTemplate = () => {
-    if (!paramsTemplateJson || !hasParamsTemplate) return
+    if (!paramsTemplateJson || !paramsTemplateObject || !hasParamsTemplate) return
 
     const current = form.getFieldValue(['executor', 'params_json'])
     if (isEmptyOrEmptyObjectParamsJson(current)) {
       form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
+      setParamsObject(paramsTemplateObject)
+      setRawParamsError(null)
+      setParamsTouched(true)
       return
     }
 
@@ -163,7 +206,68 @@ export function ActionCatalogEditorModal({
       cancelText: 'Keep current',
       onOk: () => {
         form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
+        setParamsObject(paramsTemplateObject)
+        setRawParamsError(null)
+        setParamsTouched(true)
       },
+    })
+  }
+
+  const allowGuidedParams = editorKind === 'ibcmd_cli' || editorKind === 'designer_cli'
+  const effectiveParamsEditorMode: ParamsEditorMode = allowGuidedParams ? paramsEditorMode : 'raw'
+
+  const schemaParamNames = useMemo(() => (
+    new Set(commandParams.map((p) => p.name))
+  ), [commandParams])
+
+  const unknownKeysCount = useMemo(() => {
+    const keys = Object.keys(paramsObject)
+    if (!keys.length) return 0
+    if (schemaParamNames.size === 0) return 0
+    let count = 0
+    for (const key of keys) {
+      if (!schemaParamNames.has(key)) count += 1
+    }
+    return count
+  }, [paramsObject, schemaParamNames])
+
+  const handleParamsEditorModeChange = (next: ParamsEditorMode) => {
+    if (next === 'guided') {
+      if (rawParamsError) {
+        modal.info({
+          title: 'Fix params JSON',
+          content: 'Guided mode requires params to be a valid JSON object.',
+        })
+        return
+      }
+      const current = form.getFieldValue(['executor', 'params_json'])
+      const parsed = parseParamsJsonToObject(current)
+      if (!parsed.ok) {
+        setRawParamsError(parsed.error)
+        modal.info({
+          title: 'Fix params JSON',
+          content: 'Guided mode requires params to be a valid JSON object.',
+        })
+        return
+      }
+      setParamsObject(parsed.value)
+      setRawParamsError(null)
+    }
+    setParamsEditorMode(next)
+  }
+
+  const handleGuidedParamChange = (name: string, nextValue: unknown) => {
+    setParamsTouched(true)
+    setParamsObject((current) => {
+      const next: Record<string, unknown> = { ...current }
+      if (nextValue === undefined) {
+        delete next[name]
+      } else {
+        next[name] = nextValue
+      }
+      form.setFieldValue(['executor', 'params_json'], JSON.stringify(next, null, 2))
+      setRawParamsError(null)
+      return next
     })
   }
 
@@ -300,15 +404,16 @@ export function ActionCatalogEditorModal({
             )}
           </Form.Item>
         ) : (
-          <Space size="middle" style={{ width: '100%' }} align="start">
+          <div style={{ display: 'flex', gap: 16, width: '100%' }}>
             <Form.Item
               label="driver"
               name={['executor', 'driver']}
               rules={[{ required: true, message: 'driver is required' }]}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: 0 }}
             >
               <Select
                 options={DRIVER_OPTIONS}
+                style={{ width: '100%' }}
                 data-testid="action-catalog-editor-driver"
                 onChange={() => {
                   form.setFieldValue(['executor', 'command_id'], undefined)
@@ -319,11 +424,12 @@ export function ActionCatalogEditorModal({
               label="command_id"
               name={['executor', 'command_id']}
               rules={[{ required: true, message: 'command_id is required' }]}
-              style={{ flex: 2 }}
+              style={{ flex: 2, minWidth: 0 }}
             >
               {driverCatalogUnavailable ? (
                 <Input
                   placeholder="Driver catalog unavailable — enter command_id manually"
+                  style={{ width: '100%' }}
                   data-testid="action-catalog-editor-command-id"
                 />
               ) : (
@@ -331,54 +437,56 @@ export function ActionCatalogEditorModal({
                   showSearch
                   options={commandOptions}
                   loading={commandsQuery.isLoading}
+                  style={{ width: '100%' }}
                   placeholder={commandsQuery.isLoading ? 'Loading driver catalog…' : 'Select command_id'}
                   optionFilterProp="label"
                   data-testid="action-catalog-editor-command-id"
                   notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}
-                  onChange={() => {
-                    setParamsTouched(false)
-                    setLastAutoFilledCommandId(null)
-                  }}
                 />
               )}
             </Form.Item>
-          </Space>
+          </div>
         )}
 
         {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && !driverCatalogUnavailable && selectedCommand && (
-          <Card
-            size="small"
-            title="Command parameters (from schema)"
-            style={{ marginBottom: 12 }}
-            data-testid="action-catalog-editor-schema-panel"
-          >
-            {commandParams.length === 0 ? (
-              <Text type="secondary">No command parameters in schema.</Text>
-            ) : (
-              <Descriptions bordered size="small" column={1}>
-                {commandParams.map(({ name, schema }) => {
-                  const bits: string[] = []
-                  if (schema.required) bits.push('required')
-                  if (schema.kind) bits.push(schema.kind)
-                  if (schema.value_type) bits.push(String(schema.value_type))
-                  if (schema.repeatable) bits.push('repeatable')
-                  const titleBits = bits.length ? ` (${bits.join(', ')})` : ''
+          <div style={{ marginBottom: 12 }} data-testid="action-catalog-editor-schema-panel">
+            <Collapse
+              size="small"
+              defaultActiveKey={[]}
+              items={[
+                {
+                  key: 'schema',
+                  label: `Command parameters (from schema) (${commandParams.length})`,
+                  children: commandParams.length === 0 ? (
+                    <Text type="secondary">No command parameters in schema.</Text>
+                  ) : (
+                    <Descriptions bordered size="small" column={1}>
+                      {commandParams.map(({ name, schema }) => {
+                        const bits: string[] = []
+                        if (schema.required) bits.push('required')
+                        if (schema.kind) bits.push(schema.kind)
+                        if (schema.value_type) bits.push(String(schema.value_type))
+                        if (schema.repeatable) bits.push('repeatable')
+                        const titleBits = bits.length ? ` (${bits.join(', ')})` : ''
 
-                  const defaultValue = schema.default !== undefined ? safeText(schema.default, 200) : '—'
-                  const description = schema.description ? String(schema.description) : ''
+                        const defaultValue = schema.default !== undefined ? safeText(schema.default, 200) : '—'
+                        const description = schema.description ? String(schema.description) : ''
 
-                  return (
-                    <Descriptions.Item key={name} label={`${name}${titleBits}`}>
-                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                        <Text type="secondary">default: {defaultValue}</Text>
-                        {description && <Text type="secondary">{description}</Text>}
-                      </Space>
-                    </Descriptions.Item>
-                  )
-                })}
-              </Descriptions>
-            )}
-          </Card>
+                        return (
+                          <Descriptions.Item key={name} label={`${name}${titleBits}`}>
+                            <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                              <Text type="secondary">default: {defaultValue}</Text>
+                              {description && <Text type="secondary">{description}</Text>}
+                            </Space>
+                          </Descriptions.Item>
+                        )
+                      })}
+                    </Descriptions>
+                  ),
+                },
+              ]}
+            />
+          </div>
         )}
 
         <Card size="small" style={{ marginBottom: 12 }}>
@@ -407,7 +515,19 @@ export function ActionCatalogEditorModal({
             <Form.Item
               label={(
                 <Space align="center">
-                  <span>params (JSON object)</span>
+                  <span>params</span>
+                  {allowGuidedParams && (
+                    <Segmented
+                      size="small"
+                      value={effectiveParamsEditorMode}
+                      options={[
+                        { label: 'Guided', value: 'guided' },
+                        { label: 'Raw JSON', value: 'raw' },
+                      ]}
+                      onChange={(next) => handleParamsEditorModeChange(next as ParamsEditorMode)}
+                      data-testid="action-catalog-editor-params-mode"
+                    />
+                  )}
                   {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
                     <Button
                       size="small"
@@ -425,6 +545,8 @@ export function ActionCatalogEditorModal({
                 </Space>
               )}
               name={['executor', 'params_json']}
+              validateStatus={effectiveParamsEditorMode === 'raw' && rawParamsError ? 'error' : undefined}
+              help={effectiveParamsEditorMode === 'raw' && rawParamsError ? rawParamsError : undefined}
               rules={[
                 {
                   validator: async (_rule, value) => {
@@ -438,13 +560,55 @@ export function ActionCatalogEditorModal({
                 },
               ]}
             >
-              <Input.TextArea
-                rows={6}
-                placeholder="{ }"
-                data-testid="action-catalog-editor-params"
-                onChange={() => setParamsTouched(true)}
-              />
+              {effectiveParamsEditorMode === 'raw' ? (
+                <Input.TextArea
+                  rows={6}
+                  placeholder="{ }"
+                  data-testid="action-catalog-editor-params"
+                  onChange={(event) => {
+                    setParamsTouched(true)
+                    const nextRaw = event.target.value
+                    const parsed = parseParamsJsonToObject(nextRaw)
+                    if (parsed.ok) {
+                      setParamsObject(parsed.value)
+                      setRawParamsError(null)
+                    } else {
+                      setRawParamsError(parsed.error)
+                    }
+                  }}
+                />
+              ) : (
+                <Input.TextArea rows={1} style={{ display: 'none' }} aria-hidden />
+              )}
             </Form.Item>
+
+            {allowGuidedParams && effectiveParamsEditorMode === 'guided' && (
+              <div data-testid="action-catalog-editor-params-guided">
+                {unknownKeysCount > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary">Unknown keys: {unknownKeysCount}</Text>
+                  </div>
+                )}
+
+                {driverCatalogUnavailable || !selectedCommand ? (
+                  <Text type="secondary">Select driver and command_id to edit schema params.</Text>
+                ) : commandParams.length === 0 ? (
+                  <Text type="secondary">No command parameters in schema.</Text>
+                ) : (
+                  <div>
+                    {commandParams.map(({ name, schema }) => (
+                      <ParamField
+                        key={name}
+                        name={name}
+                        schema={schema}
+                        value={paramsObject[name]}
+                        onChange={(next) => handleGuidedParamChange(name, next)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
               <Form.Item label="stdin" name={['executor', 'stdin']}>

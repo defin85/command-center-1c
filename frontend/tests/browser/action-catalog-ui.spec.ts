@@ -171,10 +171,10 @@ async function setupApiMocks(
       return fulfillJson(route, { key, value: updatedValue, status })
     }
 
-    if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
-      const driver = String(url.searchParams.get('driver') || 'ibcmd')
-      return fulfillJson(route, {
-        driver,
+	    if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
+	      const driver = String(url.searchParams.get('driver') || 'ibcmd')
+	      return fulfillJson(route, {
+	        driver,
         base_version: 'v1',
         overrides_version: null,
         generated_at: '2026-01-01T00:00:00Z',
@@ -184,25 +184,37 @@ async function setupApiMocks(
           platform_version: '8.3.27',
           source: { type: 'test' },
           generated_at: '2026-01-01T00:00:00Z',
-          commands_by_id: {
-            'infobase.extension.list': {
-              label: 'list extensions',
-              description: 'List extensions',
-              argv: ['infobase', 'extension', 'list'],
-              scope: 'per_database',
-              risk_level: 'safe',
-              params_by_name: {
-                format: { kind: 'flag', required: false, expects_value: true, default: 'json', description: 'Output format.' },
-                ids: { kind: 'flag', required: false, expects_value: true, repeatable: true, description: 'Extension IDs.' },
-                limit: { kind: 'flag', required: false, expects_value: true, description: 'Limit results.' },
-                remote: { kind: 'flag', required: false, expects_value: true, default: 'ssh://x:1545' },
-                legacy: { kind: 'flag', required: false, expects_value: true, disabled: true },
-              },
-            },
-          },
-        },
-      })
-    }
+	          commands_by_id: {
+	            'infobase.extension.list': {
+	              label: 'list extensions',
+	              description: 'List extensions',
+	              argv: ['infobase', 'extension', 'list'],
+	              scope: 'per_database',
+	              risk_level: 'safe',
+	              params_by_name: {
+	                format: { kind: 'flag', required: false, expects_value: true, default: 'json', description: 'Output format.' },
+	                ids: { kind: 'flag', required: false, expects_value: true, repeatable: true, description: 'Extension IDs.' },
+	                limit: { kind: 'flag', required: false, expects_value: true, description: 'Limit results.' },
+	                remote: { kind: 'flag', required: false, expects_value: true, default: 'ssh://x:1545' },
+	                legacy: { kind: 'flag', required: false, expects_value: true, disabled: true },
+	              },
+	            },
+	            'infobase.extension.update': {
+	              label: 'update extension',
+	              description: 'Update extension',
+	              argv: ['infobase', 'extension', 'update'],
+	              scope: 'per_database',
+	              risk_level: 'dangerous',
+	              params_by_name: {
+	                ids: { kind: 'flag', required: true, expects_value: true, repeatable: true, description: 'Extension IDs.' },
+	                force: { kind: 'flag', required: false, expects_value: false, description: 'Force update.' },
+	                timeout: { kind: 'flag', required: false, expects_value: true, value_type: 'int', description: 'Timeout (seconds).' },
+	              },
+	            },
+	          },
+	        },
+	      })
+	    }
 
     if (method === 'POST' && path === '/api/v2/ui/execution-plan/preview/') {
       return fulfillJson(route, {
@@ -379,6 +391,9 @@ test('Action Catalog: auto-fills params template from command schema and confirm
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
 
+  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
+
   const params = page.getByTestId('action-catalog-editor-params')
   await expect(params).toHaveValue(/"format": "json"/)
   await expect(params).toHaveValue(/"ids": \[\]/)
@@ -398,4 +413,126 @@ test('Action Catalog: auto-fills params template from command schema and confirm
 
   await page.getByTestId('action-catalog-editor-apply').click()
   await expect(page.getByText('extensions.template', { exact: true })).toBeVisible()
+})
+
+test('Action Catalog editor: params default Guided and schema panel is collapsed', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-editor-params-mode')).toBeVisible()
+
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+
+  const schemaPanel = page.getByTestId('action-catalog-editor-schema-panel')
+  await expect(schemaPanel).toBeVisible()
+  await expect(schemaPanel.locator('.ant-collapse-item-active')).toHaveCount(0)
+})
+
+test('Action Catalog editor: preserves unknown keys when editing schema params in Guided', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.unknown')
+  await page.getByTestId('action-catalog-editor-label').fill('Unknown keys')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
+  await page.getByTestId('action-catalog-editor-params').fill('{\"custom\": 1}')
+
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
+  const guided = page.getByTestId('action-catalog-editor-params-guided')
+  await expect(guided).toBeVisible()
+  await guided.locator('.ant-form-item', { hasText: 'limit' }).locator('input').fill('5')
+
+  await page.getByTestId('action-catalog-editor-apply').click()
+  await expect(page.getByText('extensions.unknown', { exact: true })).toBeVisible()
+
+  const row = page.locator('tr', { has: page.getByText('extensions.unknown', { exact: true }) })
+  await row.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
+
+  const params = page.getByTestId('action-catalog-editor-params')
+  await expect(params).toHaveValue(/"custom": 1/)
+  await expect(params).toHaveValue(/"limit": "5"/)
+})
+
+test('Action Catalog editor: blocks Guided on invalid Raw JSON and does not auto-fill after touch', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.touch')
+  await page.getByTestId('action-catalog-editor-label').fill('Touch action')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
+  const params = page.getByTestId('action-catalog-editor-params')
+  await params.fill('{')
+
+  await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
+  await expect(page.locator('.ant-modal-confirm-title', { hasText: 'Fix params JSON' })).toBeVisible()
+  await page.getByRole('button', { name: 'OK', exact: true }).click()
+  await expect(params).toBeVisible()
+
+  await params.fill('{}')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.update')
+  await page.keyboard.press('Enter')
+
+  await expect(params).toHaveValue('{}')
+  await expect(params).not.toHaveValue(/force/)
 })
