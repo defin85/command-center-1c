@@ -2,11 +2,11 @@ import { useCallback, useState } from 'react'
 import { Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import type { ActionCatalogAction } from '../../../api/types/actionCatalog'
-import type { ExecuteIbcmdCliOperationRequest } from '../../../api/generated/model/executeIbcmdCliOperationRequest'
-import { getV2 } from '../../../api/generated'
-import { apiClient } from '../../../api/client'
-import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
+import type { ActionCatalogAction } from '../api/types/actionCatalog'
+import type { ExecuteIbcmdCliOperationRequest } from '../api/generated/model/executeIbcmdCliOperationRequest'
+import { getV2 } from '../api/generated'
+import { apiClient } from '../api/client'
+import { tryShowIbcmdCliUiError } from '../components/ibcmd/ibcmdCliUiErrors'
 
 const api = getV2()
 
@@ -21,21 +21,21 @@ type ModalApi = {
   error: (config: Record<string, unknown>) => void
 }
 
-export type UseExtensionsActionsParams = {
+export type UseActionRunnerParams = {
   isStaff: boolean
   message: MessageApi
   modal: ModalApi
   navigate: (to: string) => void
 }
 
-export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseExtensionsActionsParams) => {
-  const [extensionsActionPendingId, setExtensionsActionPendingId] = useState<string | null>(null)
+export const useActionRunner = ({ isStaff, message, modal, navigate }: UseActionRunnerParams) => {
+  const [actionPendingId, setActionPendingId] = useState<string | null>(null)
 
-  const resetExtensionsActionPendingId = useCallback(() => {
-    setExtensionsActionPendingId(null)
+  const resetActionPendingId = useCallback(() => {
+    setActionPendingId(null)
   }, [])
 
-  const executeExtensionsAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
+  const executeAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
     const executor = action.executor
     const kind = executor.kind
 
@@ -109,8 +109,8 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
     throw new Error(`Unsupported action executor kind: ${kind}`)
   }, [message, navigate])
 
-  const runExtensionsAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
-    if (extensionsActionPendingId) return
+  const runAction = useCallback(async (action: ActionCatalogAction, databaseIds: string[]) => {
+    if (actionPendingId) return
 
     const loadPreview = async () => {
       const response = await apiClient.post('/api/v2/ui/execution-plan/preview/', {
@@ -171,16 +171,16 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
     ]
 
     const doRun = async () => {
-      setExtensionsActionPendingId(action.id)
+      setActionPendingId(action.id)
       try {
-        await executeExtensionsAction(action, databaseIds)
+        await executeAction(action, databaseIds)
       } catch (e: unknown) {
         if (!tryShowIbcmdCliUiError(e, modal, message)) {
           const errorMessage = e instanceof Error ? e.message : 'unknown error'
           message.error(`Не удалось выполнить действие: ${errorMessage}`)
         }
       } finally {
-        setExtensionsActionPendingId(null)
+        setActionPendingId(null)
       }
     }
 
@@ -251,7 +251,8 @@ export const useExtensionsActions = ({ isStaff, message, modal, navigate }: UseE
     }
 
     await doRun()
-  }, [executeExtensionsAction, extensionsActionPendingId, isStaff, message, modal])
+  }, [actionPendingId, executeAction, isStaff, message, modal])
 
-  return { runExtensionsAction, extensionsActionPendingId, resetExtensionsActionPendingId }
+  return { runAction, actionPendingId, resetActionPendingId }
 }
+

@@ -13134,6 +13134,14 @@ components:
 
             - `extensions.sync` (default) - refresh extensions snapshots (existing behaviour)
             - `extensions.set_flags` - apply flags policy (requires `extension_name`)
+        action_id:
+          type: string
+          maxLength: 128
+          description: |-
+            Optional deterministic action selector (matches `ui.action_catalog.extensions.actions[].id`).
+
+            If provided, backend uses this action directly. If omitted and multiple actions match the requested
+            `capability`, backend fails closed with `AMBIGUOUS_ACTION`.
         extension_name:
           type: string
           description: Extension name (exact match). Required for capability `extensions.set_flags`.

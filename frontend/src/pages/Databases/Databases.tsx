@@ -33,7 +33,7 @@ import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModa
 import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdConnectionProfileModal'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
-import { useExtensionsActions } from './components/useExtensionsActions'
+import { useActionRunner } from '../../hooks/useActionRunner'
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
 
 const EMPTY_CLUSTERS: Cluster[] = []
@@ -115,7 +115,7 @@ export const Databases = () => {
   const updateDatabaseCredentials = useUpdateDatabaseCredentials()
   const updateDatabaseDbmsMetadata = useUpdateDatabaseDbmsMetadata()
   const updateDatabaseIbcmdConnectionProfile = useUpdateDatabaseIbcmdConnectionProfile()
-  const { runExtensionsAction, extensionsActionPendingId, resetExtensionsActionPendingId } = useExtensionsActions({ isStaff, message, modal, navigate })
+  const { runAction: runExtensionsAction, actionPendingId: extensionsActionPendingId, resetActionPendingId: resetExtensionsActionPendingId } = useActionRunner({ isStaff, message, modal, navigate })
 
   // Derived state: selected cluster object
   const selectedCluster = useMemo(() => {

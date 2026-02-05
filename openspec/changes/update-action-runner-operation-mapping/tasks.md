@@ -15,7 +15,7 @@
 - [x] Убрать клиентскую валидацию duplicate reserved capability в `frontend/src/pages/Settings/actionCatalog/actionCatalogValidation.ts`.
 - [x] Убрать проверку reserved duplicate в modal Add/Edit action (если она есть) и полагаться на backend validation.
 - [x] В `Extensions` UI: выбирать `extensions.set_flags` action по `action_id` (dropdown или 3 кнопки пресетов) и вызывать plan/apply детерминированно.
-- [ ] (Опционально) Выделить общий `ActionRunner` hook из `frontend/src/pages/Databases/components/useExtensionsActions.tsx` для reuse в `Extensions`.
+- [x] (Опционально) Выделить общий `ActionRunner` hook из `frontend/src/pages/Databases/components/useExtensionsActions.tsx` для reuse в `Extensions`.
 
 ## 3. Spec & Validation
 - [x] Добавить delta-specs для `extensions-action-catalog`, `extensions-plan-apply`, `ui-action-catalog-editor`.

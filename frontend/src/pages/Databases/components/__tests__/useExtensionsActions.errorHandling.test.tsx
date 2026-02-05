@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 
-import { useExtensionsActions } from '../useExtensionsActions'
+import { useActionRunner } from '../../../../hooks/useActionRunner'
 
 vi.mock('../../../../api/generated', () => ({
   getV2: () => ({
@@ -25,13 +25,13 @@ vi.mock('../../../../api/client', () => ({
   apiClient: { post: vi.fn() },
 }))
 
-describe('useExtensionsActions: ibcmd_cli error handling', () => {
+describe('useActionRunner: ibcmd_cli error handling', () => {
   it('shows actionable modal for IBCMD_CONNECTION_PROFILE_INVALID', async () => {
     const message = { success: vi.fn(), error: vi.fn(), info: vi.fn() }
     const modal = { confirm: vi.fn(), error: vi.fn() }
     const navigate = vi.fn()
 
-    const { result } = renderHook(() => useExtensionsActions({ isStaff: false, message, modal, navigate }))
+    const { result } = renderHook(() => useActionRunner({ isStaff: false, message, modal, navigate }))
 
     const action: any = {
       id: 'extensions.list',
@@ -41,7 +41,7 @@ describe('useExtensionsActions: ibcmd_cli error handling', () => {
     }
 
     await act(async () => {
-      await result.current.runExtensionsAction(action, ['db-1'])
+      await result.current.runAction(action, ['db-1'])
     })
 
     expect(modal.error).toHaveBeenCalledTimes(1)
