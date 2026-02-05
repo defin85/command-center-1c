@@ -634,23 +634,35 @@ export function ActionCatalogEditorModal({
                   </div>
                 )}
 
-                {driverCatalogUnavailable || !selectedCommand ? (
-                  <Text type="secondary">Select driver and command_id to edit schema params.</Text>
-                ) : commandParams.length === 0 ? (
-                  <Text type="secondary">No command parameters in schema.</Text>
-                ) : (
-                  <div>
-                    {commandParams.map(({ name, schema }) => (
-                      <ParamField
-                        key={name}
-                        name={name}
-                        schema={schema}
-                        value={getGuidedParamValue(name, schema)}
-                        onChange={(next) => handleGuidedParamChange(name, next)}
-                      />
-                    ))}
-                  </div>
-                )}
+                <Collapse
+                  size="small"
+                  ghost
+                  destroyInactivePanel={false}
+                  defaultActiveKey={['guided-params']}
+                  items={[
+                    {
+                      key: 'guided-params',
+                      label: `Command params (guided) (${driverCatalogUnavailable || !selectedCommand ? '—' : commandParams.length})`,
+                      children: driverCatalogUnavailable || !selectedCommand ? (
+                        <Text type="secondary">Select driver and command_id to edit schema params.</Text>
+                      ) : commandParams.length === 0 ? (
+                        <Text type="secondary">No command parameters in schema.</Text>
+                      ) : (
+                        <div>
+                          {commandParams.map(({ name, schema }) => (
+                            <ParamField
+                              key={name}
+                              name={name}
+                              schema={schema}
+                              value={getGuidedParamValue(name, schema)}
+                              onChange={(next) => handleGuidedParamChange(name, next)}
+                            />
+                          ))}
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
               </div>
             )}
 
