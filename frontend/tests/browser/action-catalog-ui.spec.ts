@@ -54,11 +54,31 @@ async function setupApiMocks(
       return fulfillJson(route, { roles: [], count: 0, total: 0 })
     }
 
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      return fulfillJson(route, {
+        active_tenant_id: null,
+        tenants: [
+          { id: 't1', slug: 't1', name: 'Tenant 1', role: 'owner' },
+        ],
+      })
+    }
+
+    if (method === 'POST' && path === '/api/v2/tenants/set-active/') {
+      let payload: AnyRecord = {}
+      try {
+        payload = JSON.parse(request.postData() || '{}') as AnyRecord
+      } catch (_err) {
+        payload = {}
+      }
+      const tenantId = typeof payload.tenant_id === 'string' ? payload.tenant_id : 't1'
+      return fulfillJson(route, { active_tenant_id: tenantId })
+    }
+
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/audit/') {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
-    if (method === 'GET' && path === '/api/v2/settings/runtime/') {
+    if (method === 'GET' && (path === '/api/v2/settings/runtime/' || path === '/api/v2/settings/runtime-effective/')) {
       return fulfillJson(route, { settings: state.runtimeSettings })
     }
 
@@ -105,6 +125,52 @@ async function setupApiMocks(
       return fulfillJson(route, updated)
     }
 
+    if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime-overrides/')) {
+      const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
+      const existing = state.runtimeSettings.find((item) => item.key === key)
+
+      let payload: AnyRecord = {}
+      try {
+        payload = JSON.parse(request.postData() || '{}') as AnyRecord
+      } catch (_err) {
+        payload = {}
+      }
+
+      if ((state.patchFailCount ?? 0) > 0) {
+        state.patchFailCount = (state.patchFailCount ?? 0) - 1
+        return fulfillJson(route, {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: state.patchFailMessages ?? ['extensions.actions[0].executor.command_id: unknown command_id'],
+          },
+        }, 400)
+      }
+
+      const updatedValue = payload.value
+
+      const updated: AnyRecord = existing
+        ? { ...existing, value: updatedValue }
+        : {
+          key,
+          value_type: 'json',
+          description: '',
+          min_value: null,
+          max_value: null,
+          default: null,
+          value: updatedValue,
+        }
+
+      if (existing) {
+        existing.value = updatedValue
+      } else {
+        state.runtimeSettings.push(updated)
+      }
+
+      const status = typeof payload.status === 'string' ? payload.status : 'published'
+      return fulfillJson(route, { key, value: updatedValue, status })
+    }
+
     if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
       const driver = String(url.searchParams.get('driver') || 'ibcmd')
       return fulfillJson(route, {
@@ -125,7 +191,13 @@ async function setupApiMocks(
               argv: ['infobase', 'extension', 'list'],
               scope: 'per_database',
               risk_level: 'safe',
-              params_by_name: {},
+              params_by_name: {
+                format: { kind: 'flag', required: false, expects_value: true, default: 'json', description: 'Output format.' },
+                ids: { kind: 'flag', required: false, expects_value: true, repeatable: true, description: 'Extension IDs.' },
+                limit: { kind: 'flag', required: false, expects_value: true, description: 'Limit results.' },
+                remote: { kind: 'flag', required: false, expects_value: true, default: 'ssh://x:1545' },
+                legacy: { kind: 'flag', required: false, expects_value: true, disabled: true },
+              },
             },
           },
         },
@@ -191,6 +263,10 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   const listRow = page.locator('tr', { has: page.getByText('extensions.list', { exact: true }) })
   await listRow.getByRole('button', { name: 'Preview', exact: true }).click()
   await expect(page.getByText('Preview: extensions.list')).toBeVisible()
+  await page.getByTestId('action-catalog-preview-database-ids').click()
+  await page.keyboard.type('db1')
+  await page.keyboard.press('Enter')
+  await page.getByLabel('Preview: extensions.list').getByRole('button', { name: 'Preview', exact: true }).click()
   await expect(page.getByText('execution_plan', { exact: false })).toBeVisible()
   await page.locator('.ant-modal-footer').getByRole('button', { name: 'Close', exact: true }).click()
 
@@ -275,4 +351,51 @@ test('Action Catalog: shows backend validation errors on save', async ({ page })
 
   await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
   await expect(page.getByTestId('action-catalog-save')).toBeEnabled()
+})
+
+test('Action Catalog: auto-fills params template from command schema and confirms overwrite', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.template')
+  await page.getByTestId('action-catalog-editor-label').fill('Template action')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+
+  const params = page.getByTestId('action-catalog-editor-params')
+  await expect(params).toHaveValue(/"format": "json"/)
+  await expect(params).toHaveValue(/"ids": \[\]/)
+  await expect(params).toHaveValue(/"limit": null/)
+  await expect(params).not.toHaveValue(/remote/)
+  await expect(params).not.toHaveValue(/legacy/)
+
+  await params.fill('{\"custom\": 1}')
+  await page.getByTestId('action-catalog-editor-insert-params-template').click()
+  await expect(page.getByRole('button', { name: 'Keep current', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Keep current', exact: true }).click()
+  await expect(params).toHaveValue('{\"custom\": 1}')
+
+  await page.getByTestId('action-catalog-editor-insert-params-template').click()
+  await page.getByRole('button', { name: 'Overwrite', exact: true }).click()
+  await expect(params).toHaveValue(/"format": "json"/)
+
+  await page.getByTestId('action-catalog-editor-apply').click()
+  await expect(page.getByText('extensions.template', { exact: true })).toBeVisible()
 })

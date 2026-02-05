@@ -17,6 +17,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:browser": "playwright test",
+    "test:browser:action-catalog": "playwright test tests/browser/action-catalog-ui.spec.ts",
     "test:browser:command-schemas": "playwright test tests/browser/command-schemas-ui.spec.ts",
     "test:browser:extensions": "playwright test tests/browser/extensions-ui.spec.ts",
     "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts"

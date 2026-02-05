@@ -66,6 +66,7 @@ export function ActionCatalogPreviewModal({
             notFoundContent={databasesQuery.isError ? 'Failed to load databases' : 'No databases'}
             tokenSeparators={['\n', ' ', ',', ';']}
             style={{ width: '100%' }}
+            data-testid="action-catalog-preview-database-ids"
           />
         </Space>
       )}

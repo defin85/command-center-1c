@@ -36,6 +36,32 @@ export const IBCMD_CONNECTION_PARAM_NAMES = new Set([
   'users_data',
 ])
 
+export const getCommandParamsFromSchema = (
+  paramsByName: Record<string, DriverCommandParamV2> | undefined,
+  driver: DriverName
+): Array<{ name: string; schema: DriverCommandParamV2 }> => (
+  Object.entries(paramsByName ?? {})
+    .filter(([, schema]) => Boolean(schema) && !schema.disabled)
+    .filter(([name]) => driver !== 'ibcmd' || !IBCMD_CONNECTION_PARAM_NAMES.has(name))
+    .map(([name, schema]) => ({ name, schema: schema as DriverCommandParamV2 }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+)
+
+export const buildParamsTemplate = (command: DriverCommandV2 | undefined, driver: DriverName): Record<string, unknown> => {
+  const paramsByName = command?.params_by_name
+  const entries = getCommandParamsFromSchema(paramsByName, driver)
+
+  const template: Record<string, unknown> = {}
+  for (const { name, schema } of entries) {
+    if (schema.default !== undefined) {
+      template[name] = schema.default
+      continue
+    }
+    template[name] = schema.repeatable ? [] : null
+  }
+  return template
+}
+
 export const ensureArgvLanguage = (monaco: MonacoInstance) => {
   if (argvLanguageRegistered) return
   argvLanguageRegistered = true

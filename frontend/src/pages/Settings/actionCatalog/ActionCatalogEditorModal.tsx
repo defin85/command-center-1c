@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
-import { Alert, AutoComplete, Card, Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, App, AutoComplete, Button, Card, Descriptions, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
-import type { DriverName } from '../../../api/driverCommands'
+import type { DriverCommandParamV2, DriverCommandV2, DriverName } from '../../../api/driverCommands'
 import { useWorkflowTemplates } from '../../../api/queries/workflowTemplates'
 import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCatalogTypes'
-import { isPlainObject, parseJson } from '../actionCatalogUtils'
+import { isPlainObject, parseJson, safeText } from '../actionCatalogUtils'
+import { buildParamsTemplate, getCommandParamsFromSchema } from '../../../components/driverCommands/builder/utils'
 
 const ACTION_CONTEXT_OPTIONS: { value: ActionContext; label: string }[] = [
   { value: 'database_card', label: 'database_card' },
@@ -54,10 +55,15 @@ export function ActionCatalogEditorModal({
   onCancel,
   onApply,
 }: ActionCatalogEditorModalProps) {
+  const { Text } = Typography
+  const { modal } = App.useApp()
   const [workflowSearch, setWorkflowSearch] = useState('')
+  const [paramsTouched, setParamsTouched] = useState(false)
+  const [lastAutoFilledCommandId, setLastAutoFilledCommandId] = useState<string | null>(null)
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorDriver = Form.useWatch(['executor', 'driver'], form) as DriverName | undefined
+  const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
   const commandsDriver: DriverName = (editorDriver === 'cli' || editorDriver === 'ibcmd')
     ? editorDriver
     : (editorKind === 'designer_cli' ? 'cli' : 'ibcmd')
@@ -98,6 +104,68 @@ export function ActionCatalogEditorModal({
     (open && (editorKind === 'ibcmd_cli' || editorKind === 'designer_cli'))
     && (commandsQuery.isError || (!commandsQuery.isLoading && commandOptions.length === 0))
   )
+
+  const selectedCommand = useMemo((): DriverCommandV2 | null => {
+    const commandsById = commandsQuery.data?.catalog?.commands_by_id
+    if (!editorCommandId || !commandsById || typeof commandsById !== 'object') return null
+    const cmd = (commandsById as Record<string, DriverCommandV2 | undefined>)[editorCommandId]
+    return cmd ?? null
+  }, [commandsQuery.data, editorCommandId])
+
+  const commandParams = useMemo((): Array<{ name: string; schema: DriverCommandParamV2 }> => {
+    if (!selectedCommand) return []
+    return getCommandParamsFromSchema(selectedCommand.params_by_name, commandsDriver)
+  }, [commandsDriver, selectedCommand])
+
+  const hasParamsTemplate = commandParams.length > 0
+
+  const paramsTemplateJson = useMemo(() => {
+    if (!selectedCommand) return ''
+    const template = buildParamsTemplate(selectedCommand, commandsDriver)
+    return JSON.stringify(template, null, 2)
+  }, [commandsDriver, selectedCommand])
+
+  const isEmptyOrEmptyObjectParamsJson = (value: unknown): boolean => {
+    const raw = typeof value === 'string' ? value.trim() : ''
+    if (!raw) return true
+    const parsed = parseJson(raw)
+    return isPlainObject(parsed) && Object.keys(parsed).length === 0
+  }
+
+  useEffect(() => {
+    if (!open) return
+    if (!selectedCommand) return
+    if (!editorCommandId) return
+    if (paramsTouched) return
+    if (lastAutoFilledCommandId === editorCommandId) return
+    if (!hasParamsTemplate) return
+
+    const current = form.getFieldValue(['executor', 'params_json'])
+    if (!isEmptyOrEmptyObjectParamsJson(current)) return
+
+    form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
+    setLastAutoFilledCommandId(editorCommandId)
+  }, [editorCommandId, form, hasParamsTemplate, lastAutoFilledCommandId, open, paramsTemplateJson, paramsTouched, selectedCommand])
+
+  const handleInsertParamsTemplate = () => {
+    if (!paramsTemplateJson || !hasParamsTemplate) return
+
+    const current = form.getFieldValue(['executor', 'params_json'])
+    if (isEmptyOrEmptyObjectParamsJson(current)) {
+      form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
+      return
+    }
+
+    modal.confirm({
+      title: 'Overwrite params?',
+      content: 'This will replace the current params JSON with a template built from the command schema.',
+      okText: 'Overwrite',
+      cancelText: 'Keep current',
+      onOk: () => {
+        form.setFieldValue(['executor', 'params_json'], paramsTemplateJson)
+      },
+    })
+  }
 
   const workflowTemplatesUnavailable = Boolean(
     (open && editorKind === 'workflow')
@@ -267,10 +335,50 @@ export function ActionCatalogEditorModal({
                   optionFilterProp="label"
                   data-testid="action-catalog-editor-command-id"
                   notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}
+                  onChange={() => {
+                    setParamsTouched(false)
+                    setLastAutoFilledCommandId(null)
+                  }}
                 />
               )}
             </Form.Item>
           </Space>
+        )}
+
+        {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && !driverCatalogUnavailable && selectedCommand && (
+          <Card
+            size="small"
+            title="Command parameters (from schema)"
+            style={{ marginBottom: 12 }}
+            data-testid="action-catalog-editor-schema-panel"
+          >
+            {commandParams.length === 0 ? (
+              <Text type="secondary">No command parameters in schema.</Text>
+            ) : (
+              <Descriptions bordered size="small" column={1}>
+                {commandParams.map(({ name, schema }) => {
+                  const bits: string[] = []
+                  if (schema.required) bits.push('required')
+                  if (schema.kind) bits.push(schema.kind)
+                  if (schema.value_type) bits.push(String(schema.value_type))
+                  if (schema.repeatable) bits.push('repeatable')
+                  const titleBits = bits.length ? ` (${bits.join(', ')})` : ''
+
+                  const defaultValue = schema.default !== undefined ? safeText(schema.default, 200) : '—'
+                  const description = schema.description ? String(schema.description) : ''
+
+                  return (
+                    <Descriptions.Item key={name} label={`${name}${titleBits}`}>
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <Text type="secondary">default: {defaultValue}</Text>
+                        {description && <Text type="secondary">{description}</Text>}
+                      </Space>
+                    </Descriptions.Item>
+                  )
+                })}
+              </Descriptions>
+            )}
+          </Card>
         )}
 
         <Card size="small" style={{ marginBottom: 12 }}>
@@ -297,7 +405,25 @@ export function ActionCatalogEditorModal({
             )}
 
             <Form.Item
-              label="params (JSON object)"
+              label={(
+                <Space align="center">
+                  <span>params (JSON object)</span>
+                  {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                    <Button
+                      size="small"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleInsertParamsTemplate()
+                      }}
+                      disabled={!hasParamsTemplate || driverCatalogUnavailable || !selectedCommand}
+                      data-testid="action-catalog-editor-insert-params-template"
+                    >
+                      Insert params template
+                    </Button>
+                  )}
+                </Space>
+              )}
               name={['executor', 'params_json']}
               rules={[
                 {
@@ -316,6 +442,7 @@ export function ActionCatalogEditorModal({
                 rows={6}
                 placeholder="{ }"
                 data-testid="action-catalog-editor-params"
+                onChange={() => setParamsTouched(true)}
               />
             </Form.Item>
 
