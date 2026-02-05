@@ -156,16 +156,17 @@ export function ActionCatalogEditorModal({
     if (!open) return
     autoFilledCommandIdsRef.current.clear()
     setParamsTouched(false)
-    setParamsEditorMode('guided')
 
     const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
     const parsed = parseParamsJsonToObject(current)
     if (parsed.ok) {
       setParamsObject(parsed.value)
       setRawParamsError(null)
+      setParamsEditorMode('guided')
     } else {
       setParamsObject({})
       setRawParamsError(parsed.error)
+      setParamsEditorMode('raw')
     }
   }, [form, initialValues?.executor?.params_json, open])
 
@@ -254,6 +255,34 @@ export function ActionCatalogEditorModal({
       setRawParamsError(null)
     }
     setParamsEditorMode(next)
+  }
+
+  const handleResetParamsJson = () => {
+    setParamsTouched(true)
+    form.setFieldValue(['executor', 'params_json'], '{}')
+    setParamsObject({})
+    setRawParamsError(null)
+    setParamsEditorMode('raw')
+  }
+
+  const getGuidedParamValue = (name: string, schema: DriverCommandParamV2): unknown => {
+    const value = paramsObject[name]
+    if (schema.value_type === 'int' || schema.value_type === 'float') {
+      if (typeof value === 'number') return value
+      if (typeof value === 'string') {
+        const num = Number(value)
+        return Number.isFinite(num) ? num : undefined
+      }
+      return undefined
+    }
+    if (schema.kind === 'flag' && !schema.expects_value) {
+      if (value === true || value === false) return value
+      if (typeof value === 'string') {
+        if (value.toLowerCase() === 'true') return true
+        if (value.toLowerCase() === 'false') return false
+      }
+    }
+    return value
   }
 
   const handleGuidedParamChange = (name: string, nextValue: unknown) => {
@@ -528,6 +557,19 @@ export function ActionCatalogEditorModal({
                       data-testid="action-catalog-editor-params-mode"
                     />
                   )}
+                  {effectiveParamsEditorMode === 'raw' && rawParamsError && (
+                    <Button
+                      size="small"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleResetParamsJson()
+                      }}
+                      data-testid="action-catalog-editor-params-reset"
+                    >
+                      Reset to {'{}'}
+                    </Button>
+                  )}
                   {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
                     <Button
                       size="small"
@@ -601,7 +643,7 @@ export function ActionCatalogEditorModal({
                         key={name}
                         name={name}
                         schema={schema}
-                        value={paramsObject[name]}
+                        value={getGuidedParamValue(name, schema)}
                         onChange={(next) => handleGuidedParamChange(name, next)}
                       />
                     ))}
