@@ -1,29 +1,34 @@
-# Change: UX/безопасность schema-driven params template в Action Catalog (edge cases)
+# Change: Action Catalog editor — Guided params + безопасный schema-driven template (edge cases)
 
 ## Why
-Текущая реализация schema-driven params template для `/settings/action-catalog` закрывает базовый сценарий, но остаются UX/edge-case риски:
-- “touched” состояние может сбрасываться при смене `command_id`, что повышает шанс неожиданного auto-fill при последующих действиях пользователя;
-- schema panel всегда видимая и может перегружать модалку при длинных схемах;
-- логика “pristine vs user-edited” должна опираться на максимально надёжный сигнал (а не на вручную сбрасываемый флаг), чтобы исключить незаметные перезаписи.
+В `/settings/action-catalog` редактирование `executor.params` сейчас ориентировано на Raw JSON, а schema-driven template закрывает только базовый сценарий. Это оставляет UX и safety проблемы:
+- Select выбора `driver`/`command_id` может схлопываться до узкой ширины, что делает выбор команды неудобным.
+- Параметры приходится вручную заполнять JSON’ом по шаблону — логичнее предоставить Guided‑режим с интерактивными полями по schema.
+- Есть edge cases безопасности ввода: auto-fill и overwrite не должны неожиданно перезаписывать ручной ввод; `user-edited` состояние не должно “сбрасываться” при смене `command_id`.
+- Schema panel параметров при длинных схемах перегружает модалку, если всегда развёрнута.
 
 ## What Changes
-- Уточнить/зафиксировать правила **pristine/touched** для `executor.params_json`:
-  - auto-fill разрешён только если поле “pristine” (не редактировалось пользователем в рамках текущей сессии модалки) и пустое/`{}`.
-  - смена `command_id` НЕ должна сбрасывать “user-edited” состояние.
+- Секция `params` получает переключатель **Guided / Raw JSON** (по умолчанию Guided).
+- В Guided режиме UI рендерит интерактивные поля по `params_by_name` (после фильтрации disabled + ibcmd connection params), переиспользуя существующие компоненты (напр. `ParamField`) для единообразия типов.
+- Guided‑редактирование **сохраняет кастомные/unknown keys** (ключи, отсутствующие в schema): Guided меняет только schema‑ключи, не удаляя остальные.
+- Raw JSON остаётся доступным; при невалидном JSON Guided‑режим не должен “ломаться”/терять данные.
+- Fix layout: выбор `driver`/`command_id` получает стабильную ширину (flex‑layout, без схлопывания).
+- Уточнить/зафиксировать правила **pristine/touched** для auto-fill schema template:
+  - auto-fill разрешён только если поле pristine и пустое/`{}`.
+  - смена `command_id` НЕ сбрасывает “user-edited”.
   - overwrite существующего JSON — только через явное действие пользователя с confirm.
 - Сделать schema panel параметров **collapsible** (по умолчанию свернутой) и показывать счётчик параметров.
-- (Опционально, если окажется полезно) локализовать/изолировать helper’ы генерации template в более нейтральный модуль, чтобы снизить связанность с `driverCommands/builder`.
 
 ## Impact
 - Affected specs:
   - `ui-action-catalog-editor`
 - Affected code (ожидаемо):
   - `frontend/src/pages/Settings/actionCatalog/ActionCatalogEditorModal.tsx`
+  - `frontend/src/components/driverCommands/builder/ParamField.tsx` (переиспользование)
   - (опционально) `frontend/src/components/driverCommands/builder/utils.ts` или новый helper-модуль
   - `frontend/tests/browser/action-catalog-ui.spec.ts`
 
 ## Non-Goals
-- Замена JSON-редактора `params` на полноценный визуальный builder.
+- Полноценный “workflow builder” или изменения UX за пределами редактора Action Catalog.
 - Любые изменения backend/API/контрактов.
 - Расширение схемы `ui.action_catalog`.
-
