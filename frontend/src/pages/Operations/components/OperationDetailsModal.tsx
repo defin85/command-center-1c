@@ -15,7 +15,7 @@ import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { useAuthz } from '../../../authz/useAuthz'
 
-const { Paragraph, Link } = Typography
+const { Paragraph, Link, Text } = Typography
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -27,6 +27,25 @@ const toNumber = (value: unknown): number | null => {
   }
   return null
 }
+
+const extractTaskResultField = <T,>(
+  result: unknown,
+  key: string,
+  predicate: (value: unknown) => value is T
+): T | null => {
+  if (!result || typeof result !== 'object') return null
+  const value = (result as Record<string, unknown>)[key]
+  return predicate(value) ? value : null
+}
+
+const extractTaskStderr = (result: unknown): string | null => {
+  const raw = extractTaskResultField(result, 'stderr', (v): v is string => typeof v === 'string')
+  const trimmed = raw?.trim()
+  return trimmed ? trimmed : null
+}
+
+const extractTaskExitStatus = (result: unknown): number | null =>
+  extractTaskResultField(result, 'exit_code', (v): v is number => typeof v === 'number' && Number.isFinite(v))
 
 const applyTimelineUpdate = (
   operation: OperationDetailsModalProps['operation'],
@@ -176,8 +195,25 @@ export const OperationDetailsModal = ({
       title: 'Error',
       dataIndex: 'error_message',
       key: 'error_message',
-      render: (error: string) =>
-        error ? <span style={{ color: 'red' }}>{error}</span> : '-',
+      render: (_error: string, record) => {
+        const stderr = extractTaskStderr(record.result)
+        const exitStatus = extractTaskExitStatus(record.result)
+        const error = (record.error_message ?? '').trim()
+        const primary = stderr ?? error
+
+        if (!primary) return '-'
+
+        const showExitStatus = exitStatus !== null && primary !== `exit status ${exitStatus}`
+
+        return (
+          <Space direction="vertical" size={0}>
+            <Text type="danger" ellipsis={{ tooltip: primary }} style={{ maxWidth: 420 }}>
+              {primary}
+            </Text>
+            {showExitStatus ? <Text type="secondary">exit status {exitStatus}</Text> : null}
+          </Space>
+        )
+      },
     },
   ]
 
