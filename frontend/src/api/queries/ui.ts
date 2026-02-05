@@ -17,3 +17,12 @@ export function useActionCatalog() {
     queryFn: () => api.getUiActionCatalog(),
   })
 }
+
+export function useActionCatalogEditorHints(enabled = true) {
+  return useQuery({
+    queryKey: ['ui', 'action-catalog', 'editor-hints'],
+    queryFn: () => api.getUiActionCatalogEditorHints(),
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  })
+}

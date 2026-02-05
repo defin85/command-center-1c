@@ -8099,6 +8099,36 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/ui/action-catalog/editor-hints/:
+    get:
+      operationId: v2_ui_action_catalog_editor_hints_retrieve
+      description: Returns capability-driven UI hints for Action Catalog editor (staff-only).
+      summary: Get action catalog editor hints (capability UI hints)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalogEditorHintsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/ui/execution-plan/preview/:
     post:
       operationId: v2_ui_execution_plan_preview_create
@@ -9298,6 +9328,36 @@ components:
       required:
       - catalog_version
       - extensions
+    ActionCatalogEditorHintHelp:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+    ActionCatalogEditorCapabilityHints:
+      type: object
+      properties:
+        fixed_schema:
+          type: object
+          additionalProperties: {}
+        fixed_ui_schema:
+          type: object
+          additionalProperties: {}
+        help:
+          $ref: '#/components/schemas/ActionCatalogEditorHintHelp'
+    ActionCatalogEditorHintsResponse:
+      type: object
+      properties:
+        hints_version:
+          type: integer
+        capabilities:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ActionCatalogEditorCapabilityHints'
+      required:
+      - hints_version
+      - capabilities
     AdminAuditLogItem:
       type: object
       properties:

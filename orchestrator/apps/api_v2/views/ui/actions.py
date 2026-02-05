@@ -7,6 +7,7 @@ import uuid
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
+from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -27,6 +28,108 @@ logger = logging.getLogger(__name__)
 class ActionCatalogResponseSerializer(serializers.Serializer):
     catalog_version = serializers.IntegerField()
     extensions = serializers.DictField()
+
+
+class ActionCatalogEditorHintHelpSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False)
+    description = serializers.CharField(required=False)
+
+
+class ActionCatalogEditorCapabilityHintsSerializer(serializers.Serializer):
+    fixed_schema = serializers.JSONField(required=False)
+    fixed_ui_schema = serializers.JSONField(required=False)
+    help = ActionCatalogEditorHintHelpSerializer(required=False)
+
+
+class ActionCatalogEditorHintsResponseSerializer(serializers.Serializer):
+    hints_version = serializers.IntegerField()
+    # keys are capability ids; values are hint objects (schema + uiSchema)
+    capabilities = serializers.DictField()
+
+
+def _build_extensions_set_flags_hints() -> dict:
+    fixed_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "apply_mask": {
+                "type": "object",
+                "title": "apply_mask (preset)",
+                "description": (
+                    "Optional preset mask for extensions.set_flags. "
+                    "If omitted, caller provides apply_mask or system applies all flags."
+                ),
+                "additionalProperties": False,
+                "required": ["active", "safe_mode", "unsafe_action_protection"],
+                "properties": {
+                    "active": {
+                        "type": "boolean",
+                        "title": "active",
+                        "description": "Apply only the active flag (extension enabled/disabled).",
+                        "default": False,
+                    },
+                    "safe_mode": {
+                        "type": "boolean",
+                        "title": "safe_mode",
+                        "description": "Apply only the safe_mode flag.",
+                        "default": False,
+                    },
+                    "unsafe_action_protection": {
+                        "type": "boolean",
+                        "title": "unsafe_action_protection",
+                        "description": "Apply only the unsafe_action_protection flag.",
+                        "default": False,
+                    },
+                },
+            }
+        },
+    }
+
+    fixed_ui_schema = {
+        "apply_mask": {
+            "active": {"ui:widget": "switch"},
+            "safe_mode": {"ui:widget": "switch"},
+            "unsafe_action_protection": {"ui:widget": "switch"},
+        }
+    }
+
+    return {
+        "fixed_schema": fixed_schema,
+        "fixed_ui_schema": fixed_ui_schema,
+        "help": {
+            "title": "Set flags presets",
+            "description": "Capability-specific fixed fields for extensions.set_flags.",
+        },
+    }
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Get action catalog editor hints (capability UI hints)",
+    description="Returns capability-driven UI hints for Action Catalog editor (staff-only).",
+    responses={
+        200: ActionCatalogEditorHintsResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_action_catalog_editor_hints(request):
+    if not getattr(request.user, "is_staff", False):
+        return Response(
+            {"success": False, "error": {"code": "FORBIDDEN", "message": "Staff only"}},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    return Response(
+        {
+            "hints_version": 1,
+            "capabilities": {
+                "extensions.set_flags": _build_extensions_set_flags_hints(),
+            },
+        }
+    )
 
 
 def _get_effective_commands_by_id(user, driver: str) -> dict[str, dict] | None:
@@ -153,4 +256,3 @@ def get_action_catalog(request):
             "extensions": {"actions": filtered_actions},
         }
     )
-

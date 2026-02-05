@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, AutoComplete, Button, Card, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Typography } from 'antd'
+import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
 import type { DriverCommandParamV2, DriverCommandV2, DriverName } from '../../../api/driverCommands'
+import { useActionCatalogEditorHints } from '../../../api/queries/ui'
 import { useWorkflowTemplates } from '../../../api/queries/workflowTemplates'
 import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCatalogTypes'
 import { isPlainObject, parseJson, safeText } from '../actionCatalogUtils'
 import { buildParamsTemplate, getCommandParamsFromSchema } from '../../../components/driverCommands/builder/utils'
 import { ParamField } from '../../../components/driverCommands/builder/ParamField'
+import { ActionCatalogCapabilityFixedSection } from './ActionCatalogCapabilityFixedSection'
 
 const ACTION_CONTEXT_OPTIONS: { value: ActionContext; label: string }[] = [
   { value: 'database_card', label: 'database_card' },
@@ -59,19 +61,19 @@ export function ActionCatalogEditorModal({
   onApply,
 }: ActionCatalogEditorModalProps) {
   const { Text } = Typography
-  const { modal } = App.useApp()
+  const { modal, message } = App.useApp()
   const [workflowSearch, setWorkflowSearch] = useState('')
   const [paramsTouched, setParamsTouched] = useState(false)
   const autoFilledCommandIdsRef = useRef<Set<string>>(new Set())
   const [paramsEditorMode, setParamsEditorMode] = useState<ParamsEditorMode>('guided')
   const [paramsObject, setParamsObject] = useState<Record<string, unknown>>({})
   const [rawParamsError, setRawParamsError] = useState<string | null>(null)
+  const [paramsSearch, setParamsSearch] = useState('')
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
   const editorDriver = Form.useWatch(['executor', 'driver'], form) as DriverName | undefined
   const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
-  const isSetFlagsCapability = editorCapability.trim() === 'extensions.set_flags'
   const commandsDriver: DriverName = (editorDriver === 'cli' || editorDriver === 'ibcmd')
     ? editorDriver
     : (editorKind === 'designer_cli' ? 'cli' : 'ibcmd')
@@ -80,6 +82,8 @@ export function ActionCatalogEditorModal({
     commandsDriver,
     open && (editorKind === 'ibcmd_cli' || editorKind === 'designer_cli')
   )
+
+  const hintsQuery = useActionCatalogEditorHints(open)
 
   const workflowTemplatesQuery = useWorkflowTemplates(
     workflowSearch.trim() ? { search: workflowSearch.trim() } : undefined,
@@ -307,14 +311,74 @@ export function ActionCatalogEditorModal({
     && (workflowTemplatesQuery.isError || (!workflowTemplatesQuery.isLoading && workflowOptions.length === 0))
   )
 
+  const filteredCommandParams = useMemo(() => {
+    const q = paramsSearch.trim().toLowerCase()
+    if (!q) return commandParams
+    return commandParams.filter(({ name, schema }) => {
+      const label = typeof schema.label === 'string' ? schema.label : ''
+      return name.toLowerCase().includes(q) || label.toLowerCase().includes(q)
+    })
+  }, [commandParams, paramsSearch])
+
+  const hasParamKey = (name: string): boolean => Object.prototype.hasOwnProperty.call(paramsObject, name)
+
+  const groupedCommandParams = useMemo(() => {
+    const filled: Array<{ name: string; schema: DriverCommandParamV2 }> = []
+    const required: Array<{ name: string; schema: DriverCommandParamV2 }> = []
+    const optional: Array<{ name: string; schema: DriverCommandParamV2 }> = []
+
+    for (const item of filteredCommandParams) {
+      if (hasParamKey(item.name)) {
+        filled.push(item)
+        continue
+      }
+      if (item.schema.required) {
+        required.push(item)
+        continue
+      }
+      optional.push(item)
+    }
+
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
+    filled.sort(byName)
+    required.sort(byName)
+    optional.sort(byName)
+
+    return { filled, required, optional }
+  }, [filteredCommandParams, paramsObject])
+
+  const handleCopyPreviewJson = async () => {
+    try {
+      const raw = JSON.stringify(form.getFieldsValue(true), null, 2)
+      await navigator.clipboard.writeText(raw)
+      message.success('Copied')
+    } catch (_err) {
+      message.error('Copy failed')
+    }
+  }
+
+  const footer = (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Space>
+        <Button size="small" onClick={handleCopyPreviewJson} data-testid="action-catalog-editor-copy-json">
+          Copy JSON
+        </Button>
+      </Space>
+      <Space>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button type="primary" onClick={onApply} data-testid="action-catalog-editor-apply">
+          Apply
+        </Button>
+      </Space>
+    </div>
+  )
+
   return (
     <Modal
       title={title}
       open={open}
       onCancel={onCancel}
-      onOk={onApply}
-      okText="Apply"
-      okButtonProps={{ 'data-testid': 'action-catalog-editor-apply' }}
+      footer={footer}
       destroyOnClose
     >
       <Form<ActionFormValues>
@@ -323,423 +387,492 @@ export function ActionCatalogEditorModal({
         preserve={false}
         initialValues={initialValues ?? undefined}
       >
-        <Form.Item
-          label="ID"
-          name="id"
-          rules={[
-            { required: true, message: 'ID is required' },
-            { whitespace: true, message: 'ID is required' },
-          ]}
-        >
-          <Input data-testid="action-catalog-editor-id" />
-        </Form.Item>
-
-        <Form.Item
-          label="Capability (optional)"
-          name="capability"
-          rules={[
+        <Tabs
+          defaultActiveKey="basics"
+          destroyInactiveTabPane={false}
+          items={[
             {
-              validator: (_rule, value) => {
-                const raw = typeof value === 'string' ? value.trim() : ''
-                if (!raw) return Promise.resolve()
-                if (CAPABILITY_RE.test(raw)) return Promise.resolve()
-                return Promise.reject(new Error('Capability must be a namespaced string (e.g. extensions.list)'))
-              },
-            },
-          ]}
-        >
-          <AutoComplete
-            options={CAPABILITY_OPTIONS}
-            placeholder="e.g. extensions.list"
-            allowClear
-            filterOption={(inputValue, option) => (option?.value ?? '').includes(inputValue)}
-            data-testid="action-catalog-editor-capability"
-          />
-        </Form.Item>
+              key: 'basics',
+              label: 'Basics',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Form.Item
+                    label="ID"
+                    name="id"
+                    rules={[
+                      { required: true, message: 'ID is required' },
+                      { whitespace: true, message: 'ID is required' },
+                    ]}
+                  >
+                    <Input data-testid="action-catalog-editor-id" />
+                  </Form.Item>
 
-        <Form.Item
-          label="Label"
-          name="label"
-          rules={[
-            { required: true, message: 'Label is required' },
-            { whitespace: true, message: 'Label is required' },
-          ]}
-        >
-          <Input data-testid="action-catalog-editor-label" />
-        </Form.Item>
-
-        <Form.Item
-          label="Contexts"
-          name="contexts"
-          rules={[
-            { required: true, message: 'At least one context is required' },
-          ]}
-        >
-          <Select
-            mode="multiple"
-            options={ACTION_CONTEXT_OPTIONS}
-            data-testid="action-catalog-editor-contexts"
-          />
-        </Form.Item>
-
-        <Form.Item
-          label="Executor kind"
-          name={['executor', 'kind']}
-          rules={[{ required: true, message: 'Executor kind is required' }]}
-        >
-          <Select
-            options={EXECUTOR_KIND_OPTIONS}
-            data-testid="action-catalog-editor-executor-kind"
-            onChange={(next: ExecutorKind) => {
-              if (next === 'workflow') {
-                form.setFieldValue(['executor', 'driver'], undefined)
-                form.setFieldValue(['executor', 'command_id'], undefined)
-                form.setFieldValue(['executor', 'workflow_id'], form.getFieldValue(['executor', 'workflow_id']) ?? '')
-                return
-              }
-              form.setFieldValue(['executor', 'workflow_id'], undefined)
-              const currentDriver = form.getFieldValue(['executor', 'driver']) as unknown
-              if (currentDriver !== 'cli' && currentDriver !== 'ibcmd') {
-                form.setFieldValue(['executor', 'driver'], next === 'designer_cli' ? 'cli' : 'ibcmd')
-              }
-              form.setFieldValue(['executor', 'command_id'], undefined)
-            }}
-          />
-        </Form.Item>
-
-        {editorKind === 'workflow' ? (
-          <Form.Item
-            label="workflow_id"
-            name={['executor', 'workflow_id']}
-            rules={[
-              { required: true, message: 'workflow_id is required' },
-              { whitespace: true, message: 'workflow_id is required' },
-            ]}
-          >
-            {workflowTemplatesUnavailable ? (
-              <Input
-                placeholder="Workflow templates unavailable — enter workflow_id manually"
-                data-testid="action-catalog-editor-workflow-id"
-              />
-            ) : (
-              <Select
-                showSearch
-                options={workflowOptions}
-                loading={workflowTemplatesQuery.isLoading}
-                filterOption={false}
-                onSearch={(value) => setWorkflowSearch(value)}
-                placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates…' : 'Select workflow template'}
-                data-testid="action-catalog-editor-workflow-id"
-                notFoundContent={workflowTemplatesQuery.isError ? 'Failed to load workflow templates' : 'No templates'}
-              />
-            )}
-          </Form.Item>
-        ) : (
-          <div style={{ display: 'flex', gap: 16, width: '100%' }}>
-            <Form.Item
-              label="driver"
-              name={['executor', 'driver']}
-              rules={[{ required: true, message: 'driver is required' }]}
-              style={{ flex: 1, minWidth: 0 }}
-            >
-              <Select
-                options={DRIVER_OPTIONS}
-                style={{ width: '100%' }}
-                data-testid="action-catalog-editor-driver"
-                onChange={() => {
-                  form.setFieldValue(['executor', 'command_id'], undefined)
-                }}
-              />
-            </Form.Item>
-            <Form.Item
-              label="command_id"
-              name={['executor', 'command_id']}
-              rules={[{ required: true, message: 'command_id is required' }]}
-              style={{ flex: 2, minWidth: 0 }}
-            >
-              {driverCatalogUnavailable ? (
-                <Input
-                  placeholder="Driver catalog unavailable — enter command_id manually"
-                  style={{ width: '100%' }}
-                  data-testid="action-catalog-editor-command-id"
-                />
-              ) : (
-                <Select
-                  showSearch
-                  options={commandOptions}
-                  loading={commandsQuery.isLoading}
-                  style={{ width: '100%' }}
-                  placeholder={commandsQuery.isLoading ? 'Loading driver catalog…' : 'Select command_id'}
-                  optionFilterProp="label"
-                  data-testid="action-catalog-editor-command-id"
-                  notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}
-                />
-              )}
-            </Form.Item>
-          </div>
-        )}
-
-        {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && !driverCatalogUnavailable && selectedCommand && (
-          <div style={{ marginBottom: 12 }} data-testid="action-catalog-editor-schema-panel">
-            <Collapse
-              size="small"
-              defaultActiveKey={[]}
-              items={[
-                {
-                  key: 'schema',
-                  label: `Command parameters (from schema) (${commandParams.length})`,
-                  children: commandParams.length === 0 ? (
-                    <Text type="secondary">No command parameters in schema.</Text>
-                  ) : (
-                    <Descriptions bordered size="small" column={1}>
-                      {commandParams.map(({ name, schema }) => {
-                        const bits: string[] = []
-                        if (schema.required) bits.push('required')
-                        if (schema.kind) bits.push(schema.kind)
-                        if (schema.value_type) bits.push(String(schema.value_type))
-                        if (schema.repeatable) bits.push('repeatable')
-                        const titleBits = bits.length ? ` (${bits.join(', ')})` : ''
-
-                        const defaultValue = schema.default !== undefined ? safeText(schema.default, 200) : '—'
-                        const description = schema.description ? String(schema.description) : ''
-
-                        return (
-                          <Descriptions.Item key={name} label={`${name}${titleBits}`}>
-                            <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                              <Text type="secondary">default: {defaultValue}</Text>
-                              {description && <Text type="secondary">{description}</Text>}
-                            </Space>
-                          </Descriptions.Item>
-                        )
-                      })}
-                    </Descriptions>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        )}
-
-        <Card size="small" style={{ marginBottom: 12 }}>
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
-              <Form.Item
-                label="additional_args"
-                name={['executor', 'additional_args']}
-                tooltip="Для designer_cli это args; для ibcmd_cli — дополнительные argv-параметры."
-              >
-                <Select
-                  mode="tags"
-                  tokenSeparators={['\n', ' ']}
-                  placeholder="Enter args (space/newline-separated)"
-                  data-testid="action-catalog-editor-additional-args"
-                />
-              </Form.Item>
-            )}
-
-            {editorKind === 'ibcmd_cli' && (
-              <Form.Item label="mode" name={['executor', 'mode']}>
-                <Select options={MODE_OPTIONS} data-testid="action-catalog-editor-mode" />
-              </Form.Item>
-            )}
-
-            <Form.Item
-              label={(
-                <Space align="center">
-                  <span>params</span>
-                  {allowGuidedParams && (
-                    <Segmented
-                      size="small"
-                      value={effectiveParamsEditorMode}
-                      options={[
-                        { label: 'Guided', value: 'guided' },
-                        { label: 'Raw JSON', value: 'raw' },
-                      ]}
-                      onChange={(next) => handleParamsEditorModeChange(next as ParamsEditorMode)}
-                      data-testid="action-catalog-editor-params-mode"
+                  <Form.Item
+                    label="Capability (optional)"
+                    name="capability"
+                    rules={[
+                      {
+                        validator: (_rule, value) => {
+                          const raw = typeof value === 'string' ? value.trim() : ''
+                          if (!raw) return Promise.resolve()
+                          if (CAPABILITY_RE.test(raw)) return Promise.resolve()
+                          return Promise.reject(new Error('Capability must be a namespaced string (e.g. extensions.list)'))
+                        },
+                      },
+                    ]}
+                  >
+                    <AutoComplete
+                      options={CAPABILITY_OPTIONS}
+                      placeholder="e.g. extensions.list"
+                      allowClear
+                      filterOption={(inputValue, option) => (option?.value ?? '').includes(inputValue)}
+                      data-testid="action-catalog-editor-capability"
                     />
-                  )}
-                  {effectiveParamsEditorMode === 'raw' && rawParamsError && (
-                    <Button
-                      size="small"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        handleResetParamsJson()
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Label"
+                    name="label"
+                    rules={[
+                      { required: true, message: 'Label is required' },
+                      { whitespace: true, message: 'Label is required' },
+                    ]}
+                  >
+                    <Input data-testid="action-catalog-editor-label" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Contexts"
+                    name="contexts"
+                    rules={[
+                      { required: true, message: 'At least one context is required' },
+                    ]}
+                  >
+                    <Select
+                      mode="multiple"
+                      options={ACTION_CONTEXT_OPTIONS}
+                      data-testid="action-catalog-editor-contexts"
+                    />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Executor kind"
+                    name={['executor', 'kind']}
+                    rules={[{ required: true, message: 'Executor kind is required' }]}
+                  >
+                    <Select
+                      options={EXECUTOR_KIND_OPTIONS}
+                      data-testid="action-catalog-editor-executor-kind"
+                      onChange={(next: ExecutorKind) => {
+                        if (next === 'workflow') {
+                          form.setFieldValue(['executor', 'driver'], undefined)
+                          form.setFieldValue(['executor', 'command_id'], undefined)
+                          form.setFieldValue(['executor', 'workflow_id'], form.getFieldValue(['executor', 'workflow_id']) ?? '')
+                          return
+                        }
+                        form.setFieldValue(['executor', 'workflow_id'], undefined)
+                        const currentDriver = form.getFieldValue(['executor', 'driver']) as unknown
+                        if (currentDriver !== 'cli' && currentDriver !== 'ibcmd') {
+                          form.setFieldValue(['executor', 'driver'], next === 'designer_cli' ? 'cli' : 'ibcmd')
+                        }
+                        form.setFieldValue(['executor', 'command_id'], undefined)
                       }}
-                      data-testid="action-catalog-editor-params-reset"
+                    />
+                  </Form.Item>
+
+                  {editorKind === 'workflow' ? (
+                    <Form.Item
+                      label="workflow_id"
+                      name={['executor', 'workflow_id']}
+                      rules={[
+                        { required: true, message: 'workflow_id is required' },
+                        { whitespace: true, message: 'workflow_id is required' },
+                      ]}
                     >
-                      Reset to {'{}'}
-                    </Button>
+                      {workflowTemplatesUnavailable ? (
+                        <Input
+                          placeholder="Workflow templates unavailable — enter workflow_id manually"
+                          data-testid="action-catalog-editor-workflow-id"
+                        />
+                      ) : (
+                        <Select
+                          showSearch
+                          options={workflowOptions}
+                          loading={workflowTemplatesQuery.isLoading}
+                          filterOption={false}
+                          onSearch={(value) => setWorkflowSearch(value)}
+                          placeholder={workflowTemplatesQuery.isLoading ? 'Loading workflow templates…' : 'Select workflow template'}
+                          data-testid="action-catalog-editor-workflow-id"
+                          notFoundContent={workflowTemplatesQuery.isError ? 'Failed to load workflow templates' : 'No templates'}
+                        />
+                      )}
+                    </Form.Item>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 16, width: '100%' }}>
+                      <Form.Item
+                        label="driver"
+                        name={['executor', 'driver']}
+                        rules={[{ required: true, message: 'driver is required' }]}
+                        style={{ flex: 1, minWidth: 0 }}
+                      >
+                        <Select
+                          options={DRIVER_OPTIONS}
+                          style={{ width: '100%' }}
+                          data-testid="action-catalog-editor-driver"
+                          onChange={() => {
+                            form.setFieldValue(['executor', 'command_id'], undefined)
+                          }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        label="command_id"
+                        name={['executor', 'command_id']}
+                        rules={[{ required: true, message: 'command_id is required' }]}
+                        style={{ flex: 2, minWidth: 0 }}
+                      >
+                        {driverCatalogUnavailable ? (
+                          <Input
+                            placeholder="Driver catalog unavailable — enter command_id manually"
+                            style={{ width: '100%' }}
+                            data-testid="action-catalog-editor-command-id"
+                          />
+                        ) : (
+                          <Select
+                            showSearch
+                            options={commandOptions}
+                            loading={commandsQuery.isLoading}
+                            style={{ width: '100%' }}
+                            placeholder={commandsQuery.isLoading ? 'Loading driver catalog…' : 'Select command_id'}
+                            optionFilterProp="label"
+                            data-testid="action-catalog-editor-command-id"
+                            notFoundContent={commandsQuery.isError ? 'Failed to load driver catalog' : 'No commands'}
+                          />
+                        )}
+                      </Form.Item>
+                    </div>
                   )}
-                  {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
-                    <Button
-                      size="small"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        handleInsertParamsTemplate()
-                      }}
-                      disabled={!hasParamsTemplate || driverCatalogUnavailable || !selectedCommand}
-                      data-testid="action-catalog-editor-insert-params-template"
-                    >
-                      Insert params template
-                    </Button>
+
+                  {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && !driverCatalogUnavailable && selectedCommand && (
+                    <div style={{ marginBottom: 12 }} data-testid="action-catalog-editor-schema-panel">
+                      <Collapse
+                        size="small"
+                        defaultActiveKey={[]}
+                        items={[
+                          {
+                            key: 'schema',
+                            label: `Command parameters (from schema) (${commandParams.length})`,
+                            children: commandParams.length === 0 ? (
+                              <Text type="secondary">No command parameters in schema.</Text>
+                            ) : (
+                              <Descriptions bordered size="small" column={1}>
+                                {commandParams.map(({ name, schema }) => {
+                                  const bits: string[] = []
+                                  if (schema.required) bits.push('required')
+                                  if (schema.kind) bits.push(schema.kind)
+                                  if (schema.value_type) bits.push(String(schema.value_type))
+                                  if (schema.repeatable) bits.push('repeatable')
+                                  const titleBits = bits.length ? ` (${bits.join(', ')})` : ''
+
+                                  const defaultValue = schema.default !== undefined ? safeText(schema.default, 200) : '—'
+                                  const description = schema.description ? String(schema.description) : ''
+
+                                  return (
+                                    <Descriptions.Item key={name} label={`${name}${titleBits}`}>
+                                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                                        <Text type="secondary">default: {defaultValue}</Text>
+                                        {description && <Text type="secondary">{description}</Text>}
+                                      </Space>
+                                    </Descriptions.Item>
+                                  )
+                                })}
+                              </Descriptions>
+                            ),
+                          },
+                        ]}
+                      />
+                    </div>
                   )}
                 </Space>
-              )}
-              name={['executor', 'params_json']}
-              validateStatus={effectiveParamsEditorMode === 'raw' && rawParamsError ? 'error' : undefined}
-              help={effectiveParamsEditorMode === 'raw' && rawParamsError ? rawParamsError : undefined}
-              rules={[
-                {
-                  validator: async (_rule, value) => {
-                    const raw = typeof value === 'string' ? value : ''
-                    if (!raw.trim()) return
-                    const parsed = parseJson(raw)
-                    if (!isPlainObject(parsed)) {
-                      throw new Error('params must be a JSON object')
-                    }
-                  },
-                },
-              ]}
-            >
-              {effectiveParamsEditorMode === 'raw' ? (
-                <Input.TextArea
-                  rows={6}
-                  placeholder="{ }"
-                  data-testid="action-catalog-editor-params"
-                  onChange={(event) => {
-                    setParamsTouched(true)
-                    const nextRaw = event.target.value
-                    const parsed = parseParamsJsonToObject(nextRaw)
-                    if (parsed.ok) {
-                      setParamsObject(parsed.value)
-                      setRawParamsError(null)
-                    } else {
-                      setRawParamsError(parsed.error)
-                    }
-                  }}
-                />
-              ) : (
-                <Input.TextArea rows={1} style={{ display: 'none' }} aria-hidden />
-              )}
-            </Form.Item>
-
-            {allowGuidedParams && effectiveParamsEditorMode === 'guided' && (
-              <div data-testid="action-catalog-editor-params-guided">
-                {unknownKeysCount > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">Unknown keys: {unknownKeysCount}</Text>
-                  </div>
-                )}
-
-                <Collapse
-                  size="small"
-                  ghost
-                  destroyInactivePanel={false}
-                  defaultActiveKey={['guided-params']}
-                  items={[
-                    {
-                      key: 'guided-params',
-                      label: `Command params (guided) (${driverCatalogUnavailable || !selectedCommand ? '—' : commandParams.length})`,
-                      children: driverCatalogUnavailable || !selectedCommand ? (
-                        <Text type="secondary">Select driver and command_id to edit schema params.</Text>
-                      ) : commandParams.length === 0 ? (
-                        <Text type="secondary">No command parameters in schema.</Text>
-                      ) : (
-                        <div>
-                          {commandParams.map(({ name, schema }) => (
-                            <ParamField
-                              key={name}
-                              name={name}
-                              schema={schema}
-                              value={getGuidedParamValue(name, schema)}
-                              onChange={(next) => handleGuidedParamChange(name, next)}
-                            />
-                          ))}
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            )}
-
-            {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
-              <Form.Item label="stdin" name={['executor', 'stdin']}>
-                <Input.TextArea
-                  rows={3}
-                  placeholder="Optional stdin"
-                  data-testid="action-catalog-editor-stdin"
-                />
-              </Form.Item>
-            )}
-
-            <Space size="middle" wrap>
-              <Form.Item
-                label="fixed.confirm_dangerous"
-                name={['executor', 'fixed', 'confirm_dangerous']}
-                valuePropName="checked"
-              >
-                <Switch data-testid="action-catalog-editor-confirm-dangerous" />
-              </Form.Item>
-              <Form.Item
-                label="fixed.timeout_seconds"
-                name={['executor', 'fixed', 'timeout_seconds']}
-              >
-                <InputNumber
-                  min={1}
-                  max={3600}
-                  style={{ width: 160 }}
-                  data-testid="action-catalog-editor-timeout"
-                />
-              </Form.Item>
-            </Space>
-
-            {isSetFlagsCapability && (
-              <div style={{ marginTop: 8 }}>
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text strong>fixed.apply_mask (preset)</Text>
-                    <Button
-                      size="small"
-                      onClick={() => form.setFieldValue(['executor', 'fixed', 'apply_mask'], undefined)}
+              ),
+            },
+            {
+              key: 'executor',
+              label: 'Executor',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                    <Form.Item
+                      label="additional_args"
+                      name={['executor', 'additional_args']}
+                      tooltip="Для designer_cli это args; для ibcmd_cli — дополнительные argv-параметры."
                     >
-                      Clear
-                    </Button>
-                  </div>
-                  <Text type="secondary">
-                    Optional preset mask for <Text code>extensions.set_flags</Text>. If omitted, caller provides apply_mask or system applies all flags.
-                  </Text>
+                      <Select
+                        mode="tags"
+                        tokenSeparators={['\n', ' ']}
+                        placeholder="Enter args (space/newline-separated)"
+                        data-testid="action-catalog-editor-additional-args"
+                      />
+                    </Form.Item>
+                  )}
+
+                  {editorKind === 'ibcmd_cli' && (
+                    <Form.Item label="mode" name={['executor', 'mode']}>
+                      <Select options={MODE_OPTIONS} data-testid="action-catalog-editor-mode" />
+                    </Form.Item>
+                  )}
+
+                  {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                    <Form.Item label="stdin" name={['executor', 'stdin']}>
+                      <Input.TextArea
+                        rows={3}
+                        placeholder="Optional stdin"
+                        data-testid="action-catalog-editor-stdin"
+                      />
+                    </Form.Item>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              key: 'params',
+              label: 'Params',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Form.Item
+                    label={(
+                      <Space align="center" wrap>
+                        <span>params</span>
+                        {allowGuidedParams && (
+                          <Segmented
+                            size="small"
+                            value={effectiveParamsEditorMode}
+                            options={[
+                              { label: 'Guided', value: 'guided' },
+                              { label: 'Raw JSON', value: 'raw' },
+                            ]}
+                            onChange={(next) => handleParamsEditorModeChange(next as ParamsEditorMode)}
+                            data-testid="action-catalog-editor-params-mode"
+                          />
+                        )}
+                        {effectiveParamsEditorMode === 'raw' && rawParamsError && (
+                          <Button
+                            size="small"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              handleResetParamsJson()
+                            }}
+                            data-testid="action-catalog-editor-params-reset"
+                          >
+                            Reset to {'{}'}
+                          </Button>
+                        )}
+                        {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
+                          <Button
+                            size="small"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              handleInsertParamsTemplate()
+                            }}
+                            disabled={!hasParamsTemplate || driverCatalogUnavailable || !selectedCommand}
+                            data-testid="action-catalog-editor-insert-params-template"
+                          >
+                            Insert params template
+                          </Button>
+                        )}
+                      </Space>
+                    )}
+                    name={['executor', 'params_json']}
+                    validateStatus={effectiveParamsEditorMode === 'raw' && rawParamsError ? 'error' : undefined}
+                    help={effectiveParamsEditorMode === 'raw' && rawParamsError ? rawParamsError : undefined}
+                    rules={[
+                      {
+                        validator: async (_rule, value) => {
+                          const raw = typeof value === 'string' ? value : ''
+                          if (!raw.trim()) return
+                          const parsed = parseJson(raw)
+                          if (!isPlainObject(parsed)) {
+                            throw new Error('params must be a JSON object')
+                          }
+                        },
+                      },
+                    ]}
+                  >
+                    {effectiveParamsEditorMode === 'raw' ? (
+                      <Input.TextArea
+                        rows={6}
+                        placeholder="{ }"
+                        data-testid="action-catalog-editor-params"
+                        onChange={(event) => {
+                          setParamsTouched(true)
+                          const nextRaw = event.target.value
+                          const parsed = parseParamsJsonToObject(nextRaw)
+                          if (parsed.ok) {
+                            setParamsObject(parsed.value)
+                            setRawParamsError(null)
+                          } else {
+                            setRawParamsError(parsed.error)
+                          }
+                        }}
+                      />
+                    ) : (
+                      <Input.TextArea rows={1} style={{ display: 'none' }} aria-hidden />
+                    )}
+                  </Form.Item>
+
+                  {allowGuidedParams && effectiveParamsEditorMode === 'guided' && (
+                    <div data-testid="action-catalog-editor-params-guided">
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Input
+                          allowClear
+                          placeholder="Search params…"
+                          value={paramsSearch}
+                          onChange={(event) => setParamsSearch(event.target.value)}
+                          data-testid="action-catalog-editor-params-search"
+                        />
+
+                        {unknownKeysCount > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text type="secondary">Unknown keys: {unknownKeysCount}</Text>
+                          </div>
+                        )}
+
+                        <Collapse
+                          size="small"
+                          ghost
+                          destroyInactivePanel
+                          defaultActiveKey={['filled', 'required']}
+                          items={[
+                            {
+                              key: 'filled',
+                              label: `Filled (${driverCatalogUnavailable || !selectedCommand ? '—' : groupedCommandParams.filled.length})`,
+                              children: driverCatalogUnavailable || !selectedCommand ? (
+                                <Text type="secondary">Select driver and command_id to edit schema params.</Text>
+                              ) : groupedCommandParams.filled.length === 0 ? (
+                                <Text type="secondary">No filled params.</Text>
+                              ) : (
+                                <div>
+                                  {groupedCommandParams.filled.map(({ name, schema }) => (
+                                    <ParamField
+                                      key={name}
+                                      name={name}
+                                      schema={schema}
+                                      value={getGuidedParamValue(name, schema)}
+                                      onChange={(next) => handleGuidedParamChange(name, next)}
+                                    />
+                                  ))}
+                                </div>
+                              ),
+                            },
+                            {
+                              key: 'required',
+                              label: `Required (${driverCatalogUnavailable || !selectedCommand ? '—' : groupedCommandParams.required.length})`,
+                              children: driverCatalogUnavailable || !selectedCommand ? (
+                                <Text type="secondary">Select driver and command_id to edit schema params.</Text>
+                              ) : groupedCommandParams.required.length === 0 ? (
+                                <Text type="secondary">No required params.</Text>
+                              ) : (
+                                <div>
+                                  {groupedCommandParams.required.map(({ name, schema }) => (
+                                    <ParamField
+                                      key={name}
+                                      name={name}
+                                      schema={schema}
+                                      value={getGuidedParamValue(name, schema)}
+                                      onChange={(next) => handleGuidedParamChange(name, next)}
+                                    />
+                                  ))}
+                                </div>
+                              ),
+                            },
+                            {
+                              key: 'optional',
+                              label: `Optional (${driverCatalogUnavailable || !selectedCommand ? '—' : groupedCommandParams.optional.length})`,
+                              children: driverCatalogUnavailable || !selectedCommand ? (
+                                <Text type="secondary">Select driver and command_id to edit schema params.</Text>
+                              ) : groupedCommandParams.optional.length === 0 ? (
+                                <Text type="secondary">No optional params.</Text>
+                              ) : (
+                                <div>
+                                  {groupedCommandParams.optional.map(({ name, schema }) => (
+                                    <ParamField
+                                      key={name}
+                                      name={name}
+                                      schema={schema}
+                                      value={getGuidedParamValue(name, schema)}
+                                      onChange={(next) => handleGuidedParamChange(name, next)}
+                                    />
+                                  ))}
+                                </div>
+                              ),
+                            },
+                          ]}
+                        />
+                      </Space>
+                    </div>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              key: 'safety',
+              label: 'Safety & Fixed',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
                   <Space size="middle" wrap>
                     <Form.Item
-                      label="active"
-                      name={['executor', 'fixed', 'apply_mask', 'active']}
+                      label="fixed.confirm_dangerous"
+                      name={['executor', 'fixed', 'confirm_dangerous']}
                       valuePropName="checked"
                     >
-                      <Switch />
+                      <Switch data-testid="action-catalog-editor-confirm-dangerous" />
                     </Form.Item>
                     <Form.Item
-                      label="safe_mode"
-                      name={['executor', 'fixed', 'apply_mask', 'safe_mode']}
-                      valuePropName="checked"
+                      label="fixed.timeout_seconds"
+                      name={['executor', 'fixed', 'timeout_seconds']}
                     >
-                      <Switch />
-                    </Form.Item>
-                    <Form.Item
-                      label="unsafe_action_protection"
-                      name={['executor', 'fixed', 'apply_mask', 'unsafe_action_protection']}
-                      valuePropName="checked"
-                    >
-                      <Switch />
+                      <InputNumber
+                        min={1}
+                        max={3600}
+                        style={{ width: 160 }}
+                        data-testid="action-catalog-editor-timeout"
+                      />
                     </Form.Item>
                   </Space>
+
+                  {hintsQuery.isError && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="Hints unavailable"
+                      description="Capability-driven fixed UI is unavailable."
+                    />
+                  )}
+
+                  {!hintsQuery.isError && (
+                    <ActionCatalogCapabilityFixedSection
+                      form={form}
+                      capability={editorCapability}
+                      hints={hintsQuery.data}
+                    />
+                  )}
                 </Space>
-              </div>
-            )}
-          </Space>
-        </Card>
+              ),
+            },
+            {
+              key: 'preview',
+              label: 'Preview',
+              children: (
+                <Input.TextArea
+                  rows={10}
+                  value={JSON.stringify(form.getFieldsValue(true), null, 2)}
+                  readOnly
+                />
+              ),
+            },
+          ]}
+        />
 
         {(commandsQuery.isError || workflowTemplatesQuery.isError) && (
           <Alert

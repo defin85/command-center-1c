@@ -12,6 +12,7 @@ from typing import Any
 _BASE = __name__
 _EXPORTS: dict[str, tuple[str, str]] = {
     "get_action_catalog": (f"{_BASE}.actions", "get_action_catalog"),
+    "get_action_catalog_editor_hints": (f"{_BASE}.actions", "get_action_catalog_editor_hints"),
     "preview_execution_plan": (f"{_BASE}.preview", "preview_execution_plan"),
     "get_table_metadata": (f"{_BASE}.table_metadata", "get_table_metadata"),
 }
